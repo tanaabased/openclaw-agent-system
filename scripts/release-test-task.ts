@@ -110,6 +110,7 @@ try {
     'utils/decode.ts',
     'utils/encode.ts',
     'utils/encode-keys.ts',
+    'utils/plugin-metadata-failures.ts',
     'assets/agent-system.png',
     'README.md',
     'CHANGELOG.md',

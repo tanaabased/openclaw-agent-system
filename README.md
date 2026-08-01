@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> This repository currently provides the working plugin and delivery scaffold. Manifest discovery, identity application, environment resolution, credentials, installation, and diagnostics remain product work described in [SPEC.md](./SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. This repository currently provides the working plugin and delivery scaffold. Manifest discovery, identity application, environment resolution, credentials, installation, and diagnostics remain product work described in [SPEC.md](./SPEC.md).
 
 ## Overview
 

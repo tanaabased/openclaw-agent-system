@@ -8,7 +8,6 @@ permissions:
 
 env:
   HOMEBREW_NO_AUTO_UPDATE: '1'
-  STAMPED_VERSION: v9.9.9-ci.${{ github.event.pull_request.head.sha }}
 
 jobs:
   examples:
@@ -52,10 +51,10 @@ jobs:
       - name: Prepare release-shaped build
         uses: tanaabased/prepare-release-action@v1
         with:
-          version: ${{ env.STAMPED_VERSION }}
+          version: dev
           sync: false
           commands: |
-            version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
             bun run build
       - name: Pack prepared plugin
