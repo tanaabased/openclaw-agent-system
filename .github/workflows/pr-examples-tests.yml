@@ -37,6 +37,7 @@ jobs:
           sync: false
           commands: |
             version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
+            bun run format:write
       - name: Check prepared formatting
         run: bun run format:check
       - name: Pack prepared plugin
