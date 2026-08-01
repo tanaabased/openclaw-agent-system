@@ -11,54 +11,8 @@ env:
   STAMPED_VERSION: v9.9.9-ci.${{ github.event.pull_request.head.sha }}
 
 jobs:
-  package:
-    name: Prepare plugin package
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Prepare release-shaped metadata
-        uses: tanaabased/prepare-release-action@v1
-        with:
-          version: ${{ env.STAMPED_VERSION }}
-          sync: false
-          commands: |
-            version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
-            bun run format:write
-      - name: Check prepared formatting
-        run: bun run format:check
-      - name: Pack prepared plugin
-        shell: bash
-        run: |
-          package_directory="$RUNNER_TEMP/agent-system-package"
-          archive_path="$(bun run --silent package:pack -- "$package_directory")"
-          test -f "$archive_path"
-          archive_name="$(basename "$archive_path")"
-          (cd "$package_directory" && shasum -a 256 "$archive_name" > "$archive_name.sha256")
-      - name: Upload prepared plugin
-        uses: actions/upload-artifact@v7
-        with:
-          name: agent-system-package
-          path: ${{ runner.temp }}/agent-system-package/*
-          if-no-files-found: error
-          retention-days: 1
-
   examples:
     name: ${{ matrix.example }} (${{ matrix.os }})
-    needs: package
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -71,6 +25,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Put Homebrew on PATH
         shell: bash
         run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
@@ -79,7 +35,9 @@ jobs:
         run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
       - name: Install OpenClaw CLI
         shell: bash
-        run: brew install openclaw-cli
+        run: |
+          brew install openclaw-cli
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - name: Install Node
         uses: actions/setup-node@v6
         with:
@@ -91,22 +49,26 @@ jobs:
           bun-version-file: .bun-version
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
-      - name: Download prepared plugin
-        uses: actions/download-artifact@v8
+      - name: Prepare release-shaped build
+        uses: tanaabased/prepare-release-action@v1
         with:
-          name: agent-system-package
-          path: ${{ runner.temp }}/agent-system-package
-      - name: Verify prepared plugin
+          version: ${{ env.STAMPED_VERSION }}
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
+            bun run format:write
+            bun run build
+      - name: Pack prepared plugin
         shell: bash
         run: |
-          package_directory="$RUNNER_TEMP/agent-system-package"
-          (cd "$package_directory" && shasum -a 256 -c ./*.sha256)
-          set -- "$package_directory"/*.tgz
-          test "$#" -eq 1
-          test -f "$1"
-          echo "AGENT_SYSTEM_PACKAGE=$1" >> "$GITHUB_ENV"
+          bun run plugin:check
+          bun run format:check
+          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          test -n "$archive_name"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
       - name: Run Leia-backed example
         shell: bash
         env:
           NO_COLOR: '1'
+          TMPDIR: ${{ runner.temp }}
         run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0

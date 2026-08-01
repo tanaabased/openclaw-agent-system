@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 interface ClawHubValidation {
@@ -21,9 +21,18 @@ interface PackageMetadata {
   };
 }
 
+interface PackResult {
+  filename?: string;
+  files?: Array<{ path: string }>;
+}
+
 interface PluginManifest {
   id?: string;
   version?: string;
+}
+
+interface RunOptions {
+  env?: NodeJS.ProcessEnv;
 }
 
 interface RunResult {
@@ -46,9 +55,9 @@ async function check<T>(label: string, action: () => T | Promise<T>): Promise<T>
   }
 }
 
-async function run(command: string, args: string[]): Promise<RunResult> {
+async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   const child = spawn(command, args, {
-    env: process.env,
+    env: options.env ?? process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -66,33 +75,31 @@ async function run(command: string, args: string[]): Promise<RunResult> {
   return { output };
 }
 
-const archiveArgument = process.argv.slice(2).find((argument) => argument !== '--');
-if (!archiveArgument) {
-  throw new Error('usage: bun run test:release -- <package-archive>');
-}
-
-const archivePath = isAbsolute(archiveArgument)
-  ? archiveArgument
-  : resolve(process.cwd(), archiveArgument);
-const temporaryRoot = await mkdtemp(join(tmpdir(), 'openclaw-agent-system-package-test-'));
+const temporaryRoot = await mkdtemp(join(tmpdir(), 'openclaw-agent-system-package-'));
+const environment = {
+  ...process.env,
+  npm_config_cache: join(temporaryRoot, 'npm-cache'),
+};
 
 try {
-  await check('find the prepared npm package archive', () => access(archivePath));
+  await check('build the plugin runtime', () => run('bun', ['run', 'build']));
+  await check('validate plugin metadata', () => run('bun', ['run', 'plugin:check']));
 
-  const packedPaths = await check('inspect the npm package archive', async () => {
-    const listed = await run('tar', ['-tzf', archivePath]);
-    const entries = listed.output
-      .split('\n')
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    assert.equal(entries.length > 0, true, 'package archive must not be empty');
-    for (const entry of entries) {
-      assert.equal(entry.startsWith('package/'), true, `unexpected archive root: ${entry}`);
-      assert.equal(entry.includes('../'), false, `unsafe archive path: ${entry}`);
-    }
-    return new Set(entries.map((entry) => entry.replace(/^package\//, '')));
+  const { archivePath, packageResult } = await check('create the npm package archive', async () => {
+    const packed = await run(
+      'npm',
+      ['pack', '--ignore-scripts', '--json', '--pack-destination', temporaryRoot],
+      { env: environment },
+    );
+    const result = (JSON.parse(packed.output) as PackResult[])[0];
+    if (!result?.filename) throw new Error('npm pack did not report an archive');
+    assert.match(result.filename, /\.tgz$/);
+    const path = join(temporaryRoot, result.filename);
+    await access(path);
+    return { archivePath: path, packageResult: result };
   });
 
+  const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
   const requiredPaths = [
     'package.json',
     'openclaw.plugin.json',
@@ -144,7 +151,7 @@ try {
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
   });
 
-  await check('ship the built plugin entry that was validated locally', async () => {
+  await check('ship the built Agent System plugin entry', async () => {
     const [localEntry, packedEntry] = await Promise.all([
       readFile(join(process.cwd(), 'dist', 'index.js')),
       readFile(join(packageRoot, 'dist', 'index.js')),

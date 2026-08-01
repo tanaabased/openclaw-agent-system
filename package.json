@@ -63,7 +63,6 @@
     "leia": "leia",
     "lint:eslint": "eslint .",
     "lint": "bun run lint:eslint && bun run format:check",
-    "package:pack": "bun scripts/pack-plugin-task.ts",
     "plugin:check": "bun scripts/check-plugin-task.ts",
     "test:release": "bun scripts/release-test-task.ts",
     "test": "bun run test:unit",

@@ -58,18 +58,17 @@ bun run build
 bun run plugin:check
 ```
 
-When package contents or release wiring change, create one release-shaped archive and validate that exact artifact:
+When package contents or release wiring change, run the self-contained release package check:
 
 ```sh
-archive_path="$(bun run --silent package:pack -- .tmp/package)"
-bun run test:release -- "$archive_path"
+bun run test:release
 ```
 
-The package task builds the Node-targeted runtime, validates plugin metadata, and creates the npm archive. The release check extracts that archive, checks its file boundaries and metadata, and requires ClawHub package validation to pass without warnings. It does not publish the package.
+The release check builds the Node-targeted runtime, validates plugin metadata, creates and inspects a temporary npm archive, verifies its file boundaries and identity metadata, and requires ClawHub package validation to pass without warnings. It cleans up the temporary archive and does not publish the package.
 
 Operational examples are executable Leia scenarios under `examples/`. They are GitHub Actions-only and must not be run as local repository validation. The initial install example installs the prepared archive through OpenClaw's managed npm-package path and verifies both `openclaw agent-system` and `openclaw as`. Pull requests run the example on macOS and Ubuntu independently from lint, unit, and release checks.
 
-Published GitHub releases prepare and validate one archive, then publish that same artifact through npm trusted publishing and ClawHub.
+Published GitHub releases run independent, release-shaped preparation and validation jobs for npm trusted publishing and ClawHub.
 
 ## Project direction
 

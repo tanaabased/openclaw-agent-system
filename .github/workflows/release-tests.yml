@@ -41,34 +41,16 @@ jobs:
         run: bun run format:check
       - name: Upgrade npm for publish validation
         run: npm install --global "npm@^11.5.1"
-      - name: Build and pack the prepared plugin
-        id: package
-        shell: bash
-        run: |
-          package_directory="$RUNNER_TEMP/agent-system-package"
-          archive_path="$(bun run --silent package:pack -- "$package_directory")"
-          test -f "$archive_path"
-          archive_name="$(basename "$archive_path")"
-          (cd "$package_directory" && shasum -a 256 "$archive_name" > "$archive_name.sha256")
-          echo "archive=$archive_path" >> "$GITHUB_OUTPUT"
       - name: Run release package tests
-        run: bun run test:release -- "${{ steps.package.outputs.archive }}"
+        run: bun run test:release
       - name: Validate npm publish
-        run: npm publish "${{ steps.package.outputs.archive }}" --access public --tag edge --dry-run
+        run: npm publish --access public --tag edge --dry-run
       - name: Validate ClawHub publish
         run: |
-          bunx --no-install clawhub package publish "${{ steps.package.outputs.archive }}" \
+          TARBALL=$(npm pack --silent --ignore-scripts --pack-destination "$RUNNER_TEMP")
+          bunx --no-install clawhub package publish "$RUNNER_TEMP/$TARBALL" \
             --family code-plugin \
             --owner tanaab \
             --source-repo "${{ github.repository }}" \
             --source-commit "${{ github.event.pull_request.head.sha }}" \
             --dry-run
-      - name: Retain the validated package
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-test-package
-          path: |
-            ${{ steps.package.outputs.archive }}
-            ${{ steps.package.outputs.archive }}.sha256
-          if-no-files-found: error
-          retention-days: 1
