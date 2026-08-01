@@ -1,0 +1,56 @@
+name: Release tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  STAMPED_VERSION: v9.9.9-ci.${{ github.event.pull_request.head.sha }}
+
+jobs:
+  release-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare synthetic release
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          sync: false
+          version: ${{ env.STAMPED_VERSION }}
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
+            bun run format:write
+      - name: Check prepared formatting
+        run: bun run format:check
+      - name: Upgrade npm for publish validation
+        run: npm install --global "npm@^11.5.1"
+      - name: Run release package tests
+        run: bun run test:release
+      - name: Validate npm publish
+        run: npm publish --access public --tag edge --dry-run
+      - name: Validate ClawHub publish
+        run: |
+          TARBALL=$(npm pack --silent --ignore-scripts --pack-destination "$RUNNER_TEMP")
+          bunx --no-install clawhub package publish "$RUNNER_TEMP/$TARBALL" \
+            --family code-plugin \
+            --owner tanaab \
+            --source-repo "${{ github.repository }}" \
+            --source-commit "${{ github.event.pull_request.head.sha }}" \
+            --dry-run

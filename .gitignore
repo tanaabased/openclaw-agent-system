@@ -1,0 +1,25 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.tgz
+
+# Logs and local state
+*.log
+.env
+.env.*
+!.env.example
+.npm/
+.eslintcache
+.cache/
+.temp/
+.tmp/
+temp/
+
+# Operating-system and editor files
+.DS_Store
+._*
+.*.swp
+.idea/
+*.sublime-*

@@ -1,0 +1,73 @@
+name: Example tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+
+jobs:
+  examples:
+    name: ${{ matrix.example }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-26
+          - ubuntu-24.04
+        example:
+          - install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Put Homebrew on PATH
+        shell: bash
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: Refresh Homebrew when needed
+        shell: bash
+        run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+      - name: Install OpenClaw CLI
+        shell: bash
+        run: |
+          brew install openclaw-cli
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          version: dev
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Pack prepared plugin
+        shell: bash
+        run: |
+          bun run plugin:check
+          bun run format:check
+          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          test -n "$archive_name"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
+      - name: Run Leia-backed example
+        shell: bash
+        env:
+          NO_COLOR: '1'
+          TMPDIR: ${{ runner.temp }}
+        run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
