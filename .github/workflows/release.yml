@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+jobs:
+  prepare_package:
+    name: Prepare package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      package_name: ${{ steps.package_metadata.outputs.package_name }}
+      package_version: ${{ steps.package_metadata.outputs.package_version }}
+    env:
+      TERM: xterm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Validate source
+        run: |
+          bun run lint
+          bun run typecheck
+          bun run test
+          bun run plugin:check
+      - name: Export formatted release date
+        shell: bash
+        env:
+          PUBLISHED_AT: ${{ github.event.release.published_at }}
+        run: echo "RELEASE_DATE=$(date -d "$PUBLISHED_AT" "+%B %e, %Y" | tr -s ' ')" >> "$GITHUB_ENV"
+      - name: Prepare release
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "${{ github.event.release.tag_name }}"
+            bun run format:write
+          sync-token: ${{ secrets.TANAAB_COAXIUM_INJECTOR }}
+          sync-email: tanaabot@tanaab.dev
+          sync-username: tanaabot
+          sync-verified: true
+          update-files: CHANGELOG.md
+          update-files-header: |
+            ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
+          update-files-meta: |
+            UNRELEASED_DATE=${{ env.RELEASE_DATE }}
+            UNRELEASED_LINK=${{ github.event.release.html_url }}
+            UNRELEASED_VERSION=${{ github.event.release.tag_name }}
+      - name: Validate prepared formatting
+        run: bun run format:check
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global "npm@^11.5.1"
+      - name: Build and pack the prepared plugin
+        id: package
+        shell: bash
+        run: |
+          package_directory="$RUNNER_TEMP/agent-system-package"
+          archive_path="$(bun run --silent package:pack -- "$package_directory")"
+          test -f "$archive_path"
+          archive_name="$(basename "$archive_path")"
+          (cd "$package_directory" && shasum -a 256 "$archive_name" > "$archive_name.sha256")
+          echo "archive=$archive_path" >> "$GITHUB_OUTPUT"
+      - name: Export package metadata
+        id: package_metadata
+        shell: bash
+        run: |
+          echo "package_name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "package_version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Validate packed plugin package
+        run: bun run test:release -- "${{ steps.package.outputs.archive }}"
+      - name: Validate npm publication
+        run: npm publish "${{ steps.package.outputs.archive }}" --access public --dry-run
+      - name: Validate ClawHub publication
+        run: |
+          bunx --no-install clawhub package publish "${{ steps.package.outputs.archive }}" \
+            --family code-plugin \
+            --owner tanaab \
+            --source-repo "${{ github.repository }}" \
+            --source-commit "${{ github.sha }}" \
+            --dry-run
+      - name: Upload prepared plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-system-release-package
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  release-npm:
+    name: Publish npm package
+    needs: prepare_package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Download prepared plugin
+        uses: actions/download-artifact@v8
+        with:
+          name: agent-system-release-package
+          path: ${{ runner.temp }}/agent-system-package
+      - name: Verify prepared plugin
+        id: package
+        shell: bash
+        run: |
+          package_directory="$RUNNER_TEMP/agent-system-package"
+          (cd "$package_directory" && shasum -a 256 -c ./*.sha256)
+          set -- "$package_directory"/*.tgz
+          test "$#" -eq 1
+          test -f "$1"
+          echo "archive=$1" >> "$GITHUB_OUTPUT"
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global "npm@^11.5.1"
+      - name: Publish stable package with trusted publishing
+        if: github.event.release.prerelease == false
+        run: npm publish "${{ steps.package.outputs.archive }}" --access public
+      - name: Publish prerelease package with trusted publishing
+        if: github.event.release.prerelease == true
+        run: npm publish "${{ steps.package.outputs.archive }}" --access public --tag edge
+      - name: Synchronize edge tag to stable
+        if: github.event.release.prerelease == false
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.TANAAB_NPM_DEPLOY }}
+        run: npm dist-tag add "${{ needs.prepare_package.outputs.package_name }}@${{ needs.prepare_package.outputs.package_version }}" edge
+
+  release-clawhub:
+    name: Publish ClawHub package
+    needs: prepare_package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Download prepared plugin
+        uses: actions/download-artifact@v8
+        with:
+          name: agent-system-release-package
+          path: ${{ runner.temp }}/agent-system-package
+      - name: Verify prepared plugin
+        id: package
+        shell: bash
+        run: |
+          package_directory="$RUNNER_TEMP/agent-system-package"
+          (cd "$package_directory" && shasum -a 256 -c ./*.sha256)
+          set -- "$package_directory"/*.tgz
+          test "$#" -eq 1
+          test -f "$1"
+          echo "archive=$1" >> "$GITHUB_OUTPUT"
+      - name: Publish package to ClawHub
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.TANAAB_LOBSTER_BOAT }}
+        run: |
+          bunx --no-install clawhub --no-input login --token "$CLAWHUB_TOKEN"
+          bunx --no-install clawhub package publish \
+            "${{ steps.package.outputs.archive }}" \
+            --family code-plugin \
+            --owner tanaab \
+            --tags "${{ github.event.release.prerelease && 'edge' || 'latest,edge' }}" \
+            --source-repo "${{ github.repository }}" \
+            --source-commit "${{ github.sha }}"

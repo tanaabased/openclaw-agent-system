@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+temp
+cache
+.cache
+bun.lock

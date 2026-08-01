@@ -1,0 +1,73 @@
+name: Release tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  STAMPED_VERSION: v9.9.9-ci.${{ github.event.pull_request.head.sha }}
+
+jobs:
+  release-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare synthetic release
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          sync: false
+          version: ${{ env.STAMPED_VERSION }}
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "${{ env.STAMPED_VERSION }}"
+      - name: Check prepared formatting
+        run: bun run format:check
+      - name: Upgrade npm for publish validation
+        run: npm install --global "npm@^11.5.1"
+      - name: Build and pack the prepared plugin
+        id: package
+        shell: bash
+        run: |
+          package_directory="$RUNNER_TEMP/agent-system-package"
+          archive_path="$(bun run --silent package:pack -- "$package_directory")"
+          test -f "$archive_path"
+          archive_name="$(basename "$archive_path")"
+          (cd "$package_directory" && shasum -a 256 "$archive_name" > "$archive_name.sha256")
+          echo "archive=$archive_path" >> "$GITHUB_OUTPUT"
+      - name: Run release package tests
+        run: bun run test:release -- "${{ steps.package.outputs.archive }}"
+      - name: Validate npm publish
+        run: npm publish "${{ steps.package.outputs.archive }}" --access public --tag edge --dry-run
+      - name: Validate ClawHub publish
+        run: |
+          bunx --no-install clawhub package publish "${{ steps.package.outputs.archive }}" \
+            --family code-plugin \
+            --owner tanaab \
+            --source-repo "${{ github.repository }}" \
+            --source-commit "${{ github.event.pull_request.head.sha }}" \
+            --dry-run
+      - name: Retain the validated package
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-test-package
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 1

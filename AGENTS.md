@@ -1,0 +1,27 @@
+# Agent System Agent Guidance
+
+## Scope
+
+- Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
+- Keep CLI registration and product orchestration in `lib/`, independently testable functions in `utils/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
+
+## Identity and configuration
+
+- Keep the npm identity `@tanaab/openclaw-agent-system`, OpenClaw plugin id `agent-system`, and display name `Agent System` as separate contracts.
+- Keep `openclaw agent-system` canonical and `openclaw as` as its tested alias.
+- Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
+- Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.
+
+## OpenClaw integration
+
+- Use stable `openclaw/plugin-sdk/*` exports and inspect the installed SDK contract before adding new plugin surfaces.
+- Keep the Node-targeted build's package dependencies external.
+- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation.
+
+## Validation
+
+- Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
+- Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
+- Never run Leia scenarios or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.
+- Keep live OpenClaw validation isolated and explicitly requested; repository checks must not mutate the user's normal OpenClaw state.

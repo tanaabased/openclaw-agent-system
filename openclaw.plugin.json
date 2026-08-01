@@ -1,0 +1,24 @@
+{
+  "id": "agent-system",
+  "name": "Agent System",
+  "description": "Define reproducible identity, environment, and installation for OpenClaw agent workspaces.",
+  "version": "0.1.0",
+  "activation": {
+    "onCommands": ["agent-system", "as"]
+  },
+  "commandAliases": [
+    {
+      "name": "agent-system",
+      "cliCommand": "agent-system"
+    },
+    {
+      "name": "as",
+      "cliCommand": "as"
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
