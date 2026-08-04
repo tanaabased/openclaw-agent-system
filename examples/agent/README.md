@@ -26,6 +26,9 @@ openclaw onboard --non-interactive --accept-risk \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
 
+# should allow unattended tool execution on the isolated ephemeral CI runner
+openclaw exec-policy preset yolo
+
 # should register the scenario-owned data workspace explicitly
 cp -R "$GITHUB_WORKSPACE/examples/agent/data" "$TMPDIR/data"
 openclaw agents add data --workspace "$TMPDIR/data" --model "openai/$OPENAI_MODEL" --non-interactive

@@ -13,7 +13,8 @@
 - Register named agents explicitly and bind them to scenario-owned workspace copies; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
 - Keep static agent workspaces and message inputs checked in beside their owning README, then copy mutable workspaces beneath `TMPDIR` before use.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
-- Scope model credentials and model-specific environment to the matrix entries that invoke a live agent.
+- When an unattended OpenClaw CI scenario invokes tools, run `openclaw exec-policy preset yolo` in that scenario's setup; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
+- Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
 
 ## Assertions
 
