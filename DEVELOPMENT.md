@@ -7,7 +7,7 @@ This guide covers installing, developing, and testing Agent System. Start with t
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - OpenClaw 2026.7.1-2 or newer
-- A configured `tanaabot` agent with usable model authentication in the normal OpenClaw profile
+- A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
 

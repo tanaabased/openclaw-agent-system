@@ -29,6 +29,22 @@ Agent System is intended to turn one strict, workspace-owned `agent.yaml` manife
 
 YAML schema keys use kebab-case while TypeScript uses camelCase. The scaffold includes focused TypeScript ports of Core Next's `encode` and `decode` utilities as the initial conversion primitives. Manifest code will apply those primitives only to schema-owned keys so literal values such as environment-variable names remain unchanged.
 
+## Installation
+
+Install the current development build from a source checkout:
+
+```sh
+git clone https://github.com/tanaabased/openclaw-agent-system.git
+cd openclaw-agent-system
+bun install
+bun run build
+openclaw plugins install --link .
+openclaw plugins enable agent-system
+openclaw plugins inspect agent-system --runtime --json
+```
+
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for source-install caveats, the recommended isolated DevGuard workflow, and repository validation.
+
 ## Current manifest
 
 An agent workspace opts into Agent System with `.agent-system/agent.yaml` or the shorter root-level `agent.yaml`:
