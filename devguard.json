@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "plugin": {
+    "id": "agent-system",
+    "build": {
+      "command": "bun",
+      "args": ["run", "build"]
+    },
+    "validate": {
+      "command": "bun",
+      "args": ["run", "plugin:check"]
+    },
+    "watch": ["lib", "utils", "index.ts", "openclaw.plugin.json", "package.json", "tsconfig.json"]
+  },
+  "policy": {
+    "mode": "probe"
+  },
+  "logging": {
+    "environmentValueAllowlist": []
+  },
+  "gateway": {
+    "port": 19001
+  },
+  "supervision": {
+    "buildTimeoutSeconds": 120,
+    "validationTimeoutSeconds": 300,
+    "shutdownGraceSeconds": 5
+  }
+}

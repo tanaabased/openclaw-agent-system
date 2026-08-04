@@ -42,33 +42,7 @@ Both commands currently confirm that the plugin is installed and route through t
 
 ## Development
 
-Use the pinned Bun and Node.js versions, then install the dependencies:
-
-```sh
-bun install
-```
-
-Run the repository checks:
-
-```sh
-bun run lint
-bun run typecheck
-bun run test
-bun run build
-bun run plugin:check
-```
-
-When package contents or release wiring change, run the self-contained release package check:
-
-```sh
-bun run test:release
-```
-
-The release check builds the Node-targeted runtime, validates plugin metadata, creates and inspects a temporary npm archive, verifies its file boundaries and identity metadata, and requires ClawHub package validation to pass without warnings. It cleans up the temporary archive and does not publish the package.
-
-Operational examples are executable Leia scenarios under `examples/`. They are GitHub Actions-only and must not be run as local repository validation. The initial install example installs the prepared archive through OpenClaw's managed npm-package path and verifies both `openclaw agent-system` and `openclaw as`. Pull requests run the example on macOS and Ubuntu independently from lint, unit, and release checks.
-
-Published GitHub releases run independent, release-shaped preparation and validation jobs for npm trusted publishing and ClawHub.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for source installation, the recommended DevGuard workflow with `tanaabot`, repository testing, package validation, and coding standards.
 
 ## Project direction
 
