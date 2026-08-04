@@ -1,5 +1,8 @@
+import installAgentSystem from '../cli/install.ts';
+import validateAgentSystem from '../cli/validate.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
-import type { AgentManifestLoadResult } from './agent-manifest-service.ts';
+import type AgentInstallService from './agent-install-service.ts';
+import { type CliOutput, defaultCliOutput } from './cli-output.ts';
 
 type Action = (...args: unknown[]) => unknown;
 
@@ -13,65 +16,17 @@ export interface CommandLike {
   opts(): Record<string, unknown>;
 }
 
-export interface CliOutput {
-  error(message: string): void;
-  write(message: string): void;
-}
-
 export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
+  installService: Pick<AgentInstallService, 'install'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output?: CliOutput;
   setExitCode?: (code: number) => void;
 }
 
-const defaultOutput: CliOutput = {
-  error(message) {
-    process.stderr.write(message);
-  },
-  write(message) {
-    process.stdout.write(message);
-  },
-};
-
 function writeHelp(command: CommandLike, output: CliOutput): void {
   const help = command.helpInformation();
   output.write(help.endsWith('\n') ? help : `${help}\n`);
-}
-
-function reportDiagnostics(result: AgentManifestLoadResult, output: CliOutput): void {
-  for (const diagnostic of result.diagnostics) {
-    const location = diagnostic.fieldPath ? ` (${diagnostic.fieldPath})` : '';
-    output.error(`${diagnostic.severity}: [${diagnostic.code}]${location} ${diagnostic.message}\n`);
-  }
-}
-
-function reportValidation(
-  result: AgentManifestLoadResult,
-  output: CliOutput,
-  setExitCode: (code: number) => void,
-): void {
-  if (result.status === 'loaded') {
-    output.write(
-      `valid: Agent System manifest for ${result.manifest.agent.id} at ${result.path}\n`,
-    );
-    reportDiagnostics(result, output);
-    return;
-  }
-
-  if (result.status === 'unmanaged') {
-    output.error(`error: no Agent System manifest found in ${result.scope.workspaceDir}\n`);
-  } else if (result.status === 'invalid') {
-    output.error(
-      `error: invalid Agent System manifest${result.path ? ` at ${result.path}` : ''}\n`,
-    );
-    reportDiagnostics(result, output);
-  } else {
-    output.error('error: an OpenClaw agent workspace could not be resolved\n');
-    reportDiagnostics(result, output);
-  }
-
-  setExitCode(1);
 }
 
 /** Register the plugin-owned command tree over the manifest service. */
@@ -80,7 +35,7 @@ export default function registerAgentSystemCli(
   options: RegisterAgentSystemCliOptions,
 ): void {
   const cwd = options.cwd ?? process.cwd;
-  const output = options.output ?? defaultOutput;
+  const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const agentSystem = program
     .command('agent-system')
@@ -93,10 +48,24 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Validate the configured workspace for an OpenClaw agent.')
     .action(async () => {
       const agentId = validate.opts().agent;
-      const result =
-        typeof agentId === 'string'
-          ? await options.manifestService.loadForAgentId(agentId, 'cli')
-          : await options.manifestService.loadForWorkspace(cwd(), undefined, 'cli');
-      reportValidation(result, output, setExitCode);
+      await validateAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        workspaceDir: cwd(),
+      });
+    });
+  agentSystem
+    .command('install')
+    .description('Install the workspace agent and reconcile its manifest identity.')
+    .action(async () => {
+      await installAgentSystem({
+        installService: options.installService,
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        workspaceDir: cwd(),
+      });
     });
 }

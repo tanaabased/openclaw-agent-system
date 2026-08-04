@@ -77,11 +77,14 @@ const supportedOperatingSystems = ['darwin', 'linux'];
 const requiredPackageFiles = [
   'dist/',
   'index.ts',
+  'cli/',
   'lib/',
   'utils/',
   'assets/agent-system.png',
   'openclaw.plugin.json',
   'README.md',
+  'ADVANCED.md',
+  'DEVELOPMENT.md',
   'CHANGELOG.md',
   'LICENSE',
 ];

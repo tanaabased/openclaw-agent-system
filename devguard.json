@@ -10,7 +10,15 @@
       "command": "bun",
       "args": ["run", "plugin:check"]
     },
-    "watch": ["lib", "utils", "index.ts", "openclaw.plugin.json", "package.json", "tsconfig.json"]
+    "watch": [
+      "cli",
+      "lib",
+      "utils",
+      "index.ts",
+      "openclaw.plugin.json",
+      "package.json",
+      "tsconfig.json"
+    ]
   },
   "policy": {
     "mode": "probe"

@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation discovers, parses, binds, caches, and reports workspace manifests. Identity application, environment resolution, credentials, and installation remain product work described in [SPEC.md](./SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation discovers, parses, binds, caches, and reports workspace manifests, and explicitly reconciles OpenClaw agent registration and public identity. Environment resolution, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -69,7 +69,18 @@ openclaw agent-system validate --agent tanaabot
 openclaw as validate --agent tanaabot
 ```
 
+Install the agent represented by the current workspace:
+
+```sh
+cd /path/to/agent-workspace
+openclaw agent-system install
+```
+
+`install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
+
 At runtime, the plugin passively loads a matching manifest at `session_start` and `before_tool_call`. A missing manifest leaves the agent unmanaged; an invalid manifest is reported without crashing the Gateway or changing the agent environment. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see safe `agent_system.manifest_*` lifecycle events without manifest values.
+
+See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 
 ## Development
 
@@ -77,7 +88,7 @@ See [DEVELOPMENT.md](./DEVELOPMENT.md) for source installation, the recommended 
 
 ## Project direction
 
-[SPEC.md](./SPEC.md) defines the first implementation path and its security boundaries. It is product intent rather than evidence that a feature has already shipped.
+[SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) defines the first implementation path and its security boundaries. It is product intent rather than evidence that a feature has already shipped.
 
 ## Issues, Questions and Support
 

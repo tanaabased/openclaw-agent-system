@@ -1,6 +1,6 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly registered Data agent. It verifies manifest loading at `session_start`, current manifest loading at `before_tool_call`, and redacted lifecycle logging.
+This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed Data agent. It verifies agent onboarding, manifest loading at `session_start`, current manifest loading at `before_tool_call`, and redacted lifecycle logging.
 
 ## Setup
 
@@ -29,13 +29,12 @@ openclaw models set "openai/$OPENAI_MODEL"
 # should allow unattended tool execution on the isolated ephemeral CI runner
 openclaw exec-policy preset yolo
 
-# should register the scenario-owned data workspace explicitly
-cp -R "$GITHUB_WORKSPACE/examples/agent/data" "$TMPDIR/data"
-openclaw agents add data --workspace "$TMPDIR/data" --model "openai/$OPENAI_MODEL" --non-interactive
-
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
+
+# should install the scenario-owned data workspace through Agent System
+(cd "$GITHUB_WORKSPACE/examples/agent/data" && openclaw agent-system install)
 
 # should start the default Gateway as a supervised background process
 (
@@ -60,8 +59,8 @@ openclaw agent \
 grep -F 'agent_system.manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"
 
 # should load the current manifest before a tool call in the existing session
-cp "$GITHUB_WORKSPACE/examples/agent/agent.changed.yaml" "$TMPDIR/data/agent.yaml"
-changed_digest=$(shasum -a 256 "$TMPDIR/data/agent.yaml" | cut -c 1-12)
+cp "$GITHUB_WORKSPACE/examples/agent/agent.changed.yaml" "$GITHUB_WORKSPACE/examples/agent/data/agent.yaml"
+changed_digest=$(shasum -a 256 "$GITHUB_WORKSPACE/examples/agent/data/agent.yaml" | cut -c 1-12)
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-leia \

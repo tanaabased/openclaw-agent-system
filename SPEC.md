@@ -165,6 +165,10 @@ Identity follows these rules:
 - `agent.id` is a stable machine identifier and does not change implicitly when
   the display name changes.
 - `agent.name` is the display name and default Git author and committer name.
+- Explicit `install` requires `agent.name` and reconciles `agent.id`, `agent.name`,
+  and a declared `agent.avatar` with OpenClaw's agent registration and identity.
+- An existing OpenClaw agent id bound to another workspace is a conflict; Agent
+  System does not silently repoint it.
 - `agent.git.email` is the default Git author and committer email.
 - `github-username` identifies the expected GitHub actor but does not
   authenticate it.
@@ -327,6 +331,19 @@ openclaw agent-system credentials set onepassword-service-account
 
 ## Installation Contract
 
+Installation begins by reconciling the current workspace with OpenClaw:
+
+- the current directory supplies the workspace and manifest;
+- an absent named agent is added with that workspace;
+- OpenClaw's implicit `main` agent is not redundantly added;
+- the manifest-owned display name and optional avatar are applied;
+- an agent id already bound to another workspace fails without mutation;
+- configuration is reloaded and verified after mutation; and
+- a repeated install with matching registration and identity is a no-op.
+
+This reconciliation happens only through an explicit `install` command. Gateway
+startup and passive manifest hooks never add agents or update identity.
+
 The manifest may contain an explicit multiline installation and reconciliation
 script:
 
@@ -344,7 +361,6 @@ install:
     openclaw plugins install npm:@tanaab/openclaw-mem0
     openclaw plugins enable openclaw-mem0
     openclaw config set plugins.entries.agent-system.enabled true
-    openclaw agent-system register
 ```
 
 The script is an intentional arbitrary-code escape hatch. It is not inherently
@@ -390,7 +406,8 @@ openclaw agent-system doctor
   platform backend.
 - `plan` reports installation inputs, readiness, hash, and drift without running
   the installation script.
-- `install` resolves the managed environment and explicitly executes the script.
+- `install` reconciles OpenClaw agent registration and identity, then resolves
+  the managed environment and explicitly executes a declared script.
 - `doctor` checks manifest validity, credential access, required variables, file
   permissions, expected tools and plugins, and installation drift without repair.
 
@@ -425,11 +442,12 @@ openclaw agent-system doctor
 8. Add Linux credential backends and the hardened file fallback behind the same
    interface.
 9. Resolve 1Password Environments without leaking the bootstrap token.
-10. Apply runtime Git author, transport, and signing identity.
-11. Implement installation planning, hashing, explicit execution, and successful
-    run state.
-12. Implement `doctor` using the same read-only validators and state readers.
-13. Integrate Gateway startup with validation and drift reporting only.
+10. Reconcile OpenClaw agent registration and manifest-owned public identity.
+11. Apply runtime Git author, transport, and signing identity.
+12. Implement installation planning, hashing, explicit script execution, and
+    successful run state.
+13. Implement `doctor` using the same read-only validators and state readers.
+14. Integrate Gateway startup with validation and drift reporting only.
 
 The CLI should remain a thin adapter over reusable discovery, configuration,
 environment, credential, identity, redaction, installation, and diagnostic

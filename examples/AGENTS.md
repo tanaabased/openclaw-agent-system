@@ -10,8 +10,8 @@
 ## OpenClaw Runtime
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
-- Register named agents explicitly and bind them to scenario-owned workspace copies; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
-- Keep static agent workspaces and message inputs checked in beside their owning README, then copy mutable workspaces beneath `TMPDIR` before use.
+- Register named agents explicitly and bind them to scenario-owned workspaces; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
+- Keep static agent workspaces and message inputs checked in beside their owning README and use them in place on fresh GitHub Actions runners. Copy a fixture only when isolation from a tested mutation is part of the scenario contract.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
 - When an unattended OpenClaw CI scenario invokes tools, run `openclaw exec-policy preset yolo` in that scenario's setup; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.

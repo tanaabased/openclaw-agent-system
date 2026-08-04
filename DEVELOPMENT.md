@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, and testing Agent System. Start with the [README](./README.md) for the current product surface and treat [SPEC.md](./SPEC.md) as product intent rather than implementation evidence.
+This guide covers installing, developing, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, logging, and CLI references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
 
 ## Requirements
 
@@ -149,6 +149,7 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | Path       | Responsibility                             |
 | ---------- | ------------------------------------------ |
 | `index.ts` | Plugin registration                        |
+| `cli/`     | One implementation file per subcommand     |
 | `lib/`     | CLI registration and product orchestration |
 | `utils/`   | Independently testable functions           |
 | `scripts/` | Development and release tasks              |

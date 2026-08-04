@@ -3,8 +3,15 @@
 ## Scope
 
 - Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
-- Keep CLI registration and product orchestration in `lib/`, independently testable functions in `utils/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and product orchestration in `lib/`, independently testable functions in `utils/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
 - Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
+
+## Documentation
+
+- Keep `README.md` focused on installation, the common manifest workflow, and first verification.
+- Put complete manifest, logging, and CLI reference material in `ADVANCED.md`.
+- Put source installation, DevGuard usage, validation, and coding standards in `DEVELOPMENT.md`.
+- Treat `SPEC.md` as product intent and `CHANGELOG.md` as the record of implemented changes.
 
 ## Identity and configuration
 

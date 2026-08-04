@@ -14,11 +14,14 @@ const packageMetadata: PackageMetadata = {
   files: [
     'dist/',
     'index.ts',
+    'cli/',
     'lib/',
     'utils/',
     'assets/agent-system.png',
     'openclaw.plugin.json',
     'README.md',
+    'ADVANCED.md',
+    'DEVELOPMENT.md',
     'CHANGELOG.md',
     'LICENSE',
   ],
@@ -112,6 +115,25 @@ describe('utils/plugin-metadata-failures', () => {
           code: 'supported-os',
           message: 'npm package must support exactly macOS and Linux',
         },
+      ],
+    );
+  });
+
+  it('should report required command and companion documentation package files', () => {
+    assert.deepEqual(
+      pluginMetadataFailures(
+        {
+          ...packageMetadata,
+          files: packageMetadata.files?.filter(
+            (path) => !['cli/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+          ),
+        },
+        manifest,
+      ),
+      [
+        { code: 'package-file', message: 'package files must include cli/' },
+        { code: 'package-file', message: 'package files must include ADVANCED.md' },
+        { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
       ],
     );
   });
