@@ -34,7 +34,8 @@ openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 
 # should install the scenario-owned data workspace through Agent System
-(cd "$GITHUB_WORKSPACE/examples/agent/data" && openclaw agent-system install)
+cd "$GITHUB_WORKSPACE/examples/agent/data"
+openclaw agent-system install
 
 # should start the default Gateway as a supervised background process
 (
