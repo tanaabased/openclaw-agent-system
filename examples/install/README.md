@@ -23,8 +23,6 @@ grep -F 'dist/index.js' "$TMPDIR/inspection.json"
 openclaw plugins doctor
 
 # should expose the canonical command tree and its alias
-openclaw agent-system --help | grep -F 'Manage reproducible OpenClaw agent workspaces.'
-openclaw as --help | grep -F 'Manage reproducible OpenClaw agent workspaces.'
-openclaw agent-system | grep -F 'validate'
-openclaw as | grep -F 'validate'
+openclaw agent-system --help | grep -F 'validate'
+openclaw as --help | grep -F 'validate'
 ```

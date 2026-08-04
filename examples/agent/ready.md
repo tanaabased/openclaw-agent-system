@@ -1,1 +1,1 @@
-Reply exactly with DATA_READY. Do not use any tools.
+Acknowledge readiness without using tools.

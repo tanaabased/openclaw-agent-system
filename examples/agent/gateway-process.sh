@@ -47,30 +47,6 @@ wait_for_gateway() {
   done
 }
 
-wait_for_log() {
-  local pattern="${1:-}"
-  local timeout_seconds="${2:-30}"
-  local deadline=$((SECONDS + timeout_seconds))
-  if [[ -z "$pattern" ]]; then
-    echo "A fixed log pattern is required." >&2
-    return 1
-  fi
-  read_gateway_pid
-  until grep -Fq "$pattern" "$log_path" 2>/dev/null; do
-    if ! kill -0 "$gateway_pid" 2>/dev/null; then
-      echo "Gateway exited while waiting for log pattern: $pattern" >&2
-      tail_diagnostics
-      return 1
-    fi
-    if ((SECONDS >= deadline)); then
-      echo "Gateway log pattern did not appear within $timeout_seconds seconds: $pattern" >&2
-      tail_diagnostics
-      return 1
-    fi
-    sleep 1
-  done
-}
-
 stop_gateway() {
   local timeout_seconds="${1:-30}"
   local deadline=$((SECONDS + timeout_seconds))
@@ -103,14 +79,11 @@ case "$action" in
   wait)
     wait_for_gateway "${2:-90}"
     ;;
-  wait-log)
-    wait_for_log "${2:-}" "${3:-30}"
-    ;;
   stop)
     stop_gateway "${2:-30}"
     ;;
   *)
-    echo "Usage: gateway-process.sh <wait|wait-log|stop> [argument] [timeout-seconds]" >&2
+    echo "Usage: gateway-process.sh <wait|stop> [timeout-seconds]" >&2
     exit 2
     ;;
 esac

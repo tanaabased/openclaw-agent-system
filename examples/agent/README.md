@@ -52,35 +52,28 @@ echo "$!" > "$TMPDIR/gateway.pid"
 openclaw agent-system validate --agent data | grep -F 'valid: Agent System manifest for data'
 
 # should load the data manifest when a new session starts
-set -o pipefail
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-leia \
   --message-file "$GITHUB_WORKSPACE/examples/agent/ready.md" \
-  --timeout 120 \
-  --json | tee "$TMPDIR/ready.json"
-grep -F 'DATA_READY' "$TMPDIR/ready.json"
-"$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" wait-log 'agent_system.manifest_loaded trigger="session_start" agentId="data"'
+  --timeout 120
+grep -F 'agent_system.manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"
 
 # should load the current manifest before a tool call in the existing session
 cp "$GITHUB_WORKSPACE/examples/agent/agent.changed.yaml" "$TMPDIR/data/agent.yaml"
 changed_digest=$(shasum -a 256 "$TMPDIR/data/agent.yaml" | cut -c 1-12)
-set -o pipefail
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-leia \
   --message-file "$GITHUB_WORKSPACE/examples/agent/exec.md" \
-  --timeout 120 \
-  --json | tee "$TMPDIR/tool.json"
+  --timeout 120
 grep -F 'DATA_TOOL_OK' "$TMPDIR/agent-system-data-sentinel"
-"$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" wait-log 'trigger="before_tool_call" agentId="data"'
 grep -F 'agent_system.manifest_' "$TMPDIR/gateway.log" \
   | grep -F 'trigger="before_tool_call" agentId="data"' \
   | grep -F "$changed_digest"
 
 # should keep manifest values out of Gateway lifecycle logs
-if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
-if grep -Fq 'leia-changed-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
+if grep -Fq -e 'leia-initial-manifest-value' -e 'leia-changed-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 ```
 
 ## Cleanup

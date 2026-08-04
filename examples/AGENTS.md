@@ -19,6 +19,7 @@
 ## Assertions
 
 - Start each executable block with one lowercase `# should ...` statement and keep one observable behavior per block.
+- Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
 - Keep runtime-derived state beneath the scenario's `TMPDIR` and keep generated state out of version control.
