@@ -17,9 +17,13 @@ function successfulResult() {
 describe('lib/agent-install-service', () => {
   it('should add an absent agent and set its manifest identity', async () => {
     let config: OpenClawConfig = {};
+    let configReads = 0;
     const commands: string[][] = [];
     const service = new AgentInstallService({
-      readConfig: () => config,
+      readConfig() {
+        configReads += 1;
+        return config;
+      },
       async runOpenClawCommand(args) {
         commands.push(args);
         if (args[1] === 'add') {
@@ -48,6 +52,7 @@ describe('lib/agent-install-service', () => {
     const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
 
     assert.deepEqual(result.actions, ['add-agent', 'set-identity']);
+    assert.equal(configReads, 2);
     assert.deepEqual(commands, [
       ['agents', 'add', 'data', '--workspace', '/workspace/data', '--non-interactive', '--json'],
       [

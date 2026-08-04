@@ -1,4 +1,4 @@
-import { clearConfigCache, loadConfig } from 'openclaw/plugin-sdk/config-runtime';
+import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
 import { definePluginEntry, type OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
@@ -26,8 +26,8 @@ export default definePluginEntry({
     });
     const installService = new AgentInstallService({
       readConfig() {
-        clearConfigCache();
-        return loadConfig();
+        // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
+        return loadConfig({ pin: false });
       },
       runOpenClawCommand(args, cwd) {
         const cliEntry = process.argv[1];
