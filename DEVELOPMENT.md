@@ -53,6 +53,9 @@ openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth
 
 # Confirm that the isolated profile loads Agent System from this checkout.
 openclaw devguard exec -- plugins inspect agent-system --runtime --json
+
+# Validate tanaabot's resolved workspace manifest.
+openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
 
 Only [`devguard.json`](./devguard.json) is portable project configuration. Agent selections, copied authentication, isolated OpenClaw state, and audit logs remain machine-local.
@@ -70,7 +73,7 @@ OPENCLAW_LOG_LEVEL=debug openclaw devguard run --once
 In another terminal while `run` is active:
 
 ```sh
-# Follow the human-readable audit log; stop following with Ctrl-C.
+# Follow DevGuard's tool-policy audit log; stop following with Ctrl-C.
 openclaw devguard tail
 
 # Or print the current machine-readable records and exit.
@@ -79,10 +82,16 @@ openclaw devguard tail --json --no-follow
 # Verify the isolated profile, target build, Gateway, and policy hook.
 openclaw devguard doctor
 
-# Exercise the Agent System commands directly.
+# Exercise Agent System directly. Bare commands show help.
 openclaw devguard exec -- agent-system
 openclaw devguard exec -- as
+
+# Validate the current directory or tanaabot's configured workspace.
+openclaw devguard exec -- agent-system validate
+openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
+
+Phase 1 manifest lifecycle events (`agent_system.manifest_loaded`, `manifest_changed`, `manifest_invalid`, `manifest_shadowed`, and debug-only `manifest_absent`) appear in the `devguard run` terminal when `OPENCLAW_LOG_LEVEL=debug` is set. `devguard tail` shows DevGuard policy audit records, not the plugin logger stream. Manifest contents and values are never included in Agent System lifecycle logs.
 
 To exercise an agent-requested tool call and its audit records through `tanaabot`:
 
@@ -90,7 +99,7 @@ To exercise an agent-requested tool call and its audit records through `tanaabot
 openclaw devguard exec -- agent \
   --agent tanaabot \
   --session-key agent-system-dev \
-  --message "Use the exec tool exactly once to run 'openclaw agent-system', then report the tool result without retrying." \
+  --message "Use the exec tool exactly once to run 'openclaw agent-system validate --agent tanaabot', then report the tool result without retrying." \
   --json
 ```
 

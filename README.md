@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. This repository currently provides the working plugin and delivery scaffold. Manifest discovery, identity application, environment resolution, credentials, installation, and diagnostics remain product work described in [SPEC.md](./SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation discovers, parses, binds, caches, and reports workspace manifests. Identity application, environment resolution, credentials, and installation remain product work described in [SPEC.md](./SPEC.md).
 
 ## Overview
 
@@ -29,16 +29,31 @@ Agent System is intended to turn one strict, workspace-owned `agent.yaml` manife
 
 YAML schema keys use kebab-case while TypeScript uses camelCase. The scaffold includes focused TypeScript ports of Core Next's `encode` and `decode` utilities as the initial conversion primitives. Manifest code will apply those primitives only to schema-owned keys so literal values such as environment-variable names remain unchanged.
 
-## Current command
+## Current manifest
 
-The plugin registers one canonical OpenClaw command and a shorter alias:
+An agent workspace opts into Agent System with `.agent-system/agent.yaml` or the shorter root-level `agent.yaml`:
 
-```sh
-openclaw agent-system
-openclaw as
+```yaml
+schema-version: 1
+
+agent:
+  id: tanaabot
+  name: Tanaabot
 ```
 
-Both commands currently confirm that the plugin is installed and route through the same implementation. Future product commands will live under the canonical `agent-system` command tree.
+The preferred `.agent-system/agent.yaml` wins when both files exist. Phase 1 accepts only the identity fields `id`, `name`, `description`, and `avatar`; unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+
+## Usage
+
+Validate the current directory or one configured OpenClaw agent workspace:
+
+```sh
+openclaw agent-system validate
+openclaw agent-system validate --agent tanaabot
+openclaw as validate --agent tanaabot
+```
+
+At runtime, the plugin passively loads a matching manifest at `session_start` and `before_tool_call`. A missing manifest leaves the agent unmanaged; an invalid manifest is reported without crashing the Gateway or changing the agent environment. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see safe `agent_system.manifest_*` lifecycle events without manifest values.
 
 ## Development
 

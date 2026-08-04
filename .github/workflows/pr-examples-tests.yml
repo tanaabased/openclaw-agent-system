@@ -7,6 +7,7 @@ permissions:
   contents: read
 
 env:
+  AGENT_SYSTEM_LEIA_MODEL: gpt-5.4-nano
   HOMEBREW_NO_AUTO_UPDATE: '1'
 
 jobs:
@@ -21,6 +22,8 @@ jobs:
           - ubuntu-24.04
         example:
           - install
+          - validate
+          - agent
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -69,5 +72,24 @@ jobs:
         shell: bash
         env:
           NO_COLOR: '1'
-          TMPDIR: ${{ runner.temp }}
-        run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+          OPENAI_API_KEY: ${{ matrix.example == 'agent' && secrets.TANAAB_ALTERNATE_MALE_KEY || '' }}
+          OPENAI_MODEL: ${{ matrix.example == 'agent' && env.AGENT_SYSTEM_LEIA_MODEL || '' }}
+          TMPDIR: ${{ runner.temp }}/agent-system-${{ matrix.example }}
+        run: |
+          mkdir -p "$TMPDIR"
+          bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: Stop agent Gateway
+        if: ${{ always() && matrix.example == 'agent' }}
+        shell: bash
+        env:
+          TMPDIR: ${{ runner.temp }}/agent-system-agent
+        run: |
+          "$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" stop
+      - name: Upload agent diagnostics
+        if: ${{ failure() && matrix.example == 'agent' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-system-agent-${{ matrix.os }}
+          path: ${{ runner.temp }}/agent-system-agent
+          if-no-files-found: ignore
+          retention-days: 7

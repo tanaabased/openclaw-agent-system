@@ -1,0 +1,5 @@
+schemaVersion: 1
+
+agent:
+  id: data
+  name: Invalid Data

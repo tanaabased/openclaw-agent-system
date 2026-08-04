@@ -47,6 +47,7 @@ const manifest: PluginManifest = {
   name: 'Agent System',
   version: 'test-version',
   activation: {
+    onStartup: true,
     onCommands: ['agent-system', 'as'],
   },
   commandAliases: [
@@ -85,6 +86,7 @@ describe('utils/plugin-metadata-failures', () => {
         'version-mismatch',
         'source-entry',
         'runtime-entry',
+        'startup-activation',
         'canonical-command',
         'alias-command',
         'canonical-command-alias',
@@ -123,7 +125,7 @@ describe('utils/plugin-metadata-failures', () => {
         },
         {
           ...manifest,
-          activation: { onCommands: ['agent-system'] },
+          activation: { onStartup: true, onCommands: ['agent-system'] },
           commandAliases: [{ name: 'agent-system', cliCommand: 'agent-system' }],
         },
       ),

@@ -17,11 +17,12 @@
 
 - Use stable `openclaw/plugin-sdk/*` exports and inspect the installed SDK contract before adding new plugin surfaces.
 - Keep the Node-targeted build's package dependencies external.
-- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation.
+- Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia scenarios under `examples/` are the operational exception.
 
 ## Validation
 
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
+- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia scenario and its example matrix entry; keep detailed scenario rules in `examples/AGENTS.md`.
 - Never run Leia scenarios or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.
 - Keep live OpenClaw validation isolated and explicitly requested; repository checks must not mutate the user's normal OpenClaw state.

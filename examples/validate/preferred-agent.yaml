@@ -1,0 +1,6 @@
+schema-version: 1
+
+agent:
+  id: data
+  name: Preferred Data
+  description: Preferred hidden Agent System manifest
