@@ -1,6 +1,6 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly registered Data agent. It verifies manifest loading at `session_start`, cache invalidation at `before_tool_call`, and redacted lifecycle logging.
+This scenario runs the prepared Agent System package in the default Gateway with an explicitly registered Data agent. It verifies manifest loading at `session_start`, current manifest loading at `before_tool_call`, and redacted lifecycle logging.
 
 ## Setup
 
@@ -62,8 +62,9 @@ openclaw agent \
 grep -F 'DATA_READY' "$TMPDIR/ready.json"
 "$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" wait-log 'agent_system.manifest_loaded trigger="session_start" agentId="data"'
 
-# should reload a changed manifest before a tool call in the existing session
+# should load the current manifest before a tool call in the existing session
 cp "$GITHUB_WORKSPACE/examples/agent/agent.changed.yaml" "$TMPDIR/data/agent.yaml"
+changed_digest=$(shasum -a 256 "$TMPDIR/data/agent.yaml" | cut -c 1-12)
 set -o pipefail
 openclaw agent \
   --agent data \
@@ -72,7 +73,10 @@ openclaw agent \
   --timeout 120 \
   --json | tee "$TMPDIR/tool.json"
 grep -F 'DATA_TOOL_OK' "$TMPDIR/agent-system-data-sentinel"
-"$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" wait-log 'agent_system.manifest_changed trigger="before_tool_call" agentId="data"'
+"$GITHUB_WORKSPACE/examples/agent/gateway-process.sh" wait-log 'trigger="before_tool_call" agentId="data"'
+grep -F 'agent_system.manifest_' "$TMPDIR/gateway.log" \
+  | grep -F 'trigger="before_tool_call" agentId="data"' \
+  | grep -F "$changed_digest"
 
 # should keep manifest values out of Gateway lifecycle logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
