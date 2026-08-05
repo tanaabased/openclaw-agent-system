@@ -1,6 +1,5 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import { resolveExecEnvironmentProbeValues } from '../utils/exec-env-probe.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'>;
@@ -33,15 +32,9 @@ export default function registerAgentSystemHooks(
     }
   });
 
-  api.on('resolve_exec_env', async (event, context) => {
+  api.on('resolve_exec_env', async (_event, context) => {
     const result = await environmentService.loadForRuntimeContext(context, 'resolve_exec_env');
     if (result.status !== 'loaded') return;
-    return (
-      resolveExecEnvironmentProbeValues(
-        event.sessionKey ?? context.sessionKey,
-        result.manifest.agent.id,
-        result.environment.variables,
-      ) ?? result.environment.values
-    );
+    return result.environment.values;
   });
 }

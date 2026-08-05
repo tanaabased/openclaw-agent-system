@@ -73,7 +73,7 @@ describe('lib/register-hooks', () => {
     assert.equal(unmanaged, undefined);
   });
 
-  it('should contribute literals normally and sentinels only in a reserved probe session', async () => {
+  it('should contribute literal values to the matching exec environment', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(
       {
@@ -109,23 +109,11 @@ describe('lib/register-hooks', () => {
       },
     );
 
-    const ordinary = await handlers.get('resolve_exec_env')?.(
+    const environment = await handlers.get('resolve_exec_env')?.(
       { toolName: 'exec', host: 'gateway', sessionKey: 'agent:data:ordinary' },
       { agentId: 'data' },
     );
-    const probe = await handlers.get('resolve_exec_env')?.(
-      {
-        toolName: 'exec',
-        host: 'gateway',
-        sessionKey: 'agent:data:agent-system-env-probe-11111111-2222-3333-4444-555555555555',
-      },
-      { agentId: 'data' },
-    );
 
-    assert.deepEqual(ordinary, { AGENT_COLOR: 'green' });
-    assert.equal(
-      ((probe as Record<string, string>).AGENT_COLOR ?? '').startsWith('agent-system-env-probe-'),
-      true,
-    );
+    assert.deepEqual(environment, { AGENT_COLOR: 'green' });
   });
 });

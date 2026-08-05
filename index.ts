@@ -1,11 +1,9 @@
 import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
-import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 import { definePluginEntry, type OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
-import AgentExecProbeService from './lib/agent-exec-probe-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
 import AgentManifestService from './lib/agent-manifest-service.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
@@ -39,25 +37,11 @@ export default definePluginEntry({
       },
     });
     const environmentService = new AgentEnvironmentService({ logger: api.logger, manifestService });
-    const execProbeService = new AgentExecProbeService({
-      callGateway(method, params) {
-        return callGatewayFromCli(method, {}, params, {
-          expectFinal: true,
-          scopes: ['operator.write'],
-        });
-      },
-      logger: api.logger,
-      readConfig() {
-        return loadConfig({ pin: false });
-      },
-    });
-
     registerAgentSystemHooks(api, environmentService);
     api.registerCli(
       ({ program }) => {
         registerAgentSystemCli(program, {
           environmentService,
-          execProbeService,
           installService,
           manifestService,
         });

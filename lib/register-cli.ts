@@ -2,7 +2,6 @@ import envAgentSystem from '../cli/env.ts';
 import installAgentSystem from '../cli/install.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
-import type AgentExecProbeService from './agent-exec-probe-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
 import { type CliOutput, defaultCliOutput } from './cli-output.ts';
@@ -22,7 +21,6 @@ export interface CommandLike {
 export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
-  execProbeService: Pick<AgentExecProbeService, 'probe'>;
   installService: Pick<AgentInstallService, 'install'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output?: CliOutput;
@@ -65,7 +63,6 @@ export default function registerAgentSystemCli(
     .command('env')
     .description('Inspect Agent System environment delivery without showing values.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
-    .option('--exec', 'Probe which variables reach Gateway-hosted exec.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
       const commandOptions = env.opts();
@@ -73,8 +70,6 @@ export default function registerAgentSystemCli(
       await envAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
         environmentService: options.environmentService,
-        exec: commandOptions.exec === true,
-        execProbeService: options.execProbeService,
         json: commandOptions.json === true,
         output,
         setExitCode,

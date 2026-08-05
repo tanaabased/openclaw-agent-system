@@ -32,7 +32,6 @@ function createProgram() {
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
-    probe: 0,
     workspace: [] as string[],
   };
   const program = new Command();
@@ -47,18 +46,6 @@ function createProgram() {
       async loadForWorkspace(workspaceDir) {
         calls.environmentWorkspace.push(workspaceDir);
         return validEnvironmentResult;
-      },
-    },
-    execProbeService: {
-      async probe() {
-        calls.probe += 1;
-        return {
-          status: 'completed',
-          variables: validEnvironmentResult.environment.variables.map((variable) => ({
-            ...variable,
-            observedExecDelivery: 'accepted' as const,
-          })),
-        };
       },
     },
     installService: {
@@ -107,7 +94,7 @@ describe('lib/register-cli', () => {
     assert.equal(output.write.join('').includes('env'), true);
   });
 
-  it('should delegate environment inspection with explicit agent and exec options', async () => {
+  it('should delegate environment inspection with explicit agent and JSON options', async () => {
     const { calls, program } = createProgram();
 
     await program.parseAsync([
@@ -117,12 +104,10 @@ describe('lib/register-cli', () => {
       'env',
       '--agent',
       'data',
-      '--exec',
       '--json',
     ]);
 
     assert.deepEqual(calls.environmentAgent, ['data']);
-    assert.equal(calls.probe, 1);
   });
 
   it('should delegate workspace validation from the current directory', async () => {

@@ -81,14 +81,12 @@ Phase 1 delivers:
   credential-file fallback, with Linux credential backends following the same
   interface;
 - required-variable validation, provenance, value-free consolidated `env`
-  inspection, automatic provider-output redaction, and an active Gateway
-  `exec`-filter probe;
-- OpenClaw delivery classification and observed Gateway-filter status for every
-  resolved value;
+  inspection, automatic provider-output redaction, and static OpenClaw delivery
+  classification;
 - per-agent executable path prepending through
   `agents.list[].tools.exec.pathPrepend`; and
 - focused Leia coverage of installed-plugin, agent-binding, environment, and
-  OpenClaw exec-delivery boundaries.
+  value-free diagnostic boundaries.
 
 ### Phase 2: provider API and first tools
 
@@ -268,10 +266,10 @@ arbitrary OpenClaw or third-party tool can receive the value.
 
 The first implementation slice is deliberately narrower than the completed
 Phase 1 model. It accepts only literal strings under `environment.set`, offers
-them through the agent-aware `resolve_exec_env` hook, and implements the
-value-free `env` and opt-in `env --exec` diagnostics. Host inheritance, dotenv,
-1Password, interpolation, required-variable validation, and path prepending are
-subsequent Phase 1 slices.
+them through the agent-aware `resolve_exec_env` hook, and implements value-free
+`env` diagnostics with static delivery classification. Host inheritance,
+dotenv, 1Password, interpolation, required-variable validation, and path
+prepending are subsequent Phase 1 slices.
 
 The first implementation resolves four value sources, in the precedence order
 defined below:
@@ -434,62 +432,28 @@ and CI.
 `ADVANCED.md` must document the high-value OpenClaw-restricted names and
 prefixes Agent System classifies statically for each supported compatibility
 range. The list is a conservative compatibility hint, not an exhaustive copy of
-private OpenClaw policy. An active probe is authoritative for the installed
-runtime.
+private OpenClaw policy. The current CLI does not claim to observe the installed
+runtime's final filtering decision.
 
-#### Active Gateway exec-filter probe
+#### Future active Gateway exec-filter diagnostic
 
-`openclaw agent-system env --exec` actively determines which Agent
-System-provided variable names survive the installed OpenClaw Gateway's real
-built-in `exec` filter. It uses the same agent-selection rules as the default
-command and always targets `host=gateway`.
+A future diagnostic may report which Agent System-provided variable names
+survive the installed OpenClaw Gateway's real built-in `exec` filter. It is not
+part of the current `env` command.
 
-The probe must not run raw `env` and intersect its keys with the Agent System
-set. Raw output could expose unrelated Gateway credentials, and a name already
-present in the Gateway baseline would create a false positive even when Agent
-System's override was filtered.
+The currently supported OpenClaw release does not expose built-in `exec`
+through the public direct `tools.invoke` catalog, even when
+`gateway.tools.allow` includes `exec`. That setting removes an HTTP exposure
+deny but does not materialize shell tools in the direct-invocation catalog.
+Agent System therefore cannot implement a deterministic, no-model runtime probe
+through that surface.
 
-Instead, the probe follows this contract:
-
-1. Resolve the consolidated Agent System environment and candidate variable
-   names without printing values. Probe candidates include every valid name in
-   the consolidated set, including names classified as `documented-filtered`; the
-   bootstrap token remains outside that set.
-2. Establish short-lived, unforgeable probe state bound to the selected agent
-   and one Gateway exec request.
-3. For that request only, the Agent System `resolve_exec_env` hook returns a
-   unique non-secret sentinel value for every probe candidate instead of
-   forwarding any real resolved value.
-4. Run a fixed, non-interactive probe helper through OpenClaw's real built-in
-   `exec` path with `host=gateway`. The helper reports only candidate names
-   whose sentinel value is present; it never prints the Gateway environment or
-   any value.
-5. Report `accepted` for observed sentinel names and `filtered` for the set
-   difference between candidates and observations. When the Gateway request
-   cannot run or complete, fail with a stable probe diagnostic rather than
-   assigning an observed status to any variable.
-
-OpenClaw denies direct Gateway invocation of `exec` by default. Agent System
-must not weaken that policy automatically. Before making a Gateway request,
-`env --exec` reads the current configuration and fails when `exec` is absent
-from `gateway.tools.allow`. The failure explains that enabling this surface lets
-authenticated operator clients invoke shell commands, prints a command that
-preserves existing allow entries while adding `exec`, and reminds the operator
-to restart the Gateway. The probe uses OpenClaw's public Gateway RPC client and
-`tools.invoke`; it does not use a raw HTTP client or a model-mediated tool call.
-
-This observes the installed runtime's filtering behavior without importing or
-copying OpenClaw's private filter and without exposing agent or Gateway secret
-values. It establishes the final set of Agent System-provided variable names
-that reached that Gateway exec process; it does not describe unrelated
-variables inherited or added independently by OpenClaw.
-
-The active probe is read-only but operational. It requires a reachable Gateway,
-a registered matching agent, a supported public path for deterministic built-in
-`exec` invocation, and any applicable exec approval. Failure, denial, timeout,
-agent mismatch, or an unsupported OpenClaw runtime is an explicit diagnostic,
-not a static prediction presented as observed behavior. Probe state and
-sentinels are removed after completion and are never persisted.
+Revisit this diagnostic only when OpenClaw exposes a stable public plugin or
+loopback API that can invoke the real built-in `exec` path for an exact agent
+under normal hook, policy, and approval behavior. The implementation must use
+short-lived non-secret sentinels, never run raw `env`, never expose unrelated
+Gateway variables, never import private OpenClaw internals, and never weaken
+Gateway policy automatically.
 
 The immediately relevant restrictions in the current supported OpenClaw line
 include:
@@ -1028,7 +992,6 @@ payload model, and synchronization command remain Phase 3 design work.
 ```text
 openclaw agent-system validate
 openclaw agent-system env [--agent <id>]
-openclaw agent-system env [--agent <id>] --exec
 openclaw agent-system credentials set onepassword-service-account
 openclaw agent-system providers list
 openclaw agent-system capabilities inspect github --agent emori
@@ -1047,9 +1010,6 @@ openclaw agent-system doctor
   workspace selected by `--agent`, and reports the consolidated Agent
   System-provided environment with provenance, required state, and static
   delivery class. It never prints values.
-- `env --exec` runs the secret-safe sentinel probe through the selected agent's
-  real built-in Gateway `exec` path and reports which Agent System candidate
-  names were accepted or filtered. It never dumps the raw Gateway environment.
 - `credentials set` securely stores or replaces a bootstrap credential in the
   platform backend.
 - `providers` and `capabilities` inspect provider compatibility, the selected
@@ -1083,8 +1043,8 @@ remain the first part of explicit `install` throughout these phases.
 - Resolution and delivery are distinct; blocked values are never described as
   available to OpenClaw `exec`.
 - Static delivery classification is not described as an observed OpenClaw
-  result. Only the sentinel-based `env --exec` Gateway probe may report
-  `accepted` or `filtered` for the installed runtime.
+  result. Reporting `accepted` or `filtered` for the installed runtime remains a
+  future improvement pending a stable public OpenClaw invocation path.
 - Interpolation is restricted and never evaluates shell syntax.
 - Source ordering and override behavior are explicit and inspectable.
 - Secrets are never written into the manifest or printed by normal diagnostics.
@@ -1116,26 +1076,22 @@ remain the first part of explicit `install` throughout these phases.
    binding, and metadata-only provenance.
 3. Implement `env` for current-workspace and explicit-agent selection, static
    OpenClaw delivery classification, and machine-readable value-free output.
-4. Implement the short-lived sentinel protocol and public Gateway RPC path for
-   opt-in `env --exec`; never use raw Gateway `env` output or real values as
-   probe material.
-5. Define the remaining environment sources, scalar configuration references,
+4. Define the remaining environment sources, scalar configuration references,
    deterministic precedence, and provenance without resolving secrets at
    session startup.
-6. Implement selected host inheritance, dotenv parsing, restricted
+5. Implement selected host inheritance, dotenv parsing, restricted
    interpolation, and required-value checks.
-7. Add centralized secret classification and provider-output redaction.
-8. Resolve and reconcile `environment.path-prepend` for Agent System children
+6. Add centralized secret classification and provider-output redaction.
+7. Resolve and reconcile `environment.path-prepend` for Agent System children
    and the bound OpenClaw agent.
-9. Define the bootstrap credential interface and implement macOS Keychain,
+8. Define the bootstrap credential interface and implement macOS Keychain,
    ephemeral CI environment input, Linux backends, and the hardened file
    fallback in that order of practical delivery.
-10. Resolve 1Password Environments lazily without forwarding the service-account
-    token.
-11. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
-    manifest binding, source precedence, value-free diagnostics, path projection, 1Password
-    boundaries, sentinel cleanup, and accepted-versus-filtered observations
-    through the real Gateway exec path.
+9. Resolve 1Password Environments lazily without forwarding the service-account
+   token.
+10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
+    manifest binding, source precedence, value-free diagnostics, path
+    projection, and 1Password boundaries.
 
 ### Phase 2
 

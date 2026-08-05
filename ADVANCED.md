@@ -90,24 +90,22 @@ SSL_CERT_FILE
 ZDOTDIR
 ```
 
-Names beginning with `BASH_FUNC_`, `DYLD_`, `GIT_CONFIG_`, or `LD_` receive the same classification. Other names are `exec-candidate`, not guaranteed accepted. This compatibility list is intentionally not a copy of OpenClaw's private implementation and may be incomplete; `env --exec` is authoritative for the active Gateway.
+Names beginning with `BASH_FUNC_`, `DYLD_`, `GIT_CONFIG_`, or `LD_` receive the same classification. Other names are `exec-candidate`, not guaranteed accepted. This compatibility list is intentionally not a copy of OpenClaw's private implementation and may be incomplete; the current CLI does not observe the active Gateway's final filtering decision.
 
 ### Runtime Logging
 
 Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process to include debug lifecycle events. Agent System logs metadata such as trigger, agent id, path, schema version, and a short content digest; it does not log manifest values.
 
-| Event                                        | Level | Meaning                                                  |
-| -------------------------------------------- | ----- | -------------------------------------------------------- |
-| `agent_system.manifest_scope_unresolved`     | debug | No authoritative agent could be identified for the hook. |
-| `agent_system.manifest_scope_failed`         | error | Agent or workspace resolution failed.                    |
-| `agent_system.manifest_absent`               | debug | The resolved workspace is unmanaged.                     |
-| `agent_system.manifest_shadowed`             | warn  | The preferred manifest hid the root shorthand.           |
-| `agent_system.manifest_invalid`              | error | Discovery, YAML, schema, or agent binding failed.        |
-| `agent_system.manifest_loaded`               | info  | A valid manifest was loaded.                             |
-| `agent_system.manifest_changed`              | info  | A later load observed a different manifest digest.       |
-| `agent_system.environment_resolved`          | info  | An environment was resolved; reports count and digest.   |
-| `agent_system.exec_environment_probed`       | info  | A probe completed; reports accepted and filtered counts. |
-| `agent_system.exec_environment_probe_failed` | warn  | A Gateway probe failed without logging its values.       |
+| Event                                    | Level | Meaning                                                  |
+| ---------------------------------------- | ----- | -------------------------------------------------------- |
+| `agent_system.manifest_scope_unresolved` | debug | No authoritative agent could be identified for the hook. |
+| `agent_system.manifest_scope_failed`     | error | Agent or workspace resolution failed.                    |
+| `agent_system.manifest_absent`           | debug | The resolved workspace is unmanaged.                     |
+| `agent_system.manifest_shadowed`         | warn  | The preferred manifest hid the root shorthand.           |
+| `agent_system.manifest_invalid`          | error | Discovery, YAML, schema, or agent binding failed.        |
+| `agent_system.manifest_loaded`           | info  | A valid manifest was loaded.                             |
+| `agent_system.manifest_changed`          | info  | A later load observed a different manifest digest.       |
+| `agent_system.environment_resolved`      | info  | An environment was resolved; reports count and digest.   |
 
 ## CLI Reference
 
@@ -152,8 +150,7 @@ Reports the environment variable names Agent System contributes for one manifest
 
 ```sh
 openclaw agent-system env [--agent <id>] [--json]
-openclaw agent-system env [--agent <id>] --exec [--json]
-openclaw as env [--agent <id>] [--exec] [--json]
+openclaw as env [--agent <id>] [--json]
 ```
 
 #### Options
@@ -166,20 +163,6 @@ Uses the exact agent's configured OpenClaw workspace and requires the manifest t
 
 Writes structured output. It follows the same value-free contract as human output.
 
-**`--exec`**
-
-Runs a fixed probe through the active Gateway's real built-in `exec` path with `host=gateway`. Agent System replaces every candidate value with a one-time non-secret sentinel for that request. Output marks each name `accepted` or `filtered`; neither the manifest values, sentinel values, nor unrelated Gateway environment appear in the result.
-
-#### Gateway opt-in
-
-OpenClaw denies direct Gateway invocation of `exec` by default. Agent System does not change that policy. When `exec` is absent from `gateway.tools.allow`, the command exits nonzero before contacting the Gateway, explains the risk, and prints a current-aware enable command. With an empty allow list, it prints:
-
-```sh
-openclaw config set gateway.tools.allow '["exec"]' --strict-json
-```
-
-Restart the Gateway after changing this setting. Enabling it lets authenticated operator clients invoke shell commands through the Gateway, so keep the Gateway private and protect its credentials. OpenClaw's normal exec approval policy still applies; an approval requirement is reported as `exec-probe-approval-required`. The Leia scenario uses the permissive policy only on an isolated ephemeral GitHub Actions runner.
-
 #### Output
 
 The local view includes `agentId`, `workspaceDir`, `manifestPath`, and one entry per variable:
@@ -189,7 +172,7 @@ AGENT_COLOR source=environment.set static=exec-candidate
 GITHUB_TOKEN source=environment.set static=documented-filtered
 ```
 
-After a successful active probe, each line also contains `observed=accepted` or `observed=filtered`. Static classification is a compatibility hint; only observed delivery describes the active Gateway.
+Static classification is a compatibility hint and must not be read as an observed result from the active Gateway.
 
 #### Examples
 
@@ -199,9 +182,6 @@ openclaw agent-system env
 
 # inspect a registered agent in machine-readable form.
 openclaw agent-system env --agent tanaabot --json
-
-# observe the active Gateway's final filtering decision.
-openclaw agent-system env --agent tanaabot --exec --json
 ```
 
 ### `openclaw agent-system install`
