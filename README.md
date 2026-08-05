@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation discovers, parses, binds, caches, and reports workspace manifests, and explicitly reconciles OpenClaw agent registration and public identity. Environment resolution, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and literal per-agent environment delivery. Additional environment sources, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -55,9 +55,13 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+
+environment:
+  set:
+    AGENT_COLOR: green
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. Phase 1 accepts only the identity fields `id`, `name`, `description`, and `avatar`; unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`, plus literal string values under `environment.set`. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
 
 ## Usage
 
@@ -78,7 +82,14 @@ openclaw agent-system install
 
 `install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
 
-At runtime, the plugin passively loads a matching manifest at `session_start` and `before_tool_call`. A missing manifest leaves the agent unmanaged; an invalid manifest is reported without crashing the Gateway or changing the agent environment. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see safe `agent_system.manifest_*` lifecycle events without manifest values.
+Inspect the environment names and delivery metadata without printing values:
+
+```sh
+openclaw agent-system env
+openclaw agent-system env --agent tanaabot --json
+```
+
+At runtime, the plugin loads a matching manifest at `session_start`, `before_tool_call`, and `resolve_exec_env`. Literal values are offered to OpenClaw's built-in `exec`, which applies its own protected-variable filter. A missing manifest leaves the agent unmanaged; an invalid or unresolved managed agent blocks `exec` rather than running with an unintended environment. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `agent_system.manifest_*` and `agent_system.environment_*` lifecycle events.
 
 See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 

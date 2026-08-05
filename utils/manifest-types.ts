@@ -6,6 +6,9 @@ export interface AgentManifest {
     description?: string;
     avatar?: string;
   };
+  environment?: {
+    set?: Record<string, string>;
+  };
 }
 
 export interface ManifestDiagnostic {

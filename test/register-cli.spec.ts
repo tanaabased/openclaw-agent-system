@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Command } from 'commander';
 
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
 
 const validResult: AgentManifestLoadResult = {
@@ -13,18 +14,53 @@ const validResult: AgentManifestLoadResult = {
   manifest: { schemaVersion: 1, agent: { id: 'tanaabot', name: 'Tanaabot' } },
   diagnostics: [],
 };
+const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loaded' }> = {
+  ...validResult,
+  status: 'loaded',
+  environment: {
+    values: { AGENT_COLOR: 'green' },
+    variables: [
+      { name: 'AGENT_COLOR', source: 'environment.set', staticExecDelivery: 'exec-candidate' },
+    ],
+  },
+};
 
 function createProgram() {
   const output = { error: [] as string[], write: [] as string[] };
   const calls = {
     agent: [] as string[],
+    environmentAgent: [] as string[],
+    environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
+    probe: 0,
     workspace: [] as string[],
   };
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
     cwd: () => '/current',
+    environmentService: {
+      async loadForAgentId(agentId) {
+        calls.environmentAgent.push(agentId);
+        return validEnvironmentResult;
+      },
+      async loadForWorkspace(workspaceDir) {
+        calls.environmentWorkspace.push(workspaceDir);
+        return validEnvironmentResult;
+      },
+    },
+    execProbeService: {
+      async probe() {
+        calls.probe += 1;
+        return {
+          status: 'completed',
+          variables: validEnvironmentResult.environment.variables.map((variable) => ({
+            ...variable,
+            observedExecDelivery: 'accepted' as const,
+          })),
+        };
+      },
+    },
     installService: {
       async install(input) {
         calls.install.push(input);
@@ -57,7 +93,7 @@ describe('lib/register-cli', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['validate', 'install'],
+      ['validate', 'env', 'install'],
     );
   });
 
@@ -68,6 +104,25 @@ describe('lib/register-cli', () => {
 
     assert.equal(output.write.join('').includes('validate'), true);
     assert.equal(output.write.join('').includes('install'), true);
+    assert.equal(output.write.join('').includes('env'), true);
+  });
+
+  it('should delegate environment inspection with explicit agent and exec options', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'env',
+      '--agent',
+      'data',
+      '--exec',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.environmentAgent, ['data']);
+    assert.equal(calls.probe, 1);
   });
 
   it('should delegate workspace validation from the current directory', async () => {

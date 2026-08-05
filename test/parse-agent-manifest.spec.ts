@@ -8,7 +8,7 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('utils/parse-agent-manifest', () => {
-  it('should parse the supported identity schema into camelCase application data', () => {
+  it('should parse identity and literal environment data without converting variable names', () => {
     const result = parseAgentManifest(`
 schema-version: 1
 agent:
@@ -16,6 +16,10 @@ agent:
   name: Tanaabot
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
+environment:
+  set:
+    AGENT_COLOR: green
+    GitHub_User: tanaabot
 `);
 
     assert.deepEqual(result, {
@@ -27,6 +31,12 @@ agent:
           name: 'Tanaabot',
           description: 'Tanaab development agent.',
           avatar: '.agent-system/assets/tanaabot.png',
+        },
+        environment: {
+          set: {
+            AGENT_COLOR: 'green',
+            GitHub_User: 'tanaabot',
+          },
         },
       },
       diagnostics: [],
@@ -59,9 +69,6 @@ agent:
 schemaVersion: 1
 agent:
   id: tanaabot
-environment:
-  set:
-    GITHUB_TOKEN: placeholder
 `);
 
     assert.equal(result.status, 'invalid');
@@ -70,14 +77,49 @@ environment:
 schemaVersion: 1
 agent:
   id: tanaabot
-environment:
-  set:
-    GITHUB_TOKEN: placeholder
 `).has('manifest-unknown-key'),
       true,
     );
     assert.equal(
       result.diagnostics.some(({ message }) => message.includes('placeholder')),
+      false,
+    );
+  });
+
+  it('should reject non-string literals and invalid environment variable names', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  set:
+    VALID_NAME: 123
+    not-valid-name: value
+`);
+
+    assert.equal(result.status, 'invalid');
+    assert.equal(
+      result.diagnostics.every(({ code }) => code === 'manifest-schema'),
+      true,
+    );
+  });
+
+  it('should reject unknown environment keys without exposing their values', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  file: private-value
+`);
+
+    assert.equal(result.status, 'invalid');
+    assert.equal(
+      result.diagnostics.some(({ code }) => code === 'manifest-unknown-key'),
+      true,
+    );
+    assert.equal(
+      result.diagnostics.some(({ message }) => message.includes('private-value')),
       false,
     );
   });

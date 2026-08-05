@@ -16,6 +16,16 @@ const externalAgentManifestSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
+    environment: Type.Optional(
+      Type.Object(
+        {
+          set: Type.Optional(
+            Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), Type.String()),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -60,6 +70,13 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
       ...(value.agent.description === undefined ? {} : { description: value.agent.description }),
       ...(value.agent.avatar === undefined ? {} : { avatar: value.agent.avatar }),
     },
+    ...(value.environment === undefined
+      ? {}
+      : {
+          environment: {
+            ...(value.environment.set === undefined ? {} : { set: { ...value.environment.set } }),
+          },
+        }),
   };
 }
 

@@ -1,20 +1,47 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import type AgentManifestService from './agent-manifest-service.ts';
+import { resolveExecEnvironmentProbeValues } from '../utils/exec-env-probe.ts';
+import type AgentEnvironmentService from './agent-environment-service.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'>;
-type HookManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
+type HookEnvironmentService = Pick<AgentEnvironmentService, 'loadForRuntimeContext'>;
 
-/** Register passive manifest loading at the earliest agent-aware runtime boundaries. */
+function blockReason(
+  result: Awaited<ReturnType<HookEnvironmentService['loadForRuntimeContext']>>,
+): string {
+  if (result.status === 'invalid') {
+    const codes = result.diagnostics.map(({ code }) => code).join(', ');
+    return `Agent System blocked exec because the active manifest is invalid${codes ? ` (${codes})` : ''}.`;
+  }
+  return 'Agent System blocked exec because the active agent workspace could not be resolved.';
+}
+
+/** Register agent-aware manifest loading and exec environment delivery. */
 export default function registerAgentSystemHooks(
   api: HookApi,
-  manifestService: HookManifestService,
+  environmentService: HookEnvironmentService,
 ): void {
   api.on('session_start', async (_event, context) => {
-    await manifestService.loadForRuntimeContext(context, 'session_start');
+    await environmentService.loadForRuntimeContext(context, 'session_start');
   });
 
-  api.on('before_tool_call', async (_event, context) => {
-    await manifestService.loadForRuntimeContext(context, 'before_tool_call');
+  api.on('before_tool_call', async (event, context) => {
+    const result = await environmentService.loadForRuntimeContext(context, 'before_tool_call');
+    if (event.toolName !== 'exec') return;
+    if (result.status === 'unresolved' || result.status === 'invalid') {
+      return { block: true, blockReason: blockReason(result) };
+    }
+  });
+
+  api.on('resolve_exec_env', async (event, context) => {
+    const result = await environmentService.loadForRuntimeContext(context, 'resolve_exec_env');
+    if (result.status !== 'loaded') return;
+    return (
+      resolveExecEnvironmentProbeValues(
+        event.sessionKey ?? context.sessionKey,
+        result.manifest.agent.id,
+        result.environment.variables,
+      ) ?? result.environment.values
+    );
   });
 }
