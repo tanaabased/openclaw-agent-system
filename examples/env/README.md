@@ -58,7 +58,10 @@ echo "$!" > "$TMPDIR/gateway.pid"
 "$GITHUB_WORKSPACE/examples/env/gateway-process.sh" wait
 
 # should observe accepted and filtered Agent System variables through Gateway exec
-openclaw agent-system env --agent data --exec --json > "$TMPDIR/exec-env.json"
+if ! openclaw agent-system env --agent data --exec --json > "$TMPDIR/exec-env.json"; then
+  cat "$TMPDIR/exec-env.json" >&2
+  exit 1
+fi
 node -e "const data=require(process.argv[1]); const variables=Object.fromEntries(data.variables.map(variable => [variable.name, variable.observedExecDelivery])); if (variables.AGENT_SYSTEM_LEIA_VISIBLE !== 'accepted' || variables.GITHUB_TOKEN !== 'filtered') process.exit(1)" "$TMPDIR/exec-env.json"
 if grep -Fq -e 'leia-agent-system-visible' -e 'leia-agent-system-filtered' -e 'agent-system-env-probe-' "$TMPDIR/exec-env.json"; then exit 1; fi
 grep -F 'agent_system.environment_resolved trigger="resolve_exec_env" agentId="data" variables=2' "$TMPDIR/gateway.log"
