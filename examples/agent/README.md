@@ -6,8 +6,6 @@ This scenario runs the prepared Agent System package in the default Gateway with
 
 ```bash
 # should configure the default profile with the CI model
-if test -z "$OPENAI_API_KEY"; then echo 'OPENAI_API_KEY is required for the agent example.' >&2; exit 1; fi
-if test -z "$OPENAI_MODEL"; then echo 'OPENAI_MODEL is required for the agent example.' >&2; exit 1; fi
 openclaw onboard --non-interactive --accept-risk \
   --mode local \
   --auth-choice openai-api-key \
@@ -48,9 +46,6 @@ echo "$!" > "$TMPDIR/gateway.pid"
 ## Testing
 
 ```bash
-# should resolve and validate the configured data agent workspace
-openclaw agent-system validate --agent data | grep -F 'valid: Agent System manifest for data'
-
 # should load the data manifest when a new session starts
 openclaw agent \
   --agent data \

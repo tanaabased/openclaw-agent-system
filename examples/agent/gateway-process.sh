@@ -32,7 +32,7 @@ wait_for_gateway() {
   local timeout_seconds="${1:-90}"
   local deadline=$((SECONDS + timeout_seconds))
   read_gateway_pid
-  until openclaw gateway call agents.list --json --timeout 3000 > "$TMPDIR/agents-list.json" 2> "$call_log_path"; do
+  until openclaw gateway call agents.list --json --timeout 3000 > /dev/null 2> "$call_log_path"; do
     if ! kill -0 "$gateway_pid" 2>/dev/null; then
       echo "Gateway exited before becoming ready." >&2
       tail_diagnostics

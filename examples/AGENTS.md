@@ -21,6 +21,8 @@
 - Start each executable block with one lowercase `# should ...` statement and keep one observable behavior per block.
 - Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.
+- Pipe command output directly into fixed-string assertions when possible; do not write output to a temporary file solely for a later grep.
+- Do not add preflight checks when the immediately following product command validates the same requirement.
 - Prefer one command per line; avoid `command && next-command` when ordinary newline sequencing expresses the same fail-fast flow.
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
 - Keep runtime-derived state beneath the scenario's `TMPDIR` and keep generated state out of version control.

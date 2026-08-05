@@ -18,17 +18,14 @@ cd "$GITHUB_WORKSPACE/examples/validate/valid"
 openclaw agent-system validate | grep -F 'valid: Agent System manifest for data'
 
 # should prefer the hidden manifest and report the ignored shorthand
-set -o pipefail
 cd "$GITHUB_WORKSPACE/examples/validate/preferred"
-openclaw agent-system validate 2>&1 | tee "$TMPDIR/preferred-validation.log"
-grep -F 'valid: Agent System manifest for data' "$TMPDIR/preferred-validation.log"
-grep -F '[manifest-shadowed]' "$TMPDIR/preferred-validation.log"
+openclaw agent-system validate 2>&1 | paste -sd ' ' | grep -F 'valid: Agent System manifest for data' | grep -F '[manifest-shadowed]'
 
 # should reject an unknown schema key with a failing exit code
 cd "$GITHUB_WORKSPACE/examples/validate/invalid"
-if openclaw agent-system validate > "$TMPDIR/invalid-validation.log" 2>&1; then
+if invalid_output=$(openclaw agent-system validate 2>&1); then
   exit 1
 fi
-grep -F 'error: invalid Agent System manifest' "$TMPDIR/invalid-validation.log"
-grep -F '[manifest-unknown-key]' "$TMPDIR/invalid-validation.log"
+grep -F 'error: invalid Agent System manifest' <<< "$invalid_output"
+grep -F '[manifest-unknown-key]' <<< "$invalid_output"
 ```

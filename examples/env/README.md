@@ -35,12 +35,8 @@ openclaw agent-system install
 ```bash
 # should inspect literal environment metadata without exposing values
 cd "$GITHUB_WORKSPACE/examples/env/data"
-openclaw agent-system env --json > "$TMPDIR/local-env.json"
-grep -F '"name": "AGENT_SYSTEM_LEIA_VISIBLE"' "$TMPDIR/local-env.json"
-grep -F '"name": "GITHUB_TOKEN"' "$TMPDIR/local-env.json"
-if grep -Fq -e 'leia-agent-system-visible' -e 'leia-agent-system-filtered' "$TMPDIR/local-env.json"; then exit 1; fi
+openclaw agent-system env --json | paste -sd ' ' | grep -F '"name": "AGENT_SYSTEM_LEIA_VISIBLE"' | grep -F '"name": "GITHUB_TOKEN"' | grep -Fv -e 'leia-agent-system-visible' -e 'leia-agent-system-filtered'
 
 # should inspect a registered agent without current workspace discovery
-openclaw agent-system env --agent data --json > "$TMPDIR/agent-env.json"
-grep -F '"agentId": "data"' "$TMPDIR/agent-env.json"
+openclaw agent-system env --agent data --json | grep -F '"agentId": "data"'
 ```
