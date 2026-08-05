@@ -12,15 +12,22 @@ const loaded: AgentEnvironmentLoadResult = {
     schemaVersion: 1,
     agent: { id: 'data' },
     environment: {
+      required: ['AGENT_COLOR'],
       set: { AGENT_COLOR: 'green', GITHUB_TOKEN: 'private-token' },
     },
   },
   environment: {
     values: { AGENT_COLOR: 'green', GITHUB_TOKEN: 'private-token' },
     variables: [
-      { name: 'AGENT_COLOR', source: 'environment.set', staticExecDelivery: 'exec-candidate' },
+      {
+        name: 'AGENT_COLOR',
+        required: true,
+        source: 'environment.set',
+        staticExecDelivery: 'exec-candidate',
+      },
       {
         name: 'GITHUB_TOKEN',
+        required: false,
         source: 'environment.set',
         staticExecDelivery: 'documented-filtered',
       },
@@ -68,7 +75,7 @@ function createHarness(
 }
 
 describe('cli/env', () => {
-  it('should inspect the current manifest without exposing literal values', async () => {
+  it('should inspect the current manifest without exposing resolved values', async () => {
     const { calls, output, run } = createHarness({ json: true });
 
     await run();
@@ -77,8 +84,20 @@ describe('cli/env', () => {
     assert.deepEqual(calls.workspace, ['/current']);
     assert.equal(serialized.includes('AGENT_COLOR'), true);
     assert.equal(serialized.includes('exec-candidate'), true);
+    assert.equal(serialized.includes('"required": true'), true);
     assert.equal(serialized.includes('green'), false);
     assert.equal(serialized.includes('private-token'), false);
+  });
+
+  it('should report required state in human output', async () => {
+    const { output, run } = createHarness();
+
+    await run();
+
+    assert.equal(
+      output.write.join('').includes('AGENT_COLOR source=environment.set required=true'),
+      true,
+    );
   });
 
   it('should inspect an explicit agent without using workspace discovery', async () => {

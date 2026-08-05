@@ -35,7 +35,7 @@ function writeHuman(output: CliOutput, view: EnvironmentView): void {
   }
   for (const variable of view.variables) {
     output.write(
-      `${variable.name} source=${variable.source} static=${variable.staticExecDelivery}\n`,
+      `${variable.name} source=${variable.source} required=${variable.required} static=${variable.staticExecDelivery}\n`,
     );
   }
 }

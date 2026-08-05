@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
 describe('lib/register-hooks', () => {
-  it('should load environments at passive agent-aware runtime boundaries', async () => {
+  it('should load only manifest metadata at session start and resolve environments for exec', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
-    const calls: Array<{ agentId?: string; trigger: string }> = [];
+    const calls: Array<{ agentId?: string; service: string; trigger: string }> = [];
     registerAgentSystemHooks(
       {
         on(name: string, handler: (...args: unknown[]) => unknown) {
@@ -14,18 +14,25 @@ describe('lib/register-hooks', () => {
       } as never,
       {
         async loadForRuntimeContext(context, trigger) {
-          calls.push({ agentId: context.agentId, trigger });
+          calls.push({ agentId: context.agentId, service: 'manifest', trigger });
+          return { status: 'unresolved', diagnostics: [] };
+        },
+      },
+      {
+        async loadForRuntimeContext(context, trigger) {
+          calls.push({ agentId: context.agentId, service: 'environment', trigger });
           return { status: 'unresolved', diagnostics: [] };
         },
       },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
-    await handlers.get('before_tool_call')?.({}, { agentId: 'tanaabot', toolName: 'exec' });
+    await handlers.get('before_tool_call')?.({ toolName: 'read' }, { agentId: 'tanaabot' });
+    await handlers.get('before_tool_call')?.({ toolName: 'exec' }, { agentId: 'tanaabot' });
 
     assert.deepEqual(calls, [
-      { agentId: 'tanaabot', trigger: 'session_start' },
-      { agentId: 'tanaabot', trigger: 'before_tool_call' },
+      { agentId: 'tanaabot', service: 'manifest', trigger: 'session_start' },
+      { agentId: 'tanaabot', service: 'environment', trigger: 'before_tool_call' },
     ]);
   });
 
@@ -38,6 +45,11 @@ describe('lib/register-hooks', () => {
           handlers.set(name, handler);
         },
       } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] };
+        },
+      },
       {
         async loadForRuntimeContext() {
           return result === 'invalid'
@@ -73,7 +85,7 @@ describe('lib/register-hooks', () => {
     assert.equal(unmanaged, undefined);
   });
 
-  it('should contribute literal values to the matching exec environment', async () => {
+  it('should contribute resolved values to the matching exec environment', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(
       {
@@ -81,6 +93,11 @@ describe('lib/register-hooks', () => {
           handlers.set(name, handler);
         },
       } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] };
+        },
+      },
       {
         async loadForRuntimeContext() {
           return {
@@ -98,6 +115,7 @@ describe('lib/register-hooks', () => {
               variables: [
                 {
                   name: 'AGENT_COLOR',
+                  required: false,
                   source: 'environment.set',
                   staticExecDelivery: 'exec-candidate',
                 },

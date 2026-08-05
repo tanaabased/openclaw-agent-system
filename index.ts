@@ -36,8 +36,12 @@ export default definePluginEntry({
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     });
-    const environmentService = new AgentEnvironmentService({ logger: api.logger, manifestService });
-    registerAgentSystemHooks(api, environmentService);
+    const environmentService = new AgentEnvironmentService({
+      hostEnvironment: process.env,
+      logger: api.logger,
+      manifestService,
+    });
+    registerAgentSystemHooks(api, manifestService, environmentService);
     api.registerCli(
       ({ program }) => {
         registerAgentSystemCli(program, {

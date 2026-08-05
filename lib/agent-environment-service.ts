@@ -13,7 +13,9 @@ export type AgentEnvironmentLoadResult =
     });
 
 export interface AgentEnvironmentServiceDependencies {
+  hostEnvironment: Readonly<Record<string, string | undefined>>;
   logger: {
+    error(message: string): void;
     info(message: string): void;
   };
   manifestService: Pick<
@@ -36,9 +38,11 @@ function environmentDigest(environment: ResolvedAgentEnvironment): string {
 /** Resolve one manifest's environment while keeping values out of diagnostics. */
 export default class AgentEnvironmentService {
   readonly #dependencies: AgentEnvironmentServiceDependencies;
+  readonly #hostEnvironment: Readonly<Record<string, string | undefined>>;
 
   constructor(dependencies: AgentEnvironmentServiceDependencies) {
     this.#dependencies = dependencies;
+    this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
   }
 
   async loadForRuntimeContext(
@@ -82,7 +86,21 @@ export default class AgentEnvironmentService {
   ): AgentEnvironmentLoadResult {
     if (result.status !== 'loaded') return result;
 
-    const environment = resolveAgentEnvironment(result.manifest);
+    const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment);
+    if (resolution.status === 'invalid') {
+      const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
+      this.#dependencies.logger.error(
+        `agent_system.environment_invalid trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
+      );
+      return {
+        status: 'invalid',
+        scope: result.scope,
+        path: result.path,
+        diagnostics,
+      };
+    }
+
+    const { environment } = resolution;
     this.#dependencies.logger.info(
       `agent_system.environment_resolved trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} variables=${environment.variables.length} digest=${quote(environmentDigest(environment))}`,
     );

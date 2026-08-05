@@ -8,7 +8,7 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('utils/parse-agent-manifest', () => {
-  it('should parse identity and literal environment data without converting variable names', () => {
+  it('should parse identity and environment data without converting variable names', () => {
     const result = parseAgentManifest(`
 schema-version: 1
 agent:
@@ -17,6 +17,8 @@ agent:
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
 environment:
+  required:
+    - AGENT_COLOR
   set:
     AGENT_COLOR: green
     GitHub_User: tanaabot
@@ -33,6 +35,7 @@ environment:
           avatar: '.agent-system/assets/tanaabot.png',
         },
         environment: {
+          required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
             GitHub_User: 'tanaabot',
@@ -100,6 +103,31 @@ environment:
     assert.equal(result.status, 'invalid');
     assert.equal(
       result.diagnostics.every(({ code }) => code === 'manifest-schema'),
+      true,
+    );
+  });
+
+  it('should reject empty and duplicate required variable lists', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  required: []
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  required:
+    - AGENT_COLOR
+    - AGENT_COLOR
+`).has('manifest-schema'),
       true,
     );
   });

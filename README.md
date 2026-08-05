@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and literal per-agent environment delivery. Additional environment sources, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and explicit per-agent environment values with restricted host references and required-value checks. Additional environment sources, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -59,9 +59,11 @@ agent:
 environment:
   set:
     AGENT_COLOR: green
+  required:
+    - AGENT_COLOR
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`, plus literal string values under `environment.set`. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`, string values under `environment.set`, and `environment.required`. Set values may reference the plugin process environment with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
 
 ## Usage
 

@@ -7,6 +7,7 @@ export interface AgentManifest {
     avatar?: string;
   };
   environment?: {
+    required?: string[];
     set?: Record<string, string>;
   };
 }

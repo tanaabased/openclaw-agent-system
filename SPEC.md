@@ -7,11 +7,12 @@ reproducible identity, deterministic environment, agent-aware provider tools,
 and explicit lifecycle procedures.
 
 The environment runtime is the product's foundation. It resolves declared
-literal values, selected host variables, dotenv files, and 1Password
-Environments without placing agent secrets in the Gateway environment. Higher
-layers consume that environment through purpose-built configuration projections,
-Agent System-owned tools, command shims, diagnostics, installation, and later
-lifecycle features such as cron synchronization.
+literal values, dotenv files, and 1Password Environments while allowing explicit
+references to a host-environment snapshot without copying that snapshot into the
+agent environment. Higher layers consume the assembled environment through
+purpose-built configuration projections, Agent System-owned tools, command
+shims, diagnostics, installation, and later lifecycle features such as cron
+synchronization.
 
 Agent System also defines a shared provider API so this package and other
 OpenClaw plugins can expose agent-aware tools without independently rebuilding
@@ -74,8 +75,8 @@ host-management format.
 Phase 1 delivers:
 
 - strict manifest discovery, parsing, casing, and agent binding;
-- inline strings and restricted environment interpolation;
-- explicitly selected host variables and dotenv sources;
+- inline strings and restricted references to environment lookup values;
+- ordered dotenv sources;
 - lazy 1Password Environment resolution;
 - macOS Keychain bootstrap storage, ephemeral CI bootstrap, and a hardened
   credential-file fallback, with Linux credential backends following the same
@@ -233,12 +234,13 @@ Identity follows these rules:
 ## Configuration Value References
 
 Non-secret configuration values may be literal strings or restricted
-interpolations against the fully resolved Agent System environment:
+interpolations against the host lookup and fully resolved Agent System
+environment:
 
 ```yaml
 git:
   name: EMORI
-  email: ${AGENT_GIT_EMAIL}
+  email: $COMPANY_EMAIL
 
 github:
   username: ${AGENT_GITHUB_USERNAME}
@@ -252,10 +254,13 @@ environment variable; it is not the token itself. Tokens, private keys, and
 other credentials must remain environment bindings or secret references and
 must never appear as literal manifest values.
 
-Interpolation occurs after environment assembly and before a consuming
-projection is validated. A missing value is an explicit configuration error,
-not an empty string or fallback to another agent. Environment-variable names
-remain literal data keys and are never casing-converted.
+Both `$NAME` and `${NAME}` are supported for names matching
+`[A-Z_][A-Z0-9_]*`. Interpolation occurs after environment assembly and before a
+consuming projection is validated. Agent System output overrides a same-named
+host lookup value. A reference used by a configuration field does not itself add
+that name to the agent environment. A missing value is an explicit configuration
+error, not an empty string or fallback to another agent. Environment-variable
+names remain literal data keys and are never casing-converted.
 
 ## Environment Model
 
@@ -264,51 +269,38 @@ Agent System may successfully resolve a value that OpenClaw refuses to deliver
 to its built-in `exec` tool. Resolution therefore never implies that an
 arbitrary OpenClaw or third-party tool can receive the value.
 
-The first implementation slice is deliberately narrower than the completed
-Phase 1 model. It accepts only literal strings under `environment.set`, offers
-them through the agent-aware `resolve_exec_env` hook, and implements value-free
-`env` diagnostics with static delivery classification. Host inheritance,
-dotenv, 1Password, interpolation, required-variable validation, and path
+The current implementation accepts strings under `environment.set`, resolves
+restricted `$NAME` and `${NAME}` references against a fixed host-environment
+snapshot, validates `environment.required`, offers the resulting values through
+the agent-aware `resolve_exec_env` hook, and implements value-free `env`
+diagnostics with static delivery classification. Dotenv, 1Password, and path
 prepending are subsequent Phase 1 slices.
 
-The first implementation resolves four value sources, in the precedence order
-defined below:
+The completed Phase 1 environment has three output sources in a fixed order:
 
-1. variables explicitly selected from the host process;
-2. dotenv-style environment files;
-3. 1Password Environments; and
-4. inline string literals declared in `environment.set`.
+1. inline strings declared in `environment.set`;
+2. ordered dotenv files; and
+3. ordered 1Password Environments.
 
-Inline values may use restricted `${NAME}` interpolation against values already
-resolved by the preceding layers. Interpolation is a resolution feature, not an
-additional source.
+The host process environment is a lookup input, not an output source. A manifest
+must explicitly bind a host value through `environment.set` when that value
+should be part of the agent environment. Interpolation is a resolution feature,
+not an additional source.
 
 ```yaml
 environment:
-  inherit:
-    mode: allowlist
-    variables:
-      - HOME
-      - USER
-      - SHELL
-      - TERM
-      - TMPDIR
-      - LANG
-      - SSH_AUTH_SOCK
-
-  sources:
-    - type: dotenv
-      path: .agent-system/env/agent.env
-      optional: true
-    - type: onepassword-environment
-      environment-id: env_emori_dev
-      auth: onepassword-service-account
-      optional: false
-
   set:
     AGENT_SYSTEM_AGENT_ID: emori
     NODE_ENV: development
-    AGENT_EMAIL: ${COMPANY_EMAIL}
+    AGENT_EMAIL: $COMPANY_EMAIL
+
+  dotenv:
+    - .agent-system/env/base.env
+    - .agent-system/env/local.env
+
+  onepassword-environments:
+    - env_team
+    - env_emori
 
   path-prepend:
     - .agent-system/bin
@@ -322,28 +314,37 @@ environment:
 Precedence is fixed:
 
 ```text
-sanitized host environment
-  < environment.sources[0]
-  < environment.sources[1]
-  < later environment sources
-  < environment.set
+environment.set
+  < environment.dotenv[0]
+  < environment.dotenv[1]
+  < later dotenv files
+  < environment.onepassword-environments[0]
+  < environment.onepassword-environments[1]
+  < later 1Password Environments
 ```
 
-Later values override earlier values. The resolver must retain provenance so
-diagnostics can explain which source supplied or overrode a variable without
-printing its value.
+Later values override earlier values. The order is a product contract rather
+than a user-configurable cross-source merge strategy. Within each ordered source
+type, a higher array index overrides a lower index. `environment.dotenv` and
+`environment.onepassword-environments` each accept either one string or a
+non-empty list of unique strings and normalize the scalar form to a one-item
+list. Empty strings, empty declared lists, and duplicate entries are invalid.
+The resolver must retain provenance so diagnostics can explain which source
+supplied or overrode a variable without printing its value.
 
 Manifest discovery and routine Gateway hooks load and cache only validated
 non-secret manifest data. Dotenv and 1Password values are resolved lazily for
 an explicit diagnostic, installation, Agent System tool, or shim action that
 needs them. A secret must not be fetched merely because an agent session starts.
 
-### Host inheritance
+### Host environment lookup
 
-`environment.inherit.mode` is one of `none`, `allowlist`, or `all`. An allowlist
-is the recommended default because it avoids accidentally passing unrelated host
-credentials into the resolved environment. Host inheritance is still subject to
-the delivery restrictions of the eventual action surface.
+Agent System snapshots the plugin process environment as a reference lookup.
+That snapshot is never merged wholesale or selectively inherited into the agent
+environment. A declaration such as `AGENT_EMAIL: $COMPANY_EMAIL` exports only
+`AGENT_EMAIL`; `COMPANY_EMAIL` remains a host lookup input unless it is also
+declared as an Agent System output. This keeps the agent environment explicit
+and avoids accidental Gateway credential inheritance.
 
 ### Executable path projection
 
@@ -363,17 +364,19 @@ OpenClaw projection is synchronized.
 
 ### Inline values and interpolation
 
-Inline environment values are strings and support only `${UPPERCASE_NAME}`
-interpolation.
+Inline environment values are strings and support `$UPPERCASE_NAME` and
+`${UPPERCASE_NAME}` interpolation.
 
-- Values resolve against the environment constructed so far.
+- Reference names match `[A-Z_][A-Z0-9_]*`.
+- Bare references consume the longest valid name, so `${NAME}_SUFFIX` is the
+  explicit boundary form when `NAME_SUFFIX` is not the intended lookup.
+- `$$` produces one literal `$`.
+- Values resolve once against the host lookup plus the ordered external source
+  maps. `environment.set` values do not reference one another.
 - Plain values without interpolation remain literal strings.
 - Commands, backticks, shell substitutions, and arbitrary expressions never run.
 - A missing interpolation is a validation error.
 - YAML boolean and numeric coercion must not change environment values.
-- Same-block references may resolve in declaration order only if the chosen YAML
-  parser and configuration layer preserve that order reliably; otherwise they
-  are rejected in the first version.
 
 ### Dotenv files
 
@@ -382,13 +385,23 @@ It supports blank lines, comments, `NAME=value`, and optionally
 `export NAME=value`. It does not evaluate commands or shell syntax and rejects
 malformed names and NUL bytes.
 
-Relative paths resolve from the workspace root. A missing file is skipped only
-when `optional: true`. Secret-bearing files should use owner-only permissions and
-remain outside version control.
+`environment.dotenv` accepts one path or an ordered list of paths. Relative paths
+resolve from the workspace root. Declared files are required. A higher list
+index overrides a lower list index. Secret-bearing files should use owner-only
+permissions and remain outside version control.
+
+### 1Password Environments
+
+`environment.onepassword-environments` accepts one Environment id or an ordered
+list of ids. A higher list index overrides a lower list index, and 1Password
+values override dotenv and `environment.set` values. Resolution is lazy and uses
+the agent's configured bootstrap credential without adding that credential to
+the output environment.
 
 ### Required values and output safety
 
-`environment.required` lists variables that must exist before execution.
+`environment.required` is a non-empty list of unique variables that must exist
+with a non-empty value after all sources are merged and before execution.
 It does not suppress a declared variable; remove a variable from the assembled
 environment when it should not be delivered. Diagnostic output reports names,
 sources, presence, and override status without printing values. Provider result
@@ -406,16 +419,16 @@ Static delivery classes are:
 - `agent-system-only`: deliverable only to an Agent System-owned child process;
 - `exec-candidate`: offered by Agent System through
   `resolve_exec_env`, subject to OpenClaw's private runtime filter;
-- `inherited-only`: usable only when already present in the Gateway process;
 - `documented-filtered`: documented by the supported OpenClaw compatibility
   contract as rejected or stripped for that surface; or
 - `not-applicable`: the target tool does not consume process environment.
 
 The `env` command resolves the selected agent's sources and reports the
 consolidated set of environment variables Agent System provides. It reports
-variable name, final source, override history, required state, and static
-delivery class. This default view describes Agent System's resolved environment;
-it does not claim that OpenClaw accepted every variable for `exec`.
+variable name, final source, required state, and static delivery class. Once
+multi-source resolution ships, it also reports override history. This default
+view describes Agent System's resolved environment; it does not claim that
+OpenClaw accepted every variable for `exec`.
 
 Without `--agent`, `env` discovers the manifest from the current workspace
 using the normal `.agent-system/agent.yaml`, then `agent.yaml`, precedence. With
@@ -1076,19 +1089,18 @@ remain the first part of explicit `install` throughout these phases.
    binding, and metadata-only provenance.
 3. Implement `env` for current-workspace and explicit-agent selection, static
    OpenClaw delivery classification, and machine-readable value-free output.
-4. Define the remaining environment sources, scalar configuration references,
-   deterministic precedence, and provenance without resolving secrets at
-   session startup.
-5. Implement selected host inheritance, dotenv parsing, restricted
-   interpolation, and required-value checks.
-6. Add centralized secret classification and provider-output redaction.
-7. Resolve and reconcile `environment.path-prepend` for Agent System children
+4. Define the fixed output-source precedence, scalar-or-list normalization, and
+   scalar configuration references without resolving secrets at session startup.
+5. Implement `$NAME` and `${NAME}` host-lookup interpolation for
+   `environment.set`, followed by required-value checks.
+6. Implement ordered dotenv parsing and provenance, then ordered lazy 1Password
+   Environment resolution with the same merge contract.
+7. Add centralized secret classification and provider-output redaction.
+8. Resolve and reconcile `environment.path-prepend` for Agent System children
    and the bound OpenClaw agent.
-8. Define the bootstrap credential interface and implement macOS Keychain,
+9. Define the bootstrap credential interface and implement macOS Keychain,
    ephemeral CI environment input, Linux backends, and the hardened file
    fallback in that order of practical delivery.
-9. Resolve 1Password Environments lazily without forwarding the service-account
-   token.
 10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
     manifest binding, source precedence, value-free diagnostics, path
     projection, and 1Password boundaries.
@@ -1153,7 +1165,6 @@ provider work, not new Agent System core environment implementations.
   stable shared configuration package.
 - The exact schema validation library and safe YAML parser options.
 - The managed location and format for successful installation metadata.
-- Whether same-block inline environment references are supported initially.
 - The exact Linux headless service-credential integration.
 - Whether OpenClaw should expose its exec-environment projection with accepted
   and rejected diagnostics so routine inspection can avoid an active probe.

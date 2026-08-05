@@ -20,7 +20,12 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
   environment: {
     values: { AGENT_COLOR: 'green' },
     variables: [
-      { name: 'AGENT_COLOR', source: 'environment.set', staticExecDelivery: 'exec-candidate' },
+      {
+        name: 'AGENT_COLOR',
+        required: false,
+        source: 'environment.set',
+        staticExecDelivery: 'exec-candidate',
+      },
     ],
   },
 };

@@ -1,6 +1,6 @@
 # Environment Example
 
-This scenario uses a scenario-owned Data agent on a fresh runner. It verifies value-free environment inspection without invoking a model.
+This scenario uses scenario-owned Data workspaces on a fresh runner. It verifies host reference resolution, required-value enforcement, and value-free environment inspection without invoking a model.
 
 ## Setup
 
@@ -33,12 +33,18 @@ openclaw agent-system install
 ## Testing
 
 ```bash
-# should inspect literal environment metadata without exposing values
+# should inspect resolved required metadata without exposing values
 cd "$GITHUB_WORKSPACE/examples/env/data"
-openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_VISIBLE"'
-openclaw agent-system env --json | grep -F '"name": "GITHUB_TOKEN"'
-if openclaw agent-system env --json | grep -Fq -e 'leia-agent-system-visible' -e 'leia-agent-system-filtered'; then exit 1; fi
+AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BARE"'
+AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BRACED"'
+AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"required": true'
+if AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-filtered'; then exit 1; fi
 
 # should inspect a registered agent without current workspace discovery
-openclaw agent-system env --agent data --json | grep -F '"agentId": "data"'
+AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --agent data --json | grep -F '"agentId": "data"'
+
+# should fail when a required environment variable is absent
+cd "$GITHUB_WORKSPACE/examples/env/missing-required"
+if missing_output=$(openclaw agent-system env 2>&1); then exit 1; fi
+grep -F '[environment-required-missing]' <<< "$missing_output"
 ```

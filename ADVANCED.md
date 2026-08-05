@@ -48,21 +48,29 @@ agent:
 environment:
   set:
     AGENT_COLOR: green
+    AGENT_EMAIL: $COMPANY_EMAIL
     NODE_ENV: development
+  required:
+    - AGENT_EMAIL
 ```
 
-| Field               | Required      | Current behavior                                                                 |
-| ------------------- | ------------- | -------------------------------------------------------------------------------- |
-| `schema-version`    | yes           | Must be the integer `1`.                                                         |
-| `agent.id`          | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.   |
-| `agent.name`        | for `install` | Validated when present and applied as the OpenClaw display name during install.  |
-| `agent.description` | no            | Validated and loaded; reserved for a later identity surface.                     |
-| `agent.avatar`      | no            | Applied during install when declared; an undeclared existing avatar is retained. |
-| `environment.set`   | no            | Literal string map offered to the matching agent's built-in `exec` environment.  |
+| Field                  | Required      | Current behavior                                                                   |
+| ---------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| `schema-version`       | yes           | Must be the integer `1`.                                                           |
+| `agent.id`             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
+| `agent.name`           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
+| `agent.description`    | no            | Validated and loaded; reserved for a later identity surface.                       |
+| `agent.avatar`         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
+| `environment.set`      | no            | String map offered to the matching agent's built-in `exec` environment.            |
+| `environment.required` | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
-Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be YAML strings; booleans and numbers fail validation instead of being coerced. Variable names are literal data keys and are never casing-converted. The current slice does not implement interpolation, host inheritance, dotenv files, 1Password Environments, or path prepending.
+Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be YAML strings; booleans and numbers fail validation instead of being coerced. Variable names are literal data keys and are never casing-converted.
+
+Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
+
+The current slice does not implement dotenv files, 1Password Environments, or path prepending.
 
 OpenClaw applies its own private protected-variable filter after Agent System contributes values through `resolve_exec_env`. Agent System 0.1 classifies these documented, high-value restrictions as `documented-filtered`:
 
@@ -168,8 +176,8 @@ Writes structured output. It follows the same value-free contract as human outpu
 The local view includes `agentId`, `workspaceDir`, `manifestPath`, and one entry per variable:
 
 ```text
-AGENT_COLOR source=environment.set static=exec-candidate
-GITHUB_TOKEN source=environment.set static=documented-filtered
+AGENT_COLOR source=environment.set required=false static=exec-candidate
+GITHUB_TOKEN source=environment.set required=true static=documented-filtered
 ```
 
 Static classification is a compatibility hint and must not be read as an observed result from the active Gateway.
@@ -217,7 +225,7 @@ The created and updated lines may appear together on first installation. Repeate
 
 ### Environment And Credentials
 
-Selected host inheritance, required variables, interpolation, dotenv loading, 1Password Environments, path prepending, and host credential storage are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. Their complete precedence and security reference will live here when implemented.
+Ordered dotenv loading, ordered 1Password Environments, path prepending, and host credential storage are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. Their complete precedence and security reference will live here when implemented.
 
 ### Installation Scripts And Drift
 

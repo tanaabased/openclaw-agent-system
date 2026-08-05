@@ -8,5 +8,9 @@ agent:
 
 environment:
   set:
-    AGENT_SYSTEM_LEIA_VISIBLE: leia-agent-system-visible
+    AGENT_SYSTEM_LEIA_BARE: $AGENT_SYSTEM_LEIA_SOURCE
+    AGENT_SYSTEM_LEIA_BRACED: ${AGENT_SYSTEM_LEIA_SOURCE}
     GITHUB_TOKEN: leia-agent-system-filtered
+  required:
+    - AGENT_SYSTEM_LEIA_BARE
+    - AGENT_SYSTEM_LEIA_BRACED
