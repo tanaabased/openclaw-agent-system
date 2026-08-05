@@ -14,7 +14,8 @@ openclaw plugins enable agent-system
 
 ```bash
 # should load the packed runtime from dist
-openclaw plugins inspect agent-system --runtime --json | paste -sd ' ' | grep -F '"id": "agent-system"' | grep -F 'dist/index.js'
+openclaw plugins inspect agent-system --runtime --json | grep -F '"id": "agent-system"'
+openclaw plugins inspect agent-system --runtime --json | grep -F 'dist/index.js'
 
 # should expose the canonical command tree and its alias
 openclaw agent-system --help | grep -F 'validate'

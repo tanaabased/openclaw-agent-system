@@ -22,6 +22,7 @@
 - Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.
 - Pipe command output directly into fixed-string assertions when possible; do not write output to a temporary file solely for a later grep.
+- Use multiple direct command-and-grep assertions in one test when expected properties occur on different output lines; do not reshape output solely to force one assertion pipeline.
 - Do not add preflight checks when the immediately following product command validates the same requirement.
 - Prefer one command per line; avoid `command && next-command` when ordinary newline sequencing expresses the same fail-fast flow.
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.

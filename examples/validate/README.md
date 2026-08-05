@@ -19,7 +19,8 @@ openclaw agent-system validate | grep -F 'valid: Agent System manifest for data'
 
 # should prefer the hidden manifest and report the ignored shorthand
 cd "$GITHUB_WORKSPACE/examples/validate/preferred"
-openclaw agent-system validate 2>&1 | paste -sd ' ' | grep -F 'valid: Agent System manifest for data' | grep -F '[manifest-shadowed]'
+openclaw agent-system validate 2>&1 | grep -F 'valid: Agent System manifest for data'
+openclaw agent-system validate 2>&1 | grep -F '[manifest-shadowed]'
 
 # should reject an unknown schema key with a failing exit code
 cd "$GITHUB_WORKSPACE/examples/validate/invalid"
