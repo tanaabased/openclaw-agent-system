@@ -32,9 +32,13 @@ The implicit `main` agent is not redundantly added when OpenClaw has no explicit
 
 ## Configuration Reference
 
+Agent System currently has two configuration layers: an empty global plugin configuration and the per-workspace manifest described below.
+
+### Plugin Configuration
+
 Agent System currently owns no global plugin configuration; `openclaw.plugin.json` intentionally exposes an empty strict configuration schema. The workspace manifest is the current configuration surface.
 
-### Manifest Schema
+### Workspace Manifest
 
 ```yaml
 schema-version: 1
@@ -66,13 +70,17 @@ environment:
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
+#### Environment Resolution And Exec Filtering
+
 Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be YAML strings; booleans and numbers fail validation instead of being coerced. Variable names are literal data keys and are never casing-converted.
 
 Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
 
 The current slice does not implement dotenv files, 1Password Environments, or path prepending.
 
-OpenClaw applies its own private protected-variable filter after Agent System contributes values through `resolve_exec_env`. Agent System 0.1 classifies these documented, high-value restrictions as `documented-filtered`:
+OpenClaw filters plugin-provided variables after Agent System contributes them through `resolve_exec_env`. `PATH` is always removed, and invalid or dangerous override names—including loader, proxy, TLS, and runtime injection variables—are also removed. See OpenClaw's [exec environment hook documentation](https://docs.openclaw.ai/plugins/hooks#exec-environment-hook) and authoritative [host environment security policy](https://github.com/openclaw/openclaw/blob/main/src/infra/host-env-security-policy.json). The policy belongs to OpenClaw and can change between releases.
+
+Agent System cannot observe the active Gateway's final filtering decision. Its `env` command therefore classifies this conservative subset of documented, high-value restrictions as `documented-filtered`:
 
 ```text
 ALL_PROXY
@@ -98,7 +106,7 @@ SSL_CERT_FILE
 ZDOTDIR
 ```
 
-Names beginning with `BASH_FUNC_`, `DYLD_`, `GIT_CONFIG_`, or `LD_` receive the same classification. Other names are `exec-candidate`, not guaranteed accepted. This compatibility list is intentionally not a copy of OpenClaw's private implementation and may be incomplete; the current CLI does not observe the active Gateway's final filtering decision.
+Names beginning with `BASH_FUNC_`, `DYLD_`, `GIT_CONFIG_`, or `LD_` receive the same classification. Other names are `exec-candidate`, not guaranteed accepted. This compatibility list is intentionally incomplete and is not a substitute for OpenClaw's current policy.
 
 ### Runtime Logging
 
