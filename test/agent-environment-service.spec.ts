@@ -208,7 +208,7 @@ describe('lib/agent-environment-service', () => {
           return loaded;
         },
       },
-      onePasswordEnvironmentService: {
+      opEnvironmentService: {
         async load(agentId, environmentIds) {
           calls.push({ agentId, environmentIds });
           const sources: AgentEnvironmentInputSource[] = [
@@ -266,7 +266,7 @@ describe('lib/agent-environment-service', () => {
           return loaded;
         },
       },
-      onePasswordEnvironmentService: {
+      opEnvironmentService: {
         async load() {
           return {
             status: 'invalid',

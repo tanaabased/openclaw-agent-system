@@ -49,7 +49,7 @@ AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env -
 # should fail when a required environment variable is absent
 cd "$GITHUB_WORKSPACE/examples/env/missing-required"
 if openclaw agent-system env; then exit 1; fi
-openclaw agent-system env 2>&1 | grep -F '[environment-required-missing]'
+grep -F 'code=environment-required-missing' < <(openclaw agent-system env 2>&1)
 
 # should resolve a live 1password environment without exposing values or its bootstrap token
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"

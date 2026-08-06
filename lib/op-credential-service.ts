@@ -5,52 +5,52 @@ import type {
   CredentialStoreWriteResult,
 } from './credential-store.ts';
 
-export const onePasswordCredentialId = 'op';
-export const onePasswordServiceAccountTokenEnvironmentVariable = 'OP_SERVICE_ACCOUNT_TOKEN';
+export const opCredentialId = 'op';
+export const opServiceAccountTokenEnvironmentVariable = 'OP_SERVICE_ACCOUNT_TOKEN';
 
-export interface OnePasswordCredentialSource {
+export interface OpCredentialSource {
   id: string;
   type: 'environment' | 'store';
 }
 
-export type OnePasswordCredentialResolution =
+export type OpCredentialResolution =
   | CredentialStoreProblem
   | {
-      source: OnePasswordCredentialSource;
+      source: OpCredentialSource;
       status: 'resolved';
       token: string;
     }
   | { status: 'missing' };
 
-export interface OnePasswordCredentialResolveOptions {
+export interface OpCredentialResolveOptions {
   allowEnvironmentFallback?: boolean;
   storeId?: string;
 }
 
-export interface OnePasswordCredentialServiceDependencies {
+export interface OpCredentialServiceDependencies {
   hostEnvironment: Readonly<Record<string, string | undefined>>;
   stores?: readonly CredentialStore[];
 }
 
 /** Resolve and mutate agent-scoped OP credentials without exposing their values as metadata. */
-export default class OnePasswordCredentialService {
+export default class OpCredentialService {
   readonly #hostEnvironment: Readonly<Record<string, string | undefined>>;
   readonly #stores: readonly CredentialStore[];
 
-  constructor(dependencies: OnePasswordCredentialServiceDependencies) {
+  constructor(dependencies: OpCredentialServiceDependencies) {
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
     this.#stores = [...(dependencies.stores ?? [])];
   }
 
   environmentServiceAccountToken(): string | undefined {
-    const token = this.#hostEnvironment[onePasswordServiceAccountTokenEnvironmentVariable];
+    const token = this.#hostEnvironment[opServiceAccountTokenEnvironmentVariable];
     return token !== undefined && token.trim() !== '' ? token : undefined;
   }
 
   async resolveServiceAccountToken(
     agentId: string,
-    options: OnePasswordCredentialResolveOptions = {},
-  ): Promise<OnePasswordCredentialResolution> {
+    options: OpCredentialResolveOptions = {},
+  ): Promise<OpCredentialResolution> {
     const stores = options.storeId
       ? this.#stores.filter(({ id }) => id === options.storeId)
       : this.#stores;
@@ -64,7 +64,7 @@ export default class OnePasswordCredentialService {
 
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
-      const result = await store.read({ agentId, credentialId: onePasswordCredentialId });
+      const result = await store.read({ agentId, credentialId: opCredentialId });
       if (result.status === 'found') {
         return {
           status: 'resolved',
@@ -103,7 +103,7 @@ export default class OnePasswordCredentialService {
         message: `Credential store ${storeId} is not available.`,
       };
     }
-    return store.write({ agentId, credentialId: onePasswordCredentialId }, token);
+    return store.write({ agentId, credentialId: opCredentialId }, token);
   }
 
   async removeServiceAccountToken(
@@ -118,6 +118,6 @@ export default class OnePasswordCredentialService {
         message: `Credential store ${storeId} is not available.`,
       };
     }
-    return store.remove({ agentId, credentialId: onePasswordCredentialId });
+    return store.remove({ agentId, credentialId: opCredentialId });
   }
 }

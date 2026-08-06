@@ -147,7 +147,7 @@ describe('utils/resolve-agent-environment', () => {
             values: { LAYERED: 'dotenv-value' },
           },
         ],
-        onePassword: [
+        op: [
           {
             source: 'environment.op[0]',
             sensitiveNames: ['ONEPASSWORD_REFERENCE'],

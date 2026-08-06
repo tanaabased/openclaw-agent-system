@@ -213,7 +213,14 @@ describe('lib/agent-install-service', () => {
         manifest: { ...manifest, environment: { op: ['private-environment-id'] } },
         workspaceDir: '/workspace/data',
       }),
-      /\[op-credential-not-stored\]/,
+      (error: unknown) => {
+        assert.equal(error instanceof AgentInstallError, true);
+        if (error instanceof AgentInstallError) {
+          assert.equal(error.code, 'op-credential-not-stored');
+          assert.equal(error.message, 'Set the credential first.');
+        }
+        return true;
+      },
     );
     assert.equal(configReads, 0);
     assert.equal(commands, 0);

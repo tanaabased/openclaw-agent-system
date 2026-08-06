@@ -7,7 +7,7 @@ import type {
   CredentialStoreRemoveResult,
   CredentialStoreWriteResult,
 } from '../lib/credential-store.ts';
-import OnePasswordCredentialService from '../lib/onepassword-credential-service.ts';
+import OpCredentialService from '../lib/op-credential-service.ts';
 
 function createStore(
   id: string,
@@ -31,10 +31,10 @@ function createStore(
   };
 }
 
-describe('lib/onepassword-credential-service', () => {
+describe('lib/op-credential-service', () => {
   it('should prefer stored credentials before the process-environment fallback', async () => {
     const calls: Array<{ key: CredentialKey; operation: string }> = [];
-    const service = new OnePasswordCredentialService({
+    const service = new OpCredentialService({
       hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
       stores: [createStore('file', { status: 'found', value: 'stored-token' }, calls)],
     });
@@ -54,7 +54,7 @@ describe('lib/onepassword-credential-service', () => {
 
   it('should permanently support a fixed process-environment fallback', async () => {
     const hostEnvironment = { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' };
-    const service = new OnePasswordCredentialService({
+    const service = new OpCredentialService({
       hostEnvironment,
       stores: [],
     });
@@ -69,7 +69,7 @@ describe('lib/onepassword-credential-service', () => {
 
   it('should bypass the process environment for an exact store request', async () => {
     const calls: Array<{ key: CredentialKey; operation: string }> = [];
-    const service = new OnePasswordCredentialService({
+    const service = new OpCredentialService({
       hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
       stores: [createStore('file', { status: 'missing' }, calls)],
     });
@@ -80,7 +80,7 @@ describe('lib/onepassword-credential-service', () => {
   });
 
   it('should allow an unavailable store to fall through but fail closed on unsafe state', async () => {
-    const unavailable = new OnePasswordCredentialService({
+    const unavailable = new OpCredentialService({
       hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
       stores: [
         createStore(
@@ -90,7 +90,7 @@ describe('lib/onepassword-credential-service', () => {
         ),
       ],
     });
-    const unsafe = new OnePasswordCredentialService({
+    const unsafe = new OpCredentialService({
       hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
       stores: [
         createStore(
@@ -111,7 +111,7 @@ describe('lib/onepassword-credential-service', () => {
 
   it('should route writes and removals through the selected store', async () => {
     const calls: Array<{ key: CredentialKey; operation: string; value?: string }> = [];
-    const service = new OnePasswordCredentialService({
+    const service = new OpCredentialService({
       hostEnvironment: {},
       stores: [createStore('file', { status: 'missing' }, calls)],
     });
@@ -136,7 +136,7 @@ describe('lib/onepassword-credential-service', () => {
   });
 
   it('should reject unknown stores without trying the process environment', async () => {
-    const service = new OnePasswordCredentialService({
+    const service = new OpCredentialService({
       hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
       stores: [],
     });

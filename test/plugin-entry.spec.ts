@@ -32,6 +32,7 @@ describe('index', () => {
       warn() {},
     };
     const api = {
+      id: 'agent-system',
       logger,
       on(name: string) {
         hookNames.push(name);

@@ -1,16 +1,23 @@
-import type AgentInstallService from '../lib/agent-install-service.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
 import {
-  type CliOutput,
+  AgentInstallError,
+  type default as AgentInstallService,
+} from '../lib/agent-install-service.ts';
+import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
+import {
+  type Logger,
+  reportError,
   reportManifestDiagnostics,
   reportManifestFailure,
-} from '../lib/cli-output.ts';
+} from '../lib/logger.ts';
 
 export interface InstallAgentSystemOptions {
   installService: Pick<AgentInstallService, 'install'>;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForWorkspace'>;
   output: CliOutput;
   setExitCode(code: number): void;
+  styles?: CliStyles;
   workspaceDir: string;
 }
 
@@ -24,34 +31,56 @@ export default async function installAgentSystem(
     'cli',
   );
   if (result.status !== 'loaded') {
-    reportManifestFailure(result, options.output);
+    reportManifestFailure(result, options.logger);
     options.setExitCode(1);
     return;
   }
 
-  reportManifestDiagnostics(result, options.output);
+  reportManifestDiagnostics(result, options.logger);
   try {
     const installed = await options.installService.install({
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
     });
     if (installed.actions.length === 0) {
-      options.output.write(
-        `unchanged: OpenClaw agent ${installed.agentId} is installed at ${installed.workspaceDir}\n`,
+      writeCliSummary(
+        options.output,
+        [
+          {
+            label: 'unchanged',
+            style: 'status',
+            value: `OpenClaw agent ${installed.agentId}`,
+          },
+          { label: 'workspace', style: 'target', value: installed.workspaceDir },
+        ],
+        options.styles,
       );
       return;
     }
+    const lines = [];
     if (installed.actions.includes('add-agent')) {
-      options.output.write(
-        `created: OpenClaw agent ${installed.agentId} at ${installed.workspaceDir}\n`,
-      );
+      lines.push({
+        label: 'created',
+        style: 'action' as const,
+        value: `OpenClaw agent ${installed.agentId}`,
+      });
     }
     if (installed.actions.includes('set-identity')) {
-      options.output.write(`updated: OpenClaw identity for ${installed.agentId}\n`);
+      lines.push({
+        label: 'updated',
+        style: 'action' as const,
+        value: `OpenClaw identity for ${installed.agentId}`,
+      });
     }
+    lines.push({ label: 'workspace', style: 'target' as const, value: installed.workspaceDir });
+    writeCliSummary(options.output, lines, options.styles);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    options.output.error(`error: ${message}\n`);
+    reportError(
+      options.logger,
+      'install',
+      error,
+      error instanceof AgentInstallError ? error.code : undefined,
+    );
     options.setExitCode(1);
   }
 }

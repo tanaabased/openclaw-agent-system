@@ -9,9 +9,10 @@ import AgentManifestService from './lib/agent-manifest-service.ts';
 import FileCredentialStore, {
   resolveFileCredentialStoreRoot,
 } from './lib/file-credential-store.ts';
-import OnePasswordCredentialManager from './lib/onepassword-credential-manager.ts';
-import OnePasswordCredentialService from './lib/onepassword-credential-service.ts';
-import OnePasswordEnvironmentService from './lib/onepassword-environment-service.ts';
+import OpCredentialManager from './lib/op-credential-manager.ts';
+import OpCredentialService from './lib/op-credential-service.ts';
+import OpEnvironmentService from './lib/op-environment-service.ts';
+import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
 
@@ -21,9 +22,10 @@ export default definePluginEntry({
   description:
     'Define reproducible identity, environment, and installation for OpenClaw agent workspaces.',
   register(api) {
+    const logger = createAgentSystemLogger(api.logger, api.id);
     const manifestService = new AgentManifestService({
       getConfig: () => api.runtime.config.current(),
-      logger: api.logger,
+      logger,
       parseSessionAgentId(sessionKey) {
         return parseAgentSessionKey(sessionKey)?.agentId;
       },
@@ -35,17 +37,17 @@ export default definePluginEntry({
       currentUid: process.getuid?.(),
       rootDir: resolveFileCredentialStoreRoot(process.env),
     });
-    const onePasswordCredentialService = new OnePasswordCredentialService({
+    const opCredentialService = new OpCredentialService({
       hostEnvironment: process.env,
       stores: [fileCredentialStore],
     });
-    const onePasswordEnvironmentService = new OnePasswordEnvironmentService({
-      credentialService: onePasswordCredentialService,
+    const opEnvironmentService = new OpEnvironmentService({
+      credentialService: opCredentialService,
       integrationVersion: api.version ?? 'dev',
     });
-    const credentialManager = new OnePasswordCredentialManager({
-      credentialService: onePasswordCredentialService,
-      environmentService: onePasswordEnvironmentService,
+    const credentialManager = new OpCredentialManager({
+      credentialService: opCredentialService,
+      environmentService: opEnvironmentService,
     });
     const installService = new AgentInstallService({
       credentialManager,
@@ -61,17 +63,18 @@ export default definePluginEntry({
     });
     const environmentService = new AgentEnvironmentService({
       hostEnvironment: process.env,
-      logger: api.logger,
+      logger,
       manifestService,
-      onePasswordEnvironmentService,
+      opEnvironmentService,
     });
     registerAgentSystemHooks(api, manifestService);
     api.registerCli(
-      ({ program }) => {
+      ({ logger: cliLogger, program }) => {
         registerAgentSystemCli(program, {
           credentialManager,
           environmentService,
           installService,
+          logger: createAgentSystemLogger(cliLogger, api.id),
           manifestService,
         });
       },

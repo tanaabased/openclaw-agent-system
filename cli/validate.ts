@@ -1,15 +1,14 @@
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import {
-  type CliOutput,
-  reportManifestDiagnostics,
-  reportManifestFailure,
-} from '../lib/cli-output.ts';
+import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
+import { type Logger, reportManifestDiagnostics, reportManifestFailure } from '../lib/logger.ts';
 
 export interface ValidateAgentSystemOptions {
   agentId?: string;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
   setExitCode(code: number): void;
+  styles?: CliStyles;
   workspaceDir: string;
 }
 
@@ -22,13 +21,22 @@ export default async function validateAgentSystem(
     : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
 
   if (result.status !== 'loaded') {
-    reportManifestFailure(result, options.output);
+    reportManifestFailure(result, options.logger);
     options.setExitCode(1);
     return;
   }
 
-  options.output.write(
-    `valid: Agent System manifest for ${result.manifest.agent.id} at ${result.path}\n`,
+  writeCliSummary(
+    options.output,
+    [
+      {
+        label: 'valid',
+        style: 'status',
+        value: `Agent System manifest for ${result.manifest.agent.id}`,
+      },
+      { label: 'manifest', style: 'target', value: result.path },
+    ],
+    options.styles,
   );
-  reportManifestDiagnostics(result, options.output);
+  reportManifestDiagnostics(result, options.logger);
 }

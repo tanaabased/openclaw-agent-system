@@ -2,22 +2,19 @@ import type { GetVariablesResponse } from '@1password/sdk';
 
 import type { ManifestDiagnostic } from '../utils/manifest-types.ts';
 import type { AgentEnvironmentInputSource } from '../utils/resolve-agent-environment.ts';
-import type OnePasswordCredentialService from './onepassword-credential-service.ts';
-import type {
-  OnePasswordCredentialResolveOptions,
-  OnePasswordCredentialSource,
-} from './onepassword-credential-service.ts';
+import type OpCredentialService from './op-credential-service.ts';
+import type { OpCredentialResolveOptions, OpCredentialSource } from './op-credential-service.ts';
 
-export interface OnePasswordEnvironmentClient {
+export interface OpEnvironmentClient {
   getVariables(environmentId: string): Promise<GetVariablesResponse>;
 }
 
-export type CreateOnePasswordEnvironmentClient = (
+export type CreateOpEnvironmentClient = (
   serviceAccountToken: string,
   integrationVersion: string,
-) => Promise<OnePasswordEnvironmentClient>;
+) => Promise<OpEnvironmentClient>;
 
-export type OnePasswordEnvironmentLoadResult =
+export type OpEnvironmentLoadResult =
   | {
       status: 'invalid';
       diagnostics: ManifestDiagnostic[];
@@ -27,7 +24,7 @@ export type OnePasswordEnvironmentLoadResult =
       sources: AgentEnvironmentInputSource[];
     };
 
-export type OnePasswordTokenValidationResult =
+export type OpTokenValidationResult =
   | {
       status: 'invalid';
       diagnostics: ManifestDiagnostic[];
@@ -37,17 +34,17 @@ export type OnePasswordTokenValidationResult =
       environmentCount: number;
     };
 
-export type OnePasswordCredentialValidationResult =
-  | Exclude<OnePasswordTokenValidationResult, { status: 'valid' }>
+export type OpCredentialValidationResult =
+  | Exclude<OpTokenValidationResult, { status: 'valid' }>
   | {
       status: 'valid';
       environmentCount: number;
-      source: OnePasswordCredentialSource;
+      source: OpCredentialSource;
     };
 
-export interface OnePasswordEnvironmentServiceDependencies {
-  createClient?: CreateOnePasswordEnvironmentClient;
-  credentialService: Pick<OnePasswordCredentialService, 'resolveServiceAccountToken'>;
+export interface OpEnvironmentServiceDependencies {
+  createClient?: CreateOpEnvironmentClient;
+  credentialService: Pick<OpCredentialService, 'resolveServiceAccountToken'>;
   integrationVersion: string;
 }
 
@@ -57,7 +54,7 @@ const opFieldPath = '/environment/op';
 async function createSdkClient(
   serviceAccountToken: string,
   integrationVersion: string,
-): Promise<OnePasswordEnvironmentClient> {
+): Promise<OpEnvironmentClient> {
   const { createClient } = await import('@1password/sdk');
   const client = await createClient({
     auth: serviceAccountToken,
@@ -80,21 +77,18 @@ function invalid(code: string, message: string, fieldPath = opFieldPath) {
 }
 
 /** Lazily authenticate, validate access, and load ordered OP Environment variables. */
-export default class OnePasswordEnvironmentService {
-  readonly #createClient: CreateOnePasswordEnvironmentClient;
-  readonly #credentialService: Pick<OnePasswordCredentialService, 'resolveServiceAccountToken'>;
+export default class OpEnvironmentService {
+  readonly #createClient: CreateOpEnvironmentClient;
+  readonly #credentialService: Pick<OpCredentialService, 'resolveServiceAccountToken'>;
   readonly #integrationVersion: string;
 
-  constructor(dependencies: OnePasswordEnvironmentServiceDependencies) {
+  constructor(dependencies: OpEnvironmentServiceDependencies) {
     this.#createClient = dependencies.createClient ?? createSdkClient;
     this.#credentialService = dependencies.credentialService;
     this.#integrationVersion = dependencies.integrationVersion;
   }
 
-  async load(
-    agentId: string,
-    environmentIds: readonly string[],
-  ): Promise<OnePasswordEnvironmentLoadResult> {
+  async load(agentId: string, environmentIds: readonly string[]): Promise<OpEnvironmentLoadResult> {
     if (environmentIds.length === 0) return { status: 'loaded', sources: [] };
 
     const credential = await this.#resolveCredential(agentId);
@@ -105,8 +99,8 @@ export default class OnePasswordEnvironmentService {
   async validate(
     agentId: string,
     environmentIds: readonly string[],
-    options: OnePasswordCredentialResolveOptions = {},
-  ): Promise<OnePasswordCredentialValidationResult> {
+    options: OpCredentialResolveOptions = {},
+  ): Promise<OpCredentialValidationResult> {
     if (environmentIds.length === 0) {
       return invalid(
         'op-environment-not-configured',
@@ -123,7 +117,7 @@ export default class OnePasswordEnvironmentService {
   async validateToken(
     token: string,
     environmentIds: readonly string[],
-  ): Promise<OnePasswordTokenValidationResult> {
+  ): Promise<OpTokenValidationResult> {
     if (environmentIds.length === 0) {
       return invalid(
         'op-environment-not-configured',
@@ -149,9 +143,9 @@ export default class OnePasswordEnvironmentService {
 
   async #resolveCredential(
     agentId: string,
-    options: OnePasswordCredentialResolveOptions = {},
+    options: OpCredentialResolveOptions = {},
   ): Promise<
-    | { status: 'resolved'; source: OnePasswordCredentialSource; token: string }
+    | { status: 'resolved'; source: OpCredentialSource; token: string }
     | { status: 'invalid'; diagnostics: ManifestDiagnostic[] }
   > {
     let credential;
@@ -176,7 +170,7 @@ export default class OnePasswordEnvironmentService {
   async #authenticatedClient(
     token: string,
   ): Promise<
-    | { status: 'authenticated'; client: OnePasswordEnvironmentClient }
+    | { status: 'authenticated'; client: OpEnvironmentClient }
     | { status: 'invalid'; diagnostics: ManifestDiagnostic[] }
   > {
     try {
@@ -195,7 +189,7 @@ export default class OnePasswordEnvironmentService {
   async #loadWithToken(
     token: string,
     environmentIds: readonly string[],
-  ): Promise<OnePasswordEnvironmentLoadResult> {
+  ): Promise<OpEnvironmentLoadResult> {
     const client = await this.#authenticatedClient(token);
     if (client.status === 'invalid') return client;
 

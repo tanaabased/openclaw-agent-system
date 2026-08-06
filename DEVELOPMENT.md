@@ -91,7 +91,7 @@ openclaw devguard exec -- agent-system validate
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
 
-Phase 1 manifest lifecycle events (`agent_system.manifest_loaded`, `manifest_changed`, `manifest_invalid`, `manifest_shadowed`, and debug-only `manifest_absent`) appear in the `devguard run` terminal when `OPENCLAW_LOG_LEVEL=debug` is set. `devguard tail` shows DevGuard policy audit records, not the plugin logger stream. Manifest contents and values are never included in Agent System lifecycle logs.
+Phase 1 manifest lifecycle events (`[agent-system] manifest_loaded`, `manifest_changed`, `manifest_invalid`, `manifest_shadowed`, and debug-only `manifest_absent`) appear in the `devguard run` terminal when `OPENCLAW_LOG_LEVEL=debug` is set. `devguard tail` shows DevGuard policy audit records, not the plugin logger stream. Manifest contents and values are never included in Agent System lifecycle logs.
 
 To exercise an agent-requested tool call and its audit records through `tanaabot`:
 

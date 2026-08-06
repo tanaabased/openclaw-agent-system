@@ -4,6 +4,7 @@ import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import { createCliStyles } from '../lib/cli-output.ts';
 
 const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -19,7 +20,8 @@ const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
 };
 
 function harness() {
-  const output = { error: [] as string[], write: [] as string[] };
+  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const output: string[] = [];
   const exitCodes: number[] = [];
   return {
     exitCodes,
@@ -31,18 +33,23 @@ function harness() {
         return loaded;
       },
     },
-    output: {
+    logger: {
       error(message: string) {
-        output.error.push(message);
+        logs.error.push(message);
       },
-      write(message: string) {
-        output.write.push(message);
+      info(message: string) {
+        logs.info.push(message);
+      },
+      warn(message: string) {
+        logs.warn.push(message);
       },
     },
-    records: output,
+    output: { writeStdout: (message: string) => output.push(message) },
+    records: { logs, output },
     setExitCode(code: number) {
       exitCodes.push(code);
     },
+    styles: createCliStyles({ NO_COLOR: '1' }),
   };
 }
 
@@ -60,16 +67,18 @@ describe('cli/credentials', () => {
         },
       },
       fromEnvironment: false,
+      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
       storeId: 'file',
+      styles: test.styles,
       workspaceDir: '/workspace',
     });
 
     assert.equal(managerCalls, 0);
     assert.deepEqual(test.exitCodes, [1]);
-    assert.equal(test.records.error.join('').includes('requires --from-env'), true);
+    assert.equal(test.records.logs.error.join('').includes('requires --from-env'), true);
   });
 
   it('should report credential source and environment count without values', async () => {
@@ -87,16 +96,18 @@ describe('cli/credentials', () => {
           };
         },
       },
+      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
       storeId: 'file',
+      styles: test.styles,
       workspaceDir: '/workspace',
     });
 
     assert.deepEqual(test.exitCodes, []);
-    assert.deepEqual(test.records.write, [
-      'valid: op credential for data source=store:file environments=1\n',
+    assert.deepEqual(test.records.output, [
+      'valid         op credential for data\nsource        store:file\nenvironments  1\n',
     ]);
   });
 
@@ -110,15 +121,17 @@ describe('cli/credentials', () => {
           return { status: 'missing', agentId: 'data', storeId: 'file' };
         },
       },
+      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
       storeId: 'file',
+      styles: test.styles,
       workspaceDir: '/workspace',
     });
 
-    assert.deepEqual(test.records.write, [
-      'unchanged: op credential for data is not stored in file\n',
+    assert.deepEqual(test.records.output, [
+      'unchanged  op credential for data is not stored\nstore      file\n',
     ]);
   });
 
@@ -132,13 +145,15 @@ describe('cli/credentials', () => {
           throw new Error('not expected');
         },
       },
+      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
+      styles: test.styles,
       workspaceDir: '/workspace',
     });
 
     assert.deepEqual(test.exitCodes, [1]);
-    assert.deepEqual(test.records.error, ['error: unsupported credential other\n']);
+    assert.deepEqual(test.records.logs.error, ['credentials: unsupported credential other']);
   });
 });

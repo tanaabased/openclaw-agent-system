@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import installAgentSystem from '../cli/install.ts';
 import type { AgentInstallResult } from '../lib/agent-install-service.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import { createCliStyles } from '../lib/cli-output.ts';
 
 const validResult: AgentManifestLoadResult = {
   status: 'loaded',
@@ -19,7 +20,8 @@ function createHarness(
     manifest?: AgentManifestLoadResult;
   } = {},
 ) {
-  const output = { error: [] as string[], write: [] as string[] };
+  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const output: string[] = [];
   const calls = {
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
     workspace: [] as string[],
@@ -29,6 +31,7 @@ function createHarness(
   return {
     calls,
     exitCodes,
+    logs,
     output,
     run: () =>
       installAgentSystem({
@@ -45,17 +48,20 @@ function createHarness(
             );
           },
         },
+        logger: {
+          error: (message) => logs.error.push(message),
+          info: (message) => logs.info.push(message),
+          warn: (message) => logs.warn.push(message),
+        },
         manifestService: {
           async loadForWorkspace(workspaceDir) {
             calls.workspace.push(workspaceDir);
             return options.manifest ?? validResult;
           },
         },
-        output: {
-          error: (message) => output.error.push(message),
-          write: (message) => output.write.push(message),
-        },
+        output: { writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
+        styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
       }),
   };
@@ -71,9 +77,8 @@ describe('cli/install', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
-    assert.deepEqual(output.write, [
-      'created: OpenClaw agent tanaabot at /workspace\n',
-      'updated: OpenClaw identity for tanaabot\n',
+    assert.deepEqual(output, [
+      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\nworkspace  /workspace\n',
     ]);
   });
 
@@ -84,20 +89,18 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(output.write, [
-      'unchanged: OpenClaw agent tanaabot is installed at /workspace\n',
-    ]);
+    assert.deepEqual(output, ['unchanged  OpenClaw agent tanaabot\nworkspace  /workspace\n']);
   });
 
   it('should report installation failures and set a failing exit code', async () => {
-    const { exitCodes, output, run } = createHarness({
+    const { exitCodes, logs, run } = createHarness({
       install: new Error('agent workspace conflict'),
     });
 
     await run();
 
     assert.deepEqual(exitCodes, [1]);
-    assert.deepEqual(output.error, ['error: agent workspace conflict\n']);
+    assert.deepEqual(logs.error, ['install: agent workspace conflict']);
   });
 
   it('should not install an invalid workspace manifest', async () => {

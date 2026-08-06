@@ -7,8 +7,9 @@ import validateAgentSystem from '../cli/validate.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
-import { type CliOutput, defaultCliOutput } from './cli-output.ts';
-import type OnePasswordCredentialManager from './onepassword-credential-manager.ts';
+import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from './cli-output.ts';
+import type { Logger } from './logger.ts';
+import type OpCredentialManager from './op-credential-manager.ts';
 
 type Action = (...args: unknown[]) => unknown;
 
@@ -24,20 +25,19 @@ export interface CommandLike {
 
 export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
-  credentialManager: Pick<
-    OnePasswordCredentialManager,
-    'setFromEnvironment' | 'unset' | 'validate'
-  >;
+  credentialManager: Pick<OpCredentialManager, 'setFromEnvironment' | 'unset' | 'validate'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
   installService: Pick<AgentInstallService, 'install'>;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output?: CliOutput;
   setExitCode?: (code: number) => void;
+  styles?: CliStyles;
 }
 
 function writeHelp(command: CommandLike, output: CliOutput): void {
   const help = command.helpInformation();
-  output.write(help.endsWith('\n') ? help : `${help}\n`);
+  writeCliLines(output, [help.endsWith('\n') ? help.slice(0, -1) : help]);
 }
 
 /** Register the plugin-owned command tree over the manifest service. */
@@ -61,9 +61,11 @@ export default function registerAgentSystemCli(
       const agentId = validate.opts().agent;
       await validateAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
+        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
+        styles: options.styles,
         workspaceDir: cwd(),
       });
     });
@@ -79,8 +81,10 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         environmentService: options.environmentService,
         json: commandOptions.json === true,
+        logger: options.logger,
         output,
         setExitCode,
+        styles: options.styles,
         workspaceDir: cwd(),
       });
     });
@@ -103,9 +107,11 @@ export default function registerAgentSystemCli(
         credential: String(credential),
         credentialManager: options.credentialManager,
         fromEnvironment: commandOptions.fromEnv === true,
+        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
+        styles: options.styles,
         ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });
@@ -123,9 +129,11 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         credential: String(credential),
         credentialManager: options.credentialManager,
+        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
+        styles: options.styles,
         ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });
@@ -143,9 +151,11 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         credential: String(credential),
         credentialManager: options.credentialManager,
+        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
+        styles: options.styles,
         ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });
@@ -156,9 +166,11 @@ export default function registerAgentSystemCli(
     .action(async () => {
       await installAgentSystem({
         installService: options.installService,
+        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
+        styles: options.styles,
         workspaceDir: cwd(),
       });
     });

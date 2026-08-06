@@ -1,19 +1,23 @@
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import type OnePasswordCredentialManager from '../lib/onepassword-credential-manager.ts';
+import type OpCredentialManager from '../lib/op-credential-manager.ts';
+import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
 import {
-  type CliOutput,
+  formatDiagnostic,
+  type Logger,
   reportManifestDiagnostics,
   reportManifestFailure,
-} from '../lib/cli-output.ts';
+} from '../lib/logger.ts';
 
 export interface ValidateCredentialsAgentSystemOptions {
   agentId?: string;
   credential: string;
-  credentialManager: Pick<OnePasswordCredentialManager, 'validate'>;
+  credentialManager: Pick<OpCredentialManager, 'validate'>;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
   setExitCode(code: number): void;
   storeId?: string;
+  styles?: CliStyles;
   workspaceDir: string;
 }
 
@@ -22,7 +26,7 @@ export default async function validateCredentialsAgentSystem(
   options: ValidateCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
-    options.output.error(`error: unsupported credential ${options.credential}\n`);
+    options.logger.error(`credentials: unsupported credential ${options.credential}`);
     options.setExitCode(1);
     return;
   }
@@ -31,19 +35,27 @@ export default async function validateCredentialsAgentSystem(
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
   if (loaded.status !== 'loaded') {
-    reportManifestFailure(loaded, options.output);
+    reportManifestFailure(loaded, options.logger);
     options.setExitCode(1);
     return;
   }
-  reportManifestDiagnostics(loaded, options.output);
+  reportManifestDiagnostics(loaded, options.logger);
 
   const result = await options.credentialManager.validate(loaded.manifest, options.storeId);
   if (result.status === 'invalid') {
-    options.output.error(`error: [${result.code}] ${result.message}\n`);
+    options.logger.error(
+      formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+    );
     options.setExitCode(1);
     return;
   }
-  options.output.write(
-    `valid: op credential for ${result.agentId} source=${result.source} environments=${result.environmentCount}\n`,
+  writeCliSummary(
+    options.output,
+    [
+      { label: 'valid', style: 'status', value: `op credential for ${result.agentId}` },
+      { label: 'source', style: 'target', value: result.source },
+      { label: 'environments', style: 'field', value: String(result.environmentCount) },
+    ],
+    options.styles,
   );
 }

@@ -1,6 +1,6 @@
 import type { AgentManifest } from '../utils/manifest-types.ts';
-import type OnePasswordCredentialService from './onepassword-credential-service.ts';
-import type OnePasswordEnvironmentService from './onepassword-environment-service.ts';
+import type OpCredentialService from './op-credential-service.ts';
+import type OpEnvironmentService from './op-environment-service.ts';
 
 export interface CredentialManagementFailure {
   code: string;
@@ -26,12 +26,12 @@ export type CredentialUnsetResult =
 
 export type CredentialInstallReadiness = CredentialManagementFailure | { status: 'ready' };
 
-export interface OnePasswordCredentialManagerDependencies {
+export interface OpCredentialManagerDependencies {
   credentialService: Pick<
-    OnePasswordCredentialService,
+    OpCredentialService,
     'environmentServiceAccountToken' | 'removeServiceAccountToken' | 'storeServiceAccountToken'
   >;
-  environmentService: Pick<OnePasswordEnvironmentService, 'validate' | 'validateToken'>;
+  environmentService: Pick<OpEnvironmentService, 'validate' | 'validateToken'>;
 }
 
 function failure(result: {
@@ -46,11 +46,11 @@ function failure(result: {
 }
 
 /** Coordinate OP credential validation and persistent-store mutations for CLI consumers. */
-export default class OnePasswordCredentialManager {
-  readonly #credentialService: OnePasswordCredentialManagerDependencies['credentialService'];
-  readonly #environmentService: OnePasswordCredentialManagerDependencies['environmentService'];
+export default class OpCredentialManager {
+  readonly #credentialService: OpCredentialManagerDependencies['credentialService'];
+  readonly #environmentService: OpCredentialManagerDependencies['environmentService'];
 
-  constructor(dependencies: OnePasswordCredentialManagerDependencies) {
+  constructor(dependencies: OpCredentialManagerDependencies) {
     this.#credentialService = dependencies.credentialService;
     this.#environmentService = dependencies.environmentService;
   }

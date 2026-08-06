@@ -1,19 +1,23 @@
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import type OnePasswordCredentialManager from '../lib/onepassword-credential-manager.ts';
+import type OpCredentialManager from '../lib/op-credential-manager.ts';
+import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
 import {
-  type CliOutput,
+  formatDiagnostic,
+  type Logger,
   reportManifestDiagnostics,
   reportManifestFailure,
-} from '../lib/cli-output.ts';
+} from '../lib/logger.ts';
 
 export interface UnsetCredentialsAgentSystemOptions {
   agentId?: string;
   credential: string;
-  credentialManager: Pick<OnePasswordCredentialManager, 'unset'>;
+  credentialManager: Pick<OpCredentialManager, 'unset'>;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
   setExitCode(code: number): void;
   storeId?: string;
+  styles?: CliStyles;
   workspaceDir: string;
 }
 
@@ -22,12 +26,12 @@ export default async function unsetCredentialsAgentSystem(
   options: UnsetCredentialsAgentSystemOptions,
 ): Promise<void> {
   if (options.credential !== 'op') {
-    options.output.error(`error: unsupported credential ${options.credential}\n`);
+    options.logger.error(`credentials: unsupported credential ${options.credential}`);
     options.setExitCode(1);
     return;
   }
   if (!options.storeId) {
-    options.output.error('error: credentials unset op requires --store <id>\n');
+    options.logger.error('credentials: credentials unset op requires --store <id>');
     options.setExitCode(1);
     return;
   }
@@ -36,21 +40,30 @@ export default async function unsetCredentialsAgentSystem(
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
   if (loaded.status !== 'loaded') {
-    reportManifestFailure(loaded, options.output);
+    reportManifestFailure(loaded, options.logger);
     options.setExitCode(1);
     return;
   }
-  reportManifestDiagnostics(loaded, options.output);
+  reportManifestDiagnostics(loaded, options.logger);
 
   const result = await options.credentialManager.unset(loaded.manifest.agent.id, options.storeId);
   if (result.status === 'invalid') {
-    options.output.error(`error: [${result.code}] ${result.message}\n`);
+    options.logger.error(
+      formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),
+    );
     options.setExitCode(1);
     return;
   }
-  options.output.write(
-    result.status === 'removed'
-      ? `removed: op credential for ${result.agentId} store=${result.storeId}\n`
-      : `unchanged: op credential for ${result.agentId} is not stored in ${result.storeId}\n`,
+  writeCliSummary(
+    options.output,
+    [
+      {
+        label: result.status === 'removed' ? 'removed' : 'unchanged',
+        style: result.status === 'removed' ? 'action' : 'status',
+        value: `op credential for ${result.agentId}${result.status === 'missing' ? ' is not stored' : ''}`,
+      },
+      { label: 'store', style: 'target', value: result.storeId },
+    ],
+    options.styles,
   );
 }

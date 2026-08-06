@@ -105,7 +105,7 @@ openclaw agent-system env
 openclaw agent-system env --agent tanaabot --json
 ```
 
-At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve environment values at session startup or inject them into OpenClaw `exec`, Codex `exec_command`, or other generic command tools. `agent-system env` is the current explicit environment consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `agent_system.manifest_*` events; explicit environment inspection also emits `agent_system.environment_*` events.
+At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve environment values at session startup or inject them into OpenClaw `exec`, Codex `exec_command`, or other generic command tools. `agent-system env` is the current explicit environment consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `[agent-system] manifest_*` messages; explicit environment inspection also emits `[agent-system] environment_*` messages.
 
 See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 

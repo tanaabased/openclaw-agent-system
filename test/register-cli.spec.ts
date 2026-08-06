@@ -4,6 +4,7 @@ import { Command } from 'commander';
 
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
+import { createCliStyles } from '../lib/cli-output.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
 
 const validResult: AgentManifestLoadResult = {
@@ -31,7 +32,8 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
 };
 
 function createProgram() {
-  const output = { error: [] as string[], write: [] as string[] };
+  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const output: string[] = [];
   const calls = {
     agent: [] as string[],
     credentialSet: [] as Array<{ agentId: string; storeId: string }>,
@@ -84,6 +86,11 @@ function createProgram() {
         return { actions: [], agentId: 'tanaabot', workspaceDir: '/workspace' };
       },
     },
+    logger: {
+      error: (message) => logs.error.push(message),
+      info: (message) => logs.info.push(message),
+      warn: (message) => logs.warn.push(message),
+    },
     manifestService: {
       async loadForAgentId(agentId) {
         calls.agent.push(agentId);
@@ -94,12 +101,10 @@ function createProgram() {
         return validResult;
       },
     },
-    output: {
-      error: (message) => output.error.push(message),
-      write: (message) => output.write.push(message),
-    },
+    output: { writeStdout: (message) => output.push(message) },
+    styles: createCliStyles({ NO_COLOR: '1' }),
   });
-  return { calls, output, program };
+  return { calls, logs, output, program };
 }
 
 describe('lib/register-cli', () => {
@@ -119,10 +124,10 @@ describe('lib/register-cli', () => {
 
     await program.parseAsync(['node', 'openclaw', 'agent-system']);
 
-    assert.equal(output.write.join('').includes('validate'), true);
-    assert.equal(output.write.join('').includes('install'), true);
-    assert.equal(output.write.join('').includes('env'), true);
-    assert.equal(output.write.join('').includes('credentials'), true);
+    assert.equal(output.join('').includes('validate'), true);
+    assert.equal(output.join('').includes('install'), true);
+    assert.equal(output.join('').includes('env'), true);
+    assert.equal(output.join('').includes('credentials'), true);
   });
 
   it('should delegate environment inspection with explicit agent and json options', async () => {

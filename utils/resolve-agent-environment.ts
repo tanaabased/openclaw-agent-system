@@ -19,7 +19,7 @@ export interface AgentEnvironmentInputSource {
 
 export interface AgentEnvironmentExternalSources {
   dotenv?: readonly AgentEnvironmentInputSource[];
-  onePassword?: readonly AgentEnvironmentInputSource[];
+  op?: readonly AgentEnvironmentInputSource[];
 }
 
 export interface ResolvedAgentEnvironment {
@@ -38,7 +38,7 @@ export type AgentEnvironmentResolution =
       environment: ResolvedAgentEnvironment;
     };
 
-export const onePasswordServiceAccountTokenName = 'OP_SERVICE_ACCOUNT_TOKEN';
+export const opServiceAccountTokenName = 'OP_SERVICE_ACCOUNT_TOKEN';
 
 function sourceFieldPath(source: AgentEnvironmentVariableSource): string {
   const match = /^(environment\.(?:dotenv|op))\[(\d+)\]$/.exec(source);
@@ -53,18 +53,18 @@ export default function resolveAgentEnvironment(
 ): AgentEnvironmentResolution {
   const diagnostics: ManifestDiagnostic[] = [];
   const dotenvSources = externalSources.dotenv ?? [];
-  const onePasswordSources = externalSources.onePassword ?? [];
-  const inputSources = [...dotenvSources, ...onePasswordSources];
+  const opSources = externalSources.op ?? [];
+  const inputSources = [...dotenvSources, ...opSources];
   const inputValues = new Map<string, string>();
   const inputSensitivity = new Map<string, boolean>();
   for (const { sensitiveNames = [], source, values } of inputSources) {
     const sensitive = new Set(sensitiveNames);
     for (const [name, value] of Object.entries(values)) {
-      if (name === onePasswordServiceAccountTokenName) {
+      if (name === opServiceAccountTokenName) {
         diagnostics.push({
           code: 'environment-reserved-variable',
           fieldPath: sourceFieldPath(source),
-          message: `${onePasswordServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be exported.`,
+          message: `${opServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be exported.`,
           severity: 'error',
         });
         continue;
@@ -76,37 +76,35 @@ export default function resolveAgentEnvironment(
   const interpolationLookup = Object.fromEntries([
     ...Object.entries(referenceEnvironment).filter(
       (entry): entry is [string, string] =>
-        entry[0] !== onePasswordServiceAccountTokenName && entry[1] !== undefined,
+        entry[0] !== opServiceAccountTokenName && entry[1] !== undefined,
     ),
     ...inputValues,
   ]);
   const setSensitivity = new Map<string, boolean>();
   const setValues = Object.fromEntries(
     Object.entries(manifest.environment?.set ?? {}).flatMap(([name, input]) => {
-      if (name === onePasswordServiceAccountTokenName) {
+      if (name === opServiceAccountTokenName) {
         diagnostics.push({
           code: 'environment-reserved-variable',
           fieldPath: `/environment/set/${name}`,
-          message: `${onePasswordServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be exported.`,
+          message: `${opServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be exported.`,
           severity: 'error',
         });
         return [];
       }
       const interpolated = interpolateEnvironmentValue(input, interpolationLookup);
-      const referencesBootstrapToken = interpolated.references.includes(
-        onePasswordServiceAccountTokenName,
-      );
+      const referencesBootstrapToken = interpolated.references.includes(opServiceAccountTokenName);
       if (referencesBootstrapToken) {
         diagnostics.push({
           code: 'environment-reserved-reference',
           fieldPath: `/environment/set/${name}`,
-          message: `${onePasswordServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be referenced by environment.set.`,
+          message: `${opServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be referenced by environment.set.`,
           severity: 'error',
         });
       }
       diagnostics.push(
         ...interpolated.missing
-          .filter((reference) => reference !== onePasswordServiceAccountTokenName)
+          .filter((reference) => reference !== opServiceAccountTokenName)
           .map((reference) => ({
             code: 'environment-reference-missing',
             fieldPath: `/environment/set/${name}`,
@@ -135,29 +133,29 @@ export default function resolveAgentEnvironment(
       source: 'environment.set',
       values: setValues,
     },
-    ...onePasswordSources,
+    ...opSources,
   ];
   for (const layer of layers) {
     const sensitive = new Set(layer.sensitiveNames ?? []);
     for (const [name, value] of Object.entries(layer.values)) {
-      if (name === onePasswordServiceAccountTokenName) continue;
+      if (name === opServiceAccountTokenName) continue;
       values.set(name, value);
       provenance.set(name, [...(provenance.get(name) ?? []), layer.source]);
       sensitivity.set(name, sensitive.has(name));
     }
   }
   const required = new Set(manifest.environment?.required ?? []);
-  if (required.has(onePasswordServiceAccountTokenName)) {
+  if (required.has(opServiceAccountTokenName)) {
     diagnostics.push({
       code: 'environment-reserved-variable',
       fieldPath: '/environment/required',
-      message: `${onePasswordServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be required as agent output.`,
+      message: `${opServiceAccountTokenName} is reserved for Agent System bootstrap authentication and cannot be required as agent output.`,
       severity: 'error',
     });
   }
   diagnostics.push(
     ...[...required]
-      .filter((name) => name !== onePasswordServiceAccountTokenName)
+      .filter((name) => name !== opServiceAccountTokenName)
       .filter((name) => !values.has(name) || values.get(name) === '')
       .map((name) => ({
         code: 'environment-required-missing',

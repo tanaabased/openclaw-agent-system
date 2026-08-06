@@ -7,7 +7,7 @@ import planAgentInstall, {
   type CurrentAgentInstallState,
   type DesiredAgentInstallState,
 } from '../utils/plan-agent-install.ts';
-import type OnePasswordCredentialManager from './onepassword-credential-manager.ts';
+import type OpCredentialManager from './op-credential-manager.ts';
 
 export interface AgentInstallCommandResult {
   code: number;
@@ -22,7 +22,7 @@ export interface AgentInstallResult {
 }
 
 export interface AgentInstallServiceDependencies {
-  credentialManager?: Pick<OnePasswordCredentialManager, 'validateStoredForInstall'>;
+  credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
 }
@@ -34,6 +34,13 @@ export interface AgentInstallInput {
 
 export class AgentInstallError extends Error {
   override name = 'AgentInstallError';
+
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
 }
 
 function currentAgentState(config: OpenClawConfig, agentId: string): CurrentAgentInstallState {
@@ -73,12 +80,13 @@ export default class AgentInstallService {
       const credentialManager = this.#dependencies.credentialManager;
       if (!credentialManager) {
         throw new AgentInstallError(
-          '[op-credential-unavailable] Stored OP credential validation is unavailable.',
+          'Stored OP credential validation is unavailable.',
+          'op-credential-unavailable',
         );
       }
       const readiness = await credentialManager.validateStoredForInstall(input.manifest);
       if (readiness.status === 'invalid') {
-        throw new AgentInstallError(`[${readiness.code}] ${readiness.message}`);
+        throw new AgentInstallError(readiness.message, readiness.code);
       }
     }
 

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 
-import OnePasswordEnvironmentService from '../lib/onepassword-environment-service.ts';
+import OpEnvironmentService from '../lib/op-environment-service.ts';
 
-describe('lib/onepassword-environment-service', () => {
+describe('lib/op-environment-service', () => {
   it('should remain lazy when no 1password environments are declared', async () => {
     let credentialCalls = 0;
     let clientCalls = 0;
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       createClient: async () => {
         clientCalls += 1;
         throw new Error('not expected');
@@ -30,7 +30,7 @@ describe('lib/onepassword-environment-service', () => {
   });
 
   it('should report a value-free diagnostic when no credential is available', async () => {
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       credentialService: {
         async resolveServiceAccountToken() {
           return { status: 'missing' } as const;
@@ -53,7 +53,7 @@ describe('lib/onepassword-environment-service', () => {
   });
 
   it('should hide credential-provider failures', async () => {
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       credentialService: {
         async resolveServiceAccountToken() {
           throw new Error('private-provider-error');
@@ -72,7 +72,7 @@ describe('lib/onepassword-environment-service', () => {
   it('should load ordered sources through one authenticated sdk client', async () => {
     const clientInputs: Array<{ integrationVersion: string; token: string }> = [];
     const environmentCalls: string[] = [];
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       createClient: async (token, integrationVersion) => {
         clientInputs.push({ integrationVersion, token });
         return {
@@ -123,7 +123,7 @@ describe('lib/onepassword-environment-service', () => {
   });
 
   it('should hide sdk errors and environment ids from failure diagnostics', async () => {
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       createClient: async () => ({
         async getVariables() {
           throw new Error('private-sdk-response');
@@ -156,7 +156,7 @@ describe('lib/onepassword-environment-service', () => {
         { masked: false, name: 'DUPLICATE', value: 'private-two' },
       ],
     ]) {
-      const service = new OnePasswordEnvironmentService({
+      const service = new OpEnvironmentService({
         createClient: async () => ({
           async getVariables() {
             return { variables };
@@ -182,7 +182,7 @@ describe('lib/onepassword-environment-service', () => {
 
   it('should validate every declared environment without returning values or ids', async () => {
     const calls: string[] = [];
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       createClient: async () => ({
         async getVariables(environmentId) {
           calls.push(environmentId);
@@ -219,7 +219,7 @@ describe('lib/onepassword-environment-service', () => {
 
   it('should validate a candidate token before storage', async () => {
     const tokens: string[] = [];
-    const service = new OnePasswordEnvironmentService({
+    const service = new OpEnvironmentService({
       createClient: async (token) => {
         tokens.push(token);
         return {

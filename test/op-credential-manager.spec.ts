@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import OnePasswordCredentialManager from '../lib/onepassword-credential-manager.ts';
+import OpCredentialManager from '../lib/op-credential-manager.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
 const manifest: AgentManifest = {
@@ -9,10 +9,10 @@ const manifest: AgentManifest = {
   environment: { op: ['environment-one', 'environment-two'] },
 };
 
-describe('lib/onepassword-credential-manager', () => {
+describe('lib/op-credential-manager', () => {
   it('should validate a process token against every environment before storing it', async () => {
     const calls: string[] = [];
-    const manager = new OnePasswordCredentialManager({
+    const manager = new OpCredentialManager({
       credentialService: {
         environmentServiceAccountToken: () => 'private-token',
         async removeServiceAccountToken() {
@@ -44,7 +44,7 @@ describe('lib/onepassword-credential-manager', () => {
 
   it('should not write a token that cannot access a declared environment', async () => {
     let writes = 0;
-    const manager = new OnePasswordCredentialManager({
+    const manager = new OpCredentialManager({
       credentialService: {
         environmentServiceAccountToken: () => 'private-token',
         async removeServiceAccountToken() {
@@ -79,7 +79,7 @@ describe('lib/onepassword-credential-manager', () => {
   });
 
   it('should require an explicit store without falling back to the process environment', async () => {
-    const manager = new OnePasswordCredentialManager({
+    const manager = new OpCredentialManager({
       credentialService: {
         environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken() {
@@ -115,7 +115,7 @@ describe('lib/onepassword-credential-manager', () => {
   });
 
   it('should give install an actionable error when no stored credential is available', async () => {
-    const manager = new OnePasswordCredentialManager({
+    const manager = new OpCredentialManager({
       credentialService: {
         environmentServiceAccountToken: () => 'environment-token',
         async removeServiceAccountToken() {
@@ -156,7 +156,7 @@ describe('lib/onepassword-credential-manager', () => {
   });
 
   it('should unset an agent-scoped credential idempotently', async () => {
-    const manager = new OnePasswordCredentialManager({
+    const manager = new OpCredentialManager({
       credentialService: {
         environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken(agentId, storeId) {

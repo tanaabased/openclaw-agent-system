@@ -49,7 +49,7 @@ openclaw agent \
   --session-key agent:data:agent-system-leia \
   --message-file "$GITHUB_WORKSPACE/examples/agent/ready.md" \
   --timeout 120
-grep -F 'agent_system.manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"
+grep -F '[agent-system] manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"
 
 # should keep manifest values out of gateway lifecycle logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi

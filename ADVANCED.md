@@ -106,22 +106,22 @@ Agent System does not inject these values into OpenClaw `exec`, Codex `exec_comm
 
 ### Runtime Logging
 
-Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process to include debug lifecycle events. Agent System logs metadata such as trigger, agent id, path, schema version, and a short content digest; it does not log manifest values.
+Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process to include debug lifecycle events. Agent System uses the OpenClaw plugin logger and prefixes diagnostic messages with `[agent-system]`. It logs metadata such as trigger, agent id, path, schema version, and a short content digest; it does not log manifest values. Stable diagnostic identities appear as `code=<code>` metadata instead of additional bracketed prefixes.
 
-| Event                                    | Level | Meaning                                                  |
-| ---------------------------------------- | ----- | -------------------------------------------------------- |
-| `agent_system.manifest_scope_unresolved` | debug | No authoritative agent could be identified for the hook. |
-| `agent_system.manifest_scope_failed`     | error | Agent or workspace resolution failed.                    |
-| `agent_system.manifest_absent`           | debug | The resolved workspace is unmanaged.                     |
-| `agent_system.manifest_shadowed`         | warn  | The preferred manifest hid the root shorthand.           |
-| `agent_system.manifest_invalid`          | error | Discovery, YAML, schema, or agent binding failed.        |
-| `agent_system.manifest_loaded`           | info  | A valid manifest was loaded.                             |
-| `agent_system.manifest_changed`          | info  | A later load observed a different manifest digest.       |
-| `agent_system.environment_resolved`      | info  | An environment was resolved; reports count and digest.   |
+| Message                                    | Level | Meaning                                                  |
+| ------------------------------------------ | ----- | -------------------------------------------------------- |
+| `[agent-system] manifest_scope_unresolved` | debug | No authoritative agent could be identified for the hook. |
+| `[agent-system] manifest_scope_failed`     | error | Agent or workspace resolution failed.                    |
+| `[agent-system] manifest_absent`           | debug | The resolved workspace is unmanaged.                     |
+| `[agent-system] manifest_shadowed`         | warn  | The preferred manifest hid the root shorthand.           |
+| `[agent-system] manifest_invalid`          | error | Discovery, YAML, schema, or agent binding failed.        |
+| `[agent-system] manifest_loaded`           | info  | A valid manifest was loaded.                             |
+| `[agent-system] manifest_changed`          | info  | A later load observed a different manifest digest.       |
+| `[agent-system] environment_resolved`      | info  | An environment was resolved; reports count and digest.   |
 
 ## CLI Reference
 
-All commands are registered beneath `openclaw agent-system`; `openclaw as` is an equivalent alias. Bare `agent-system` or `as` prints command help. Normal results use standard output, while warnings and failures use standard error. Failed validation, environment inspection, or installation sets a nonzero process exit code.
+All commands are registered beneath `openclaw agent-system`; `openclaw as` is an equivalent alias. Bare `agent-system` or `as` prints command help. Human-facing results use locally aligned labels and Tanaab semantic colors on standard output; `NO_COLOR` and `FORCE_COLOR=0` disable styling. JSON output remains undecorated. Warnings and failures use the OpenClaw plugin logger on standard error. Failed validation, environment inspection, credential management, or installation sets a nonzero process exit code.
 
 ### `openclaw agent-system validate`
 
@@ -236,9 +236,12 @@ Installation first performs the same manifest discovery and validation used by `
 Possible result lines are:
 
 ```text
-created: OpenClaw agent tanaabot at /path/to/workspace
-updated: OpenClaw identity for tanaabot
-unchanged: OpenClaw agent tanaabot is installed at /path/to/workspace
+created    OpenClaw agent tanaabot
+updated    OpenClaw identity for tanaabot
+workspace  /path/to/workspace
+
+unchanged  OpenClaw agent tanaabot
+workspace  /path/to/workspace
 ```
 
 The created and updated lines may appear together on first installation. Repeated installation produces the unchanged line when no reconciliation is needed.
