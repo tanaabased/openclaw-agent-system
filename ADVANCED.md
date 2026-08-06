@@ -279,7 +279,7 @@ The created and updated lines may appear together on first installation. Repeate
 
 ### Environment
 
-Path prepending and native platform credential stores are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. The process-environment OP fallback will remain supported after those credential stores are added.
+`environment.path-prepend` is the next Phase 1 environment slice described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md); it is not current configuration or CLI behavior. Native platform credential stores and the permanent process-environment OP fallback are current behavior documented above.
 
 ### Installation Scripts And Drift
 

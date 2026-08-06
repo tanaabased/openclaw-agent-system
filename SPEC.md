@@ -81,9 +81,8 @@ Phase 1 delivers:
 - inline strings and restricted references to environment lookup values;
 - ordered dotenv sources;
 - lazy 1Password Environment resolution;
-- macOS Keychain bootstrap storage, ephemeral CI bootstrap, and a hardened
-  credential-file fallback, with Linux credential backends following the same
-  interface;
+- macOS Keychain and Linux Secret Service bootstrap storage, ephemeral CI
+  bootstrap, and a hardened credential-file fallback;
 - required-variable validation, provenance, value-free consolidated `env`
   inspection, and automatic provider-output redaction;
 - executable path resolution for Agent System-owned children and later optional
@@ -280,9 +279,10 @@ ordered 1Password Environments, accepts strings under `environment.set`,
 resolves restricted `$NAME` and `${NAME}` references against a fixed
 host-environment snapshot plus the ordered external-source lookup, validates
 `environment.required`, and implements value-free `env` diagnostics with
-provenance. Agent-scoped OP credential validation and the explicit file fallback
-are also implemented. Scoped consumer resolution, centralized redaction, native
-platform credential storage, and path prepending are subsequent Phase 1 slices.
+provenance. Agent-scoped OP credential validation and persistent storage through
+macOS Keychain, Linux Secret Service, and the hardened file fallback are also
+implemented. Scoped consumer resolution, centralized provider-output redaction,
+and path prepending are subsequent Phase 1 slices.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
@@ -1090,12 +1090,12 @@ remain the first part of explicit `install` throughout these phases.
    `environment.set`, followed by required-value checks.
 6. Implement ordered dotenv parsing and provenance, then ordered lazy 1Password
    Environment resolution with the same merge contract.
-7. Add centralized secret classification and provider-output redaction.
+7. Implement agent-scoped OP credential management with explicit input,
+   environment-access validation, macOS Keychain, Linux Secret Service, the
+   hardened file fallback, and the permanent process-environment fallback.
 8. Resolve `environment.path-prepend` for Agent System-owned children and later
    explicitly supported shim routes.
-9. Extend the bootstrap credential interface beyond the implemented ephemeral
-   process-environment fallback with macOS Keychain, Linux backends, and the
-   hardened file fallback in that order of practical delivery.
+9. Add centralized secret classification and provider-output redaction.
 10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
     manifest binding, source precedence, value-free diagnostics, path
     projection, and 1Password boundaries.
@@ -1160,7 +1160,6 @@ provider work, not new Agent System core environment implementations.
 
 - Whether the bounded Core Next casing ports should eventually move into a
   stable shared configuration package.
-- The exact schema validation library and safe YAML parser options.
 - The managed location and format for successful installation metadata.
 - The exact Linux headless service-credential integration.
 - The final compile-time SDK export/package boundary and typed OpenClaw
