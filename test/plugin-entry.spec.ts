@@ -6,7 +6,7 @@ import plugin from '../index.ts';
 import type { CommandLike } from '../lib/register-cli.ts';
 
 describe('index', () => {
-  it('should expose the Agent System plugin contract', () => {
+  it('should expose the agent system plugin contract', () => {
     assert.equal(plugin.id, 'agent-system');
     assert.equal(plugin.name, 'Agent System');
     assert.equal(typeof plugin.register, 'function');
@@ -14,7 +14,7 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should register startup hooks and both CLI roots', () => {
+  it('should register startup hooks and both cli roots', () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;

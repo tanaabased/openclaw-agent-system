@@ -69,20 +69,22 @@ describe('utils/resolve-agent-environment', () => {
         },
       },
       { DOTENV_REFERENCE: 'host-value', HOST_ONLY: 'not-exported' },
-      [
-        {
-          source: 'environment.dotenv[0]',
-          values: {
-            DOTENV_ONLY: 'base-required-value',
-            DOTENV_REFERENCE: 'base-reference',
-            LAYERED: 'base-value',
+      {
+        dotenv: [
+          {
+            source: 'environment.dotenv[0]',
+            values: {
+              DOTENV_ONLY: 'base-required-value',
+              DOTENV_REFERENCE: 'base-reference',
+              LAYERED: 'base-value',
+            },
           },
-        },
-        {
-          source: 'environment.dotenv[1]',
-          values: { DOTENV_REFERENCE: 'override-reference', LAYERED: 'override-value' },
-        },
-      ],
+          {
+            source: 'environment.dotenv[1]',
+            values: { DOTENV_REFERENCE: 'override-reference', LAYERED: 'override-value' },
+          },
+        ],
+      },
     );
 
     assert.deepEqual(resolved, {
@@ -122,6 +124,128 @@ describe('utils/resolve-agent-environment', () => {
         ],
       },
     });
+  });
+
+  it('should merge 1password after environment.set and preserve masked interpolation', () => {
+    const resolved = resolveAgentEnvironment(
+      {
+        schemaVersion: 1,
+        agent: { id: 'data' },
+        environment: {
+          onePasswordEnvironments: ['env-team', 'env-agent'],
+          set: {
+            FROM_ONEPASSWORD: '$ONEPASSWORD_REFERENCE',
+            LAYERED: 'set-value',
+          },
+        },
+      },
+      {},
+      {
+        dotenv: [
+          {
+            source: 'environment.dotenv[0]',
+            values: { LAYERED: 'dotenv-value' },
+          },
+        ],
+        onePassword: [
+          {
+            source: 'environment.onepassword-environments[0]',
+            sensitiveNames: ['ONEPASSWORD_REFERENCE'],
+            values: {
+              LAYERED: 'team-value',
+              ONEPASSWORD_REFERENCE: 'masked-reference',
+            },
+          },
+          {
+            source: 'environment.onepassword-environments[1]',
+            sensitiveNames: ['MASKED_FINAL'],
+            values: { LAYERED: 'agent-value', MASKED_FINAL: 'masked-final' },
+          },
+        ],
+      },
+    );
+
+    assert.deepEqual(resolved, {
+      status: 'resolved',
+      environment: {
+        sensitiveNames: ['FROM_ONEPASSWORD', 'MASKED_FINAL', 'ONEPASSWORD_REFERENCE'],
+        values: {
+          LAYERED: 'agent-value',
+          FROM_ONEPASSWORD: 'masked-reference',
+          ONEPASSWORD_REFERENCE: 'masked-reference',
+          MASKED_FINAL: 'masked-final',
+        },
+        variables: [
+          {
+            name: 'FROM_ONEPASSWORD',
+            overriddenSources: [],
+            required: false,
+            source: 'environment.set',
+          },
+          {
+            name: 'LAYERED',
+            overriddenSources: [
+              'environment.dotenv[0]',
+              'environment.set',
+              'environment.onepassword-environments[0]',
+            ],
+            required: false,
+            source: 'environment.onepassword-environments[1]',
+          },
+          {
+            name: 'MASKED_FINAL',
+            overriddenSources: [],
+            required: false,
+            source: 'environment.onepassword-environments[1]',
+          },
+          {
+            name: 'ONEPASSWORD_REFERENCE',
+            overriddenSources: [],
+            required: false,
+            source: 'environment.onepassword-environments[0]',
+          },
+        ],
+      },
+    });
+  });
+
+  it('should reject every attempt to export the 1password bootstrap token', () => {
+    const privateToken = 'private-bootstrap-token';
+    const resolved = resolveAgentEnvironment(
+      {
+        schemaVersion: 1,
+        agent: { id: 'data' },
+        environment: {
+          required: ['OP_SERVICE_ACCOUNT_TOKEN'],
+          set: {
+            ALIAS: '$OP_SERVICE_ACCOUNT_TOKEN',
+            OP_SERVICE_ACCOUNT_TOKEN: 'literal-token',
+          },
+        },
+      },
+      { OP_SERVICE_ACCOUNT_TOKEN: privateToken },
+      {
+        dotenv: [
+          {
+            source: 'environment.dotenv[0]',
+            values: { OP_SERVICE_ACCOUNT_TOKEN: 'dotenv-token' },
+          },
+        ],
+      },
+    );
+
+    assert.equal(resolved.status, 'invalid');
+    if (resolved.status !== 'invalid') return;
+    assert.deepEqual(
+      resolved.diagnostics.map(({ code }) => code),
+      [
+        'environment-reserved-variable',
+        'environment-reserved-reference',
+        'environment-reserved-variable',
+        'environment-reserved-variable',
+      ],
+    );
+    assert.equal(JSON.stringify(resolved.diagnostics).includes(privateToken), false);
   });
 
   it('should resolve a manifest without environment data to empty collections', () => {

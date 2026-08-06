@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto';
 
 import loadAgentDotenv from '../utils/load-agent-dotenv.ts';
 import resolveAgentEnvironment, {
+  type AgentEnvironmentInputSource,
   type ResolvedAgentEnvironment,
 } from '../utils/resolve-agent-environment.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type { AgentManifestLoadResult, ManifestLoadTrigger } from './agent-manifest-service.ts';
+import type OnePasswordEnvironmentService from './onepassword-environment-service.ts';
 
 export type AgentEnvironmentLoadResult =
   | Exclude<AgentManifestLoadResult, { status: 'loaded' }>
@@ -21,6 +23,7 @@ export interface AgentEnvironmentServiceDependencies {
   };
   loadDotenv?: typeof loadAgentDotenv;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  onePasswordEnvironmentService?: Pick<OnePasswordEnvironmentService, 'load'>;
 }
 
 function quote(value: string): string {
@@ -92,11 +95,49 @@ export default class AgentEnvironmentService {
       };
     }
 
-    const resolution = resolveAgentEnvironment(
-      result.manifest,
-      this.#hostEnvironment,
-      dotenv.sources,
-    );
+    const onePasswordEnvironmentIds = result.manifest.environment?.onePasswordEnvironments ?? [];
+    let onePasswordSources: AgentEnvironmentInputSource[] = [];
+    if (onePasswordEnvironmentIds.length > 0) {
+      const onePasswordEnvironmentService = this.#dependencies.onePasswordEnvironmentService;
+      if (!onePasswordEnvironmentService) {
+        const diagnostics = [
+          ...result.diagnostics,
+          {
+            code: 'onepassword-integration-unavailable',
+            fieldPath: '/environment/onepassword-environments',
+            message: '1Password Environment resolution is unavailable in this runtime.',
+            severity: 'error' as const,
+          },
+        ];
+        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
+        return {
+          status: 'invalid',
+          scope: result.scope,
+          path: result.path,
+          diagnostics,
+        };
+      }
+      const onePassword = await onePasswordEnvironmentService.load(
+        result.manifest.agent.id,
+        onePasswordEnvironmentIds,
+      );
+      if (onePassword.status === 'invalid') {
+        const diagnostics = [...result.diagnostics, ...onePassword.diagnostics];
+        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
+        return {
+          status: 'invalid',
+          scope: result.scope,
+          path: result.path,
+          diagnostics,
+        };
+      }
+      onePasswordSources = onePassword.sources;
+    }
+
+    const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment, {
+      dotenv: dotenv.sources,
+      onePassword: onePasswordSources,
+    });
     if (resolution.status === 'invalid') {
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
       this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);

@@ -18,7 +18,7 @@
 
 ## Assertions
 
-- Start each executable block with one lowercase `# should ...` statement and keep one observable behavior per block.
+- Start each executable block with one fully lowercase `# should ...` statement and keep one observable behavior per block. Preserve required casing only in commands, inputs, and expected contract values.
 - Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.
 - Pipe command output directly into fixed-string assertions when possible; do not write output to a temporary file solely for a later grep.

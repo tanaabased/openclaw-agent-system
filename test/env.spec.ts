@@ -17,6 +17,7 @@ const loaded: AgentEnvironmentLoadResult = {
     },
   },
   environment: {
+    sensitiveNames: ['GITHUB_TOKEN'],
     values: { AGENT_COLOR: 'green', GITHUB_TOKEN: 'private-token' },
     variables: [
       {
@@ -98,6 +99,7 @@ describe('cli/env', () => {
     ]);
     assert.equal(serialized.includes('green'), false);
     assert.equal(serialized.includes('private-token'), false);
+    assert.equal(serialized.includes('sensitiveNames'), false);
   });
 
   it('should report required state in human output', async () => {

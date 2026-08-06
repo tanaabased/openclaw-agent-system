@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and explicit per-agent environment values with restricted host references and required-value checks. Additional environment sources, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and explicit per-agent environment values from dotenv, inline, and 1Password Environment sources. Platform credential storage, path projection, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -60,11 +60,16 @@ environment:
   dotenv: .agent-system/env/base.env
   set:
     AGENT_COLOR: green
+  onepassword-environments: env_agent
   required:
     - AGENT_COLOR
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; one or more ordered workspace-relative files under `environment.dotenv`; string values under `environment.set`; and `environment.required`. Later dotenv files override earlier files, and explicit set values override the dotenv layers. Set values may reference the plugin process environment or final dotenv values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; and `environment.required`. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or final external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
+
+1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. `OP_SERVICE_ACCOUNT_TOKEN` is the currently supported bootstrap credential and remains the permanent fallback after future platform credential providers. It is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
+
+Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
 
 ## Usage
 

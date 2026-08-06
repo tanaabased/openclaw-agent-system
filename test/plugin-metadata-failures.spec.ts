@@ -138,7 +138,7 @@ describe('utils/plugin-metadata-failures', () => {
     );
   });
 
-  it('should report command and OpenClaw version drift independently', () => {
+  it('should report command and openclaw version drift independently', () => {
     assert.deepEqual(
       failureCodes(
         {

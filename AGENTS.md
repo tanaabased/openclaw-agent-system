@@ -29,10 +29,11 @@
 ## Accepted optimization decisions
 
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
-- Keep one `pr-examples-tests.yml` matrix and scope OpenAI credentials and model selection to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume those values. Do not recommend separate jobs or per-entry environment injection solely to narrow that step; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-model scenario.
+- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume OpenAI credentials and model selection, and only the `env` scenario may consume `OP_SERVICE_ACCOUNT_TOKEN`. Do not recommend separate jobs or per-entry environment injection solely to narrow either credential; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 
 ## Validation
 
+- Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 - When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia scenario and its example matrix entry; keep detailed scenario rules in `examples/AGENTS.md`.

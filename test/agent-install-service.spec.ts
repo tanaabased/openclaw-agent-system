@@ -184,7 +184,7 @@ describe('lib/agent-install-service', () => {
     );
   });
 
-  it('should surface OpenClaw command failures', async () => {
+  it('should surface openclaw command failures', async () => {
     const service = new AgentInstallService({
       readConfig: () => ({}),
       async runOpenClawCommand() {
@@ -198,7 +198,7 @@ describe('lib/agent-install-service', () => {
     );
   });
 
-  it('should reject a successful command that does not reconcile OpenClaw state', async () => {
+  it('should reject a successful command that does not reconcile openclaw state', async () => {
     const service = new AgentInstallService({
       readConfig: () => ({}),
       async runOpenClawCommand() {

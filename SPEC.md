@@ -275,12 +275,13 @@ value makes it available only to explicit Agent System-owned consumers. It does
 not imply that OpenClaw's built-in `exec`, Codex `exec_command`, ACP backends,
 CLI backends, MCP tools, or third-party tools can receive it.
 
-The current implementation loads ordered workspace-contained dotenv files,
-accepts strings under `environment.set`, resolves restricted `$NAME` and
-`${NAME}` references against a fixed host-environment snapshot plus the final
-dotenv lookup, validates `environment.required`, and implements value-free `env`
-diagnostics with provenance. 1Password, scoped consumer resolution, and path
-prepending are subsequent Phase 1 slices.
+The current implementation loads ordered workspace-contained dotenv files and
+ordered 1Password Environments, accepts strings under `environment.set`,
+resolves restricted `$NAME` and `${NAME}` references against a fixed
+host-environment snapshot plus the ordered external-source lookup, validates
+`environment.required`, and implements value-free `env` diagnostics with
+provenance. Scoped consumer resolution, centralized redaction, platform
+credential storage, and path prepending are subsequent Phase 1 slices.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
@@ -514,9 +515,10 @@ Resolution behavior is:
 - prefer a system service credential on headless Linux where practical; and
 - use a raw credential file only as an explicit fallback.
 
-An explicitly named process-environment source may be supported for ephemeral CI
-bootstrap, but it is read only by Agent System, is never forwarded to ordinary
-agent commands, and must not become the recommended persistent setup.
+`OP_SERVICE_ACCOUNT_TOKEN` is the always-supported process-environment fallback
+after configured credential providers. It is read only by Agent System, is
+never forwarded to ordinary agent commands, and is intended for ephemeral CI or
+bootstrap rather than recommended persistent setup.
 
 Bootstrap credential storage is namespaced by agent id by default. Each agent
 gets a separate Keychain, Secret Service, or fallback-file entry unless an
@@ -1067,9 +1069,9 @@ remain the first part of explicit `install` throughout these phases.
 7. Add centralized secret classification and provider-output redaction.
 8. Resolve `environment.path-prepend` for Agent System-owned children and later
    explicitly supported shim routes.
-9. Define the bootstrap credential interface and implement macOS Keychain,
-   ephemeral CI environment input, Linux backends, and the hardened file
-   fallback in that order of practical delivery.
+9. Extend the bootstrap credential interface beyond the implemented ephemeral
+   process-environment fallback with macOS Keychain, Linux backends, and the
+   hardened file fallback in that order of practical delivery.
 10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
     manifest binding, source precedence, value-free diagnostics, path
     projection, and 1Password boundaries.

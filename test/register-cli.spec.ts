@@ -99,7 +99,7 @@ describe('lib/register-cli', () => {
     assert.equal(output.write.join('').includes('env'), true);
   });
 
-  it('should delegate environment inspection with explicit agent and JSON options', async () => {
+  it('should delegate environment inspection with explicit agent and json options', async () => {
     const { calls, program } = createProgram();
 
     await program.parseAsync([

@@ -57,20 +57,24 @@ environment:
     AGENT_COLOR: green
     AGENT_EMAIL: $COMPANY_EMAIL
     NODE_ENV: development
+  onepassword-environments:
+    - env_team
+    - env_agent
   required:
     - AGENT_EMAIL
 ```
 
-| Field                  | Required      | Current behavior                                                                   |
-| ---------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| `schema-version`       | yes           | Must be the integer `1`.                                                           |
-| `agent.id`             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
-| `agent.name`           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
-| `agent.description`    | no            | Validated and loaded; reserved for a later identity surface.                       |
-| `agent.avatar`         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
-| `environment.dotenv`   | no            | One relative path or an ordered non-empty unique list of paths.                    |
-| `environment.set`      | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
-| `environment.required` | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
+| Field                                  | Required      | Current behavior                                                                   |
+| -------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| `schema-version`                       | yes           | Must be the integer `1`.                                                           |
+| `agent.id`                             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
+| `agent.name`                           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
+| `agent.description`                    | no            | Validated and loaded; reserved for a later identity surface.                       |
+| `agent.avatar`                         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
+| `environment.dotenv`                   | no            | One relative path or an ordered non-empty unique list of paths.                    |
+| `environment.set`                      | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
+| `environment.onepassword-environments` | no            | One Environment id or an ordered non-empty unique list of ids.                     |
+| `environment.required`                 | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
@@ -78,13 +82,23 @@ Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and
 
 Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be YAML strings; booleans and numbers fail validation instead of being coerced. Variable names are literal data keys and are never casing-converted.
 
-`environment.dotenv` accepts one path or an ordered list. Paths must be relative, remain inside the canonical workspace even through symlinks, select distinct regular files, contain valid UTF-8, and remain at or below 1 MiB. Every declared file is required. Later files override earlier files; `environment.set` then overrides the final dotenv layer.
+`environment.dotenv` accepts one path or an ordered list. Paths must be relative, remain inside the canonical workspace even through symlinks, select distinct regular files, contain valid UTF-8, and remain at or below 1 MiB. Every declared file is required.
 
 The owned dotenv parser supports blank lines, full-line comments, optional `export`, and `NAME=value`. Unquoted `#` remains literal unless whitespace introduces an inline comment. Single-quoted values are literal. Double-quoted values support `\\`, `\"`, `\n`, `\r`, and `\t`. Duplicate names within one file, malformed names, unsupported escapes, unterminated quotes, and NUL bytes fail closed. Dotenv values never interpolate or execute shell syntax.
 
-Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment plus the final dotenv lookup, with dotenv values winning same-named host lookups. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
+`environment.onepassword-environments` accepts one Environment id or an ordered list. Agent System dynamically loads the official `@1password/sdk`, authenticates once per explicit resolution, and fetches each Environment in declared order. The SDK's Environment API is currently beta. Failures become stable Agent System diagnostics without including raw SDK errors, Environment ids, tokens, or values.
 
-Dotenv files are read only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads them. The current slice does not implement 1Password Environments or path prepending.
+Source precedence is fixed:
+
+```text
+environment.dotenv[0] < later dotenv files < environment.set < environment.onepassword-environments[0] < later 1Password Environments
+```
+
+Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment plus the ordered external-source lookup, with later external sources winning same-named host lookups. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
+
+Dotenv files and 1Password values are loaded only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads or fetches them. Path prepending is not yet implemented.
+
+Agent System tries configured 1Password credential providers before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. Platform credential providers and `credentials set` are not implemented yet, so the fallback is the current authentication path. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
 
 Agent System does not inject these values into OpenClaw `exec`, Codex `exec_command`, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Those surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
 
@@ -213,7 +227,7 @@ The created and updated lines may appear together on first installation. Repeate
 
 ### Environment And Credentials
 
-Ordered 1Password Environments, path prepending, and host credential storage are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. Their complete precedence and security reference will live here when implemented.
+Path prepending, platform credential storage, and the `credentials set` command are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. The process-environment 1Password fallback will remain supported after those credential providers are added.
 
 ### Installation Scripts And Drift
 

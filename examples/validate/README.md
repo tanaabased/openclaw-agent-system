@@ -24,9 +24,7 @@ openclaw agent-system validate 2>&1 | grep -F '[manifest-shadowed]'
 
 # should reject an unknown schema key with a failing exit code
 cd "$GITHUB_WORKSPACE/examples/validate/invalid"
-if invalid_output=$(openclaw agent-system validate 2>&1); then
-  exit 1
-fi
-grep -F 'error: invalid Agent System manifest' <<< "$invalid_output"
-grep -F '[manifest-unknown-key]' <<< "$invalid_output"
+if openclaw agent-system validate; then exit 1; fi
+openclaw agent-system validate 2>&1 | grep -F 'error: invalid Agent System manifest'
+openclaw agent-system validate 2>&1 | grep -F '[manifest-unknown-key]'
 ```

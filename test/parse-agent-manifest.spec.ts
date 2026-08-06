@@ -20,6 +20,9 @@ environment:
   dotenv:
     - .agent-system/env/base.env
     - .agent-system/env/local.env
+  onepassword-environments:
+    - env-team
+    - env-agent
   required:
     - AGENT_COLOR
   set:
@@ -39,6 +42,7 @@ environment:
         },
         environment: {
           dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],
+          onePasswordEnvironments: ['env-team', 'env-agent'],
           required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
@@ -48,6 +52,20 @@ environment:
       },
       diagnostics: [],
     });
+  });
+
+  it('should normalize one 1password environment id to the ordered internal list', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  onepassword-environments: env-agent
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.onePasswordEnvironments, ['env-agent']);
   });
 
   it('should normalize one dotenv path to the ordered internal list', () => {
@@ -64,21 +82,21 @@ environment:
     assert.deepEqual(result.manifest.environment?.dotenv, ['.agent-system/env/agent.env']);
   });
 
-  it('should reject duplicate YAML keys', () => {
+  it('should reject duplicate yaml keys', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: 1\nschema-version: 1\nagent:\n  id: tanaabot\n'),
       new Set(['yaml-duplicate-key']),
     );
   });
 
-  it('should reject YAML anchors and aliases', () => {
+  it('should reject yaml anchors and aliases', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: &version 1\nagent:\n  id: tanaabot\n  name: *version\n'),
       new Set(['yaml-anchor', 'yaml-alias']),
     );
   });
 
-  it('should reject explicit YAML tags', () => {
+  it('should reject explicit yaml tags', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: 1\nagent:\n  id: !agent tanaabot\n'),
       new Set(['yaml-tag']),
@@ -164,6 +182,21 @@ agent:
   id: tanaabot
 environment:
   dotenv: ${dotenv}
+`).has('manifest-schema'),
+        true,
+      );
+    }
+  });
+
+  it('should reject empty, blank, and duplicate 1password environment declarations', () => {
+    for (const environments of ['[]', "''", "'   '", '[env-agent, env-agent]']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  onepassword-environments: ${environments}
 `).has('manifest-schema'),
         true,
       );

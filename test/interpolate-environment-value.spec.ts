@@ -15,6 +15,7 @@ describe('utils/interpolate-environment-value', () => {
       ),
       {
         missing: [],
+        references: ['AGENT_NAME', 'AGENT_EMAIL', 'AGENT_NAME_SUFFIX'],
         value: 'Data:data@example.com:android:Data_bot',
       },
     );
@@ -23,6 +24,7 @@ describe('utils/interpolate-environment-value', () => {
   it('should preserve escaped dollars and report missing references without values', () => {
     assert.deepEqual(interpolateEnvironmentValue('$$HOME:$MISSING:${ALSO_MISSING}', {}), {
       missing: ['MISSING', 'ALSO_MISSING'],
+      references: ['MISSING', 'ALSO_MISSING'],
       value: '$HOME:$MISSING:${ALSO_MISSING}',
     });
   });

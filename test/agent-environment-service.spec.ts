@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import AgentEnvironmentService from '../lib/agent-environment-service.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import type { AgentEnvironmentInputSource } from '../utils/resolve-agent-environment.ts';
 
 const loaded: AgentManifestLoadResult = {
   status: 'loaded',
@@ -168,6 +169,125 @@ describe('lib/agent-environment-service', () => {
     assert.equal(result.status, 'invalid');
     assert.equal(logs.error[0]?.includes('dotenv-file-missing'), true);
     assert.equal(logs.error[0]?.includes('private-file-name.env'), false);
+    assert.deepEqual(logs.info, []);
+  });
+
+  it('should load declared 1password environments after dotenv and environment.set', async () => {
+    const calls: Array<{ agentId: string; environmentIds: readonly string[] }> = [];
+    const logs = { error: [] as string[], info: [] as string[] };
+    const service = new AgentEnvironmentService({
+      hostEnvironment: {},
+      loadDotenv: async () => ({
+        status: 'loaded',
+        sources: [
+          {
+            source: 'environment.dotenv[0]',
+            values: { LAYERED: 'dotenv-value' },
+          },
+        ],
+      }),
+      logger: {
+        error: (message) => logs.error.push(message),
+        info: (message) => logs.info.push(message),
+      },
+      manifestService: {
+        async loadForAgentId() {
+          return {
+            ...loaded,
+            manifest: {
+              ...loaded.manifest,
+              environment: {
+                dotenv: ['env/agent.env'],
+                onePasswordEnvironments: ['env-team', 'env-agent'],
+                set: { LAYERED: 'set-value' },
+              },
+            },
+          };
+        },
+        async loadForWorkspace() {
+          return loaded;
+        },
+      },
+      onePasswordEnvironmentService: {
+        async load(agentId, environmentIds) {
+          calls.push({ agentId, environmentIds });
+          const sources: AgentEnvironmentInputSource[] = [
+            {
+              source: 'environment.onepassword-environments[0]',
+              sensitiveNames: ['PRIVATE_VALUE'],
+              values: { LAYERED: 'team-value', PRIVATE_VALUE: 'private-value' },
+            },
+            {
+              source: 'environment.onepassword-environments[1]',
+              values: { LAYERED: 'agent-value' },
+            },
+          ];
+          return {
+            status: 'loaded',
+            sources,
+          };
+        },
+      },
+    });
+
+    const result = await service.loadForAgentId('data');
+
+    assert.equal(result.status, 'loaded');
+    if (result.status !== 'loaded') return;
+    assert.deepEqual(calls, [{ agentId: 'data', environmentIds: ['env-team', 'env-agent'] }]);
+    assert.deepEqual(result.environment.values, {
+      LAYERED: 'agent-value',
+      PRIVATE_VALUE: 'private-value',
+    });
+    assert.deepEqual(result.environment.sensitiveNames, ['PRIVATE_VALUE']);
+    assert.equal(logs.info[0]?.includes('private-value'), false);
+    assert.deepEqual(logs.error, []);
+  });
+
+  it('should report 1password failures without logging source details', async () => {
+    const logs = { error: [] as string[], info: [] as string[] };
+    const service = new AgentEnvironmentService({
+      hostEnvironment: {},
+      logger: {
+        error: (message) => logs.error.push(message),
+        info: (message) => logs.info.push(message),
+      },
+      manifestService: {
+        async loadForAgentId() {
+          return {
+            ...loaded,
+            manifest: {
+              ...loaded.manifest,
+              environment: { onePasswordEnvironments: ['private-environment-id'] },
+            },
+          };
+        },
+        async loadForWorkspace() {
+          return loaded;
+        },
+      },
+      onePasswordEnvironmentService: {
+        async load() {
+          return {
+            status: 'invalid',
+            diagnostics: [
+              {
+                code: 'onepassword-environment-unavailable',
+                fieldPath: '/environment/onepassword-environments/0',
+                message: 'A declared 1Password Environment could not be resolved.',
+                severity: 'error',
+              },
+            ],
+          };
+        },
+      },
+    });
+
+    const result = await service.loadForAgentId('data');
+
+    assert.equal(result.status, 'invalid');
+    assert.equal(logs.error[0]?.includes('onepassword-environment-unavailable'), true);
+    assert.equal(logs.error[0]?.includes('private-environment-id'), false);
     assert.deepEqual(logs.info, []);
   });
 

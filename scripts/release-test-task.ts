@@ -14,6 +14,7 @@ interface ClawHubValidation {
 }
 
 interface PackageMetadata {
+  dependencies?: Record<string, string>;
   name?: string;
   version?: string;
   openclaw?: {
@@ -113,6 +114,8 @@ try {
     'lib/agent-install-service.ts',
     'lib/agent-manifest-service.ts',
     'lib/cli-output.ts',
+    'lib/onepassword-credential-service.ts',
+    'lib/onepassword-environment-service.ts',
     'lib/register-cli.ts',
     'lib/register-hooks.ts',
     'utils/decode.ts',
@@ -165,6 +168,7 @@ try {
     const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
     const manifest = JSON.parse(manifestContents) as PluginManifest;
     assert.equal(packageMetadata.name, '@tanaab/openclaw-agent-system');
+    assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);

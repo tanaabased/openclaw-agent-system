@@ -6,6 +6,8 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
 import AgentManifestService from './lib/agent-manifest-service.ts';
+import OnePasswordCredentialService from './lib/onepassword-credential-service.ts';
+import OnePasswordEnvironmentService from './lib/onepassword-environment-service.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
 
@@ -36,10 +38,18 @@ export default definePluginEntry({
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     });
+    const onePasswordCredentialService = new OnePasswordCredentialService({
+      hostEnvironment: process.env,
+    });
+    const onePasswordEnvironmentService = new OnePasswordEnvironmentService({
+      credentialService: onePasswordCredentialService,
+      integrationVersion: api.version ?? 'dev',
+    });
     const environmentService = new AgentEnvironmentService({
       hostEnvironment: process.env,
       logger: api.logger,
       manifestService,
+      onePasswordEnvironmentService,
     });
     registerAgentSystemHooks(api, manifestService);
     api.registerCli(

@@ -8,6 +8,7 @@ export interface AgentManifest {
   };
   environment?: {
     dotenv?: string[];
+    onePasswordEnvironments?: string[];
     required?: string[];
     set?: Record<string, string>;
   };

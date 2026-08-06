@@ -1,5 +1,6 @@
 export interface InterpolatedEnvironmentValue {
   missing: string[];
+  references: string[];
   value: string;
 }
 
@@ -11,6 +12,7 @@ export default function interpolateEnvironmentValue(
   lookup: Readonly<Record<string, string | undefined>>,
 ): InterpolatedEnvironmentValue {
   const missing = new Set<string>();
+  const references = new Set<string>();
   const value = input.replace(
     environmentReferencePattern,
     (reference, bracedName: string | undefined, bareName: string | undefined) => {
@@ -18,6 +20,7 @@ export default function interpolateEnvironmentValue(
 
       const name = bracedName ?? bareName;
       if (!name) return reference;
+      references.add(name);
       const resolved = lookup[name];
       if (resolved === undefined) {
         missing.add(name);
@@ -27,5 +30,5 @@ export default function interpolateEnvironmentValue(
     },
   );
 
-  return { missing: [...missing], value };
+  return { missing: [...missing], references: [...references], value };
 }

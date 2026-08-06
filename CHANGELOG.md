@@ -1,5 +1,6 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Added ordered, lazy 1Password Environment resolution through the official JavaScript SDK with value-free diagnostics and a permanent `OP_SERVICE_ACCOUNT_TOKEN` fallback.
 - Added explicit per-agent environment resolution with literal values, restricted host references, required-value checks, and value-free `env` inspection. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
 - Added `openclaw agent-system install` to reconcile OpenClaw agent registration and manifest-owned identity. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
 - Added `session_start` manifest loading with redacted lifecycle diagnostics. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
