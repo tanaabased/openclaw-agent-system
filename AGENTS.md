@@ -26,6 +26,11 @@
 - Keep the Node-targeted build's package dependencies external.
 - Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia scenarios under `examples/` are the operational exception.
 
+## Accepted optimization decisions
+
+- Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
+- Keep one `pr-examples-tests.yml` matrix and scope OpenAI credentials and model selection to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume those values. Do not recommend separate jobs or per-entry environment injection solely to narrow that step; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-model scenario.
+
 ## Validation
 
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
