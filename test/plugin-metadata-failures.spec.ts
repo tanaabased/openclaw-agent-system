@@ -15,6 +15,7 @@ const packageMetadata: PackageMetadata = {
     'dist/',
     'index.ts',
     'cli/',
+    'bin/',
     'lib/',
     'utils/',
     'assets/agent-system.png',

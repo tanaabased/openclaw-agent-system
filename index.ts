@@ -1,16 +1,24 @@
+import { basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
 import { definePluginEntry, type OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
+import AgentDoctorService from './lib/agent-doctor-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
+import AgentPathService from './lib/agent-path-service.ts';
 import AgentManifestService from './lib/agent-manifest-service.ts';
 import createCredentialStores from './lib/credential-store-registry.ts';
+import CodexPathConfigService from './lib/codex-path-config-service.ts';
+import { resolveFileCredentialStoreRoot } from './lib/file-credential-store.ts';
 import OpCredentialManager from './lib/op-credential-manager.ts';
 import OpCredentialInput from './lib/op-credential-input.ts';
 import OpCredentialService from './lib/op-credential-service.ts';
 import OpEnvironmentService from './lib/op-environment-service.ts';
+import PathProjectionStore from './lib/path-projection-store.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
@@ -21,6 +29,8 @@ export default definePluginEntry({
   description:
     'Define reproducible identity, environment, and installation for OpenClaw agent workspaces.',
   register(api) {
+    const runtimeDir = dirname(fileURLToPath(import.meta.url));
+    const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
     const logger = createAgentSystemLogger(api.logger, api.id);
     const manifestService = new AgentManifestService({
       getConfig: () => api.runtime.config.current(),
@@ -54,12 +64,25 @@ export default definePluginEntry({
       credentialService: opCredentialService,
       environmentService: opEnvironmentService,
     });
+    const readConfig = () => {
+      // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
+      return loadConfig({ pin: false });
+    };
+    const pathService = new AgentPathService({
+      basePath: process.env.PATH ?? '',
+      codexConfigService: new CodexPathConfigService(),
+      mutateConfigFile(params) {
+        return api.runtime.config.mutateConfigFile(params);
+      },
+      packageDir,
+      projectionStore: new PathProjectionStore(resolveFileCredentialStoreRoot(process.env)),
+      readConfig,
+    });
+    const doctorService = new AgentDoctorService({ pathService });
     const installService = new AgentInstallService({
       credentialManager,
-      readConfig() {
-        // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
-        return loadConfig({ pin: false });
-      },
+      pathService,
+      readConfig,
       runOpenClawCommand(args, cwd) {
         const cliEntry = process.argv[1];
         const argv = cliEntry ? [process.execPath, cliEntry, ...args] : ['openclaw', ...args];
@@ -78,6 +101,7 @@ export default definePluginEntry({
         registerAgentSystemCli(program, {
           credentialInput: opCredentialInput,
           credentialManager,
+          doctorService,
           environmentService,
           installService,
           logger: createAgentSystemLogger(cliLogger, api.id),

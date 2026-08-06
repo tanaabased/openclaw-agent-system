@@ -114,6 +114,7 @@ try {
     'cli/env.ts',
     'cli/install.ts',
     'cli/validate.ts',
+    'bin/agent-system-test',
     'lib/agent-environment-service.ts',
     'lib/agent-install-service.ts',
     'lib/agent-manifest-service.ts',
@@ -203,6 +204,16 @@ try {
     assert.equal(builtModule.default?.id, 'agent-system');
     assert.equal(builtModule.default?.name, 'Agent System');
     assert.equal(typeof builtModule.default?.register, 'function');
+  });
+
+  await check('ship an executable Agent System path probe', async () => {
+    const probePath = join(packageRoot, 'bin', 'agent-system-test');
+    await access(probePath);
+    const result = await run(probePath, []);
+    const packageMetadata = JSON.parse(
+      await readFile(join(packageRoot, 'package.json'), 'utf8'),
+    ) as PackageMetadata;
+    assert.equal(result.output.trim(), packageMetadata.version);
   });
 
   await check('pass ClawHub package validation without warnings', async () => {

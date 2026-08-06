@@ -43,6 +43,21 @@ const externalAgentManifestSchema = Type.Object(
               ),
             ]),
           ),
+          'path-prepend': Type.Optional(
+            Type.Union([
+              Type.String({
+                minLength: 1,
+                pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
+              }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
           required: Type.Optional(
             Type.Array(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), {
               minItems: 1,
@@ -119,6 +134,14 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
                     typeof value.environment.op === 'string'
                       ? [value.environment.op]
                       : [...value.environment.op],
+                }),
+            ...(value.environment['path-prepend'] === undefined
+              ? {}
+              : {
+                  pathPrepend:
+                    typeof value.environment['path-prepend'] === 'string'
+                      ? [value.environment['path-prepend']]
+                      : [...value.environment['path-prepend']],
                 }),
             ...(value.environment.required === undefined
               ? {}

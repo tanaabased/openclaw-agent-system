@@ -8,6 +8,8 @@ import planAgentInstall, {
   type DesiredAgentInstallState,
 } from '../utils/plan-agent-install.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
+import type AgentPathService from './agent-path-service.ts';
+import type { AgentPathInstallAction, AgentPathWarning } from './agent-path-service.ts';
 
 export interface AgentInstallCommandResult {
   code: number;
@@ -16,13 +18,16 @@ export interface AgentInstallCommandResult {
 }
 
 export interface AgentInstallResult {
-  actions: AgentInstallAction[];
+  actions: Array<AgentInstallAction | AgentPathInstallAction>;
   agentId: string;
+  codexStatus?: 'managed' | 'manual';
+  warnings: AgentPathWarning[];
   workspaceDir: string;
 }
 
 export interface AgentInstallServiceDependencies {
   credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
+  pathService?: Pick<AgentPathService, 'inspect' | 'reconcile'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
 }
@@ -62,7 +67,7 @@ function commandFailure(args: string[], result: AgentInstallCommandResult): Agen
   return new AgentInstallError(`OpenClaw ${args.join(' ')} failed: ${details}`);
 }
 
-/** Reconcile manifest-owned registration and identity through OpenClaw's public CLI. */
+/** Reconcile manifest-owned registration, identity, and executable paths. */
 export default class AgentInstallService {
   readonly #dependencies: AgentInstallServiceDependencies;
 
@@ -139,6 +144,8 @@ export default class AgentInstallService {
       if (result.code !== 0) throw commandFailure(args, result);
     }
 
+    const pathResult = await this.#dependencies.pathService?.reconcile(input);
+
     const verifiedConfig = await this.#dependencies.readConfig();
     const verification = planAgentInstall(
       desired,
@@ -149,10 +156,28 @@ export default class AgentInstallService {
         `OpenClaw agent ${desired.agentId} did not match its manifest after installation.`,
       );
     }
+    if (pathResult) {
+      const pathInspection = await this.#dependencies.pathService?.inspect(input);
+      if (!pathInspection?.openClawMatches) {
+        throw new AgentInstallError(
+          `OpenClaw agent ${desired.agentId} did not retain its Agent System executable path after installation.`,
+        );
+      }
+      if (
+        pathResult.codexStatus === 'managed' &&
+        (!pathInspection.codex.pathMatches || !pathInspection.codex.gitignored)
+      ) {
+        throw new AgentInstallError(
+          `Codex path configuration for ${desired.agentId} did not match after installation.`,
+        );
+      }
+    }
 
     return {
-      actions: plan.actions,
+      actions: [...plan.actions, ...(pathResult?.actions ?? [])],
       agentId: desired.agentId,
+      ...(pathResult ? { codexStatus: pathResult.codexStatus } : {}),
+      warnings: pathResult?.warnings ?? [],
       workspaceDir: plan.workspaceDir,
     };
   }

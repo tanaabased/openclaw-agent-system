@@ -1,5 +1,6 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Added deterministic executable path projection for OpenClaw exec and local Codex native shell commands, including workspace and packaged bin directories, workspace-relative manifest entries, managed Codex configuration, visible `.gitignore` ownership, drift diagnostics, and installed-agent coverage.
 - Added agent-scoped OP credential prompting, environment and stdin input, automatic or exact macOS Keychain, Linux Secret Service, and file-store selection, validation, idempotent removal, and stored-credential install preflight.
 - Added ordered, lazy 1Password Environment resolution through canonical `environment.op`, the official JavaScript SDK, value-free diagnostics, and a permanent `OP_SERVICE_ACCOUNT_TOKEN` fallback.
 - Added explicit per-agent environment resolution with literal values, restricted host references, required-value checks, and value-free `env` inspection. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)

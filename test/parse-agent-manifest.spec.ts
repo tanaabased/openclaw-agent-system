@@ -23,6 +23,9 @@ environment:
   op:
     - env-team
     - env-agent
+  path-prepend:
+    - tools/bin
+    - vendor/bin
   required:
     - AGENT_COLOR
   set:
@@ -43,6 +46,7 @@ environment:
         environment: {
           dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],
           op: ['env-team', 'env-agent'],
+          pathPrepend: ['tools/bin', 'vendor/bin'],
           required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
@@ -52,6 +56,20 @@ environment:
       },
       diagnostics: [],
     });
+  });
+
+  it('should normalize one workspace path prepend to the ordered internal list', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  path-prepend: tools/bin
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.pathPrepend, ['tools/bin']);
   });
 
   it('should normalize one 1password environment id to the ordered internal list', () => {
@@ -212,6 +230,21 @@ agent:
   id: tanaabot
 environment:
   op: ${environments}
+`).has('manifest-schema'),
+        true,
+      );
+    }
+  });
+
+  it('should reject empty, absolute, and duplicate path prepend declarations', () => {
+    for (const paths of ['[]', "''", "'   '", '/usr/local/bin', '[tools/bin, tools/bin]']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  path-prepend: ${paths}
 `).has('manifest-schema'),
         true,
       );

@@ -78,6 +78,7 @@ const requiredPackageFiles = [
   'dist/',
   'index.ts',
   'cli/',
+  'bin/',
   'lib/',
   'utils/',
   'assets/agent-system.png',

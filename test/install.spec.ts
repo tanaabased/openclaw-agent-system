@@ -43,6 +43,7 @@ function createHarness(
               options.install ?? {
                 actions: ['add-agent', 'set-identity'],
                 agentId: 'tanaabot',
+                warnings: [],
                 workspaceDir: '/workspace',
               }
             );
@@ -69,7 +70,22 @@ function createHarness(
 
 describe('cli/install', () => {
   it('should install a loaded workspace manifest and report completed actions', async () => {
-    const { calls, output, run } = createHarness();
+    const { calls, output, run } = createHarness({
+      install: {
+        actions: [
+          'add-agent',
+          'set-identity',
+          'create-workspace-bin',
+          'set-exec-path',
+          'create-codex-config',
+          'update-gitignore',
+        ],
+        agentId: 'tanaabot',
+        codexStatus: 'managed',
+        warnings: [],
+        workspaceDir: '/workspace',
+      },
+    });
 
     await run();
 
@@ -78,13 +94,36 @@ describe('cli/install', () => {
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
     assert.deepEqual(output, [
-      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\nworkspace  /workspace\n',
+      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\ncreated    workspace bin directory\nupdated    OpenClaw exec path for tanaabot\ncreated    Codex workspace path configuration\nupdated    workspace .gitignore\nworkspace  /workspace\n',
+    ]);
+  });
+
+  it('should warn without styling a user-managed codex configuration', async () => {
+    const { logs, run } = createHarness({
+      install: {
+        actions: [],
+        agentId: 'tanaabot',
+        codexStatus: 'manual',
+        warnings: [
+          {
+            code: 'codex-config-user-managed',
+            message: 'The existing .codex/config.toml is user-managed.',
+          },
+        ],
+        workspaceDir: '/workspace',
+      },
+    });
+
+    await run();
+
+    assert.deepEqual(logs.warn, [
+      'install: The existing .codex/config.toml is user-managed. code=codex-config-user-managed',
     ]);
   });
 
   it('should report an unchanged installed agent', async () => {
     const { output, run } = createHarness({
-      install: { actions: [], agentId: 'tanaabot', workspaceDir: '/workspace' },
+      install: { actions: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' },
     });
 
     await run();

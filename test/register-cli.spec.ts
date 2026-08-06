@@ -44,6 +44,7 @@ function createProgram() {
       fromEnvironment?: boolean;
       storeId?: string;
     }>,
+    doctor: [] as Array<{ agentId: string; workspaceDir: string }>,
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
@@ -90,6 +91,20 @@ function createProgram() {
         };
       },
     },
+    doctorService: {
+      async inspect(input) {
+        calls.doctor.push({
+          agentId: input.manifest.agent.id,
+          workspaceDir: input.workspaceDir,
+        });
+        return {
+          agentId: input.manifest.agent.id,
+          findings: [],
+          status: 'healthy',
+          workspaceDir: input.workspaceDir,
+        };
+      },
+    },
     environmentService: {
       async loadForAgentId(agentId) {
         calls.environmentAgent.push(agentId);
@@ -103,7 +118,7 @@ function createProgram() {
     installService: {
       async install(input) {
         calls.install.push(input);
-        return { actions: [], agentId: 'tanaabot', workspaceDir: '/workspace' };
+        return { actions: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' };
       },
     },
     logger: {
@@ -135,7 +150,7 @@ describe('lib/register-cli', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['validate', 'env', 'credentials', 'install'],
+      ['validate', 'env', 'doctor', 'credentials', 'install'],
     );
   });
 
@@ -148,6 +163,24 @@ describe('lib/register-cli', () => {
     assert.equal(output.join('').includes('install'), true);
     assert.equal(output.join('').includes('env'), true);
     assert.equal(output.join('').includes('credentials'), true);
+    assert.equal(output.join('').includes('doctor'), true);
+  });
+
+  it('should delegate doctor inspection for an explicit agent', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'doctor',
+      '--agent',
+      'data',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.agent, ['data']);
+    assert.deepEqual(calls.doctor, [{ agentId: 'tanaabot', workspaceDir: '/workspace' }]);
   });
 
   it('should delegate environment inspection with explicit agent and json options', async () => {

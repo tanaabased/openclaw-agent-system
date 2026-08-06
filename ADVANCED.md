@@ -29,7 +29,7 @@ cd /path/to/agent-workspace
 openclaw agent-system install
 ```
 
-Installation compares the manifest with current OpenClaw configuration. It adds an absent agent, reconciles the manifest-owned display name and optional avatar, reloads configuration, and verifies the final state. A matching installation is unchanged. An existing agent id bound to another workspace fails instead of being silently repointed.
+Installation compares the manifest with current OpenClaw configuration. It adds an absent agent, reconciles the manifest-owned display name and optional avatar, configures the supported executable paths, reloads configuration, and verifies the final state. A matching installation is unchanged. An existing agent id bound to another workspace fails instead of being silently repointed.
 
 The implicit `main` agent is not redundantly added when OpenClaw has no explicit agent list. `agent.description` is validated manifest data but is not currently applied to OpenClaw identity. Installation does not choose a model, prompt for or import credentials, start a Gateway, resolve environment values for delivery, or run a workspace installation script. When `environment.op` is declared, it does validate stored OP access before reading or mutating OpenClaw state.
 
@@ -63,21 +63,24 @@ environment:
   op:
     - env_team
     - env_agent
+  path-prepend:
+    - tools/bin
   required:
     - AGENT_EMAIL
 ```
 
-| Field                  | Required      | Current behavior                                                                   |
-| ---------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| `schema-version`       | yes           | Must be the integer `1`.                                                           |
-| `agent.id`             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
-| `agent.name`           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
-| `agent.description`    | no            | Validated and loaded; reserved for a later identity surface.                       |
-| `agent.avatar`         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
-| `environment.dotenv`   | no            | One relative path or an ordered non-empty unique list of paths.                    |
-| `environment.set`      | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
-| `environment.op`       | no            | One Environment id or an ordered non-empty unique list of ids.                     |
-| `environment.required` | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
+| Field                      | Required      | Current behavior                                                                   |
+| -------------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| `schema-version`           | yes           | Must be the integer `1`.                                                           |
+| `agent.id`                 | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
+| `agent.name`               | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
+| `agent.description`        | no            | Validated and loaded; reserved for a later identity surface.                       |
+| `agent.avatar`             | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
+| `environment.dotenv`       | no            | One relative path or an ordered non-empty unique list of paths.                    |
+| `environment.set`          | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
+| `environment.op`           | no            | One Environment id or an ordered non-empty unique list of ids.                     |
+| `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.              |
+| `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
@@ -99,11 +102,45 @@ environment.dotenv[0] < later dotenv files < environment.set < environment.op[0]
 
 Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment plus the ordered external-source lookup, with later external sources winning same-named host lookups. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
 
-Dotenv files and 1Password values are loaded only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads or fetches them. Path prepending is not yet implemented.
+Dotenv files and 1Password values are loaded only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads or fetches them.
 
 During ordinary environment resolution and credential validation, Agent System tries macOS Keychain then the agent-scoped file fallback on macOS, Linux Secret Service then file on Linux, and finally its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. Installation uses the same persistent-store order but bypasses the process environment. An exact `credentials validate op --store <id>` request also bypasses the process environment. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
 
-Agent System does not inject these values into OpenClaw `exec`, Codex `exec_command`, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Those surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
+Agent System does not inject these values into OpenClaw `exec`, Codex native shell commands, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Executable path projection is a separate, PATH-only contract for OpenClaw exec and local Codex native shell commands. Other surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
+
+#### Executable Path Projection
+
+Installation creates the workspace `bin/` directory and builds one deterministic path prefix in this order:
+
+```text
+<workspace>/bin
+<workspace>/<environment.path-prepend[0]>
+<workspace>/<later declared entries>
+<agent-system-package>/bin
+```
+
+The host `PATH` follows this prefix unchanged. Manifest entries are literal workspace-relative directories: they do not interpolate environment variables, must already exist as real directories, may not traverse a symbolic link, and must remain inside the canonical workspace. Canonical duplicates are removed while preserving first occurrence. The automatically created workspace bin and packaged Agent System bin do not need to be declared.
+
+For ordinary OpenClaw exec, `install` prepends the resolved paths to the selected agent's `tools.exec.pathPrepend` while preserving entries Agent System does not own. For local Codex native shell commands, `install` writes the equivalent literal `PATH` to `<workspace>/.codex/config.toml` with shell snapshots enabled. The Codex file must be refreshed by rerunning `install` when the workspace, package location, declared paths, or host `PATH` changes; start a new Codex session after refreshing it.
+
+Agent System owns a Codex config only when it contains the generated `# agent-system: managed-path-v1` marker. It may create or replace that managed file and adds `.codex/config.toml` to the workspace root `.gitignore` with a visible explanatory comment. An existing unmarked config, or one carrying `# agent-system: manual-path-v1`, is user-managed: installation never edits it and warns the operator to add the rendered PATH configuration manually. Agent System also leaves `.gitignore` ownership to the user in that case.
+
+For a user-managed config, merge the following settings into the existing TOML rather than duplicating an existing table. Replace the placeholder with the same absolute prefix shown under the agent's OpenClaw `tools.exec.pathPrepend`, followed by the intended base PATH. To take ownership of a previously generated file, replace the managed marker with the manual marker; do not retain both. The manual marker makes ownership explicit, and adding `.codex/config.toml` to the root `.gitignore` is recommended because the file is machine-specific and may contain environment values.
+
+```toml
+# agent-system: manual-path-v1
+
+[features]
+shell_snapshot = true
+
+[shell_environment_policy]
+inherit = "all"
+
+[shell_environment_policy.set]
+PATH = "/absolute/workspace/bin:/absolute/agent-system/bin:/base/path"
+```
+
+The projection covers OpenClaw's ordinary exec implementation and the local OpenAI Codex native shell implementation. It does not promise PATH delivery to node-host commands, remote Codex runs, ACP or CLI backends, MCP tools, or arbitrary third-party tools. OpenClaw sandbox exec can use the configured prefix only when the mounted paths and sandbox policy make those host directories available.
 
 `environment.required` applies when Agent System resolves the complete environment, including through `agent-system env`. It does not make every declared variable a prerequisite for unrelated future provider actions; those actions will declare and check their own required inputs.
 
@@ -242,7 +279,7 @@ The current command accepts only the `op` credential target. Concrete store ids 
 
 ### `openclaw agent-system install`
 
-Installs the agent represented by the current workspace and reconciles its public OpenClaw identity.
+Installs the agent represented by the current workspace and reconciles its public OpenClaw identity and supported executable paths.
 
 #### Usage
 
@@ -260,31 +297,62 @@ This command currently has no options. Run it from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reloads configuration, and fails if registration or identity still differs from the manifest.
+Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reloads configuration, and fails if registration, identity, or an Agent System-owned path surface still differs from the manifest.
 
 Possible result lines are:
 
 ```text
 created    OpenClaw agent tanaabot
 updated    OpenClaw identity for tanaabot
+created    workspace bin directory
+updated    OpenClaw exec path for tanaabot
+created    Codex workspace path configuration
+updated    workspace .gitignore
 workspace  /path/to/workspace
 
 unchanged  OpenClaw agent tanaabot
 workspace  /path/to/workspace
 ```
 
-The created and updated lines may appear together on first installation. Repeated installation produces the unchanged line when no reconciliation is needed.
+The created and updated lines may appear together on first installation. Repeated installation produces the unchanged line when no reconciliation is needed. An existing user-managed `.codex/config.toml` instead produces a warning and remains outside Agent System remediation.
+
+### `openclaw agent-system doctor`
+
+Inspects implemented Agent System path projection for drift without applying repairs.
+
+#### Usage
+
+```sh
+# inspect the current workspace without repairing it.
+openclaw agent-system doctor
+
+# inspect one configured agent workspace.
+openclaw agent-system doctor --agent tanaabot
+
+# emit stable machine-readable findings.
+openclaw agent-system doctor --agent tanaabot --json
+```
+
+#### Options
+
+**`--agent <id>`**
+
+Resolves the configured OpenClaw workspace for the exact agent id. Without this option, doctor uses the current directory as the workspace.
+
+**`--json`**
+
+Writes the value-free result as JSON instead of styled summary lines.
+
+#### Behavior
+
+The current doctor slice compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, and confirms that `.codex/config.toml` is listed in the workspace `.gitignore`. Drift returns a nonzero exit code and recommends rerunning `install`. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
 
 ## Planned Advanced Surfaces
 
-### Environment
-
-`environment.path-prepend` is the next Phase 1 environment slice described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md); it is not current configuration or CLI behavior. Native platform credential stores and the permanent process-environment OP fallback are current behavior documented above.
-
 ### Installation Scripts And Drift
 
-Workspace installation scripts, non-mutating plans, successful-run metadata, and drift reporting are not implemented. The current `install` command is limited to OpenClaw agent registration and public identity reconciliation.
+Workspace installation scripts, non-mutating plans, and successful-run metadata are not implemented. The current `install` and `doctor` commands cover OpenClaw agent registration, public identity reconciliation, and supported executable path projection only.
 
 ### Diagnostics
 
-The planned `plan` and `doctor` commands are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will become their implemented command reference as each surface ships.
+The planned `plan` command and broader credential, provider, installation-script, and lifecycle doctor findings are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will expand their implemented command reference as each surface ships.

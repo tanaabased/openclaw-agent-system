@@ -9,6 +9,7 @@ export interface AgentManifest {
   environment?: {
     dotenv?: string[];
     op?: string[];
+    pathPrepend?: string[];
     required?: string[];
     set?: Record<string, string>;
   };

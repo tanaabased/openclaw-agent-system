@@ -85,8 +85,8 @@ Phase 1 delivers:
   bootstrap, and a hardened credential-file fallback;
 - required-variable validation, provenance, value-free consolidated `env`
   inspection, and automatic provider-output redaction;
-- executable path resolution for Agent System-owned children and later optional
-  shim routing; and
+- executable path projection for ordinary OpenClaw exec and local Codex native
+  shell commands, plus later optional shim routing; and
 - focused Leia coverage of installed-plugin, agent-binding, environment, and
   value-free diagnostic boundaries.
 
@@ -271,8 +271,8 @@ names remain literal data keys and are never casing-converted.
 
 Environment resolution and consumption are separate contracts. Resolving a
 value makes it available only to explicit Agent System-owned consumers. It does
-not imply that OpenClaw's built-in `exec`, Codex `exec_command`, ACP backends,
-CLI backends, MCP tools, or third-party tools can receive it.
+not imply that OpenClaw's built-in `exec`, Codex native shell commands, ACP
+backends, CLI backends, MCP tools, or third-party tools can receive it.
 
 The current implementation loads ordered workspace-contained dotenv files and
 ordered 1Password Environments, accepts strings under `environment.set`,
@@ -281,8 +281,9 @@ host-environment snapshot plus the ordered external-source lookup, validates
 `environment.required`, and implements value-free `env` diagnostics with
 provenance. Agent-scoped OP credential validation and persistent storage through
 macOS Keychain, Linux Secret Service, and the hardened file fallback are also
-implemented. Scoped consumer resolution, centralized provider-output redaction,
-and path prepending are subsequent Phase 1 slices.
+implemented. Executable path projection is implemented separately for ordinary
+OpenClaw exec and local Codex native shell commands. Scoped consumer resolution
+and centralized provider-output redaction are subsequent Phase 1 slices.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
@@ -311,8 +312,8 @@ environment:
     - env_emori
 
   path-prepend:
-    - .agent-system/bin
-    - ${AGENT_TOOL_BIN}
+    - tools/bin
+    - vendor/bin
 
   required:
     - AGENT_EMAIL
@@ -358,19 +359,42 @@ and avoids accidental Gateway credential inheritance.
 
 ### Executable path projection
 
-`environment.path-prepend` is an ordered list of literal or interpolated
-directories. Relative entries resolve from the workspace root. Agent System
-deduplicates canonical paths while preserving first occurrence and rejects
-unsafe or workspace-escaping entries according to the consuming surface's
-policy. A missing provider-owned directory is reported as unsynchronized;
-only explicit installation may create it.
+`environment.path-prepend` accepts one literal workspace-relative directory or
+an ordered non-empty list. Entries do not interpolate environment variables.
+Each entry resolves from the canonical workspace root, must already be a real
+directory, may not traverse a symbolic link, and must remain inside the
+workspace. Agent System deduplicates canonical paths while preserving first
+occurrence.
 
-Agent System-owned child processes use the resolved list directly. A later shim
-installation may project an Agent System-owned shim directory into an explicitly
-supported command surface, but that routing does not deliver the resolved agent
-environment to generic commands. Agent System never returns or overrides a
-generic process `PATH`. `env` reports the resolved prepend entries and their
-readiness for Agent System-owned consumers.
+Explicit `install` creates `<workspace>/bin` and builds one path prefix in this
+order:
+
+1. the agent workspace `bin` directory;
+2. declared `environment.path-prepend` directories;
+3. the installed Agent System package `bin` directory; and
+4. the existing host `PATH`.
+
+Installation projects the same prefix into the agent's OpenClaw
+`tools.exec.pathPrepend` setting and a literal workspace `.codex/config.toml`
+for local Codex native shell commands. OpenClaw entries not owned by Agent
+System remain after the managed prefix. The generated Codex config enables
+shell snapshots and sets `shell_environment_policy.set.PATH`; because the value
+is literal, rerunning `install` refreshes it after any workspace, package,
+manifest-path, or host-PATH change.
+
+Agent System creates or replaces only Codex config carrying its managed marker.
+It lists a managed `.codex/config.toml` in the workspace root `.gitignore` with
+a visible explanatory comment. An unmarked config, or one carrying the manual
+marker, remains user-managed: installation warns without modifying the config
+or ignore file. `doctor` reports OpenClaw drift, managed Codex drift, ignore
+state, and manual ownership without repair.
+
+This PATH-only projection does not deliver the resolved agent environment to
+generic commands. It supports ordinary OpenClaw exec and the local Codex native
+shell implementation. Node-host commands, remote Codex execution, ACP and CLI
+backends, MCP tools, and arbitrary third-party tools remain outside the
+contract. OpenClaw sandbox exec is conditional on the configured directories
+being available under its mount and sandbox policy.
 
 ### Inline values and interpolation
 
@@ -472,11 +496,13 @@ and CI.
 
 ### Generic command boundary
 
-Agent System does not inject its environment into OpenClaw `exec`, Codex
-`exec_command`, ACP command tools, CLI backends, node-host commands, MCP tools,
-or other harness-specific command surfaces. Those tools retain their owning
-runtime's environment and security contract. Agent System also does not source
-shell startup files to approximate per-agent delivery.
+Agent System does not inject its general environment into OpenClaw `exec`, Codex
+native shell commands, ACP command tools, CLI backends, node-host commands, MCP
+tools, or other harness-specific command surfaces. Those tools retain their
+owning runtime's environment and security contract. The executable-path
+projection above is an explicit PATH-only exception for its two supported
+surfaces. Agent System does not source shell startup files to approximate
+broader per-agent delivery.
 
 Provider tools and other Agent System-owned actions may launch a fixed child
 process with a sanitized baseline and an action-scoped subset of resolved
@@ -919,8 +945,13 @@ Installation begins by reconciling the current workspace with OpenClaw:
 - OpenClaw's implicit `main` agent is not redundantly added;
 - the manifest-owned display name and optional avatar are applied;
 - an agent id already bound to another workspace fails without mutation;
+- `<workspace>/bin` is created when absent;
+- the Agent System-owned OpenClaw exec prefix and managed local Codex PATH
+  configuration are reconciled;
+- an existing user-managed Codex config is left untouched with a warning;
 - configuration is reloaded and verified after mutation; and
-- a repeated install with matching registration and identity is a no-op.
+- a repeated install with matching registration, identity, and path projection
+  is a no-op.
 
 This reconciliation happens only through an explicit `install` command. Gateway
 startup and passive manifest hooks never add agents or update identity.
@@ -1029,16 +1060,19 @@ openclaw agent-system doctor
   commands may accept `--agent`; model-facing tools may not.
 - `plan` reports installation inputs, readiness, hash, and drift without running
   the installation script.
-- `install` reconciles OpenClaw agent registration and identity, then resolves
-  the managed environment and explicitly executes a declared script.
-- `doctor` checks manifest validity, credential access, required variables, file
-  permissions, expected tools and plugins, provider compatibility, tool and shim
-  routing, cron state, and installation drift without repair.
+- `install` currently reconciles OpenClaw agent registration, identity, and the
+  supported executable paths. Phase 3 then resolves the managed environment and
+  explicitly executes a declared script.
+- `doctor` currently checks supported OpenClaw and Codex path projection without
+  repair. Later phases add credential access, required variables, file
+  permissions, expected tools and plugins, provider compatibility, shim routing,
+  cron state, and installation-script drift.
 
-Phase 1 owns `validate`, `env`, and bootstrap credential management. Phase 2
-adds provider and capability inspection. Phase 3 completes installation script
-execution, cron synchronization, and their corresponding `plan` and `doctor`
-checks. The already-supported agent registration and identity reconciliation
+Phase 1 owns `validate`, `env`, bootstrap credential management, executable path
+projection, and its narrow `doctor` checks. Phase 2 adds provider and capability
+inspection. Phase 3 completes installation script execution, cron
+synchronization, and their corresponding `plan` and expanded `doctor` checks.
+The already-supported agent registration, identity, and path reconciliation
 remain the first part of explicit `install` throughout these phases.
 
 ## Product Invariants
@@ -1052,7 +1086,8 @@ remain the first part of explicit `install` throughout these phases.
 - Environment resolution is deterministic and does not depend on shell startup
   files or OpenClaw shell snapshots.
 - Environment resolution is not ambient delivery. Generic command tools receive
-  no Agent System environment injection.
+  no Agent System environment-value injection; the two supported command
+  surfaces receive only the explicit executable-path projection.
 - Interpolation is restricted and never evaluates shell syntax.
 - Source ordering and override behavior are explicit and inspectable.
 - Secrets are never written into the manifest or printed by normal diagnostics.
@@ -1067,8 +1102,9 @@ remain the first part of explicit `install` throughout these phases.
   error, and audit contract. A future third-party API preserves that contract.
 - Git and GitHub credentials are resolved only inside their Agent System-owned
   action path and never placed in the Gateway environment.
-- Agent System-owned children and later supported shim routes use explicit path
-  configuration rather than a generic `PATH` override.
+- Ordinary OpenClaw exec, local Codex native shell commands, Agent System-owned
+  children, and later supported shim routes use explicit path configuration
+  rather than Gateway-wide or shell-startup mutation.
 - Installation requires explicit operator intent.
 - Gateway startup may validate and report drift but never installs dependencies,
   plugins, or configuration automatically.
@@ -1093,8 +1129,9 @@ remain the first part of explicit `install` throughout these phases.
 7. Implement agent-scoped OP credential management with explicit input,
    environment-access validation, macOS Keychain, Linux Secret Service, the
    hardened file fallback, and the permanent process-environment fallback.
-8. Resolve `environment.path-prepend` for Agent System-owned children and later
-   explicitly supported shim routes.
+8. Resolve `environment.path-prepend`, create the workspace bin, and project the
+   deterministic prefix into ordinary OpenClaw exec and local Codex native shell
+   commands, with managed-config ownership and read-only drift diagnostics.
 9. Add centralized secret classification and provider-output redaction.
 10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
     manifest binding, source precedence, value-free diagnostics, path

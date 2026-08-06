@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, explicit per-agent environment values from dotenv, inline, and 1Password Environment sources, and agent-scoped OP credential management through macOS Keychain, Linux Secret Service, and an owner-only file fallback. Path projection, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, explicit per-agent environment values from dotenv, inline, and 1Password Environment sources, agent-scoped OP credential management through macOS Keychain, Linux Secret Service, and an owner-only file fallback, and executable path projection for OpenClaw exec and local Codex native shell commands. Git identity and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -65,7 +65,7 @@ environment:
     - AGENT_COLOR
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; and `environment.required`. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or final external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; ordered workspace-relative executable directories under `environment.path-prepend`; and `environment.required`. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or final external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
 
 1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks macOS Keychain or Linux Secret Service, then the agent-scoped file fallback, before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
 
@@ -96,7 +96,14 @@ cd /path/to/agent-workspace
 openclaw agent-system install
 ```
 
-`install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. If `environment.op` is declared, installation first verifies that a stored credential can access every declared Environment; it does not prompt, import the process token, or store credentials. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
+`install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It also creates the workspace `bin/` directory, prepends the workspace bin, declared workspace paths, and Agent System's packaged bin to OpenClaw exec, and manages the equivalent literal path in `.codex/config.toml` for local Codex native shell commands. Agent System-owned Codex config is visibly listed in the workspace `.gitignore`; an existing user-managed Codex config is left untouched with a warning. If `environment.op` is declared, installation first verifies that a stored credential can access every declared Environment; it does not prompt, import the process token, or store credentials. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
+
+Inspect supported path projection for drift without repairing it:
+
+```sh
+openclaw agent-system doctor
+openclaw agent-system doctor --agent tanaabot --json
+```
 
 Resolve and inspect Agent System environment metadata without printing values:
 
@@ -105,7 +112,7 @@ openclaw agent-system env
 openclaw agent-system env --agent tanaabot --json
 ```
 
-At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve environment values at session startup or inject them into OpenClaw `exec`, Codex `exec_command`, or other generic command tools. `agent-system env` is the current explicit environment consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `[agent-system] manifest_*` messages; explicit environment inspection also emits `[agent-system] environment_*` messages.
+At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve or inject general environment values at session startup. Installation projects only `PATH` into the explicitly supported OpenClaw exec and local Codex native shell surfaces; other generic command tools retain their own environment contracts. `agent-system env` is the current explicit environment-value consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `[agent-system] manifest_*` messages; explicit environment inspection also emits `[agent-system] environment_*` messages.
 
 See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 

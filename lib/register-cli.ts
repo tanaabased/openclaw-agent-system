@@ -1,10 +1,12 @@
 import envAgentSystem from '../cli/env.ts';
+import doctorAgentSystem from '../cli/doctor.ts';
 import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
+import type AgentDoctorService from './agent-doctor-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
 import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from './cli-output.ts';
@@ -28,6 +30,7 @@ export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
+  doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
   installService: Pick<AgentInstallService, 'install'>;
   logger: Logger;
@@ -84,6 +87,26 @@ export default function registerAgentSystemCli(
         environmentService: options.environmentService,
         json: commandOptions.json === true,
         logger: options.logger,
+        output,
+        setExitCode,
+        styles: options.styles,
+        workspaceDir: cwd(),
+      });
+    });
+  const doctor = agentSystem
+    .command('doctor')
+    .description('Inspect Agent System workspace and executable-path drift.')
+    .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
+    .option('--json', 'Write structured JSON output.')
+    .action(async () => {
+      const commandOptions = doctor.opts();
+      const agentId = commandOptions.agent;
+      await doctorAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        doctorService: options.doctorService,
+        json: commandOptions.json === true,
+        logger: options.logger,
+        manifestService: options.manifestService,
         output,
         setExitCode,
         styles: options.styles,
@@ -169,7 +192,7 @@ export default function registerAgentSystemCli(
     });
   agentSystem
     .command('install')
-    .description('Install the workspace agent and reconcile its manifest identity.')
+    .description('Install the workspace agent and reconcile its identity and executable paths.')
     .action(async () => {
       await installAgentSystem({
         installService: options.installService,
