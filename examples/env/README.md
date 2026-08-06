@@ -38,8 +38,7 @@ cd "$GITHUB_WORKSPACE/examples/env/data"
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BARE"'
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BRACED"'
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"required": true'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"staticExecDelivery": "documented-filtered"'
-if AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-filtered'; then exit 1; fi
+if AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-value'; then exit 1; fi
 
 # should inspect a registered agent without current workspace discovery
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --agent data --json | grep -F '"agentId": "data"'

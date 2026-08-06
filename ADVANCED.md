@@ -13,7 +13,7 @@ An OpenClaw agent workspace opts into Agent System with one manifest:
 agent.yaml                 # shorthand
 ```
 
-The preferred file wins when both exist; the files never merge. Agent System loads the selected manifest at `session_start`, before each tool call, and when OpenClaw resolves the built-in `exec` environment. Passive loading validates and reports state but never adds agents, changes identity, installs dependencies, or executes workspace code.
+The preferred file wins when both exist; the files never merge. Agent System loads the selected manifest at `session_start`. Passive loading validates and reports non-secret manifest state but never resolves environment values, adds agents, changes identity, installs dependencies, or executes workspace code.
 
 Manifest discovery rejects symlinked manifests, a symlinked `.agent-system` directory, files larger than 1 MiB, invalid UTF-8, YAML anchors, aliases, explicit tags, duplicate keys, and unknown schema keys.
 
@@ -65,12 +65,12 @@ environment:
 | `agent.name`           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
 | `agent.description`    | no            | Validated and loaded; reserved for a later identity surface.                       |
 | `agent.avatar`         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
-| `environment.set`      | no            | String map offered to the matching agent's built-in `exec` environment.            |
+| `environment.set`      | no            | String map resolved for explicit Agent System diagnostics and owned consumers.     |
 | `environment.required` | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
-#### Environment Resolution And Exec Filtering
+#### Environment Resolution
 
 Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be YAML strings; booleans and numbers fail validation instead of being coerced. Variable names are literal data keys and are never casing-converted.
 
@@ -78,35 +78,9 @@ Set values support one-pass `$NAME` and `${NAME}` references for uppercase names
 
 The current slice does not implement dotenv files, 1Password Environments, or path prepending.
 
-OpenClaw filters plugin-provided variables after Agent System contributes them through `resolve_exec_env`. `PATH` is always removed, and invalid or dangerous override names—including loader, proxy, TLS, and runtime injection variables—are also removed. See OpenClaw's [exec environment hook documentation](https://docs.openclaw.ai/plugins/hooks#exec-environment-hook) and authoritative [host environment security policy](https://github.com/openclaw/openclaw/blob/main/src/infra/host-env-security-policy.json). The policy belongs to OpenClaw and can change between releases.
+Agent System does not inject these values into OpenClaw `exec`, Codex `exec_command`, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Those surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
 
-Agent System cannot observe the active Gateway's final filtering decision. Its `env` command therefore classifies this conservative subset of documented, high-value restrictions as `documented-filtered`:
-
-```text
-ALL_PROXY
-BASH_ENV
-GH_TOKEN
-GITHUB_TOKEN
-GIT_ASKPASS
-GIT_SSH
-GIT_SSH_COMMAND
-HOME
-HTTP_PROXY
-HTTPS_PROXY
-NODE_EXTRA_CA_CERTS
-NODE_OPTIONS
-NODE_TLS_REJECT_UNAUTHORIZED
-NO_PROXY
-OPENCLAW_CLI
-PATH
-SHELL
-SSH_AUTH_SOCK
-SSL_CERT_DIR
-SSL_CERT_FILE
-ZDOTDIR
-```
-
-Names beginning with `BASH_FUNC_`, `DYLD_`, `GIT_CONFIG_`, or `LD_` receive the same classification. Other names are `exec-candidate`, not guaranteed accepted. This compatibility list is intentionally incomplete and is not a substitute for OpenClaw's current policy.
+`environment.required` applies when Agent System resolves the complete environment, including through `agent-system env`. It does not make every declared variable a prerequisite for unrelated future provider actions; those actions will declare and check their own required inputs.
 
 ### Runtime Logging
 
@@ -160,7 +134,7 @@ openclaw agent-system validate --agent tanaabot
 
 ### `openclaw agent-system env`
 
-Reports the environment variable names Agent System contributes for one manifest. It never prints values.
+Resolves and reports the environment variable names Agent System provides for one manifest. It never prints values or predicts another tool's environment.
 
 #### Usage
 
@@ -184,11 +158,9 @@ Writes structured output. It follows the same value-free contract as human outpu
 The local view includes `agentId`, `workspaceDir`, `manifestPath`, and one entry per variable:
 
 ```text
-AGENT_COLOR source=environment.set required=false static=exec-candidate
-GITHUB_TOKEN source=environment.set required=true static=documented-filtered
+AGENT_COLOR source=environment.set required=false
+GITHUB_TOKEN source=environment.set required=true
 ```
-
-Static classification is a compatibility hint and must not be read as an observed result from the active Gateway.
 
 #### Examples
 

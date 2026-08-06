@@ -68,7 +68,7 @@ describe('lib/agent-manifest-service', () => {
 
     const result = await service.loadForRuntimeContext(
       { sessionKey: 'legacy-session' },
-      'before_tool_call',
+      'session_start',
     );
 
     assert.equal(result.status, 'unresolved');

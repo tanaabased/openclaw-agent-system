@@ -66,7 +66,7 @@ describe('index', () => {
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['session_start', 'before_tool_call', 'resolve_exec_env']);
+    assert.deepEqual(hookNames, ['session_start']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

@@ -30,9 +30,6 @@ describe('lib/agent-environment-service', () => {
         async loadForAgentId() {
           return loaded;
         },
-        async loadForRuntimeContext() {
-          return loaded;
-        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -67,9 +64,6 @@ describe('lib/agent-environment-service', () => {
         async loadForAgentId() {
           return invalid;
         },
-        async loadForRuntimeContext() {
-          return invalid;
-        },
         async loadForWorkspace() {
           return invalid;
         },
@@ -100,9 +94,6 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
-        },
-        async loadForRuntimeContext() {
-          return loaded;
         },
         async loadForWorkspace() {
           return loaded;

@@ -3,14 +3,14 @@ schema-version: 1
 agent:
   id: data
   name: Data
-  description: Environment delivery test agent.
+  description: Environment inspection test agent.
   avatar: avatar.png
 
 environment:
   set:
     AGENT_SYSTEM_LEIA_BARE: $AGENT_SYSTEM_LEIA_SOURCE
     AGENT_SYSTEM_LEIA_BRACED: ${AGENT_SYSTEM_LEIA_SOURCE}
-    GITHUB_TOKEN: leia-agent-system-filtered
+    GITHUB_TOKEN: leia-agent-system-private-value
   required:
     - AGENT_SYSTEM_LEIA_BARE
     - AGENT_SYSTEM_LEIA_BRACED

@@ -84,14 +84,14 @@ openclaw agent-system install
 
 `install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
 
-Inspect the environment names and delivery metadata without printing values:
+Resolve and inspect Agent System environment metadata without printing values:
 
 ```sh
 openclaw agent-system env
 openclaw agent-system env --agent tanaabot --json
 ```
 
-At runtime, the plugin loads a matching manifest at `session_start`, `before_tool_call`, and `resolve_exec_env`. Literal values are offered to OpenClaw's built-in `exec`, which applies its own protected-variable filter. A missing manifest leaves the agent unmanaged; an invalid or unresolved managed agent blocks `exec` rather than running with an unintended environment. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `agent_system.manifest_*` and `agent_system.environment_*` lifecycle events.
+At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve environment values at session startup or inject them into OpenClaw `exec`, Codex `exec_command`, or other generic command tools. `agent-system env` is the current explicit environment consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `agent_system.manifest_*` events; explicit environment inspection also emits `agent_system.environment_*` events.
 
 See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 

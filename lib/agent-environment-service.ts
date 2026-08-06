@@ -18,10 +18,7 @@ export interface AgentEnvironmentServiceDependencies {
     error(message: string): void;
     info(message: string): void;
   };
-  manifestService: Pick<
-    AgentManifestService,
-    'loadForAgentId' | 'loadForRuntimeContext' | 'loadForWorkspace'
-  >;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
 }
 
 function quote(value: string): string {
@@ -43,16 +40,6 @@ export default class AgentEnvironmentService {
   constructor(dependencies: AgentEnvironmentServiceDependencies) {
     this.#dependencies = dependencies;
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
-  }
-
-  async loadForRuntimeContext(
-    context: Parameters<AgentManifestService['loadForRuntimeContext']>[0],
-    trigger: Exclude<ManifestLoadTrigger, 'cli'>,
-  ): Promise<AgentEnvironmentLoadResult> {
-    return this.#resolve(
-      await this.#dependencies.manifestService.loadForRuntimeContext(context, trigger),
-      trigger,
-    );
   }
 
   async loadForAgentId(

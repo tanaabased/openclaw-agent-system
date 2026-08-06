@@ -24,7 +24,6 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
         name: 'AGENT_COLOR',
         required: false,
         source: 'environment.set',
-        staticExecDelivery: 'exec-candidate',
       },
     ],
   },

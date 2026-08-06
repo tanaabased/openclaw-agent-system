@@ -23,13 +23,11 @@ const loaded: AgentEnvironmentLoadResult = {
         name: 'AGENT_COLOR',
         required: true,
         source: 'environment.set',
-        staticExecDelivery: 'exec-candidate',
       },
       {
         name: 'GITHUB_TOKEN',
         required: false,
         source: 'environment.set',
-        staticExecDelivery: 'documented-filtered',
       },
     ],
   },
@@ -82,9 +80,10 @@ describe('cli/env', () => {
 
     const serialized = output.write.join('');
     assert.deepEqual(calls.workspace, ['/current']);
-    assert.equal(serialized.includes('AGENT_COLOR'), true);
-    assert.equal(serialized.includes('exec-candidate'), true);
-    assert.equal(serialized.includes('"required": true'), true);
+    assert.deepEqual(JSON.parse(serialized).variables, [
+      { name: 'AGENT_COLOR', required: true, source: 'environment.set' },
+      { name: 'GITHUB_TOKEN', required: false, source: 'environment.set' },
+    ]);
     assert.equal(serialized.includes('green'), false);
     assert.equal(serialized.includes('private-token'), false);
   });

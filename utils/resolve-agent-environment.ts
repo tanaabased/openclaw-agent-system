@@ -1,6 +1,3 @@
-import classifyOpenClawExecEnvironment, {
-  type StaticExecDelivery,
-} from './classify-openclaw-exec-environment.ts';
 import interpolateEnvironmentValue from './interpolate-environment-value.ts';
 import type { AgentManifest, ManifestDiagnostic } from './manifest-types.ts';
 
@@ -8,7 +5,6 @@ export interface AgentEnvironmentVariable {
   name: string;
   required: boolean;
   source: 'environment.set';
-  staticExecDelivery: StaticExecDelivery;
 }
 
 export interface ResolvedAgentEnvironment {
@@ -65,7 +61,6 @@ export default function resolveAgentEnvironment(
       name,
       required: required.has(name),
       source: 'environment.set' as const,
-      staticExecDelivery: classifyOpenClawExecEnvironment(name),
     }));
 
   return { status: 'resolved', environment: { values, variables } };

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
 describe('lib/register-hooks', () => {
-  it('should load only manifest metadata at session start and resolve environments for exec', async () => {
+  it('should load manifest metadata only when a session starts', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
-    const calls: Array<{ agentId?: string; service: string; trigger: string }> = [];
+    const calls: Array<{ agentId?: string; trigger: string }> = [];
     registerAgentSystemHooks(
       {
         on(name: string, handler: (...args: unknown[]) => unknown) {
@@ -14,124 +14,15 @@ describe('lib/register-hooks', () => {
       } as never,
       {
         async loadForRuntimeContext(context, trigger) {
-          calls.push({ agentId: context.agentId, service: 'manifest', trigger });
-          return { status: 'unresolved', diagnostics: [] };
-        },
-      },
-      {
-        async loadForRuntimeContext(context, trigger) {
-          calls.push({ agentId: context.agentId, service: 'environment', trigger });
+          calls.push({ agentId: context.agentId, trigger });
           return { status: 'unresolved', diagnostics: [] };
         },
       },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
-    await handlers.get('before_tool_call')?.({ toolName: 'read' }, { agentId: 'tanaabot' });
-    await handlers.get('before_tool_call')?.({ toolName: 'exec' }, { agentId: 'tanaabot' });
 
-    assert.deepEqual(calls, [
-      { agentId: 'tanaabot', service: 'manifest', trigger: 'session_start' },
-      { agentId: 'tanaabot', service: 'environment', trigger: 'before_tool_call' },
-    ]);
-  });
-
-  it('should block exec when an active manifest is invalid but allow unmanaged workspaces', async () => {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>();
-    let result: 'invalid' | 'unmanaged' = 'invalid';
-    registerAgentSystemHooks(
-      {
-        on(name: string, handler: (...args: unknown[]) => unknown) {
-          handlers.set(name, handler);
-        },
-      } as never,
-      {
-        async loadForRuntimeContext() {
-          return { status: 'unresolved', diagnostics: [] };
-        },
-      },
-      {
-        async loadForRuntimeContext() {
-          return result === 'invalid'
-            ? {
-                status: 'invalid',
-                scope: { agentId: 'data', workspaceDir: '/workspace' },
-                diagnostics: [{ code: 'manifest-schema', message: 'invalid', severity: 'error' }],
-              }
-            : {
-                status: 'unmanaged',
-                scope: { agentId: 'data', workspaceDir: '/workspace' },
-                diagnostics: [],
-              };
-        },
-      },
-    );
-
-    const invalid = await handlers.get('before_tool_call')?.(
-      { toolName: 'exec' },
-      { agentId: 'data' },
-    );
-    result = 'unmanaged';
-    const unmanaged = await handlers.get('before_tool_call')?.(
-      { toolName: 'exec' },
-      { agentId: 'data' },
-    );
-
-    assert.deepEqual(invalid, {
-      block: true,
-      blockReason:
-        'Agent System blocked exec because the active manifest is invalid (manifest-schema).',
-    });
-    assert.equal(unmanaged, undefined);
-  });
-
-  it('should contribute resolved values to the matching exec environment', async () => {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>();
-    registerAgentSystemHooks(
-      {
-        on(name: string, handler: (...args: unknown[]) => unknown) {
-          handlers.set(name, handler);
-        },
-      } as never,
-      {
-        async loadForRuntimeContext() {
-          return { status: 'unresolved', diagnostics: [] };
-        },
-      },
-      {
-        async loadForRuntimeContext() {
-          return {
-            status: 'loaded',
-            scope: { agentId: 'data', workspaceDir: '/workspace' },
-            path: '/workspace/agent.yaml',
-            digest: 'abc123',
-            manifest: {
-              schemaVersion: 1,
-              agent: { id: 'data' },
-              environment: { set: { AGENT_COLOR: 'green' } },
-            },
-            environment: {
-              values: { AGENT_COLOR: 'green' },
-              variables: [
-                {
-                  name: 'AGENT_COLOR',
-                  required: false,
-                  source: 'environment.set',
-                  staticExecDelivery: 'exec-candidate',
-                },
-              ],
-            },
-            diagnostics: [],
-          };
-        },
-      },
-    );
-
-    const environment = await handlers.get('resolve_exec_env')?.(
-      { toolName: 'exec', host: 'gateway', sessionKey: 'agent:data:ordinary' },
-      { agentId: 'data' },
-    );
-
-    assert.deepEqual(environment, { AGENT_COLOR: 'green' });
+    assert.deepEqual([...handlers.keys()], ['session_start']);
+    assert.deepEqual(calls, [{ agentId: 'tanaabot', trigger: 'session_start' }]);
   });
 });

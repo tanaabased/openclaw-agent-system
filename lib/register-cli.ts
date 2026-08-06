@@ -61,7 +61,7 @@ export default function registerAgentSystemCli(
     });
   const env = agentSystem
     .command('env')
-    .description('Inspect Agent System environment delivery without showing values.')
+    .description('Inspect the resolved Agent System environment without showing values.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {

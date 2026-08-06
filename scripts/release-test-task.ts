@@ -116,7 +116,6 @@ try {
     'lib/register-cli.ts',
     'lib/register-hooks.ts',
     'utils/decode.ts',
-    'utils/classify-openclaw-exec-environment.ts',
     'utils/discover-manifest.ts',
     'utils/encode.ts',
     'utils/encode-keys.ts',

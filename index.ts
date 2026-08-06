@@ -41,7 +41,7 @@ export default definePluginEntry({
       logger: api.logger,
       manifestService,
     });
-    registerAgentSystemHooks(api, manifestService, environmentService);
+    registerAgentSystemHooks(api, manifestService);
     api.registerCli(
       ({ program }) => {
         registerAgentSystemCli(program, {
