@@ -7,6 +7,7 @@ import planAgentInstall, {
   type CurrentAgentInstallState,
   type DesiredAgentInstallState,
 } from '../utils/plan-agent-install.ts';
+import type OnePasswordCredentialManager from './onepassword-credential-manager.ts';
 
 export interface AgentInstallCommandResult {
   code: number;
@@ -21,6 +22,7 @@ export interface AgentInstallResult {
 }
 
 export interface AgentInstallServiceDependencies {
+  credentialManager?: Pick<OnePasswordCredentialManager, 'validateStoredForInstall'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
 }
@@ -65,6 +67,19 @@ export default class AgentInstallService {
     const name = input.manifest.agent.name?.trim();
     if (!name) {
       throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
+    }
+
+    if ((input.manifest.environment?.op?.length ?? 0) > 0) {
+      const credentialManager = this.#dependencies.credentialManager;
+      if (!credentialManager) {
+        throw new AgentInstallError(
+          '[op-credential-unavailable] Stored OP credential validation is unavailable.',
+        );
+      }
+      const readiness = await credentialManager.validateStoredForInstall(input.manifest);
+      if (readiness.status === 'invalid') {
+        throw new AgentInstallError(`[${readiness.code}] ${readiness.message}`);
+      }
     }
 
     const desired: DesiredAgentInstallState = {

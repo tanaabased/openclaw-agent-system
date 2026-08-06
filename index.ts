@@ -6,6 +6,10 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
 import AgentManifestService from './lib/agent-manifest-service.ts';
+import FileCredentialStore, {
+  resolveFileCredentialStoreRoot,
+} from './lib/file-credential-store.ts';
+import OnePasswordCredentialManager from './lib/onepassword-credential-manager.ts';
 import OnePasswordCredentialService from './lib/onepassword-credential-service.ts';
 import OnePasswordEnvironmentService from './lib/onepassword-environment-service.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
@@ -27,7 +31,24 @@ export default definePluginEntry({
         return api.runtime.agent.resolveAgentWorkspaceDir(config as OpenClawConfig, agentId);
       },
     });
+    const fileCredentialStore = new FileCredentialStore({
+      currentUid: process.getuid?.(),
+      rootDir: resolveFileCredentialStoreRoot(process.env),
+    });
+    const onePasswordCredentialService = new OnePasswordCredentialService({
+      hostEnvironment: process.env,
+      stores: [fileCredentialStore],
+    });
+    const onePasswordEnvironmentService = new OnePasswordEnvironmentService({
+      credentialService: onePasswordCredentialService,
+      integrationVersion: api.version ?? 'dev',
+    });
+    const credentialManager = new OnePasswordCredentialManager({
+      credentialService: onePasswordCredentialService,
+      environmentService: onePasswordEnvironmentService,
+    });
     const installService = new AgentInstallService({
+      credentialManager,
       readConfig() {
         // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
         return loadConfig({ pin: false });
@@ -37,13 +58,6 @@ export default definePluginEntry({
         const argv = cliEntry ? [process.execPath, cliEntry, ...args] : ['openclaw', ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
-    });
-    const onePasswordCredentialService = new OnePasswordCredentialService({
-      hostEnvironment: process.env,
-    });
-    const onePasswordEnvironmentService = new OnePasswordEnvironmentService({
-      credentialService: onePasswordCredentialService,
-      integrationVersion: api.version ?? 'dev',
     });
     const environmentService = new AgentEnvironmentService({
       hostEnvironment: process.env,
@@ -55,6 +69,7 @@ export default definePluginEntry({
     api.registerCli(
       ({ program }) => {
         registerAgentSystemCli(program, {
+          credentialManager,
           environmentService,
           installService,
           manifestService,

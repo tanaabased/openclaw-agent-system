@@ -54,7 +54,7 @@ openclaw agent-system env 2>&1 | grep -F '[environment-required-missing]'
 # should resolve a live 1password environment without exposing values or its bootstrap token
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"
 openclaw agent-system env --json | grep -F '"name": "VIBES"'
-openclaw agent-system env --json | grep -F '"source": "environment.onepassword-environments[0]"'
+openclaw agent-system env --json | grep -F '"source": "environment.op[0]"'
 openclaw agent-system env --json | grep -F '"required": true'
 if openclaw agent-system env --json | grep -Fq -e '"values":' -e "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; fi
 ```

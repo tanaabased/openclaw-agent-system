@@ -198,7 +198,7 @@ describe('lib/agent-environment-service', () => {
               ...loaded.manifest,
               environment: {
                 dotenv: ['env/agent.env'],
-                onePasswordEnvironments: ['env-team', 'env-agent'],
+                op: ['env-team', 'env-agent'],
                 set: { LAYERED: 'set-value' },
               },
             },
@@ -213,12 +213,12 @@ describe('lib/agent-environment-service', () => {
           calls.push({ agentId, environmentIds });
           const sources: AgentEnvironmentInputSource[] = [
             {
-              source: 'environment.onepassword-environments[0]',
+              source: 'environment.op[0]',
               sensitiveNames: ['PRIVATE_VALUE'],
               values: { LAYERED: 'team-value', PRIVATE_VALUE: 'private-value' },
             },
             {
-              source: 'environment.onepassword-environments[1]',
+              source: 'environment.op[1]',
               values: { LAYERED: 'agent-value' },
             },
           ];
@@ -258,7 +258,7 @@ describe('lib/agent-environment-service', () => {
             ...loaded,
             manifest: {
               ...loaded.manifest,
-              environment: { onePasswordEnvironments: ['private-environment-id'] },
+              environment: { op: ['private-environment-id'] },
             },
           };
         },
@@ -272,9 +272,9 @@ describe('lib/agent-environment-service', () => {
             status: 'invalid',
             diagnostics: [
               {
-                code: 'onepassword-environment-unavailable',
-                fieldPath: '/environment/onepassword-environments/0',
-                message: 'A declared 1Password Environment could not be resolved.',
+                code: 'op-environment-unavailable',
+                fieldPath: '/environment/op/0',
+                message: 'A declared OP Environment could not be resolved.',
                 severity: 'error',
               },
             ],
@@ -286,7 +286,7 @@ describe('lib/agent-environment-service', () => {
     const result = await service.loadForAgentId('data');
 
     assert.equal(result.status, 'invalid');
-    assert.equal(logs.error[0]?.includes('onepassword-environment-unavailable'), true);
+    assert.equal(logs.error[0]?.includes('op-environment-unavailable'), true);
     assert.equal(logs.error[0]?.includes('private-environment-id'), false);
     assert.deepEqual(logs.info, []);
   });

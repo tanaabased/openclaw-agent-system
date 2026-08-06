@@ -280,8 +280,9 @@ ordered 1Password Environments, accepts strings under `environment.set`,
 resolves restricted `$NAME` and `${NAME}` references against a fixed
 host-environment snapshot plus the ordered external-source lookup, validates
 `environment.required`, and implements value-free `env` diagnostics with
-provenance. Scoped consumer resolution, centralized redaction, platform
-credential storage, and path prepending are subsequent Phase 1 slices.
+provenance. Agent-scoped OP credential validation and the explicit file fallback
+are also implemented. Scoped consumer resolution, centralized redaction, native
+platform credential storage, and path prepending are subsequent Phase 1 slices.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
@@ -305,7 +306,7 @@ environment:
     NODE_ENV: development
     AGENT_EMAIL: $COMPANY_EMAIL
 
-  onepassword-environments:
+  op:
     - env_team
     - env_emori
 
@@ -325,8 +326,8 @@ environment.dotenv[0]
   < environment.dotenv[1]
   < later dotenv files
   < environment.set
-  < environment.onepassword-environments[0]
-  < environment.onepassword-environments[1]
+  < environment.op[0]
+  < environment.op[1]
   < later 1Password Environments
 ```
 
@@ -335,7 +336,7 @@ explicit `environment.set` values override that base, and later secure sources
 remain authoritative. The order is a product contract rather than a
 user-configurable cross-source merge strategy. Within each ordered source type,
 a higher array index overrides a lower index. `environment.dotenv` and
-`environment.onepassword-environments` each accept either one string or a
+`environment.op` each accept either one string or a
 non-empty list of unique strings and normalize the scalar form to a one-item
 list. Empty strings, empty declared lists, and duplicate entries are invalid.
 The resolver must retain provenance so diagnostics can explain which source
@@ -411,7 +412,7 @@ and remain outside version control.
 
 ### 1Password Environments
 
-`environment.onepassword-environments` accepts one Environment id or an ordered
+`environment.op` accepts one Environment id or an ordered
 list of ids. A higher list index overrides a lower list index, and 1Password
 values override dotenv and `environment.set` values. Resolution is lazy and uses
 the agent's configured bootstrap credential without adding that credential to
@@ -488,32 +489,11 @@ The service-account token that unlocks a 1Password Environment is host bootstrap
 credential state. It must not be stored in `agent.yaml`, in the Environment it
 unlocks, or in OpenClaw's global JSON configuration.
 
-The manifest declares the credential mechanism separately:
-
-```yaml
-credentials:
-  onepassword-service-account:
-    type: onepassword-service-account
-    token:
-      macos:
-        type: keychain
-        service: dev.tanaab.agent-system
-        account: emori/onepassword/service-account-token
-      linux:
-        type: secret-service
-        collection: login
-        label: dev.tanaab.agent-system/emori/onepassword/service-account-token
-      fallback:
-        type: file
-        path: ~/.config/tanaab/agent-system/emori/onepassword-token
-```
-
-Resolution behavior is:
-
-- use the macOS login Keychain on macOS;
-- use a Secret Service-compatible keyring on desktop Linux when available;
-- prefer a system service credential on headless Linux where practical; and
-- use a raw credential file only as an explicit fallback.
+Credential storage is host state selected by CLI adapters, not manifest state.
+The initial `file` adapter proves the lifecycle on macOS and Linux. Later
+automatic resolution should prefer the macOS login Keychain or an appropriate
+Linux secure store before the file fallback. The manifest remains portable and
+declares only the OP Environments that require access.
 
 `OP_SERVICE_ACCOUNT_TOKEN` is the always-supported process-environment fallback
 after configured credential providers. It is read only by Agent System, is
@@ -525,20 +505,40 @@ gets a separate Keychain, Secret Service, or fallback-file entry unless an
 operator explicitly configures a shared credential and accepts its broader
 service-account scope.
 
-The file fallback must require correct ownership and owner-only permissions,
-reject symlinks where feasible, and fail closed when it is unsafe.
+The file fallback lives at
+`$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or
+`$HOME/.config/tanaab/agent-system/<agent-id>/op-token` when
+`XDG_CONFIG_HOME` is unset. Its directories and files require correct ownership
+and owner-only permissions. It rejects symlinks and non-regular credential
+files, writes through a private temporary file and atomic rename, and fails
+closed when the store is unsafe. Unsetting removes the directory entry but does
+not claim secure erasure from the underlying storage medium.
 
 Agent System uses the bootstrap token internally to retrieve the requested
 1Password Environment, then passes only the resolved Environment values to the
 authorized Agent System-owned target process. Each service account should have
 the smallest practical scope.
 
-The setup command reads the token without echo, avoids command-line arguments
-that enter shell history, and stores or replaces it in the selected backend:
+The initial lifecycle is explicit:
 
 ```text
-openclaw agent-system credentials set onepassword-service-account
+openclaw agent-system credentials set op --store file --from-env [--agent <id>]
+openclaw agent-system credentials validate op [--store file] [--agent <id>]
+openclaw agent-system credentials unset op --store file [--agent <id>]
 ```
+
+`set` reads the process token, validates access to every `environment.op`
+declaration, and only then stores or replaces it. Ordinary `validate op` tries
+configured stores before the process-environment fallback; an explicit
+`--store` requires that exact adapter and bypasses the fallback. `unset` is
+idempotent. These commands report only credential source and Environment count.
+They never print tokens, Environment ids, values, or raw SDK errors.
+
+When `environment.op` is declared, `install` requires a stored credential that
+can access every declared Environment. It performs that check before reading or
+mutating OpenClaw state. Installation does not prompt, read
+`OP_SERVICE_ACCOUNT_TOKEN`, or store credentials; its failure points users to
+the explicit `credentials set` command.
 
 ## Agent System Provider Tool API
 
@@ -979,7 +979,9 @@ payload model, and synchronization command remain Phase 3 design work.
 ```text
 openclaw agent-system validate
 openclaw agent-system env [--agent <id>]
-openclaw agent-system credentials set onepassword-service-account
+openclaw agent-system credentials set op --store file --from-env [--agent <id>]
+openclaw agent-system credentials validate op [--store file] [--agent <id>]
+openclaw agent-system credentials unset op --store file [--agent <id>]
 openclaw agent-system providers list
 openclaw agent-system capabilities inspect github --agent emori
 openclaw agent-system capabilities test github --agent emori
@@ -997,8 +999,10 @@ openclaw agent-system doctor
   workspace selected by `--agent`, and reports the consolidated Agent
   System-provided environment with provenance and required state. It never
   prints values or predicts another tool's environment.
-- `credentials set` securely stores or replaces a bootstrap credential in the
-  platform backend.
+- `credentials set` validates and stores or replaces a bootstrap credential in
+  an explicit backend. `credentials validate` checks every declared OP
+  Environment without revealing values, and `credentials unset` removes one
+  explicit backend entry idempotently.
 - `providers` and `capabilities` inspect provider compatibility, the selected
   agent's non-secret binding, required executable or request adapter, credential
   resolvability, and policy without exposing secret values. Human-facing

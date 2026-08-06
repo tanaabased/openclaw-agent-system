@@ -1,0 +1,187 @@
+import assert from 'node:assert/strict';
+
+import OnePasswordCredentialManager from '../lib/onepassword-credential-manager.ts';
+import type { AgentManifest } from '../utils/manifest-types.ts';
+
+const manifest: AgentManifest = {
+  schemaVersion: 1,
+  agent: { id: 'data', name: 'Data' },
+  environment: { op: ['environment-one', 'environment-two'] },
+};
+
+describe('lib/onepassword-credential-manager', () => {
+  it('should validate a process token against every environment before storing it', async () => {
+    const calls: string[] = [];
+    const manager = new OnePasswordCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => 'private-token',
+        async removeServiceAccountToken() {
+          return { status: 'missing' };
+        },
+        async storeServiceAccountToken(agentId, storeId, token) {
+          calls.push(`store:${agentId}:${storeId}:${token}`);
+          return { status: 'stored' };
+        },
+      },
+      environmentService: {
+        async validate() {
+          throw new Error('not expected');
+        },
+        async validateToken(token, environmentIds) {
+          calls.push(`validate:${token}:${environmentIds.length}`);
+          return { status: 'valid', environmentCount: environmentIds.length };
+        },
+      },
+    });
+
+    assert.deepEqual(await manager.setFromEnvironment(manifest, 'file'), {
+      status: 'stored',
+      agentId: 'data',
+      storeId: 'file',
+    });
+    assert.deepEqual(calls, ['validate:private-token:2', 'store:data:file:private-token']);
+  });
+
+  it('should not write a token that cannot access a declared environment', async () => {
+    let writes = 0;
+    const manager = new OnePasswordCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => 'private-token',
+        async removeServiceAccountToken() {
+          return { status: 'missing' };
+        },
+        async storeServiceAccountToken() {
+          writes += 1;
+          return { status: 'stored' };
+        },
+      },
+      environmentService: {
+        async validate() {
+          throw new Error('not expected');
+        },
+        async validateToken() {
+          return {
+            status: 'invalid',
+            diagnostics: [
+              {
+                code: 'op-environment-unavailable',
+                message: 'Environment unavailable.',
+                severity: 'error',
+              },
+            ],
+          };
+        },
+      },
+    });
+
+    assert.equal((await manager.setFromEnvironment(manifest, 'file')).status, 'invalid');
+    assert.equal(writes, 0);
+  });
+
+  it('should require an explicit store without falling back to the process environment', async () => {
+    const manager = new OnePasswordCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => undefined,
+        async removeServiceAccountToken() {
+          return { status: 'missing' };
+        },
+        async storeServiceAccountToken() {
+          return { status: 'stored' };
+        },
+      },
+      environmentService: {
+        async validate(agentId, environmentIds, options) {
+          assert.equal(agentId, 'data');
+          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
+          assert.deepEqual(options, { storeId: 'file', allowEnvironmentFallback: false });
+          return {
+            status: 'valid',
+            environmentCount: 2,
+            source: { id: 'file', type: 'store' },
+          };
+        },
+        async validateToken() {
+          throw new Error('not expected');
+        },
+      },
+    });
+
+    assert.deepEqual(await manager.validate(manifest, 'file'), {
+      status: 'valid',
+      agentId: 'data',
+      environmentCount: 2,
+      source: 'store:file',
+    });
+  });
+
+  it('should give install an actionable error when no stored credential is available', async () => {
+    const manager = new OnePasswordCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => 'environment-token',
+        async removeServiceAccountToken() {
+          return { status: 'missing' };
+        },
+        async storeServiceAccountToken() {
+          return { status: 'stored' };
+        },
+      },
+      environmentService: {
+        async validate(agentId, environmentIds, options) {
+          assert.equal(agentId, 'data');
+          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
+          assert.deepEqual(options, { allowEnvironmentFallback: false });
+          return {
+            status: 'invalid',
+            diagnostics: [
+              {
+                code: 'op-credential-missing',
+                message: 'Credential missing.',
+                severity: 'error',
+              },
+            ],
+          };
+        },
+        async validateToken() {
+          throw new Error('not expected');
+        },
+      },
+    });
+
+    const result = await manager.validateStoredForInstall(manifest);
+
+    assert.equal(result.status, 'invalid');
+    if (result.status !== 'invalid') return;
+    assert.equal(result.code, 'op-credential-not-stored');
+    assert.equal(result.message.includes('credentials set op --store file --from-env'), true);
+  });
+
+  it('should unset an agent-scoped credential idempotently', async () => {
+    const manager = new OnePasswordCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => undefined,
+        async removeServiceAccountToken(agentId, storeId) {
+          assert.equal(agentId, 'data');
+          assert.equal(storeId, 'file');
+          return { status: 'missing' };
+        },
+        async storeServiceAccountToken() {
+          return { status: 'stored' };
+        },
+      },
+      environmentService: {
+        async validate() {
+          throw new Error('not expected');
+        },
+        async validateToken() {
+          throw new Error('not expected');
+        },
+      },
+    });
+
+    assert.deepEqual(await manager.unset('data', 'file'), {
+      status: 'missing',
+      agentId: 'data',
+      storeId: 'file',
+    });
+  });
+});

@@ -95,7 +95,7 @@ export default class AgentEnvironmentService {
       };
     }
 
-    const onePasswordEnvironmentIds = result.manifest.environment?.onePasswordEnvironments ?? [];
+    const onePasswordEnvironmentIds = result.manifest.environment?.op ?? [];
     let onePasswordSources: AgentEnvironmentInputSource[] = [];
     if (onePasswordEnvironmentIds.length > 0) {
       const onePasswordEnvironmentService = this.#dependencies.onePasswordEnvironmentService;
@@ -104,8 +104,8 @@ export default class AgentEnvironmentService {
           ...result.diagnostics,
           {
             code: 'onepassword-integration-unavailable',
-            fieldPath: '/environment/onepassword-environments',
-            message: '1Password Environment resolution is unavailable in this runtime.',
+            fieldPath: '/environment/op',
+            message: 'OP Environment resolution is unavailable in this runtime.',
             severity: 'error' as const,
           },
         ];

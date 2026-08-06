@@ -28,7 +28,7 @@ openclaw agent-system install
 
 Installation compares the manifest with current OpenClaw configuration. It adds an absent agent, reconciles the manifest-owned display name and optional avatar, reloads configuration, and verifies the final state. A matching installation is unchanged. An existing agent id bound to another workspace fails instead of being silently repointed.
 
-The implicit `main` agent is not redundantly added when OpenClaw has no explicit agent list. `agent.description` is validated manifest data but is not currently applied to OpenClaw identity. Installation does not choose a model, authenticate a provider, start a Gateway, resolve environment variables, or run a workspace installation script.
+The implicit `main` agent is not redundantly added when OpenClaw has no explicit agent list. `agent.description` is validated manifest data but is not currently applied to OpenClaw identity. Installation does not choose a model, prompt for or import credentials, start a Gateway, resolve environment values for delivery, or run a workspace installation script. When `environment.op` is declared, it does validate stored OP access before reading or mutating OpenClaw state.
 
 ## Configuration Reference
 
@@ -57,24 +57,24 @@ environment:
     AGENT_COLOR: green
     AGENT_EMAIL: $COMPANY_EMAIL
     NODE_ENV: development
-  onepassword-environments:
+  op:
     - env_team
     - env_agent
   required:
     - AGENT_EMAIL
 ```
 
-| Field                                  | Required      | Current behavior                                                                   |
-| -------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| `schema-version`                       | yes           | Must be the integer `1`.                                                           |
-| `agent.id`                             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
-| `agent.name`                           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
-| `agent.description`                    | no            | Validated and loaded; reserved for a later identity surface.                       |
-| `agent.avatar`                         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
-| `environment.dotenv`                   | no            | One relative path or an ordered non-empty unique list of paths.                    |
-| `environment.set`                      | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
-| `environment.onepassword-environments` | no            | One Environment id or an ordered non-empty unique list of ids.                     |
-| `environment.required`                 | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
+| Field                  | Required      | Current behavior                                                                   |
+| ---------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| `schema-version`       | yes           | Must be the integer `1`.                                                           |
+| `agent.id`             | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
+| `agent.name`           | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
+| `agent.description`    | no            | Validated and loaded; reserved for a later identity surface.                       |
+| `agent.avatar`         | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
+| `environment.dotenv`   | no            | One relative path or an ordered non-empty unique list of paths.                    |
+| `environment.set`      | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
+| `environment.op`       | no            | One Environment id or an ordered non-empty unique list of ids.                     |
+| `environment.required` | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
@@ -86,19 +86,19 @@ Environment-variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Values must be
 
 The owned dotenv parser supports blank lines, full-line comments, optional `export`, and `NAME=value`. Unquoted `#` remains literal unless whitespace introduces an inline comment. Single-quoted values are literal. Double-quoted values support `\\`, `\"`, `\n`, `\r`, and `\t`. Duplicate names within one file, malformed names, unsupported escapes, unterminated quotes, and NUL bytes fail closed. Dotenv values never interpolate or execute shell syntax.
 
-`environment.onepassword-environments` accepts one Environment id or an ordered list. Agent System dynamically loads the official `@1password/sdk`, authenticates once per explicit resolution, and fetches each Environment in declared order. The SDK's Environment API is currently beta. Failures become stable Agent System diagnostics without including raw SDK errors, Environment ids, tokens, or values.
+`environment.op` accepts one Environment id or an ordered list. Agent System dynamically loads the official `@1password/sdk`, authenticates once per explicit resolution, and fetches each Environment in declared order. The SDK's Environment API is currently beta. Failures become stable Agent System diagnostics without including raw SDK errors, Environment ids, tokens, or values.
 
 Source precedence is fixed:
 
 ```text
-environment.dotenv[0] < later dotenv files < environment.set < environment.onepassword-environments[0] < later 1Password Environments
+environment.dotenv[0] < later dotenv files < environment.set < environment.op[0] < later 1Password Environments
 ```
 
 Set values support one-pass `$NAME` and `${NAME}` references for uppercase names matching `[A-Z_][A-Z0-9_]*`; `$$` emits a literal `$`. References resolve against a snapshot of the plugin process environment plus the ordered external-source lookup, with later external sources winning same-named host lookups. The host environment is lookup-only: `AGENT_EMAIL: $COMPANY_EMAIL` contributes `AGENT_EMAIL` but does not contribute `COMPANY_EMAIL`. Missing references fail resolution, and `environment.set` values do not reference one another.
 
 Dotenv files and 1Password values are loaded only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads or fetches them. Path prepending is not yet implemented.
 
-Agent System tries configured 1Password credential providers before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. Platform credential providers and `credentials set` are not implemented yet, so the fallback is the current authentication path. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
+Agent System tries the agent-scoped file credential store before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback during ordinary environment resolution and credential validation. An exact `credentials validate op --store file` request bypasses the process environment. Installation also bypasses the process environment and requires a stored credential whenever `environment.op` is declared. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
 
 Agent System does not inject these values into OpenClaw `exec`, Codex `exec_command`, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Those surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
 
@@ -194,6 +194,26 @@ openclaw agent-system env
 openclaw agent-system env --agent tanaabot --json
 ```
 
+### `openclaw agent-system credentials`
+
+Manages the OP service-account credential for the selected agent. Each operation loads the agent's manifest and uses every declared `environment.op` id as the access check. Results report only the selected source and Environment count; they never print token values, Environment ids, resolved values, or raw SDK errors.
+
+#### Usage
+
+```sh
+openclaw agent-system credentials set op --store file --from-env [--agent <id>]
+openclaw agent-system credentials validate op [--store file] [--agent <id>]
+openclaw agent-system credentials unset op --store file [--agent <id>]
+```
+
+#### Behavior
+
+`set op --store file --from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`, verifies that it can access every declared OP Environment, and only then stores or replaces it. `validate op` uses stored credentials first and then the process-environment fallback. Supplying `--store file` requires that exact store and never falls back to the process environment. `unset op --store file` is idempotent.
+
+The file fallback is stored at `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or `$HOME/.config/tanaab/agent-system/<agent-id>/op-token` when `XDG_CONFIG_HOME` is unset. Agent System creates store directories with owner-only access, creates credential files with mode `0600`, checks ownership and permissions when reading, rejects symlinks and non-regular files, and replaces values atomically. Removal deletes the directory entry but does not claim secure erasure from the underlying storage medium.
+
+The current command accepts only the `op` credential target and `file` store. The generic command shape leaves room for native Keychain and Linux secure-store adapters without changing the OP lifecycle.
+
 ### `openclaw agent-system install`
 
 Installs the agent represented by the current workspace and reconciles its public OpenClaw identity.
@@ -211,7 +231,7 @@ This command currently has no options. Run it from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`, refuses an agent id already bound to another workspace, and runs only the necessary public OpenClaw agent operations. It then reloads configuration and fails if registration or identity still differs from the manifest.
+Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op --store file --from-env` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reloads configuration, and fails if registration or identity still differs from the manifest.
 
 Possible result lines are:
 
@@ -225,9 +245,9 @@ The created and updated lines may appear together on first installation. Repeate
 
 ## Planned Advanced Surfaces
 
-### Environment And Credentials
+### Environment
 
-Path prepending, platform credential storage, and the `credentials set` command are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. The process-environment 1Password fallback will remain supported after those credential providers are added.
+Path prepending and native platform credential stores are product intent in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md), not current configuration or CLI behavior. The process-environment OP fallback will remain supported after those credential stores are added.
 
 ### Installation Scripts And Drift
 
@@ -235,4 +255,4 @@ Workspace installation scripts, non-mutating plans, successful-run metadata, and
 
 ### Diagnostics
 
-The planned `credentials`, `plan`, and `doctor` commands are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will become their implemented command reference as each surface ships.
+The planned `plan` and `doctor` commands are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will become their implemented command reference as each surface ships.

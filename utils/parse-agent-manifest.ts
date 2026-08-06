@@ -31,7 +31,7 @@ const externalAgentManifestSchema = Type.Object(
               ),
             ]),
           ),
-          'onepassword-environments': Type.Optional(
+          op: Type.Optional(
             Type.Union([
               Type.String({ minLength: 1, pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$' }),
               Type.Array(
@@ -112,13 +112,13 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
                       ? [value.environment.dotenv]
                       : [...value.environment.dotenv],
                 }),
-            ...(value.environment['onepassword-environments'] === undefined
+            ...(value.environment.op === undefined
               ? {}
               : {
-                  onePasswordEnvironments:
-                    typeof value.environment['onepassword-environments'] === 'string'
-                      ? [value.environment['onepassword-environments']]
-                      : [...value.environment['onepassword-environments']],
+                  op:
+                    typeof value.environment.op === 'string'
+                      ? [value.environment.op]
+                      : [...value.environment.op],
                 }),
             ...(value.environment.required === undefined
               ? {}

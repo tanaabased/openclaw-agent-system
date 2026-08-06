@@ -9,9 +9,7 @@ export interface AgentEnvironmentVariable {
 }
 
 export type AgentEnvironmentVariableSource =
-  | 'environment.set'
-  | `environment.dotenv[${number}]`
-  | `environment.onepassword-environments[${number}]`;
+  'environment.set' | `environment.dotenv[${number}]` | `environment.op[${number}]`;
 
 export interface AgentEnvironmentInputSource {
   source: Exclude<AgentEnvironmentVariableSource, 'environment.set'>;
@@ -43,7 +41,7 @@ export type AgentEnvironmentResolution =
 export const onePasswordServiceAccountTokenName = 'OP_SERVICE_ACCOUNT_TOKEN';
 
 function sourceFieldPath(source: AgentEnvironmentVariableSource): string {
-  const match = /^(environment\.(?:dotenv|onepassword-environments))\[(\d+)\]$/.exec(source);
+  const match = /^(environment\.(?:dotenv|op))\[(\d+)\]$/.exec(source);
   return match ? `/${match[1]?.replace('.', '/')}/${match[2]}` : '/environment/set';
 }
 

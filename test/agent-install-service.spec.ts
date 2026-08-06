@@ -184,6 +184,41 @@ describe('lib/agent-install-service', () => {
     );
   });
 
+  it('should validate stored op access before reading or mutating openclaw state', async () => {
+    let configReads = 0;
+    let commands = 0;
+    const service = new AgentInstallService({
+      credentialManager: {
+        async validateStoredForInstall(inputManifest) {
+          assert.deepEqual(inputManifest.environment?.op, ['private-environment-id']);
+          return {
+            status: 'invalid',
+            code: 'op-credential-not-stored',
+            message: 'Set the credential first.',
+          };
+        },
+      },
+      readConfig: () => {
+        configReads += 1;
+        return {};
+      },
+      async runOpenClawCommand() {
+        commands += 1;
+        return successfulResult();
+      },
+    });
+
+    await assert.rejects(
+      service.install({
+        manifest: { ...manifest, environment: { op: ['private-environment-id'] } },
+        workspaceDir: '/workspace/data',
+      }),
+      /\[op-credential-not-stored\]/,
+    );
+    assert.equal(configReads, 0);
+    assert.equal(commands, 0);
+  });
+
   it('should surface openclaw command failures', async () => {
     const service = new AgentInstallService({
       readConfig: () => ({}),

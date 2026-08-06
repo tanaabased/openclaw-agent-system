@@ -3,6 +3,10 @@ import type { GetVariablesResponse } from '@1password/sdk';
 import type { ManifestDiagnostic } from '../utils/manifest-types.ts';
 import type { AgentEnvironmentInputSource } from '../utils/resolve-agent-environment.ts';
 import type OnePasswordCredentialService from './onepassword-credential-service.ts';
+import type {
+  OnePasswordCredentialResolveOptions,
+  OnePasswordCredentialSource,
+} from './onepassword-credential-service.ts';
 
 export interface OnePasswordEnvironmentClient {
   getVariables(environmentId: string): Promise<GetVariablesResponse>;
@@ -23,6 +27,24 @@ export type OnePasswordEnvironmentLoadResult =
       sources: AgentEnvironmentInputSource[];
     };
 
+export type OnePasswordTokenValidationResult =
+  | {
+      status: 'invalid';
+      diagnostics: ManifestDiagnostic[];
+    }
+  | {
+      status: 'valid';
+      environmentCount: number;
+    };
+
+export type OnePasswordCredentialValidationResult =
+  | Exclude<OnePasswordTokenValidationResult, { status: 'valid' }>
+  | {
+      status: 'valid';
+      environmentCount: number;
+      source: OnePasswordCredentialSource;
+    };
+
 export interface OnePasswordEnvironmentServiceDependencies {
   createClient?: CreateOnePasswordEnvironmentClient;
   credentialService: Pick<OnePasswordCredentialService, 'resolveServiceAccountToken'>;
@@ -30,6 +52,7 @@ export interface OnePasswordEnvironmentServiceDependencies {
 }
 
 const environmentVariableNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const opFieldPath = '/environment/op';
 
 async function createSdkClient(
   serviceAccountToken: string,
@@ -48,11 +71,15 @@ async function createSdkClient(
   };
 }
 
-function diagnostic(code: string, message: string, fieldPath: string): ManifestDiagnostic {
+function diagnostic(code: string, message: string, fieldPath = opFieldPath): ManifestDiagnostic {
   return { code, fieldPath, message, severity: 'error' };
 }
 
-/** Lazily authenticate and load ordered 1Password Environment variables. */
+function invalid(code: string, message: string, fieldPath = opFieldPath) {
+  return { status: 'invalid' as const, diagnostics: [diagnostic(code, message, fieldPath)] };
+}
+
+/** Lazily authenticate, validate access, and load ordered OP Environment variables. */
 export default class OnePasswordEnvironmentService {
   readonly #createClient: CreateOnePasswordEnvironmentClient;
   readonly #credentialService: Pick<OnePasswordCredentialService, 'resolveServiceAccountToken'>;
@@ -70,101 +97,143 @@ export default class OnePasswordEnvironmentService {
   ): Promise<OnePasswordEnvironmentLoadResult> {
     if (environmentIds.length === 0) return { status: 'loaded', sources: [] };
 
-    let serviceAccountToken: string | undefined;
-    try {
-      serviceAccountToken = await this.#credentialService.resolveServiceAccountToken(agentId);
-    } catch {
-      return {
-        status: 'invalid',
-        diagnostics: [
-          diagnostic(
-            'onepassword-credential-unavailable',
-            'Agent System could not resolve a 1Password service-account credential.',
-            '/environment/onepassword-environments',
-          ),
-        ],
-      };
-    }
-    if (!serviceAccountToken) {
-      return {
-        status: 'invalid',
-        diagnostics: [
-          diagnostic(
-            'onepassword-credential-missing',
-            '1Password Environment resolution requires an available service-account credential.',
-            '/environment/onepassword-environments',
-          ),
-        ],
-      };
+    const credential = await this.#resolveCredential(agentId);
+    if (credential.status !== 'resolved') return credential;
+    return this.#loadWithToken(credential.token, environmentIds);
+  }
+
+  async validate(
+    agentId: string,
+    environmentIds: readonly string[],
+    options: OnePasswordCredentialResolveOptions = {},
+  ): Promise<OnePasswordCredentialValidationResult> {
+    if (environmentIds.length === 0) {
+      return invalid(
+        'op-environment-not-configured',
+        'The manifest does not declare an OP Environment to validate.',
+      );
     }
 
-    let client: OnePasswordEnvironmentClient;
-    try {
-      client = await this.#createClient(serviceAccountToken, this.#integrationVersion);
-    } catch {
-      return {
-        status: 'invalid',
-        diagnostics: [
-          diagnostic(
-            'onepassword-authentication-failed',
-            'Agent System could not authenticate the 1Password SDK client.',
-            '/environment/onepassword-environments',
-          ),
-        ],
-      };
+    const credential = await this.#resolveCredential(agentId, options);
+    if (credential.status !== 'resolved') return credential;
+    const result = await this.validateToken(credential.token, environmentIds);
+    return result.status === 'valid' ? { ...result, source: credential.source } : result;
+  }
+
+  async validateToken(
+    token: string,
+    environmentIds: readonly string[],
+  ): Promise<OnePasswordTokenValidationResult> {
+    if (environmentIds.length === 0) {
+      return invalid(
+        'op-environment-not-configured',
+        'The manifest does not declare an OP Environment to validate.',
+      );
     }
+
+    const client = await this.#authenticatedClient(token);
+    if (client.status === 'invalid') return client;
+    for (const [index, environmentId] of environmentIds.entries()) {
+      try {
+        await client.client.getVariables(environmentId);
+      } catch {
+        return invalid(
+          'op-environment-unavailable',
+          'A declared OP Environment could not be accessed with the selected credential.',
+          `${opFieldPath}/${index}`,
+        );
+      }
+    }
+    return { status: 'valid', environmentCount: environmentIds.length };
+  }
+
+  async #resolveCredential(
+    agentId: string,
+    options: OnePasswordCredentialResolveOptions = {},
+  ): Promise<
+    | { status: 'resolved'; source: OnePasswordCredentialSource; token: string }
+    | { status: 'invalid'; diagnostics: ManifestDiagnostic[] }
+  > {
+    let credential;
+    try {
+      credential = await this.#credentialService.resolveServiceAccountToken(agentId, options);
+    } catch {
+      return invalid(
+        'op-credential-unavailable',
+        'Agent System could not resolve an OP service-account credential.',
+      );
+    }
+    if (credential.status === 'resolved') return credential;
+    if (credential.status === 'missing') {
+      return invalid(
+        'op-credential-missing',
+        'OP Environment resolution requires an available service-account credential.',
+      );
+    }
+    return invalid(credential.code, credential.message);
+  }
+
+  async #authenticatedClient(
+    token: string,
+  ): Promise<
+    | { status: 'authenticated'; client: OnePasswordEnvironmentClient }
+    | { status: 'invalid'; diagnostics: ManifestDiagnostic[] }
+  > {
+    try {
+      return {
+        status: 'authenticated',
+        client: await this.#createClient(token, this.#integrationVersion),
+      };
+    } catch {
+      return invalid(
+        'op-authentication-failed',
+        'Agent System could not authenticate the OP SDK client.',
+      );
+    }
+  }
+
+  async #loadWithToken(
+    token: string,
+    environmentIds: readonly string[],
+  ): Promise<OnePasswordEnvironmentLoadResult> {
+    const client = await this.#authenticatedClient(token);
+    if (client.status === 'invalid') return client;
 
     const sources: AgentEnvironmentInputSource[] = [];
     for (const [index, environmentId] of environmentIds.entries()) {
-      const fieldPath = `/environment/onepassword-environments/${index}`;
       let response: GetVariablesResponse;
       try {
-        response = await client.getVariables(environmentId);
+        response = await client.client.getVariables(environmentId);
       } catch {
-        return {
-          status: 'invalid',
-          diagnostics: [
-            diagnostic(
-              'onepassword-environment-unavailable',
-              'A declared 1Password Environment could not be resolved.',
-              fieldPath,
-            ),
-          ],
-        };
+        return invalid(
+          'op-environment-unavailable',
+          'A declared OP Environment could not be resolved.',
+          `${opFieldPath}/${index}`,
+        );
       }
 
       const values = new Map<string, string>();
       const sensitiveNames: string[] = [];
       for (const variable of response.variables) {
         if (!environmentVariableNamePattern.test(variable.name)) {
-          return {
-            status: 'invalid',
-            diagnostics: [
-              diagnostic(
-                'onepassword-variable-invalid',
-                'A declared 1Password Environment returned an invalid variable name.',
-                fieldPath,
-              ),
-            ],
-          };
+          return invalid(
+            'op-variable-invalid',
+            'A declared OP Environment returned an invalid variable name.',
+            `${opFieldPath}/${index}`,
+          );
         }
         if (values.has(variable.name)) {
-          return {
-            status: 'invalid',
-            diagnostics: [
-              diagnostic(
-                'onepassword-variable-duplicate',
-                'A declared 1Password Environment returned duplicate variable names.',
-                fieldPath,
-              ),
-            ],
-          };
+          return invalid(
+            'op-variable-duplicate',
+            'A declared OP Environment returned duplicate variable names.',
+            `${opFieldPath}/${index}`,
+          );
         }
         values.set(variable.name, variable.value);
         if (variable.masked) sensitiveNames.push(variable.name);
       }
       sources.push({
-        source: `environment.onepassword-environments[${index}]`,
+        source: `environment.op[${index}]`,
         sensitiveNames,
         values: Object.fromEntries(values),
       });

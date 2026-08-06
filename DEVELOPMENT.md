@@ -142,7 +142,7 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/`](./examples/) run through GitHub Actions on macOS and Ubuntu. They install plugins and mutate isolated OpenClaw state, so they must not be used as routine local validation.
 
-The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent` scenario may consume model authentication, and only the `env` scenario may consume the `TANAAB_OP_TESTVAULT` secret through `OP_SERVICE_ACCOUNT_TOKEN`. The 1Password Environment id is a non-secret scenario fixture under [`examples/env/`](./examples/env/).
+The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent` scenario may consume model authentication, and only the `env` and `credentials` scenarios may consume the `TANAAB_OP_TESTVAULT` secret through `OP_SERVICE_ACCOUNT_TOKEN`. The 1Password Environment id is a non-secret fixture owned by each consuming scenario.
 
 ## Coding Standards
 

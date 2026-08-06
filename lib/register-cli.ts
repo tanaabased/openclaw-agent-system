@@ -1,10 +1,14 @@
 import envAgentSystem from '../cli/env.ts';
+import setCredentialsAgentSystem from '../cli/credentials-set.ts';
+import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
+import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
 import { type CliOutput, defaultCliOutput } from './cli-output.ts';
+import type OnePasswordCredentialManager from './onepassword-credential-manager.ts';
 
 type Action = (...args: unknown[]) => unknown;
 
@@ -20,6 +24,10 @@ export interface CommandLike {
 
 export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
+  credentialManager: Pick<
+    OnePasswordCredentialManager,
+    'setFromEnvironment' | 'unset' | 'validate'
+  >;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
   installService: Pick<AgentInstallService, 'install'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
@@ -73,6 +81,72 @@ export default function registerAgentSystemCli(
         json: commandOptions.json === true,
         output,
         setExitCode,
+        workspaceDir: cwd(),
+      });
+    });
+  const credentials = agentSystem
+    .command('credentials')
+    .description('Manage agent-scoped environment-provider credentials.')
+    .action(() => writeHelp(credentials, output));
+  const credentialsSet = credentials
+    .command('set <credential>')
+    .description('Validate and store a credential from an explicit source.')
+    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .option('--store <id>', 'Write to an explicit credential store.')
+    .option('--from-env', 'Read the credential from the process environment.')
+    .action(async (credential) => {
+      const commandOptions = credentialsSet.opts();
+      const agentId = commandOptions.agent;
+      const storeId = commandOptions.store;
+      await setCredentialsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        credential: String(credential),
+        credentialManager: options.credentialManager,
+        fromEnvironment: commandOptions.fromEnv === true,
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        ...(typeof storeId === 'string' ? { storeId } : {}),
+        workspaceDir: cwd(),
+      });
+    });
+  const credentialsValidate = credentials
+    .command('validate <credential>')
+    .description('Validate a credential against the current manifest.')
+    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .option('--store <id>', 'Require an explicit credential store.')
+    .action(async (credential) => {
+      const commandOptions = credentialsValidate.opts();
+      const agentId = commandOptions.agent;
+      const storeId = commandOptions.store;
+      await validateCredentialsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        credential: String(credential),
+        credentialManager: options.credentialManager,
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        ...(typeof storeId === 'string' ? { storeId } : {}),
+        workspaceDir: cwd(),
+      });
+    });
+  const credentialsUnset = credentials
+    .command('unset <credential>')
+    .description('Remove a credential from an explicit store.')
+    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .option('--store <id>', 'Remove from an explicit credential store.')
+    .action(async (credential) => {
+      const commandOptions = credentialsUnset.opts();
+      const agentId = commandOptions.agent;
+      const storeId = commandOptions.store;
+      await unsetCredentialsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        credential: String(credential),
+        credentialManager: options.credentialManager,
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        ...(typeof storeId === 'string' ? { storeId } : {}),
         workspaceDir: cwd(),
       });
     });

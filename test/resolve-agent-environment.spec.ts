@@ -132,7 +132,7 @@ describe('utils/resolve-agent-environment', () => {
         schemaVersion: 1,
         agent: { id: 'data' },
         environment: {
-          onePasswordEnvironments: ['env-team', 'env-agent'],
+          op: ['env-team', 'env-agent'],
           set: {
             FROM_ONEPASSWORD: '$ONEPASSWORD_REFERENCE',
             LAYERED: 'set-value',
@@ -149,7 +149,7 @@ describe('utils/resolve-agent-environment', () => {
         ],
         onePassword: [
           {
-            source: 'environment.onepassword-environments[0]',
+            source: 'environment.op[0]',
             sensitiveNames: ['ONEPASSWORD_REFERENCE'],
             values: {
               LAYERED: 'team-value',
@@ -157,7 +157,7 @@ describe('utils/resolve-agent-environment', () => {
             },
           },
           {
-            source: 'environment.onepassword-environments[1]',
+            source: 'environment.op[1]',
             sensitiveNames: ['MASKED_FINAL'],
             values: { LAYERED: 'agent-value', MASKED_FINAL: 'masked-final' },
           },
@@ -184,25 +184,21 @@ describe('utils/resolve-agent-environment', () => {
           },
           {
             name: 'LAYERED',
-            overriddenSources: [
-              'environment.dotenv[0]',
-              'environment.set',
-              'environment.onepassword-environments[0]',
-            ],
+            overriddenSources: ['environment.dotenv[0]', 'environment.set', 'environment.op[0]'],
             required: false,
-            source: 'environment.onepassword-environments[1]',
+            source: 'environment.op[1]',
           },
           {
             name: 'MASKED_FINAL',
             overriddenSources: [],
             required: false,
-            source: 'environment.onepassword-environments[1]',
+            source: 'environment.op[1]',
           },
           {
             name: 'ONEPASSWORD_REFERENCE',
             overriddenSources: [],
             required: false,
-            source: 'environment.onepassword-environments[0]',
+            source: 'environment.op[0]',
           },
         ],
       },

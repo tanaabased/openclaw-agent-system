@@ -20,7 +20,7 @@ environment:
   dotenv:
     - .agent-system/env/base.env
     - .agent-system/env/local.env
-  onepassword-environments:
+  op:
     - env-team
     - env-agent
   required:
@@ -42,7 +42,7 @@ environment:
         },
         environment: {
           dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],
-          onePasswordEnvironments: ['env-team', 'env-agent'],
+          op: ['env-team', 'env-agent'],
           required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
@@ -60,12 +60,12 @@ schema-version: 1
 agent:
   id: tanaabot
 environment:
-  onepassword-environments: env-agent
+  op: env-agent
 `);
 
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
-    assert.deepEqual(result.manifest.environment?.onePasswordEnvironments, ['env-agent']);
+    assert.deepEqual(result.manifest.environment?.op, ['env-agent']);
   });
 
   it('should normalize one dotenv path to the ordered internal list', () => {
@@ -80,6 +80,21 @@ environment:
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
     assert.deepEqual(result.manifest.environment?.dotenv, ['.agent-system/env/agent.env']);
+  });
+
+  it('should reject legacy or expanded op environment aliases', () => {
+    for (const key of ['onepassword-environments', 'onepassword-environment', 'ops']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  ${key}: private-environment-id
+`).has('manifest-unknown-key'),
+        true,
+      );
+    }
   });
 
   it('should reject duplicate yaml keys', () => {
@@ -196,7 +211,7 @@ schema-version: 1
 agent:
   id: tanaabot
 environment:
-  onepassword-environments: ${environments}
+  op: ${environments}
 `).has('manifest-schema'),
         true,
       );

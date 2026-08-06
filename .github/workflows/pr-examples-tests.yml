@@ -24,6 +24,7 @@ jobs:
           - validate
           - agent
           - env
+          - credentials
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

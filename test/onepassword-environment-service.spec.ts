@@ -14,7 +14,11 @@ describe('lib/onepassword-environment-service', () => {
       credentialService: {
         async resolveServiceAccountToken() {
           credentialCalls += 1;
-          return 'private-token';
+          return {
+            status: 'resolved',
+            source: { id: 'process-environment', type: 'environment' },
+            token: 'private-token',
+          } as const;
         },
       },
       integrationVersion: 'test',
@@ -29,7 +33,7 @@ describe('lib/onepassword-environment-service', () => {
     const service = new OnePasswordEnvironmentService({
       credentialService: {
         async resolveServiceAccountToken() {
-          return undefined;
+          return { status: 'missing' } as const;
         },
       },
       integrationVersion: 'test',
@@ -39,10 +43,9 @@ describe('lib/onepassword-environment-service', () => {
       status: 'invalid',
       diagnostics: [
         {
-          code: 'onepassword-credential-missing',
-          fieldPath: '/environment/onepassword-environments',
-          message:
-            '1Password Environment resolution requires an available service-account credential.',
+          code: 'op-credential-missing',
+          fieldPath: '/environment/op',
+          message: 'OP Environment resolution requires an available service-account credential.',
           severity: 'error',
         },
       ],
@@ -90,7 +93,11 @@ describe('lib/onepassword-environment-service', () => {
       credentialService: {
         async resolveServiceAccountToken(agentId) {
           assert.equal(agentId, 'data');
-          return 'private-token';
+          return {
+            status: 'resolved',
+            source: { id: 'file', type: 'store' },
+            token: 'private-token',
+          } as const;
         },
       },
       integrationVersion: '1.2.3',
@@ -100,12 +107,12 @@ describe('lib/onepassword-environment-service', () => {
       status: 'loaded',
       sources: [
         {
-          source: 'environment.onepassword-environments[0]',
+          source: 'environment.op[0]',
           sensitiveNames: ['PRIVATE_VALUE'],
           values: { PUBLIC_VALUE: 'team-public', PRIVATE_VALUE: 'team-private' },
         },
         {
-          source: 'environment.onepassword-environments[1]',
+          source: 'environment.op[1]',
           sensitiveNames: ['PRIVATE_VALUE'],
           values: { PRIVATE_VALUE: 'agent-private' },
         },
@@ -124,7 +131,11 @@ describe('lib/onepassword-environment-service', () => {
       }),
       credentialService: {
         async resolveServiceAccountToken() {
-          return 'private-token';
+          return {
+            status: 'resolved',
+            source: { id: 'file', type: 'store' },
+            token: 'private-token',
+          } as const;
         },
       },
       integrationVersion: 'test',
@@ -153,7 +164,11 @@ describe('lib/onepassword-environment-service', () => {
         }),
         credentialService: {
           async resolveServiceAccountToken() {
-            return 'private-token';
+            return {
+              status: 'resolved',
+              source: { id: 'file', type: 'store' },
+              token: 'private-token',
+            } as const;
           },
         },
         integrationVersion: 'test',
@@ -163,5 +178,68 @@ describe('lib/onepassword-environment-service', () => {
       assert.equal(result.status, 'invalid');
       assert.equal(JSON.stringify(result).includes('private-'), false);
     }
+  });
+
+  it('should validate every declared environment without returning values or ids', async () => {
+    const calls: string[] = [];
+    const service = new OnePasswordEnvironmentService({
+      createClient: async () => ({
+        async getVariables(environmentId) {
+          calls.push(environmentId);
+          return { variables: [{ masked: true, name: 'SECRET', value: 'private-value' }] };
+        },
+      }),
+      credentialService: {
+        async resolveServiceAccountToken(agentId, options) {
+          assert.equal(agentId, 'data');
+          assert.deepEqual(options, { storeId: 'file', allowEnvironmentFallback: false });
+          return {
+            status: 'resolved',
+            source: { id: 'file', type: 'store' },
+            token: 'private-token',
+          } as const;
+        },
+      },
+      integrationVersion: 'test',
+    });
+
+    assert.deepEqual(
+      await service.validate('data', ['private-one', 'private-two'], {
+        storeId: 'file',
+        allowEnvironmentFallback: false,
+      }),
+      {
+        status: 'valid',
+        environmentCount: 2,
+        source: { id: 'file', type: 'store' },
+      },
+    );
+    assert.deepEqual(calls, ['private-one', 'private-two']);
+  });
+
+  it('should validate a candidate token before storage', async () => {
+    const tokens: string[] = [];
+    const service = new OnePasswordEnvironmentService({
+      createClient: async (token) => {
+        tokens.push(token);
+        return {
+          async getVariables() {
+            return { variables: [] };
+          },
+        };
+      },
+      credentialService: {
+        async resolveServiceAccountToken() {
+          return { status: 'missing' } as const;
+        },
+      },
+      integrationVersion: 'test',
+    });
+
+    assert.deepEqual(await service.validateToken('private-candidate', ['private-id']), {
+      status: 'valid',
+      environmentCount: 1,
+    });
+    assert.deepEqual(tokens, ['private-candidate']);
   });
 });

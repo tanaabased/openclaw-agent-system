@@ -29,7 +29,7 @@
 ## Accepted optimization decisions
 
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
-- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume OpenAI credentials and model selection, and only the `env` scenario may consume `OP_SERVICE_ACCOUNT_TOKEN`. Do not recommend separate jobs or per-entry environment injection solely to narrow either credential; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
+- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume OpenAI credentials and model selection, and only the `env` and `credentials` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. Do not recommend separate jobs or per-entry environment injection solely to narrow either credential; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 
 ## Validation
 
