@@ -14,11 +14,14 @@ const packageMetadata: PackageMetadata = {
   files: [
     'dist/',
     'index.ts',
+    'cli/',
     'lib/',
     'utils/',
     'assets/agent-system.png',
     'openclaw.plugin.json',
     'README.md',
+    'ADVANCED.md',
+    'DEVELOPMENT.md',
     'CHANGELOG.md',
     'LICENSE',
   ],
@@ -47,6 +50,7 @@ const manifest: PluginManifest = {
   name: 'Agent System',
   version: 'test-version',
   activation: {
+    onStartup: true,
     onCommands: ['agent-system', 'as'],
   },
   commandAliases: [
@@ -85,6 +89,7 @@ describe('utils/plugin-metadata-failures', () => {
         'version-mismatch',
         'source-entry',
         'runtime-entry',
+        'startup-activation',
         'canonical-command',
         'alias-command',
         'canonical-command-alias',
@@ -114,6 +119,25 @@ describe('utils/plugin-metadata-failures', () => {
     );
   });
 
+  it('should report required command and companion documentation package files', () => {
+    assert.deepEqual(
+      pluginMetadataFailures(
+        {
+          ...packageMetadata,
+          files: packageMetadata.files?.filter(
+            (path) => !['cli/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+          ),
+        },
+        manifest,
+      ),
+      [
+        { code: 'package-file', message: 'package files must include cli/' },
+        { code: 'package-file', message: 'package files must include ADVANCED.md' },
+        { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
+      ],
+    );
+  });
+
   it('should report command and OpenClaw version drift independently', () => {
     assert.deepEqual(
       failureCodes(
@@ -123,7 +147,7 @@ describe('utils/plugin-metadata-failures', () => {
         },
         {
           ...manifest,
-          activation: { onCommands: ['agent-system'] },
+          activation: { onStartup: true, onCommands: ['agent-system'] },
           commandAliases: [{ name: 'agent-system', cliCommand: 'agent-system' }],
         },
       ),

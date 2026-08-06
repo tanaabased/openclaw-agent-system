@@ -1,0 +1,8 @@
+schema-version: 1
+
+agent:
+  id: data
+
+environment:
+  required:
+    - AGENT_SYSTEM_LEIA_MISSING

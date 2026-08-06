@@ -1,0 +1,6 @@
+schema-version: 1
+
+agent:
+  id: data
+  name: Data
+  description: Precise Agent System validation agent

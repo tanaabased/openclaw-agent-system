@@ -4,6 +4,7 @@
   "description": "Define reproducible identity, environment, and installation for OpenClaw agent workspaces.",
   "version": "0.1.0",
   "activation": {
+    "onStartup": true,
     "onCommands": ["agent-system", "as"]
   },
   "commandAliases": [

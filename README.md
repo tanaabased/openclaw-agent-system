@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. This repository currently provides the working plugin and delivery scaffold. Manifest discovery, identity application, environment resolution, credentials, installation, and diagnostics remain product work described in [SPEC.md](./SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, and explicit per-agent environment values with restricted host references and required-value checks. Additional environment sources, credentials, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -29,50 +29,80 @@ Agent System is intended to turn one strict, workspace-owned `agent.yaml` manife
 
 YAML schema keys use kebab-case while TypeScript uses camelCase. The scaffold includes focused TypeScript ports of Core Next's `encode` and `decode` utilities as the initial conversion primitives. Manifest code will apply those primitives only to schema-owned keys so literal values such as environment-variable names remain unchanged.
 
-## Current command
+## Installation
 
-The plugin registers one canonical OpenClaw command and a shorter alias:
+Install the current development build from a source checkout:
 
 ```sh
-openclaw agent-system
-openclaw as
+git clone https://github.com/tanaabased/openclaw-agent-system.git
+cd openclaw-agent-system
+bun install
+bun run build
+openclaw plugins install --link .
+openclaw plugins enable agent-system
+openclaw plugins inspect agent-system --runtime --json
 ```
 
-Both commands currently confirm that the plugin is installed and route through the same implementation. Future product commands will live under the canonical `agent-system` command tree.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for source-install caveats, the recommended isolated DevGuard workflow, and repository validation.
+
+## Current manifest
+
+An agent workspace opts into Agent System with `.agent-system/agent.yaml` or the shorter root-level `agent.yaml`:
+
+```yaml
+schema-version: 1
+
+agent:
+  id: tanaabot
+  name: Tanaabot
+
+environment:
+  dotenv: .agent-system/env/base.env
+  set:
+    AGENT_COLOR: green
+  required:
+    - AGENT_COLOR
+```
+
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; one or more ordered workspace-relative files under `environment.dotenv`; string values under `environment.set`; and `environment.required`. Later dotenv files override earlier files, and explicit set values override the dotenv layers. Set values may reference the plugin process environment or final dotenv values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+
+## Usage
+
+Validate the current directory or one configured OpenClaw agent workspace:
+
+```sh
+openclaw agent-system validate
+openclaw agent-system validate --agent tanaabot
+openclaw as validate --agent tanaabot
+```
+
+Install the agent represented by the current workspace:
+
+```sh
+cd /path/to/agent-workspace
+openclaw agent-system install
+```
+
+`install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
+
+Resolve and inspect Agent System environment metadata without printing values:
+
+```sh
+openclaw agent-system env
+openclaw agent-system env --agent tanaabot --json
+```
+
+At runtime, the plugin loads a matching manifest at `session_start` and emits value-free manifest lifecycle diagnostics. It does not resolve environment values at session startup or inject them into OpenClaw `exec`, Codex `exec_command`, or other generic command tools. `agent-system env` is the current explicit environment consumer and validation surface. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `agent_system.manifest_*` events; explicit environment inspection also emits `agent_system.environment_*` events.
+
+See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
 
 ## Development
 
-Use the pinned Bun and Node.js versions, then install the dependencies:
-
-```sh
-bun install
-```
-
-Run the repository checks:
-
-```sh
-bun run lint
-bun run typecheck
-bun run test
-bun run build
-bun run plugin:check
-```
-
-When package contents or release wiring change, run the self-contained release package check:
-
-```sh
-bun run test:release
-```
-
-The release check builds the Node-targeted runtime, validates plugin metadata, creates and inspects a temporary npm archive, verifies its file boundaries and identity metadata, and requires ClawHub package validation to pass without warnings. It cleans up the temporary archive and does not publish the package.
-
-Operational examples are executable Leia scenarios under `examples/`. They are GitHub Actions-only and must not be run as local repository validation. The initial install example installs the prepared archive through OpenClaw's managed npm-package path and verifies both `openclaw agent-system` and `openclaw as`. Pull requests run the example on macOS and Ubuntu independently from lint, unit, and release checks.
-
-Published GitHub releases run independent, release-shaped preparation and validation jobs for npm trusted publishing and ClawHub.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for source installation, the recommended DevGuard workflow with `tanaabot`, repository testing, package validation, and coding standards.
 
 ## Project direction
 
-[SPEC.md](./SPEC.md) defines the first implementation path and its security boundaries. It is product intent rather than evidence that a feature has already shipped.
+[SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) defines the first implementation path and its security boundaries. It is product intent rather than evidence that a feature has already shipped.
 
 ## Issues, Questions and Support
 

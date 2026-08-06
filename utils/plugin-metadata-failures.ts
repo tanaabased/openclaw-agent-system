@@ -29,6 +29,7 @@ export interface PackageMetadata {
 export interface PluginManifest {
   activation?: {
     onCommands?: string[];
+    onStartup?: boolean;
   };
   commandAliases?: Array<{
     cliCommand?: string;
@@ -52,6 +53,7 @@ export type PluginMetadataFailureCode =
   | 'version-mismatch'
   | 'source-entry'
   | 'runtime-entry'
+  | 'startup-activation'
   | 'canonical-command'
   | 'alias-command'
   | 'canonical-command-alias'
@@ -75,11 +77,14 @@ const supportedOperatingSystems = ['darwin', 'linux'];
 const requiredPackageFiles = [
   'dist/',
   'index.ts',
+  'cli/',
   'lib/',
   'utils/',
   'assets/agent-system.png',
   'openclaw.plugin.json',
   'README.md',
+  'ADVANCED.md',
+  'DEVELOPMENT.md',
   'CHANGELOG.md',
   'LICENSE',
 ];
@@ -110,6 +115,11 @@ export default function pluginMetadataFailures(
     typeof developmentOpenClawVersion === 'string' &&
     exactSemanticVersion.test(developmentOpenClawVersion);
 
+  check(
+    manifest.activation?.onStartup === true,
+    'startup-activation',
+    'plugin must activate at Gateway startup',
+  );
   check(
     packageMetadata.name === '@tanaab/openclaw-agent-system',
     'package-name',

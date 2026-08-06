@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import discoverManifest, { maximumManifestBytes } from '../utils/discover-manifest.ts';
+
+const temporaryRoots: string[] = [];
+
+async function temporaryRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'agent-system-discovery-'));
+  temporaryRoots.push(root);
+  return root;
+}
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true })));
+});
+
+describe('utils/discover-manifest', () => {
+  it('should report a workspace without a manifest as unmanaged', async () => {
+    const result = await discoverManifest(await temporaryRoot());
+
+    assert.equal(result.selected, undefined);
+    assert.deepEqual(result.diagnostics, []);
+  });
+
+  it('should discover the root shorthand manifest', async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\n');
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.status, 'readable');
+    assert.equal(result.selected?.path, join(root, 'agent.yaml'));
+  });
+
+  it('should prefer .agent-system/agent.yaml and warn about the ignored shorthand', async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, '.agent-system'));
+    await Promise.all([
+      writeFile(join(root, '.agent-system', 'agent.yaml'), 'schema-version: 1\n'),
+      writeFile(join(root, 'agent.yaml'), 'schema-version: 1\n'),
+    ]);
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.path, join(root, '.agent-system', 'agent.yaml'));
+    assert.equal(result.ignoredPath, join(root, 'agent.yaml'));
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-shadowed'],
+    );
+  });
+
+  it('should reject a manifest symlink', async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, 'target.yaml'), 'schema-version: 1\n');
+    await symlink(join(root, 'target.yaml'), join(root, 'agent.yaml'));
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.status, 'invalid');
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-not-regular-file'],
+    );
+  });
+
+  it('should reject a symlinked .agent-system directory', async () => {
+    const root = await temporaryRoot();
+    const target = join(root, 'target');
+    await mkdir(target);
+    await writeFile(join(target, 'agent.yaml'), 'schema-version: 1\n');
+    await symlink(target, join(root, '.agent-system'));
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.status, 'invalid');
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-directory-not-real'],
+    );
+  });
+
+  it('should reject a manifest over the size limit', async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, 'agent.yaml'), Buffer.alloc(maximumManifestBytes + 1));
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.status, 'invalid');
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-too-large'],
+    );
+  });
+});

@@ -1,0 +1,6 @@
+schema-version: 1
+
+agent:
+  id: data
+  name: Root Data
+  description: Ignored root Agent System manifest

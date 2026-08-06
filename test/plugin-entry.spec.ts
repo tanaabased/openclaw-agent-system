@@ -14,7 +14,7 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should register both CLI roots for lazy loading', () => {
+  it('should register startup hooks and both CLI roots', () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
@@ -24,7 +24,30 @@ describe('index', () => {
           descriptors?: Array<{ hasSubcommands?: boolean; name: string }>;
         }
       | undefined;
+    const hookNames: string[] = [];
+    const logger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
     const api = {
+      logger,
+      on(name: string) {
+        hookNames.push(name);
+      },
+      runtime: {
+        agent: {
+          resolveAgentWorkspaceDir() {
+            return '/workspace';
+          },
+        },
+        config: {
+          current() {
+            return {};
+          },
+        },
+      },
       registerCli(
         nextRegistrar: (context: {
           logger: PluginLogger;
@@ -43,12 +66,13 @@ describe('index', () => {
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
+    assert.deepEqual(hookNames, ['session_start']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),
       [
-        { hasSubcommands: false, name: 'agent-system' },
-        { hasSubcommands: false, name: 'as' },
+        { hasSubcommands: true, name: 'agent-system' },
+        { hasSubcommands: true, name: 'as' },
       ],
     );
   });
