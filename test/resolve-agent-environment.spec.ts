@@ -34,16 +34,88 @@ describe('utils/resolve-agent-environment', () => {
         variables: [
           {
             name: 'ALPHA',
+            overriddenSources: [],
             required: true,
             source: 'environment.set',
           },
           {
             name: 'GITHUB_TOKEN',
+            overriddenSources: [],
             required: false,
             source: 'environment.set',
           },
           {
             name: 'ZEBRA',
+            overriddenSources: [],
+            required: false,
+            source: 'environment.set',
+          },
+        ],
+      },
+    });
+  });
+
+  it('should merge ordered dotenv sources before environment.set and retain provenance', () => {
+    const resolved = resolveAgentEnvironment(
+      {
+        schemaVersion: 1,
+        agent: { id: 'data' },
+        environment: {
+          required: ['DOTENV_ONLY'],
+          set: {
+            FROM_DOTENV: '$DOTENV_REFERENCE',
+            LAYERED: 'set-value',
+          },
+        },
+      },
+      { DOTENV_REFERENCE: 'host-value', HOST_ONLY: 'not-exported' },
+      [
+        {
+          source: 'environment.dotenv[0]',
+          values: {
+            DOTENV_ONLY: 'base-required-value',
+            DOTENV_REFERENCE: 'base-reference',
+            LAYERED: 'base-value',
+          },
+        },
+        {
+          source: 'environment.dotenv[1]',
+          values: { DOTENV_REFERENCE: 'override-reference', LAYERED: 'override-value' },
+        },
+      ],
+    );
+
+    assert.deepEqual(resolved, {
+      status: 'resolved',
+      environment: {
+        values: {
+          DOTENV_ONLY: 'base-required-value',
+          DOTENV_REFERENCE: 'override-reference',
+          LAYERED: 'set-value',
+          FROM_DOTENV: 'override-reference',
+        },
+        variables: [
+          {
+            name: 'DOTENV_ONLY',
+            overriddenSources: [],
+            required: true,
+            source: 'environment.dotenv[0]',
+          },
+          {
+            name: 'DOTENV_REFERENCE',
+            overriddenSources: ['environment.dotenv[0]'],
+            required: false,
+            source: 'environment.dotenv[1]',
+          },
+          {
+            name: 'FROM_DOTENV',
+            overriddenSources: [],
+            required: false,
+            source: 'environment.set',
+          },
+          {
+            name: 'LAYERED',
+            overriddenSources: ['environment.dotenv[0]', 'environment.dotenv[1]'],
             required: false,
             source: 'environment.set',
           },

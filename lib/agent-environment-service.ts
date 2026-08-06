@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import loadAgentDotenv from '../utils/load-agent-dotenv.ts';
 import resolveAgentEnvironment, {
   type ResolvedAgentEnvironment,
 } from '../utils/resolve-agent-environment.ts';
@@ -18,6 +19,7 @@ export interface AgentEnvironmentServiceDependencies {
     error(message: string): void;
     info(message: string): void;
   };
+  loadDotenv?: typeof loadAgentDotenv;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
 }
 
@@ -36,10 +38,12 @@ function environmentDigest(environment: ResolvedAgentEnvironment): string {
 export default class AgentEnvironmentService {
   readonly #dependencies: AgentEnvironmentServiceDependencies;
   readonly #hostEnvironment: Readonly<Record<string, string | undefined>>;
+  readonly #loadDotenv: typeof loadAgentDotenv;
 
   constructor(dependencies: AgentEnvironmentServiceDependencies) {
     this.#dependencies = dependencies;
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
+    this.#loadDotenv = dependencies.loadDotenv ?? loadAgentDotenv;
   }
 
   async loadForAgentId(
@@ -67,18 +71,35 @@ export default class AgentEnvironmentService {
     );
   }
 
-  #resolve(
+  async #resolve(
     result: AgentManifestLoadResult,
     trigger: ManifestLoadTrigger,
-  ): AgentEnvironmentLoadResult {
+  ): Promise<AgentEnvironmentLoadResult> {
     if (result.status !== 'loaded') return result;
 
-    const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment);
+    const dotenv = await this.#loadDotenv(
+      result.scope.workspaceDir,
+      result.manifest.environment?.dotenv ?? [],
+    );
+    if (dotenv.status === 'invalid') {
+      const diagnostics = [...result.diagnostics, ...dotenv.diagnostics];
+      this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
+      return {
+        status: 'invalid',
+        scope: result.scope,
+        path: result.path,
+        diagnostics,
+      };
+    }
+
+    const resolution = resolveAgentEnvironment(
+      result.manifest,
+      this.#hostEnvironment,
+      dotenv.sources,
+    );
     if (resolution.status === 'invalid') {
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
-      this.#dependencies.logger.error(
-        `agent_system.environment_invalid trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
-      );
+      this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
       return {
         status: 'invalid',
         scope: result.scope,
@@ -92,5 +113,15 @@ export default class AgentEnvironmentService {
       `agent_system.environment_resolved trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} variables=${environment.variables.length} digest=${quote(environmentDigest(environment))}`,
     );
     return { ...result, environment };
+  }
+
+  #logInvalidEnvironment(
+    agentId: string,
+    trigger: ManifestLoadTrigger,
+    diagnostics: AgentManifestLoadResult['diagnostics'],
+  ): void {
+    this.#dependencies.logger.error(
+      `agent_system.environment_invalid trigger=${quote(trigger)} agentId=${quote(agentId)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
+    );
   }
 }

@@ -57,13 +57,14 @@ agent:
   name: Tanaabot
 
 environment:
+  dotenv: .agent-system/env/base.env
   set:
     AGENT_COLOR: green
   required:
     - AGENT_COLOR
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`, string values under `environment.set`, and `environment.required`. Set values may reference the plugin process environment with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; one or more ordered workspace-relative files under `environment.dotenv`; string values under `environment.set`; and `environment.required`. Later dotenv files override earlier files, and explicit set values override the dotenv layers. Set values may reference the plugin process environment or final dotenv values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
 
 ## Usage
 

@@ -7,10 +7,17 @@ agent:
   avatar: avatar.png
 
 environment:
+  dotenv:
+    - base.env
+    - local.env
   set:
     AGENT_SYSTEM_LEIA_BARE: $AGENT_SYSTEM_LEIA_SOURCE
     AGENT_SYSTEM_LEIA_BRACED: ${AGENT_SYSTEM_LEIA_SOURCE}
+    AGENT_SYSTEM_LEIA_FROM_DOTENV: $AGENT_SYSTEM_LEIA_DOTENV_REFERENCE
+    AGENT_SYSTEM_LEIA_SET_OVERRIDE: leia-agent-system-private-set-value
     GITHUB_TOKEN: leia-agent-system-private-value
   required:
     - AGENT_SYSTEM_LEIA_BARE
     - AGENT_SYSTEM_LEIA_BRACED
+    - AGENT_SYSTEM_LEIA_DOTENV_REQUIRED
+    - AGENT_SYSTEM_LEIA_FROM_DOTENV

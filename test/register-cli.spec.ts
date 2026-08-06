@@ -22,6 +22,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
     variables: [
       {
         name: 'AGENT_COLOR',
+        overriddenSources: [],
         required: false,
         source: 'environment.set',
       },

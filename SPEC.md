@@ -275,16 +275,17 @@ value makes it available only to explicit Agent System-owned consumers. It does
 not imply that OpenClaw's built-in `exec`, Codex `exec_command`, ACP backends,
 CLI backends, MCP tools, or third-party tools can receive it.
 
-The current implementation accepts strings under `environment.set`, resolves
-restricted `$NAME` and `${NAME}` references against a fixed host-environment
-snapshot, validates `environment.required`, and implements value-free `env`
-diagnostics. Dotenv, 1Password, scoped consumer resolution, and path prepending
-are subsequent Phase 1 slices.
+The current implementation loads ordered workspace-contained dotenv files,
+accepts strings under `environment.set`, resolves restricted `$NAME` and
+`${NAME}` references against a fixed host-environment snapshot plus the final
+dotenv lookup, validates `environment.required`, and implements value-free `env`
+diagnostics with provenance. 1Password, scoped consumer resolution, and path
+prepending are subsequent Phase 1 slices.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
-1. inline strings declared in `environment.set`;
-2. ordered dotenv files; and
+1. ordered dotenv files;
+2. inline strings declared in `environment.set`; and
 3. ordered 1Password Environments.
 
 The host process environment is a lookup input, not an output source. A manifest
@@ -294,14 +295,14 @@ not an additional source.
 
 ```yaml
 environment:
+  dotenv:
+    - .agent-system/env/base.env
+    - .agent-system/env/local.env
+
   set:
     AGENT_SYSTEM_AGENT_ID: emori
     NODE_ENV: development
     AGENT_EMAIL: $COMPANY_EMAIL
-
-  dotenv:
-    - .agent-system/env/base.env
-    - .agent-system/env/local.env
 
   onepassword-environments:
     - env_team
@@ -319,18 +320,20 @@ environment:
 Precedence is fixed:
 
 ```text
-environment.set
-  < environment.dotenv[0]
+environment.dotenv[0]
   < environment.dotenv[1]
   < later dotenv files
+  < environment.set
   < environment.onepassword-environments[0]
   < environment.onepassword-environments[1]
   < later 1Password Environments
 ```
 
-Later values override earlier values. The order is a product contract rather
-than a user-configurable cross-source merge strategy. Within each ordered source
-type, a higher array index overrides a lower index. `environment.dotenv` and
+Later values override earlier values. Ordered dotenv files establish the base,
+explicit `environment.set` values override that base, and later secure sources
+remain authoritative. The order is a product contract rather than a
+user-configurable cross-source merge strategy. Within each ordered source type,
+a higher array index overrides a lower index. `environment.dotenv` and
 `environment.onepassword-environments` each accept either one string or a
 non-empty list of unique strings and normalize the scalar form to a one-item
 list. Empty strings, empty declared lists, and duplicate entries are invalid.
@@ -390,10 +393,20 @@ It supports blank lines, comments, `NAME=value`, and optionally
 `export NAME=value`. It does not evaluate commands or shell syntax and rejects
 malformed names and NUL bytes.
 
-`environment.dotenv` accepts one path or an ordered list of paths. Relative paths
-resolve from the workspace root. Declared files are required. A higher list
-index overrides a lower list index. Secret-bearing files should use owner-only
-permissions and remain outside version control.
+Unquoted values preserve literal `#` characters unless whitespace introduces an
+inline comment. Single-quoted values are literal. Double-quoted values support
+only `\\`, `\"`, `\n`, `\r`, and `\t` escapes. Dotenv values do not perform
+host or dotenv interpolation. Duplicate variables within one file, unsupported
+escapes, unterminated quotes, invalid UTF-8, and files larger than 1 MiB fail
+closed without including values in diagnostics.
+
+`environment.dotenv` accepts one relative path or an ordered list of relative
+paths and resolves them from the workspace root. Absolute paths, lexical or
+symlink escapes from the workspace, and paths that canonically select the same
+file more than once are rejected. Declared files are required regular files. A
+higher list index overrides a lower list index, and `environment.set` overrides
+the final dotenv layer. Secret-bearing files should use owner-only permissions
+and remain outside version control.
 
 ### 1Password Environments
 
@@ -439,9 +452,8 @@ requirements, fetch dotenv files, or contact 1Password.
 
 The `env` command resolves the selected agent's sources and reports the
 consolidated set of environment variables Agent System provides. It reports
-variable name, final source, and required state. Once multi-source resolution
-ships, it also reports override history. It makes no claim about an unrelated
-OpenClaw or harness command environment.
+variable name, final source, required state, and override history. It makes no
+claim about an unrelated OpenClaw or harness command environment.
 
 Without `--agent`, `env` discovers the manifest from the current workspace
 using the normal `.agent-system/agent.yaml`, then `agent.yaml`, precedence. With

@@ -17,6 +17,9 @@ agent:
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
 environment:
+  dotenv:
+    - .agent-system/env/base.env
+    - .agent-system/env/local.env
   required:
     - AGENT_COLOR
   set:
@@ -35,6 +38,7 @@ environment:
           avatar: '.agent-system/assets/tanaabot.png',
         },
         environment: {
+          dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],
           required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
@@ -44,6 +48,20 @@ environment:
       },
       diagnostics: [],
     });
+  });
+
+  it('should normalize one dotenv path to the ordered internal list', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  dotenv: .agent-system/env/agent.env
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.dotenv, ['.agent-system/env/agent.env']);
   });
 
   it('should reject duplicate YAML keys', () => {
@@ -130,6 +148,26 @@ environment:
 `).has('manifest-schema'),
       true,
     );
+  });
+
+  it('should reject empty, blank, and duplicate dotenv declarations', () => {
+    for (const dotenv of [
+      '[]',
+      "''",
+      "'   '",
+      '[.agent-system/env/base.env, .agent-system/env/base.env]',
+    ]) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  dotenv: ${dotenv}
+`).has('manifest-schema'),
+        true,
+      );
+    }
   });
 
   it('should reject unknown environment keys without exposing their values', () => {
