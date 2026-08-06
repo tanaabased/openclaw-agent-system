@@ -54,31 +54,66 @@ function harness() {
 }
 
 describe('cli/credentials', () => {
-  it('should require explicit set inputs before loading or storing', async () => {
+  it('should read and store a credential from the selected input source', async () => {
     const test = harness();
-    let managerCalls = 0;
+    const calls: string[] = [];
 
     await setCredentialsAgentSystem({
       credential: 'op',
+      credentialInput: {
+        async read(source) {
+          calls.push(`read:${source}`);
+          return { status: 'read', source, token: 'private-token' };
+        },
+      },
       credentialManager: {
-        async setFromEnvironment() {
-          managerCalls += 1;
+        async set(manifest, token, storeId) {
+          calls.push(`set:${manifest.agent.id}:${token}:${storeId ?? 'automatic'}`);
           return { status: 'stored', agentId: 'data', storeId: 'file' };
         },
       },
-      fromEnvironment: false,
+      fromEnvironment: true,
+      fromStdin: false,
       logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
-      storeId: 'file',
       styles: test.styles,
       workspaceDir: '/workspace',
     });
 
-    assert.equal(managerCalls, 0);
+    assert.deepEqual(calls, ['read:environment', 'set:data:private-token:automatic']);
+    assert.deepEqual(test.exitCodes, []);
+    assert.deepEqual(test.records.output, ['stored  op credential for data\nstore   file\n']);
+  });
+
+  it('should reject conflicting set input sources before loading the manifest', async () => {
+    const test = harness();
+
+    await setCredentialsAgentSystem({
+      credential: 'op',
+      credentialInput: {
+        async read() {
+          throw new Error('not expected');
+        },
+      },
+      credentialManager: {
+        async set() {
+          throw new Error('not expected');
+        },
+      },
+      fromEnvironment: true,
+      fromStdin: true,
+      logger: test.logger,
+      manifestService: test.manifestService,
+      output: test.output,
+      setExitCode: test.setExitCode,
+      styles: test.styles,
+      workspaceDir: '/workspace',
+    });
+
     assert.deepEqual(test.exitCodes, [1]);
-    assert.equal(test.records.logs.error.join('').includes('requires --from-env'), true);
+    assert.equal(test.records.logs.error.join('').includes('cannot be used together'), true);
   });
 
   it('should report credential source and environment count without values', async () => {
@@ -87,7 +122,8 @@ describe('cli/credentials', () => {
     await validateCredentialsAgentSystem({
       credential: 'op',
       credentialManager: {
-        async validate() {
+        async validate(_manifest, options) {
+          assert.deepEqual(options, { storeId: 'file' });
           return {
             status: 'valid',
             agentId: 'data',
@@ -96,6 +132,7 @@ describe('cli/credentials', () => {
           };
         },
       },
+      fromEnvironment: false,
       logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
@@ -111,6 +148,59 @@ describe('cli/credentials', () => {
     ]);
   });
 
+  it('should validate only the process-environment credential when requested', async () => {
+    const test = harness();
+
+    await validateCredentialsAgentSystem({
+      credential: 'op',
+      credentialManager: {
+        async validate(_manifest, options) {
+          assert.deepEqual(options, { fromEnvironment: true });
+          return {
+            status: 'valid',
+            agentId: 'data',
+            environmentCount: 1,
+            source: 'process-environment',
+          };
+        },
+      },
+      fromEnvironment: true,
+      logger: test.logger,
+      manifestService: test.manifestService,
+      output: test.output,
+      setExitCode: test.setExitCode,
+      styles: test.styles,
+      workspaceDir: '/workspace',
+    });
+
+    assert.deepEqual(test.exitCodes, []);
+    assert.equal(test.records.output.join('').includes('process-environment'), true);
+  });
+
+  it('should reject conflicting validation selectors before loading the manifest', async () => {
+    const test = harness();
+
+    await validateCredentialsAgentSystem({
+      credential: 'op',
+      credentialManager: {
+        async validate() {
+          throw new Error('not expected');
+        },
+      },
+      fromEnvironment: true,
+      logger: test.logger,
+      manifestService: test.manifestService,
+      output: test.output,
+      setExitCode: test.setExitCode,
+      storeId: 'file',
+      styles: test.styles,
+      workspaceDir: '/workspace',
+    });
+
+    assert.deepEqual(test.exitCodes, [1]);
+    assert.equal(test.records.logs.error.join('').includes('cannot be used together'), true);
+  });
+
   it('should report idempotent explicit-store removal', async () => {
     const test = harness();
 
@@ -118,7 +208,12 @@ describe('cli/credentials', () => {
       credential: 'op',
       credentialManager: {
         async unset() {
-          return { status: 'missing', agentId: 'data', storeId: 'file' };
+          return {
+            status: 'missing',
+            agentId: 'data',
+            storeIds: ['file'],
+            unavailableStoreIds: [],
+          };
         },
       },
       logger: test.logger,
@@ -145,6 +240,7 @@ describe('cli/credentials', () => {
           throw new Error('not expected');
         },
       },
+      fromEnvironment: false,
       logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,

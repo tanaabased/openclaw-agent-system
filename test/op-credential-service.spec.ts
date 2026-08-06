@@ -109,7 +109,7 @@ describe('lib/op-credential-service', () => {
     });
   });
 
-  it('should route writes and removals through the selected store', async () => {
+  it('should route writes and removals through one exact store', async () => {
     const calls: Array<{ key: CredentialKey; operation: string; value?: string }> = [];
     const service = new OpCredentialService({
       hostEnvironment: {},
@@ -118,9 +118,12 @@ describe('lib/op-credential-service', () => {
 
     assert.deepEqual(await service.storeServiceAccountToken('data', 'file', 'private-token'), {
       status: 'stored',
+      storeId: 'file',
     });
     assert.deepEqual(await service.removeServiceAccountToken('data', 'file'), {
       status: 'removed',
+      storeIds: ['file'],
+      unavailableStoreIds: [],
     });
     assert.deepEqual(calls.slice(-2), [
       {
@@ -133,6 +136,33 @@ describe('lib/op-credential-service', () => {
         operation: 'remove',
       },
     ]);
+  });
+
+  it('should select the first writable store and remove every available copy by default', async () => {
+    const calls: Array<{ key: CredentialKey; operation: string; value?: string }> = [];
+    const unavailable = createStore('keychain', { status: 'missing' }, calls);
+    unavailable.write = async (key, value) => {
+      calls.push({ key, operation: 'write', value });
+      return { status: 'unavailable', code: 'store-down', message: 'Store unavailable.' };
+    };
+    unavailable.remove = async (key) => {
+      calls.push({ key, operation: 'remove' });
+      return { status: 'unavailable', code: 'store-down', message: 'Store unavailable.' };
+    };
+    const service = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [unavailable, createStore('file', { status: 'missing' }, calls)],
+    });
+
+    assert.deepEqual(await service.storeServiceAccountToken('data', undefined, 'private-token'), {
+      status: 'stored',
+      storeId: 'file',
+    });
+    assert.deepEqual(await service.removeServiceAccountToken('data'), {
+      status: 'removed',
+      storeIds: ['file'],
+      unavailableStoreIds: ['keychain'],
+    });
   });
 
   it('should reject unknown stores without trying the process environment', async () => {

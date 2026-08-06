@@ -22,7 +22,13 @@ export type CredentialValidationResult =
     };
 
 export type CredentialUnsetResult =
-  CredentialManagementFailure | { agentId: string; status: 'removed' | 'missing'; storeId: string };
+  | CredentialManagementFailure
+  | {
+      agentId: string;
+      status: 'removed' | 'missing';
+      storeIds: string[];
+      unavailableStoreIds: string[];
+    };
 
 export type CredentialInstallReadiness = CredentialManagementFailure | { status: 'ready' };
 
@@ -55,17 +61,12 @@ export default class OpCredentialManager {
     this.#environmentService = dependencies.environmentService;
   }
 
-  async setFromEnvironment(manifest: AgentManifest, storeId: string): Promise<CredentialSetResult> {
+  async set(
+    manifest: AgentManifest,
+    token: string,
+    storeId?: string,
+  ): Promise<CredentialSetResult> {
     const environmentIds = manifest.environment?.op ?? [];
-    const token = this.#credentialService.environmentServiceAccountToken();
-    if (!token) {
-      return {
-        status: 'invalid',
-        code: 'op-environment-credential-missing',
-        message: 'OP_SERVICE_ACCOUNT_TOKEN is not available to store.',
-      };
-    }
-
     const validation = await this.#environmentService.validateToken(token, environmentIds);
     if (validation.status === 'invalid') return failure(validation);
 
@@ -74,17 +75,40 @@ export default class OpCredentialManager {
       storeId,
       token,
     );
-    if (stored.status === 'unsafe' || stored.status === 'unavailable') {
+    if ('code' in stored) {
       return { status: 'invalid', code: stored.code, message: stored.message };
     }
-    return { status: stored.status, agentId: manifest.agent.id, storeId };
+    return { status: stored.status, agentId: manifest.agent.id, storeId: stored.storeId };
   }
 
-  async validate(manifest: AgentManifest, storeId?: string): Promise<CredentialValidationResult> {
+  async validate(
+    manifest: AgentManifest,
+    options: { fromEnvironment?: boolean; storeId?: string } = {},
+  ): Promise<CredentialValidationResult> {
+    const environmentIds = manifest.environment?.op ?? [];
+    if (options.fromEnvironment) {
+      const token = this.#credentialService.environmentServiceAccountToken();
+      if (!token) {
+        return {
+          status: 'invalid',
+          code: 'op-environment-credential-missing',
+          message: 'OP_SERVICE_ACCOUNT_TOKEN is not available to validate.',
+        };
+      }
+      const validation = await this.#environmentService.validateToken(token, environmentIds);
+      if (validation.status === 'invalid') return failure(validation);
+      return {
+        status: 'valid',
+        agentId: manifest.agent.id,
+        environmentCount: validation.environmentCount,
+        source: 'process-environment',
+      };
+    }
+
     const validated = await this.#environmentService.validate(
       manifest.agent.id,
-      manifest.environment?.op ?? [],
-      storeId ? { storeId, allowEnvironmentFallback: false } : {},
+      environmentIds,
+      options.storeId ? { storeId: options.storeId, allowEnvironmentFallback: false } : {},
     );
     if (validated.status === 'invalid') return failure(validated);
     return {
@@ -96,12 +120,17 @@ export default class OpCredentialManager {
     };
   }
 
-  async unset(agentId: string, storeId: string): Promise<CredentialUnsetResult> {
+  async unset(agentId: string, storeId?: string): Promise<CredentialUnsetResult> {
     const removed = await this.#credentialService.removeServiceAccountToken(agentId, storeId);
-    if (removed.status === 'unsafe' || removed.status === 'unavailable') {
+    if ('code' in removed) {
       return { status: 'invalid', code: removed.code, message: removed.message };
     }
-    return { status: removed.status, agentId, storeId };
+    return {
+      status: removed.status,
+      agentId,
+      storeIds: removed.storeIds,
+      unavailableStoreIds: removed.unavailableStoreIds,
+    };
   }
 
   async validateStoredForInstall(manifest: AgentManifest): Promise<CredentialInstallReadiness> {
@@ -118,7 +147,7 @@ export default class OpCredentialManager {
     return {
       status: 'invalid',
       code: 'op-credential-not-stored',
-      message: `No stored OP credential is available for ${manifest.agent.id}. Run: openclaw agent-system credentials set op --store file --from-env`,
+      message: `No stored OP credential is available for ${manifest.agent.id}. Run: openclaw agent-system credentials set op. For non-interactive input, add --from-env or --stdin.`,
     };
   }
 }

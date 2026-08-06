@@ -85,7 +85,7 @@ When the manifest declares `environment.op`, validate and store the process toke
 
 ```sh
 openclaw agent-system credentials validate op
-openclaw agent-system credentials set op --store file --from-env
+openclaw agent-system credentials set op --from-env
 openclaw agent-system credentials validate op --store file
 ```
 

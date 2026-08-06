@@ -22,7 +22,10 @@ Manifest discovery rejects symlinked manifests, a symlinked `.agent-system` dire
 Run installation from the workspace represented by the manifest:
 
 ```sh
+# Enter the workspace represented by the manifest.
 cd /path/to/agent-workspace
+
+# Install or reconcile the workspace agent.
 openclaw agent-system install
 ```
 
@@ -130,8 +133,14 @@ Discovers and validates a workspace manifest without mutating OpenClaw state.
 #### Usage
 
 ```sh
-openclaw agent-system validate [--agent <id>]
-openclaw as validate [--agent <id>]
+# validate the manifest in the current workspace.
+openclaw agent-system validate
+
+# validate the configured workspace for one openclaw agent.
+openclaw agent-system validate --agent tanaabot
+
+# use the equivalent short command alias.
+openclaw as validate --agent tanaabot
 ```
 
 #### Options
@@ -144,16 +153,6 @@ Resolves the configured OpenClaw workspace for the exact agent id and requires t
 
 A valid manifest prints its agent id and selected path. A shadowed shorthand produces a warning after the valid result. Missing, invalid, unreadable, unsafe, or mismatched manifests fail with stable diagnostic codes such as `manifest-shadowed`, `manifest-schema`, or `agent-id-mismatch`.
 
-#### Examples
-
-```sh
-# validate the current workspace.
-openclaw agent-system validate
-
-# validate tanaabot's configured OpenClaw workspace.
-openclaw agent-system validate --agent tanaabot
-```
-
 ### `openclaw agent-system env`
 
 Resolves and reports the environment variable names Agent System provides for one manifest. It never prints values or predicts another tool's environment.
@@ -161,8 +160,14 @@ Resolves and reports the environment variable names Agent System provides for on
 #### Usage
 
 ```sh
-openclaw agent-system env [--agent <id>] [--json]
-openclaw as env [--agent <id>] [--json]
+# inspect the current workspace without printing environment values.
+openclaw agent-system env
+
+# inspect one configured agent in machine-readable form.
+openclaw agent-system env --agent tanaabot --json
+
+# use the equivalent short command alias.
+openclaw as env --agent tanaabot
 ```
 
 #### Options
@@ -184,35 +189,54 @@ AGENT_COLOR source=environment.set required=false overridden=1
 GITHUB_TOKEN source=environment.dotenv[1] required=true overridden=1
 ```
 
-#### Examples
-
-```sh
-# inspect the current workspace safely.
-openclaw agent-system env
-
-# inspect a registered agent in machine-readable form.
-openclaw agent-system env --agent tanaabot --json
-```
-
 ### `openclaw agent-system credentials`
 
-Manages the OP service-account credential for the selected agent. Each operation loads the agent's manifest and uses every declared `environment.op` id as the access check. Results report only the selected source and Environment count; they never print token values, Environment ids, resolved values, or raw SDK errors.
+Manages the OP service-account credential for the selected agent. Each operation loads the agent's manifest and uses every declared `environment.op` id as the access check. Results report only selected sources, stores, and Environment counts; they never print token values, Environment ids, resolved values, or raw SDK errors.
 
 #### Usage
 
 ```sh
-openclaw agent-system credentials set op --store file --from-env [--agent <id>]
-openclaw agent-system credentials validate op [--store file] [--agent <id>]
-openclaw agent-system credentials unset op --store file [--agent <id>]
+# prompt securely and store in the preferred available backend.
+openclaw agent-system credentials set op
+
+# store OP_SERVICE_ACCOUNT_TOKEN in the preferred available backend.
+openclaw agent-system credentials set op --from-env
+
+# read a credential from redirected input without putting it in command arguments.
+openclaw agent-system credentials set op --stdin < /secure/path/op-token
+
+# force the credential into one exact backend.
+openclaw agent-system credentials set op --from-env --store file
+
+# validate the effective credential, including the process-environment fallback.
+openclaw agent-system credentials validate op
+
+# validate only OP_SERVICE_ACCOUNT_TOKEN.
+openclaw agent-system credentials validate op --from-env
+
+# validate only one persistent backend.
+openclaw agent-system credentials validate op --store file
+
+# remove every persisted copy for the selected agent.
+openclaw agent-system credentials unset op
+
+# remove only one persistent copy.
+openclaw agent-system credentials unset op --store file
 ```
 
 #### Behavior
 
-`set op --store file --from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`, verifies that it can access every declared OP Environment, and only then stores or replaces it. `validate op` uses stored credentials first and then the process-environment fallback. Supplying `--store file` requires that exact store and never falls back to the process environment. `unset op --store file` is idempotent.
+Credential input and persistent storage are separate choices. `set op` uses a masked interactive prompt. `--from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`, while `--stdin` reads redirected or piped input and removes one terminal line ending. The input flags are mutually exclusive. A non-interactive invocation without either flag fails with guidance instead of reading the environment implicitly. Agent System does not accept a token as a command argument because process arguments and shell history are not credential-safe.
+
+Every `set` path verifies that the token can access every declared OP Environment before storing it. Without `--store`, Agent System writes to the first available registered backend and reports the concrete store used. Supplying `--store file` requires that exact backend. The current implementation registers only `file`; native Keychain and Linux Secret Service adapters remain planned.
+
+`validate op` uses stored credentials first and then the process-environment fallback. `validate op --from-env` checks only `OP_SERVICE_ACCOUNT_TOKEN`, while `--store file` checks only that persistent backend. Those selectors are mutually exclusive.
+
+`unset op` removes every persisted copy available to Agent System for the selected agent. Supplying `--store file` removes only that backend. Removal is idempotent and never changes `OP_SERVICE_ACCOUNT_TOKEN` in the parent process environment.
 
 The file fallback is stored at `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or `$HOME/.config/tanaab/agent-system/<agent-id>/op-token` when `XDG_CONFIG_HOME` is unset. Agent System creates store directories with owner-only access, creates credential files with mode `0600`, checks ownership and permissions when reading, rejects symlinks and non-regular files, and replaces values atomically. Removal deletes the directory entry but does not claim secure erasure from the underlying storage medium.
 
-The current command accepts only the `op` credential target and `file` store. The generic command shape leaves room for native Keychain and Linux secure-store adapters without changing the OP lifecycle.
+The current command accepts only the `op` credential target and concrete `file` store. Omitting `--store` invokes command-appropriate automatic behavior; `auto` is not itself a store id.
 
 ### `openclaw agent-system install`
 
@@ -221,7 +245,10 @@ Installs the agent represented by the current workspace and reconciles its publi
 #### Usage
 
 ```sh
+# install and reconcile the agent represented by the current workspace.
 openclaw agent-system install
+
+# use the equivalent short command alias.
 openclaw as install
 ```
 
@@ -231,7 +258,7 @@ This command currently has no options. Run it from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op --store file --from-env` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reloads configuration, and fails if registration or identity still differs from the manifest.
+Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reloads configuration, and fails if registration or identity still differs from the manifest.
 
 Possible result lines are:
 

@@ -3,16 +3,15 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
-import type {
-  CredentialKey,
-  CredentialStore,
-  CredentialStoreProblem,
-  CredentialStoreReadResult,
-  CredentialStoreRemoveResult,
-  CredentialStoreWriteResult,
+import {
+  maximumCredentialBytes,
+  type CredentialKey,
+  type CredentialStore,
+  type CredentialStoreProblem,
+  type CredentialStoreReadResult,
+  type CredentialStoreRemoveResult,
+  type CredentialStoreWriteResult,
 } from './credential-store.ts';
-
-const maximumCredentialBytes = 64 * 1024;
 const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
 const identifierPattern = /^[a-z0-9][a-z0-9-]*$/;

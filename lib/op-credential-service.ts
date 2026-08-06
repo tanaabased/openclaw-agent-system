@@ -1,9 +1,4 @@
-import type {
-  CredentialStore,
-  CredentialStoreProblem,
-  CredentialStoreRemoveResult,
-  CredentialStoreWriteResult,
-} from './credential-store.ts';
+import type { CredentialStore, CredentialStoreProblem } from './credential-store.ts';
 
 export const opCredentialId = 'op';
 export const opServiceAccountTokenEnvironmentVariable = 'OP_SERVICE_ACCOUNT_TOKEN';
@@ -26,6 +21,17 @@ export interface OpCredentialResolveOptions {
   allowEnvironmentFallback?: boolean;
   storeId?: string;
 }
+
+export type OpCredentialStoreWriteResult =
+  CredentialStoreProblem | { status: 'stored' | 'unchanged'; storeId: string };
+
+export type OpCredentialStoreRemoveResult =
+  | CredentialStoreProblem
+  | {
+      status: 'removed' | 'missing';
+      storeIds: string[];
+      unavailableStoreIds: string[];
+    };
 
 export interface OpCredentialServiceDependencies {
   hostEnvironment: Readonly<Record<string, string | undefined>>;
@@ -92,32 +98,94 @@ export default class OpCredentialService {
 
   async storeServiceAccountToken(
     agentId: string,
-    storeId: string,
+    storeId: string | undefined,
     token: string,
-  ): Promise<CredentialStoreWriteResult> {
-    const store = this.#stores.find(({ id }) => id === storeId);
-    if (!store) {
+  ): Promise<OpCredentialStoreWriteResult> {
+    const stores = storeId ? this.#stores.filter(({ id }) => id === storeId) : this.#stores;
+    if (storeId && stores.length === 0) {
       return {
         status: 'unavailable',
         code: 'credential-store-unknown',
         message: `Credential store ${storeId} is not available.`,
       };
     }
-    return store.write({ agentId, credentialId: opCredentialId }, token);
+    if (stores.length === 0) {
+      return {
+        status: 'unavailable',
+        code: 'credential-store-unavailable',
+        message: 'No credential store is available.',
+      };
+    }
+
+    let unavailable: CredentialStoreProblem | undefined;
+    for (const store of stores) {
+      const result = await store.write({ agentId, credentialId: opCredentialId }, token);
+      if (result.status === 'stored' || result.status === 'unchanged') {
+        return { ...result, storeId: store.id };
+      }
+      if ('code' in result) {
+        if (result.status === 'unsafe') return result;
+        unavailable ??= result;
+      }
+    }
+    return (
+      unavailable ?? {
+        status: 'unavailable',
+        code: 'credential-store-unavailable',
+        message: 'No credential store is available.',
+      }
+    );
   }
 
   async removeServiceAccountToken(
     agentId: string,
-    storeId: string,
-  ): Promise<CredentialStoreRemoveResult> {
-    const store = this.#stores.find(({ id }) => id === storeId);
-    if (!store) {
+    storeId?: string,
+  ): Promise<OpCredentialStoreRemoveResult> {
+    const stores = storeId ? this.#stores.filter(({ id }) => id === storeId) : this.#stores;
+    if (storeId && stores.length === 0) {
       return {
         status: 'unavailable',
         code: 'credential-store-unknown',
         message: `Credential store ${storeId} is not available.`,
       };
     }
-    return store.remove({ agentId, credentialId: opCredentialId });
+    if (stores.length === 0) {
+      return {
+        status: 'unavailable',
+        code: 'credential-store-unavailable',
+        message: 'No credential store is available.',
+      };
+    }
+
+    const checkedStoreIds: string[] = [];
+    const removedStoreIds: string[] = [];
+    const unavailableStoreIds: string[] = [];
+    let unavailable: CredentialStoreProblem | undefined;
+    for (const store of stores) {
+      const result = await store.remove({ agentId, credentialId: opCredentialId });
+      if (result.status === 'unsafe') return result;
+      if (result.status === 'unavailable') {
+        unavailable ??= result;
+        unavailableStoreIds.push(store.id);
+        continue;
+      }
+      checkedStoreIds.push(store.id);
+      if (result.status === 'removed') removedStoreIds.push(store.id);
+    }
+
+    if (checkedStoreIds.length === 0) {
+      return (
+        unavailable ?? {
+          status: 'unavailable',
+          code: 'credential-store-unavailable',
+          message: 'No credential store is available.',
+        }
+      );
+    }
+    return {
+      status: removedStoreIds.length > 0 ? 'removed' : 'missing',
+      storeIds: removedStoreIds.length > 0 ? removedStoreIds : checkedStoreIds,
+      unavailableStoreIds,
+    };
   }
 }

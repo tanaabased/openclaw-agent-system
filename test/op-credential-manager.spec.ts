@@ -10,17 +10,17 @@ const manifest: AgentManifest = {
 };
 
 describe('lib/op-credential-manager', () => {
-  it('should validate a process token against every environment before storing it', async () => {
+  it('should validate a supplied token against every environment before storing it', async () => {
     const calls: string[] = [];
     const manager = new OpCredentialManager({
       credentialService: {
-        environmentServiceAccountToken: () => 'private-token',
+        environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken() {
-          return { status: 'missing' };
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
         },
         async storeServiceAccountToken(agentId, storeId, token) {
           calls.push(`store:${agentId}:${storeId}:${token}`);
-          return { status: 'stored' };
+          return { status: 'stored', storeId: storeId ?? 'file' };
         },
       },
       environmentService: {
@@ -34,7 +34,7 @@ describe('lib/op-credential-manager', () => {
       },
     });
 
-    assert.deepEqual(await manager.setFromEnvironment(manifest, 'file'), {
+    assert.deepEqual(await manager.set(manifest, 'private-token', 'file'), {
       status: 'stored',
       agentId: 'data',
       storeId: 'file',
@@ -46,13 +46,13 @@ describe('lib/op-credential-manager', () => {
     let writes = 0;
     const manager = new OpCredentialManager({
       credentialService: {
-        environmentServiceAccountToken: () => 'private-token',
+        environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken() {
-          return { status: 'missing' };
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
         },
         async storeServiceAccountToken() {
           writes += 1;
-          return { status: 'stored' };
+          return { status: 'stored', storeId: 'file' };
         },
       },
       environmentService: {
@@ -74,7 +74,7 @@ describe('lib/op-credential-manager', () => {
       },
     });
 
-    assert.equal((await manager.setFromEnvironment(manifest, 'file')).status, 'invalid');
+    assert.equal((await manager.set(manifest, 'private-token', 'file')).status, 'invalid');
     assert.equal(writes, 0);
   });
 
@@ -83,10 +83,10 @@ describe('lib/op-credential-manager', () => {
       credentialService: {
         environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken() {
-          return { status: 'missing' };
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
         },
         async storeServiceAccountToken() {
-          return { status: 'stored' };
+          return { status: 'stored', storeId: 'file' };
         },
       },
       environmentService: {
@@ -106,11 +106,42 @@ describe('lib/op-credential-manager', () => {
       },
     });
 
-    assert.deepEqual(await manager.validate(manifest, 'file'), {
+    assert.deepEqual(await manager.validate(manifest, { storeId: 'file' }), {
       status: 'valid',
       agentId: 'data',
       environmentCount: 2,
       source: 'store:file',
+    });
+  });
+
+  it('should validate only the fixed process-environment credential when requested', async () => {
+    const manager = new OpCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => 'environment-token',
+        async removeServiceAccountToken() {
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
+        },
+        async storeServiceAccountToken() {
+          return { status: 'stored', storeId: 'file' };
+        },
+      },
+      environmentService: {
+        async validate() {
+          throw new Error('not expected');
+        },
+        async validateToken(token, environmentIds) {
+          assert.equal(token, 'environment-token');
+          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
+          return { status: 'valid', environmentCount: 2 };
+        },
+      },
+    });
+
+    assert.deepEqual(await manager.validate(manifest, { fromEnvironment: true }), {
+      status: 'valid',
+      agentId: 'data',
+      environmentCount: 2,
+      source: 'process-environment',
     });
   });
 
@@ -119,10 +150,10 @@ describe('lib/op-credential-manager', () => {
       credentialService: {
         environmentServiceAccountToken: () => 'environment-token',
         async removeServiceAccountToken() {
-          return { status: 'missing' };
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
         },
         async storeServiceAccountToken() {
-          return { status: 'stored' };
+          return { status: 'stored', storeId: 'file' };
         },
       },
       environmentService: {
@@ -152,7 +183,8 @@ describe('lib/op-credential-manager', () => {
     assert.equal(result.status, 'invalid');
     if (result.status !== 'invalid') return;
     assert.equal(result.code, 'op-credential-not-stored');
-    assert.equal(result.message.includes('credentials set op --store file --from-env'), true);
+    assert.equal(result.message.includes('credentials set op'), true);
+    assert.equal(result.message.includes('--from-env or --stdin'), true);
   });
 
   it('should unset an agent-scoped credential idempotently', async () => {
@@ -161,11 +193,11 @@ describe('lib/op-credential-manager', () => {
         environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken(agentId, storeId) {
           assert.equal(agentId, 'data');
-          assert.equal(storeId, 'file');
-          return { status: 'missing' };
+          assert.equal(storeId, undefined);
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
         },
         async storeServiceAccountToken() {
-          return { status: 'stored' };
+          return { status: 'stored', storeId: 'file' };
         },
       },
       environmentService: {
@@ -178,10 +210,11 @@ describe('lib/op-credential-manager', () => {
       },
     });
 
-    assert.deepEqual(await manager.unset('data', 'file'), {
+    assert.deepEqual(await manager.unset('data'), {
       status: 'missing',
       agentId: 'data',
-      storeId: 'file',
+      storeIds: ['file'],
+      unavailableStoreIds: [],
     });
   });
 });

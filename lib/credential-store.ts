@@ -3,6 +3,8 @@ export interface CredentialKey {
   credentialId: string;
 }
 
+export const maximumCredentialBytes = 64 * 1024;
+
 export interface CredentialStoreProblem {
   code: string;
   message: string;

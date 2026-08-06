@@ -1,4 +1,5 @@
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import type OpCredentialInput from '../lib/op-credential-input.ts';
 import type OpCredentialManager from '../lib/op-credential-manager.ts';
 import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
 import {
@@ -11,8 +12,10 @@ import {
 export interface SetCredentialsAgentSystemOptions {
   agentId?: string;
   credential: string;
-  credentialManager: Pick<OpCredentialManager, 'setFromEnvironment'>;
+  credentialInput: Pick<OpCredentialInput, 'read'>;
+  credentialManager: Pick<OpCredentialManager, 'set'>;
   fromEnvironment: boolean;
+  fromStdin: boolean;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
@@ -22,7 +25,7 @@ export interface SetCredentialsAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Validate and persist an OP service-account token from the process environment. */
+/** Validate and persist an OP service-account token from one explicit or interactive source. */
 export default async function setCredentialsAgentSystem(
   options: SetCredentialsAgentSystemOptions,
 ): Promise<void> {
@@ -31,13 +34,8 @@ export default async function setCredentialsAgentSystem(
     options.setExitCode(1);
     return;
   }
-  if (!options.storeId) {
-    options.logger.error('credentials: credentials set op requires --store <id>');
-    options.setExitCode(1);
-    return;
-  }
-  if (!options.fromEnvironment) {
-    options.logger.error('credentials: credentials set op requires --from-env');
+  if (options.fromEnvironment && options.fromStdin) {
+    options.logger.error('credentials: --from-env and --stdin cannot be used together');
     options.setExitCode(1);
     return;
   }
@@ -52,10 +50,18 @@ export default async function setCredentialsAgentSystem(
   }
   reportManifestDiagnostics(loaded, options.logger);
 
-  const result = await options.credentialManager.setFromEnvironment(
-    loaded.manifest,
-    options.storeId,
+  const input = await options.credentialInput.read(
+    options.fromEnvironment ? 'environment' : options.fromStdin ? 'stdin' : 'prompt',
   );
+  if (input.status === 'invalid') {
+    options.logger.error(
+      formatDiagnostic({ code: input.code, component: 'credentials', message: input.message }),
+    );
+    options.setExitCode(1);
+    return;
+  }
+
+  const result = await options.credentialManager.set(loaded.manifest, input.token, options.storeId);
   if (result.status === 'invalid') {
     options.logger.error(
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),

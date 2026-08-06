@@ -120,6 +120,7 @@ try {
     'lib/credential-store.ts',
     'lib/file-credential-store.ts',
     'lib/logger.ts',
+    'lib/op-credential-input.ts',
     'lib/op-credential-manager.ts',
     'lib/op-credential-service.ts',
     'lib/op-environment-service.ts',
@@ -176,6 +177,7 @@ try {
     const manifest = JSON.parse(manifestContents) as PluginManifest;
     assert.equal(packageMetadata.name, '@tanaab/openclaw-agent-system');
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
+    assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);

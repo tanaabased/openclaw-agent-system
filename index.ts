@@ -10,6 +10,7 @@ import FileCredentialStore, {
   resolveFileCredentialStoreRoot,
 } from './lib/file-credential-store.ts';
 import OpCredentialManager from './lib/op-credential-manager.ts';
+import OpCredentialInput from './lib/op-credential-input.ts';
 import OpCredentialService from './lib/op-credential-service.ts';
 import OpEnvironmentService from './lib/op-environment-service.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
@@ -41,6 +42,11 @@ export default definePluginEntry({
       hostEnvironment: process.env,
       stores: [fileCredentialStore],
     });
+    const opCredentialInput = new OpCredentialInput({
+      hostEnvironment: process.env,
+      input: process.stdin,
+      output: process.stderr,
+    });
     const opEnvironmentService = new OpEnvironmentService({
       credentialService: opCredentialService,
       integrationVersion: api.version ?? 'dev',
@@ -71,6 +77,7 @@ export default definePluginEntry({
     api.registerCli(
       ({ logger: cliLogger, program }) => {
         registerAgentSystemCli(program, {
+          credentialInput: opCredentialInput,
           credentialManager,
           environmentService,
           installService,

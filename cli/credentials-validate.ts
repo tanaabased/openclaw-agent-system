@@ -12,6 +12,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   agentId?: string;
   credential: string;
   credentialManager: Pick<OpCredentialManager, 'validate'>;
+  fromEnvironment: boolean;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
@@ -30,6 +31,11 @@ export default async function validateCredentialsAgentSystem(
     options.setExitCode(1);
     return;
   }
+  if (options.fromEnvironment && options.storeId) {
+    options.logger.error('credentials: --from-env and --store cannot be used together');
+    options.setExitCode(1);
+    return;
+  }
 
   const loaded = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
@@ -41,7 +47,10 @@ export default async function validateCredentialsAgentSystem(
   }
   reportManifestDiagnostics(loaded, options.logger);
 
-  const result = await options.credentialManager.validate(loaded.manifest, options.storeId);
+  const result = await options.credentialManager.validate(loaded.manifest, {
+    ...(options.fromEnvironment ? { fromEnvironment: true } : {}),
+    ...(options.storeId ? { storeId: options.storeId } : {}),
+  });
   if (result.status === 'invalid') {
     options.logger.error(
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),

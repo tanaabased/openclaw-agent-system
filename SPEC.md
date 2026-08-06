@@ -519,20 +519,29 @@ Agent System uses the bootstrap token internally to retrieve the requested
 authorized Agent System-owned target process. Each service account should have
 the smallest practical scope.
 
-The initial lifecycle is explicit:
+The credential lifecycle separates input from persistent storage:
 
 ```text
-openclaw agent-system credentials set op --store file --from-env [--agent <id>]
-openclaw agent-system credentials validate op [--store file] [--agent <id>]
-openclaw agent-system credentials unset op --store file [--agent <id>]
+openclaw agent-system credentials set op [--from-env | --stdin] [--store <id>] [--agent <id>]
+openclaw agent-system credentials validate op [--from-env | --store <id>] [--agent <id>]
+openclaw agent-system credentials unset op [--store <id>] [--agent <id>]
 ```
 
-`set` reads the process token, validates access to every `environment.op`
-declaration, and only then stores or replaces it. Ordinary `validate op` tries
-configured stores before the process-environment fallback; an explicit
-`--store` requires that exact adapter and bypasses the fallback. `unset` is
-idempotent. These commands report only credential source and Environment count.
-They never print tokens, Environment ids, values, or raw SDK errors.
+Without an input flag, `set` prompts through a masked interactive terminal.
+`--from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`; `--stdin` supports redirected or
+piped automation without putting the token in process arguments. Non-interactive
+set operations require one of those explicit sources. Every source is validated
+against each `environment.op` declaration before storage.
+
+Omitting `--store` lets `set` use the first available registered backend and
+lets `unset` remove every persisted copy. An explicit `--store` requires that
+exact adapter. Ordinary `validate op` tries configured stores before the
+process-environment fallback; `--from-env` checks only that fallback, while an
+explicit `--store` bypasses it. `unset` is idempotent and never changes the
+parent process environment. `auto` is not a store id.
+
+These commands report only credential source, selected stores, and Environment
+count. They never print tokens, Environment ids, values, or raw SDK errors.
 
 When `environment.op` is declared, `install` requires a stored credential that
 can access every declared Environment. It performs that check before reading or
@@ -979,9 +988,9 @@ payload model, and synchronization command remain Phase 3 design work.
 ```text
 openclaw agent-system validate
 openclaw agent-system env [--agent <id>]
-openclaw agent-system credentials set op --store file --from-env [--agent <id>]
-openclaw agent-system credentials validate op [--store file] [--agent <id>]
-openclaw agent-system credentials unset op --store file [--agent <id>]
+openclaw agent-system credentials set op [--from-env | --stdin] [--store <id>] [--agent <id>]
+openclaw agent-system credentials validate op [--from-env | --store <id>] [--agent <id>]
+openclaw agent-system credentials unset op [--store <id>] [--agent <id>]
 openclaw agent-system providers list
 openclaw agent-system capabilities inspect github --agent emori
 openclaw agent-system capabilities test github --agent emori
@@ -999,10 +1008,12 @@ openclaw agent-system doctor
   workspace selected by `--agent`, and reports the consolidated Agent
   System-provided environment with provenance and required state. It never
   prints values or predicts another tool's environment.
-- `credentials set` validates and stores or replaces a bootstrap credential in
-  an explicit backend. `credentials validate` checks every declared OP
-  Environment without revealing values, and `credentials unset` removes one
-  explicit backend entry idempotently.
+- `credentials set` reads a masked prompt, the fixed process environment, or
+  standard input; validates every declared OP Environment; and stores or
+  replaces the bootstrap credential in the preferred or explicitly selected
+  backend. `credentials validate` checks the effective or explicitly selected
+  credential without revealing values, and `credentials unset` removes every
+  persistent copy or one exact backend entry idempotently.
 - `providers` and `capabilities` inspect provider compatibility, the selected
   agent's non-secret binding, required executable or request adapter, credential
   resolvability, and policy without exposing secret values. Human-facing

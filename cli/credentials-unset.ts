@@ -21,7 +21,7 @@ export interface UnsetCredentialsAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Remove an agent-scoped OP credential from an explicit store. */
+/** Remove an agent-scoped OP credential from one exact store or every registered store. */
 export default async function unsetCredentialsAgentSystem(
   options: UnsetCredentialsAgentSystemOptions,
 ): Promise<void> {
@@ -30,12 +30,6 @@ export default async function unsetCredentialsAgentSystem(
     options.setExitCode(1);
     return;
   }
-  if (!options.storeId) {
-    options.logger.error('credentials: credentials unset op requires --store <id>');
-    options.setExitCode(1);
-    return;
-  }
-
   const loaded = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
@@ -62,8 +56,17 @@ export default async function unsetCredentialsAgentSystem(
         style: result.status === 'removed' ? 'action' : 'status',
         value: `op credential for ${result.agentId}${result.status === 'missing' ? ' is not stored' : ''}`,
       },
-      { label: 'store', style: 'target', value: result.storeId },
+      {
+        label: result.storeIds.length === 1 ? 'store' : 'stores',
+        style: 'target',
+        value: result.storeIds.join(', '),
+      },
     ],
     options.styles,
   );
+  if (result.unavailableStoreIds.length > 0) {
+    options.logger.warn(
+      `credentials: unavailable stores were skipped: ${result.unavailableStoreIds.join(', ')}`,
+    );
+  }
 }

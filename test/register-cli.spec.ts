@@ -36,9 +36,14 @@ function createProgram() {
   const output: string[] = [];
   const calls = {
     agent: [] as string[],
-    credentialSet: [] as Array<{ agentId: string; storeId: string }>,
-    credentialUnset: [] as Array<{ agentId: string; storeId: string }>,
-    credentialValidate: [] as Array<{ agentId: string; storeId?: string }>,
+    credentialInput: [] as string[],
+    credentialSet: [] as Array<{ agentId: string; storeId?: string; token: string }>,
+    credentialUnset: [] as Array<{ agentId: string; storeId?: string }>,
+    credentialValidate: [] as Array<{
+      agentId: string;
+      fromEnvironment?: boolean;
+      storeId?: string;
+    }>,
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
@@ -48,25 +53,40 @@ function createProgram() {
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
     cwd: () => '/current',
+    credentialInput: {
+      async read(source) {
+        calls.credentialInput.push(source);
+        return { status: 'read', source, token: 'private-token' };
+      },
+    },
     credentialManager: {
-      async setFromEnvironment(manifest, storeId) {
-        calls.credentialSet.push({ agentId: manifest.agent.id, storeId });
-        return { status: 'stored', agentId: manifest.agent.id, storeId };
+      async set(manifest, token, storeId) {
+        calls.credentialSet.push({
+          agentId: manifest.agent.id,
+          token,
+          ...(storeId ? { storeId } : {}),
+        });
+        return { status: 'stored', agentId: manifest.agent.id, storeId: storeId ?? 'file' };
       },
       async unset(agentId, storeId) {
-        calls.credentialUnset.push({ agentId, storeId });
-        return { status: 'removed', agentId, storeId };
+        calls.credentialUnset.push({ agentId, ...(storeId ? { storeId } : {}) });
+        return {
+          status: 'removed',
+          agentId,
+          storeIds: [storeId ?? 'file'],
+          unavailableStoreIds: [],
+        };
       },
-      async validate(manifest, storeId) {
+      async validate(manifest, options = {}) {
         calls.credentialValidate.push({
           agentId: manifest.agent.id,
-          ...(storeId === undefined ? {} : { storeId }),
+          ...options,
         });
         return {
           status: 'valid',
           agentId: manifest.agent.id,
           environmentCount: 1,
-          source: storeId ? `store:${storeId}` : 'process-environment',
+          source: options.storeId ? `store:${options.storeId}` : 'process-environment',
         };
       },
     },
@@ -188,7 +208,36 @@ describe('lib/register-cli', () => {
       '--from-env',
     ]);
 
-    assert.deepEqual(calls.credentialSet, [{ agentId: 'tanaabot', storeId: 'file' }]);
+    assert.deepEqual(calls.credentialInput, ['environment']);
+    assert.deepEqual(calls.credentialSet, [
+      { agentId: 'tanaabot', storeId: 'file', token: 'private-token' },
+    ]);
+  });
+
+  it('should delegate stdin storage with automatic store selection', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'credentials',
+      'set',
+      'op',
+      '--stdin',
+    ]);
+
+    assert.deepEqual(calls.credentialInput, ['stdin']);
+    assert.deepEqual(calls.credentialSet, [{ agentId: 'tanaabot', token: 'private-token' }]);
+  });
+
+  it('should delegate interactive storage by default', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync(['node', 'openclaw', 'agent-system', 'credentials', 'set', 'op']);
+
+    assert.deepEqual(calls.credentialInput, ['prompt']);
+    assert.deepEqual(calls.credentialSet, [{ agentId: 'tanaabot', token: 'private-token' }]);
   });
 
   it('should delegate exact-store credential validation for an agent', async () => {
@@ -211,6 +260,22 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.agent, ['data']);
   });
 
+  it('should delegate process-environment credential validation', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'credentials',
+      'validate',
+      'op',
+      '--from-env',
+    ]);
+
+    assert.deepEqual(calls.credentialValidate, [{ agentId: 'tanaabot', fromEnvironment: true }]);
+  });
+
   it('should delegate removal from an explicit credential store', async () => {
     const { calls, program } = createProgram();
 
@@ -226,5 +291,13 @@ describe('lib/register-cli', () => {
     ]);
 
     assert.deepEqual(calls.credentialUnset, [{ agentId: 'tanaabot', storeId: 'file' }]);
+  });
+
+  it('should delegate removal from every registered credential store by default', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync(['node', 'openclaw', 'agent-system', 'credentials', 'unset', 'op']);
+
+    assert.deepEqual(calls.credentialUnset, [{ agentId: 'tanaabot' }]);
   });
 });
