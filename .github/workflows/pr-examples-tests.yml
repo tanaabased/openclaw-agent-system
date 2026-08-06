@@ -52,6 +52,18 @@ jobs:
           bun-version-file: .bun-version
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install Linux Secret Service test dependencies
+        if: runner.os == 'Linux' && matrix.example == 'credentials'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes dbus-x11 gnome-keyring libsecret-tools
+          mkdir -p "$RUNNER_TEMP/secret-service-home"
+          dbus_address="$(dbus-daemon --session --fork --print-address=1)"
+          test -n "$dbus_address"
+          export DBUS_SESSION_BUS_ADDRESS="$dbus_address"
+          echo "DBUS_SESSION_BUS_ADDRESS=$dbus_address" >> "$GITHUB_ENV"
+          printf '%s' 'test-keyring-password' | HOME="$RUNNER_TEMP/secret-service-home" gnome-keyring-daemon --unlock --components=secrets
       - name: Prepare release-shaped build
         uses: tanaabased/prepare-release-action@v1
         with:
@@ -72,6 +84,7 @@ jobs:
       - name: Run Leia-backed example
         shell: bash
         env:
+          DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           NO_COLOR: '1'
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_MODEL: gpt-5.4-nano

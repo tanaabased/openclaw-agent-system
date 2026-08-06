@@ -52,6 +52,27 @@ describe('lib/op-credential-service', () => {
     ]);
   });
 
+  it('should continue from a missing native store to the file store', async () => {
+    const calls: Array<{ key: CredentialKey; operation: string }> = [];
+    const service = new OpCredentialService({
+      hostEnvironment: { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' },
+      stores: [
+        createStore('keychain', { status: 'missing' }, calls),
+        createStore('file', { status: 'found', value: 'stored-token' }, calls),
+      ],
+    });
+
+    assert.deepEqual(await service.resolveServiceAccountToken('data'), {
+      status: 'resolved',
+      source: { id: 'file', type: 'store' },
+      token: 'stored-token',
+    });
+    assert.deepEqual(
+      calls.map(({ operation }) => operation),
+      ['read', 'read'],
+    );
+  });
+
   it('should permanently support a fixed process-environment fallback', async () => {
     const hostEnvironment = { OP_SERVICE_ACCOUNT_TOKEN: 'environment-token' };
     const service = new OpCredentialService({
@@ -100,8 +121,20 @@ describe('lib/op-credential-service', () => {
         ),
       ],
     });
+    const missing = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [
+        createStore(
+          'keychain',
+          { status: 'unavailable', code: 'store-down', message: 'Store unavailable.' },
+          [],
+        ),
+        createStore('file', { status: 'missing' }, []),
+      ],
+    });
 
     assert.equal((await unavailable.resolveServiceAccountToken('data')).status, 'resolved');
+    assert.deepEqual(await missing.resolveServiceAccountToken('data'), { status: 'missing' });
     assert.deepEqual(await unsafe.resolveServiceAccountToken('data'), {
       status: 'unsafe',
       code: 'store-unsafe',
@@ -163,6 +196,57 @@ describe('lib/op-credential-service', () => {
       storeIds: ['file'],
       unavailableStoreIds: ['keychain'],
     });
+  });
+
+  it('should keep exact and unsafe writes from falling through', async () => {
+    const calls: Array<{ key: CredentialKey; operation: string; value?: string }> = [];
+    const unavailable = createStore('keychain', { status: 'missing' }, calls);
+    unavailable.write = async (key, value) => {
+      calls.push({ key, operation: 'write', value });
+      return { status: 'unavailable', code: 'store-down', message: 'Store unavailable.' };
+    };
+    const file = createStore('file', { status: 'missing' }, calls);
+    const exactService = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [unavailable, file],
+    });
+
+    assert.deepEqual(
+      await exactService.storeServiceAccountToken('data', 'keychain', 'private-token'),
+      {
+        status: 'unavailable',
+        code: 'store-down',
+        message: 'Store unavailable.',
+      },
+    );
+    assert.deepEqual(
+      calls.map(({ operation }) => operation),
+      ['write'],
+    );
+
+    calls.length = 0;
+    const unsafe = createStore('keychain', { status: 'missing' }, calls);
+    unsafe.write = async (key, value) => {
+      calls.push({ key, operation: 'write', value });
+      return { status: 'unsafe', code: 'store-unsafe', message: 'Store unsafe.' };
+    };
+    const automaticService = new OpCredentialService({
+      hostEnvironment: {},
+      stores: [unsafe, file],
+    });
+
+    assert.deepEqual(
+      await automaticService.storeServiceAccountToken('data', undefined, 'private-token'),
+      {
+        status: 'unsafe',
+        code: 'store-unsafe',
+        message: 'Store unsafe.',
+      },
+    );
+    assert.deepEqual(
+      calls.map(({ operation }) => operation),
+      ['write'],
+    );
   });
 
   it('should reject unknown stores without trying the process environment', async () => {

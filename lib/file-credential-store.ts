@@ -4,6 +4,8 @@ import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
 import {
+  isCredentialKeyValid,
+  isCredentialValueValid,
   maximumCredentialBytes,
   type CredentialKey,
   type CredentialStore,
@@ -14,7 +16,6 @@ import {
 } from './credential-store.ts';
 const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
-const identifierPattern = /^[a-z0-9][a-z0-9-]*$/;
 
 export interface FileCredentialStoreDependencies {
   currentUid?: number;
@@ -169,11 +170,7 @@ export default class FileCredentialStore implements CredentialStore {
   }
 
   async write(key: CredentialKey, value: string): Promise<CredentialStoreWriteResult> {
-    if (
-      value.trim() === '' ||
-      value.includes('\0') ||
-      Buffer.byteLength(value, 'utf8') > maximumCredentialBytes
-    ) {
+    if (!isCredentialValueValid(value)) {
       return problem(
         'unsafe',
         'credential-value-invalid',
@@ -253,11 +250,7 @@ export default class FileCredentialStore implements CredentialStore {
   #paths(
     key: CredentialKey,
   ): { agentDir: string; credentialPath: string; rootDir: string } | undefined {
-    if (
-      !this.#rootDir ||
-      !identifierPattern.test(key.agentId) ||
-      !identifierPattern.test(key.credentialId)
-    ) {
+    if (!this.#rootDir || !isCredentialKeyValid(key)) {
       return undefined;
     }
     const agentDir = join(this.#rootDir, key.agentId);

@@ -1,6 +1,6 @@
 # Credentials Example
 
-This scenario verifies OP credential fallback, explicit environment validation, stdin storage, install preflight, stored resolution without the process token, and idempotent automatic removal on a fresh runner.
+This scenario verifies OP credential fallback, explicit environment validation, platform-native and file storage, stdin storage, install preflight, stored resolution without the process token, and idempotent automatic removal on a fresh runner.
 
 ## Setup
 
@@ -40,14 +40,14 @@ if XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install; then exit 1; 
 grep -F 'code=op-credential-not-stored' < <(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install 2>&1)
 grep -F 'credentials set op' < <(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install 2>&1)
 
-# should validate stdin and store it in the preferred available backend
+# should validate stdin and store it in the platform-native backend
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin | grep -F 'stored  op credential for credential-data'
+printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin | grep -F "$DEFAULT_CREDENTIAL_STORE"
 
-# should validate only the explicitly selected file store
+# should validate only the selected platform-native store
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'store:file'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'environments  1'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F 'environments  1'
 
 # should resolve stored op environment values without the process token
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -66,7 +66,22 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | gr
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged  op credential for credential-data is not stored'
 
-# should reject exact-store validation after the credential is removed
+# should reject exact native-store validation after the credential is removed
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+if XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE"; then exit 1; fi
+grep -F 'code=op-credential-missing' < <(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" 2>&1)
+
+# should store and validate an explicitly selected file credential
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file | grep -F 'file'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'store:file'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'environments  1'
+
+# should remove the explicitly selected file credential
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file | grep -F 'removed  op credential for credential-data'
+
+# should reject exact file-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 if XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file; then exit 1; fi
 grep -F 'code=op-credential-missing' < <(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file 2>&1)

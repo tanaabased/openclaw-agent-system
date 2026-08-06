@@ -4,6 +4,22 @@ export interface CredentialKey {
 }
 
 export const maximumCredentialBytes = 64 * 1024;
+const credentialIdentifierPattern = /^[a-z0-9][a-z0-9-]*$/;
+
+export function isCredentialKeyValid(key: CredentialKey): boolean {
+  return (
+    credentialIdentifierPattern.test(key.agentId) &&
+    credentialIdentifierPattern.test(key.credentialId)
+  );
+}
+
+export function isCredentialValueValid(value: string): boolean {
+  return (
+    value.trim() !== '' &&
+    !value.includes('\0') &&
+    Buffer.byteLength(value, 'utf8') <= maximumCredentialBytes
+  );
+}
 
 export interface CredentialStoreProblem {
   code: string;

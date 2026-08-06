@@ -68,6 +68,7 @@ export default class OpCredentialService {
       };
     }
 
+    let missing = false;
     let unavailable: CredentialStoreProblem | undefined;
     for (const store of stores) {
       const result = await store.read({ agentId, credentialId: opCredentialId });
@@ -80,6 +81,7 @@ export default class OpCredentialService {
       }
       if (result.status === 'unsafe') return result;
       if (result.status === 'unavailable') unavailable ??= result;
+      if (result.status === 'missing') missing = true;
     }
 
     if (!options.storeId && options.allowEnvironmentFallback !== false) {
@@ -93,7 +95,7 @@ export default class OpCredentialService {
       }
     }
 
-    return unavailable ?? { status: 'missing' };
+    return missing ? { status: 'missing' } : (unavailable ?? { status: 'missing' });
   }
 
   async storeServiceAccountToken(

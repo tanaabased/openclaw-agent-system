@@ -101,7 +101,7 @@ Set values support one-pass `$NAME` and `${NAME}` references for uppercase names
 
 Dotenv files and 1Password values are loaded only when an explicit Agent System environment consumer runs. Passive `session_start` manifest loading never reads or fetches them. Path prepending is not yet implemented.
 
-Agent System tries the agent-scoped file credential store before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback during ordinary environment resolution and credential validation. An exact `credentials validate op --store file` request bypasses the process environment. Installation also bypasses the process environment and requires a stored credential whenever `environment.op` is declared. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
+During ordinary environment resolution and credential validation, Agent System tries macOS Keychain then the agent-scoped file fallback on macOS, Linux Secret Service then file on Linux, and finally its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. Installation uses the same persistent-store order but bypasses the process environment. An exact `credentials validate op --store <id>` request also bypasses the process environment. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
 
 Agent System does not inject these values into OpenClaw `exec`, Codex `exec_command`, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Those surfaces keep their own environment and security contracts. Future Agent System provider tools will resolve only the named values needed for one owned action.
 
@@ -228,15 +228,17 @@ openclaw agent-system credentials unset op --store file
 
 Credential input and persistent storage are separate choices. `set op` uses a masked interactive prompt. `--from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`, while `--stdin` reads redirected or piped input and removes one terminal line ending. The input flags are mutually exclusive. A non-interactive invocation without either flag fails with guidance instead of reading the environment implicitly. Agent System does not accept a token as a command argument because process arguments and shell history are not credential-safe.
 
-Every `set` path verifies that the token can access every declared OP Environment before storing it. Without `--store`, Agent System writes to the first available registered backend and reports the concrete store used. Supplying `--store file` requires that exact backend. The current implementation registers only `file`; native Keychain and Linux Secret Service adapters remain planned.
+Every `set` path verifies that the token can access every declared OP Environment before storing it. Without `--store`, Agent System writes to the first usable backend and reports the concrete store used. The persistent order is `keychain`, then `file`, on macOS and `secret-service`, then `file`, on Linux. A missing entry or unavailable native backend falls through during automatic selection; unsafe store state stops selection. Supplying `--store keychain`, `--store secret-service`, or `--store file` requires that exact backend without fallback.
 
-`validate op` uses stored credentials first and then the process-environment fallback. `validate op --from-env` checks only `OP_SERVICE_ACCOUNT_TOKEN`, while `--store file` checks only that persistent backend. Those selectors are mutually exclusive.
+`validate op` uses the platform's persistent order and then the process-environment fallback. `validate op --from-env` checks only `OP_SERVICE_ACCOUNT_TOKEN`, while `--store <id>` checks only that persistent backend. Those selectors are mutually exclusive. A found credential that fails OP access validation does not fall through to a lower-priority copy.
 
-`unset op` removes every persisted copy available to Agent System for the selected agent. Supplying `--store file` removes only that backend. Removal is idempotent and never changes `OP_SERVICE_ACCOUNT_TOKEN` in the parent process environment.
+`unset op` removes every persisted copy available to Agent System for the selected agent. Supplying `--store <id>` removes only that backend. Removal is idempotent, skips unavailable stores with a value-free warning, and never changes `OP_SERVICE_ACCOUNT_TOKEN` in the parent process environment.
+
+The `keychain` backend uses the current user's macOS Keychain and is loaded lazily so a missing native binding can fall back safely. The `secret-service` backend uses `secret-tool` without a shell, passes credential input only through standard input, and requires a usable D-Bus Secret Service session. A missing helper, unavailable or locked session, timeout, or helper input limit makes that backend unavailable so automatic selection can use `file`.
 
 The file fallback is stored at `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or `$HOME/.config/tanaab/agent-system/<agent-id>/op-token` when `XDG_CONFIG_HOME` is unset. Agent System creates store directories with owner-only access, creates credential files with mode `0600`, checks ownership and permissions when reading, rejects symlinks and non-regular files, and replaces values atomically. Removal deletes the directory entry but does not claim secure erasure from the underlying storage medium.
 
-The current command accepts only the `op` credential target and concrete `file` store. Omitting `--store` invokes command-appropriate automatic behavior; `auto` is not itself a store id.
+The current command accepts only the `op` credential target. Concrete store ids are `keychain` on macOS, `secret-service` on Linux, and `file` on both platforms. Omitting `--store` invokes command-appropriate automatic behavior; `auto` is not itself a store id.
 
 ### `openclaw agent-system install`
 

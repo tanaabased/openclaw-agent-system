@@ -6,9 +6,7 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
 import AgentManifestService from './lib/agent-manifest-service.ts';
-import FileCredentialStore, {
-  resolveFileCredentialStoreRoot,
-} from './lib/file-credential-store.ts';
+import createCredentialStores from './lib/credential-store-registry.ts';
 import OpCredentialManager from './lib/op-credential-manager.ts';
 import OpCredentialInput from './lib/op-credential-input.ts';
 import OpCredentialService from './lib/op-credential-service.ts';
@@ -34,13 +32,14 @@ export default definePluginEntry({
         return api.runtime.agent.resolveAgentWorkspaceDir(config as OpenClawConfig, agentId);
       },
     });
-    const fileCredentialStore = new FileCredentialStore({
+    const credentialStores = createCredentialStores({
       currentUid: process.getuid?.(),
-      rootDir: resolveFileCredentialStoreRoot(process.env),
+      environment: process.env,
+      platform: process.platform,
     });
     const opCredentialService = new OpCredentialService({
       hostEnvironment: process.env,
-      stores: [fileCredentialStore],
+      stores: credentialStores,
     });
     const opCredentialInput = new OpCredentialInput({
       hostEnvironment: process.env,

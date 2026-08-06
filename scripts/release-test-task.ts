@@ -16,6 +16,7 @@ interface ClawHubValidation {
 interface PackageMetadata {
   dependencies?: Record<string, string>;
   name?: string;
+  optionalDependencies?: Record<string, string>;
   version?: string;
   openclaw?: {
     runtimeExtensions?: string[];
@@ -118,7 +119,9 @@ try {
     'lib/agent-manifest-service.ts',
     'lib/cli-output.ts',
     'lib/credential-store.ts',
+    'lib/credential-store-registry.ts',
     'lib/file-credential-store.ts',
+    'lib/keychain-credential-store.ts',
     'lib/logger.ts',
     'lib/op-credential-input.ts',
     'lib/op-credential-manager.ts',
@@ -126,6 +129,7 @@ try {
     'lib/op-environment-service.ts',
     'lib/register-cli.ts',
     'lib/register-hooks.ts',
+    'lib/secret-service-credential-store.ts',
     'utils/decode.ts',
     'utils/discover-manifest.ts',
     'utils/encode.ts',
@@ -138,6 +142,7 @@ try {
     'utils/plugin-metadata-failures.ts',
     'utils/resolve-agent-id.ts',
     'utils/resolve-agent-environment.ts',
+    'utils/run-credential-command.ts',
     'assets/agent-system.png',
     'README.md',
     'ADVANCED.md',
@@ -178,6 +183,7 @@ try {
     assert.equal(packageMetadata.name, '@tanaab/openclaw-agent-system');
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
+    assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);

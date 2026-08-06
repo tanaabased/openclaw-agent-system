@@ -490,10 +490,10 @@ credential state. It must not be stored in `agent.yaml`, in the Environment it
 unlocks, or in OpenClaw's global JSON configuration.
 
 Credential storage is host state selected by CLI adapters, not manifest state.
-The initial `file` adapter proves the lifecycle on macOS and Linux. Later
-automatic resolution should prefer the macOS login Keychain or an appropriate
-Linux secure store before the file fallback. The manifest remains portable and
-declares only the OP Environments that require access.
+Automatic resolution prefers the macOS login Keychain on macOS or Secret
+Service on Linux before the file fallback. Other platforms use the file store.
+The manifest remains portable and declares only the OP Environments that
+require access.
 
 `OP_SERVICE_ACCOUNT_TOKEN` is the always-supported process-environment fallback
 after configured credential providers. It is read only by Agent System, is
@@ -533,12 +533,21 @@ piped automation without putting the token in process arguments. Non-interactive
 set operations require one of those explicit sources. Every source is validated
 against each `environment.op` declaration before storage.
 
-Omitting `--store` lets `set` use the first available registered backend and
-lets `unset` remove every persisted copy. An explicit `--store` requires that
-exact adapter. Ordinary `validate op` tries configured stores before the
-process-environment fallback; `--from-env` checks only that fallback, while an
-explicit `--store` bypasses it. `unset` is idempotent and never changes the
-parent process environment. `auto` is not a store id.
+Omitting `--store` lets `set` use the first usable registered backend and lets
+`unset` remove every persisted copy. Persistent order is Keychain then file on
+macOS, Secret Service then file on Linux, and file on other platforms. A missing
+entry or unavailable backend falls through during automatic selection; unsafe
+state stops it. An explicit `--store` requires that exact adapter. Ordinary
+`validate op` tries configured stores before the process-environment fallback;
+`--from-env` checks only that fallback, while an explicit `--store` bypasses it.
+`unset` is idempotent and never changes the parent process environment. `auto`
+is not a store id.
+
+Keychain access uses a lazily loaded native binding. Linux Secret Service access
+uses `secret-tool` without a shell and passes credential values only through
+standard input. A missing binding or executable, unavailable or locked session,
+timeout, or backend-specific input limit makes that adapter unavailable without
+exposing raw native or subprocess errors.
 
 These commands report only credential source, selected stores, and Environment
 count. They never print tokens, Environment ids, values, or raw SDK errors.

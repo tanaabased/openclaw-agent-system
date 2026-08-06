@@ -15,7 +15,7 @@
 Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, and explicit installation procedure.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, explicit per-agent environment values from dotenv, inline, and 1Password Environment sources, and agent-scoped OP credential management through an owner-only file store. Native platform credential stores, path projection, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current Phase 1 implementation handles workspace manifests, OpenClaw agent registration and public identity, explicit per-agent environment values from dotenv, inline, and 1Password Environment sources, and agent-scoped OP credential management through macOS Keychain, Linux Secret Service, and an owner-only file fallback. Path projection, Git identity, and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
 
 ## Overview
 
@@ -67,7 +67,7 @@ environment:
 
 The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; and `environment.required`. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or final external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
 
-1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks the agent-scoped file store before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
+1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks macOS Keychain or Linux Secret Service, then the agent-scoped file fallback, before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
 
 Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
 
@@ -86,7 +86,7 @@ When the manifest declares `environment.op`, validate and store the process toke
 ```sh
 openclaw agent-system credentials validate op
 openclaw agent-system credentials set op --from-env
-openclaw agent-system credentials validate op --store file
+openclaw agent-system credentials validate op
 ```
 
 Install the agent represented by the current workspace:
