@@ -5,7 +5,7 @@
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
-- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep examples-level files limited to `AGENTS.md`, `package.json`, and bounded coordination helpers shared by at least two live scenarios.
+- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep examples-level files limited to `AGENTS.md` and `package.json`, and move proven shared coordination helpers to the repository's `scripts/` directory.
 
 ## OpenClaw Runtime
 

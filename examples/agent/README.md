@@ -40,7 +40,7 @@ openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
   exec env OPENCLAW_LOG_LEVEL=debug openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
 ) &
 echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/examples/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 ```
 
 ## Testing
@@ -64,5 +64,5 @@ if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 
 ```bash
 # should stop the background gateway cleanly
-"$GITHUB_WORKSPACE/examples/gateway-process.sh" stop
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
 ```

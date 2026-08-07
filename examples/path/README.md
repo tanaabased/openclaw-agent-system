@@ -49,7 +49,7 @@ openclaw exec-policy preset yolo
   exec openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
 ) &
 echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/examples/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 ```
 
 ## Testing
@@ -76,5 +76,5 @@ grep -F 'manifest-path-prepend-precedence' "$GITHUB_WORKSPACE/examples/path/open
 
 ```bash
 # should stop the background gateway cleanly
-"$GITHUB_WORKSPACE/examples/gateway-process.sh" stop
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
 ```
