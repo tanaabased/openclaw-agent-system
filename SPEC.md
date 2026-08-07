@@ -31,10 +31,11 @@ display name is `Agent System`, and the canonical command is
 ### Environment runtime
 
 The core runtime owns deterministic environment assembly, provenance, required
-value checks, secret classification, redaction, bootstrap credential access,
-and action-scoped value delivery. Resolution does not modify the Gateway
-process or inject values into OpenClaw's generic command-execution tools.
-Agent System-owned consumers must explicitly request the values they need.
+value checks, bootstrap credential access, and explicit consumer resolution. It
+does not own provider policy, approval, output redaction, or audit. Resolution
+does not modify the Gateway process or inject values into OpenClaw's generic
+command-execution tools. Agent System-owned consumers must explicitly request
+the values they need.
 
 ### Provider tool platform
 
@@ -84,7 +85,7 @@ Phase 1 delivers:
 - macOS Keychain and Linux Secret Service bootstrap storage, ephemeral CI
   bootstrap, and a hardened credential-file fallback;
 - required-variable validation, provenance, value-free consolidated `env`
-  inspection, and automatic provider-output redaction;
+  inspection, and value-free diagnostics;
 - executable path projection for ordinary OpenClaw exec and local Codex native
   shell commands, plus later optional shim routing; and
 - focused Leia coverage of installed-plugin, agent-binding, environment, and
@@ -282,8 +283,10 @@ host-environment snapshot plus the ordered external-source lookup, validates
 provenance. Agent-scoped OP credential validation and persistent storage through
 macOS Keychain, Linux Secret Service, and the hardened file fallback are also
 implemented. Executable path projection is implemented separately for ordinary
-OpenClaw exec and local Codex native shell commands. Scoped consumer resolution
-and centralized provider-output redaction are subsequent Phase 1 slices.
+OpenClaw exec and local Codex native shell commands. This completes the Phase 1
+environment foundation. Action-scoped provider consumption, known-secret
+classification, and provider-output redaction begin with the Phase 2 provider
+runtime.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
@@ -453,9 +456,9 @@ declares and checks only the values required for that action.
 
 Removing a variable from the assembled environment is the way to keep it from
 Agent System consumers. Diagnostic output reports names, sources, presence, and
-override status without printing values. Provider result handling separately
-redacts known secret material that may appear in command or HTTP output; there
-is no manifest `environment.redact` list.
+override status without printing values. Phase 2 provider result handling will
+separately redact known secret material that may appear in command or HTTP
+output; there is no manifest `environment.redact` list.
 
 The bootstrap `OP_SERVICE_ACCOUNT_TOKEN` is never included in the ordinary agent
 environment, even if it is used internally to resolve a source.
@@ -1133,10 +1136,9 @@ remain the first part of explicit `install` throughout these phases.
 8. Resolve `environment.path-prepend`, create the workspace bin, and project the
    deterministic prefix into ordinary OpenClaw exec and local Codex native shell
    commands, with managed-config ownership and read-only drift diagnostics.
-9. Add centralized secret classification and provider-output redaction.
-10. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
-    manifest binding, source precedence, value-free diagnostics, path
-    projection, and 1Password boundaries.
+9. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
+   manifest binding, source precedence, value-free diagnostics, path
+   projection, and 1Password boundaries.
 
 ### Phase 2
 
@@ -1146,8 +1148,9 @@ remain the first part of explicit `install` throughout these phases.
    used by the first-party proving tools.
 3. Implement the fixed-executable CLI runner, constrained request helper, and
    provider test harness.
-4. Add common resource policy, OpenClaw approval integration, output bounding,
-   and redaction before credential materialization.
+4. Add common resource policy, OpenClaw approval integration, known-secret
+   classification, output bounding, and redaction, with credential
+   materialization only after approval.
 5. Add the GitHub projection and prove the initial `agent_system_github`
    model-facing schema and `gh`, HTTP/Octokit, or hybrid executor through a thin
    vertical slice.

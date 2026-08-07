@@ -102,48 +102,18 @@ try {
   });
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
-  const requiredPaths = [
+  const trackedSourcePaths = await check('inventory checked-in package sources', async () => {
+    const result = await run('git', ['ls-files', '-z', '--', 'bin', 'cli', 'lib', 'utils']);
+    const paths = result.output.split('\0').filter(Boolean);
+    assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
+    return paths;
+  });
+  const requiredArtifactPaths = [
     'package.json',
     'openclaw.plugin.json',
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
-    'cli/credentials-set.ts',
-    'cli/credentials-unset.ts',
-    'cli/credentials-validate.ts',
-    'cli/env.ts',
-    'cli/install.ts',
-    'cli/validate.ts',
-    'bin/agent-system-test',
-    'lib/agent-environment-service.ts',
-    'lib/agent-install-service.ts',
-    'lib/agent-manifest-service.ts',
-    'lib/cli-output.ts',
-    'lib/credential-store.ts',
-    'lib/credential-store-registry.ts',
-    'lib/file-credential-store.ts',
-    'lib/keychain-credential-store.ts',
-    'lib/logger.ts',
-    'lib/op-credential-input.ts',
-    'lib/op-credential-manager.ts',
-    'lib/op-credential-service.ts',
-    'lib/op-environment-service.ts',
-    'lib/register-cli.ts',
-    'lib/register-hooks.ts',
-    'lib/secret-service-credential-store.ts',
-    'utils/decode.ts',
-    'utils/discover-manifest.ts',
-    'utils/encode.ts',
-    'utils/encode-keys.ts',
-    'utils/load-agent-dotenv.ts',
-    'utils/manifest-types.ts',
-    'utils/parse-agent-manifest.ts',
-    'utils/parse-dotenv.ts',
-    'utils/plan-agent-install.ts',
-    'utils/plugin-metadata-failures.ts',
-    'utils/resolve-agent-id.ts',
-    'utils/resolve-agent-environment.ts',
-    'utils/run-credential-command.ts',
     'assets/agent-system.png',
     'README.md',
     'ADVANCED.md',
@@ -152,7 +122,7 @@ try {
     'LICENSE',
   ];
   await check('include required package files', () => {
-    for (const path of requiredPaths) {
+    for (const path of [...requiredArtifactPaths, ...trackedSourcePaths]) {
       assert.equal(packedPaths.has(path), true, `packed plugin is missing ${path}`);
     }
   });

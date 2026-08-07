@@ -23,6 +23,7 @@ jobs:
           - install
           - validate
           - agent
+          - path
           - env
           - credentials
     steps:

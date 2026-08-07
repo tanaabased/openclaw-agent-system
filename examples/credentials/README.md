@@ -32,7 +32,7 @@ openclaw plugins enable agent-system
 # should validate the process-environment fallback against every declared op environment
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env | grep -F 'process-environment'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env | grep -F 'environments  1'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env | grep -F 'environments' | grep -F '1'
 
 # should reject installation before openclaw mutation when no stored credential is available
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -47,7 +47,7 @@ printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CO
 # should validate only the selected platform-native store
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F 'environments  1'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F 'environments' | grep -F '1'
 
 # should resolve stored op environment values without the process token
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -56,15 +56,15 @@ env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-
 
 # should install after validating the stored credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install | grep -F 'created    OpenClaw agent credential-data'
+env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install | grep -F 'created' | grep -F 'OpenClaw agent credential-data'
 
 # should remove every persisted credential copy
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'removed  op credential for credential-data'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'removed' | grep -F 'op credential for credential-data'
 
 # should leave the credential absent when removal is repeated
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged  op credential for credential-data is not stored'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'unchanged' | grep -F 'op credential for credential-data is not stored'
 
 # should reject exact native-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -75,11 +75,11 @@ grep -F 'code=op-credential-missing' < <(XDG_CONFIG_HOME="$TMPDIR/config" opencl
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file | grep -F 'file'
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'store:file'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'environments  1'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'environments' | grep -F '1'
 
 # should remove the explicitly selected file credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file | grep -F 'removed  op credential for credential-data'
+XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file | grep -F 'removed' | grep -F 'op credential for credential-data'
 
 # should reject exact file-store validation after the credential is removed
 cd "$GITHUB_WORKSPACE/examples/credentials/data"

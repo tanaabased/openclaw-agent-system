@@ -1,0 +1,8 @@
+schema-version: 1
+
+agent:
+  id: path-codex
+  name: Path Codex
+
+environment:
+  path-prepend: tools/bin
