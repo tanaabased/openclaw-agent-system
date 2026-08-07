@@ -380,7 +380,8 @@ for local Codex native shell commands. OpenClaw entries not owned by Agent
 System remain after the managed prefix. The generated Codex config enables
 shell snapshots and sets `shell_environment_policy.set.PATH`; because the value
 is literal, rerunning `install` refreshes it after any workspace, package,
-manifest-path, or host-PATH change.
+manifest-path, or host-PATH change. Agent System does not set the Codex
+environment inheritance or filtering policy.
 
 Agent System creates or replaces only Codex config carrying its managed marker.
 It lists a managed `.codex/config.toml` in the workspace root `.gitignore` with

@@ -18,9 +18,6 @@ export function renderCodexPathConfig(path: string): string {
 [features]
 shell_snapshot = true
 
-[shell_environment_policy]
-inherit = "all"
-
 [shell_environment_policy.set]
 PATH = ${JSON.stringify(path)}
 `;

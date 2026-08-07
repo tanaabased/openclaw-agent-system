@@ -133,12 +133,11 @@ For a user-managed config, merge the following settings into the existing TOML r
 [features]
 shell_snapshot = true
 
-[shell_environment_policy]
-inherit = "all"
-
 [shell_environment_policy.set]
 PATH = "/absolute/workspace/bin:/absolute/agent-system/bin:/base/path"
 ```
+
+Agent System sets only the projected `PATH`. It does not override Codex's inherited-environment policy, so the current Codex default or a user-selected `all`, `core`, or `none` policy remains effective.
 
 The projection covers OpenClaw's ordinary exec implementation and the local OpenAI Codex native shell implementation. It does not promise PATH delivery to node-host commands, remote Codex runs, ACP or CLI backends, MCP tools, or arbitrary third-party tools. OpenClaw sandbox exec can use the configured prefix only when the mounted paths and sandbox policy make those host directories available.
 

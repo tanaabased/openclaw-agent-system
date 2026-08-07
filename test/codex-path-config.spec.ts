@@ -22,7 +22,7 @@ describe('utils/codex-path-config', () => {
 
     assert.equal(classifyCodexPathConfig(source), 'managed');
     assert.equal(source.includes('shell_snapshot = true'), true);
-    assert.equal(source.includes('inherit = "all"'), true);
+    assert.equal(source.includes('inherit = "all"'), false);
     assert.deepEqual(inspectCodexPathConfig(source, projection), {
       ownership: 'managed',
       pathMatches: true,
