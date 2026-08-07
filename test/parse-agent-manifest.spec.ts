@@ -14,6 +14,8 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email:
+    from-environment: AGENT_EMAIL
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
 environment:
@@ -40,6 +42,7 @@ environment:
         agent: {
           id: 'tanaabot',
           name: 'Tanaabot',
+          email: { fromEnvironment: 'AGENT_EMAIL' },
           description: 'Tanaab development agent.',
           avatar: '.agent-system/assets/tanaabot.png',
         },
@@ -56,6 +59,85 @@ environment:
       },
       diagnostics: [],
     });
+  });
+
+  it('should parse literal and environment-backed agent values', () => {
+    const literal = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: Tanaabot
+  email: tanaabot@example.com
+`);
+    const referenced = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name:
+    from-environment: AGENT_NAME
+  email:
+    from-environment: AGENT_EMAIL
+`);
+
+    assert.equal(literal.status, 'valid');
+    if (literal.status === 'valid') {
+      assert.equal(literal.manifest.agent.name, 'Tanaabot');
+      assert.equal(literal.manifest.agent.email, 'tanaabot@example.com');
+    }
+    assert.equal(referenced.status, 'valid');
+    if (referenced.status === 'valid') {
+      assert.deepEqual(referenced.manifest.agent.name, { fromEnvironment: 'AGENT_NAME' });
+      assert.deepEqual(referenced.manifest.agent.email, { fromEnvironment: 'AGENT_EMAIL' });
+    }
+  });
+
+  it('should keep dollar-prefixed agent strings literal', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: $AGENT_NAME
+  email: \${AGENT_EMAIL}
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.equal(result.manifest.agent.name, '$AGENT_NAME');
+    assert.equal(result.manifest.agent.email, '${AGENT_EMAIL}');
+  });
+
+  it('should reject invalid agent environment references', () => {
+    for (const value of [
+      '{ from-environment: agent_name }',
+      '{ from-environment: AGENT_NAME, fallback: Tanaabot }',
+      '{ fromEnvironment: AGENT_NAME }',
+    ]) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: ${value}
+`).has(
+          value.includes('fallback') || value.includes('fromEnvironment')
+            ? 'manifest-unknown-key'
+            : 'manifest-schema',
+        ),
+        true,
+      );
+    }
+  });
+
+  it('should keep agent id literal-only', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id:
+    from-environment: AGENT_ID
+`).has('manifest-schema'),
+      true,
+    );
   });
 
   it('should normalize one workspace path prepend to the ordered internal list', () => {

@@ -7,6 +7,8 @@ import planAgentInstall, {
   type CurrentAgentInstallState,
   type DesiredAgentInstallState,
 } from '../utils/plan-agent-install.ts';
+import resolveManifestValue from '../utils/resolve-manifest-value.ts';
+import type AgentEnvironmentService from './agent-environment-service.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type AgentPathService from './agent-path-service.ts';
 import type { AgentPathInstallAction, AgentPathWarning } from './agent-path-service.ts';
@@ -27,6 +29,7 @@ export interface AgentInstallResult {
 
 export interface AgentInstallServiceDependencies {
   credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
+  environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   pathService?: Pick<AgentPathService, 'inspect' | 'reconcile'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
@@ -67,6 +70,16 @@ function commandFailure(args: string[], result: AgentInstallCommandResult): Agen
   return new AgentInstallError(`OpenClaw ${args.join(' ')} failed: ${details}`);
 }
 
+function environmentFailure(
+  result: Awaited<ReturnType<AgentEnvironmentService['loadForWorkspace']>>,
+): AgentInstallError {
+  const diagnostic = result.diagnostics.find(({ severity }) => severity === 'error');
+  return new AgentInstallError(
+    diagnostic?.message ?? 'Agent System could not resolve the manifest environment.',
+    diagnostic?.code ?? 'agent-environment-unavailable',
+  );
+}
+
 /** Reconcile manifest-owned registration, identity, and executable paths. */
 export default class AgentInstallService {
   readonly #dependencies: AgentInstallServiceDependencies;
@@ -76,8 +89,11 @@ export default class AgentInstallService {
   }
 
   async install(input: AgentInstallInput): Promise<AgentInstallResult> {
-    const name = input.manifest.agent.name?.trim();
-    if (!name) {
+    const configuredName = input.manifest.agent.name;
+    if (configuredName === undefined) {
+      throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
+    }
+    if (typeof configuredName === 'string' && !configuredName.trim()) {
       throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
     }
 
@@ -93,6 +109,36 @@ export default class AgentInstallService {
       if (readiness.status === 'invalid') {
         throw new AgentInstallError(readiness.message, readiness.code);
       }
+    }
+
+    let environment: Readonly<Record<string, string | undefined>> = {};
+    if (typeof configuredName !== 'string') {
+      const environmentService = this.#dependencies.environmentService;
+      if (!environmentService) {
+        throw new AgentInstallError(
+          'Agent System environment resolution is unavailable during install.',
+          'agent-environment-unavailable',
+        );
+      }
+      const result = await environmentService.loadForWorkspace(
+        input.workspaceDir,
+        input.manifest.agent.id,
+        'cli',
+      );
+      if (result.status !== 'loaded') throw environmentFailure(result);
+      environment = result.environment.values;
+    }
+    const nameResolution = resolveManifestValue(configuredName, environment, '/agent/name');
+    if (nameResolution.status === 'invalid') {
+      throw new AgentInstallError(
+        nameResolution.diagnostic.message,
+        nameResolution.diagnostic.code,
+      );
+    }
+
+    const name = nameResolution.value.trim();
+    if (!name) {
+      throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
     }
 
     const desired: DesiredAgentInstallState = {

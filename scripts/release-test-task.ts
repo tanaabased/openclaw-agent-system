@@ -103,7 +103,16 @@ try {
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
   const trackedSourcePaths = await check('inventory checked-in package sources', async () => {
-    const result = await run('git', ['ls-files', '-z', '--', 'bin', 'cli', 'lib', 'utils']);
+    const result = await run('git', [
+      'ls-files',
+      '-z',
+      '--',
+      'bin',
+      'cli',
+      'lib',
+      'tools',
+      'utils',
+    ]);
     const paths = result.output.split('\0').filter(Boolean);
     assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
     return paths;

@@ -35,6 +35,7 @@
     "cli/",
     "bin/",
     "lib/",
+    "tools/",
     "utils/",
     "assets/agent-system.png",
     "openclaw.plugin.json",

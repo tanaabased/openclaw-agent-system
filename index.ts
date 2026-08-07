@@ -79,8 +79,15 @@ export default definePluginEntry({
       readConfig,
     });
     const doctorService = new AgentDoctorService({ pathService });
+    const environmentService = new AgentEnvironmentService({
+      hostEnvironment: process.env,
+      logger,
+      manifestService,
+      opEnvironmentService,
+    });
     const installService = new AgentInstallService({
       credentialManager,
+      environmentService,
       pathService,
       readConfig,
       runOpenClawCommand(args, cwd) {
@@ -88,12 +95,6 @@ export default definePluginEntry({
         const argv = cliEntry ? [process.execPath, cliEntry, ...args] : ['openclaw', ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
-    });
-    const environmentService = new AgentEnvironmentService({
-      hostEnvironment: process.env,
-      logger,
-      manifestService,
-      opEnvironmentService,
     });
     registerAgentSystemHooks(api, manifestService);
     api.registerCli(

@@ -29,9 +29,9 @@ cd /path/to/agent-workspace
 openclaw agent-system install
 ```
 
-Installation compares the manifest with current OpenClaw configuration. It adds an absent agent, reconciles the manifest-owned display name and optional avatar, configures the supported executable paths, reloads configuration, and verifies the final state. A matching installation is unchanged. An existing agent id bound to another workspace fails instead of being silently repointed.
+Installation compares the manifest with current OpenClaw configuration. It resolves an environment-backed display name when declared, adds an absent agent, reconciles the manifest-owned display name and optional avatar, configures the supported executable paths, reloads configuration, and verifies the final state. A matching installation is unchanged. An existing agent id bound to another workspace fails instead of being silently repointed.
 
-The implicit `main` agent is not redundantly added when OpenClaw has no explicit agent list. `agent.description` is validated manifest data but is not currently applied to OpenClaw identity. Installation does not choose a model, prompt for or import credentials, start a Gateway, resolve environment values for delivery, or run a workspace installation script. When `environment.op` is declared, it does validate stored OP access before reading or mutating OpenClaw state.
+The implicit `main` agent is not redundantly added when OpenClaw has no explicit agent list. `agent.email` and `agent.description` are validated manifest data but are not currently applied to OpenClaw identity. Installation does not choose a model, prompt for or import credentials, start a Gateway, deliver the resolved environment to generic execution tools, or run a workspace installation script. It resolves the environment only when the installed name references it. When `environment.op` is declared, install first validates stored OP access without the process-environment fallback, before resolving the name or reading or mutating OpenClaw state.
 
 ## Configuration Reference
 
@@ -49,6 +49,8 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email:
+    from-environment: AGENT_EMAIL
   description: Tanaab development agent.
   avatar: avatar.png
 
@@ -69,20 +71,35 @@ environment:
     - AGENT_EMAIL
 ```
 
-| Field                      | Required      | Current behavior                                                                   |
-| -------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| `schema-version`           | yes           | Must be the integer `1`.                                                           |
-| `agent.id`                 | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.     |
-| `agent.name`               | for `install` | Validated when present and applied as the OpenClaw display name during install.    |
-| `agent.description`        | no            | Validated and loaded; reserved for a later identity surface.                       |
-| `agent.avatar`             | no            | Applied during install when declared; an undeclared existing avatar is retained.   |
-| `environment.dotenv`       | no            | One relative path or an ordered non-empty unique list of paths.                    |
-| `environment.set`          | no            | String map that overrides dotenv layers for explicit Agent System consumers.       |
-| `environment.op`           | no            | One Environment id or an ordered non-empty unique list of ids.                     |
-| `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.              |
-| `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty. |
+| Field                      | Required      | Current behavior                                                                    |
+| -------------------------- | ------------- | ----------------------------------------------------------------------------------- |
+| `schema-version`           | yes           | Must be the integer `1`.                                                            |
+| `agent.id`                 | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.      |
+| `agent.name`               | for `install` | Literal or environment-backed; applied as the OpenClaw display name during install. |
+| `agent.email`              | no            | Literal or environment-backed; reserved for a Git identity consumer.                |
+| `agent.description`        | no            | Validated and loaded; reserved for a later identity surface.                        |
+| `agent.avatar`             | no            | Applied during install when declared; an undeclared existing avatar is retained.    |
+| `environment.dotenv`       | no            | One relative path or an ordered non-empty unique list of paths.                     |
+| `environment.set`          | no            | String map that overrides dotenv layers for explicit Agent System consumers.        |
+| `environment.op`           | no            | One Environment id or an ordered non-empty unique list of ids.                      |
+| `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.               |
+| `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty.  |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
+
+#### Manifest Value Kinds
+
+Each schema field selects one closed value kind; manifests cannot name arbitrary resolvers or schema modules:
+
+| Value kind          | YAML form                                             | Meaning                                                                                    |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| literal             | `name: Tanaabot`                                      | The scalar is the configured value.                                                        |
+| resolvable          | a literal or `name: { from-environment: AGENT_NAME }` | The field may be literal or consume one value from the completed Agent System environment. |
+| environment binding | `token: GITHUB_TOKEN`                                 | The scalar names an environment variable and can never be a literal credential.            |
+
+`agent.id`, `agent.description`, and `agent.avatar` are literal. `agent.name` and `agent.email` are resolvable. The initial agent schema has no environment-binding field; future credential fields such as `github.token` use that kind. Environment names in references and bindings match `[A-Z_][A-Z0-9_]*` and remain literal data keys.
+
+A dollar-prefixed scalar outside `environment.set` remains literal. For example, `agent.name: $AGENT_NAME` is the display name `$AGENT_NAME`; environment-backed identity must use `from-environment`. References resolve only from the final Agent System environment, never directly from the host lookup, and missing or empty values fail the consuming action without revealing values. A resolvable field does not itself add the referenced name to the environment.
 
 #### Environment Resolution
 
@@ -296,7 +313,7 @@ This command currently has no options. Run it from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name`. When `environment.op` is declared, it also verifies that a stored credential can access every declared Environment and fails with a `credentials set op` remediation before any OpenClaw configuration read or command. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reloads configuration, and fails if registration, identity, or an Agent System-owned path surface still differs from the manifest.
+Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name` and resolves it from the completed Agent System environment when `from-environment` is declared. A missing or empty name binding fails before any OpenClaw configuration read or command. When `environment.op` is declared, install first verifies that a stored credential can access every declared Environment without using the process-environment fallback and fails with a `credentials set op` remediation before environment resolution or OpenClaw mutation. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reloads configuration, and fails if registration, identity, or an Agent System-owned path surface still differs from the manifest. `agent.email` is not resolved by install because OpenClaw identity has no email field.
 
 Possible result lines are:
 

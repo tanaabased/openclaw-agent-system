@@ -2,20 +2,13 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
+import { decodeAgentSection, externalAgentSectionSchema } from './agent-section-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './manifest-types.ts';
 
 const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
-    agent: Type.Object(
-      {
-        id: Type.String({ minLength: 1, pattern: '^[a-z0-9][a-z0-9-]*$' }),
-        name: Type.Optional(Type.String({ minLength: 1 })),
-        description: Type.Optional(Type.String({ minLength: 1 })),
-        avatar: Type.Optional(Type.String({ minLength: 1 })),
-      },
-      { additionalProperties: false },
-    ),
+    agent: externalAgentSectionSchema,
     environment: Type.Optional(
       Type.Object(
         {
@@ -109,12 +102,7 @@ function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): Manif
 function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   return {
     schemaVersion: value['schema-version'],
-    agent: {
-      id: value.agent.id,
-      ...(value.agent.name === undefined ? {} : { name: value.agent.name }),
-      ...(value.agent.description === undefined ? {} : { description: value.agent.description }),
-      ...(value.agent.avatar === undefined ? {} : { avatar: value.agent.avatar }),
-    },
+    agent: decodeAgentSection(value.agent),
     ...(value.environment === undefined
       ? {}
       : {

@@ -55,17 +55,20 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email:
+    from-environment: AGENT_EMAIL
 
 environment:
   dotenv: .agent-system/env/base.env
   set:
     AGENT_COLOR: green
+    AGENT_EMAIL: $COMPANY_EMAIL
   op: env_agent
   required:
     - AGENT_COLOR
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; ordered workspace-relative executable directories under `environment.path-prepend`; and `environment.required`. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or final external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `email`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; ordered workspace-relative executable directories under `environment.path-prepend`; and `environment.required`. `agent.id` is literal; `agent.name` and `agent.email` accept either literal strings or an explicit `from-environment` reference to the completed Agent System environment. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
 
 1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks macOS Keychain or Linux Secret Service, then the agent-scoped file fallback, before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
 
@@ -96,7 +99,7 @@ cd /path/to/agent-workspace
 openclaw agent-system install
 ```
 
-`install` requires `agent.name`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. It also creates the workspace `bin/` directory, prepends the workspace bin, declared workspace paths, and Agent System's packaged bin to OpenClaw exec, and manages the equivalent literal path in `.codex/config.toml` for local Codex native shell commands. Agent System-owned Codex config is visibly listed in the workspace `.gitignore`; an existing user-managed Codex config is left untouched with a warning. If `environment.op` is declared, installation first verifies that a stored credential can access every declared Environment; it does not prompt, import the process token, or store credentials. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
+`install` requires `agent.name`, resolves it from the completed Agent System environment when declared with `from-environment`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. `agent.email` remains lazy until a consumer such as the planned Git provider needs it. Install also creates the workspace `bin/` directory, prepends the workspace bin, declared workspace paths, and Agent System's packaged bin to OpenClaw exec, and manages the equivalent literal path in `.codex/config.toml` for local Codex native shell commands. Agent System-owned Codex config is visibly listed in the workspace `.gitignore`; an existing user-managed Codex config is left untouched with a warning. If `environment.op` is declared, installation first verifies stored access before environment resolution or OpenClaw mutation; it does not use the process-token fallback, prompt, import the process token, or store credentials. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
 
 Inspect supported path projection for drift without repairing it:
 

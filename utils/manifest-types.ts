@@ -1,8 +1,11 @@
+import type { ResolvableString } from './manifest-value-types.ts';
+
 export interface AgentManifest {
   schemaVersion: 1;
   agent: {
     id: string;
-    name?: string;
+    name?: ResolvableString;
+    email?: ResolvableString;
     description?: string;
     avatar?: string;
   };

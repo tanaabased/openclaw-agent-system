@@ -3,7 +3,8 @@
 ## Scope
 
 - Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
-- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and product orchestration in `lib/`, independently testable functions in `utils/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Never load schema files or tool modules from manifest values, and do not create empty tool folders before their implementation exists.
 - Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
 
 ## Documentation

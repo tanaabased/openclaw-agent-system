@@ -220,15 +220,23 @@ schema-version: 1
 agent:
   id: emori
   name: EMORI
+  email:
+    from-environment: AGENT_EMAIL
   description: Tanaab coordinating and project-management agent.
   avatar: .agent-system/assets/emori.png
 ```
 
 Identity follows these rules:
 
-- `agent.id` is a stable machine identifier and does not change implicitly when
-  the display name changes.
-- `agent.name` is the display name and default Git author and committer name.
+- `agent.id` is a literal stable machine identifier because Agent System must
+  bind the manifest before resolving its environment. It does not change
+  implicitly when the display name changes.
+- `agent.name` is a literal or environment-backed display name and the default
+  Git author and committer name.
+- `agent.email` is a literal or environment-backed default Git author and
+  committer email. OpenClaw identity does not currently consume it, so install
+  does not resolve it until a later Git consumer needs it.
+- `agent.description` and `agent.avatar` remain literal values.
 - Explicit `install` requires `agent.name` and reconciles `agent.id`, `agent.name`,
   and a declared `agent.avatar` with OpenClaw's agent registration and identity.
 - An existing OpenClaw agent id bound to another workspace is a conflict; Agent
@@ -237,36 +245,69 @@ Identity follows these rules:
   cron configuration. Those sections may reference `agent` values but retain
   their own validation and lifecycle.
 
-## Configuration Value References
+## Manifest Value Kinds
 
-Non-secret configuration values may be literal strings or restricted
-interpolations against the host lookup and fully resolved Agent System
-environment:
+Every schema-owned field selects one closed value kind. A manifest cannot name
+an arbitrary resolver, schema file, or executable module.
+
+### Literal values
+
+A literal scalar is the configured value. Structural values such as `agent.id`,
+`agent.description`, `agent.avatar`, and `github.host` are literal-only. A dollar
+sign has no special meaning outside `environment.set`:
 
 ```yaml
-git:
-  name: EMORI
-  email: $COMPANY_EMAIL
-
-github:
-  username: ${AGENT_GITHUB_USERNAME}
-  host: github.com
-  token-variable: GH_TOKEN
+agent:
+  id: emori
+  name: $EMORI # the literal display name "$EMORI"
 ```
 
-The public `git.name`, `git.email`, `github.username`, and similar fields may
-use literal or interpolated values. `github.token-variable` names a resolved
-environment variable; it is not the token itself. Tokens, private keys, and
-other credentials must remain environment bindings or secret references and
-must never appear as literal manifest values.
+### Resolvable values
 
-Both `$NAME` and `${NAME}` are supported for names matching
-`[A-Z_][A-Z0-9_]*`. Interpolation occurs after environment assembly and before a
-consuming projection is validated. Agent System output overrides a same-named
-host lookup value. A reference used by a configuration field does not itself add
-that name to the agent environment. A missing value is an explicit configuration
-error, not an empty string or fallback to another agent. Environment-variable
-names remain literal data keys and are never casing-converted.
+Ordinary configuration such as agent identity, Git identity, and GitHub
+usernames may be a literal string or an explicit reference to the completed
+Agent System environment:
+
+```yaml
+agent:
+  name: EMORI
+  email:
+    from-environment: AGENT_EMAIL
+
+github:
+  username:
+    from-environment: AGENT_GITHUB_USERNAME
+```
+
+The external key is `from-environment`; the internal TypeScript representation
+is `{ fromEnvironment: string }`. References name variables matching
+`[A-Z_][A-Z0-9_]*`. They resolve after environment precedence has produced the
+final Agent System environment and never fall back directly to the host lookup.
+A reference does not itself add that name to the environment. Missing or empty
+values fail the consuming action instead of becoming an empty string or falling
+back to another agent. Resolved values do not appear in diagnostics.
+
+Partial interpolation is not supported for resolvable fields. Composition
+belongs in `environment.set`; the consuming field then references the resulting
+environment variable. The `$NAME`, `${NAME}`, and `$$` syntax remains exclusive
+to `environment.set`, where it retains the host and external-source lookup
+semantics described below.
+
+### Environment bindings
+
+Credential and secret-bearing fields are environment-only. Their scalar value
+is an environment-variable name rather than the credential itself:
+
+```yaml
+github:
+  token: GH_TOKEN
+```
+
+An environment binding must match `[A-Z_][A-Z0-9_]*`; literal tokens, private
+keys, and other credentials are invalid manifest values. The binding remains
+opaque until an approved consumer resolves it for one action. It must never
+appear as a resolved configuration value, model-facing tool parameter, log,
+approval message, or audit payload.
 
 ## Environment Model
 
@@ -618,6 +659,31 @@ Agent System registers fixed OpenClaw tool names and declares them in its
 OpenClaw plugin manifest. It does not inspect `agent.yaml` and dynamically
 synthesize tool names.
 
+Each first-party capability owns a focused folder without introducing a generic
+`src/` directory:
+
+```text
+tools/
+  github/
+    config-schema.ts  # optional agent.yaml section schema
+    tool-schema.ts    # required model-facing OpenClaw input schema
+    register.ts       # thin OpenClaw registration
+    execute.ts        # tool-specific execution
+```
+
+Only files with an implemented responsibility are created. Shared provider
+policy, credential, approval, runner, redaction, and audit orchestration remains
+in `lib/`; lower-coupling manifest-value and validation functions remain in
+`utils/`; behavior-focused tests remain flat in `test/`.
+
+Every OpenClaw tool has a model-input schema. A tool has a separate manifest
+configuration schema only when it consumes an `agent.yaml` section. The root
+manifest parser statically imports and composes those configuration fragments,
+and tool registration statically imports its model-input schema and handler.
+Manifest values never contain schema paths, tool module paths, or dynamic
+registration instructions. A configuration section may still feed multiple
+tools, and a tool may consume multiple sections.
+
 The initial implementation keeps the provider contract and runtime inside this
 package. It binds the current tool context to an agent manifest, environment,
 policy, approval broker, runner, and audit sink. A provider fails closed with a
@@ -814,20 +880,22 @@ transport, signing, and credentials.
 ```yaml
 git:
   name: EMORI
-  email: ${AGENT_GIT_EMAIL}
+  email:
+    from-environment: AGENT_GIT_EMAIL
   transport:
     type: ssh
-    private-key-variable: GIT_SSH_PRIVATE_KEY
+    private-key: GIT_SSH_PRIVATE_KEY
   signing:
     enabled: true
     format: ssh
     public-key: .agent-system/keys/git-signing.pub
-    private-key-variable: GIT_SIGNING_PRIVATE_KEY
+    private-key: GIT_SIGNING_PRIVATE_KEY
 
 github:
   host: github.com
-  username: ${AGENT_GITHUB_USERNAME}
-  token-variable: GH_TOKEN
+  username:
+    from-environment: AGENT_GITHUB_USERNAME
+  token: GH_TOKEN
   repositories:
     - tanaabased/*
   policy:
