@@ -117,10 +117,13 @@ const githubTool = defineAgentSystemCliTool({
     description:
       'Use GitHub with the current Agent System configuration. The initial read-only surface accepts argv ["api", "user"] to identify the configured account.',
     inputFromCommand(argv): GitHubToolInput {
-      if (argv.length !== 2 || argv[0] !== 'api' || argv[1] !== 'user') {
+      const isUserRequest = argv[0] === 'api' && argv[1] === 'user';
+      const hasNoFormatting = argv.length === 2;
+      const hasLoginProjection = argv.length === 4 && argv[2] === '--jq' && argv[3] === '.login';
+      if (!isUserRequest || (!hasNoFormatting && !hasLoginProjection)) {
         toolError(
           'invalid_arguments',
-          'The initial Agent System GitHub tool supports only: gh api user',
+          'The initial Agent System GitHub tool supports only: gh api user [--jq .login]',
         );
       }
       return { argv: ['api', 'user'] };

@@ -129,7 +129,7 @@ describe('tools/github/tool', () => {
       },
     });
 
-    const result = await registry.invoke('gh', runtime, ['api', 'user'], {
+    const result = await registry.invoke('gh', runtime, ['api', 'user', '--jq', '.login'], {
       source: 'command',
       workspaceDir,
     });

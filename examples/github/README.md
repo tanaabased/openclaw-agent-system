@@ -1,6 +1,6 @@
 # GitHub Tool Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that the initial native GitHub tool selects each agent's configured 1Password-backed credential and authenticated account.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that the GitHub tool runtime selects each agent's configured 1Password-backed credential and authenticated account through either supported invocation route.
 
 ## Setup
 
@@ -60,7 +60,7 @@ openclaw agent \
   --session-key agent:tanaabot:agent-system-github-leia \
   --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
   --timeout 120 | grep -F 'tanaabot'
-grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="tanaabot"' | grep -F 'source="tool"'
+grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="tanaabot"'
 
 # should identify emori through her configured github tool credential
 openclaw agent \
@@ -68,7 +68,7 @@ openclaw agent \
   --session-key agent:emori:agent-system-github-leia \
   --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
   --timeout 120 | grep -F 'emoriwan'
-grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="emori"' | grep -F 'source="tool"'
+grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="emori"'
 ```
 
 ## Cleanup

@@ -948,6 +948,12 @@ The first vertical slice selects a deliberately closed CLI-shaped request:
 { "argv": ["api", "user"] }
 ```
 
+The command adapter accepts `gh api user` and the equivalent
+`gh api user --jq .login` spelling observed from ordinary agent CLI use. Both
+forms canonicalize to the same authenticated-user operation before execution;
+Agent System retains ownership of the fixed child-process field projection and
+normalized result.
+
 Its strict manifest slice requires `github.token`, with optional `github.host`
 and `github.username`. The broader
 `repositories` and `policy` fields illustrated above remain planned and are
