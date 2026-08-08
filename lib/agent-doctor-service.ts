@@ -1,5 +1,7 @@
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import type AgentPathService from './agent-path-service.ts';
+import type GitHubConfigStore from '../tools/github/config-store.ts';
+import { resolveGitHubCliConfiguration } from '../tools/github/config-schema.ts';
 
 export interface AgentDoctorFinding {
   code: string;
@@ -16,6 +18,7 @@ export interface AgentDoctorResult {
 }
 
 export interface AgentDoctorServiceDependencies {
+  githubConfigStore?: Pick<GitHubConfigStore, 'inspect'>;
   pathService: Pick<AgentPathService, 'inspect'>;
 }
 
@@ -104,6 +107,46 @@ export default class AgentDoctorService {
         remediation: 'Correct the workspace paths, then run openclaw agent-system install.',
         status: 'drift',
       });
+    }
+
+    if (input.manifest.github && !this.#dependencies.githubConfigStore) {
+      findings.push({
+        code: 'github-config-unavailable',
+        message: 'Generated GitHub CLI config inspection is unavailable.',
+        remediation: 'Reload the Agent System plugin, then run openclaw agent-system doctor.',
+        status: 'drift',
+      });
+    } else if (input.manifest.github && this.#dependencies.githubConfigStore) {
+      try {
+        const github = await this.#dependencies.githubConfigStore.inspect(
+          input.manifest.agent.id,
+          resolveGitHubCliConfiguration(input.manifest.github),
+        );
+        findings.push(
+          github.status === 'ready'
+            ? {
+                code: 'github-config-ready',
+                message: 'Generated GitHub CLI config matches the agent manifest.',
+                status: 'healthy',
+              }
+            : {
+                code: 'github-config-drift',
+                message: 'Generated GitHub CLI config does not match the agent manifest.',
+                remediation: 'Run openclaw agent-system install from this workspace.',
+                status: 'drift',
+              },
+        );
+      } catch (error) {
+        findings.push({
+          code: 'github-config-unsafe',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Generated GitHub CLI config could not be inspected.',
+          remediation: 'Correct the private config path, then run openclaw agent-system install.',
+          status: 'drift',
+        });
+      }
     }
 
     return {

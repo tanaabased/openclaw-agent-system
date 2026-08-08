@@ -58,18 +58,27 @@ export interface AgentSystemToolRuntimeDependencies {
 
 const baselineEnvironmentNames = [
   'HOME',
+  'CLICOLOR',
+  'CLICOLOR_FORCE',
+  'COLORTERM',
   'LANG',
   'LC_ALL',
   'NODE_EXTRA_CA_CERTS',
+  'NO_COLOR',
   'PATH',
   'SSL_CERT_DIR',
   'SSL_CERT_FILE',
   'TEMP',
   'TMP',
   'TMPDIR',
+  'TERM',
 ] as const;
 
-function quote(value: string): string {
+function bindingNames(binding: string | { anyOf: readonly string[] }): readonly string[] {
+  return typeof binding === 'string' ? [binding] : binding.anyOf;
+}
+
+function quote(value: string | number): string {
   return JSON.stringify(value);
 }
 
@@ -143,20 +152,23 @@ export default class AgentSystemToolRuntime {
       );
     }
     const operation = definition.tool.classify(input, declaredConfiguration);
-    if (operation.risk === 'unknown') {
+    const authorizationMode = definition.authorization?.mode ?? 'agent-system';
+    if (operation.risk === 'unknown' && authorizationMode === 'agent-system') {
       throw new AgentSystemToolError(
         'operation_unclassified',
         `The ${definition.tool.name} request could not be classified safely.`,
       );
     }
-    const authorization = await (this.#dependencies.authorize ?? defaultAuthorize)({
-      agentId,
-      operation,
-      toolId: definition.id,
-      toolName: definition.tool.name,
-    });
-    if (authorization.status === 'denied') {
-      throw new AgentSystemToolError('approval_denied', authorization.reason);
+    if (authorizationMode === 'agent-system') {
+      const authorization = await (this.#dependencies.authorize ?? defaultAuthorize)({
+        agentId,
+        operation,
+        toolId: definition.id,
+        toolName: definition.tool.name,
+      });
+      if (authorization.status === 'denied') {
+        throw new AgentSystemToolError('approval_denied', authorization.reason);
+      }
     }
 
     const auditId = randomUUID();
@@ -200,6 +212,7 @@ export default class AgentSystemToolRuntime {
           return result.value;
         },
       });
+      await definition.runner.prepare?.(resolvedConfiguration, { agentId, workspaceDir });
       const childEnvironment: NodeJS.ProcessEnv = {};
       for (const name of baselineEnvironmentNames) {
         const value = this.#dependencies.baseEnvironment[name];
@@ -207,27 +220,35 @@ export default class AgentSystemToolRuntime {
       }
       Object.assign(
         childEnvironment,
-        definition.runner.environment?.(resolvedConfiguration, { agentId, workspaceDir }) ?? {},
+        definition.runner.environment?.(resolvedConfiguration, {
+          agentId,
+          source: scope.source,
+          ...(scope.terminalColumns === undefined
+            ? {}
+            : { terminalColumns: scope.terminalColumns }),
+          workspaceDir,
+        }) ?? {},
       );
       const secretValues: string[] = [];
       for (const [childName, binding] of Object.entries(
         definition.runner.credentialBindings?.(resolvedConfiguration) ?? {},
       )) {
-        const value = values[binding];
+        const names = bindingNames(binding);
+        const selectedName = names.find((name) => Boolean(values[name]));
+        const value = selectedName ? values[selectedName] : undefined;
         if (!value) {
           throw new AgentSystemToolError(
             'credential_unavailable',
-            `The ${definition.id} tool credential ${binding} is unavailable for agent ${agentId}.`,
+            `The ${definition.id} tool credential ${names.join(' or ')} is unavailable for agent ${agentId}.`,
           );
         }
         childEnvironment[childName] = value;
         secretValues.push(value);
       }
 
-      let cliResult: AgentSystemCliResult;
-      try {
-        cliResult = await this.#runCli({
-          argv: definition.runner.argv(input, resolvedConfiguration),
+      const runRequest = (argv: string[], stdin?: string) =>
+        this.#runCli({
+          argv,
           cwd: workspaceDir,
           environment: childEnvironment,
           executable: definition.runner.executable,
@@ -240,19 +261,49 @@ export default class AgentSystemToolRuntime {
           ],
           maxOutputBytes: definition.runner.maxOutputBytes ?? 65_536,
           signal,
+          ...(stdin === undefined ? {} : { stdin }),
           timeoutMs: definition.runner.timeoutMs ?? 30_000,
         });
+
+      const sanitizeResult = (result: AgentSystemCliResult): AgentSystemCliResult => ({
+        ...result,
+        stderr: redact(result.stderr, secretValues),
+        stdout: redact(result.stdout, secretValues),
+      });
+
+      try {
+        const preflight = definition.runner.preflight?.(resolvedConfiguration);
+        if (preflight) {
+          const preflightResult = sanitizeResult(await runRequest(preflight.argv));
+          if (preflightResult.timedOut) {
+            throw new AgentSystemToolError(
+              'execution_timed_out',
+              `The ${definition.id} tool identity check timed out.`,
+            );
+          }
+          preflight.validate(preflightResult);
+        }
+      } catch (error) {
+        if (error instanceof AgentSystemToolError) throw error;
+        throw new AgentSystemToolError(
+          'tool_unavailable',
+          `The ${definition.id} tool executable is unavailable.`,
+        );
+      }
+
+      let cliResult: AgentSystemCliResult;
+      try {
+        cliResult = await runRequest(
+          definition.runner.argv(input, resolvedConfiguration),
+          definition.runner.stdin?.(input, resolvedConfiguration),
+        );
       } catch {
         throw new AgentSystemToolError(
           'tool_unavailable',
           `The ${definition.id} tool executable is unavailable.`,
         );
       }
-      const redactedResult = {
-        ...cliResult,
-        stderr: redact(cliResult.stderr, secretValues),
-        stdout: redact(cliResult.stdout, secretValues),
-      };
+      const redactedResult = sanitizeResult(cliResult);
       if (redactedResult.timedOut) {
         throw new AgentSystemToolError(
           'execution_timed_out',
@@ -265,13 +316,16 @@ export default class AgentSystemToolRuntime {
         ...baseAudit,
         durationMs,
         phase: 'completed',
-        status: 'ok',
+        status:
+          redactedResult.exitCode === 0
+            ? 'ok'
+            : `exit-${redactedResult.exitCode === null ? 'unknown' : redactedResult.exitCode}`,
         truncated: redactedResult.truncated,
       });
       this.#dependencies.logger.info(
-        `tool_call_completed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} truncated=${redactedResult.truncated}`,
+        `tool_call_completed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} exitCode=${quote(redactedResult.exitCode ?? 'unknown')} truncated=${redactedResult.truncated}`,
       );
-      return { auditId, operation, output };
+      return { auditId, commandResult: redactedResult, operation, output };
     } catch (error) {
       const toolError =
         error instanceof AgentSystemToolError

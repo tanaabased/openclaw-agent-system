@@ -20,6 +20,7 @@
   "contracts": {
     "tools": ["agent_system_github"]
   },
+  "skills": ["./skills"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

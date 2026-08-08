@@ -484,6 +484,48 @@ describe('lib/agent-install-service', () => {
     assert.deepEqual(events, ['path:reconcile', 'path:inspect']);
   });
 
+  it('should reconcile and verify generated github cli config during install', async () => {
+    const events: string[] = [];
+    const githubManifest: AgentManifest = {
+      ...manifest,
+      github: { config: { gitProtocol: 'https' } },
+    };
+    const service = new AgentInstallService({
+      githubConfigStore: {
+        async reconcile(agentId, configuration) {
+          events.push(`reconcile:${agentId}:${configuration.gitProtocol}`);
+          return { configDir: '/private/data/tools/gh', status: 'created' };
+        },
+        async inspect(agentId, configuration) {
+          events.push(`inspect:${agentId}:${configuration.gitProtocol}`);
+          return { configDir: '/private/data/tools/gh', status: 'ready' };
+        },
+      },
+      readConfig: () => ({
+        agents: {
+          list: [
+            {
+              id: 'data',
+              workspace: '/workspace/data',
+              identity: { name: 'Data', avatar: 'avatar.png' },
+            },
+          ],
+        },
+      }),
+      async runOpenClawCommand() {
+        throw new Error('command should not run');
+      },
+    });
+
+    const result = await service.install({
+      manifest: githubManifest,
+      workspaceDir: '/workspace/data',
+    });
+
+    assert.deepEqual(result.actions, ['create-github-config']);
+    assert.deepEqual(events, ['reconcile:data:https', 'inspect:data:https']);
+  });
+
   it('should reject a successful command that does not reconcile openclaw state', async () => {
     const service = new AgentInstallService({
       readConfig: () => ({}),

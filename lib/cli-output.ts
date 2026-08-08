@@ -1,7 +1,9 @@
 import ansis, { Ansis } from 'ansis';
 import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
-export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'>;
+export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
+  writeStderr?(value: string): void;
+};
 
 export interface CliStyles {
   action(value: string): string;
@@ -74,5 +76,6 @@ export function writeCliJson(output: CliOutput, value: unknown): void {
 }
 
 export const defaultCliOutput: CliOutput = {
+  writeStderr: (value) => process.stderr.write(value),
   writeStdout: (value) => defaultRuntime.writeStdout(value),
 };

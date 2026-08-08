@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Agent System GitHub CLI">
+  <rect width="64" height="64" rx="14" fill="#00c88a"/>
+  <path d="M16 20h32v24H16z" fill="#101820"/>
+  <path d="m25 27-6 5 6 5m14-10 6 5-6 5M34 24l-4 16" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

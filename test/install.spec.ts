@@ -79,6 +79,7 @@ describe('cli/install', () => {
           'set-exec-path',
           'create-codex-config',
           'update-gitignore',
+          'create-github-config',
         ],
         agentId: 'tanaabot',
         codexStatus: 'managed',
@@ -94,7 +95,7 @@ describe('cli/install', () => {
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
     assert.deepEqual(output, [
-      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\ncreated    workspace bin directory\nupdated    OpenClaw exec path for tanaabot\ncreated    Codex workspace path configuration\nupdated    workspace .gitignore\nworkspace  /workspace\n',
+      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\ncreated    workspace bin directory\nupdated    OpenClaw exec path for tanaabot\ncreated    Codex workspace path configuration\nupdated    workspace .gitignore\ncreated    private GitHub CLI config\nworkspace  /workspace\n',
     ]);
   });
 

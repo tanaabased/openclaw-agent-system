@@ -45,6 +45,7 @@ export interface PluginManifest {
   };
   id?: string;
   name?: string;
+  skills?: string[];
   version?: string;
 }
 
@@ -62,6 +63,7 @@ export type PluginMetadataFailureCode =
   | 'canonical-command-alias'
   | 'short-command-alias'
   | 'github-tool-contract'
+  | 'github-skill-contract'
   | 'config-schema-type'
   | 'config-schema-strictness'
   | 'package-file'
@@ -84,6 +86,7 @@ const requiredPackageFiles = [
   'cli/',
   'bin/',
   'lib/',
+  'skills/',
   'tools/',
   'utils/',
   'assets/agent-system.png',
@@ -179,6 +182,11 @@ export default function pluginMetadataFailures(
     containsExactly(manifest.contracts?.tools, ['agent_system_github']),
     'github-tool-contract',
     'plugin must declare exactly the registered Agent System GitHub tool',
+  );
+  check(
+    containsExactly(manifest.skills, ['./skills']),
+    'github-skill-contract',
+    'plugin must load its packaged GitHub CLI skill directory',
   );
   check(
     manifest.configSchema?.type === 'object',

@@ -72,8 +72,10 @@ export default async function runToolCli(
     cwd: request.cwd,
     env: request.environment,
     shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
+  child.stdin.on('error', () => undefined);
+  child.stdin.end(request.stdin);
   let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let capturedBytes = 0;

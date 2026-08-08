@@ -12,6 +12,10 @@ import type AgentEnvironmentService from './agent-environment-service.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type AgentPathService from './agent-path-service.ts';
 import type { AgentPathInstallAction, AgentPathWarning } from './agent-path-service.ts';
+import type GitHubConfigStore from '../tools/github/config-store.ts';
+import { resolveGitHubCliConfiguration } from '../tools/github/config-schema.ts';
+
+export type GitHubConfigInstallAction = 'create-github-config' | 'update-github-config';
 
 export interface AgentInstallCommandResult {
   code: number;
@@ -20,7 +24,7 @@ export interface AgentInstallCommandResult {
 }
 
 export interface AgentInstallResult {
-  actions: Array<AgentInstallAction | AgentPathInstallAction>;
+  actions: Array<AgentInstallAction | AgentPathInstallAction | GitHubConfigInstallAction>;
   agentId: string;
   codexStatus?: 'managed' | 'manual';
   warnings: AgentPathWarning[];
@@ -30,6 +34,7 @@ export interface AgentInstallResult {
 export interface AgentInstallServiceDependencies {
   credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
   environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
+  githubConfigStore?: Pick<GitHubConfigStore, 'inspect' | 'reconcile'>;
   pathService?: Pick<AgentPathService, 'inspect' | 'reconcile'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
@@ -80,7 +85,7 @@ function environmentFailure(
   );
 }
 
-/** Reconcile manifest-owned registration, identity, and executable paths. */
+/** Reconcile manifest-owned registration, identity, executable paths, and tool config. */
 export default class AgentInstallService {
   readonly #dependencies: AgentInstallServiceDependencies;
 
@@ -191,6 +196,15 @@ export default class AgentInstallService {
     }
 
     const pathResult = await this.#dependencies.pathService?.reconcile(input);
+    if (input.manifest.github && !this.#dependencies.githubConfigStore) {
+      throw new AgentInstallError('GitHub CLI config reconciliation is unavailable.');
+    }
+    const githubResult = input.manifest.github
+      ? await this.#dependencies.githubConfigStore?.reconcile(
+          input.manifest.agent.id,
+          resolveGitHubCliConfiguration(input.manifest.github),
+        )
+      : undefined;
 
     const verifiedConfig = await this.#dependencies.readConfig();
     const verification = planAgentInstall(
@@ -218,9 +232,27 @@ export default class AgentInstallService {
         );
       }
     }
+    if (input.manifest.github && this.#dependencies.githubConfigStore) {
+      const githubInspection = await this.#dependencies.githubConfigStore.inspect(
+        input.manifest.agent.id,
+        resolveGitHubCliConfiguration(input.manifest.github),
+      );
+      if (githubInspection.status !== 'ready') {
+        throw new AgentInstallError(
+          `GitHub CLI configuration for ${desired.agentId} did not match after installation.`,
+        );
+      }
+    }
+
+    const githubActions: GitHubConfigInstallAction[] =
+      githubResult?.status === 'created'
+        ? ['create-github-config']
+        : githubResult?.status === 'updated'
+          ? ['update-github-config']
+          : [];
 
     return {
-      actions: [...plan.actions, ...(pathResult?.actions ?? [])],
+      actions: [...plan.actions, ...(pathResult?.actions ?? []), ...githubActions],
       agentId: desired.agentId,
       ...(pathResult ? { codexStatus: pathResult.codexStatus } : {}),
       warnings: pathResult?.warnings ?? [],

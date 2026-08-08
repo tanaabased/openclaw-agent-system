@@ -148,10 +148,17 @@ function createProgram() {
         calls.tool.push({ argv, command, scope });
         return {
           auditId: 'audit-id',
+          commandResult: {
+            exitCode: 0,
+            stderr: '',
+            stdout: 'tanaabot\n',
+            timedOut: false,
+            truncated: false,
+          },
           operation: {
-            action: 'github.viewer.get',
-            risk: 'read',
-            summary: 'Read the authenticated GitHub account',
+            action: 'github.cli.invoke',
+            risk: 'unknown',
+            summary: 'Run gh api',
           },
           output: { id: 222685891, login: 'tanaabot' },
         };
@@ -196,7 +203,7 @@ describe('lib/register-cli', () => {
         scope: { source: 'command', workspaceDir: '/current' },
       },
     ]);
-    assert.equal(output.join('').includes('"login": "tanaabot"'), true);
+    assert.equal(output.join(''), 'tanaabot\n');
   });
 
   it('should delegate a tool command for an explicit agent', async () => {

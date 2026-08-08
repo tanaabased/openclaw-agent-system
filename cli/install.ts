@@ -22,7 +22,7 @@ export interface InstallAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Reconcile the current manifest's OpenClaw agent, identity, and executable paths. */
+/** Reconcile the current manifest's OpenClaw agent, identity, paths, and tool config. */
 export default async function installAgentSystem(
   options: InstallAgentSystemOptions,
 ): Promise<void> {
@@ -115,6 +115,20 @@ export default async function installAgentSystem(
         label: 'updated',
         style: 'action' as const,
         value: 'workspace .gitignore',
+      });
+    }
+    if (installed.actions.includes('create-github-config')) {
+      lines.push({
+        label: 'created',
+        style: 'action' as const,
+        value: 'private GitHub CLI config',
+      });
+    }
+    if (installed.actions.includes('update-github-config')) {
+      lines.push({
+        label: 'updated',
+        style: 'action' as const,
+        value: 'private GitHub CLI config',
       });
     }
     lines.push({ label: 'workspace', style: 'target' as const, value: installed.workspaceDir });

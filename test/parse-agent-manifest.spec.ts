@@ -112,6 +112,33 @@ github:
     });
   });
 
+  it('should parse optional github credentials and all supported cli config settings', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  config:
+    git-protocol: ssh
+    color-labels: disabled
+    accessible-colors: enabled
+    spinner: disabled
+    telemetry: enabled
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github, {
+      config: {
+        gitProtocol: 'ssh',
+        colorLabels: 'disabled',
+        accessibleColors: 'enabled',
+        spinner: 'disabled',
+        telemetry: 'enabled',
+      },
+    });
+  });
+
   it('should reject literal-like github tokens and unknown github keys', () => {
     assert.equal(
       diagnosticCodes(`

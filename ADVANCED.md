@@ -75,6 +75,12 @@ github:
   username:
     from-environment: AGENT_GITHUB_USERNAME
   token: GITHUB_TOKEN
+  config:
+    git-protocol: ssh
+    color-labels: enabled
+    accessible-colors: disabled
+    spinner: enabled
+    telemetry: disabled
 ```
 
 | Field                      | Required      | Current behavior                                                                    |
@@ -92,7 +98,8 @@ github:
 | `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty.  |
 | `github.host`              | no            | Literal `github.com`; defaults to `github.com`.                                     |
 | `github.username`          | no            | Literal or environment-backed expected authenticated login; verified when declared. |
-| `github.token`             | with `github` | Environment binding resolved only inside an authorized GitHub tool action.          |
+| `github.token`             | no            | Optional environment binding; defaults to `GH_TOKEN`, then `GITHUB_TOKEN`.          |
+| `github.config`            | no            | Supported `gh` settings written to an isolated generated config during install/use. |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
@@ -106,7 +113,7 @@ Each schema field selects one closed value kind; manifests cannot name arbitrary
 | resolvable          | a literal or `name: { from-environment: AGENT_NAME }` | The field may be literal or consume one value from the completed Agent System environment. |
 | environment binding | `token: GITHUB_TOKEN`                                 | The scalar names an environment variable and can never be a literal credential.            |
 
-`agent.id`, `agent.description`, and `agent.avatar` are literal. `agent.name`, `agent.email`, and `github.username` are resolvable. `github.token` is the first implemented environment-binding field. Environment names in references and bindings match `[A-Z_][A-Z0-9_]*` and remain literal data keys.
+`agent.id`, `agent.description`, and `agent.avatar` are literal. `agent.name`, `agent.email`, and `github.username` are resolvable. `github.token`, when declared, is an environment-binding field. Environment names in references and bindings match `[A-Z_][A-Z0-9_]*` and remain literal data keys.
 
 A dollar-prefixed scalar outside `environment.set` remains literal. For example, `agent.name: $AGENT_NAME` is the display name `$AGENT_NAME`; environment-backed identity must use `from-environment`. References resolve only from the final Agent System environment, never directly from the host lookup, and missing or empty values fail the consuming action without revealing values. A resolvable field does not itself add the referenced name to the environment.
 
@@ -132,15 +139,21 @@ Dotenv files and 1Password values are loaded only when an explicit Agent System 
 
 During ordinary environment resolution and credential validation, Agent System tries macOS Keychain then the agent-scoped file fallback on macOS, Linux Secret Service then file on Linux, and finally its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. Installation uses the same persistent-store order but bypasses the process environment. An exact `credentials validate op --store <id>` request also bypasses the process environment. The token is never included in the resolved agent environment, and manifests, dotenv files, and 1Password Environments cannot export, require, or interpolate it.
 
-Agent System does not inject these values into OpenClaw `exec`, Codex native shell commands, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Executable path projection is a separate, PATH-only contract for OpenClaw exec and local Codex native shell commands. Other surfaces keep their own environment and security contracts. Agent System tools resolve the consolidated manifest environment only after agent binding, input classification, and authorization, then consume only their declared values; the initial GitHub tool supplies only `GH_TOKEN` and fixed non-interactive settings to its owned `gh` child process.
+Agent System does not inject these values into OpenClaw `exec`, Codex native shell commands, ACP or CLI backends, node-host commands, MCP tools, or other harness-specific command surfaces. Executable path projection is a separate, PATH-only contract for OpenClaw exec and local Codex native shell commands. Other surfaces keep their own environment and security contracts. Agent System tools resolve the consolidated manifest environment only after trusted agent binding and input validation, then consume only their declared values; the GitHub tool supplies the selected token as `GH_TOKEN` plus its isolated config and fixed noninteractive settings to the owned `gh` child process.
 
-#### GitHub Tool Pilot
+#### GitHub CLI Tool
 
-The initial tool surface is deliberately narrow. When `github` is configured, Agent System registers `agent_system_github` and adds concise preference guidance during `before_prompt_build`. The native tool, `agent-system tool gh`, and the packaged `bin/gh` command use the same manifest binding, read classification, environment resolution, sanitized runner, output normalization, and metadata-only logging path.
+When `github` is configured, Agent System registers `agent_system_github`, packages `$tanaab-github-cli`, and adds concise preference guidance during `before_prompt_build`. The native tool, `agent-system tool gh`, and packaged `bin/gh` command use the same manifest binding, environment resolution, sanitized runner, output bounding, known-secret redaction, and metadata-only logging path.
 
-The only accepted request is the authenticated-user lookup represented as `{"argv":["api","user"]}`, `gh api user`, or `gh api user --jq .login`. The CLI forms are canonicalized to the same operation before Agent System adds its fixed field projection internally. The runtime returns only `host`, `id`, and `login`, and rejects the result when a declared `github.username` does not match the authenticated login. The model never supplies the agent id, workspace, username, executable, credential name, or token. The runtime currently allows classified reads and rejects every other risk class; broader policy and interactive approval are later Phase 2 work.
+The native tool accepts `{ "argv": ["..."], "stdin": "..." }`; `argv` holds ordinary noninteractive `gh` arguments and optional `stdin` is capped at 64 KiB. The model never supplies the agent id, workspace, executable, credential name, or token. A declared token binding wins; otherwise the runtime selects `GH_TOKEN` and then `GITHUB_TOKEN` from the completed Agent System environment. When `github.username` is declared, every invocation first verifies the authenticated login in the same child environment.
 
-Agent System ships one global `bin/gh` compatibility launcher. Exact `gh --agent-system` prints `agent-system` and exits successfully; ordinary arguments pass unchanged to `openclaw agent-system tool gh -- ...` through a minimal POSIX shell process. The launcher resolves `openclaw` through the caller's ordinary `PATH`, identifies its canonical directory to the runtime, and never receives an agent credential. Because the workspace `bin/` precedes the packaged bin, an agent can supply its own higher-priority command without Agent System replacing it. After trusted agent binding and credential resolution, the TypeScript tool runtime resolves the real GitHub CLI to an absolute path and launches it without a shell. Resolution excludes the workspace bin, declared prepended directories, Agent System's packaged bin, and the calling Agent System launcher directory to prevent command overrides and recursion. The launcher is routing convenience, not universal interception; absolute binaries, replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated host processes may bypass it.
+Agent System always sets `GH_CONFIG_DIR` to a private per-agent directory beneath its machine-local state root. `install` and each invocation reconcile a token-free `config.yml`; missing or changed files are written atomically and unsafe links, owners, or permissions fail closed. Supported settings and defaults are `git-protocol: ssh`, `color-labels: enabled`, `accessible-colors: disabled`, `spinner: enabled`, and `telemetry: disabled`. The generated file also disables prompts and editor prompts and selects `cat` as the pager. It never reads the operator's normal `~/.config/gh` configuration.
+
+Authentication mutation or token display, generated-config mutation, aliases, extensions, and browser or editor launch paths are blocked as credential-containment boundaries. Other `gh` operations pass through unchanged. GitHub token permissions are the current authorization boundary; Agent System does not yet classify or prohibit destructive GitHub operations. Add least-privilege tokens and treat tool-level destructive-operation policy as deferred work.
+
+Agent System ships one global `bin/gh` compatibility launcher. Exact `gh --agent-system` prints `agent-system` and exits successfully; ordinary arguments pass unchanged to `openclaw agent-system tool gh -- ...` through a minimal POSIX shell process. The command surface writes child stdout and stderr directly and preserves the child exit code. The native tool instead returns structured `exitCode`, `stdout`, `stderr`, and `truncated` fields. When the command surface is attached to a terminal, it supplies `GH_FORCE_TTY`; explicit caller color variables remain intact, while CI and other non-TTY use stays uncolored naturally.
+
+The launcher resolves `openclaw` through the caller's ordinary `PATH`, identifies its canonical directory to the runtime, and never receives an agent credential. Because the workspace `bin/` precedes the packaged bin, an agent can supply its own higher-priority command without Agent System replacing it. After trusted agent binding and credential resolution, the TypeScript runtime resolves the real GitHub CLI to an absolute path and launches it without a shell. Resolution excludes the workspace bin, declared prepended directories, Agent System's packaged bin, and the calling Agent System launcher directory to prevent command overrides and recursion. The launcher is routing convenience, not universal interception; absolute binaries, replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated host processes may bypass it.
 
 #### Executable Path Projection
 
@@ -270,10 +283,10 @@ Runs one registered command through its Agent System tool. This is a closed tool
 
 ```sh
 # discover the current workspace manifest.
-openclaw agent-system tool gh -- api user
+openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 
 # target one exact installed agent from any directory.
-openclaw as tool gh --agent tanaabot -- api user
+openclaw as tool gh --agent tanaabot -- api user --jq .login
 
 # verify that the packaged gh command belongs to Agent System.
 gh --agent-system
@@ -281,7 +294,7 @@ gh --agent-system
 
 #### Behavior
 
-The current registry accepts command `gh` with arguments `api user` and the equivalent formatted form `api user --jq .login`. Without `--agent`, it discovers the current manifest and binds that workspace back to the installed OpenClaw agent. With `--agent`, it resolves the exact configured workspace directly. It canonicalizes the supported request, classifies and authorizes the read, resolves the manifest environment, launches the trusted real `gh` executable with only the action credential and sanitized baseline variables, verifies the configured username when present, and writes normalized user JSON. Unsupported commands or arguments fail before credential resolution. The packaged `bin/gh` command delegates ordinary arguments through this same route.
+The current registry accepts command `gh` with ordinary noninteractive GitHub CLI arguments. Without `--agent`, it discovers the current manifest and binds that workspace back to the installed OpenClaw agent. With `--agent`, it resolves the exact configured workspace directly. It validates credential-containment boundaries, resolves the manifest environment, reconciles isolated generated config, verifies the configured username when present, and launches the trusted real `gh` executable with only the selected credential and sanitized baseline variables. Child stdout and stderr pass through directly and the child exit code is preserved. The packaged `bin/gh` command delegates ordinary arguments through this same route.
 
 ### `openclaw agent-system credentials`
 
@@ -354,7 +367,7 @@ This command currently has no options. Run it from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name` and resolves it from the completed Agent System environment when `from-environment` is declared. A missing or empty name binding fails before any OpenClaw configuration read or command. When `environment.op` is declared, install first verifies that a stored credential can access every declared Environment without using the process-environment fallback and fails with a `credentials set op` remediation before environment resolution or OpenClaw mutation. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reloads configuration, and fails if registration, identity, or an Agent System-owned path surface still differs from the manifest. `agent.email` is not resolved by install because OpenClaw identity has no email field.
+Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name` and resolves it from the completed Agent System environment when `from-environment` is declared. A missing or empty name binding fails before any OpenClaw configuration read or command. When `environment.op` is declared, install first verifies that a stored credential can access every declared Environment without using the process-environment fallback and fails with a `credentials set op` remediation before environment resolution or OpenClaw mutation. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reconciles private generated GitHub CLI config when `github` is declared, reloads configuration, and fails if registration, identity, or an Agent System-owned surface still differs from the manifest. `agent.email` is not resolved by install because OpenClaw identity has no email field.
 
 Possible result lines are:
 
@@ -365,17 +378,18 @@ created    workspace bin directory
 updated    OpenClaw exec path for tanaabot
 created    Codex workspace path configuration
 updated    workspace .gitignore
+created    private GitHub CLI config
 workspace  /path/to/workspace
 
 unchanged  OpenClaw agent tanaabot
 workspace  /path/to/workspace
 ```
 
-The created and updated lines may appear together on first installation. Repeated installation produces the unchanged line when no reconciliation is needed. An existing user-managed `.codex/config.toml` instead produces a warning and remains outside Agent System remediation.
+The created and updated lines may appear together on first installation. GitHub config may instead report `updated`. Repeated installation produces the unchanged line when no reconciliation is needed. An existing user-managed `.codex/config.toml` instead produces a warning and remains outside Agent System remediation.
 
 ### `openclaw agent-system doctor`
 
-Inspects implemented Agent System path projection for drift without applying repairs.
+Inspects implemented Agent System path projection and generated GitHub CLI config for drift without applying repairs.
 
 #### Usage
 
@@ -402,13 +416,13 @@ Writes the value-free result as JSON instead of styled summary lines.
 
 #### Behavior
 
-The current doctor slice compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, and confirms that `.codex/config.toml` is listed in the workspace `.gitignore`. Drift returns a nonzero exit code and recommends rerunning `install`. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
+The current doctor slice compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, confirms that `.codex/config.toml` is listed in the workspace `.gitignore`, and inspects generated GitHub CLI config when declared. Drift returns a nonzero exit code and recommends rerunning `install`. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
 
 ## Planned Advanced Surfaces
 
 ### Installation Scripts And Drift
 
-Workspace installation scripts, non-mutating plans, and successful-run metadata are not implemented. The current `install` and `doctor` commands cover OpenClaw agent registration, public identity reconciliation, and supported executable path projection only.
+Workspace installation scripts, non-mutating plans, and successful-run metadata are not implemented. The current `install` and `doctor` commands cover OpenClaw agent registration, public identity reconciliation, supported executable path projection, and generated GitHub CLI config.
 
 ### Diagnostics
 

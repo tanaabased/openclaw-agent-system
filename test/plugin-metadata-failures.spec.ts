@@ -17,6 +17,7 @@ const packageMetadata: PackageMetadata = {
     'cli/',
     'bin/',
     'lib/',
+    'skills/',
     'tools/',
     'utils/',
     'assets/agent-system.png',
@@ -62,6 +63,7 @@ const manifest: PluginManifest = {
   contracts: {
     tools: ['agent_system_github'],
   },
+  skills: ['./skills'],
   configSchema: {
     type: 'object',
     additionalProperties: false,
@@ -100,6 +102,7 @@ describe('utils/plugin-metadata-failures', () => {
         'canonical-command-alias',
         'short-command-alias',
         'github-tool-contract',
+        'github-skill-contract',
         'config-schema-type',
         'config-schema-strictness',
         'package-file',
@@ -131,13 +134,14 @@ describe('utils/plugin-metadata-failures', () => {
         {
           ...packageMetadata,
           files: packageMetadata.files?.filter(
-            (path) => !['cli/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+            (path) => !['cli/', 'skills/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
           ),
         },
         manifest,
       ),
       [
         { code: 'package-file', message: 'package files must include cli/' },
+        { code: 'package-file', message: 'package files must include skills/' },
         { code: 'package-file', message: 'package files must include ADVANCED.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
       ],

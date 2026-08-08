@@ -24,7 +24,8 @@ import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
-import githubTool from './tools/github/tool.ts';
+import GitHubConfigStore from './tools/github/config-store.ts';
+import { createGitHubTool } from './tools/github/tool.ts';
 
 export default definePluginEntry({
   id: 'agent-system',
@@ -71,6 +72,11 @@ export default definePluginEntry({
       // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
       return loadConfig({ pin: false });
     };
+    const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
+    const githubConfigStore = new GitHubConfigStore({
+      currentUid: process.getuid?.(),
+      rootDir: privateStateRoot,
+    });
     const pathService = new AgentPathService({
       basePath: process.env.PATH ?? '',
       codexConfigService: new CodexPathConfigService(),
@@ -78,17 +84,19 @@ export default definePluginEntry({
         return api.runtime.config.mutateConfigFile(params);
       },
       packageDir,
-      projectionStore: new PathProjectionStore(resolveFileCredentialStoreRoot(process.env)),
+      projectionStore: new PathProjectionStore(privateStateRoot),
       readConfig,
     });
-    const doctorService = new AgentDoctorService({ pathService });
+    const doctorService = new AgentDoctorService({ githubConfigStore, pathService });
     const environmentService = new AgentEnvironmentService({
       hostEnvironment: process.env,
       logger,
       manifestService,
       opEnvironmentService,
     });
-    const toolRegistry = new AgentSystemToolRegistry([githubTool]);
+    const toolRegistry = new AgentSystemToolRegistry([
+      createGitHubTool({ configStore: githubConfigStore }),
+    ]);
     const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
     const toolRuntime = new AgentSystemToolRuntime({
       baseEnvironment: process.env,
@@ -105,6 +113,7 @@ export default definePluginEntry({
     const installService = new AgentInstallService({
       credentialManager,
       environmentService,
+      githubConfigStore,
       pathService,
       readConfig,
       runOpenClawCommand(args, cwd) {

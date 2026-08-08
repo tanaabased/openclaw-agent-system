@@ -70,6 +70,21 @@ describe('lib/tool-cli-runner', () => {
     assert.equal(result.stdout, 'selected');
   });
 
+  it('should pass bounded stdin directly to the fixed executable', async () => {
+    const result = await runToolCli({
+      argv: ['-e', 'process.stdin.pipe(process.stdout)'],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      stdin: 'request-body',
+      timeoutMs: 1000,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, 'request-body');
+  });
+
   it('should bound combined standard output and error capture', async () => {
     const script = join(root, 'output.mjs');
     await writeFile(script, "process.stdout.write('abc');\nprocess.stderr.write('def');\n");

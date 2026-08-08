@@ -7,7 +7,7 @@
 - Added initial Agent System plugin and delivery scaffolding. [#1](https://github.com/tanaabased/openclaw-agent-system/pull/1)
 - Added manifest loading at `session_start` with redacted lifecycle diagnostics. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
 - Added ordered, lazy 1Password Environment resolution through `environment.op` with value-free diagnostics. [#3](https://github.com/tanaabased/openclaw-agent-system/pull/3)
-- Added read-only `agent_system_github` identity tooling, packaged `gh` routing, and 1Password-backed Leia coverage. [#3](https://github.com/tanaabased/openclaw-agent-system/pull/3)
+- Added generic `agent_system_github` CLI tooling with isolated per-agent config, packaged skill and `gh` routing, credential fallbacks, and 1Password-backed Leia coverage. [#3](https://github.com/tanaabased/openclaw-agent-system/pull/3)
 - Added schema-owned literal and environment-backed manifest values for agent identity and tool credentials. [#3](https://github.com/tanaabased/openclaw-agent-system/pull/3)
 - Added strict ordered dotenv loading with workspace containment, deterministic precedence, and provenance. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
 - Added strict workspace manifest discovery, validation, and OpenClaw agent binding. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)

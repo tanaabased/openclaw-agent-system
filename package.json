@@ -35,6 +35,7 @@
     "cli/",
     "bin/",
     "lib/",
+    "skills/",
     "tools/",
     "utils/",
     "assets/agent-system.png",

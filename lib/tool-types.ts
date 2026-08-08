@@ -20,7 +20,6 @@ export interface AgentSystemOperation {
 
 export interface AgentSystemToolGuidance {
   prompt: string;
-  skillPath?: string;
 }
 
 export interface AgentSystemToolCommand {
@@ -48,15 +47,23 @@ export interface AgentSystemCliRunRequest {
   excludedExecutableDirectories?: string[];
   maxOutputBytes: number;
   signal?: AbortSignal;
+  stdin?: string;
   timeoutMs: number;
 }
 
 export interface AgentSystemToolScope {
   source: 'command' | 'tool';
   agentId?: string;
+  terminalColumns?: number;
   toolContext?: OpenClawPluginToolContext;
   workspaceDir?: string;
 }
+
+export type AgentSystemCredentialBinding =
+  | string
+  | {
+      anyOf: readonly string[];
+    };
 
 export interface AgentSystemAuthorizationRequest {
   agentId: string;
@@ -90,6 +97,9 @@ export interface AgentSystemCliToolDefinition<
   TOutput,
 > {
   apiVersion: 1;
+  authorization?: {
+    mode: 'agent-system' | 'provider';
+  };
   id: string;
   configuration: {
     read(manifest: AgentManifest): TDeclaredConfiguration | undefined;
@@ -102,13 +112,31 @@ export interface AgentSystemCliToolDefinition<
   guidance?: AgentSystemToolGuidance;
   runner: {
     argv(input: Static<TParameters>, configuration: TResolvedConfiguration): string[];
-    credentialBindings?(configuration: TResolvedConfiguration): Record<string, string>;
+    credentialBindings?(
+      configuration: TResolvedConfiguration,
+    ): Record<string, AgentSystemCredentialBinding>;
     environment?(
       configuration: TResolvedConfiguration,
-      scope: { agentId: string; workspaceDir: string },
+      scope: {
+        agentId: string;
+        source: AgentSystemToolScope['source'];
+        terminalColumns?: number;
+        workspaceDir: string;
+      },
     ): Record<string, string>;
     executable: string;
     maxOutputBytes?: number;
+    preflight?(configuration: TResolvedConfiguration):
+      | {
+          argv: string[];
+          validate(result: AgentSystemCliResult): void;
+        }
+      | undefined;
+    prepare?(
+      configuration: TResolvedConfiguration,
+      scope: { agentId: string; workspaceDir: string },
+    ): Promise<void> | void;
+    stdin?(input: Static<TParameters>, configuration: TResolvedConfiguration): string | undefined;
     timeoutMs?: number;
   };
   tool: {
@@ -128,6 +156,7 @@ export interface AgentSystemCliToolDefinition<
 
 export interface AgentSystemToolExecutionResult {
   auditId: string;
+  commandResult: AgentSystemCliResult;
   operation: AgentSystemOperation;
   output: unknown;
 }

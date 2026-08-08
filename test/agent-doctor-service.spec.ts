@@ -75,4 +75,31 @@ describe('lib/agent-doctor-service', () => {
     assert.equal(result.findings[0]?.code, 'path-projection-invalid');
     assert.match(result.findings[0]?.remediation ?? '', /agent-system install/u);
   });
+
+  it('should report generated github config drift for a configured agent', async () => {
+    const service = new AgentDoctorService({
+      githubConfigStore: {
+        async inspect() {
+          return { configDir: '/private/data/tools/gh', status: 'drift' };
+        },
+      },
+      pathService: {
+        async inspect() {
+          return {
+            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
+            openClawMatches: true,
+            projection: { entries: [], path: '/usr/bin' },
+          };
+        },
+      },
+    });
+
+    const result = await service.inspect({
+      ...input,
+      manifest: { ...input.manifest, github: {} },
+    });
+
+    assert.equal(result.status, 'drift');
+    assert.equal(result.findings.at(-1)?.code, 'github-config-drift');
+  });
 });
