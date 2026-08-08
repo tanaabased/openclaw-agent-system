@@ -37,6 +37,8 @@ function renderConfig(configuration: GitHubCliConfiguration): string {
     `accessible_colors: ${configuration.accessibleColors}`,
     `spinner: ${configuration.spinner}`,
     `telemetry: ${configuration.telemetry}`,
+    // GitHub CLI adds this marker on first use when it is absent, creating perpetual drift.
+    'version: "1"',
     '',
   ].join('\n');
 }

@@ -40,6 +40,7 @@ describe('tools/github/config-store', () => {
     assert.match(contents, /^prompt: disabled$/m);
     assert.match(contents, /^spinner: enabled$/m);
     assert.match(contents, /^telemetry: disabled$/m);
+    assert.match(contents, /^version: "1"$/m);
     assert.equal(contents.includes('token'), false);
     assert.equal((await lstat(store.configDirectory('data'))).mode & 0o077, 0);
     assert.equal((await lstat(configPath)).mode & 0o077, 0);
