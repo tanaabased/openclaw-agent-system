@@ -1,6 +1,6 @@
 # GitHub Tool Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that GitHub lifecycle installation adds and diagnoses declared SSH authentication and signing keys, then proves that the tool runtime selects each agent's configured 1Password-backed credential and authenticated account through either supported invocation route.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that GitHub lifecycle installation adds and diagnoses fresh ephemeral SSH authentication and signing keys, proves the already-installed path, and then verifies that the tool runtime selects each agent's configured 1Password-backed credential and authenticated account through either supported invocation route.
 
 ## Setup
 
@@ -100,19 +100,21 @@ openclaw agent \
 ```bash
 # should remove only the exact generated tanaabot authentication key
 key_material="$(awk '{ print $2 }' "$TMPDIR/agent-system-github-tanaabot/generated-auth.pub")"
-key_id="$(openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/keys | jq -r --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | .[0].id // empty')"
+key_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")"
 if test -n "$key_id"; then
-  openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/keys/$key_id"
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/keys/$key_id"
 fi
-openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/keys | jq -e --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | length == 0'
+remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")"
+test -z "$remaining"
 
 # should remove only the exact generated tanaabot signing key
 key_material="$(awk '{ print $2 }' "$TMPDIR/agent-system-github-tanaabot/generated-signing.pub")"
-key_id="$(openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/ssh_signing_keys | jq -r --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | .[0].id // empty')"
+key_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --paginate /user/ssh_signing_keys --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")"
 if test -n "$key_id"; then
-  openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/ssh_signing_keys/$key_id"
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/ssh_signing_keys/$key_id"
 fi
-openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/ssh_signing_keys | jq -e --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | length == 0'
+remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tanaabot -- api --paginate /user/ssh_signing_keys --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")"
+test -z "$remaining"
 
 # should stop the background gateway cleanly
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
