@@ -920,8 +920,9 @@ The stable model-facing tool name is:
 agent_system_github(...)
 ```
 
-Its initial input schema and executor are a Phase 2 vertical-slice decision.
-Supported implementation shapes are:
+The initial input schema and executor were a Phase 2 vertical-slice decision.
+The implemented pilot below selects one of these supported shapes; later
+expansion may revisit that choice:
 
 - a CLI-shaped schema such as `{ argv, stdin?, cwd? }` over a fixed trusted
   `gh` executable;
@@ -999,9 +1000,10 @@ When the CLI adapter is used, the child receives only values such as:
 
 ```text
 GH_TOKEN=<action-scoped resolved value>
+GH_HOST=<configured host>
 GH_PROMPT_DISABLED=1
-GH_CONFIG_DIR=<agent-specific trusted directory>
 GH_PAGER=cat
+NO_COLOR=1
 PAGER=cat
 ```
 
@@ -1016,7 +1018,7 @@ from validated semantic input, injects authorization internally, constrains
 pagination and response size, and never accepts an arbitrary credential,
 authorization header, or unvalidated URL from the model.
 
-Whichever initial surface is chosen, later typed conveniences such as issue
+For later surface expansion, typed conveniences such as issue
 creation or workflow dispatch may be added only when they measurably improve
 model reliability, semantic approvals, structured output, or policy. They
 compile to the same tool lifecycle and do not create a parallel credential
@@ -1333,14 +1335,14 @@ work, not new Agent System core environment implementations.
 - The exact Linux headless service-credential integration.
 - The final compile-time SDK export/package boundary and typed OpenClaw
   cross-plugin tool capability.
-- Whether the initial GitHub schema is CLI-shaped, semantic HTTP/Octokit
-  operations, or a hybrid, and which executor proves the safest reliable slice.
+- Whether future GitHub operations should extend the CLI-shaped pilot, add
+  semantic HTTP/Octokit operations, or form a hybrid surface.
 - Whether one stable tool per service remains sufficient or common operations
   need narrower approval-aware convenience tools.
 - How third-party tools contribute strictly validated manifest projection
   schemas without weakening unknown-key rejection.
-- Whether tools without a binding are omitted per agent or remain
-  visible with a deterministic `capability_not_configured` result.
+- Whether future cross-plugin tools should retain the pilot's visible
+  `capability_not_configured` behavior or support per-agent omission.
 - The default policy for GitHub and Git writes, destructive operations, and
   unknown classifications.
 - The exact cron job schema, ownership marker, synchronization command, and
