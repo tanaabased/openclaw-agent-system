@@ -68,7 +68,7 @@
     "format:write": "prettier . --write --ignore-unknown",
     "leia": "leia",
     "lint:eslint": "eslint .",
-    "lint:shellcheck": "shellcheck bin/*",
+    "lint:shellcheck": "shellcheck bin/* scripts/*.sh",
     "lint": "bun run lint:eslint && bun run format:check && bun run lint:shellcheck",
     "plugin:check": "bun scripts/check-plugin-task.ts",
     "test:release": "bun scripts/release-test-task.ts",
