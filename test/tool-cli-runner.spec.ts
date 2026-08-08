@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -120,16 +120,35 @@ describe('lib/tool-cli-runner', () => {
     assert.equal(result.timedOut, true);
   });
 
-  it('should forcefully terminate a child process that ignores its graceful timeout', async function () {
+  it('should terminate the full child process group after its graceful timeout', async function () {
     this.timeout(5_000);
-    const script = join(root, 'ignore-termination.mjs');
+    const markerPath = join(root, 'grandchild-survived');
+    const grandchildPath = join(root, 'grandchild.mjs');
+    const parentPath = join(root, 'parent.mjs');
     await writeFile(
-      script,
-      "process.on('SIGTERM', () => {});\nsetTimeout(() => process.exit(23), 3000);\nsetInterval(() => {}, 1000);\n",
+      grandchildPath,
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "process.on('SIGTERM', () => {});",
+        "setTimeout(() => { writeFileSync(process.argv[2], 'survived'); process.exit(24); }, 3000);",
+        'setInterval(() => {}, 1000);',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      parentPath,
+      [
+        "import { spawn } from 'node:child_process';",
+        "spawn(process.execPath, [process.argv[2], process.argv[3]], { stdio: 'inherit' });",
+        "process.on('SIGTERM', () => {});",
+        'setTimeout(() => process.exit(23), 4000);',
+        'setInterval(() => {}, 1000);',
+        '',
+      ].join('\n'),
     );
 
     const result = await runToolCli({
-      argv: [script],
+      argv: [parentPath, grandchildPath, markerPath],
       cwd: root,
       environment: process.env,
       executable: process.execPath,
@@ -139,6 +158,10 @@ describe('lib/tool-cli-runner', () => {
 
     assert.equal(result.exitCode, null);
     assert.equal(result.timedOut, true);
+    await assert.rejects(
+      access(markerPath),
+      (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT',
+    );
   });
 
   it('should terminate immediately when the request is already aborted', async () => {

@@ -61,7 +61,7 @@ export async function resolveToolExecutable(
   throw new Error('tool executable is unavailable');
 }
 
-/** Run one fixed executable without a shell while bounding time and captured output. */
+/** Run one fixed executable in its own process group while bounding time and captured output. */
 export default async function runToolCli(
   request: AgentSystemCliRunRequest,
 ): Promise<AgentSystemCliResult> {
@@ -72,6 +72,7 @@ export default async function runToolCli(
   );
   const child = spawn(executable, request.argv, {
     cwd: request.cwd,
+    detached: true,
     env: request.environment,
     shell: false,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -104,9 +105,20 @@ export default async function runToolCli(
   });
 
   let forcedTermination: NodeJS.Timeout | undefined;
+  const signalProcessGroup = (signal: NodeJS.Signals) => {
+    if (child.pid === undefined) {
+      child.kill(signal);
+      return;
+    }
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      child.kill(signal);
+    }
+  };
   const terminate = () => {
-    child.kill('SIGTERM');
-    forcedTermination ??= setTimeout(() => child.kill('SIGKILL'), forcedTerminationGraceMs);
+    signalProcessGroup('SIGTERM');
+    forcedTermination ??= setTimeout(() => signalProcessGroup('SIGKILL'), forcedTerminationGraceMs);
   };
   const abort = () => terminate();
   if (request.signal?.aborted) abort();
