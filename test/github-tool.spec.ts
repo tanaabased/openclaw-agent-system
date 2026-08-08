@@ -54,7 +54,6 @@ function createRuntime(
     authorize?: () => Promise<{ status: 'allowed' } | { status: 'denied'; reason: string }>;
     environmentCalls?: string[];
     logs?: string[];
-    logCliDiagnostics?: boolean;
     manifestWorkspace?: string;
     excludedExecutableDirectories?: string[];
     runCli?: (request: AgentSystemCliRunRequest) => Promise<AgentSystemCliResult>;
@@ -76,7 +75,6 @@ function createRuntime(
       },
     },
     excludedExecutableDirectories: options.excludedExecutableDirectories ?? ['/package/bin'],
-    logCliDiagnostics: options.logCliDiagnostics,
     logger: {
       error: (message) => logs.push(message),
       info: (message) => logs.push(message),
@@ -255,7 +253,7 @@ describe('tools/github/tool', () => {
     );
   });
 
-  it('should not log cli diagnostics unless enabled', async () => {
+  it('should keep child failure output out of lifecycle logs', async () => {
     const registry = new AgentSystemToolRegistry([githubTool]);
     const logs: string[] = [];
     const runtime = createRuntime({
@@ -276,36 +274,10 @@ describe('tools/github/tool', () => {
         error instanceof AgentSystemToolError && error.code === 'execution_failed',
     );
     assert.equal(
-      logs.some((line) => line.startsWith('tool_cli_diagnostic')),
-      false,
+      logs.some((line) => line.startsWith('tool_call_failed') && line.includes('execution_failed')),
+      true,
     );
-  });
-
-  it('should redact credentials from enabled cli failure diagnostics', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
-    const logs: string[] = [];
-    const runtime = createRuntime({
-      logCliDiagnostics: true,
-      logs,
-      runCli: async () => ({
-        exitCode: 1,
-        resolvedExecutable: '/workspace/source/bin/gh',
-        stderr: 'request failed for private-token',
-        stdout: '',
-        timedOut: false,
-        truncated: false,
-      }),
-    });
-
-    await assert.rejects(
-      registry.invoke('gh', runtime, ['api', 'user'], { source: 'command', workspaceDir }),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'execution_failed',
-    );
-    const diagnostic = logs.find((line) => line.startsWith('tool_cli_diagnostic'));
-    assert.match(diagnostic ?? '', /executable="\/workspace\/source\/bin\/gh"/);
-    assert.match(diagnostic ?? '', /exitCode=1/);
-    assert.match(diagnostic ?? '', /request failed for \[REDACTED\]/);
     assert.equal(logs.join('\n').includes('private-token'), false);
+    assert.equal(logs.join('\n').includes('request failed'), false);
   });
 });

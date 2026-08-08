@@ -94,19 +94,22 @@ export default async function runToolCli(
   child.stdout.on('data', (chunk: Buffer<ArrayBufferLike>) => (stdout = append(stdout, chunk)));
   child.stderr.on('data', (chunk: Buffer<ArrayBufferLike>) => (stderr = append(stderr, chunk)));
 
+  const exit = new Promise<number | null>((resolveExit, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code) => resolveExit(code));
+  });
+
   const terminate = () => child.kill('SIGTERM');
   const abort = () => terminate();
-  request.signal?.addEventListener('abort', abort, { once: true });
+  if (request.signal?.aborted) abort();
+  else request.signal?.addEventListener('abort', abort, { once: true });
   const timeout = setTimeout(() => {
     timedOut = true;
     terminate();
   }, request.timeoutMs);
 
   try {
-    const exitCode = await new Promise<number | null>((resolveExit, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code) => resolveExit(code));
-    });
+    const exitCode = await exit;
     return {
       exitCode,
       resolvedExecutable: executable,

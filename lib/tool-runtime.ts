@@ -51,7 +51,6 @@ export interface AgentSystemToolRuntimeDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'>;
   excludedExecutableDirectories?: readonly string[];
-  logCliDiagnostics?: boolean;
   logger: ToolLogger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   runCli?: typeof runToolCli;
@@ -254,18 +253,6 @@ export default class AgentSystemToolRuntime {
         stderr: redact(cliResult.stderr, secretValues),
         stdout: redact(cliResult.stdout, secretValues),
       };
-      if (this.#dependencies.logCliDiagnostics) {
-        const diagnostic =
-          `tool_cli_diagnostic tool=${quote(definition.id)} agentId=${quote(agentId)} ` +
-          `executable=${quote(redactedResult.resolvedExecutable ?? 'unknown')} ` +
-          `exitCode=${redactedResult.exitCode ?? 'null'} timedOut=${redactedResult.timedOut} ` +
-          `truncated=${redactedResult.truncated} stderr=${quote(redactedResult.stderr.slice(0, 4096))}`;
-        if (redactedResult.exitCode === 0) {
-          this.#dependencies.logger.info(diagnostic);
-        } else {
-          this.#dependencies.logger.error(diagnostic);
-        }
-      }
       if (redactedResult.timedOut) {
         throw new AgentSystemToolError(
           'execution_timed_out',

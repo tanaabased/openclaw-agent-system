@@ -97,7 +97,6 @@ export default definePluginEntry({
         join(packageDir, 'bin'),
         ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
       ],
-      logCliDiagnostics: process.env.AGENT_SYSTEM_TOOL_DIAGNOSTICS === '1',
       logger,
       manifestService,
     });

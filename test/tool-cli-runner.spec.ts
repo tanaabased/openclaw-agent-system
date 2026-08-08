@@ -69,4 +69,59 @@ describe('lib/tool-cli-runner', () => {
     assert.equal(result.resolvedExecutable, await realpath(join(bin, 'probe')));
     assert.equal(result.stdout, 'selected');
   });
+
+  it('should bound combined standard output and error capture', async () => {
+    const script = join(root, 'output.mjs');
+    await writeFile(script, "process.stdout.write('abc');\nprocess.stderr.write('def');\n");
+
+    const result = await runToolCli({
+      argv: [script],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 4,
+      timeoutMs: 1000,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr), 4);
+    assert.equal(result.truncated, true);
+  });
+
+  it('should terminate a child process after its timeout', async () => {
+    const script = join(root, 'timeout.mjs');
+    await writeFile(script, 'setInterval(() => {}, 1000);\n');
+
+    const result = await runToolCli({
+      argv: [script],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      timeoutMs: 20,
+    });
+
+    assert.equal(result.exitCode, null);
+    assert.equal(result.timedOut, true);
+  });
+
+  it('should terminate immediately when the request is already aborted', async () => {
+    const script = join(root, 'abort.mjs');
+    await writeFile(script, 'setInterval(() => {}, 1000);\n');
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runToolCli({
+      argv: [script],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      signal: controller.signal,
+      timeoutMs: 1000,
+    });
+
+    assert.equal(result.exitCode, null);
+    assert.equal(result.timedOut, false);
+  });
 });
