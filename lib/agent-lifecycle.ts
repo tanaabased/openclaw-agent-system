@@ -152,7 +152,10 @@ export default function createAgentLifecycleContribution(
   return {
     id: 'agent',
     isConfigured: () => true,
-    validate: () => ({ summary: 'OpenClaw agent declaration' }),
+    validate: () => ({
+      code: 'agent-declaration-valid',
+      summary: 'OpenClaw agent declaration',
+    }),
     async inspect(context) {
       let desired: DesiredAgentInstallState;
       try {

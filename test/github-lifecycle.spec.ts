@@ -26,6 +26,7 @@ describe('tools/github/lifecycle', () => {
     });
 
     assert.deepEqual(contribution.validate?.(context), {
+      code: 'github-config-valid',
       summary: 'GitHub tool configuration',
     });
     assert.deepEqual(await contribution.inspect?.(context), [

@@ -23,6 +23,8 @@ openclaw agent-system validate | grep -F 'valid' | grep -F 'path'
 cd "$GITHUB_WORKSPACE/examples/validate/valid"
 openclaw agent-system validate --json | grep -F '"component": "agent"'
 openclaw agent-system validate --json | grep -F '"component": "path"'
+openclaw agent-system validate --json | grep -F '"code": "manifest-valid"'
+openclaw agent-system validate --json | grep -F '"code": "agent-declaration-valid"'
 openclaw agent-system validate --json | grep -F '"status": "valid"'
 
 # should prefer the hidden manifest and report the ignored shorthand

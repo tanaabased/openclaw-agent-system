@@ -14,6 +14,7 @@ import resolveAgentId, { type AgentRuntimeContext } from '../utils/resolve-agent
 export type ManifestLoadTrigger = 'before_prompt_build' | 'cli' | 'session_start';
 
 export interface AgentManifestValidationCheck {
+  code: string;
   component: string;
   message: string;
   status: 'valid';

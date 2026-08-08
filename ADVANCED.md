@@ -244,7 +244,7 @@ Writes the valid manifest view and its component-attributed checks as JSON inste
 
 #### Behavior
 
-A valid manifest prints its agent id and selected path plus one `valid` line for the foundational `agent` and `path` contributions and each configured capability contribution. The JSON view carries those same checks. Declaration checks remain deterministic: they do not resolve credentials, inspect installed or remote state, or mutate anything. A shadowed shorthand produces a warning after the valid result. Missing, invalid, unreadable, unsafe, mismatched, or contribution-invalid manifests fail with stable component and diagnostic codes such as `manifest-shadowed`, `manifest-schema`, or `agent-id-mismatch`.
+A valid manifest prints its agent id and selected path plus one `valid` line for the foundational `agent` and `path` contributions and each configured capability contribution. The JSON view carries those same checks with stable codes such as `manifest-valid`, `agent-declaration-valid`, and `path-projection-valid`. Declaration checks remain deterministic: they do not resolve credentials, inspect installed or remote state, or mutate anything. A shadowed shorthand produces a warning after the valid result. Missing, invalid, unreadable, unsafe, mismatched, or contribution-invalid manifests fail with stable component and diagnostic codes such as `manifest-shadowed`, `manifest-schema`, or `agent-id-mismatch`.
 
 ### `openclaw agent-system env`
 

@@ -45,6 +45,31 @@ describe('lib/cli-output', () => {
     );
   });
 
+  it('should render error and warning summaries with semantic styles', () => {
+    const markerStyles = {
+      action: (value: string) => `<action>${value}</action>`,
+      error: (value: string) => `<error>${value}</error>`,
+      field: (value: string) => `<field>${value}</field>`,
+      status: (value: string) => `<status>${value}</status>`,
+      target: (value: string) => `<target>${value}</target>`,
+      warning: (value: string) => `<warning>${value}</warning>`,
+    };
+
+    assert.deepEqual(
+      renderCliSummary(
+        [
+          { label: 'blocked', style: 'error', value: 'inspection failed' },
+          { label: 'drift', style: 'warning', value: 'configuration differs' },
+        ],
+        markerStyles,
+      ),
+      [
+        '<error>blocked  </error>inspection failed',
+        '<warning>drift    </warning>configuration differs',
+      ],
+    );
+  });
+
   it('should align optional lifecycle components as a third summary column', () => {
     assert.deepEqual(
       renderCliSummary(

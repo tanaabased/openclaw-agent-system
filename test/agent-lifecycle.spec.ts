@@ -28,6 +28,7 @@ describe('lib/agent-lifecycle', () => {
     });
 
     assert.deepEqual(contribution.validate?.(context), {
+      code: 'agent-declaration-valid',
       summary: 'OpenClaw agent declaration',
     });
   });

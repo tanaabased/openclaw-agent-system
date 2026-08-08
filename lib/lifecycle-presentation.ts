@@ -22,13 +22,9 @@ function presentationStyle(
   status: AgentSystemLifecyclePresentationStatus,
 ): CliSummaryLine['style'] {
   if (status === 'healthy' || status === 'unchanged' || status === 'valid') return 'status';
-  if (
-    status === 'blocked' ||
-    status === 'created' ||
-    status === 'drift' ||
-    status === 'removed' ||
-    status === 'updated'
-  ) {
+  if (status === 'blocked') return 'error';
+  if (status === 'drift' || status === 'warning') return 'warning';
+  if (status === 'created' || status === 'removed' || status === 'updated') {
     return 'action';
   }
   return 'field';

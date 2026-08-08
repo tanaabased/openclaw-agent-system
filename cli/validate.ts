@@ -35,6 +35,7 @@ export default async function validateAgentSystem(
 
   const checks = [
     {
+      code: 'manifest-valid',
       component: 'manifest',
       message: `Agent System manifest for ${result.manifest.agent.id}`,
       status: 'valid' as const,

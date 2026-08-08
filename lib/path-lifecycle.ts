@@ -51,7 +51,10 @@ export default function createPathLifecycleContribution(
   return {
     id: 'path',
     isConfigured: () => true,
-    validate: () => ({ summary: 'Executable path projection' }),
+    validate: () => ({
+      code: 'path-projection-valid',
+      summary: 'Executable path projection',
+    }),
     async inspect(context) {
       try {
         const path = await dependencies.pathService.inspect(context);

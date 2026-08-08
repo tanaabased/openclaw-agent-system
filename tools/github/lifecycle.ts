@@ -16,7 +16,10 @@ export default function createGitHubLifecycleContribution(
   return {
     id: 'github',
     isConfigured: (manifest) => manifest.github !== undefined,
-    validate: () => ({ summary: 'GitHub tool configuration' }),
+    validate: () => ({
+      code: 'github-config-valid',
+      summary: 'GitHub tool configuration',
+    }),
     async inspect({ manifest }) {
       try {
         const github = await dependencies.configStore.inspect(

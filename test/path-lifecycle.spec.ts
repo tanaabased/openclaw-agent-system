@@ -23,6 +23,7 @@ describe('lib/path-lifecycle', () => {
     });
 
     assert.deepEqual(contribution.validate?.(context), {
+      code: 'path-projection-valid',
       summary: 'Executable path projection',
     });
   });

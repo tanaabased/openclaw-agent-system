@@ -32,6 +32,7 @@ export interface AgentSystemLifecycleFinding {
 }
 
 export interface AgentSystemLifecycleValidationCheck {
+  code: string;
   component: string;
   message: string;
   status: 'valid';
@@ -70,6 +71,7 @@ export interface AgentSystemLifecycleContribution {
   isConfigured(manifest: AgentManifest): boolean;
   /** Perform deterministic declaration checks without resolving credentials or inspecting state. */
   validate?(context: AgentSystemLifecycleContext): {
+    code: string;
     diagnostics?: readonly ContributionDiagnostic[];
     summary: string;
   };
@@ -120,7 +122,12 @@ export default class AgentSystemLifecycleRegistry {
       }));
       diagnostics.push(...contributedDiagnostics);
       if (!contributedDiagnostics.some(({ severity }) => severity === 'error')) {
-        checks.push({ component: contribution.id, message: result.summary, status: 'valid' });
+        checks.push({
+          code: result.code,
+          component: contribution.id,
+          message: result.summary,
+          status: 'valid',
+        });
       }
     }
     return { checks, diagnostics };

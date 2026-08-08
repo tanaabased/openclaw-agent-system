@@ -85,9 +85,24 @@ describe('cli/validate', () => {
       workspace: {
         ...validResult,
         validationChecks: [
-          { component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' },
-          { component: 'path', message: 'Executable path projection', status: 'valid' },
-          { component: 'github', message: 'GitHub tool configuration', status: 'valid' },
+          {
+            code: 'agent-declaration-valid',
+            component: 'agent',
+            message: 'OpenClaw agent declaration',
+            status: 'valid',
+          },
+          {
+            code: 'path-projection-valid',
+            component: 'path',
+            message: 'Executable path projection',
+            status: 'valid',
+          },
+          {
+            code: 'github-config-valid',
+            component: 'github',
+            message: 'GitHub tool configuration',
+            status: 'valid',
+          },
         ],
       },
     });
@@ -105,7 +120,12 @@ describe('cli/validate', () => {
       workspace: {
         ...validResult,
         validationChecks: [
-          { component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' },
+          {
+            code: 'agent-declaration-valid',
+            component: 'agent',
+            message: 'OpenClaw agent declaration',
+            status: 'valid',
+          },
         ],
       },
     });
@@ -114,10 +134,20 @@ describe('cli/validate', () => {
 
     const result = JSON.parse(output.join(''));
     assert.equal(result.status, 'valid');
-    assert.deepEqual(
-      result.checks.map(({ component }: { component: string }) => component),
-      ['manifest', 'agent'],
-    );
+    assert.deepEqual(result.checks, [
+      {
+        code: 'manifest-valid',
+        component: 'manifest',
+        message: 'Agent System manifest for tanaabot',
+        status: 'valid',
+      },
+      {
+        code: 'agent-declaration-valid',
+        component: 'agent',
+        message: 'OpenClaw agent declaration',
+        status: 'valid',
+      },
+    ]);
   });
 
   it('should report an invalid manifest and set a failing exit code', async () => {

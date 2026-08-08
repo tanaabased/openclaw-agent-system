@@ -19,6 +19,7 @@ describe('lib/lifecycle-registry', () => {
         id: 'github',
         isConfigured: (candidate) => candidate.github !== undefined,
         validate: () => ({
+          code: 'github-config-valid',
           diagnostics: [
             {
               code: 'github-config-warning',
@@ -65,7 +66,14 @@ describe('lib/lifecycle-registry', () => {
     ]);
 
     assert.deepEqual(registry.validate(context), {
-      checks: [{ component: 'github', message: 'GitHub tool configuration', status: 'valid' }],
+      checks: [
+        {
+          code: 'github-config-valid',
+          component: 'github',
+          message: 'GitHub tool configuration',
+          status: 'valid',
+        },
+      ],
       diagnostics: [
         {
           code: 'github-config-warning',
@@ -118,7 +126,7 @@ describe('lib/lifecycle-registry', () => {
       isConfigured: () => true,
       validate() {
         events.push(`validate:${id}`);
-        return { summary: id };
+        return { code: `${id}-valid`, summary: id };
       },
       async inspect() {
         events.push(`inspect:${id}`);

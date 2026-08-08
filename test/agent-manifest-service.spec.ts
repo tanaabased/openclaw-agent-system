@@ -125,7 +125,14 @@ describe('lib/agent-manifest-service', () => {
     const root = await temporaryRoot();
     await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: tanaabot\n');
     const { service } = createService({ tanaabot: root }, () => ({
-      checks: [{ component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' }],
+      checks: [
+        {
+          code: 'agent-declaration-valid',
+          component: 'agent',
+          message: 'OpenClaw agent declaration',
+          status: 'valid',
+        },
+      ],
       diagnostics: [],
     }));
 
@@ -134,7 +141,12 @@ describe('lib/agent-manifest-service', () => {
     assert.equal(result.status, 'loaded');
     if (result.status !== 'loaded') return;
     assert.deepEqual(result.validationChecks, [
-      { component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' },
+      {
+        code: 'agent-declaration-valid',
+        component: 'agent',
+        message: 'OpenClaw agent declaration',
+        status: 'valid',
+      },
     ]);
   });
 
