@@ -45,6 +45,24 @@ describe('lib/cli-output', () => {
     );
   });
 
+  it('should align optional lifecycle components as a third summary column', () => {
+    assert.deepEqual(
+      renderCliSummary(
+        [
+          { component: 'manifest', label: 'valid', style: 'status', value: 'Agent manifest' },
+          { component: 'github', label: 'valid', style: 'status', value: 'Tool configuration' },
+          { label: 'manifest', style: 'target', value: '/workspace/agent.yaml' },
+        ],
+        plainStyles,
+      ),
+      [
+        'valid     manifest  Agent manifest',
+        'valid     github    Tool configuration',
+        'manifest            /workspace/agent.yaml',
+      ],
+    );
+  });
+
   it('should write one trailing newline for human summaries', () => {
     const written: string[] = [];
 

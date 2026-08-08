@@ -3,68 +3,29 @@ import assert from 'node:assert/strict';
 import AgentDoctorService from '../lib/agent-doctor-service.ts';
 
 const input = {
-  manifest: { schemaVersion: 1 as const, agent: { id: 'data' } },
+  manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
   workspaceDir: '/workspace',
 };
 
 describe('lib/agent-doctor-service', () => {
-  it('should report healthy managed path projection', async () => {
+  it('should aggregate lifecycle findings and preserve their order', async () => {
     const service = new AgentDoctorService({
-      pathService: {
+      lifecycleRegistry: {
         async inspect() {
-          return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
-            openClawMatches: true,
-            projection: { entries: [], path: '/usr/bin' },
-          };
-        },
-      },
-    });
-
-    const result = await service.inspect(input);
-
-    assert.equal(result.status, 'healthy');
-    assert.deepEqual(
-      result.findings.map(({ code, status }) => ({ code, status })),
-      [
-        { code: 'openclaw-exec-path-ready', status: 'healthy' },
-        { code: 'codex-path-ready', status: 'healthy' },
-        { code: 'codex-config-gitignored', status: 'healthy' },
-      ],
-    );
-  });
-
-  it('should keep user-managed codex configuration outside automatic repair', async () => {
-    const service = new AgentDoctorService({
-      pathService: {
-        async inspect() {
-          return {
-            codex: { gitignored: false, ownership: 'manual', pathMatches: false },
-            openClawMatches: true,
-            projection: { entries: [], path: '/usr/bin' },
-          };
-        },
-      },
-    });
-
-    const result = await service.inspect(input);
-
-    assert.equal(result.status, 'healthy');
-    assert.deepEqual(
-      result.findings.map(({ code, status }) => ({ code, status })),
-      [
-        { code: 'openclaw-exec-path-ready', status: 'healthy' },
-        { code: 'codex-config-manual', status: 'manual' },
-        { code: 'codex-config-not-gitignored', status: 'warning' },
-      ],
-    );
-  });
-
-  it('should convert an invalid path projection into drift', async () => {
-    const service = new AgentDoctorService({
-      pathService: {
-        async inspect() {
-          throw new Error('The declared path is missing.');
+          return [
+            {
+              code: 'agent-ready',
+              component: 'agent',
+              message: 'OpenClaw agent state matches.',
+              status: 'healthy',
+            },
+            {
+              code: 'github-config-drift',
+              component: 'github',
+              message: 'Generated GitHub CLI config drifted.',
+              status: 'drift',
+            },
+          ];
         },
       },
     });
@@ -72,34 +33,53 @@ describe('lib/agent-doctor-service', () => {
     const result = await service.inspect(input);
 
     assert.equal(result.status, 'drift');
-    assert.equal(result.findings[0]?.code, 'path-projection-invalid');
-    assert.match(result.findings[0]?.remediation ?? '', /agent-system install/u);
+    assert.deepEqual(
+      result.findings.map(({ component }) => component),
+      ['agent', 'github'],
+    );
   });
 
-  it('should report generated github config drift for a configured agent', async () => {
+  it('should give blocked findings precedence over drift', async () => {
     const service = new AgentDoctorService({
-      githubConfigStore: {
+      lifecycleRegistry: {
         async inspect() {
-          return { configDir: '/private/data/tools/gh', status: 'drift' };
-        },
-      },
-      pathService: {
-        async inspect() {
-          return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
-            openClawMatches: true,
-            projection: { entries: [], path: '/usr/bin' },
-          };
+          return [
+            {
+              code: 'path-drift',
+              component: 'path',
+              message: 'Path drifted.',
+              status: 'drift',
+            },
+            {
+              code: 'agent-conflict',
+              component: 'agent',
+              message: 'Agent registration conflicts.',
+              status: 'blocked',
+            },
+          ];
         },
       },
     });
 
-    const result = await service.inspect({
-      ...input,
-      manifest: { ...input.manifest, github: {} },
+    assert.equal((await service.inspect(input)).status, 'blocked');
+  });
+
+  it('should treat manual and warning findings as healthy aggregate state', async () => {
+    const service = new AgentDoctorService({
+      lifecycleRegistry: {
+        async inspect() {
+          return [
+            {
+              code: 'codex-config-manual',
+              component: 'path',
+              message: 'Codex configuration is user-managed.',
+              status: 'manual',
+            },
+          ];
+        },
+      },
     });
 
-    assert.equal(result.status, 'drift');
-    assert.equal(result.findings.at(-1)?.code, 'github-config-drift');
+    assert.equal((await service.inspect(input)).status, 'healthy');
   });
 });

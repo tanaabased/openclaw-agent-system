@@ -677,6 +677,7 @@ tools/
   github/
     config-store.ts   # private generated gh config
     config-schema.ts  # optional agent.yaml section schema
+    lifecycle.ts      # validate, doctor, and install contribution
     tool-schema.ts    # required model-facing OpenClaw input schema
     tool.ts           # thin registration and tool-specific behavior
 ```
@@ -693,6 +694,41 @@ and tool registration statically imports its model-input schema and handler.
 Manifest values never contain schema paths, tool module paths, or dynamic
 registration instructions. A configuration section may still feed multiple
 tools, and a tool may consume multiple sections.
+
+### Lifecycle contributions
+
+Foundational state and first-party capabilities use the same lifecycle
+contribution contract. Foundational agent and path contributions live in
+`lib/`; a capability may register a contribution beside its model-facing tool
+definition. The capability contracts share configuration and focused services
+but remain independent: model-facing invocation does not receive install hooks,
+and lifecycle reconciliation does not accept model-controlled commands or
+arguments.
+
+Lifecycle contributions are statically imported and registered in dependency
+order: agent registration, path projection, then configured capabilities. They
+may provide three typed operations:
+
+- `validate` performs deterministic declaration checks without resolving
+  credentials, inspecting installed state, or mutating anything;
+- `inspect` contributes value-free `doctor` findings without repair; and
+- `reconcile` contributes owned changes and warnings only during an explicit
+  `install`, then verifies the state it changed.
+
+The root manifest parser still statically composes every capability schema and
+retains strict unknown-key rejection. The lifecycle registry is not a dynamic
+schema or module loader and is not a public third-party extension API.
+
+Lifecycle validation diagnostics and command results carry a stable component,
+code, status, and message. Doctor findings may also carry remediation. Human
+output renders status, component, and message as aligned columns; structured
+`validate`, `install`, and `doctor` output retains the same attribution.
+Reconciliation reports an explicit unchanged outcome for each active component
+when no mutation is needed. An unexpected
+validator failure becomes a component-attributed manifest error, an unexpected
+inspection failure becomes a blocked finding, and reconciliation failures retain
+their component and stable code instead of being reported as generic install
+errors.
 
 The initial implementation keeps the tool contract and runtime inside this
 package. It binds the current tool context to an agent manifest, environment,
@@ -1159,7 +1195,7 @@ payload model, and synchronization command remain Phase 3 design work.
 ## CLI Contract by Phase
 
 ```text
-openclaw agent-system validate
+openclaw agent-system validate [--json]
 openclaw agent-system env [--agent <id>]
 openclaw agent-system credentials set op [--from-env | --stdin] [--store <id>] [--agent <id>]
 openclaw agent-system credentials validate op [--from-env | --store <id>] [--agent <id>]
@@ -1168,15 +1204,16 @@ openclaw agent-system tool gh [--agent <id>] -- api user
 openclaw agent-system capabilities inspect github --agent emori
 openclaw agent-system capabilities test github --agent emori
 openclaw agent-system plan
-openclaw agent-system install
-openclaw agent-system doctor
+openclaw agent-system install [--json]
+openclaw agent-system doctor [--agent <id>] [--json]
 ```
 
 `openclaw as` is an alias for the same canonical command tree, so, for example,
 `openclaw as validate` and `openclaw agent-system validate` are equivalent.
 
-- `validate` discovers and parses the manifest and reports invalid or unresolved
-  declarations without mutation.
+- `validate` discovers and parses the manifest, runs configured lifecycle
+  declaration checks, and reports invalid or unresolved declarations without
+  mutation.
 - `env` resolves the current workspace manifest by default, or the registered
   workspace selected by `--agent`, and reports the consolidated Agent
   System-provided environment with provenance and required state. It never
@@ -1194,11 +1231,15 @@ openclaw agent-system doctor
   commands may accept `--agent`; model-facing tools may not.
 - `plan` reports installation inputs, readiness, hash, and drift without running
   the installation script.
-- `install` currently reconciles OpenClaw agent registration, identity, the
-  supported executable paths, and generated GitHub CLI config. Phase 3 then
-  resolves the managed environment and explicitly executes a declared script.
-- `doctor` currently checks supported OpenClaw and Codex path projection plus
-  generated GitHub CLI config without repair. Later phases add credential access, required variables, file
+- `install` checks global credential prerequisites, then reconciles the
+  foundational agent and path contributions followed by every configured
+  capability contribution. The initial GitHub contribution owns generated
+  GitHub CLI config. Phase 3 then resolves the managed environment and explicitly
+  executes a declared script.
+- `doctor` inspects OpenClaw registration and public identity, supported OpenClaw
+  and Codex path projection, and every configured capability contribution
+  without repair. The initial GitHub contribution inspects generated GitHub CLI
+  config. Later phases add credential access, required variables, file
   permissions, expected tools and plugins, tool compatibility, command routing,
   cron state, and installation-script drift.
 

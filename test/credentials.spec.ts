@@ -17,6 +17,7 @@ const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
     environment: { op: ['environment-id'] },
   },
   diagnostics: [],
+  validationChecks: [],
 };
 
 function harness() {

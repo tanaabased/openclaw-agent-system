@@ -33,6 +33,7 @@ function loadedManifest(inputManifest = manifest) {
     digest: 'manifest-digest',
     manifest: inputManifest,
     diagnostics: [],
+    validationChecks: [],
   };
 }
 

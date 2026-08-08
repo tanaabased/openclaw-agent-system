@@ -210,7 +210,7 @@ Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process to include debug lifecycl
 
 ## CLI Reference
 
-All commands are registered beneath `openclaw agent-system`; `openclaw as` is an equivalent alias. Bare `agent-system` or `as` prints command help. Human-facing results use locally aligned labels and Tanaab semantic colors on standard output; `NO_COLOR` and `FORCE_COLOR=0` disable styling. JSON output remains undecorated. Warnings and failures use the OpenClaw plugin logger on standard error. Failed validation, environment inspection, credential management, or installation sets a nonzero process exit code.
+All commands are registered beneath `openclaw agent-system`; `openclaw as` is an equivalent alias. Bare `agent-system` or `as` prints command help. Human-facing lifecycle results use aligned status, component, and message columns with Tanaab semantic colors on standard output; other summaries omit the component column. `NO_COLOR` and `FORCE_COLOR=0` disable styling. JSON output remains undecorated. Warnings and failures use the OpenClaw plugin logger on standard error. Failed validation, environment inspection, credential management, or installation sets a nonzero process exit code.
 
 ### `openclaw agent-system validate`
 
@@ -225,6 +225,9 @@ openclaw agent-system validate
 # validate the configured workspace for one openclaw agent.
 openclaw agent-system validate --agent tanaabot
 
+# emit the same checks as structured json.
+openclaw agent-system validate --json
+
 # use the equivalent short command alias.
 openclaw as validate --agent tanaabot
 ```
@@ -235,9 +238,13 @@ openclaw as validate --agent tanaabot
 
 Resolves the configured OpenClaw workspace for the exact agent id and requires the manifest's `agent.id` to match. Without this option, validation uses the current directory as the workspace.
 
+**`--json`**
+
+Writes the valid manifest view and its component-attributed checks as JSON instead of the human table.
+
 #### Behavior
 
-A valid manifest prints its agent id and selected path. A shadowed shorthand produces a warning after the valid result. Missing, invalid, unreadable, unsafe, or mismatched manifests fail with stable diagnostic codes such as `manifest-shadowed`, `manifest-schema`, or `agent-id-mismatch`.
+A valid manifest prints its agent id and selected path plus one `valid` line for the foundational `agent` and `path` contributions and each configured capability contribution. The JSON view carries those same checks. Declaration checks remain deterministic: they do not resolve credentials, inspect installed or remote state, or mutate anything. A shadowed shorthand produces a warning after the valid result. Missing, invalid, unreadable, unsafe, mismatched, or contribution-invalid manifests fail with stable component and diagnostic codes such as `manifest-shadowed`, `manifest-schema`, or `agent-id-mismatch`.
 
 ### `openclaw agent-system env`
 
@@ -357,39 +364,46 @@ Installs the agent represented by the current workspace and reconciles its publi
 # install and reconcile the agent represented by the current workspace.
 openclaw agent-system install
 
+# emit component outcomes as structured json.
+openclaw agent-system install --json
+
 # use the equivalent short command alias.
 openclaw as install
 ```
 
 #### Options
 
-This command currently has no options. Run it from the intended agent workspace.
+**`--json`**
+
+Writes the same component outcomes and warnings as structured JSON. Run install from the intended agent workspace.
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. It requires `agent.name` and resolves it from the completed Agent System environment when `from-environment` is declared. A missing or empty name binding fails before any OpenClaw configuration read or command. When `environment.op` is declared, install first verifies that a stored credential can access every declared Environment without using the process-environment fallback and fails with a `credentials set op` remediation before environment resolution or OpenClaw mutation. Installation never prompts for, imports, or stores a credential. It then refuses an agent id already bound to another workspace, runs only the necessary public OpenClaw agent operations, reconciles the OpenClaw and Codex path projections described above, reconciles private generated GitHub CLI config when `github` is declared, reloads configuration, and fails if registration, identity, or an Agent System-owned surface still differs from the manifest. `agent.email` is not resolved by install because OpenClaw identity has no email field.
+Installation first performs the same manifest discovery and validation used by `validate`. Before any lifecycle component mutates state, it verifies that a stored credential can access every declared `environment.op` Environment without using the process-environment fallback. It fails with a `credentials set op` remediation when that prerequisite is unavailable and never prompts for, imports, or stores a credential. The registry then reconciles `agent`, `path`, and configured capability contributions in deterministic order. The agent contribution requires `agent.name`, resolves it from the completed Agent System environment when `from-environment` is declared, refuses an agent id already bound to another workspace, and verifies registration and identity after mutation. The path and GitHub contributions likewise verify the state they own. `agent.email` is not resolved by install because OpenClaw identity has no email field.
 
 Possible result lines are:
 
 ```text
-created    OpenClaw agent tanaabot
-updated    OpenClaw identity for tanaabot
-created    workspace bin directory
-updated    OpenClaw exec path for tanaabot
-created    Codex workspace path configuration
-updated    workspace .gitignore
-created    private GitHub CLI config
-workspace  /path/to/workspace
+created    agent   OpenClaw agent tanaabot
+updated    agent   OpenClaw identity for tanaabot
+created    path    workspace bin directory
+updated    path    OpenClaw exec path for tanaabot
+created    path    Codex workspace path configuration
+updated    path    workspace .gitignore
+created    github  private GitHub CLI config
+workspace          /path/to/workspace
 
-unchanged  OpenClaw agent tanaabot
-workspace  /path/to/workspace
+unchanged  agent   OpenClaw registration and identity for tanaabot
+unchanged  path    Executable path projection for tanaabot
+unchanged  github  private GitHub CLI config
+workspace          /path/to/workspace
 ```
 
-The created and updated lines may appear together on first installation. GitHub config may instead report `updated`. Repeated installation produces the unchanged line when no reconciliation is needed. An existing user-managed `.codex/config.toml` instead produces a warning and remains outside Agent System remediation.
+The created and updated lines may appear together on first installation. GitHub config may instead report `updated`. Repeated installation produces one unchanged line for every active component. An existing user-managed `.codex/config.toml` also produces a warning and remains outside Agent System remediation.
 
 ### `openclaw agent-system doctor`
 
-Inspects implemented Agent System path projection and generated GitHub CLI config for drift without applying repairs.
+Inspects OpenClaw registration and identity, executable-path projection, and configured capability state for drift without applying repairs.
 
 #### Usage
 
@@ -416,7 +430,7 @@ Writes the value-free result as JSON instead of styled summary lines.
 
 #### Behavior
 
-The current doctor slice compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, confirms that `.codex/config.toml` is listed in the workspace `.gitignore`, and inspects generated GitHub CLI config when declared. Drift returns a nonzero exit code and recommends rerunning `install`. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
+Doctor runs the same ordered lifecycle registry without applying repairs. The foundational agent contribution checks registration, workspace binding, and public identity. The path contribution compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, and confirms that `.codex/config.toml` is listed in the workspace `.gitignore`. The GitHub contribution inspects generated GitHub CLI config when declared. Findings carry stable component, code, status, message, and optional remediation fields in JSON; the default human table presents status, component, and combined message. Drift or a blocked inspection returns a nonzero exit code. Repairable drift recommends rerunning `install`; blocked, manual, and warning findings retain their more specific remediation semantics. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
 
 ## Planned Advanced Surfaces
 

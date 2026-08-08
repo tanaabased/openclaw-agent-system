@@ -6,6 +6,7 @@ import { definePluginEntry, type OpenClawConfig } from 'openclaw/plugin-sdk/plug
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
+import createAgentLifecycleContribution from './lib/agent-lifecycle.ts';
 import AgentEnvironmentService from './lib/agent-environment-service.ts';
 import AgentDoctorService from './lib/agent-doctor-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
@@ -19,12 +20,15 @@ import OpCredentialInput from './lib/op-credential-input.ts';
 import OpCredentialService from './lib/op-credential-service.ts';
 import OpEnvironmentService from './lib/op-environment-service.ts';
 import PathProjectionStore from './lib/path-projection-store.ts';
+import createPathLifecycleContribution from './lib/path-lifecycle.ts';
+import AgentSystemLifecycleRegistry from './lib/lifecycle-registry.ts';
 import AgentSystemToolRegistry from './lib/tool-registry.ts';
 import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
 import GitHubConfigStore from './tools/github/config-store.ts';
+import createGitHubLifecycleContribution from './tools/github/lifecycle.ts';
 import { createGitHubTool } from './tools/github/tool.ts';
 
 export default definePluginEntry({
@@ -36,15 +40,16 @@ export default definePluginEntry({
     const runtimeDir = dirname(fileURLToPath(import.meta.url));
     const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
     const logger = createAgentSystemLogger(api.logger, api.id);
-    const manifestService = new AgentManifestService({
-      getConfig: () => api.runtime.config.current(),
-      logger,
-      parseSessionAgentId(sessionKey) {
-        return parseAgentSessionKey(sessionKey)?.agentId;
-      },
-      resolveAgentWorkspaceDir(config, agentId) {
-        return api.runtime.agent.resolveAgentWorkspaceDir(config as OpenClawConfig, agentId);
-      },
+    const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
+    const readConfig = () => {
+      // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
+      return loadConfig({ pin: false });
+    };
+    const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
+    const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
+    const githubConfigStore = new GitHubConfigStore({
+      currentUid: process.getuid?.(),
+      rootDir: privateStateRoot,
     });
     const credentialStores = createCredentialStores({
       currentUid: process.getuid?.(),
@@ -68,15 +73,6 @@ export default definePluginEntry({
       credentialService: opCredentialService,
       environmentService: opEnvironmentService,
     });
-    const readConfig = () => {
-      // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
-      return loadConfig({ pin: false });
-    };
-    const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
-    const githubConfigStore = new GitHubConfigStore({
-      currentUid: process.getuid?.(),
-      rootDir: privateStateRoot,
-    });
     const pathService = new AgentPathService({
       basePath: process.env.PATH ?? '',
       codexConfigService: new CodexPathConfigService(),
@@ -87,13 +83,47 @@ export default definePluginEntry({
       projectionStore: new PathProjectionStore(privateStateRoot),
       readConfig,
     });
-    const doctorService = new AgentDoctorService({ githubConfigStore, pathService });
+    // Agent inspection and reconciliation run only after synchronous plugin registration completes.
+    const environmentServiceRef: { current?: AgentEnvironmentService } = {};
+    const lifecycleRegistry = new AgentSystemLifecycleRegistry([
+      createAgentLifecycleContribution({
+        environmentService: {
+          loadForWorkspace(workspaceDir, expectedAgentId, trigger) {
+            const service = environmentServiceRef.current;
+            if (!service) throw new Error('Agent System environment service is unavailable.');
+            return service.loadForWorkspace(workspaceDir, expectedAgentId, trigger);
+          },
+        },
+        readConfig,
+        runOpenClawCommand(args, cwd) {
+          const argv = [...openClawCommand, ...args];
+          return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
+        },
+      }),
+      createPathLifecycleContribution({ pathService }),
+      createGitHubLifecycleContribution({ configStore: githubConfigStore }),
+    ]);
+    const manifestService = new AgentManifestService({
+      getConfig: () => api.runtime.config.current(),
+      logger,
+      parseSessionAgentId(sessionKey) {
+        return parseAgentSessionKey(sessionKey)?.agentId;
+      },
+      resolveAgentWorkspaceDir(config, agentId) {
+        return api.runtime.agent.resolveAgentWorkspaceDir(config as OpenClawConfig, agentId);
+      },
+      validateManifest(manifest, workspaceDir) {
+        return lifecycleRegistry.validate({ manifest, workspaceDir });
+      },
+    });
     const environmentService = new AgentEnvironmentService({
       hostEnvironment: process.env,
       logger,
       manifestService,
       opEnvironmentService,
     });
+    environmentServiceRef.current = environmentService;
+    const doctorService = new AgentDoctorService({ lifecycleRegistry });
     const toolRegistry = new AgentSystemToolRegistry([
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
@@ -108,18 +138,9 @@ export default definePluginEntry({
       logger,
       manifestService,
     });
-    const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
-    const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
     const installService = new AgentInstallService({
       credentialManager,
-      environmentService,
-      githubConfigStore,
-      pathService,
-      readConfig,
-      runOpenClawCommand(args, cwd) {
-        const argv = [...openClawCommand, ...args];
-        return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
-      },
+      lifecycleRegistry,
     });
     toolRegistry.registerTools(api, toolRuntime);
     registerAgentSystemHooks(api, manifestService, toolRegistry);

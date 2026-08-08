@@ -36,6 +36,7 @@ const loaded: AgentEnvironmentLoadResult = {
     ],
   },
   diagnostics: [],
+  validationChecks: [],
 };
 
 function createHarness(

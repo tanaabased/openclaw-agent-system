@@ -15,6 +15,7 @@ const loaded: AgentManifestLoadResult = {
     environment: { set: { AGENT_COLOR: '$AGENT_COLOR_SOURCE' } },
   },
   diagnostics: [],
+  validationChecks: [],
 };
 
 describe('lib/agent-environment-service', () => {

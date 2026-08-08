@@ -8,13 +8,14 @@ import { createCliStyles } from '../lib/cli-output.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
 import type { AgentSystemToolScope } from '../lib/tool-types.ts';
 
-const validResult: AgentManifestLoadResult = {
+const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
   scope: { workspaceDir: '/workspace' },
   path: '/workspace/agent.yaml',
   digest: 'abc123',
   manifest: { schemaVersion: 1, agent: { id: 'tanaabot', name: 'Tanaabot' } },
   diagnostics: [],
+  validationChecks: [],
 };
 const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loaded' }> = {
   ...validResult,
@@ -124,7 +125,7 @@ function createProgram() {
     installService: {
       async install(input) {
         calls.install.push(input);
-        return { actions: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' };
+        return { outcomes: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' };
       },
     },
     logger: {
@@ -284,6 +285,14 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.workspace, ['/current']);
   });
 
+  it('should register structured json validation output', async () => {
+    const { output, program } = createProgram();
+
+    await program.parseAsync(['node', 'openclaw', 'agent-system', 'validate', '--json']);
+
+    assert.equal(JSON.parse(output.join('')).status, 'valid');
+  });
+
   it('should pass an explicit agent through the short alias', async () => {
     const { calls, program } = createProgram();
 
@@ -301,6 +310,14 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
+  });
+
+  it('should register structured json installation output', async () => {
+    const { output, program } = createProgram();
+
+    await program.parseAsync(['node', 'openclaw', 'agent-system', 'install', '--json']);
+
+    assert.equal(JSON.parse(output.join('')).agentId, 'tanaabot');
   });
 
   it('should delegate credential storage from the process environment', async () => {

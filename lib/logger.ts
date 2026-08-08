@@ -73,7 +73,7 @@ export function reportManifestDiagnostics(result: AgentManifestLoadResult, logge
   for (const diagnostic of result.diagnostics) {
     const message = formatDiagnostic({
       code: diagnostic.code,
-      component: 'manifest',
+      component: diagnostic.component ?? 'manifest',
       ...(diagnostic.fieldPath ? { fieldPath: diagnostic.fieldPath } : {}),
       message: diagnostic.message,
     });

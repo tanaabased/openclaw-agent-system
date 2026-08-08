@@ -6,6 +6,7 @@ import {
   writeCliJson,
   writeCliSummary,
 } from '../lib/cli-output.ts';
+import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
 import { type Logger, reportManifestDiagnostics, reportManifestFailure } from '../lib/logger.ts';
 
 export interface DoctorAgentSystemOptions {
@@ -20,7 +21,7 @@ export interface DoctorAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Inspect implemented Agent System drift without applying repairs. */
+/** Inspect every configured Agent System lifecycle component without applying repairs. */
 export default async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<void> {
   const manifest = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
@@ -40,20 +41,17 @@ export default async function doctorAgentSystem(options: DoctorAgentSystemOption
     writeCliSummary(
       options.output,
       [
-        ...result.findings.map((finding) => ({
-          label: finding.status,
-          style:
-            finding.status === 'healthy'
-              ? ('status' as const)
-              : finding.status === 'drift'
-                ? ('action' as const)
-                : ('field' as const),
-          value: `${finding.message}${finding.remediation ? ` ${finding.remediation}` : ''}`,
-        })),
+        ...lifecyclePresentationLines(
+          result.findings.map((finding) => ({
+            component: finding.component,
+            message: `${finding.message}${finding.remediation ? ` ${finding.remediation}` : ''}`,
+            status: finding.status,
+          })),
+        ),
         { label: 'workspace', style: 'target' as const, value: result.workspaceDir },
       ],
       options.styles,
     );
   }
-  if (result.status === 'drift') options.setExitCode(1);
+  if (result.status !== 'healthy') options.setExitCode(1);
 }

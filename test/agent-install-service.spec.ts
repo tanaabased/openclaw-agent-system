@@ -1,405 +1,86 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
-
-import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
 import AgentInstallService, { AgentInstallError } from '../lib/agent-install-service.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
-  agent: { id: 'data', name: 'Data', avatar: 'avatar.png' },
+  agent: { id: 'data', name: 'Data' },
 };
 
-function successfulResult() {
-  return { code: 0, stderr: '', stdout: '{}' };
-}
-
-function loadedEnvironment(
-  inputManifest: AgentManifest,
-  values: Record<string, string>,
-  workspaceDir = '/workspace/data',
-): AgentEnvironmentLoadResult {
-  return {
-    status: 'loaded',
-    scope: { agentId: inputManifest.agent.id, workspaceDir },
-    path: `${workspaceDir}/agent.yaml`,
-    digest: 'manifest-digest',
-    manifest: inputManifest,
-    diagnostics: [],
-    environment: { values, variables: [] },
-  };
-}
-
 describe('lib/agent-install-service', () => {
-  it('should add an absent agent and set its manifest identity', async () => {
-    let config: OpenClawConfig = {};
-    let configReads = 0;
-    const commands: string[][] = [];
+  it('should reconcile lifecycle components after global prerequisites pass', async () => {
+    const calls: string[] = [];
     const service = new AgentInstallService({
-      readConfig() {
-        configReads += 1;
-        return config;
-      },
-      async runOpenClawCommand(args) {
-        commands.push(args);
-        if (args[1] === 'add') {
-          config = {
-            agents: {
-              list: [{ id: 'data', workspace: '/workspace/data' }],
-            },
-          };
-        } else {
-          config = {
-            agents: {
-              list: [
-                {
-                  id: 'data',
-                  workspace: '/workspace/data',
-                  identity: { name: 'Data', avatar: 'avatar.png' },
-                },
-              ],
-            },
-          };
-        }
-        return successfulResult();
-      },
-    });
-
-    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
-
-    assert.deepEqual(result.actions, ['add-agent', 'set-identity']);
-    assert.equal(configReads, 2);
-    assert.deepEqual(commands, [
-      ['agents', 'add', 'data', '--workspace', '/workspace/data', '--non-interactive', '--json'],
-      [
-        'agents',
-        'set-identity',
-        '--agent',
-        'data',
-        '--workspace',
-        '/workspace/data',
-        '--name',
-        'Data',
-        '--avatar',
-        'avatar.png',
-        '--json',
-      ],
-    ]);
-  });
-
-  it('should leave an installed agent unchanged', async () => {
-    const commands: string[][] = [];
-    const service = new AgentInstallService({
-      readConfig: () => ({
-        agents: {
-          list: [
-            {
-              id: 'data',
-              workspace: '/workspace/data',
-              identity: { name: 'Data', avatar: 'avatar.png' },
-            },
-          ],
-        },
-      }),
-      async runOpenClawCommand(args) {
-        commands.push(args);
-        return successfulResult();
-      },
-    });
-
-    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
-
-    assert.deepEqual(result.actions, []);
-    assert.deepEqual(commands, []);
-  });
-
-  it('should reconcile identity without re-adding the agent', async () => {
-    let identity = { name: 'Other', avatar: 'other.png' };
-    const commands: string[][] = [];
-    const service = new AgentInstallService({
-      readConfig: () => ({
-        agents: { list: [{ id: 'data', workspace: '/workspace/data', identity }] },
-      }),
-      async runOpenClawCommand(args) {
-        commands.push(args);
-        identity = { name: 'Data', avatar: 'avatar.png' };
-        return successfulResult();
-      },
-    });
-
-    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
-
-    assert.deepEqual(result.actions, ['set-identity']);
-    assert.equal(commands.length, 1);
-    assert.equal(commands[0]?.[1], 'set-identity');
-  });
-
-  it('should identify the implicit main agent without adding it', async () => {
-    let config: OpenClawConfig = {
-      agents: { defaults: { workspace: '/workspace/main' } },
-    };
-    const commands: string[][] = [];
-    const service = new AgentInstallService({
-      readConfig: () => config,
-      async runOpenClawCommand(args) {
-        commands.push(args);
-        config = {
-          agents: {
-            defaults: { workspace: '/workspace/main' },
-            list: [
+      lifecycleRegistry: {
+        async reconcile(input) {
+          calls.push(`reconcile:${input.manifest.agent.id}`);
+          return {
+            outcomes: [
               {
-                id: 'main',
-                identity: { name: 'Main' },
+                code: 'agent-unchanged',
+                component: 'agent',
+                message: 'OpenClaw registration and identity for data',
+                status: 'unchanged',
               },
             ],
-          },
-        };
-        return successfulResult();
-      },
-    });
-
-    const result = await service.install({
-      manifest: { schemaVersion: 1, agent: { id: 'main', name: 'Main' } },
-      workspaceDir: '/workspace/main',
-    });
-
-    assert.deepEqual(result.actions, ['set-identity']);
-    assert.equal(commands[0]?.[1], 'set-identity');
-  });
-
-  it('should reject an existing agent bound to another workspace', async () => {
-    const service = new AgentInstallService({
-      readConfig: () => ({
-        agents: { list: [{ id: 'data', workspace: '/workspace/other' }] },
-      }),
-      async runOpenClawCommand() {
-        throw new Error('command should not run');
-      },
-    });
-
-    await assert.rejects(
-      service.install({ manifest, workspaceDir: '/workspace/data' }),
-      /refusing to replace it/,
-    );
-  });
-
-  it('should require a manifest display name', async () => {
-    const service = new AgentInstallService({
-      readConfig: () => ({}),
-      async runOpenClawCommand() {
-        return successfulResult();
-      },
-    });
-
-    await assert.rejects(
-      service.install({
-        manifest: { schemaVersion: 1, agent: { id: 'data' } },
-        workspaceDir: '/workspace/data',
-      }),
-      AgentInstallError,
-    );
-  });
-
-  it('should resolve an environment-backed name before reading or mutating openclaw state', async () => {
-    const referencedManifest: AgentManifest = {
-      schemaVersion: 1,
-      agent: { id: 'data', name: { fromEnvironment: 'AGENT_NAME' } },
-      environment: { set: { AGENT_NAME: 'Data' } },
-    };
-    const events: string[] = [];
-    let config: OpenClawConfig = {};
-    const service = new AgentInstallService({
-      environmentService: {
-        async loadForWorkspace(workspaceDir, expectedAgentId) {
-          events.push('environment');
-          assert.equal(workspaceDir, '/workspace/data');
-          assert.equal(expectedAgentId, 'data');
-          return loadedEnvironment(referencedManifest, { AGENT_NAME: 'Data' }, workspaceDir);
+            warnings: [],
+          };
         },
       },
-      readConfig() {
-        events.push('config');
-        return config;
-      },
-      async runOpenClawCommand(args) {
-        events.push(`command:${args[1]}`);
-        config =
-          args[1] === 'add'
-            ? { agents: { list: [{ id: 'data', workspace: '/workspace/data' }] } }
-            : {
-                agents: {
-                  list: [
-                    {
-                      id: 'data',
-                      workspace: '/workspace/data',
-                      identity: { name: 'Data' },
-                    },
-                  ],
-                },
-              };
-        return successfulResult();
-      },
     });
 
-    const result = await service.install({
-      manifest: referencedManifest,
-      workspaceDir: '/workspace/data',
-    });
+    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
 
-    assert.deepEqual(result.actions, ['add-agent', 'set-identity']);
-    assert.deepEqual(events, [
-      'environment',
-      'config',
-      'command:add',
-      'command:set-identity',
-      'config',
-    ]);
+    assert.deepEqual(calls, ['reconcile:data']);
+    assert.equal(result.agentId, 'data');
+    assert.equal(result.outcomes[0]?.component, 'agent');
+    assert.equal(result.workspaceDir, '/workspace/data');
   });
 
-  it('should reject a missing environment-backed name before openclaw access', async () => {
-    const referencedManifest: AgentManifest = {
-      schemaVersion: 1,
-      agent: { id: 'data', name: { fromEnvironment: 'AGENT_NAME' } },
-    };
-    let configReads = 0;
-    let commands = 0;
-    const service = new AgentInstallService({
-      environmentService: {
-        async loadForWorkspace(workspaceDir) {
-          return loadedEnvironment(
-            referencedManifest,
-            { PRIVATE_VALUE: 'private-value' },
-            workspaceDir,
-          );
-        },
-      },
-      readConfig() {
-        configReads += 1;
-        return {};
-      },
-      async runOpenClawCommand() {
-        commands += 1;
-        return successfulResult();
-      },
-    });
-
-    await assert.rejects(
-      service.install({ manifest: referencedManifest, workspaceDir: '/workspace/data' }),
-      (error: unknown) => {
-        assert.equal(error instanceof AgentInstallError, true);
-        if (error instanceof AgentInstallError) {
-          assert.equal(error.code, 'manifest-environment-value-missing');
-          assert.equal(error.message.includes('AGENT_NAME'), true);
-          assert.equal(error.message.includes('private-value'), false);
-        }
-        return true;
-      },
-    );
-    assert.equal(configReads, 0);
-    assert.equal(commands, 0);
-  });
-
-  it('should leave an unused environment-backed email unresolved during install', async () => {
-    const service = new AgentInstallService({
-      environmentService: {
-        async loadForWorkspace() {
-          throw new Error('email should remain unresolved');
-        },
-      },
-      readConfig: () => ({
-        agents: {
-          list: [
-            {
-              id: 'data',
-              workspace: '/workspace/data',
-              identity: { name: 'Data', avatar: 'avatar.png' },
-            },
-          ],
-        },
-      }),
-      async runOpenClawCommand() {
-        throw new Error('command should not run');
-      },
-    });
-
-    const result = await service.install({
-      manifest: {
-        ...manifest,
-        agent: {
-          ...manifest.agent,
-          email: { fromEnvironment: 'AGENT_EMAIL' },
-        },
-      },
-      workspaceDir: '/workspace/data',
-    });
-
-    assert.deepEqual(result.actions, []);
-  });
-
-  it('should validate stored op access before resolving an environment-backed name', async () => {
-    const referencedManifest: AgentManifest = {
-      schemaVersion: 1,
-      agent: { id: 'data', name: { fromEnvironment: 'AGENT_NAME' } },
+  it('should validate stored op access before lifecycle reconciliation', async () => {
+    const calls: string[] = [];
+    const opManifest: AgentManifest = {
+      ...manifest,
       environment: { op: ['private-environment-id'] },
     };
-    const events: string[] = [];
     const service = new AgentInstallService({
       credentialManager: {
-        async validateStoredForInstall() {
-          events.push('credential');
+        async validateStoredForInstall(input) {
+          calls.push(`credential:${input.agent.id}`);
           return { status: 'ready' };
         },
       },
-      environmentService: {
-        async loadForWorkspace(workspaceDir) {
-          events.push('environment');
-          return loadedEnvironment(referencedManifest, { AGENT_NAME: 'Data' }, workspaceDir);
+      lifecycleRegistry: {
+        async reconcile() {
+          calls.push('reconcile');
+          return { outcomes: [], warnings: [] };
         },
       },
-      readConfig: () => {
-        events.push('config');
-        return {
-          agents: {
-            list: [{ id: 'data', workspace: '/workspace/data', identity: { name: 'Data' } }],
-          },
-        };
-      },
-      async runOpenClawCommand() {
-        throw new Error('command should not run');
-      },
     });
 
-    const result = await service.install({
-      manifest: referencedManifest,
-      workspaceDir: '/workspace/data',
-    });
+    await service.install({ manifest: opManifest, workspaceDir: '/workspace/data' });
 
-    assert.deepEqual(result.actions, []);
-    assert.deepEqual(events, ['credential', 'environment', 'config', 'config']);
+    assert.deepEqual(calls, ['credential:data', 'reconcile']);
   });
 
-  it('should validate stored op access before reading or mutating openclaw state', async () => {
-    let configReads = 0;
-    let commands = 0;
+  it('should stop before reconciliation when stored op access is invalid', async () => {
+    let reconciliations = 0;
     const service = new AgentInstallService({
       credentialManager: {
-        async validateStoredForInstall(inputManifest) {
-          assert.deepEqual(inputManifest.environment?.op, ['private-environment-id']);
+        async validateStoredForInstall() {
           return {
-            status: 'invalid',
             code: 'op-credential-not-stored',
             message: 'Set the credential first.',
+            status: 'invalid',
           };
         },
       },
-      readConfig: () => {
-        configReads += 1;
-        return {};
-      },
-      async runOpenClawCommand() {
-        commands += 1;
-        return successfulResult();
+      lifecycleRegistry: {
+        async reconcile() {
+          reconciliations += 1;
+          return { outcomes: [], warnings: [] };
+        },
       },
     });
 
@@ -412,131 +93,29 @@ describe('lib/agent-install-service', () => {
         assert.equal(error instanceof AgentInstallError, true);
         if (error instanceof AgentInstallError) {
           assert.equal(error.code, 'op-credential-not-stored');
-          assert.equal(error.message, 'Set the credential first.');
         }
         return true;
       },
     );
-    assert.equal(configReads, 0);
-    assert.equal(commands, 0);
+    assert.equal(reconciliations, 0);
   });
 
-  it('should surface openclaw command failures', async () => {
+  it('should fail closed when stored credential validation is unavailable', async () => {
     const service = new AgentInstallService({
-      readConfig: () => ({}),
-      async runOpenClawCommand() {
-        return { code: 1, stdout: '', stderr: 'agent add failed' };
-      },
-    });
-
-    await assert.rejects(
-      service.install({ manifest, workspaceDir: '/workspace/data' }),
-      /agent add failed/,
-    );
-  });
-
-  it('should verify executable paths after reconciliation', async () => {
-    const events: string[] = [];
-    const service = new AgentInstallService({
-      pathService: {
+      lifecycleRegistry: {
         async reconcile() {
-          events.push('path:reconcile');
-          return {
-            actions: ['create-workspace-bin'] as const,
-            codexStatus: 'managed' as const,
-            projection: { entries: [], path: '/usr/bin' },
-            warnings: [],
-          };
+          return { outcomes: [], warnings: [] };
         },
-        async inspect() {
-          events.push('path:inspect');
-          return {
-            codex: {
-              gitignored: true,
-              ownership: 'managed' as const,
-              pathMatches: true,
-              status: 'managed' as const,
-            },
-            openClawMatches: true,
-            projection: { entries: [], path: '/usr/bin' },
-          };
-        },
-      },
-      readConfig: () => ({
-        agents: {
-          list: [
-            {
-              id: 'data',
-              workspace: '/workspace/data',
-              identity: { name: 'Data', avatar: 'avatar.png' },
-            },
-          ],
-        },
-      }),
-      async runOpenClawCommand() {
-        throw new Error('command should not run');
-      },
-    });
-
-    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
-
-    assert.deepEqual(result.actions, ['create-workspace-bin']);
-    assert.deepEqual(events, ['path:reconcile', 'path:inspect']);
-  });
-
-  it('should reconcile and verify generated github cli config during install', async () => {
-    const events: string[] = [];
-    const githubManifest: AgentManifest = {
-      ...manifest,
-      github: { config: { gitProtocol: 'https' } },
-    };
-    const service = new AgentInstallService({
-      githubConfigStore: {
-        async reconcile(agentId, configuration) {
-          events.push(`reconcile:${agentId}:${configuration.gitProtocol}`);
-          return { configDir: '/private/data/tools/gh', status: 'created' };
-        },
-        async inspect(agentId, configuration) {
-          events.push(`inspect:${agentId}:${configuration.gitProtocol}`);
-          return { configDir: '/private/data/tools/gh', status: 'ready' };
-        },
-      },
-      readConfig: () => ({
-        agents: {
-          list: [
-            {
-              id: 'data',
-              workspace: '/workspace/data',
-              identity: { name: 'Data', avatar: 'avatar.png' },
-            },
-          ],
-        },
-      }),
-      async runOpenClawCommand() {
-        throw new Error('command should not run');
-      },
-    });
-
-    const result = await service.install({
-      manifest: githubManifest,
-      workspaceDir: '/workspace/data',
-    });
-
-    assert.deepEqual(result.actions, ['create-github-config']);
-    assert.deepEqual(events, ['reconcile:data:https', 'inspect:data:https']);
-  });
-
-  it('should reject a successful command that does not reconcile openclaw state', async () => {
-    const service = new AgentInstallService({
-      readConfig: () => ({}),
-      async runOpenClawCommand() {
-        return successfulResult();
       },
     });
 
     await assert.rejects(
-      service.install({ manifest, workspaceDir: '/workspace/data' }),
-      /did not match its manifest after installation/,
+      service.install({
+        manifest: { ...manifest, environment: { op: ['private-environment-id'] } },
+        workspaceDir: '/workspace/data',
+      }),
+      (error: unknown) =>
+        error instanceof AgentInstallError && error.code === 'op-credential-unavailable',
     );
   });
 });

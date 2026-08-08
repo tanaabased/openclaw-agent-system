@@ -13,6 +13,12 @@ import resolveAgentId, { type AgentRuntimeContext } from '../utils/resolve-agent
 
 export type ManifestLoadTrigger = 'before_prompt_build' | 'cli' | 'session_start';
 
+export interface AgentManifestValidationCheck {
+  component: string;
+  message: string;
+  status: 'valid';
+}
+
 export interface AgentManifestScope {
   agentId?: string;
   workspaceDir: string;
@@ -41,6 +47,7 @@ export type AgentManifestLoadResult =
       digest: string;
       manifest: AgentManifest;
       diagnostics: ManifestDiagnostic[];
+      validationChecks: AgentManifestValidationCheck[];
     };
 
 export interface AgentManifestServiceDependencies {
@@ -56,6 +63,13 @@ export interface AgentManifestServiceDependencies {
     config: ReturnType<OpenClawPluginApi['runtime']['config']['current']>,
     agentId: string,
   ): string;
+  validateManifest?(
+    manifest: AgentManifest,
+    workspaceDir: string,
+  ): {
+    checks: AgentManifestValidationCheck[];
+    diagnostics: ManifestDiagnostic[];
+  };
 }
 
 interface CacheEntry {
@@ -276,13 +290,27 @@ export default class AgentManifestService {
       );
     }
 
+    const lifecycleValidation = this.#dependencies.validateManifest?.(
+      parsed.manifest,
+      discovery.workspaceDir,
+    ) ?? { checks: [], diagnostics: [] };
+    const lifecycleDiagnostics = lifecycleValidation.diagnostics;
+    if (lifecycleDiagnostics.some(({ severity }) => severity === 'error')) {
+      return invalidResult(
+        scope,
+        [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
+        selected.path,
+      );
+    }
+
     return {
       status: 'loaded',
       scope,
       path: selected.path,
       digest,
       manifest: parsed.manifest,
-      diagnostics: discovery.diagnostics,
+      diagnostics: [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
+      validationChecks: lifecycleValidation.checks,
     };
   }
 

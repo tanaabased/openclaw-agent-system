@@ -13,6 +13,7 @@ export interface CliStyles {
 }
 
 export interface CliSummaryLine {
+  component?: string;
   label: string;
   style: 'action' | 'field' | 'status' | 'target';
   value: string;
@@ -48,13 +49,17 @@ export function renderCliSummary(
   lines: readonly CliSummaryLine[],
   styles: CliStyles = defaultCliStyles,
 ): string[] {
-  const width = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
-  return lines.map(({ label, style, value }) => {
-    const formattedLabel = label.padEnd(width);
-    if (style === 'action') return `${styles.action(formattedLabel)}${styles.target(value)}`;
-    if (style === 'status') return `${styles.status(formattedLabel)}${styles.target(value)}`;
-    if (style === 'target') return `${styles.field(formattedLabel)}${styles.target(value)}`;
-    return `${styles.field(formattedLabel)}${value}`;
+  const labelWidth = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
+  const componentWidth = Math.max(0, ...lines.map(({ component }) => component?.length ?? 0));
+  return lines.map(({ component, label, style, value }) => {
+    const formattedLabel = label.padEnd(labelWidth);
+    const formattedComponent =
+      componentWidth === 0 ? '' : `${(component ?? '').padEnd(componentWidth)}  `;
+    const prefix = `${formattedLabel}${formattedComponent}`;
+    if (style === 'action') return `${styles.action(prefix)}${styles.target(value)}`;
+    if (style === 'status') return `${styles.status(prefix)}${styles.target(value)}`;
+    if (style === 'target') return `${styles.field(prefix)}${styles.target(value)}`;
+    return `${styles.field(prefix)}${value}`;
   });
 }
 

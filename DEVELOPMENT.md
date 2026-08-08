@@ -148,13 +148,16 @@ The shared final Leia step receives the repository's model and 1Password test cr
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
 
-| Path       | Responsibility                             |
-| ---------- | ------------------------------------------ |
-| `index.ts` | Plugin registration                        |
-| `cli/`     | One implementation file per subcommand     |
-| `lib/`     | CLI registration and product orchestration |
-| `utils/`   | Independently testable functions           |
-| `scripts/` | Development and release tasks              |
-| `test/`    | Flat behavior-focused unit tests           |
+| Path                  | Responsibility                                               |
+| --------------------- | ------------------------------------------------------------ |
+| `index.ts`            | Static plugin, tool, and lifecycle registration              |
+| `cli/`                | One implementation file per subcommand                       |
+| `lib/`                | CLI registration, lifecycle registry, and orchestration      |
+| `tools/<capability>/` | Tool schemas, execution, and optional lifecycle contribution |
+| `utils/`              | Independently testable functions                             |
+| `scripts/`            | Development and release tasks                                |
+| `test/`               | Flat behavior-focused unit tests                             |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
+
+Foundational `agent` and `path` lifecycle contributions live in `lib/`; capability contributions remain beside their optional model-facing tool definitions. Declaration validation is deterministic and side-effect free, doctor inspection is read-only, and reconciliation runs only through explicit install after global prerequisites pass. Register contributions in deterministic dependency order in `index.ts`, return explicit unchanged outcomes, and cover validation, inspection, reconciliation, and component-aware presentation directly. Public lifecycle behavior is exercised by the GitHub Actions-only `validate`, `install`, and `doctor` Leia scenarios.

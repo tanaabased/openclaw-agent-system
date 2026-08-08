@@ -1,9 +1,16 @@
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliJson,
+  writeCliSummary,
+} from '../lib/cli-output.ts';
+import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
 import { type Logger, reportManifestDiagnostics, reportManifestFailure } from '../lib/logger.ts';
 
 export interface ValidateAgentSystemOptions {
   agentId?: string;
+  json: boolean;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output: CliOutput;
@@ -26,17 +33,36 @@ export default async function validateAgentSystem(
     return;
   }
 
-  writeCliSummary(
-    options.output,
-    [
-      {
-        label: 'valid',
-        style: 'status',
-        value: `Agent System manifest for ${result.manifest.agent.id}`,
-      },
-      { label: 'manifest', style: 'target', value: result.path },
-    ],
-    options.styles,
-  );
+  const checks = [
+    {
+      component: 'manifest',
+      message: `Agent System manifest for ${result.manifest.agent.id}`,
+      status: 'valid' as const,
+    },
+    ...result.validationChecks,
+  ];
+  if (options.json) {
+    writeCliJson(options.output, {
+      agentId: result.manifest.agent.id,
+      checks,
+      diagnostics: result.diagnostics,
+      manifestPath: result.path,
+      status: 'valid',
+      workspaceDir: result.scope.workspaceDir,
+    });
+  } else {
+    writeCliSummary(
+      options.output,
+      [
+        ...lifecyclePresentationLines(checks),
+        {
+          label: 'manifest',
+          style: 'target',
+          value: result.path,
+        },
+      ],
+      options.styles,
+    );
+  }
   reportManifestDiagnostics(result, options.logger);
 }

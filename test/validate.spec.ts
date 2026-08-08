@@ -4,19 +4,21 @@ import validateAgentSystem from '../cli/validate.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import { createCliStyles } from '../lib/cli-output.ts';
 
-const validResult: AgentManifestLoadResult = {
+const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
   scope: { workspaceDir: '/workspace' },
   path: '/workspace/agent.yaml',
   digest: 'abc123',
   manifest: { schemaVersion: 1, agent: { id: 'tanaabot', name: 'Tanaabot' } },
   diagnostics: [],
+  validationChecks: [],
 };
 
 function createHarness(
   options: {
     agentId?: string;
     agent?: AgentManifestLoadResult;
+    json?: boolean;
     workspace?: AgentManifestLoadResult;
   } = {},
 ) {
@@ -33,6 +35,7 @@ function createHarness(
     run: () =>
       validateAgentSystem({
         ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
+        json: options.json ?? false,
         logger: {
           error: (message) => logs.error.push(message),
           info: (message) => logs.info.push(message),
@@ -57,14 +60,14 @@ function createHarness(
 }
 
 describe('cli/validate', () => {
-  it('should validate the current workspace', async () => {
+  it('should validate the current workspace with a human-readable table', async () => {
     const { calls, output, run } = createHarness();
 
     await run();
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(output, [
-      'valid     Agent System manifest for tanaabot\nmanifest  /workspace/agent.yaml\n',
+      'valid     manifest  Agent System manifest for tanaabot\nmanifest            /workspace/agent.yaml\n',
     ]);
   });
 
@@ -75,6 +78,46 @@ describe('cli/validate', () => {
 
     assert.deepEqual(calls.agent, ['tanaabot']);
     assert.deepEqual(calls.workspace, []);
+  });
+
+  it('should present carried lifecycle validation checks', async () => {
+    const { output, run } = createHarness({
+      workspace: {
+        ...validResult,
+        validationChecks: [
+          { component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' },
+          { component: 'path', message: 'Executable path projection', status: 'valid' },
+          { component: 'github', message: 'GitHub tool configuration', status: 'valid' },
+        ],
+      },
+    });
+
+    await run();
+
+    assert.equal(output.join('').includes('valid     agent'), true);
+    assert.equal(output.join('').includes('valid     path'), true);
+    assert.equal(output.join('').includes('valid     github'), true);
+  });
+
+  it('should write the same checks as structured json', async () => {
+    const { output, run } = createHarness({
+      json: true,
+      workspace: {
+        ...validResult,
+        validationChecks: [
+          { component: 'agent', message: 'OpenClaw agent declaration', status: 'valid' },
+        ],
+      },
+    });
+
+    await run();
+
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.status, 'valid');
+    assert.deepEqual(
+      result.checks.map(({ component }: { component: string }) => component),
+      ['manifest', 'agent'],
+    );
   });
 
   it('should report an invalid manifest and set a failing exit code', async () => {
