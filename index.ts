@@ -11,7 +11,7 @@ import AgentEnvironmentService from './lib/agent-environment-service.ts';
 import AgentDoctorService from './lib/agent-doctor-service.ts';
 import AgentInstallService from './lib/agent-install-service.ts';
 import AgentPathService from './lib/agent-path-service.ts';
-import AgentManifestService from './lib/agent-manifest-service.ts';
+import AgentManifestService, { type ManifestLoadTrigger } from './lib/agent-manifest-service.ts';
 import createCredentialStores from './lib/credential-store-registry.ts';
 import CodexPathConfigService from './lib/codex-path-config-service.ts';
 import { resolveFileCredentialStoreRoot } from './lib/file-credential-store.ts';
@@ -27,6 +27,8 @@ import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
+import GitHubAccountClient from './tools/github/account-client.ts';
+import GitHubAccountKeyService from './tools/github/account-key-service.ts';
 import GitHubConfigStore from './tools/github/config-store.ts';
 import createGitHubLifecycleContribution from './tools/github/lifecycle.ts';
 import { createGitHubTool } from './tools/github/tool.ts';
@@ -51,6 +53,7 @@ export default definePluginEntry({
       currentUid: process.getuid?.(),
       rootDir: privateStateRoot,
     });
+    const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
     const credentialStores = createCredentialStores({
       currentUid: process.getuid?.(),
       environment: process.env,
@@ -85,15 +88,32 @@ export default definePluginEntry({
     });
     // Agent inspection and reconciliation run only after synchronous plugin registration completes.
     const environmentServiceRef: { current?: AgentEnvironmentService } = {};
+    const lifecycleEnvironmentService = {
+      loadForWorkspace(
+        workspaceDir: string,
+        expectedAgentId?: string,
+        trigger?: ManifestLoadTrigger,
+      ) {
+        const service = environmentServiceRef.current;
+        if (!service) throw new Error('Agent System environment service is unavailable.');
+        return service.loadForWorkspace(workspaceDir, expectedAgentId, trigger);
+      },
+    };
+    const githubAccountKeyService = new GitHubAccountKeyService({
+      client: new GitHubAccountClient({
+        baseEnvironment: process.env,
+        configStore: githubConfigStore,
+        environmentService: lifecycleEnvironmentService,
+        excludedExecutableDirectories: [
+          join(packageDir, 'bin'),
+          ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
+        ],
+      }),
+      ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
+    });
     const lifecycleRegistry = new AgentSystemLifecycleRegistry([
       createAgentLifecycleContribution({
-        environmentService: {
-          loadForWorkspace(workspaceDir, expectedAgentId, trigger) {
-            const service = environmentServiceRef.current;
-            if (!service) throw new Error('Agent System environment service is unavailable.');
-            return service.loadForWorkspace(workspaceDir, expectedAgentId, trigger);
-          },
-        },
+        environmentService: lifecycleEnvironmentService,
         readConfig,
         runOpenClawCommand(args, cwd) {
           const argv = [...openClawCommand, ...args];
@@ -101,7 +121,10 @@ export default definePluginEntry({
         },
       }),
       createPathLifecycleContribution({ pathService }),
-      createGitHubLifecycleContribution({ configStore: githubConfigStore }),
+      createGitHubLifecycleContribution({
+        accountKeyService: githubAccountKeyService,
+        configStore: githubConfigStore,
+      }),
     ]);
     const manifestService = new AgentManifestService({
       getConfig: () => api.runtime.config.current(),
@@ -127,7 +150,6 @@ export default definePluginEntry({
     const toolRegistry = new AgentSystemToolRegistry([
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
-    const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
     const toolRuntime = new AgentSystemToolRuntime({
       baseEnvironment: process.env,
       environmentService,

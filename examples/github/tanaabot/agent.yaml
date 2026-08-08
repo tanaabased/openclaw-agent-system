@@ -11,3 +11,11 @@ github:
   host: github.com
   username: tanaabot
   token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev
+    - path: generated-auth.pub
+      title: Agent System Leia generated authentication key
+  ssh-signing-keys:
+    - key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev
+      title: Tanaabot signing key
+    - generated-signing.pub

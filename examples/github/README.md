@@ -1,6 +1,6 @@
 # GitHub Tool Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that the GitHub tool runtime selects each agent's configured 1Password-backed credential and authenticated account through either supported invocation route.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that GitHub lifecycle installation adds and diagnoses declared SSH authentication and signing keys, then proves that the tool runtime selects each agent's configured 1Password-backed credential and authenticated account through either supported invocation route.
 
 ## Setup
 
@@ -29,10 +29,20 @@ openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 
-# should store access and install both scenario-owned github agents through agent system
-cd "$GITHUB_WORKSPACE/examples/github/tanaabot"
+# should prepare scenario-owned generated public keys under the temporary workspace
+mkdir "$TMPDIR/agent-system-github-tanaabot"
+cp "$GITHUB_WORKSPACE/examples/github/tanaabot/agent.yaml" "$TMPDIR/agent-system-github-tanaabot/agent.yaml"
+ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-auth -f "$TMPDIR/agent-system-github-tanaabot/generated-auth"
+ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-signing -f "$TMPDIR/agent-system-github-tanaabot/generated-signing"
+
+# should store access and add missing tanaabot authentication and signing keys during install
+cd "$TMPDIR/agent-system-github-tanaabot"
 openclaw agent-system credentials set op --from-env
-openclaw agent-system install
+output="$(openclaw agent-system install --json)"
+printf '%s\n' "$output" | grep -F '"code": "add-github-ssh-keys"'
+printf '%s\n' "$output" | grep -F '"code": "add-github-ssh-signing-keys"'
+
+# should store access and install the scenario-owned emori agent through agent system
 cd "$GITHUB_WORKSPACE/examples/github/emori"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install
@@ -55,6 +65,21 @@ echo "$!" > "$TMPDIR/gateway.pid"
 ## Testing
 
 ```bash
+# should validate the tanaabot github lifecycle declaration without remote permission preflights
+cd "$TMPDIR/agent-system-github-tanaabot"
+openclaw agent-system validate | grep -F 'valid' | grep -F 'github' | grep -F 'GitHub tool and account key configuration'
+
+# should report both tanaabot github key collections healthy through doctor
+cd "$TMPDIR/agent-system-github-tanaabot"
+openclaw agent-system doctor | grep -F 'healthy' | grep -F 'GitHub SSH authentication keys'
+openclaw agent-system doctor | grep -F 'healthy' | grep -F 'GitHub SSH signing keys'
+
+# should keep both tanaabot github key collections unchanged on repeated install
+cd "$TMPDIR/agent-system-github-tanaabot"
+output="$(openclaw agent-system install --json)"
+printf '%s\n' "$output" | grep -F '"code": "github-ssh-keys-unchanged"'
+printf '%s\n' "$output" | grep -F '"code": "github-ssh-signing-keys-unchanged"'
+
 # should identify tanaabot through its configured github tool credential
 openclaw agent \
   --agent tanaabot \
@@ -73,6 +98,22 @@ openclaw agent \
 ## Cleanup
 
 ```bash
+# should remove only the exact generated tanaabot authentication key
+key_material="$(awk '{ print $2 }' "$TMPDIR/agent-system-github-tanaabot/generated-auth.pub")"
+key_id="$(openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/keys | jq -r --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | .[0].id // empty')"
+if test -n "$key_id"; then
+  openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/keys/$key_id"
+fi
+openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/keys | jq -e --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | length == 0'
+
+# should remove only the exact generated tanaabot signing key
+key_material="$(awk '{ print $2 }' "$TMPDIR/agent-system-github-tanaabot/generated-signing.pub")"
+key_id="$(openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/ssh_signing_keys | jq -r --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | .[0].id // empty')"
+if test -n "$key_id"; then
+  openclaw agent-system tool gh --agent tanaabot -- api --method DELETE "/user/ssh_signing_keys/$key_id"
+fi
+openclaw agent-system tool gh --agent tanaabot -- api --paginate --slurp /user/ssh_signing_keys | jq -e --arg material "$key_material" '[.[][] | select((.key | split(" ") | index($material)) != null)] | length == 0'
+
 # should stop the background gateway cleanly
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
 ```

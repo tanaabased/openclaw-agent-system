@@ -30,7 +30,7 @@ export interface InstallAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Reconcile the current manifest's OpenClaw agent, identity, paths, and tool config. */
+/** Reconcile every configured lifecycle component for the current workspace manifest. */
 export default async function installAgentSystem(
   options: InstallAgentSystemOptions,
 ): Promise<void> {

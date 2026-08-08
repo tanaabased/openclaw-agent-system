@@ -946,6 +946,11 @@ github:
   username:
     from-environment: AGENT_GITHUB_USERNAME
   token: GH_TOKEN
+  ssh-keys:
+    - ~/.ssh/id_ed25519.pub
+  ssh-signing-keys:
+    path: .agent-system/keys/git-signing.pub
+    title: Agent signing key
   config:
     git-protocol: ssh
     color-labels: enabled
@@ -993,6 +998,22 @@ mismatched account. `github.token` is an optional environment binding. An
 explicit binding wins; otherwise Agent System selects `GH_TOKEN` and then
 `GITHUB_TOKEN` from the completed Agent System environment. The selected value
 is exposed only as `GH_TOKEN` to the child process.
+
+`github.ssh-keys` and `github.ssh-signing-keys` accept one source or an ordered
+list of sources. Short strings select either an OpenSSH public key line or a
+path; object forms select exactly one of `key` or `path` plus an optional title.
+The signing section is specifically for GitHub SSH signing keys, not GPG keys or
+local Git signing configuration. Declaring either section requires an explicit
+username and token binding because it authorizes account mutation.
+
+The GitHub lifecycle contribution validates declarations without resolving
+credentials or reading files. Doctor resolves public-key files and compares
+canonical fingerprints with the two GitHub account collections without repair.
+Install resolves all sources before remote work, verifies the configured login,
+lists both configured collections, adds only missing keys, and refetches them to
+verify convergence. Titles are creation metadata. Reconciliation is additive:
+Agent System does not remove, rotate, retitle, or prune account keys, and it does
+not add a separate permission-scope preflight before the actual API operations.
 
 Agent System owns a private per-agent `GH_CONFIG_DIR` beneath its machine-local
 state root. `install` and tool invocation both reconcile the same token-free
@@ -1233,15 +1254,15 @@ openclaw agent-system doctor [--agent <id>] [--json]
   the installation script.
 - `install` checks global credential prerequisites, then reconciles the
   foundational agent and path contributions followed by every configured
-  capability contribution. The initial GitHub contribution owns generated
-  GitHub CLI config. Phase 3 then resolves the managed environment and explicitly
-  executes a declared script.
+  capability contribution. The GitHub contribution owns generated GitHub CLI
+  config plus declared SSH authentication and signing keys. Phase 3 then resolves
+  the managed environment and explicitly executes a declared script.
 - `doctor` inspects OpenClaw registration and public identity, supported OpenClaw
   and Codex path projection, and every configured capability contribution
-  without repair. The initial GitHub contribution inspects generated GitHub CLI
-  config. Later phases add credential access, required variables, file
-  permissions, expected tools and plugins, tool compatibility, command routing,
-  cron state, and installation-script drift.
+  without repair. The GitHub contribution inspects generated GitHub CLI config
+  and declared account keys. Later phases add credential access, required
+  variables, file permissions, expected tools and plugins, tool compatibility,
+  command routing, cron state, and installation-script drift.
 
 Phase 1 owns `validate`, `env`, bootstrap credential management, executable path
 projection, and its narrow `doctor` checks. Phase 2 adds the registered tool command and capability

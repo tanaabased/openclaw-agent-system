@@ -7,6 +7,37 @@ import {
 } from '../../utils/manifest-value-schemas.ts';
 import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
 
+const externalGitHubKeyValueSchema = Type.String({
+  minLength: 1,
+  pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+});
+const externalGitHubKeyTitleSchema = Type.String({
+  maxLength: 255,
+  minLength: 1,
+  pattern: '^.*\\S.*$',
+});
+const externalGitHubKeySourceSchema = Type.Union([
+  externalGitHubKeyValueSchema,
+  Type.Object(
+    {
+      key: externalGitHubKeyValueSchema,
+      title: Type.Optional(externalGitHubKeyTitleSchema),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      path: externalGitHubKeyValueSchema,
+      title: Type.Optional(externalGitHubKeyTitleSchema),
+    },
+    { additionalProperties: false },
+  ),
+]);
+const externalGitHubKeySourcesSchema = Type.Union([
+  externalGitHubKeySourceSchema,
+  Type.Array(externalGitHubKeySourceSchema, { minItems: 1 }),
+]);
+
 export const externalGitHubSectionSchema = Type.Object(
   {
     config: Type.Optional(
@@ -26,6 +57,8 @@ export const externalGitHubSectionSchema = Type.Object(
       ),
     ),
     host: Type.Optional(Type.Literal('github.com')),
+    'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
+    'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
     username: Type.Optional(externalResolvableStringSchema),
     token: Type.Optional(externalEnvironmentBindingSchema),
   },
@@ -34,9 +67,16 @@ export const externalGitHubSectionSchema = Type.Object(
 
 type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
+export type GitHubPublicKeySource =
+  | { source: string; type: 'auto'; title?: string }
+  | { source: string; type: 'key'; title?: string }
+  | { source: string; type: 'path'; title?: string };
+
 export interface GitHubManifestConfiguration {
   config?: Partial<GitHubCliConfiguration>;
   host?: 'github.com';
+  sshKeys?: GitHubPublicKeySource[];
+  sshSigningKeys?: GitHubPublicKeySource[];
   token?: EnvironmentBinding;
   username?: ResolvableString;
 }
@@ -65,6 +105,25 @@ export function resolveGitHubCliConfiguration(
 
 /** Decode schema-owned GitHub keys without transforming environment-variable names. */
 export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifestConfiguration {
+  const decodeKeySources = (
+    sources: NonNullable<ExternalGitHubSection['ssh-keys']>,
+  ): GitHubPublicKeySource[] =>
+    (Array.isArray(sources) ? sources : [sources]).map((source) =>
+      typeof source === 'string'
+        ? { source, type: 'auto' }
+        : 'key' in source
+          ? {
+              source: source.key,
+              type: 'key',
+              ...(source.title === undefined ? {} : { title: source.title }),
+            }
+          : {
+              source: source.path,
+              type: 'path',
+              ...(source.title === undefined ? {} : { title: source.title }),
+            },
+    );
+
   return {
     ...(value.config
       ? {
@@ -80,6 +139,10 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
         }
       : {}),
     ...(value.host ? { host: value.host } : {}),
+    ...(value['ssh-keys'] ? { sshKeys: decodeKeySources(value['ssh-keys']) } : {}),
+    ...(value['ssh-signing-keys']
+      ? { sshSigningKeys: decodeKeySources(value['ssh-signing-keys']) }
+      : {}),
     ...(value.token ? { token: value.token } : {}),
     ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };

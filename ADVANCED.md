@@ -75,6 +75,13 @@ github:
   username:
     from-environment: AGENT_GITHUB_USERNAME
   token: GITHUB_TOKEN
+  ssh-keys:
+    - ~/.ssh/id_ed25519.pub
+    - key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev
+      title: Tanaabot authentication key
+  ssh-signing-keys:
+    path: .agent-system/keys/signing.pub
+    title: Tanaabot signing key
   config:
     git-protocol: ssh
     color-labels: enabled
@@ -83,23 +90,25 @@ github:
     telemetry: disabled
 ```
 
-| Field                      | Required      | Current behavior                                                                    |
-| -------------------------- | ------------- | ----------------------------------------------------------------------------------- |
-| `schema-version`           | yes           | Must be the integer `1`.                                                            |
-| `agent.id`                 | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.      |
-| `agent.name`               | for `install` | Literal or environment-backed; applied as the OpenClaw display name during install. |
-| `agent.email`              | no            | Literal or environment-backed; reserved for a Git identity consumer.                |
-| `agent.description`        | no            | Validated and loaded; reserved for a later identity surface.                        |
-| `agent.avatar`             | no            | Applied during install when declared; an undeclared existing avatar is retained.    |
-| `environment.dotenv`       | no            | One relative path or an ordered non-empty unique list of paths.                     |
-| `environment.set`          | no            | String map that overrides dotenv layers for explicit Agent System consumers.        |
-| `environment.op`           | no            | One Environment id or an ordered non-empty unique list of ids.                      |
-| `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.               |
-| `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty.  |
-| `github.host`              | no            | Literal `github.com`; defaults to `github.com`.                                     |
-| `github.username`          | no            | Literal or environment-backed expected authenticated login; verified when declared. |
-| `github.token`             | no            | Optional environment binding; defaults to `GH_TOKEN`, then `GITHUB_TOKEN`.          |
-| `github.config`            | no            | Supported `gh` settings written to an isolated generated config during install/use. |
+| Field                      | Required      | Current behavior                                                                      |
+| -------------------------- | ------------- | ------------------------------------------------------------------------------------- |
+| `schema-version`           | yes           | Must be the integer `1`.                                                              |
+| `agent.id`                 | yes           | Lowercase identifier matching `^[a-z0-9][a-z0-9-]*$`; binds manifest to agent.        |
+| `agent.name`               | for `install` | Literal or environment-backed; applied as the OpenClaw display name during install.   |
+| `agent.email`              | no            | Literal or environment-backed; reserved for a Git identity consumer.                  |
+| `agent.description`        | no            | Validated and loaded; reserved for a later identity surface.                          |
+| `agent.avatar`             | no            | Applied during install when declared; an undeclared existing avatar is retained.      |
+| `environment.dotenv`       | no            | One relative path or an ordered non-empty unique list of paths.                       |
+| `environment.set`          | no            | String map that overrides dotenv layers for explicit Agent System consumers.          |
+| `environment.op`           | no            | One Environment id or an ordered non-empty unique list of ids.                        |
+| `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.                 |
+| `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty.    |
+| `github.host`              | no            | Literal `github.com`; defaults to `github.com`.                                       |
+| `github.username`          | for keys      | Literal or environment-backed expected authenticated login; verified when declared.   |
+| `github.token`             | for keys      | Environment binding; ordinary tool use falls back to `GH_TOKEN`, then `GITHUB_TOKEN`. |
+| `github.ssh-keys`          | no            | One SSH public-key source or list reconciled with GitHub authentication keys.         |
+| `github.ssh-signing-keys`  | no            | One SSH public-key source or list reconciled with GitHub SSH signing keys.            |
+| `github.config`            | no            | Supported `gh` settings written to an isolated generated config during install/use.   |
 
 Schema-owned YAML keys use kebab-case. Unknown keys, camelCase alternatives, and snake_case alternatives fail validation rather than being ignored.
 
@@ -148,6 +157,10 @@ When `github` is configured, Agent System registers `agent_system_github`, packa
 The native tool accepts `{ "argv": ["..."], "stdin": "..." }`; `argv` holds ordinary noninteractive `gh` arguments and optional `stdin` is capped at 64 KiB. The model never supplies the agent id, workspace, executable, credential name, or token. A declared token binding wins; otherwise the runtime selects `GH_TOKEN` and then `GITHUB_TOKEN` from the completed Agent System environment. When `github.username` is declared, every invocation first verifies the authenticated login in the same child environment.
 
 Agent System always sets `GH_CONFIG_DIR` to a private per-agent directory beneath its machine-local state root. `install` and each invocation reconcile a token-free `config.yml`; missing or changed files are written atomically and unsafe links, owners, or permissions fail closed. Supported settings and defaults are `git-protocol: ssh`, `color-labels: enabled`, `accessible-colors: disabled`, `spinner: enabled`, and `telemetry: disabled`. The generated file also disables prompts and editor prompts and selects `cat` as the pager. It never reads the operator's normal `~/.config/gh` configuration.
+
+`github.ssh-keys` and `github.ssh-signing-keys` each accept one source or a non-empty list. A short string is either a supported OpenSSH public key line or a path. Object forms use exactly one of `key` or `path` and may add a GitHub `title`. Relative paths resolve from the agent workspace; absolute and `~/` paths are also supported. Files must be non-symlinked regular files at or below 64 KiB and contain exactly one supported public key line. Private keys are never accepted or managed.
+
+Declaring either account-key section requires explicit `github.username` and `github.token` fields. `validate` checks the declaration, inline key structure, and unambiguous path syntax without reading files, resolving credentials, or contacting GitHub. `doctor` resolves key files, verifies the configured account, and compares canonical SHA-256 key fingerprints with GitHub's authentication and SSH-signing collections. `install` resolves every source before remote work, adds only missing keys, and refetches both configured collections to verify convergence. Titles are creation metadata and do not create drift; matching uses key material. Agent System never removes, rotates, retitles, or prunes GitHub keys.
 
 Authentication mutation or token display, generated-config mutation, aliases, extensions, and browser or editor launch paths are blocked as credential-containment boundaries. Other `gh` operations pass through unchanged. GitHub token permissions are the current authorization boundary; Agent System does not yet classify or prohibit destructive GitHub operations. Add least-privilege tokens and treat tool-level destructive-operation policy as deferred work.
 
@@ -379,7 +392,7 @@ Writes the same component outcomes and warnings as structured JSON. Run install 
 
 #### Behavior
 
-Installation first performs the same manifest discovery and validation used by `validate`. Before any lifecycle component mutates state, it verifies that a stored credential can access every declared `environment.op` Environment without using the process-environment fallback. It fails with a `credentials set op` remediation when that prerequisite is unavailable and never prompts for, imports, or stores a credential. The registry then reconciles `agent`, `path`, and configured capability contributions in deterministic order. The agent contribution requires `agent.name`, resolves it from the completed Agent System environment when `from-environment` is declared, refuses an agent id already bound to another workspace, and verifies registration and identity after mutation. The path and GitHub contributions likewise verify the state they own. `agent.email` is not resolved by install because OpenClaw identity has no email field.
+Installation first performs the same manifest discovery and validation used by `validate`. Before any lifecycle component mutates state, it verifies that a stored credential can access every declared `environment.op` Environment without using the process-environment fallback. It fails with a `credentials set op` remediation when that prerequisite is unavailable and never prompts for, imports, or stores a credential. The registry then reconciles `agent`, `path`, and configured capability contributions in deterministic order. The agent contribution requires `agent.name`, resolves it from the completed Agent System environment when `from-environment` is declared, refuses an agent id already bound to another workspace, and verifies registration and identity after mutation. The path and GitHub contributions likewise verify the state they own. When GitHub account keys are declared, install verifies the configured login, lists the corresponding account collections, creates only missing keys, and refetches them without a separate token-scope preflight. `agent.email` is not resolved by install because OpenClaw identity has no email field.
 
 Possible result lines are:
 
@@ -391,6 +404,8 @@ updated    path    OpenClaw exec path for tanaabot
 created    path    Codex workspace path configuration
 updated    path    workspace .gitignore
 created    github  private GitHub CLI config
+created    github  2 GitHub SSH authentication keys
+unchanged  github  1 GitHub SSH signing key
 workspace          /path/to/workspace
 
 unchanged  agent   OpenClaw registration and identity for tanaabot
@@ -430,13 +445,13 @@ Writes the value-free result as JSON instead of styled summary lines.
 
 #### Behavior
 
-Doctor runs the same ordered lifecycle registry without applying repairs. The foundational agent contribution checks registration, workspace binding, and public identity. The path contribution compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, and confirms that `.codex/config.toml` is listed in the workspace `.gitignore`. The GitHub contribution inspects generated GitHub CLI config when declared. Findings carry stable component, code, status, message, and optional remediation fields in JSON; the default human table presents status, component, and combined message. Drift or a blocked inspection returns a nonzero exit code. Repairable drift recommends rerunning `install`; blocked, manual, and warning findings retain their more specific remediation semantics. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
+Doctor runs the same ordered lifecycle registry without applying repairs. The foundational agent contribution checks registration, workspace binding, and public identity. The path contribution compares the expected prefix with OpenClaw exec configuration, checks Agent System-owned Codex path content, and confirms that `.codex/config.toml` is listed in the workspace `.gitignore`. The GitHub contribution inspects generated GitHub CLI config and, when declared, authentication and SSH-signing key collections. Findings carry stable component, code, status, message, and optional remediation fields in JSON; the default human table presents status, component, and combined message. Drift or a blocked inspection returns a nonzero exit code. Repairable drift recommends rerunning `install`; blocked, manual, and warning findings retain their more specific remediation semantics. A user-managed Codex config is reported as manual rather than repaired or treated as failing drift; the operator remains responsible for its PATH and ignore rule.
 
 ## Planned Advanced Surfaces
 
 ### Installation Scripts And Drift
 
-Workspace installation scripts, non-mutating plans, and successful-run metadata are not implemented. The current `install` and `doctor` commands cover OpenClaw agent registration, public identity reconciliation, supported executable path projection, and generated GitHub CLI config.
+Workspace installation scripts, non-mutating plans, and successful-run metadata are not implemented. The current `install` and `doctor` commands cover OpenClaw agent registration, public identity reconciliation, supported executable path projection, generated GitHub CLI config, and declared GitHub SSH authentication and signing keys.
 
 ### Diagnostics
 

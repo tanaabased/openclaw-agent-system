@@ -103,7 +103,7 @@ export default function registerAgentSystemCli(
     });
   const doctor = agentSystem
     .command('doctor')
-    .description('Inspect Agent System agent, executable-path, and tool-config drift.')
+    .description('Inspect Agent System agent, path, and configured capability drift.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
@@ -221,7 +221,7 @@ export default function registerAgentSystemCli(
     });
   const install = agentSystem
     .command('install')
-    .description('Install the workspace agent and reconcile its identity, paths, and tool config.')
+    .description('Install the workspace agent and reconcile configured lifecycle state.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
       await installAgentSystem({
