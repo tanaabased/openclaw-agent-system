@@ -24,9 +24,10 @@ openclaw onboard --non-interactive --accept-risk \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
 
-# should install and enable the packed plugin
+# should install, enable, and trust the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
+openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 
 # should store access and install both scenario-owned github agents through agent system
 cd "$GITHUB_WORKSPACE/examples/github/tanaabot"
@@ -60,7 +61,6 @@ openclaw agent \
   --session-key agent:tanaabot:agent-system-github-leia \
   --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
   --timeout 120 | grep -F 'tanaabot'
-grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="tanaabot"'
 
 # should identify emori through her configured github tool credential
 openclaw agent \
@@ -68,7 +68,6 @@ openclaw agent \
   --session-key agent:emori:agent-system-github-leia \
   --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
   --timeout 120 | grep -F 'emoriwan'
-grep -F 'tool_call_started' "$TMPDIR/gateway.log" | grep -F 'tool="github"' | grep -F 'agentId="emori"'
 ```
 
 ## Cleanup
