@@ -155,7 +155,7 @@ describe('tools/github/account-key-service', () => {
       ['api', '--method', 'POST', '/user/ssh_signing_keys', '--input', '-'],
     ]);
     assert.equal(inputs[0]?.title, 'Scenario authentication key');
-    assert.equal(inputs[1]?.title.startsWith('Agent System tanaabot ssh-signing '), true);
+    assert.equal(inputs[1]?.title, 'agent-system-tanaabot-ssh-signing-e9d94502af18');
 
     assert.deepEqual(
       await service.reconcile({

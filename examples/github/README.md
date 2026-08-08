@@ -31,7 +31,12 @@ openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 
 # should prepare scenario-owned generated public keys under the temporary workspace
 mkdir "$TMPDIR/agent-system-github-tanaabot"
-cp "$GITHUB_WORKSPACE/examples/github/tanaabot/agent.yaml" "$TMPDIR/agent-system-github-tanaabot/agent.yaml"
+runner_os="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+sed \
+  -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" \
+  -e "s/__GITHUB_RUN_ATTEMPT__/$GITHUB_RUN_ATTEMPT/g" \
+  -e "s/__RUNNER_OS__/$runner_os/g" \
+  "$GITHUB_WORKSPACE/examples/github/tanaabot/agent.yaml" > "$TMPDIR/agent-system-github-tanaabot/agent.yaml"
 ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-auth -f "$TMPDIR/agent-system-github-tanaabot/generated-auth"
 ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-signing -f "$TMPDIR/agent-system-github-tanaabot/generated-signing"
 

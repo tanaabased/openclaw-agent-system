@@ -13,5 +13,7 @@ github:
   token: GH_TOKEN_TANAABOT
   ssh-keys:
     path: generated-auth.pub
-    title: Agent System Leia generated authentication key
-  ssh-signing-keys: generated-signing.pub
+    title: agent-system-leia-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__-ssh-authentication
+  ssh-signing-keys:
+    path: generated-signing.pub
+    title: agent-system-leia-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__-ssh-signing

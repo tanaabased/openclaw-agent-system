@@ -89,6 +89,16 @@ function isInlineSource(source: GitHubPublicKeySource): boolean {
   return source.type === 'key' || (source.type === 'auto' && looksLikeSshPublicKey(source.source));
 }
 
+function defaultKeyTitle(
+  agentId: string,
+  category: GitHubAccountKeyCategory,
+  fingerprint: string,
+): string {
+  const fingerprintHex = Buffer.from(fingerprint.slice('SHA256:'.length), 'base64').toString('hex');
+  const keyKind = category === 'ssh' ? 'ssh-authentication' : 'ssh-signing';
+  return `agent-system-${agentId}-${keyKind}-${fingerprintHex.slice(0, 12)}`;
+}
+
 /** Validate deterministic account-key declarations without reading files or resolving credentials. */
 export function validateGitHubAccountKeyDeclarations(
   configuration: GitHubManifestConfiguration,
@@ -279,7 +289,7 @@ export default class GitHubAccountKeyService {
         ...key,
         title:
           source.title?.trim() ||
-          `Agent System ${context.manifest.agent.id} ${category.category} ${key.fingerprint.slice(-12)}`,
+          defaultKeyTitle(context.manifest.agent.id, category.category, key.fingerprint),
       });
     }
     return keys;
