@@ -35,6 +35,9 @@ export interface PluginManifest {
     cliCommand?: string;
     name?: string;
   }>;
+  contracts?: {
+    tools?: string[];
+  };
   configSchema?: {
     additionalProperties?: boolean;
     properties?: Record<string, unknown>;
@@ -58,6 +61,7 @@ export type PluginMetadataFailureCode =
   | 'alias-command'
   | 'canonical-command-alias'
   | 'short-command-alias'
+  | 'github-tool-contract'
   | 'config-schema-type'
   | 'config-schema-strictness'
   | 'package-file'
@@ -80,6 +84,7 @@ const requiredPackageFiles = [
   'cli/',
   'bin/',
   'lib/',
+  'tools/',
   'utils/',
   'assets/agent-system.png',
   'openclaw.plugin.json',
@@ -169,6 +174,11 @@ export default function pluginMetadataFailures(
     declaresCommandAlias(manifest.commandAliases, 'as', 'as'),
     'short-command-alias',
     'short command alias is missing',
+  );
+  check(
+    containsExactly(manifest.contracts?.tools, ['agent_system_github']),
+    'github-tool-contract',
+    'plugin must declare exactly the registered Agent System GitHub tool',
   );
   check(
     manifest.configSchema?.type === 'object',

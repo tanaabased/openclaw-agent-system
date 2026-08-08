@@ -6,6 +6,7 @@ import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
 import { createCliStyles } from '../lib/cli-output.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
+import type { AgentSystemToolScope } from '../lib/tool-types.ts';
 
 const validResult: AgentManifestLoadResult = {
   status: 'loaded',
@@ -48,6 +49,11 @@ function createProgram() {
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
+    tool: [] as Array<{
+      argv: string[];
+      command: string;
+      scope: AgentSystemToolScope;
+    }>,
     workspace: [] as string[],
   };
   const program = new Command();
@@ -137,6 +143,21 @@ function createProgram() {
       },
     },
     output: { writeStdout: (message) => output.push(message) },
+    toolRegistry: {
+      async invoke(command, _runtime, argv, scope) {
+        calls.tool.push({ argv, command, scope });
+        return {
+          auditId: 'audit-id',
+          operation: {
+            action: 'github.viewer.get',
+            risk: 'read',
+            summary: 'Read the authenticated GitHub account',
+          },
+          output: { id: 222685891, login: 'tanaabot' },
+        };
+      },
+    },
+    toolRuntime: {} as never,
     styles: createCliStyles({ NO_COLOR: '1' }),
   });
   return { calls, logs, output, program };
@@ -150,8 +171,57 @@ describe('lib/register-cli', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['validate', 'env', 'doctor', 'credentials', 'install'],
+      ['validate', 'env', 'doctor', 'tool', 'credentials', 'install'],
     );
+  });
+
+  it('should delegate tool arguments from the current workspace', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'tool',
+      'gh',
+      '--',
+      'api',
+      'user',
+    ]);
+
+    assert.deepEqual(calls.tool, [
+      {
+        argv: ['api', 'user'],
+        command: 'gh',
+        scope: { source: 'command', workspaceDir: '/current' },
+      },
+    ]);
+    assert.equal(output.join('').includes('"login": "tanaabot"'), true);
+  });
+
+  it('should delegate a tool command for an explicit agent', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'tool',
+      'gh',
+      '--agent',
+      'data',
+      '--',
+      'api',
+      'user',
+    ]);
+
+    assert.deepEqual(calls.tool, [
+      {
+        argv: ['api', 'user'],
+        command: 'gh',
+        scope: { agentId: 'data', source: 'command' },
+      },
+    ]);
   });
 
   it('should show command help when invoked without a subcommand', async () => {

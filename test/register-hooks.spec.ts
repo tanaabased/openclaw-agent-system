@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
 describe('lib/register-hooks', () => {
-  it('should load manifest metadata only when a session starts', async () => {
+  it('should load manifest metadata for lifecycle and prompt hooks', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const calls: Array<{ agentId?: string; trigger: string }> = [];
     registerAgentSystemHooks(
@@ -18,11 +18,47 @@ describe('lib/register-hooks', () => {
           return { status: 'unresolved', diagnostics: [] };
         },
       },
+      { guidance: () => [] },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
+    await handlers.get('before_prompt_build')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
 
-    assert.deepEqual([...handlers.keys()], ['session_start']);
-    assert.deepEqual(calls, [{ agentId: 'tanaabot', trigger: 'session_start' }]);
+    assert.deepEqual([...handlers.keys()], ['session_start', 'before_prompt_build']);
+    assert.deepEqual(calls, [
+      { agentId: 'tanaabot', trigger: 'session_start' },
+      { agentId: 'tanaabot', trigger: 'before_prompt_build' },
+    ]);
+  });
+
+  it('should append guidance only for tools configured by the active manifest', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return {
+            status: 'loaded',
+            scope: { agentId: 'data', workspaceDir: '/workspace' },
+            path: '/workspace/agent.yaml',
+            digest: 'digest',
+            manifest: { schemaVersion: 1, agent: { id: 'data' } },
+            diagnostics: [],
+          } as const;
+        },
+      },
+      { guidance: () => ['Prefer the configured Agent System tool.'] },
+    );
+
+    const result = await handlers.get('before_prompt_build')?.(
+      {},
+      { agentId: 'data', sessionId: 'one' },
+    );
+
+    assert.deepEqual(result, { appendSystemContext: 'Prefer the configured Agent System tool.' });
   });
 });

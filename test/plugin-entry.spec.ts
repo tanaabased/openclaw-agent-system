@@ -25,6 +25,7 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const toolNames: string[] = [];
     const logger = {
       debug() {},
       error() {},
@@ -62,12 +63,16 @@ describe('index', () => {
         registrar = nextRegistrar;
         options = nextOptions;
       },
+      registerTool(_tool: unknown, toolOptions?: { name?: string }) {
+        if (toolOptions?.name) toolNames.push(toolOptions.name);
+      },
     };
 
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['session_start']);
+    assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
+    assert.deepEqual(toolNames, ['agent_system_github']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

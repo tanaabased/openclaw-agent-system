@@ -123,6 +123,7 @@ try {
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
+    'bin/gh',
     'assets/agent-system.png',
     'README.md',
     'ADVANCED.md',
@@ -193,6 +194,13 @@ try {
       await readFile(join(packageRoot, 'package.json'), 'utf8'),
     ) as PackageMetadata;
     assert.equal(result.output.trim(), packageMetadata.version);
+  });
+
+  await check('ship an executable Agent System gh command', async () => {
+    const commandPath = join(packageRoot, 'bin', 'gh');
+    await access(commandPath);
+    const result = await run(commandPath, ['--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
   });
 
   await check('pass ClawHub package validation without warnings', async () => {

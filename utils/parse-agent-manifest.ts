@@ -3,6 +3,7 @@ import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-section-schema.ts';
+import { decodeGitHubSection, externalGitHubSectionSchema } from '../tools/github/config-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './manifest-types.ts';
 
 const externalAgentManifestSchema = Type.Object(
@@ -64,6 +65,7 @@ const externalAgentManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    github: Type.Optional(externalGitHubSectionSchema),
   },
   { additionalProperties: false },
 );
@@ -137,6 +139,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
             ...(value.environment.set === undefined ? {} : { set: { ...value.environment.set } }),
           },
         }),
+    ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
   };
 }
 

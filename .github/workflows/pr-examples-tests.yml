@@ -27,6 +27,8 @@ jobs:
           - path
           - env
           - credentials
+          - github
+          - tool
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

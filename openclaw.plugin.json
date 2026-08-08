@@ -17,6 +17,9 @@
       "cliCommand": "as"
     }
   ],
+  "contracts": {
+    "tools": ["agent_system_github"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

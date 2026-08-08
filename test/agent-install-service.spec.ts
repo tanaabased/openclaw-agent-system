@@ -435,6 +435,55 @@ describe('lib/agent-install-service', () => {
     );
   });
 
+  it('should verify executable paths after reconciliation', async () => {
+    const events: string[] = [];
+    const service = new AgentInstallService({
+      pathService: {
+        async reconcile() {
+          events.push('path:reconcile');
+          return {
+            actions: ['create-workspace-bin'] as const,
+            codexStatus: 'managed' as const,
+            projection: { entries: [], path: '/usr/bin' },
+            warnings: [],
+          };
+        },
+        async inspect() {
+          events.push('path:inspect');
+          return {
+            codex: {
+              gitignored: true,
+              ownership: 'managed' as const,
+              pathMatches: true,
+              status: 'managed' as const,
+            },
+            openClawMatches: true,
+            projection: { entries: [], path: '/usr/bin' },
+          };
+        },
+      },
+      readConfig: () => ({
+        agents: {
+          list: [
+            {
+              id: 'data',
+              workspace: '/workspace/data',
+              identity: { name: 'Data', avatar: 'avatar.png' },
+            },
+          ],
+        },
+      }),
+      async runOpenClawCommand() {
+        throw new Error('command should not run');
+      },
+    });
+
+    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
+
+    assert.deepEqual(result.actions, ['create-workspace-bin']);
+    assert.deepEqual(events, ['path:reconcile', 'path:inspect']);
+  });
+
   it('should reject a successful command that does not reconcile openclaw state', async () => {
     const service = new AgentInstallService({
       readConfig: () => ({}),

@@ -1,0 +1,12 @@
+#!/bin/sh
+
+if [ "$#" -eq 1 ]; then
+  case "$1" in
+    --agent-system)
+      printf '%s\n' agent-system
+      exit 0
+      ;;
+  esac
+fi
+
+exec openclaw agent-system tool gh -- "$@"

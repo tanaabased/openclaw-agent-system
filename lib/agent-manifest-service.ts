@@ -11,7 +11,7 @@ import type { AgentManifest, ManifestDiagnostic } from '../utils/manifest-types.
 import parseAgentManifest from '../utils/parse-agent-manifest.ts';
 import resolveAgentId, { type AgentRuntimeContext } from '../utils/resolve-agent-id.ts';
 
-export type ManifestLoadTrigger = 'cli' | 'session_start';
+export type ManifestLoadTrigger = 'before_prompt_build' | 'cli' | 'session_start';
 
 export interface AgentManifestScope {
   agentId?: string;

@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Added the internal Agent System tool registry and runtime with trusted agent binding, pre-credential classification and authorization, sanitized fixed-executable execution, bounded redaction, conditional prompt guidance, and metadata-only audit hooks.
+- Added the initial read-only `agent_system_github` authenticated-user tool, strict `github` manifest projection, public `agent-system tool gh` route, packaged `gh` command launcher, and focused 1Password-backed GitHub Actions-only Leia coverage.
 - Added schema-owned literal, environment-backed, and environment-binding value kinds, including environment-backed agent names and emails with lazy install-time name resolution.
 - Added deterministic executable path projection for OpenClaw exec and local Codex native shell commands, including workspace and packaged bin directories, workspace-relative manifest entries, managed Codex configuration, visible `.gitignore` ownership, drift diagnostics, and installed-agent coverage.
 - Added agent-scoped OP credential prompting, environment and stdin input, automatic or exact macOS Keychain, Linux Secret Service, and file-store selection, validation, idempotent removal, and stored-credential install preflight.

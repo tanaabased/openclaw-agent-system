@@ -91,6 +91,51 @@ agent:
     }
   });
 
+  it('should parse github identity and an environment-only credential binding', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  host: github.com
+  username:
+    from-environment: GITHUB_USERNAME
+  token: GITHUB_TOKEN
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github, {
+      host: 'github.com',
+      username: { fromEnvironment: 'GITHUB_USERNAME' },
+      token: 'GITHUB_TOKEN',
+    });
+  });
+
+  it('should reject literal-like github tokens and unknown github keys', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  token: github_pat_private
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  token: GITHUB_TOKEN
+  api-url: https://api.github.com
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
+
   it('should keep dollar-prefixed agent strings literal', () => {
     const result = parseAgentManifest(`
 schema-version: 1

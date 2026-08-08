@@ -3,20 +3,20 @@
 ## Purpose
 
 Agent System is an OpenClaw plugin and CLI layer that gives an agent workspace a
-reproducible identity, deterministic environment, agent-aware provider tools,
-and explicit lifecycle procedures.
+reproducible identity, deterministic environment, agent-aware tools, and
+explicit lifecycle procedures.
 
 The environment runtime is the product's foundation. It resolves declared
 literal values, dotenv files, and 1Password Environments while allowing explicit
 references to a host-environment snapshot without copying that snapshot into the
 agent environment. Higher layers consume the assembled environment through
-purpose-built configuration projections, Agent System-owned tools, command
-shims, diagnostics, installation, and later lifecycle features such as cron
-synchronization.
+purpose-built configuration projections, Agent System-owned tools, packaged
+command launchers, diagnostics, installation, and later lifecycle features such
+as cron synchronization.
 
-Agent System also defines a provider contract so its own tools can share agent
+Agent System also defines a tool contract so its own tools can share agent
 binding, credential resolution, policy, approval, redaction, safe process
-execution, and audit behavior. Git and GitHub are the first providers; GOG and
+execution, and audit behavior. Git and GitHub are the first tools; GOG and
 other service integrations may implement the same contract later. A public
 cross-plugin SDK remains a product goal, but depends on a supported OpenClaw
 runtime capability rather than an ad hoc process-global registry.
@@ -32,21 +32,21 @@ display name is `Agent System`, and the canonical command is
 
 The core runtime owns deterministic environment assembly, provenance, required
 value checks, bootstrap credential access, and explicit consumer resolution. It
-does not own provider policy, approval, output redaction, or audit. Resolution
+does not own tool policy, approval, output redaction, or audit. Resolution
 does not modify the Gateway process or inject values into OpenClaw's generic
 command-execution tools. Agent System-owned consumers must explicitly request
 the values they need.
 
-### Provider tool platform
+### Agent System tool platform
 
-The provider platform exposes stable OpenClaw tools backed by trusted agent
+The tool platform exposes stable OpenClaw tools backed by trusted agent
 context and the environment runtime. Agent System owns the common binding,
 credential, policy, approval, execution, redaction, and audit lifecycle. A
-provider owns its model-facing schema, fixed executable or direct API adapter,
+tool owns its model-facing schema, fixed executable or direct API adapter,
 operation classifier, normalization, supplemental redaction, health checks, and
 concise tool guidance.
 
-Providers do not receive a general raw-secret API. They request logical
+Tools do not receive a general raw-secret API. They request logical
 credentials and consume them through an approved child-process or request
 helper for the smallest practical action scope.
 
@@ -56,17 +56,17 @@ The manifest composes configuration sections over the environment runtime. A
 section is not required to map one-to-one to a tool:
 
 - `agent` configures core OpenClaw identity and workspace binding;
-- `git` and `github` supply values used by provider tools, shims, installation,
-  and diagnostics;
+- `git` and `github` supply values used by tools, packaged command launchers,
+  installation, and diagnostics;
 - `environment` defines common values and executable path additions;
 - `install` defines explicit operator-run reconciliation;
 - future `cron` configuration describes scheduled desired state; and
-- later provider integrations may define additional strictly validated
+- later tool integrations may define additional strictly validated
   capability sections.
 
-One section may feed several runtime surfaces, and one provider tool may consume
+One section may feed several runtime surfaces, and one tool may consume
 several sections. The schema must not synthesize arbitrary tool names or load
-untrusted provider code from manifest values.
+untrusted tool code from manifest values.
 
 The manifest describes one agent workspace. It is not OpenClaw's global
 configuration and must not become a biography, secret store, or general-purpose
@@ -87,25 +87,25 @@ Phase 1 delivers:
 - required-variable validation, provenance, value-free consolidated `env`
   inspection, and value-free diagnostics;
 - executable path projection for ordinary OpenClaw exec and local Codex native
-  shell commands, plus later optional shim routing; and
+  shell commands, plus packaged command routing; and
 - focused Leia coverage of installed-plugin, agent-binding, environment, and
   value-free diagnostic boundaries.
 
-### Phase 2: provider API and first tools
+### Phase 2: tool API and first tools
 
 Phase 2 delivers:
 
-- an internal Agent System provider contract and runtime service;
+- an internal Agent System tool contract and runtime service;
 - common operation risk, policy, approval, redaction, audit, and error models;
 - a fixed-executable CLI runner and a constrained direct-request helper;
 - first-party `agent_system_git` and `agent_system_github` tools;
 - top-level `git` and `github` manifest projections;
-- provider-owned skills, tool descriptions, and concise prompt guidance;
-- agent-local `git` and `gh` shims installed into the Phase 1 prepended path;
-  and
-- provider, capability, executable, and routing diagnostics.
+- tool-owned skills, tool descriptions, and concise prompt guidance;
+- Agent System-packaged `git` and `gh` command launchers reached through the
+  Phase 1 prepended path, while preserving workspace-bin precedence; and
+- tool, capability, executable, and routing diagnostics.
 
-Publishing the provider contract for third-party plugins follows only after
+Publishing the tool contract for third-party plugins follows only after
 OpenClaw exposes or accepts a supported typed cross-plugin capability. The
 first-party vertical slice must not invent a private runtime service locator.
 
@@ -119,7 +119,7 @@ Phase 3 completes:
 - declarative cron synchronization with stable ownership and no duplicate jobs;
   and
 - additional lifecycle-oriented manifest sections that do not belong to the
-  environment or provider layers.
+  environment or tool layers.
 
 ## Manifest Contract
 
@@ -241,7 +241,7 @@ Identity follows these rules:
   and a declared `agent.avatar` with OpenClaw's agent registration and identity.
 - An existing OpenClaw agent id bound to another workspace is a conflict; Agent
   System does not silently repoint it.
-- Core identity does not imply Git, GitHub, provider, environment, install, or
+- Core identity does not imply Git, GitHub, tool, environment, install, or
   cron configuration. Those sections may reference `agent` values but retain
   their own validation and lifecycle.
 
@@ -325,8 +325,8 @@ provenance. Agent-scoped OP credential validation and persistent storage through
 macOS Keychain, Linux Secret Service, and the hardened file fallback are also
 implemented. Executable path projection is implemented separately for ordinary
 OpenClaw exec and local Codex native shell commands. This completes the Phase 1
-environment foundation. Action-scoped provider consumption, known-secret
-classification, and provider-output redaction begin with the Phase 2 provider
+environment foundation. Action-scoped tool consumption, known-secret
+classification, and tool-output redaction begin with the Phase 2 tool
 runtime.
 
 The completed Phase 1 environment has three output sources in a fixed order:
@@ -389,7 +389,7 @@ supplied or overrode a variable without printing its value.
 
 Manifest discovery and routine Gateway hooks load and cache only validated
 non-secret manifest data. Dotenv and 1Password values are resolved lazily for
-an explicit diagnostic, installation, Agent System tool, or shim action that
+an explicit diagnostic, installation, Agent System tool, or packaged command action that
 needs them. A secret must not be fetched merely because an agent session starts.
 
 ### Host environment lookup
@@ -492,12 +492,12 @@ the output environment.
 `environment.required` is a non-empty list of unique variables that must exist
 with a non-empty value when the complete environment is explicitly resolved,
 including by `agent-system env`. It does not turn every variable into a
-prerequisite for every Agent System action. A provider or other scoped consumer
+prerequisite for every Agent System action. A tool or other scoped consumer
 declares and checks only the values required for that action.
 
 Removing a variable from the assembled environment is the way to keep it from
 Agent System consumers. Diagnostic output reports names, sources, presence, and
-override status without printing values. Phase 2 provider result handling will
+override status without printing values. Phase 2 tool result handling will
 separately redact known secret material that may appear in command or HTTP
 output; there is no manifest `environment.redact` list.
 
@@ -510,12 +510,12 @@ Environment values have no ambient delivery class. Each Agent System-owned
 consumer explicitly requests either the complete environment or a named subset:
 
 - `agent-system env` resolves the complete environment for inspection;
-- provider actions resolve only their declared configuration and credential
+- tool actions resolve only their declared configuration and credential
   variables after validation, policy, and required approval;
 - explicit installation may resolve only values required by the installation
   action; and
-- later shims delegate to the same scoped provider runtime rather than receiving
-  a general environment.
+- packaged command launchers delegate to the same scoped tool runtime rather
+  than receiving a general environment.
 
 Routine Gateway hooks load only validated, non-secret manifest metadata.
 Session startup does not resolve environment values, check complete-environment
@@ -549,7 +549,7 @@ projection above is an explicit PATH-only exception for its two supported
 surfaces. Agent System does not source shell startup files to approximate
 broader per-agent delivery.
 
-Provider tools and other Agent System-owned actions may launch a fixed child
+Agent System tools and other Agent System-owned actions may launch a fixed child
 process with a sanitized baseline and an action-scoped subset of resolved
 values. That child is a private implementation detail of the Agent System
 consumer, not a replacement environment for generic command execution.
@@ -629,12 +629,12 @@ mutating OpenClaw state. Installation does not prompt, read
 `OP_SERVICE_ACCOUNT_TOKEN`, or store credentials; its failure points users to
 the explicit `credentials set` command.
 
-## Agent System Provider Tool API
+## Agent System Tool API
 
-The provider contract lets Agent System register stable, agent-aware tools
+The tool contract lets Agent System register stable, agent-aware tools
 without duplicating identity, environment, credential, policy, approval,
 execution, redaction, or audit machinery. The same contract is intended to
-become a public provider API once OpenClaw has a supported cross-plugin runtime
+become a public tool API once OpenClaw has a supported cross-plugin runtime
 capability.
 
 The responsibility boundary is:
@@ -644,8 +644,8 @@ Agent System
   agent binding + environment + credentials + policy + approval
   safe execution + redaction + audit + diagnostics
 
-Provider implementation
-  stable tool schema + provider configuration projection
+Tool implementation
+  stable tool schema + tool configuration projection
   fixed CLI or direct API behavior + operation classification
   normalization + supplemental redaction + concise guidance
 
@@ -667,11 +667,10 @@ tools/
   github/
     config-schema.ts  # optional agent.yaml section schema
     tool-schema.ts    # required model-facing OpenClaw input schema
-    register.ts       # thin OpenClaw registration
-    execute.ts        # tool-specific execution
+    tool.ts           # thin registration and tool-specific behavior
 ```
 
-Only files with an implemented responsibility are created. Shared provider
+Only files with an implemented responsibility are created. Shared tool
 policy, credential, approval, runner, redaction, and audit orchestration remains
 in `lib/`; lower-coupling manifest-value and validation functions remain in
 `utils/`; behavior-focused tests remain flat in `test/`.
@@ -684,29 +683,29 @@ Manifest values never contain schema paths, tool module paths, or dynamic
 registration instructions. A configuration section may still feed multiple
 tools, and a tool may consume multiple sections.
 
-The initial implementation keeps the provider contract and runtime inside this
+The initial implementation keeps the tool contract and runtime inside this
 package. It binds the current tool context to an agent manifest, environment,
-policy, approval broker, runner, and audit sink. A provider fails closed with a
+policy, approval broker, runner, and audit sink. A tool fails closed with a
 stable diagnostic when Agent System cannot resolve the active agent or
 capability.
 
 The supported OpenClaw SDK currently supplies trusted tool-factory context but
 does not expose a general cross-plugin runtime service registry. A later public
-API therefore requires a typed OpenClaw capability with provider registration
+API therefore requires a typed OpenClaw capability with tool registration
 and runtime lookup. Agent System does not use process globals, private registry
 reach-ins, background-service registration, or Gateway RPC as an in-process
 service locator. A separate SDK package is justified only after an external
-provider proves that supported boundary.
+external tool proves that supported boundary.
 
 OpenClaw supplies `agentId`, `workspaceDir`, `agentDir`, `sessionKey`, and
 sandbox state to a tool factory. The model must never supply an agent id,
 account selector that bypasses the manifest binding, executable path, token, or
 secret reference.
 
-Native provider tools execute in the Gateway plugin process. A sandboxed
+Native Agent System tools execute in the Gateway plugin process. A sandboxed
 originating session adds an OpenClaw tool-policy gate but does not automatically
-relocate provider code or its child process into the configured sandbox. A
-provider that genuinely needs sandbox filesystem execution must select an
+relocate tool code or its child process into the configured sandbox. A
+tool that genuinely needs sandbox filesystem execution must select an
 explicit supported executor; it must not imply that native plugin execution is
 sandboxed.
 
@@ -728,34 +727,34 @@ interface AgentSystemOperation {
 ```
 
 `unknown` never silently inherits read policy. It fails closed or receives the
-strictest configured approval posture. Provider configuration may constrain
+strictest configured approval posture. Tool configuration may constrain
 accounts, hosts, repositories, working directories, or other resources after
 classification.
 
 The shared runtime lifecycle is:
 
 ```text
-1. OpenClaw invokes a stable provider tool.
+1. OpenClaw invokes a stable Agent System tool.
 2. The tool factory supplies trusted agent and workspace context.
 3. Agent System resolves and validates that agent's manifest.
-4. Agent System projects the provider's configuration and capability binding.
-5. The provider validates and classifies model-controlled input.
+4. Agent System projects the tool's configuration and capability binding.
+5. The tool validates and classifies model-controlled input.
 6. Agent System evaluates resource policy and obtains required approval.
 7. Agent System opens a secret-free pending audit event.
 8. Agent System lazily resolves only the required action credentials.
 9. The shared CLI or request helper performs the action.
-10. Provider and core normalization, bounding, and redaction run.
+10. Tool and core normalization, bounding, and redaction run.
 11. Agent System finalizes the audit event and returns structured output.
 ```
 
-Because credential resolution occurs inside provider execution, an OpenClaw
+Because credential resolution occurs inside tool execution, an OpenClaw
 `before_tool_call` approval can resolve before the secret is materialized. The
-same approval adapter and risk vocabulary apply to every supported provider and
+same approval adapter and risk vocabulary apply to every supported tool and
 remain part of any future third-party contract.
 
-### Provider definitions
+### Tool definitions
 
-The internal provider contract supports a general direct executor and a
+The internal tool contract supports a general direct executor and a
 fixed-executable CLI adapter. The exact TypeScript names remain subject to
 implementation validation, but the future public contract is conceptually:
 
@@ -786,10 +785,10 @@ defineAgentSystemCliTool(api, {
 });
 ```
 
-Provider execution context exposes purpose-built operations such as an
+Tool execution context exposes purpose-built operations such as an
 approved fixed-executable runner and an origin-constrained fetch helper. It
 does not expose the entire resolved agent environment or a model-callable
-secret retrieval surface. Logical credentials should remain opaque to provider
+secret retrieval surface. Logical credentials should remain opaque to tool
 code where the chosen execution adapter permits it.
 
 ### Safe CLI runner
@@ -801,7 +800,7 @@ The shared runner:
 - treats `argv`, `stdin`, `cwd`, repository names, API paths, queries, and all
   other model parameters as untrusted;
 - starts from a sanitized baseline environment and adds only
-  provider-declared, binding-approved child variables;
+  tool-declared, binding-approved child variables;
 - restricts `cwd` to the current agent workspace or an explicitly approved
   job/worktree, including canonical and symlink checks;
 - disables interactive prompts, pagers, editors, browser launch, and TTY
@@ -812,25 +811,25 @@ The shared runner:
 
 Workspace-controlled hooks, aliases, extensions, configuration, and executable
 resolution are possible code-execution paths and must be handled by each
-provider's validation and runner configuration.
+tool's validation and runner configuration.
 
 ### Direct request helper
 
-Providers without a suitable CLI may use a shared request helper. It enforces
-provider-declared origins, injects authentication internally, bounds request
+Tools without a suitable CLI may use a shared request helper. It enforces
+tool-declared origins, injects authentication internally, bounds request
 and response bodies, redacts headers and errors, respects cancellation and
 timeouts, and emits the same operation and audit model as CLI tools.
 
 ### Guidance and routing
 
-Each provider ships concise tool guidance rather than injecting a full CLI or
+Each tool ships concise guidance rather than injecting a full CLI or
 API manual into every prompt. Guidance may include:
 
 - the tool name and the situations in which it is preferred;
-- a provider-owned skill with task-oriented examples;
+- a tool-owned skill with task-oriented examples;
 - a short `before_prompt_build` contribution for agents with a configured
   binding; and
-- instructions to request the provider CLI's `--help` through the owned tool
+- instructions to request the wrapped CLI's `--help` through the owned tool
   when syntax is unfamiliar.
 
 This is tool guidance or context injection, not hostile prompt injection. It is
@@ -838,40 +837,43 @@ advisory. An optional enforcement mode may block high-confidence bypasses, but
 must not claim to recognize every shell, absolute path, SDK, MCP, browser, or
 third-party plugin route.
 
-### Shims
+### Packaged command launchers
 
-Phase 2 installation may reconcile agent-local executable shims into an
-Agent System-owned directory from Phase 1 `path-prepend`, then explicitly route
-supported command surfaces through that directory. A shim delegates to the same
-provider runtime as its OpenClaw tool, derives the agent from trusted runtime
-context, and invokes a validated real executable without recursion. Tool and
-shim requests share classification, credentials, policy, redaction, audit, and
-errors; logs distinguish their source.
+Phase 2 may ship narrow executable launchers in Agent System's packaged `bin/`
+directory. Phase 1 prepends the workspace bin first and the packaged bin last,
+so an agent-owned command remains the explicit higher-priority override. A
+packaged launcher passes its arguments unchanged to
+`openclaw agent-system tool <command> -- ...` through the caller's ordinary
+`PATH` and never receives agent credentials. The tool runtime then derives the
+agent from a trusted installed binding or an explicit operator-selected
+`--agent` and invokes a validated real executable without recursion. Native and
+command requests share classification, credentials, policy, redaction, audit,
+and errors; logs distinguish their source.
 
-Shims are defense in depth, not hard isolation. Absolute binary paths, PATH
+Launchers are routing convenience, not hard isolation. Absolute binary paths, PATH
 replacement, `command -p`, direct HTTP/SDK traffic, other tools, node-host
 execution, and non-OpenClaw processes may bypass them. Sandbox use requires the
-shim and its runtime bridge to exist inside or be mounted into the sandbox.
+launcher and its runtime bridge to exist inside or be mounted into the sandbox.
 `doctor` reports unsupported or incomplete routes.
 
 ### Errors and audit
 
-Providers return stable categories such as `agent_not_resolved`,
-`capability_not_configured`, `provider_unavailable`, `credential_unavailable`,
+Tools return stable categories such as `agent_not_resolved`,
+`capability_not_configured`, `tool_unavailable`, `credential_unavailable`,
 `resource_denied`, `approval_denied`, `operation_unclassified`,
-`invalid_arguments`, `working_directory_denied`, `execution_failed`, and
-`execution_timed_out`.
+`invalid_arguments`, `tool_identity_mismatch`, `working_directory_denied`,
+`execution_failed`, and `execution_timed_out`.
 
-Audit records include agent, session/job context when available, provider,
-capability, tool, classified operation, resources, non-secret account metadata,
+Audit records include agent, session/job context when available, capability,
+tool, classified operation, resources, non-secret account metadata,
 canonical input hash, approval, duration, status, result size, truncation, and
 redaction categories. They never contain tokens, authorization headers,
 resolved environments, private keys, bootstrap credentials, or unredacted
 sensitive input/output.
 
-## Git and GitHub Providers
+## Git and GitHub Tools
 
-Git and GitHub are the proving providers because OpenClaw blocks several
+Git and GitHub are the proving tools because OpenClaw blocks several
 environment variables traditionally used to select per-agent identity,
 transport, signing, and credentials.
 
@@ -906,9 +908,9 @@ github:
 
 These sections project values from the completed environment. Git and GitHub
 credentials name resolved variables; they are never literal manifest values.
-The same projections feed tools, shims, installation, validation, `env`, and
-`doctor`, demonstrating that configuration sections do not map one-to-one to
-tool commands.
+The same projections feed tools, command launchers, installation, validation,
+`env`, and `doctor`, demonstrating that configuration sections do not map
+one-to-one to tool commands.
 
 ### GitHub tool
 
@@ -929,7 +931,7 @@ Supported implementation shapes are:
 
 This choice does not change agent binding, configuration projection,
 classification, policy, approval, credential timing, redaction, audit, or
-errors. Transport-specific logic remains behind the GitHub provider rather than
+errors. Transport-specific logic remains behind the GitHub tool rather than
 leaking into Agent System core.
 
 The public schema and transport must be selected together. An `argv` schema
@@ -937,6 +939,53 @@ commits the model-facing contract to `gh` semantics even if a later
 implementation internally translates some requests to HTTP. A semantic action
 schema can switch between `gh`, Octokit, and direct HTTP more freely, but
 requires Agent System to define and maintain those actions.
+
+#### Initial implemented pilot
+
+The first vertical slice selects a deliberately closed CLI-shaped request:
+
+```json
+{ "argv": ["api", "user"] }
+```
+
+Its strict manifest slice requires `github.token`, with optional `github.host`
+and `github.username`. The broader
+`repositories` and `policy` fields illustrated above remain planned and are
+rejected by the current parser.
+
+It classifies the request as the read-only `github.viewer.get` operation, runs
+trusted `gh api user` behavior without a shell, adds a fixed `id` and `login`
+field projection internally, and returns only the configured host plus the
+authenticated account's numeric `id` and `login`. The declared
+username resolves from the completed Agent System environment only after
+authorization and, when present, must match the returned login. The declared
+token binding then resolves and is exposed only as `GH_TOKEN` to the child
+process.
+
+The pilot uses the existing consolidated environment resolver after
+authorization, so declared dotenv and 1Password sources are assembled before
+the tool projects its named username and token binding. Only those named
+values reach tool configuration or the child process. Finer-grained source
+resolution remains a later optimization of the environment service rather than
+a parallel tool-specific loader.
+
+The same internal tool registry and runtime compile the native
+`agent_system_github` tool, conditional `before_prompt_build` guidance, and the
+`agent-system tool gh` CLI bridge used by the Agent System-owned `bin/gh`
+launcher. Inside that credential-bearing runtime, real executable resolution
+excludes the workspace bin, declared prepended paths, and packaged bin. The
+runtime bounds captured output, redacts known credential values before
+normalization, and emits source-distinguished metadata-only lifecycle logs. The
+default pilot authorization allows classified reads and rejects all other risk
+classes.
+
+This pilot does not claim the complete Phase 2 platform. Resource policy,
+OpenClaw approval integration, persistent audit storage, a direct request
+helper, process-tree termination, broader GitHub operations, command routing drift
+diagnostics, and the supported cross-plugin registration capability remain
+follow-up work. The internal contract must not be exported as a third-party SDK
+before that supported OpenClaw capability exists and an external tool proves
+the boundary.
 
 When the CLI adapter is used, the child receives only values such as:
 
@@ -962,7 +1011,7 @@ authorization header, or unvalidated URL from the model.
 Whichever initial surface is chosen, later typed conveniences such as issue
 creation or workflow dispatch may be added only when they measurably improve
 model reliability, semantic approvals, structured output, or policy. They
-compile to the same provider lifecycle and do not create a parallel credential
+compile to the same tool lifecycle and do not create a parallel credential
 or execution path.
 
 ### Git tool
@@ -985,9 +1034,9 @@ factories, bind `manifest.agent.id` to the active agent, and resolve only the
 credentials required by the classified action. Neither tool accepts `agentId`,
 tokens, secret references, or executable paths from the model.
 
-### Provider verification contract
+### Tool verification contract
 
-The shared provider harness and each proving provider must directly verify:
+The shared tool harness and each proving tool must directly verify:
 
 - agent-id and workspace spoofing fail closed, including missing or mismatched
   runtime context;
@@ -1002,10 +1051,10 @@ The shared provider harness and each proving provider must directly verify:
   authorization headers or arbitrary credential selectors;
 - destructive, admin, and unknown operations cannot inherit read policy;
 - escape hatches such as `gh api`, Git config, aliases, hooks, helpers, and
-  provider extensions receive explicit classification or fail closed;
+  tool extensions receive explicit classification or fail closed;
 - output bounding, normalization, redaction, audit completion, and non-zero
   execution results behave consistently; and
-- provider SDK and runtime incompatibility produces a stable, secret-free
+- tool SDK and runtime incompatibility produces a stable, secret-free
   diagnostic instead of partial execution.
 
 ## Installation Contract
@@ -1103,7 +1152,7 @@ openclaw agent-system env [--agent <id>]
 openclaw agent-system credentials set op [--from-env | --stdin] [--store <id>] [--agent <id>]
 openclaw agent-system credentials validate op [--from-env | --store <id>] [--agent <id>]
 openclaw agent-system credentials unset op [--store <id>] [--agent <id>]
-openclaw agent-system providers list
+openclaw agent-system tool gh [--agent <id>] -- api user
 openclaw agent-system capabilities inspect github --agent emori
 openclaw agent-system capabilities test github --agent emori
 openclaw agent-system plan
@@ -1126,7 +1175,8 @@ openclaw agent-system doctor
   backend. `credentials validate` checks the effective or explicitly selected
   credential without revealing values, and `credentials unset` removes every
   persistent copy or one exact backend entry idempotently.
-- `providers` and `capabilities` inspect provider compatibility, the selected
+- `tool` runs one statically registered command using current-workspace
+  discovery or an explicit installed agent. `capabilities` later inspects tool compatibility, the selected
   agent's non-secret binding, required executable or request adapter, credential
   resolvability, and policy without exposing secret values. Human-facing
   commands may accept `--agent`; model-facing tools may not.
@@ -1137,11 +1187,11 @@ openclaw agent-system doctor
   explicitly executes a declared script.
 - `doctor` currently checks supported OpenClaw and Codex path projection without
   repair. Later phases add credential access, required variables, file
-  permissions, expected tools and plugins, provider compatibility, shim routing,
+  permissions, expected tools and plugins, tool compatibility, command routing,
   cron state, and installation-script drift.
 
 Phase 1 owns `validate`, `env`, bootstrap credential management, executable path
-projection, and its narrow `doctor` checks. Phase 2 adds provider and capability
+projection, and its narrow `doctor` checks. Phase 2 adds the registered tool command and capability
 inspection. Phase 3 completes installation script execution, cron
 synchronization, and their corresponding `plan` and expanded `doctor` checks.
 The already-supported agent registration, identity, and path reconciliation
@@ -1166,16 +1216,18 @@ remain the first part of explicit `install` throughout these phases.
 - The 1Password bootstrap token is never passed to ordinary agent commands.
 - Manifest sections are configuration projections, not implicit one-to-one tool
   registrations.
-- Provider tools derive the agent from trusted OpenClaw context and never accept
-  agent identity, executable paths, tokens, or secret references from the model.
+- Model-facing Agent System tools derive the agent from trusted OpenClaw context
+  and never accept agent identity, executable paths, tokens, or secret references
+  from the model. Operator-facing `agent-system tool` may select an installed
+  agent explicitly but still never accepts credentials or executable paths.
 - Credentials resolve after classification and required approval, for the
   smallest practical child process or request scope.
-- All Agent System providers use one operation, policy, approval, redaction,
+- All Agent System tools use one operation, policy, approval, redaction,
   error, and audit contract. A future third-party API preserves that contract.
 - Git and GitHub credentials are resolved only inside their Agent System-owned
   action path and never placed in the Gateway environment.
 - Ordinary OpenClaw exec, local Codex native shell commands, Agent System-owned
-  children, and later supported shim routes use explicit path configuration
+  children, and packaged command routes use explicit path configuration
   rather than Gateway-wide or shell-startup mutation.
 - Installation requires explicit operator intent.
 - Gateway startup may validate and report drift but never installs dependencies,
@@ -1210,33 +1262,33 @@ remain the first part of explicit `install` throughout these phases.
 
 ### Phase 2
 
-1. Define and version the common provider, operation, risk, error, audit, and
+1. Define and version the common tool, operation, risk, error, audit, and
    compatibility contracts.
-2. Implement internal provider registration and the runtime Agent System service
+2. Implement internal tool registration and the runtime Agent System service
    used by the first-party proving tools.
 3. Implement the fixed-executable CLI runner, constrained request helper, and
-   provider test harness.
+   tool test harness.
 4. Add common resource policy, OpenClaw approval integration, known-secret
    classification, output bounding, and redaction, with credential
    materialization only after approval.
 5. Add the GitHub projection and prove the initial `agent_system_github`
    model-facing schema and `gh`, HTTP/Octokit, or hybrid executor through a thin
    vertical slice.
-6. Add the Git projection and `agent_system_git` over the same provider runtime.
-7. Ship provider-owned skills, tool descriptions, and concise conditional
+6. Add the Git projection and `agent_system_git` over the same tool runtime.
+7. Ship tool-owned skills, tool descriptions, and concise conditional
    guidance.
-8. Install and validate `git` and `gh` shims through the Phase 1 prepended path.
-9. Add provider/capability diagnostics, optional high-confidence bypass
+8. Ship and validate narrow `git` and `gh` launchers through the Phase 1 prepended path.
+9. Add tool/capability diagnostics, optional high-confidence bypass
    blocking, and Leia scenarios for tool discovery, approval-before-secret,
-   agent separation, shim routing, and secret-free results/audit.
+   agent separation, command routing, and secret-free results/audit.
 10. Propose a typed OpenClaw cross-plugin capability before exporting the
-    provider contract for third-party plugins.
+    tool contract for third-party plugins.
 
 ### Phase 3
 
 1. Complete installation planning, hashing, explicit idempotent-by-convention
    script execution, and successful-run state.
-2. Extend `doctor` with installation, provider, shim, and lifecycle drift.
+2. Extend `doctor` with installation, tool, command-routing, and lifecycle drift.
 3. Define and implement explicitly synchronized cron desired state with stable
    ownership and idempotent reconciliation.
 4. Add other lifecycle-oriented manifest sections only after their ownership,
@@ -1262,8 +1314,8 @@ The first implementation does not include:
 - hard prevention of every possible Git or GitHub bypass; or
 - complete prediction or reversal of installation-script side effects.
 
-GOG and other providers beyond the Phase 2 Git/GitHub proving slice are later
-provider work, not new Agent System core environment implementations.
+GOG and other tools beyond the Phase 2 Git/GitHub proving slice are later tool
+work, not new Agent System core environment implementations.
 
 ## Open Decisions
 
@@ -1272,14 +1324,14 @@ provider work, not new Agent System core environment implementations.
 - The managed location and format for successful installation metadata.
 - The exact Linux headless service-credential integration.
 - The final compile-time SDK export/package boundary and typed OpenClaw
-  cross-plugin provider capability.
+  cross-plugin tool capability.
 - Whether the initial GitHub schema is CLI-shaped, semantic HTTP/Octokit
   operations, or a hybrid, and which executor proves the safest reliable slice.
-- Whether one stable tool per provider remains sufficient or common operations
+- Whether one stable tool per service remains sufficient or common operations
   need narrower approval-aware convenience tools.
-- How third-party providers contribute strictly validated manifest projection
+- How third-party tools contribute strictly validated manifest projection
   schemas without weakening unknown-key rejection.
-- Whether provider tools without a binding are omitted per agent or remain
+- Whether tools without a binding are omitted per agent or remain
   visible with a deterministic `capability_not_configured` result.
 - The default policy for GitHub and Git writes, destructive operations, and
   unknown classifications.
@@ -1292,5 +1344,5 @@ The initial product direction is:
 
 > A reproducible, inspectable agent runtime that turns one strict manifest into
 > deterministic environment resolution, configuration projections, agent-aware
-> provider tools, and explicit lifecycle reconciliation without placing agent
+> tools, and explicit lifecycle reconciliation without placing agent
 > secrets in the Gateway environment.

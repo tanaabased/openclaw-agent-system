@@ -1,4 +1,4 @@
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
@@ -19,9 +19,12 @@ import OpCredentialInput from './lib/op-credential-input.ts';
 import OpCredentialService from './lib/op-credential-service.ts';
 import OpEnvironmentService from './lib/op-environment-service.ts';
 import PathProjectionStore from './lib/path-projection-store.ts';
+import AgentSystemToolRegistry from './lib/tool-registry.ts';
+import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
+import githubTool from './tools/github/tool.ts';
 
 export default definePluginEntry({
   id: 'agent-system',
@@ -85,18 +88,28 @@ export default definePluginEntry({
       manifestService,
       opEnvironmentService,
     });
+    const toolRegistry = new AgentSystemToolRegistry([githubTool]);
+    const toolRuntime = new AgentSystemToolRuntime({
+      baseEnvironment: process.env,
+      environmentService,
+      excludedExecutableDirectories: [join(packageDir, 'bin')],
+      logger,
+      manifestService,
+    });
+    const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
+    const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
     const installService = new AgentInstallService({
       credentialManager,
       environmentService,
       pathService,
       readConfig,
       runOpenClawCommand(args, cwd) {
-        const cliEntry = process.argv[1];
-        const argv = cliEntry ? [process.execPath, cliEntry, ...args] : ['openclaw', ...args];
+        const argv = [...openClawCommand, ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     });
-    registerAgentSystemHooks(api, manifestService);
+    toolRegistry.registerTools(api, toolRuntime);
+    registerAgentSystemHooks(api, manifestService, toolRegistry);
     api.registerCli(
       ({ logger: cliLogger, program }) => {
         registerAgentSystemCli(program, {
@@ -107,6 +120,8 @@ export default definePluginEntry({
           installService,
           logger: createAgentSystemLogger(cliLogger, api.id),
           manifestService,
+          toolRegistry,
+          toolRuntime,
         });
       },
       {

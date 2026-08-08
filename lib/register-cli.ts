@@ -1,5 +1,6 @@
 import envAgentSystem from '../cli/env.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
+import runAgentSystemTool from '../cli/tool.ts';
 import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
@@ -13,6 +14,8 @@ import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from 
 import type { Logger } from './logger.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type OpCredentialInput from './op-credential-input.ts';
+import type AgentSystemToolRegistry from './tool-registry.ts';
+import type AgentSystemToolRuntime from './tool-runtime.ts';
 
 type Action = (...args: unknown[]) => unknown;
 
@@ -36,6 +39,8 @@ export interface RegisterAgentSystemCliOptions {
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
   output?: CliOutput;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
+  toolRuntime: AgentSystemToolRuntime;
   setExitCode?: (code: number) => void;
   styles?: CliStyles;
 }
@@ -110,6 +115,24 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        workspaceDir: cwd(),
+      });
+    });
+  const tool = agentSystem
+    .command('tool <command> [args...]')
+    .description('Run one registered command through its Agent System tool.')
+    .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .action(async (command, args) => {
+      const agentId = tool.opts().agent;
+      await runAgentSystemTool({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        argv: Array.isArray(args) ? args.map(String) : [],
+        command: String(command),
+        logger: options.logger,
+        output,
+        setExitCode,
+        toolRegistry: options.toolRegistry,
+        toolRuntime: options.toolRuntime,
         workspaceDir: cwd(),
       });
     });

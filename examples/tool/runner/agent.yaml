@@ -1,0 +1,13 @@
+schema-version: 1
+
+agent:
+  id: tool-runner
+  name: Tool Runner
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+
+github:
+  host: github.com
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT

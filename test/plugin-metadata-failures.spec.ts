@@ -17,6 +17,7 @@ const packageMetadata: PackageMetadata = {
     'cli/',
     'bin/',
     'lib/',
+    'tools/',
     'utils/',
     'assets/agent-system.png',
     'openclaw.plugin.json',
@@ -58,6 +59,9 @@ const manifest: PluginManifest = {
     { name: 'agent-system', cliCommand: 'agent-system' },
     { name: 'as', cliCommand: 'as' },
   ],
+  contracts: {
+    tools: ['agent_system_github'],
+  },
   configSchema: {
     type: 'object',
     additionalProperties: false,
@@ -95,6 +99,7 @@ describe('utils/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
+        'github-tool-contract',
         'config-schema-type',
         'config-schema-strictness',
         'package-file',
