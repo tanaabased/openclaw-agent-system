@@ -33,6 +33,7 @@ export interface AgentSystemManifestValueResolver {
 
 export interface AgentSystemCliResult {
   exitCode: number | null;
+  resolvedExecutable?: string;
   stderr: string;
   stdout: string;
   timedOut: boolean;

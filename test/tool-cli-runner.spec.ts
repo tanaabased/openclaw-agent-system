@@ -3,7 +3,7 @@ import { chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import { resolveToolExecutable } from '../lib/tool-cli-runner.ts';
+import runToolCli, { resolveToolExecutable } from '../lib/tool-cli-runner.ts';
 
 describe('lib/tool-cli-runner', () => {
   let root = '';
@@ -48,5 +48,25 @@ describe('lib/tool-cli-runner', () => {
       await resolveToolExecutable('gh', [workspaceBin, bin].join(delimiter), [workspaceBin]),
       await realpath('/usr/bin/true'),
     );
+  });
+
+  it('should report the executable selected for the child process', async () => {
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'probe'), '#!/bin/sh\nprintf selected');
+    await chmod(join(bin, 'probe'), 0o755);
+
+    const result = await runToolCli({
+      argv: [],
+      cwd: root,
+      environment: { PATH: bin },
+      executable: 'probe',
+      maxOutputBytes: 1024,
+      timeoutMs: 1000,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.resolvedExecutable, await realpath(join(bin, 'probe')));
+    assert.equal(result.stdout, 'selected');
   });
 });

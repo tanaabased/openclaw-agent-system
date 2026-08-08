@@ -93,6 +93,7 @@ export default definePluginEntry({
       baseEnvironment: process.env,
       environmentService,
       excludedExecutableDirectories: [join(packageDir, 'bin')],
+      logCliDiagnostics: process.env.AGENT_SYSTEM_TOOL_DIAGNOSTICS === '1',
       logger,
       manifestService,
     });

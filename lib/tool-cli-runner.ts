@@ -109,6 +109,7 @@ export default async function runToolCli(
     });
     return {
       exitCode,
+      resolvedExecutable: executable,
       stderr: stderr.toString('utf8'),
       stdout: stdout.toString('utf8'),
       timedOut,
