@@ -36,7 +36,7 @@ describe('bin/gh', () => {
     await mkdir(hostBin);
     await writeFile(
       join(hostBin, 'openclaw'),
-      '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n',
+      '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ argv: process.argv.slice(2), launcherDirectory: process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR }));\n',
     );
     await chmod(join(hostBin, 'openclaw'), 0o755);
 
@@ -49,14 +49,12 @@ describe('bin/gh', () => {
     });
 
     assert.equal(result.status, 0);
-    assert.deepEqual(JSON.parse(result.stdout), [
-      'agent-system',
-      'tool',
-      'gh',
-      '--',
-      'api',
-      'user',
-    ]);
+    const output = JSON.parse(result.stdout) as {
+      argv: string[];
+      launcherDirectory: string;
+    };
+    assert.deepEqual(output.argv, ['agent-system', 'tool', 'gh', '--', 'api', 'user']);
+    assert.equal(output.launcherDirectory, packageBin);
   });
 
   it('should preserve a delegated command failure', async () => {

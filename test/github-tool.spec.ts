@@ -118,6 +118,7 @@ describe('tools/github/tool', () => {
     const logs: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];
     const runtime = createRuntime({
+      excludedExecutableDirectories: ['/package/bin', '/source/bin'],
       logs,
       runCli: async (request) => {
         requests.push(request);
@@ -149,6 +150,7 @@ describe('tools/github/tool', () => {
       `${workspaceDir}/bin`,
       `${workspaceDir}/commands`,
       '/package/bin',
+      '/source/bin',
     ]);
     assert.equal(logs.join('\n').includes('private-token'), false);
     assert.equal(

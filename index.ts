@@ -89,10 +89,14 @@ export default definePluginEntry({
       opEnvironmentService,
     });
     const toolRegistry = new AgentSystemToolRegistry([githubTool]);
+    const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
     const toolRuntime = new AgentSystemToolRuntime({
       baseEnvironment: process.env,
       environmentService,
-      excludedExecutableDirectories: [join(packageDir, 'bin')],
+      excludedExecutableDirectories: [
+        join(packageDir, 'bin'),
+        ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
+      ],
       logCliDiagnostics: process.env.AGENT_SYSTEM_TOOL_DIAGNOSTICS === '1',
       logger,
       manifestService,

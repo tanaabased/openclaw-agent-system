@@ -979,8 +979,10 @@ The same internal tool registry and runtime compile the native
 `agent_system_github` tool, conditional `before_prompt_build` guidance, and the
 `agent-system tool gh` CLI bridge used by the Agent System-owned `bin/gh`
 launcher. Inside that credential-bearing runtime, real executable resolution
-excludes the workspace bin, declared prepended paths, and packaged bin. The
-runtime bounds captured output, redacts known credential values before
+excludes the workspace bin, declared prepended paths, packaged bin, and the
+calling Agent System launcher directory. It resolves the remaining executable
+to an absolute real path and launches it without a shell. The runtime bounds
+captured output, redacts known credential values before
 normalization, and emits source-distinguished metadata-only lifecycle logs. The
 default pilot authorization allows classified reads and rejects all other risk
 classes.
