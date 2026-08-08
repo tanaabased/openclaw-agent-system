@@ -120,6 +120,27 @@ describe('lib/tool-cli-runner', () => {
     assert.equal(result.timedOut, true);
   });
 
+  it('should forcefully terminate a child process that ignores its graceful timeout', async function () {
+    this.timeout(5_000);
+    const script = join(root, 'ignore-termination.mjs');
+    await writeFile(
+      script,
+      "process.on('SIGTERM', () => {});\nsetTimeout(() => process.exit(23), 3000);\nsetInterval(() => {}, 1000);\n",
+    );
+
+    const result = await runToolCli({
+      argv: [script],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      timeoutMs: 1_000,
+    });
+
+    assert.equal(result.exitCode, null);
+    assert.equal(result.timedOut, true);
+  });
+
   it('should terminate immediately when the request is already aborted', async () => {
     const script = join(root, 'abort.mjs');
     await writeFile(script, 'setInterval(() => {}, 1000);\n');

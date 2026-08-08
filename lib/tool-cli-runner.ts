@@ -4,6 +4,8 @@ import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from './tool-types.ts';
 
+const forcedTerminationGraceMs = 100;
+
 function isInside(path: string, directory: string): boolean {
   const difference = relative(resolve(directory), resolve(path));
   return difference === '' || (!difference.startsWith('..') && !isAbsolute(difference));
@@ -98,10 +100,14 @@ export default async function runToolCli(
 
   const exit = new Promise<number | null>((resolveExit, reject) => {
     child.once('error', reject);
-    child.once('exit', (code) => resolveExit(code));
+    child.once('close', (code) => resolveExit(code));
   });
 
-  const terminate = () => child.kill('SIGTERM');
+  let forcedTermination: NodeJS.Timeout | undefined;
+  const terminate = () => {
+    child.kill('SIGTERM');
+    forcedTermination ??= setTimeout(() => child.kill('SIGKILL'), forcedTerminationGraceMs);
+  };
   const abort = () => terminate();
   if (request.signal?.aborted) abort();
   else request.signal?.addEventListener('abort', abort, { once: true });
@@ -122,6 +128,7 @@ export default async function runToolCli(
     };
   } finally {
     clearTimeout(timeout);
+    if (forcedTermination) clearTimeout(forcedTermination);
     request.signal?.removeEventListener('abort', abort);
   }
 }
