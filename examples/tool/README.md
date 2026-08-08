@@ -26,7 +26,7 @@ openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 
 # should store access and install the scenario-owned agent through agent system
-cd "$GITHUB_WORKSPACE/examples/tool/runner"
+cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 ```
@@ -38,14 +38,14 @@ openclaw agent-system install
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --agent-system | grep -Fx 'agent-system'
 
 # should discover the current agent manifest for a tool command
-cd "$GITHUB_WORKSPACE/examples/tool/runner"
+cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 openclaw as tool gh -- api user | grep -F '"login": "tanaabot"'
 
 # should run a tool command for an explicit installed agent outside its workspace
 cd "$TMPDIR"
-openclaw as tool gh --agent tool-runner -- api user | grep -F '"login": "tanaabot"'
+openclaw as tool gh --agent tanaabot -- api user | grep -F '"login": "tanaabot"'
 
 # should delegate the packaged gh command through the same agent-bound tool runtime
-cd "$GITHUB_WORKSPACE/examples/tool/runner"
+cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user | grep -F '"login": "tanaabot"'
 ```
