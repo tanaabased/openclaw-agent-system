@@ -47,5 +47,5 @@ openclaw as tool gh --agent tool-runner -- api user | grep -F '"login": "tanaabo
 
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/runner"
-AGENT_SYSTEM_TOOL_DIAGNOSTICS=1 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user | grep -F '"login": "tanaabot"'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user | grep -F '"login": "tanaabot"'
 ```
