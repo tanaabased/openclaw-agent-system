@@ -1,0 +1,4 @@
+#!/bin/sh
+
+package_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+exec node -p 'require(process.argv[1]).version' "$package_root/package.json"

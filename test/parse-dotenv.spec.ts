@@ -34,7 +34,7 @@ EQUALS=left=right
     );
   });
 
-  it('should reject malformed names, duplicate variables, invalid values, escapes, and NULs', () => {
+  it('should reject malformed names, duplicate variables, invalid values, escapes, and nuls', () => {
     for (const [source, code] of [
       ['not-valid=value', 'dotenv-syntax'],
       ['DUPLICATE=one\nDUPLICATE=two', 'dotenv-duplicate-variable'],

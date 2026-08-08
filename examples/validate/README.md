@@ -15,18 +15,16 @@ openclaw plugins enable agent-system
 ```bash
 # should validate the current workspace through the canonical command
 cd "$GITHUB_WORKSPACE/examples/validate/valid"
-openclaw agent-system validate | grep -F 'valid: Agent System manifest for data'
+openclaw agent-system validate | grep -F 'valid' | grep -F 'Agent System manifest for data'
 
 # should prefer the hidden manifest and report the ignored shorthand
 cd "$GITHUB_WORKSPACE/examples/validate/preferred"
-openclaw agent-system validate 2>&1 | grep -F 'valid: Agent System manifest for data'
-openclaw agent-system validate 2>&1 | grep -F '[manifest-shadowed]'
+openclaw agent-system validate 2>&1 | grep -F 'valid' | grep -F 'Agent System manifest for data'
+openclaw agent-system validate 2>&1 | grep -F 'code=manifest-shadowed'
 
 # should reject an unknown schema key with a failing exit code
 cd "$GITHUB_WORKSPACE/examples/validate/invalid"
-if invalid_output=$(openclaw agent-system validate 2>&1); then
-  exit 1
-fi
-grep -F 'error: invalid Agent System manifest' <<< "$invalid_output"
-grep -F '[manifest-unknown-key]' <<< "$invalid_output"
+if output=$(openclaw agent-system validate 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'manifest: invalid Agent System manifest'
+printf '%s\n' "$output" | grep -F 'code=manifest-unknown-key'
 ```

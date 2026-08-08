@@ -3,7 +3,8 @@
 ## Scope
 
 - Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
-- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and product orchestration in `lib/`, independently testable functions in `utils/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Never load schema files or tool modules from manifest values, and do not create empty tool folders before their implementation exists.
 - Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
 
 ## Documentation
@@ -29,10 +30,11 @@
 ## Accepted optimization decisions
 
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
-- Keep one `pr-examples-tests.yml` matrix and scope OpenAI credentials and model selection to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent` scenario may consume those values. Do not recommend separate jobs or per-entry environment injection solely to narrow that step; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-model scenario.
+- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, and `github` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The GitHub and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 
 ## Validation
 
+- Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 - When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia scenario and its example matrix entry; keep detailed scenario rules in `examples/AGENTS.md`.

@@ -1,42 +1,78 @@
-import type { AgentManifestLoadResult } from './agent-manifest-service.ts';
+import ansis, { Ansis } from 'ansis';
+import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
-export interface CliOutput {
-  error(message: string): void;
-  write(message: string): void;
+export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'>;
+
+export interface CliStyles {
+  action(value: string): string;
+  field(value: string): string;
+  status(value: string): string;
+  target(value: string): string;
+}
+
+export interface CliSummaryLine {
+  label: string;
+  style: 'action' | 'field' | 'status' | 'target';
+  value: string;
+}
+
+function colorLevel(environment: NodeJS.ProcessEnv): number {
+  if (Object.hasOwn(environment, 'NO_COLOR')) return 0;
+  if (!Object.hasOwn(environment, 'FORCE_COLOR')) return ansis.level;
+
+  const value = environment.FORCE_COLOR?.trim().toLowerCase();
+  if (value === '0' || value === 'false' || value === 'no' || value === 'off') return 0;
+  if (value === '2' || value === '3') return Number(value);
+  return 1;
+}
+
+export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): CliStyles {
+  const color = new Ansis(colorLevel(environment)).extend({
+    tp: '#00c88a',
+    ts: '#db2777',
+  });
+
+  return {
+    action: (value) => color.tp(value),
+    field: (value) => color.dim(value),
+    status: (value) => color.bold(color.green(value)),
+    target: (value) => color.ts(value),
+  };
+}
+
+const defaultCliStyles = createCliStyles();
+
+export function renderCliSummary(
+  lines: readonly CliSummaryLine[],
+  styles: CliStyles = defaultCliStyles,
+): string[] {
+  const width = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
+  return lines.map(({ label, style, value }) => {
+    const formattedLabel = label.padEnd(width);
+    if (style === 'action') return `${styles.action(formattedLabel)}${styles.target(value)}`;
+    if (style === 'status') return `${styles.status(formattedLabel)}${styles.target(value)}`;
+    if (style === 'target') return `${styles.field(formattedLabel)}${styles.target(value)}`;
+    return `${styles.field(formattedLabel)}${value}`;
+  });
+}
+
+export function writeCliLines(output: CliOutput, lines: readonly string[]): void {
+  if (lines.length === 0) return;
+  output.writeStdout(`${lines.join('\n')}\n`);
+}
+
+export function writeCliSummary(
+  output: CliOutput,
+  lines: readonly CliSummaryLine[],
+  styles?: CliStyles,
+): void {
+  writeCliLines(output, renderCliSummary(lines, styles));
+}
+
+export function writeCliJson(output: CliOutput, value: unknown): void {
+  output.writeStdout(`${JSON.stringify(value, undefined, 2)}\n`);
 }
 
 export const defaultCliOutput: CliOutput = {
-  error(message) {
-    process.stderr.write(message);
-  },
-  write(message) {
-    process.stdout.write(message);
-  },
+  writeStdout: (value) => defaultRuntime.writeStdout(value),
 };
-
-export function reportManifestDiagnostics(
-  result: AgentManifestLoadResult,
-  output: CliOutput,
-): void {
-  for (const diagnostic of result.diagnostics) {
-    const location = diagnostic.fieldPath ? ` (${diagnostic.fieldPath})` : '';
-    output.error(`${diagnostic.severity}: [${diagnostic.code}]${location} ${diagnostic.message}\n`);
-  }
-}
-
-export function reportManifestFailure(
-  result: Exclude<AgentManifestLoadResult, { status: 'loaded' }>,
-  output: CliOutput,
-): void {
-  if (result.status === 'unmanaged') {
-    output.error(`error: no Agent System manifest found in ${result.scope.workspaceDir}\n`);
-  } else if (result.status === 'invalid') {
-    output.error(
-      `error: invalid Agent System manifest${result.path ? ` at ${result.path}` : ''}\n`,
-    );
-    reportManifestDiagnostics(result, output);
-  } else {
-    output.error('error: an OpenClaw agent workspace could not be resolved\n');
-    reportManifestDiagnostics(result, output);
-  }
-}

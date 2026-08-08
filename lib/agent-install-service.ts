@@ -7,6 +7,11 @@ import planAgentInstall, {
   type CurrentAgentInstallState,
   type DesiredAgentInstallState,
 } from '../utils/plan-agent-install.ts';
+import resolveManifestValue from '../utils/resolve-manifest-value.ts';
+import type AgentEnvironmentService from './agent-environment-service.ts';
+import type OpCredentialManager from './op-credential-manager.ts';
+import type AgentPathService from './agent-path-service.ts';
+import type { AgentPathInstallAction, AgentPathWarning } from './agent-path-service.ts';
 
 export interface AgentInstallCommandResult {
   code: number;
@@ -15,12 +20,17 @@ export interface AgentInstallCommandResult {
 }
 
 export interface AgentInstallResult {
-  actions: AgentInstallAction[];
+  actions: Array<AgentInstallAction | AgentPathInstallAction>;
   agentId: string;
+  codexStatus?: 'managed' | 'manual';
+  warnings: AgentPathWarning[];
   workspaceDir: string;
 }
 
 export interface AgentInstallServiceDependencies {
+  credentialManager?: Pick<OpCredentialManager, 'validateStoredForInstall'>;
+  environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
+  pathService?: Pick<AgentPathService, 'inspect' | 'reconcile'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentInstallCommandResult>;
 }
@@ -32,6 +42,13 @@ export interface AgentInstallInput {
 
 export class AgentInstallError extends Error {
   override name = 'AgentInstallError';
+
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
 }
 
 function currentAgentState(config: OpenClawConfig, agentId: string): CurrentAgentInstallState {
@@ -53,7 +70,17 @@ function commandFailure(args: string[], result: AgentInstallCommandResult): Agen
   return new AgentInstallError(`OpenClaw ${args.join(' ')} failed: ${details}`);
 }
 
-/** Reconcile manifest-owned registration and identity through OpenClaw's public CLI. */
+function environmentFailure(
+  result: Awaited<ReturnType<AgentEnvironmentService['loadForWorkspace']>>,
+): AgentInstallError {
+  const diagnostic = result.diagnostics.find(({ severity }) => severity === 'error');
+  return new AgentInstallError(
+    diagnostic?.message ?? 'Agent System could not resolve the manifest environment.',
+    diagnostic?.code ?? 'agent-environment-unavailable',
+  );
+}
+
+/** Reconcile manifest-owned registration, identity, and executable paths. */
 export default class AgentInstallService {
   readonly #dependencies: AgentInstallServiceDependencies;
 
@@ -62,7 +89,54 @@ export default class AgentInstallService {
   }
 
   async install(input: AgentInstallInput): Promise<AgentInstallResult> {
-    const name = input.manifest.agent.name?.trim();
+    const configuredName = input.manifest.agent.name;
+    if (configuredName === undefined) {
+      throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
+    }
+    if (typeof configuredName === 'string' && !configuredName.trim()) {
+      throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
+    }
+
+    if ((input.manifest.environment?.op?.length ?? 0) > 0) {
+      const credentialManager = this.#dependencies.credentialManager;
+      if (!credentialManager) {
+        throw new AgentInstallError(
+          'Stored OP credential validation is unavailable.',
+          'op-credential-unavailable',
+        );
+      }
+      const readiness = await credentialManager.validateStoredForInstall(input.manifest);
+      if (readiness.status === 'invalid') {
+        throw new AgentInstallError(readiness.message, readiness.code);
+      }
+    }
+
+    let environment: Readonly<Record<string, string | undefined>> = {};
+    if (typeof configuredName !== 'string') {
+      const environmentService = this.#dependencies.environmentService;
+      if (!environmentService) {
+        throw new AgentInstallError(
+          'Agent System environment resolution is unavailable during install.',
+          'agent-environment-unavailable',
+        );
+      }
+      const result = await environmentService.loadForWorkspace(
+        input.workspaceDir,
+        input.manifest.agent.id,
+        'cli',
+      );
+      if (result.status !== 'loaded') throw environmentFailure(result);
+      environment = result.environment.values;
+    }
+    const nameResolution = resolveManifestValue(configuredName, environment, '/agent/name');
+    if (nameResolution.status === 'invalid') {
+      throw new AgentInstallError(
+        nameResolution.diagnostic.message,
+        nameResolution.diagnostic.code,
+      );
+    }
+
+    const name = nameResolution.value.trim();
     if (!name) {
       throw new AgentInstallError('Agent System install requires agent.name in the manifest.');
     }
@@ -116,6 +190,8 @@ export default class AgentInstallService {
       if (result.code !== 0) throw commandFailure(args, result);
     }
 
+    const pathResult = await this.#dependencies.pathService?.reconcile(input);
+
     const verifiedConfig = await this.#dependencies.readConfig();
     const verification = planAgentInstall(
       desired,
@@ -126,10 +202,28 @@ export default class AgentInstallService {
         `OpenClaw agent ${desired.agentId} did not match its manifest after installation.`,
       );
     }
+    if (pathResult) {
+      const pathInspection = await this.#dependencies.pathService?.inspect(input);
+      if (!pathInspection?.openClawMatches) {
+        throw new AgentInstallError(
+          `OpenClaw agent ${desired.agentId} did not retain its Agent System executable path after installation.`,
+        );
+      }
+      if (
+        pathResult.codexStatus === 'managed' &&
+        (!pathInspection.codex.pathMatches || !pathInspection.codex.gitignored)
+      ) {
+        throw new AgentInstallError(
+          `Codex path configuration for ${desired.agentId} did not match after installation.`,
+        );
+      }
+    }
 
     return {
-      actions: plan.actions,
+      actions: [...plan.actions, ...(pathResult?.actions ?? [])],
       agentId: desired.agentId,
+      ...(pathResult ? { codexStatus: pathResult.codexStatus } : {}),
+      warnings: pathResult?.warnings ?? [],
       workspaceDir: plan.workspaceDir,
     };
   }

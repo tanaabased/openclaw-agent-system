@@ -5,7 +5,7 @@
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
-- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; `AGENTS.md` and `package.json` are the examples-level boundary files.
+- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep examples-level files limited to `AGENTS.md` and `package.json`, and move proven shared coordination helpers to the repository's `scripts/` directory.
 
 ## OpenClaw Runtime
 
@@ -18,10 +18,11 @@
 
 ## Assertions
 
-- Start each executable block with one lowercase `# should ...` statement and keep one observable behavior per block.
+- Start each executable block with one fully lowercase `# should ...` statement and keep one observable behavior per block. Preserve required casing only in commands, inputs, and expected contract values.
 - Keep every command in a `# should ...` block directly tied to preparing, invoking, or asserting the behavior named by that statement; remove unrelated preflights, repeated assertions, and third-party re-tests.
 - Prefer public commands and direct fixed-string assertions over repository-specific wrappers.
 - Pipe command output directly into fixed-string assertions when possible; do not write output to a temporary file solely for a later grep.
+- When multiple expected properties must occur on the same output line, chain fixed-string greps in one pipeline; do not assert formatter padding or alignment whitespace.
 - Use multiple direct command-and-grep assertions in one test when expected properties occur on different output lines; do not reshape output solely to force one assertion pipeline.
 - Do not add preflight checks when the immediately following product command validates the same requirement.
 - Prefer one command per line; avoid `command && next-command` when ordinary newline sequencing expresses the same fail-fast flow.

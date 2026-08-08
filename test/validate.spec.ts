@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import validateAgentSystem from '../cli/validate.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import { createCliStyles } from '../lib/cli-output.ts';
 
 const validResult: AgentManifestLoadResult = {
   status: 'loaded',
@@ -19,17 +20,24 @@ function createHarness(
     workspace?: AgentManifestLoadResult;
   } = {},
 ) {
-  const output = { error: [] as string[], write: [] as string[] };
+  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const output: string[] = [];
   const calls = { agent: [] as string[], workspace: [] as string[] };
   const exitCodes: number[] = [];
 
   return {
     calls,
     exitCodes,
+    logs,
     output,
     run: () =>
       validateAgentSystem({
         ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
+        logger: {
+          error: (message) => logs.error.push(message),
+          info: (message) => logs.info.push(message),
+          warn: (message) => logs.warn.push(message),
+        },
         manifestService: {
           async loadForAgentId(agentId) {
             calls.agent.push(agentId);
@@ -40,11 +48,9 @@ function createHarness(
             return options.workspace ?? validResult;
           },
         },
-        output: {
-          error: (message) => output.error.push(message),
-          write: (message) => output.write.push(message),
-        },
+        output: { writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
+        styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
       }),
   };
@@ -57,8 +63,8 @@ describe('cli/validate', () => {
     await run();
 
     assert.deepEqual(calls.workspace, ['/current']);
-    assert.deepEqual(output.write, [
-      'valid: Agent System manifest for tanaabot at /workspace/agent.yaml\n',
+    assert.deepEqual(output, [
+      'valid     Agent System manifest for tanaabot\nmanifest  /workspace/agent.yaml\n',
     ]);
   });
 
@@ -78,11 +84,11 @@ describe('cli/validate', () => {
       path: '/current/agent.yaml',
       diagnostics: [],
     };
-    const { exitCodes, output, run } = createHarness({ workspace: invalid });
+    const { exitCodes, logs, run } = createHarness({ workspace: invalid });
 
     await run();
 
     assert.deepEqual(exitCodes, [1]);
-    assert.equal(output.error.length > 0, true);
+    assert.equal(logs.error.length > 0, true);
   });
 });

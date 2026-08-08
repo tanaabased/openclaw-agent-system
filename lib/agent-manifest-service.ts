@@ -11,7 +11,7 @@ import type { AgentManifest, ManifestDiagnostic } from '../utils/manifest-types.
 import parseAgentManifest from '../utils/parse-agent-manifest.ts';
 import resolveAgentId, { type AgentRuntimeContext } from '../utils/resolve-agent-id.ts';
 
-export type ManifestLoadTrigger = 'cli' | 'session_start';
+export type ManifestLoadTrigger = 'before_prompt_build' | 'cli' | 'session_start';
 
 export interface AgentManifestScope {
   agentId?: string;
@@ -108,9 +108,7 @@ export default class AgentManifestService {
 
       return await this.loadForAgentId(agentId, trigger);
     } catch {
-      this.#dependencies.logger.error(
-        `agent_system.manifest_scope_failed trigger=${quote(trigger)}`,
-      );
+      this.#dependencies.logger.error(`manifest_scope_failed trigger=${quote(trigger)}`);
       return {
         status: 'unresolved',
         diagnostics: [
@@ -148,7 +146,7 @@ export default class AgentManifestService {
       return await this.loadForWorkspace(workspaceDir, normalizedAgentId, trigger);
     } catch {
       this.#dependencies.logger.error(
-        `agent_system.manifest_scope_failed trigger=${quote(trigger)} agentId=${quote(normalizedAgentId)}`,
+        `manifest_scope_failed trigger=${quote(trigger)} agentId=${quote(normalizedAgentId)}`,
       );
       return {
         status: 'unresolved',
@@ -291,9 +289,7 @@ export default class AgentManifestService {
   #logUnresolved(trigger: ManifestLoadTrigger): void {
     if (this.#unresolvedTriggers.has(trigger)) return;
     this.#unresolvedTriggers.add(trigger);
-    this.#dependencies.logger.debug?.(
-      `agent_system.manifest_scope_unresolved trigger=${quote(trigger)}`,
-    );
+    this.#dependencies.logger.debug?.(`manifest_scope_unresolved trigger=${quote(trigger)}`);
   }
 
   #logResult(
@@ -308,20 +304,20 @@ export default class AgentManifestService {
       result.scope.agentId === undefined ? '' : ` agentId=${quote(result.scope.agentId)}`;
     if (result.status === 'unmanaged') {
       this.#dependencies.logger.debug?.(
-        `agent_system.manifest_absent trigger=${quote(trigger)}${agentAttribute} workspace=${quote(result.scope.workspaceDir)}`,
+        `manifest_absent trigger=${quote(trigger)}${agentAttribute} workspace=${quote(result.scope.workspaceDir)}`,
       );
       return;
     }
 
     if (ignoredPath) {
       this.#dependencies.logger.warn(
-        `agent_system.manifest_shadowed selected=${quote(result.path ?? '')} ignored=${quote(ignoredPath)}`,
+        `manifest_shadowed selected=${quote(result.path ?? '')} ignored=${quote(ignoredPath)}`,
       );
     }
 
     if (result.status === 'invalid') {
       this.#dependencies.logger.error(
-        `agent_system.manifest_invalid trigger=${quote(trigger)}${agentAttribute} path=${quote(result.path ?? '')} codes=${quote(diagnosticCodes(result.diagnostics))}`,
+        `manifest_invalid trigger=${quote(trigger)}${agentAttribute} path=${quote(result.path ?? '')} codes=${quote(diagnosticCodes(result.diagnostics))}`,
       );
       return;
     }
@@ -331,7 +327,7 @@ export default class AgentManifestService {
         ? 'manifest_changed'
         : 'manifest_loaded';
     this.#dependencies.logger.info(
-      `agent_system.${event} trigger=${quote(trigger)}${agentAttribute} path=${quote(result.path)} schemaVersion=${result.manifest.schemaVersion} digest=${quote(result.digest)}`,
+      `${event} trigger=${quote(trigger)}${agentAttribute} path=${quote(result.path)} schemaVersion=${result.manifest.schemaVersion} digest=${quote(result.digest)}`,
     );
   }
 }

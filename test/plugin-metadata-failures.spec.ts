@@ -15,7 +15,9 @@ const packageMetadata: PackageMetadata = {
     'dist/',
     'index.ts',
     'cli/',
+    'bin/',
     'lib/',
+    'tools/',
     'utils/',
     'assets/agent-system.png',
     'openclaw.plugin.json',
@@ -57,6 +59,9 @@ const manifest: PluginManifest = {
     { name: 'agent-system', cliCommand: 'agent-system' },
     { name: 'as', cliCommand: 'as' },
   ],
+  contracts: {
+    tools: ['agent_system_github'],
+  },
   configSchema: {
     type: 'object',
     additionalProperties: false,
@@ -94,6 +99,7 @@ describe('utils/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
+        'github-tool-contract',
         'config-schema-type',
         'config-schema-strictness',
         'package-file',
@@ -138,7 +144,7 @@ describe('utils/plugin-metadata-failures', () => {
     );
   });
 
-  it('should report command and OpenClaw version drift independently', () => {
+  it('should report command and openclaw version drift independently', () => {
     assert.deepEqual(
       failureCodes(
         {

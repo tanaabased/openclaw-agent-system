@@ -14,12 +14,20 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email:
+    from-environment: AGENT_EMAIL
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
 environment:
   dotenv:
     - .agent-system/env/base.env
     - .agent-system/env/local.env
+  op:
+    - env-team
+    - env-agent
+  path-prepend:
+    - tools/bin
+    - vendor/bin
   required:
     - AGENT_COLOR
   set:
@@ -34,11 +42,14 @@ environment:
         agent: {
           id: 'tanaabot',
           name: 'Tanaabot',
+          email: { fromEnvironment: 'AGENT_EMAIL' },
           description: 'Tanaab development agent.',
           avatar: '.agent-system/assets/tanaabot.png',
         },
         environment: {
           dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],
+          op: ['env-team', 'env-agent'],
+          pathPrepend: ['tools/bin', 'vendor/bin'],
           required: ['AGENT_COLOR'],
           set: {
             AGENT_COLOR: 'green',
@@ -48,6 +59,158 @@ environment:
       },
       diagnostics: [],
     });
+  });
+
+  it('should parse literal and environment-backed agent values', () => {
+    const literal = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: Tanaabot
+  email: tanaabot@example.com
+`);
+    const referenced = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name:
+    from-environment: AGENT_NAME
+  email:
+    from-environment: AGENT_EMAIL
+`);
+
+    assert.equal(literal.status, 'valid');
+    if (literal.status === 'valid') {
+      assert.equal(literal.manifest.agent.name, 'Tanaabot');
+      assert.equal(literal.manifest.agent.email, 'tanaabot@example.com');
+    }
+    assert.equal(referenced.status, 'valid');
+    if (referenced.status === 'valid') {
+      assert.deepEqual(referenced.manifest.agent.name, { fromEnvironment: 'AGENT_NAME' });
+      assert.deepEqual(referenced.manifest.agent.email, { fromEnvironment: 'AGENT_EMAIL' });
+    }
+  });
+
+  it('should parse github identity and an environment-only credential binding', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  host: github.com
+  username:
+    from-environment: GITHUB_USERNAME
+  token: GITHUB_TOKEN
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github, {
+      host: 'github.com',
+      username: { fromEnvironment: 'GITHUB_USERNAME' },
+      token: 'GITHUB_TOKEN',
+    });
+  });
+
+  it('should reject literal-like github tokens and unknown github keys', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  token: github_pat_private
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  token: GITHUB_TOKEN
+  api-url: https://api.github.com
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
+
+  it('should keep dollar-prefixed agent strings literal', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: $AGENT_NAME
+  email: \${AGENT_EMAIL}
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.equal(result.manifest.agent.name, '$AGENT_NAME');
+    assert.equal(result.manifest.agent.email, '${AGENT_EMAIL}');
+  });
+
+  it('should reject invalid agent environment references', () => {
+    for (const value of [
+      '{ from-environment: agent_name }',
+      '{ from-environment: AGENT_NAME, fallback: Tanaabot }',
+      '{ fromEnvironment: AGENT_NAME }',
+    ]) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+  name: ${value}
+`).has(
+          value.includes('fallback') || value.includes('fromEnvironment')
+            ? 'manifest-unknown-key'
+            : 'manifest-schema',
+        ),
+        true,
+      );
+    }
+  });
+
+  it('should keep agent id literal-only', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id:
+    from-environment: AGENT_ID
+`).has('manifest-schema'),
+      true,
+    );
+  });
+
+  it('should normalize one workspace path prepend to the ordered internal list', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  path-prepend: tools/bin
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.pathPrepend, ['tools/bin']);
+  });
+
+  it('should normalize one 1password environment id to the ordered internal list', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  op: env-agent
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.op, ['env-agent']);
   });
 
   it('should normalize one dotenv path to the ordered internal list', () => {
@@ -64,21 +227,36 @@ environment:
     assert.deepEqual(result.manifest.environment?.dotenv, ['.agent-system/env/agent.env']);
   });
 
-  it('should reject duplicate YAML keys', () => {
+  it('should reject legacy or expanded op environment aliases', () => {
+    for (const key of ['onepassword-environments', 'onepassword-environment', 'ops']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  ${key}: private-environment-id
+`).has('manifest-unknown-key'),
+        true,
+      );
+    }
+  });
+
+  it('should reject duplicate yaml keys', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: 1\nschema-version: 1\nagent:\n  id: tanaabot\n'),
       new Set(['yaml-duplicate-key']),
     );
   });
 
-  it('should reject YAML anchors and aliases', () => {
+  it('should reject yaml anchors and aliases', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: &version 1\nagent:\n  id: tanaabot\n  name: *version\n'),
       new Set(['yaml-anchor', 'yaml-alias']),
     );
   });
 
-  it('should reject explicit YAML tags', () => {
+  it('should reject explicit yaml tags', () => {
     assert.deepEqual(
       diagnosticCodes('schema-version: 1\nagent:\n  id: !agent tanaabot\n'),
       new Set(['yaml-tag']),
@@ -164,6 +342,36 @@ agent:
   id: tanaabot
 environment:
   dotenv: ${dotenv}
+`).has('manifest-schema'),
+        true,
+      );
+    }
+  });
+
+  it('should reject empty, blank, and duplicate 1password environment declarations', () => {
+    for (const environments of ['[]', "''", "'   '", '[env-agent, env-agent]']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  op: ${environments}
+`).has('manifest-schema'),
+        true,
+      );
+    }
+  });
+
+  it('should reject empty, absolute, and duplicate path prepend declarations', () => {
+    for (const paths of ['[]', "''", "'   '", '/usr/local/bin', '[tools/bin, tools/bin]']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  path-prepend: ${paths}
 `).has('manifest-schema'),
         true,
       );

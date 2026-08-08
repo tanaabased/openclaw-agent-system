@@ -1,0 +1,10 @@
+schema-version: 1
+
+agent:
+  id: identity-data
+  name:
+    from-environment: AGENT_NAME
+
+environment:
+  set:
+    AGENT_NAME: Data from environment

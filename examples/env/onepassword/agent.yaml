@@ -1,0 +1,9 @@
+schema-version: 1
+
+agent:
+  id: onepassword-data
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+  required:
+    - VIBES

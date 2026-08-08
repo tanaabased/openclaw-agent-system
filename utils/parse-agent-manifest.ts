@@ -2,20 +2,14 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
+import { decodeAgentSection, externalAgentSectionSchema } from './agent-section-schema.ts';
+import { decodeGitHubSection, externalGitHubSectionSchema } from '../tools/github/config-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './manifest-types.ts';
 
 const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
-    agent: Type.Object(
-      {
-        id: Type.String({ minLength: 1, pattern: '^[a-z0-9][a-z0-9-]*$' }),
-        name: Type.Optional(Type.String({ minLength: 1 })),
-        description: Type.Optional(Type.String({ minLength: 1 })),
-        avatar: Type.Optional(Type.String({ minLength: 1 })),
-      },
-      { additionalProperties: false },
-    ),
+    agent: externalAgentSectionSchema,
     environment: Type.Optional(
       Type.Object(
         {
@@ -26,6 +20,33 @@ const externalAgentManifestSchema = Type.Object(
                 Type.String({
                   minLength: 1,
                   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
+          op: Type.Optional(
+            Type.Union([
+              Type.String({ minLength: 1, pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$' }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
+          'path-prepend': Type.Optional(
+            Type.Union([
+              Type.String({
+                minLength: 1,
+                pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
+              }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
                 }),
                 { minItems: 1, uniqueItems: true },
               ),
@@ -44,6 +65,7 @@ const externalAgentManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    github: Type.Optional(externalGitHubSectionSchema),
   },
   { additionalProperties: false },
 );
@@ -82,12 +104,7 @@ function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): Manif
 function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   return {
     schemaVersion: value['schema-version'],
-    agent: {
-      id: value.agent.id,
-      ...(value.agent.name === undefined ? {} : { name: value.agent.name }),
-      ...(value.agent.description === undefined ? {} : { description: value.agent.description }),
-      ...(value.agent.avatar === undefined ? {} : { avatar: value.agent.avatar }),
-    },
+    agent: decodeAgentSection(value.agent),
     ...(value.environment === undefined
       ? {}
       : {
@@ -100,12 +117,29 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
                       ? [value.environment.dotenv]
                       : [...value.environment.dotenv],
                 }),
+            ...(value.environment.op === undefined
+              ? {}
+              : {
+                  op:
+                    typeof value.environment.op === 'string'
+                      ? [value.environment.op]
+                      : [...value.environment.op],
+                }),
+            ...(value.environment['path-prepend'] === undefined
+              ? {}
+              : {
+                  pathPrepend:
+                    typeof value.environment['path-prepend'] === 'string'
+                      ? [value.environment['path-prepend']]
+                      : [...value.environment['path-prepend']],
+                }),
             ...(value.environment.required === undefined
               ? {}
               : { required: [...value.environment.required] }),
             ...(value.environment.set === undefined ? {} : { set: { ...value.environment.set } }),
           },
         }),
+    ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
   };
 }
 

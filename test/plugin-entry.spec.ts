@@ -6,7 +6,7 @@ import plugin from '../index.ts';
 import type { CommandLike } from '../lib/register-cli.ts';
 
 describe('index', () => {
-  it('should expose the Agent System plugin contract', () => {
+  it('should expose the agent system plugin contract', () => {
     assert.equal(plugin.id, 'agent-system');
     assert.equal(plugin.name, 'Agent System');
     assert.equal(typeof plugin.register, 'function');
@@ -14,7 +14,7 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should register startup hooks and both CLI roots', () => {
+  it('should register startup hooks and both cli roots', () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
@@ -25,6 +25,7 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const toolNames: string[] = [];
     const logger = {
       debug() {},
       error() {},
@@ -32,6 +33,7 @@ describe('index', () => {
       warn() {},
     };
     const api = {
+      id: 'agent-system',
       logger,
       on(name: string) {
         hookNames.push(name);
@@ -61,12 +63,16 @@ describe('index', () => {
         registrar = nextRegistrar;
         options = nextOptions;
       },
+      registerTool(_tool: unknown, toolOptions?: { name?: string }) {
+        if (toolOptions?.name) toolNames.push(toolOptions.name);
+      },
     };
 
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['session_start']);
+    assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
+    assert.deepEqual(toolNames, ['agent_system_github']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

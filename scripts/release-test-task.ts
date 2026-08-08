@@ -14,7 +14,9 @@ interface ClawHubValidation {
 }
 
 interface PackageMetadata {
+  dependencies?: Record<string, string>;
   name?: string;
+  optionalDependencies?: Record<string, string>;
   version?: string;
   openclaw?: {
     runtimeExtensions?: string[];
@@ -100,33 +102,28 @@ try {
   });
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
-  const requiredPaths = [
+  const trackedSourcePaths = await check('inventory checked-in package sources', async () => {
+    const result = await run('git', [
+      'ls-files',
+      '-z',
+      '--',
+      'bin',
+      'cli',
+      'lib',
+      'tools',
+      'utils',
+    ]);
+    const paths = result.output.split('\0').filter(Boolean);
+    assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
+    return paths;
+  });
+  const requiredArtifactPaths = [
     'package.json',
     'openclaw.plugin.json',
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
-    'cli/env.ts',
-    'cli/install.ts',
-    'cli/validate.ts',
-    'lib/agent-environment-service.ts',
-    'lib/agent-install-service.ts',
-    'lib/agent-manifest-service.ts',
-    'lib/cli-output.ts',
-    'lib/register-cli.ts',
-    'lib/register-hooks.ts',
-    'utils/decode.ts',
-    'utils/discover-manifest.ts',
-    'utils/encode.ts',
-    'utils/encode-keys.ts',
-    'utils/load-agent-dotenv.ts',
-    'utils/manifest-types.ts',
-    'utils/parse-agent-manifest.ts',
-    'utils/parse-dotenv.ts',
-    'utils/plan-agent-install.ts',
-    'utils/plugin-metadata-failures.ts',
-    'utils/resolve-agent-id.ts',
-    'utils/resolve-agent-environment.ts',
+    'bin/gh',
     'assets/agent-system.png',
     'README.md',
     'ADVANCED.md',
@@ -135,7 +132,7 @@ try {
     'LICENSE',
   ];
   await check('include required package files', () => {
-    for (const path of requiredPaths) {
+    for (const path of [...requiredArtifactPaths, ...trackedSourcePaths]) {
       assert.equal(packedPaths.has(path), true, `packed plugin is missing ${path}`);
     }
   });
@@ -165,6 +162,9 @@ try {
     const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
     const manifest = JSON.parse(manifestContents) as PluginManifest;
     assert.equal(packageMetadata.name, '@tanaab/openclaw-agent-system');
+    assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
+    assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
+    assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
@@ -184,6 +184,23 @@ try {
     assert.equal(builtModule.default?.id, 'agent-system');
     assert.equal(builtModule.default?.name, 'Agent System');
     assert.equal(typeof builtModule.default?.register, 'function');
+  });
+
+  await check('ship an executable Agent System path probe', async () => {
+    const probePath = join(packageRoot, 'bin', 'agent-system-test');
+    await access(probePath);
+    const result = await run(probePath, []);
+    const packageMetadata = JSON.parse(
+      await readFile(join(packageRoot, 'package.json'), 'utf8'),
+    ) as PackageMetadata;
+    assert.equal(result.output.trim(), packageMetadata.version);
+  });
+
+  await check('ship an executable Agent System gh command', async () => {
+    const commandPath = join(packageRoot, 'bin', 'gh');
+    await access(commandPath);
+    const result = await run(commandPath, ['--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
   });
 
   await check('pass ClawHub package validation without warnings', async () => {

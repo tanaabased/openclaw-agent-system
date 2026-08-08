@@ -5,7 +5,7 @@ This scenario installs the prepared Agent System package on a fresh GitHub Actio
 ## Setup
 
 ```bash
-# should install and enable the packed plugin through OpenClaw's managed npm package path
+# should install and enable the packed plugin through openclaw's managed npm package path
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 ```

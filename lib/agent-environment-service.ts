@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto';
 
 import loadAgentDotenv from '../utils/load-agent-dotenv.ts';
 import resolveAgentEnvironment, {
+  type AgentEnvironmentInputSource,
   type ResolvedAgentEnvironment,
 } from '../utils/resolve-agent-environment.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type { AgentManifestLoadResult, ManifestLoadTrigger } from './agent-manifest-service.ts';
+import type OpEnvironmentService from './op-environment-service.ts';
 
 export type AgentEnvironmentLoadResult =
   | Exclude<AgentManifestLoadResult, { status: 'loaded' }>
@@ -21,6 +23,7 @@ export interface AgentEnvironmentServiceDependencies {
   };
   loadDotenv?: typeof loadAgentDotenv;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  opEnvironmentService?: Pick<OpEnvironmentService, 'load'>;
 }
 
 function quote(value: string): string {
@@ -92,11 +95,46 @@ export default class AgentEnvironmentService {
       };
     }
 
-    const resolution = resolveAgentEnvironment(
-      result.manifest,
-      this.#hostEnvironment,
-      dotenv.sources,
-    );
+    const opEnvironmentIds = result.manifest.environment?.op ?? [];
+    let opSources: AgentEnvironmentInputSource[] = [];
+    if (opEnvironmentIds.length > 0) {
+      const opEnvironmentService = this.#dependencies.opEnvironmentService;
+      if (!opEnvironmentService) {
+        const diagnostics = [
+          ...result.diagnostics,
+          {
+            code: 'op-integration-unavailable',
+            fieldPath: '/environment/op',
+            message: 'OP Environment resolution is unavailable in this runtime.',
+            severity: 'error' as const,
+          },
+        ];
+        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
+        return {
+          status: 'invalid',
+          scope: result.scope,
+          path: result.path,
+          diagnostics,
+        };
+      }
+      const op = await opEnvironmentService.load(result.manifest.agent.id, opEnvironmentIds);
+      if (op.status === 'invalid') {
+        const diagnostics = [...result.diagnostics, ...op.diagnostics];
+        this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
+        return {
+          status: 'invalid',
+          scope: result.scope,
+          path: result.path,
+          diagnostics,
+        };
+      }
+      opSources = op.sources;
+    }
+
+    const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment, {
+      dotenv: dotenv.sources,
+      op: opSources,
+    });
     if (resolution.status === 'invalid') {
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
       this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
@@ -110,7 +148,7 @@ export default class AgentEnvironmentService {
 
     const { environment } = resolution;
     this.#dependencies.logger.info(
-      `agent_system.environment_resolved trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} variables=${environment.variables.length} digest=${quote(environmentDigest(environment))}`,
+      `environment_resolved trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} variables=${environment.variables.length} digest=${quote(environmentDigest(environment))}`,
     );
     return { ...result, environment };
   }
@@ -121,7 +159,7 @@ export default class AgentEnvironmentService {
     diagnostics: AgentManifestLoadResult['diagnostics'],
   ): void {
     this.#dependencies.logger.error(
-      `agent_system.environment_invalid trigger=${quote(trigger)} agentId=${quote(agentId)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
+      `environment_invalid trigger=${quote(trigger)} agentId=${quote(agentId)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
     );
   }
 }

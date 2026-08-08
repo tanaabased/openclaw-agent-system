@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import envAgentSystem from '../cli/env.ts';
 import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
+import { createCliStyles } from '../lib/cli-output.ts';
 
 const loaded: AgentEnvironmentLoadResult = {
   status: 'loaded',
@@ -17,6 +18,7 @@ const loaded: AgentEnvironmentLoadResult = {
     },
   },
   environment: {
+    sensitiveNames: ['GITHUB_TOKEN'],
     values: { AGENT_COLOR: 'green', GITHUB_TOKEN: 'private-token' },
     variables: [
       {
@@ -45,10 +47,12 @@ function createHarness(
 ) {
   const calls = { agent: [] as string[], workspace: [] as string[] };
   const exitCodes: number[] = [];
-  const output = { error: [] as string[], write: [] as string[] };
+  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const output: string[] = [];
   return {
     calls,
     exitCodes,
+    logs,
     output,
     run: () =>
       envAgentSystem({
@@ -64,11 +68,14 @@ function createHarness(
           },
         },
         json: options.json ?? false,
-        output: {
-          error: (message) => output.error.push(message),
-          write: (message) => output.write.push(message),
+        logger: {
+          error: (message) => logs.error.push(message),
+          info: (message) => logs.info.push(message),
+          warn: (message) => logs.warn.push(message),
         },
+        output: { writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
+        styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
       }),
   };
@@ -80,7 +87,7 @@ describe('cli/env', () => {
 
     await run();
 
-    const serialized = output.write.join('');
+    const serialized = output.join('');
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(JSON.parse(serialized).variables, [
       {
@@ -98,6 +105,7 @@ describe('cli/env', () => {
     ]);
     assert.equal(serialized.includes('green'), false);
     assert.equal(serialized.includes('private-token'), false);
+    assert.equal(serialized.includes('sensitiveNames'), false);
   });
 
   it('should report required state in human output', async () => {
@@ -106,9 +114,7 @@ describe('cli/env', () => {
     await run();
 
     assert.equal(
-      output.write
-        .join('')
-        .includes('AGENT_COLOR source=environment.set required=true overridden=0'),
+      output.join('').includes('AGENT_COLOR   source=environment.set required=true overridden=0'),
       true,
     );
   });
@@ -120,7 +126,7 @@ describe('cli/env', () => {
 
     assert.deepEqual(calls.agent, ['data']);
     assert.deepEqual(calls.workspace, []);
-    assert.equal(output.write.join('').includes('AGENT_COLOR'), true);
+    assert.equal(output.join('').includes('AGENT_COLOR'), true);
   });
 
   it('should fail when the manifest is invalid', async () => {

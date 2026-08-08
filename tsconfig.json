@@ -16,5 +16,5 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true
   },
-  "include": ["index.ts", "cli/**/*.ts", "lib/**/*.ts", "utils/**/*.ts"]
+  "include": ["index.ts", "cli/**/*.ts", "lib/**/*.ts", "tools/**/*.ts", "utils/**/*.ts"]
 }

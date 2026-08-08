@@ -1,0 +1,22 @@
+#!/bin/sh
+
+if [ "$#" -eq 1 ]; then
+  case "$1" in
+    --agent-system)
+      printf '%s\n' agent-system
+      exit 0
+      ;;
+  esac
+fi
+
+if ! agent_system_launcher_dir=$(
+  CDPATH='' cd -P "$(dirname "$0")"
+  pwd -P
+); then
+  printf '%s\n' 'agent-system: could not resolve the gh launcher directory' >&2
+  exit 1
+fi
+AGENT_SYSTEM_TOOL_LAUNCHER_DIR=$agent_system_launcher_dir
+export AGENT_SYSTEM_TOOL_LAUNCHER_DIR
+
+exec openclaw agent-system tool gh -- "$@"
