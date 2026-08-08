@@ -28,7 +28,7 @@ metadata:
 
 ## Overview
 
-Use `agent_system_github` for GitHub work when the active agent manifest contains `github`. It runs the trusted `gh` executable with that agent's Agent System environment, selected token, and isolated generated config.
+Use `agent_system_github` for GitHub work when the active agent manifest contains `github`. It applies the agent's operation policy, then runs the trusted `gh` executable with that agent's Agent System environment, selected token, and isolated generated config.
 
 ## When to Use
 
@@ -74,8 +74,9 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 
 - Treat a nonzero `exitCode` and returned `stderr` as the underlying `gh` failure.
 - Report missing tool, missing credential, manifest binding, or configured-username mismatch errors directly.
+- When OpenClaw requests approval, wait for the operator's decision and do not retry or reshape the command to avoid the classified policy.
 - Do not work around containment failures with `exec`, direct HTTP, another integration, or a different GitHub identity.
-- GitHub token permissions are the authorization boundary in this release; Agent System does not yet block destructive operations. Use least-privilege credentials and follow the user's confirmation requirements.
+- Agent System policy denies or asks for configured destructive, admin, and unknown operations before credentials load. GitHub token permissions remain the underlying provider boundary, so use least-privilege credentials.
 
 ## Workflow
 

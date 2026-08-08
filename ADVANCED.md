@@ -72,6 +72,10 @@ environment:
 
 github:
   host: github.com
+  policy:
+    destructive: ask
+    admin: deny
+    unknown: deny
   username:
     from-environment: AGENT_GITHUB_USERNAME
   token: GITHUB_TOKEN
@@ -104,6 +108,7 @@ github:
 | `environment.path-prepend` | no            | One workspace-relative directory or an ordered non-empty unique list.                 |
 | `environment.required`     | no            | Non-empty unique list that fails resolution when a final value is absent or empty.    |
 | `github.host`              | no            | Literal `github.com`; defaults to `github.com`.                                       |
+| `github.policy`            | no            | Decisions for destructive, admin, and unknown operations; each defaults to `deny`.    |
 | `github.username`          | for keys      | Literal or environment-backed expected authenticated login; verified when declared.   |
 | `github.token`             | for keys      | Environment binding; ordinary tool use falls back to `GH_TOKEN`, then `GITHUB_TOKEN`. |
 | `github.ssh-keys`          | no            | One SSH public-key source or list reconciled with GitHub authentication keys.         |
@@ -162,7 +167,11 @@ Agent System always sets `GH_CONFIG_DIR` to a private per-agent directory beneat
 
 Declaring either account-key section requires explicit `github.username` and `github.token` fields. `validate` checks the declaration, inline key structure, and unambiguous path syntax without reading files, resolving credentials, or contacting GitHub. `doctor` resolves key files, verifies the configured account, and compares canonical SHA-256 key fingerprints with GitHub's authentication and SSH-signing collections. `install` resolves every source before remote work, adds only missing keys, and refetches both configured collections to verify convergence. An omitted title defaults to `agent-system-<agent-id>-ssh-authentication-<12-hex>` or `agent-system-<agent-id>-ssh-signing-<12-hex>`. Titles are creation metadata and do not create drift; matching uses key material. Agent System never removes, rotates, retitles, or prunes GitHub keys.
 
-Authentication mutation or token display, generated-config mutation, aliases, extensions, and browser or editor launch paths are blocked as credential-containment boundaries. Other `gh` operations pass through unchanged. GitHub token permissions are the current authorization boundary; Agent System does not yet classify or prohibit destructive GitHub operations. Add least-privilege tokens and treat tool-level destructive-operation policy as deferred work.
+Authentication mutation or token display, generated-config mutation, aliases, extensions, and browser or editor launch paths are blocked as credential-containment boundaries. The tool then classifies ordinary command verbs, known hazardous verbs and flags, REST methods and sensitive routes, and GraphQL operation shape. Known destructive and admin classifications take precedence over `unknown`, so `unknown: allow` does not override a known hazard.
+
+Read and ordinary write operations are allowed. `github.policy.destructive`, `github.policy.admin`, and `github.policy.unknown` each accept `allow`, `ask`, or `deny` and default to `deny`. `validate` warns when `unknown: allow` weakens the fail-closed compatibility boundary. Classification is deliberately compact and conservative rather than a complete mirror of every `gh` version; unfamiliar syntax remains `unknown`, and least-privilege GitHub token permissions remain the underlying provider boundary.
+
+`ask` is available only to `agent_system_github` calls made during an OpenClaw agent turn. The registered trusted tool policy asks through OpenClaw before Agent System resolves the environment or credential. An `allow once` response creates one short-lived receipt bound to the agent, tool-call id, and exact input; the runtime consumes it once before execution. Denial, timeout, missing approval delivery, changed input, and replay fail closed. Direct `agent-system tool gh` calls and the packaged `gh` launcher have no originating approval conversation, so an `ask` decision is rejected with guidance to use an agent turn or configure explicit `allow` for automation.
 
 Agent System ships one global `bin/gh` compatibility launcher. Exact `gh --agent-system` prints `agent-system` and exits successfully; ordinary arguments pass unchanged to `openclaw agent-system tool gh -- ...` through a minimal POSIX shell process. The command surface writes child stdout and stderr directly and preserves the child exit code. The native tool instead returns structured `exitCode`, `stdout`, `stderr`, and `truncated` fields. When the command surface is attached to a terminal, it supplies `GH_FORCE_TTY`; explicit caller color variables remain intact, while CI and other non-TTY use stays uncolored naturally.
 

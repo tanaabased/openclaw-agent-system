@@ -51,6 +51,43 @@ describe('tools/github/lifecycle', () => {
     ]);
   });
 
+  it('should warn when unknown github operations are explicitly allowed', () => {
+    const contribution = createGitHubLifecycleContribution({
+      configStore: {
+        async inspect() {
+          throw new Error('inspect should not run');
+        },
+        async reconcile() {
+          throw new Error('reconcile should not run');
+        },
+      },
+    });
+
+    assert.deepEqual(
+      contribution.validate?.({
+        manifest: {
+          schemaVersion: 1,
+          agent: { id: 'data' },
+          github: { policy: { unknown: 'allow' } },
+        },
+        workspaceDir: '/workspace',
+      }),
+      {
+        code: 'github-config-valid',
+        diagnostics: [
+          {
+            code: 'github-policy-unknown-allowed',
+            fieldPath: '/github/policy/unknown',
+            message:
+              'Unknown GitHub operations are allowed; new or unclassified gh syntax may execute.',
+            severity: 'warning',
+          },
+        ],
+        summary: 'GitHub tool configuration',
+      },
+    );
+  });
+
   it('should reconcile and verify generated github cli configuration', async () => {
     const events: string[] = [];
     const contribution = createGitHubLifecycleContribution({

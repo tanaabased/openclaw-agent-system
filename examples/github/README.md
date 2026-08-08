@@ -70,6 +70,13 @@ echo "$!" > "$TMPDIR/gateway.pid"
 ## Testing
 
 ```bash
+# should reject agent-only approval policy through the direct tool command
+cd "$GITHUB_WORKSPACE/examples/github/emori"
+if output="$(openclaw agent-system tool gh -- repo delete emoriwan/agent-system-policy-proof --yes 2>&1)"; then
+  exit 1
+fi
+printf '%s\n' "$output" | grep -F 'require approval in an OpenClaw agent conversation'
+
 # should validate the tanaabot github lifecycle declaration without remote permission preflights
 cd "$TMPDIR/agent-system-github-tanaabot"
 openclaw agent-system validate | grep -F 'valid' | grep -F 'github' | grep -F 'GitHub tool and account key configuration'

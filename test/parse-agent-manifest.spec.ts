@@ -139,6 +139,52 @@ github:
     });
   });
 
+  it('should parse narrow github hazard policy decisions', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    destructive: allow
+    admin: ask
+    unknown: allow
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github?.policy, {
+      destructive: 'allow',
+      admin: 'ask',
+      unknown: 'allow',
+    });
+  });
+
+  it('should reject unsupported github policy decisions and policy keys', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    destructive: prompt
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    write: deny
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
+
   it('should normalize github ssh authentication and signing key short and object forms', () => {
     const result = parseAgentManifest(`
 schema-version: 1

@@ -8,6 +8,11 @@ import {
   type GitHubCliConfiguration,
   type GitHubManifestConfiguration,
 } from './config-schema.ts';
+import {
+  authorizeGitHubOperation,
+  classifyGitHubOperation,
+  githubCommandPosition,
+} from './policy.ts';
 import { githubToolSchema, type GitHubToolInput } from './tool-schema.ts';
 
 interface ResolvedGitHubConfiguration {
@@ -30,20 +35,6 @@ export interface GitHubToolDependencies {
 
 function toolError(code: AgentSystemToolErrorCode, message: string): never {
   throw new AgentSystemToolError(code, message);
-}
-
-function commandPosition(argv: readonly string[]): number {
-  const optionsWithValues = new Set(['--hostname', '--repo', '-R']);
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index] ?? '';
-    if (value === '--') return index + 1;
-    if (optionsWithValues.has(value)) {
-      index += 1;
-      continue;
-    }
-    if (!value.startsWith('-')) return index;
-  }
-  return -1;
 }
 
 function validateInput(input: GitHubToolInput): void {
@@ -69,7 +60,7 @@ function validateInput(input: GitHubToolInput): void {
     );
   }
 
-  const position = commandPosition(input.argv);
+  const position = githubCommandPosition(input.argv);
   const command = position < 0 ? undefined : input.argv[position];
   const subcommand = position < 0 ? undefined : input.argv[position + 1];
   if (!command) toolError('invalid_arguments', 'The GitHub CLI command is missing.');
@@ -111,7 +102,11 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
   return defineAgentSystemCliTool({
     apiVersion: 1,
     id: 'github',
-    authorization: { mode: 'provider' },
+    authorization: {
+      authorize: authorizeGitHubOperation,
+      mode: 'agent-system',
+      policyId: 'agent-system.github',
+    },
     configuration: {
       read: readConfiguration,
       resolve(configuration, resolver): ResolvedGitHubConfiguration {
@@ -182,13 +177,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
     commands: [{ command: 'gh' }],
     tool: {
       classify(input) {
-        const position = commandPosition(input.argv);
-        return {
-          action: 'github.cli.invoke',
-          risk: 'unknown',
-          summary: `Run gh ${position >= 0 ? input.argv[position] : 'command'}`,
-          resources: [{ type: 'host', id: 'github.com' }],
-        };
+        return classifyGitHubOperation(input);
       },
       description:
         'Run the trusted GitHub CLI with the active Agent System agent credential and isolated configuration. Supply ordinary non-interactive gh arguments in argv and optional bounded stdin. Authentication mutation, credential display, config mutation, aliases, extensions, browsers, and editors are unavailable.',

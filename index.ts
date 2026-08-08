@@ -23,6 +23,7 @@ import PathProjectionStore from './lib/path-projection-store.ts';
 import createPathLifecycleContribution from './lib/path-lifecycle.ts';
 import AgentSystemLifecycleRegistry from './lib/lifecycle-registry.ts';
 import AgentSystemToolRegistry from './lib/tool-registry.ts';
+import AgentSystemToolApprovalReceiptStore from './lib/tool-approval-receipt-store.ts';
 import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
@@ -147,10 +148,12 @@ export default definePluginEntry({
     });
     environmentServiceRef.current = environmentService;
     const doctorService = new AgentDoctorService({ lifecycleRegistry });
+    const toolApprovals = new AgentSystemToolApprovalReceiptStore();
     const toolRegistry = new AgentSystemToolRegistry([
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
     const toolRuntime = new AgentSystemToolRuntime({
+      approvals: toolApprovals,
       baseEnvironment: process.env,
       environmentService,
       excludedExecutableDirectories: [
@@ -165,6 +168,7 @@ export default definePluginEntry({
       lifecycleRegistry,
     });
     toolRegistry.registerTools(api, toolRuntime);
+    toolRegistry.registerTrustedPolicies(api, manifestService, toolApprovals);
     registerAgentSystemHooks(api, manifestService, toolRegistry);
     api.registerCli(
       ({ logger: cliLogger, program }) => {

@@ -33,6 +33,15 @@ export default function createGitHubLifecycleContribution(
     isConfigured: (manifest) => manifest.github !== undefined,
     validate: ({ manifest }) => {
       const diagnostics = validateGitHubAccountKeyDeclarations(manifest.github ?? {});
+      if (manifest.github?.policy?.unknown === 'allow') {
+        diagnostics.push({
+          code: 'github-policy-unknown-allowed',
+          fieldPath: '/github/policy/unknown',
+          message:
+            'Unknown GitHub operations are allowed; new or unclassified gh syntax may execute.',
+          severity: 'warning',
+        });
+      }
       return {
         code: 'github-config-valid',
         ...(diagnostics.length === 0 ? {} : { diagnostics }),

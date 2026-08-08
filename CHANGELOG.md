@@ -5,6 +5,7 @@
 - Added deterministic agent `PATH` projection for OpenClaw exec and Codex native shell commands, with drift diagnostics. [#3](https://github.com/tanaabased/openclaw-agent-system/pull/3)
 - Added explicit per-agent environment resolution with host references, required checks, and value-free `env` inspection. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)
 - Added generic `agent_system_github` CLI passthrough, isolated per-agent config, credential fallbacks, and packaged usage guidance. [#4](https://github.com/tanaabased/openclaw-agent-system/pull/4)
+- Added fail-closed GitHub destructive, admin, and unknown-operation policy with agent-only OpenClaw approval prompts. [#4](https://github.com/tanaabased/openclaw-agent-system/pull/4)
 - Added GitHub SSH authentication and signing key lifecycle reconciliation through `validate`, `doctor`, and `install`. [#4](https://github.com/tanaabased/openclaw-agent-system/pull/4)
 - Added initial Agent System plugin and delivery scaffolding. [#1](https://github.com/tanaabased/openclaw-agent-system/pull/1)
 - Added manifest loading at `session_start` with redacted lifecycle diagnostics. [#2](https://github.com/tanaabased/openclaw-agent-system/pull/2)

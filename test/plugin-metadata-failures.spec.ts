@@ -62,6 +62,7 @@ const manifest: PluginManifest = {
   ],
   contracts: {
     tools: ['agent_system_github'],
+    trustedToolPolicies: ['agent-system.github'],
   },
   skills: ['./skills'],
   configSchema: {
@@ -102,6 +103,7 @@ describe('utils/plugin-metadata-failures', () => {
         'canonical-command-alias',
         'short-command-alias',
         'github-tool-contract',
+        'github-tool-policy-contract',
         'github-skill-contract',
         'config-schema-type',
         'config-schema-strictness',

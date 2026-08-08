@@ -9,5 +9,7 @@ environment:
 
 github:
   host: github.com
+  policy:
+    destructive: ask
   username: emoriwan
   token: GH_TOKEN_EMORI

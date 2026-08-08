@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
@@ -6,6 +6,10 @@ import type { Static, TSchema } from 'typebox';
 import resolveManifestValue from '../utils/resolve-manifest-value.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
+import {
+  hashAgentSystemToolInput,
+  type default as AgentSystemToolApprovalReceiptStore,
+} from './tool-approval-receipt-store.ts';
 import runToolCli from './tool-cli-runner.ts';
 import type {
   AgentSystemAuditEvent,
@@ -46,6 +50,7 @@ interface ToolLogger {
 }
 
 export interface AgentSystemToolRuntimeDependencies {
+  approvals?: Pick<AgentSystemToolApprovalReceiptStore, 'consume'>;
   audit?: { record(event: AgentSystemAuditEvent): Promise<void> | void };
   authorize?(request: AgentSystemAuthorizationRequest): Promise<AgentSystemAuthorizationDecision>;
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
@@ -80,10 +85,6 @@ function bindingNames(binding: string | { anyOf: readonly string[] }): readonly 
 
 function quote(value: string | number): string {
   return JSON.stringify(value);
-}
-
-function inputHash(input: unknown): string {
-  return createHash('sha256').update(JSON.stringify(input)).digest('hex').slice(0, 16);
 }
 
 function redact(value: string, secrets: readonly string[]): string {
@@ -153,21 +154,42 @@ export default class AgentSystemToolRuntime {
     }
     const operation = definition.tool.classify(input, declaredConfiguration);
     const authorizationMode = definition.authorization?.mode ?? 'agent-system';
-    if (operation.risk === 'unknown' && authorizationMode === 'agent-system') {
-      throw new AgentSystemToolError(
-        'operation_unclassified',
-        `The ${definition.tool.name} request could not be classified safely.`,
-      );
-    }
     if (authorizationMode === 'agent-system') {
-      const authorization = await (this.#dependencies.authorize ?? defaultAuthorize)({
+      const request = {
         agentId,
         operation,
         toolId: definition.id,
         toolName: definition.tool.name,
-      });
+      };
+      const authorization = definition.authorization?.authorize
+        ? await definition.authorization.authorize(operation, declaredConfiguration)
+        : await (this.#dependencies.authorize ?? defaultAuthorize)(request);
+      if (authorization.status === 'approval_required') {
+        const toolCallId = scope.toolCallId?.trim();
+        const approved =
+          scope.source === 'tool' &&
+          Boolean(toolCallId) &&
+          Boolean(
+            this.#dependencies.approvals?.consume({
+              agentId,
+              input,
+              toolCallId: toolCallId ?? '',
+              toolId: definition.id,
+            }),
+          );
+        if (!approved) throw new AgentSystemToolError('approval_denied', authorization.reason);
+      }
       if (authorization.status === 'denied') {
-        throw new AgentSystemToolError('approval_denied', authorization.reason);
+        throw new AgentSystemToolError(
+          operation.risk === 'unknown' ? 'operation_unclassified' : 'approval_denied',
+          authorization.reason,
+        );
+      }
+      if (definition.authorization?.authorize && this.#dependencies.authorize) {
+        const approval = await this.#dependencies.authorize(request);
+        if (approval.status !== 'allowed') {
+          throw new AgentSystemToolError('approval_denied', approval.reason);
+        }
       }
     }
 
@@ -177,7 +199,7 @@ export default class AgentSystemToolRuntime {
       action: operation.action,
       agentId,
       auditId,
-      inputHash: inputHash(input),
+      inputHash: hashAgentSystemToolInput(input),
       toolId: definition.id,
       risk: operation.risk,
       source: scope.source,

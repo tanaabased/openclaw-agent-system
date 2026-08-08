@@ -6,6 +6,8 @@ import type { Static, TSchema } from 'typebox';
 
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import type { ResolvableString } from '../utils/manifest-value-types.ts';
+import type AgentManifestService from './agent-manifest-service.ts';
+import type AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
 import type AgentSystemToolRuntime from './tool-runtime.ts';
 
 export type AgentSystemRisk = 'read' | 'write' | 'destructive' | 'admin' | 'unknown';
@@ -55,6 +57,7 @@ export interface AgentSystemToolScope {
   source: 'command' | 'tool';
   agentId?: string;
   terminalColumns?: number;
+  toolCallId?: string;
   toolContext?: OpenClawPluginToolContext;
   workspaceDir?: string;
 }
@@ -73,7 +76,17 @@ export interface AgentSystemAuthorizationRequest {
 }
 
 export type AgentSystemAuthorizationDecision =
-  { status: 'allowed'; approvalId?: string } | { status: 'denied'; reason: string };
+  | { status: 'allowed'; approvalId?: string }
+  | { status: 'denied'; reason: string }
+  | {
+      status: 'approval_required';
+      reason: string;
+      request: {
+        description: string;
+        severity: 'info' | 'warning' | 'critical';
+        title: string;
+      };
+    };
 
 export interface AgentSystemAuditEvent {
   action: string;
@@ -98,7 +111,12 @@ export interface AgentSystemCliToolDefinition<
 > {
   apiVersion: 1;
   authorization?: {
+    authorize?(
+      operation: AgentSystemOperation,
+      configuration: TDeclaredConfiguration,
+    ): AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>;
     mode: 'agent-system' | 'provider';
+    policyId?: string;
   };
   id: string;
   configuration: {
@@ -175,6 +193,11 @@ export interface RegisteredAgentSystemTool {
   registerTools(
     api: Pick<OpenClawPluginApi, 'registerTool'>,
     runtime: AgentSystemToolRuntime,
+  ): void;
+  registerTrustedPolicy?(
+    api: Pick<OpenClawPluginApi, 'registerTrustedToolPolicy'>,
+    manifestService: Pick<AgentManifestService, 'loadForAgentId'>,
+    approvals: Pick<AgentSystemToolApprovalReceiptStore, 'record'>,
   ): void;
   toolNames: readonly string[];
 }

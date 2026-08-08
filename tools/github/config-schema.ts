@@ -37,6 +37,11 @@ const externalGitHubKeySourcesSchema = Type.Union([
   externalGitHubKeySourceSchema,
   Type.Array(externalGitHubKeySourceSchema, { minItems: 1 }),
 ]);
+const externalGitHubPolicyDecisionSchema = Type.Union([
+  Type.Literal('allow'),
+  Type.Literal('ask'),
+  Type.Literal('deny'),
+]);
 
 export const externalGitHubSectionSchema = Type.Object(
   {
@@ -57,6 +62,16 @@ export const externalGitHubSectionSchema = Type.Object(
       ),
     ),
     host: Type.Optional(Type.Literal('github.com')),
+    policy: Type.Optional(
+      Type.Object(
+        {
+          admin: Type.Optional(externalGitHubPolicyDecisionSchema),
+          destructive: Type.Optional(externalGitHubPolicyDecisionSchema),
+          unknown: Type.Optional(externalGitHubPolicyDecisionSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
     'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
     username: Type.Optional(externalResolvableStringSchema),
@@ -75,6 +90,7 @@ export type GitHubPublicKeySource =
 export interface GitHubManifestConfiguration {
   config?: Partial<GitHubCliConfiguration>;
   host?: 'github.com';
+  policy?: Partial<GitHubPolicyConfiguration>;
   sshKeys?: GitHubPublicKeySource[];
   sshSigningKeys?: GitHubPublicKeySource[];
   token?: EnvironmentBinding;
@@ -89,6 +105,14 @@ export interface GitHubCliConfiguration {
   telemetry: 'enabled' | 'disabled';
 }
 
+export type GitHubPolicyDecision = 'allow' | 'ask' | 'deny';
+
+export interface GitHubPolicyConfiguration {
+  admin: GitHubPolicyDecision;
+  destructive: GitHubPolicyDecision;
+  unknown: GitHubPolicyDecision;
+}
+
 export const defaultGitHubCliConfiguration: GitHubCliConfiguration = {
   accessibleColors: 'disabled',
   colorLabels: 'enabled',
@@ -97,10 +121,22 @@ export const defaultGitHubCliConfiguration: GitHubCliConfiguration = {
   telemetry: 'disabled',
 };
 
+export const defaultGitHubPolicyConfiguration: GitHubPolicyConfiguration = {
+  admin: 'deny',
+  destructive: 'deny',
+  unknown: 'deny',
+};
+
 export function resolveGitHubCliConfiguration(
   configuration: GitHubManifestConfiguration,
 ): GitHubCliConfiguration {
   return { ...defaultGitHubCliConfiguration, ...configuration.config };
+}
+
+export function resolveGitHubPolicyConfiguration(
+  configuration: GitHubManifestConfiguration,
+): GitHubPolicyConfiguration {
+  return { ...defaultGitHubPolicyConfiguration, ...configuration.policy };
 }
 
 /** Decode schema-owned GitHub keys without transforming environment-variable names. */
@@ -139,6 +175,7 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
         }
       : {}),
     ...(value.host ? { host: value.host } : {}),
+    ...(value.policy ? { policy: { ...value.policy } } : {}),
     ...(value['ssh-keys'] ? { sshKeys: decodeKeySources(value['ssh-keys']) } : {}),
     ...(value['ssh-signing-keys']
       ? { sshSigningKeys: decodeKeySources(value['ssh-signing-keys']) }

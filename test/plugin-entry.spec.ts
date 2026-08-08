@@ -25,6 +25,7 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const policyIds: string[] = [];
     const toolNames: string[] = [];
     const logger = {
       debug() {},
@@ -66,6 +67,9 @@ describe('index', () => {
       registerTool(_tool: unknown, toolOptions?: { name?: string }) {
         if (toolOptions?.name) toolNames.push(toolOptions.name);
       },
+      registerTrustedToolPolicy(policy: { id: string }) {
+        policyIds.push(policy.id);
+      },
     };
 
     plugin.register(api as never);
@@ -73,6 +77,7 @@ describe('index', () => {
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
     assert.deepEqual(toolNames, ['agent_system_github']);
+    assert.deepEqual(policyIds, ['agent-system.github']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

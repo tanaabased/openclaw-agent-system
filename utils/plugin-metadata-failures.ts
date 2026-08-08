@@ -37,6 +37,7 @@ export interface PluginManifest {
   }>;
   contracts?: {
     tools?: string[];
+    trustedToolPolicies?: string[];
   };
   configSchema?: {
     additionalProperties?: boolean;
@@ -63,6 +64,7 @@ export type PluginMetadataFailureCode =
   | 'canonical-command-alias'
   | 'short-command-alias'
   | 'github-tool-contract'
+  | 'github-tool-policy-contract'
   | 'github-skill-contract'
   | 'config-schema-type'
   | 'config-schema-strictness'
@@ -182,6 +184,11 @@ export default function pluginMetadataFailures(
     containsExactly(manifest.contracts?.tools, ['agent_system_github']),
     'github-tool-contract',
     'plugin must declare exactly the registered Agent System GitHub tool',
+  );
+  check(
+    containsExactly(manifest.contracts?.trustedToolPolicies, ['agent-system.github']),
+    'github-tool-policy-contract',
+    'plugin must declare exactly the registered Agent System GitHub policy',
   );
   check(
     containsExactly(manifest.skills, ['./skills']),

@@ -15,10 +15,10 @@ command launchers, diagnostics, installation, and later lifecycle features such
 as cron synchronization.
 
 Agent System also defines a tool contract so its own tools can share agent
-binding, credential resolution, redaction, safe process execution, and audit
-behavior. The first GitHub CLI implementation delegates remote authorization
-to a least-privilege GitHub token; common destructive-operation policy and
-approval are later layers rather than prerequisites for generic tool wrappers.
+binding, credential resolution, policy, redaction, safe process execution, and
+audit behavior. The first GitHub CLI implementation applies compact
+destructive, admin, and unknown-operation policy before resolving credentials,
+while a least-privilege GitHub token remains the remote authorization boundary.
 Git and GitHub are the first tools; GOG and other service integrations may
 implement the same contract later. A public cross-plugin SDK remains a product
 goal, but depends on a supported OpenClaw runtime capability rather than an ad
@@ -46,10 +46,10 @@ The tool platform exposes stable OpenClaw tools backed by trusted agent
 context and the environment runtime. Agent System owns common binding,
 credential materialization, execution, redaction, and audit behavior. A tool
 owns its model-facing schema, fixed executable or direct API adapter,
-authorization mode, normalization, supplemental redaction, health checks, and
-concise tool guidance. Optional common policy and approval must compose onto
-this path later without forcing a generic CLI wrapper to misclassify every
-operation as read.
+authorization mode, classification, normalization, supplemental redaction,
+health checks, and concise tool guidance. OpenClaw trusted tool policy composes
+agent-only approval onto this path without forcing a generic CLI wrapper to
+misclassify every operation as read.
 
 Tools do not receive a general raw-secret API. They request logical
 credentials and consume them through an approved child-process or request
@@ -110,10 +110,10 @@ Phase 2 delivers:
   Phase 1 prepended path, while preserving workspace-bin precedence; and
 - tool, capability, executable, config, and routing diagnostics.
 
-Common resource policy, destructive-operation classification, interactive
-approval, and a constrained direct-request helper are secondary Phase 2 work.
-The first generic GitHub wrapper uses GitHub token permissions as its remote
-authorization boundary and does not claim to block destructive operations.
+The first generic GitHub wrapper includes narrow destructive, admin, and
+unknown-operation classification plus agent-only interactive approval. Broader
+resource policy and a constrained direct-request helper remain secondary Phase
+2 work. GitHub token permissions remain the remote authorization boundary.
 
 Publishing the tool contract for third-party plugins follows only after
 OpenClaw exposes or accepts a supported typed cross-plugin capability. The
@@ -742,7 +742,7 @@ API therefore requires a typed OpenClaw capability with tool registration
 and runtime lookup. Agent System does not use process globals, private registry
 reach-ins, background-service registration, or Gateway RPC as an in-process
 service locator. A separate SDK package is justified only after an external
-external tool proves that supported boundary.
+tool proves that supported boundary.
 
 OpenClaw supplies `agentId`, `workspaceDir`, `agentDir`, `sessionKey`, and
 sandbox state to a tool factory. The model must never supply an agent id,
@@ -773,11 +773,11 @@ interface AgentSystemOperation {
 }
 ```
 
-An Agent System-policy tool must not let `unknown` silently inherit read policy.
-A provider-authorized tool may record `unknown` while delegating operation
-authorization to its remote credential. The GitHub CLI wrapper uses this mode
-until command-aware destructive-operation policy is implemented. Credential
-containment checks remain mandatory in either mode.
+An Agent System-policy tool must not let destructive, admin, or unknown
+operations silently inherit read or ordinary-write policy. The GitHub CLI
+wrapper uses Agent System policy, while its selected GitHub token remains the
+provider's final authorization boundary. Credential containment checks remain
+mandatory regardless of the manifest decision.
 
 The shared runtime lifecycle is:
 
@@ -787,7 +787,7 @@ The shared runtime lifecycle is:
 3. Agent System resolves and validates that agent's manifest.
 4. Agent System projects the tool's configuration and capability binding.
 5. The tool validates model-controlled input and records operation metadata.
-6. Agent System applies the tool's authorization mode; a future policy mode may obtain approval here.
+6. Agent System applies the tool's authorization mode and consumes any exact one-use OpenClaw approval receipt.
 7. Agent System opens a secret-free pending audit event.
 8. Agent System lazily resolves only the required action credentials.
 9. The shared CLI or request helper performs the action.
@@ -795,10 +795,13 @@ The shared runtime lifecycle is:
 11. Agent System finalizes the audit event and returns structured output.
 ```
 
-Because credential resolution occurs inside tool execution, a future approval
-adapter can resolve before the secret is materialized. Authorization mode and
-operation metadata remain explicit so provider authorization and later Agent
-System policy do not become parallel execution paths.
+For agent-originated calls, OpenClaw's trusted pre-tool policy classifies the
+exact request and asks before tool execution. An `allow once` response records
+a short-lived receipt bound to the agent, tool-call id, tool, and exact input;
+the runtime consumes it once at step 6. Direct command and launcher invocations
+have no originating approval conversation and reject an `ask` decision.
+Authorization mode and operation metadata remain explicit so provider
+authorization and Agent System policy do not become parallel execution paths.
 
 ### Tool definitions
 
@@ -943,6 +946,10 @@ git:
 
 github:
   host: github.com
+  policy:
+    destructive: ask
+    admin: deny
+    unknown: deny
   username:
     from-environment: AGENT_GITHUB_USERNAME
   token: GH_TOKEN
@@ -1035,14 +1042,26 @@ The generated config also disables prompts and editor prompts and selects
 `cat` as the pager. Agent System never reads the operator's ordinary
 `~/.config/gh`, never writes a token to config, and blocks authentication
 mutation or token display, config mutation, aliases, extensions, and browser or
-editor launch paths. Those are credential-containment boundaries, not a claim
-that the current wrapper blocks destructive GitHub operations.
+editor launch paths. Those credential-containment boundaries apply before
+operation policy.
 
-The GitHub CLI tool uses provider authorization: GitHub token permissions are
-the remote authorization boundary, and operation metadata records the generic
-invocation without pretending every request is a read. Common resource policy,
-destructive-operation classification, and interactive approval are deferred to
-a later secondary layer. Users should supply least-privilege tokens.
+The GitHub CLI tool classifies common command verbs, known hazardous verbs and
+flags, REST methods and sensitive routes, and GraphQL operation shape. Read and
+ordinary write operations are allowed. `github.policy.destructive`,
+`github.policy.admin`, and `github.policy.unknown` accept `allow`, `ask`, or
+`deny` and default to `deny`. Known hazards win over unknown classification, so
+`unknown: allow` cannot authorize a recognized destructive or admin operation.
+The classifier is deliberately compact and conservative rather than a complete
+versioned copy of the `gh` command tree; unfamiliar syntax stays unknown.
+
+`ask` uses OpenClaw's declared trusted tool policy only for native
+`agent_system_github` calls in an agent turn. OpenClaw offers `allow once` and
+`deny`; Agent System records an input-bound one-use approval receipt and
+consumes it before resolving credentials. Denial, timeout, unavailable approval
+delivery, input changes, and replay fail closed. Direct CLI and packaged
+launcher calls reject `ask` because they have no approval conversation. GitHub
+token permissions remain the remote authorization boundary, so users must
+still supply least-privilege tokens.
 
 The existing consolidated environment resolver assembles declared dotenv and
 1Password sources only after trusted agent binding and input validation. The
@@ -1056,8 +1075,8 @@ binary to an absolute real path, and launches it without a shell. The runtime
 bounds output, redacts the selected credential, and emits
 source-distinguished metadata-only lifecycle logs.
 
-Resource policy, OpenClaw approval integration, persistent audit storage, a
-direct request helper, process-tree termination, richer executable diagnostics,
+Broader resource policy, durable approval choices, persistent audit storage, a
+direct request helper, richer executable diagnostics,
 and the supported cross-plugin registration capability remain follow-up work.
 The internal contract must not be exported as a third-party SDK before that
 supported OpenClaw capability exists and an external tool proves the boundary.
@@ -1119,8 +1138,9 @@ The shared tool harness and each proving tool must directly verify:
   authorization headers or arbitrary credential selectors;
 - tools using Agent System policy never let destructive, admin, or unknown
   operations inherit read policy;
-- provider-authorized CLI tools block credential and executable escape hatches
-  without claiming to classify every remote operation;
+- CLI-shaped tools block credential and executable escape hatches, classify
+  known hazards before unknown policy, and do not claim exhaustive semantic
+  understanding of every remote operation;
 - output bounding, normalization, redaction, audit completion, and non-zero
   execution results behave consistently; and
 - tool SDK and runtime incompatibility produces a stable, secret-free
@@ -1297,8 +1317,8 @@ remain the first part of explicit `install` throughout these phases.
 - Credentials resolve after trusted binding, validation, and the selected
   authorization mode, for the smallest practical child process or request scope.
 - All Agent System tools use one operation metadata, authorization, redaction,
-  error, and audit contract. A future policy layer and third-party API preserve
-  that execution path.
+  error, and audit contract. Tool-specific policy and a future third-party API
+  preserve that execution path.
 - Git and GitHub credentials are resolved only inside their Agent System-owned
   action path and never placed in the Gateway environment.
 - Ordinary OpenClaw exec, local Codex native shell commands, Agent System-owned
@@ -1344,9 +1364,11 @@ remain the first part of explicit `install` throughout these phases.
 3. Implement the fixed-executable CLI runner, bounded stdin and output,
    known-secret redaction, and tool test harness.
 4. Add the GitHub projection and generic `agent_system_github` CLI-shaped
-   schema over trusted `gh`, with provider authorization and isolated config.
-5. Add common resource policy, destructive-operation classification, OpenClaw
-   approval integration, and a constrained request helper as secondary layers.
+   schema over trusted `gh`, with isolated config and least-privilege provider
+   authorization.
+5. Add compact destructive, admin, and unknown-operation classification plus
+   agent-only OpenClaw approval; retain broader resource policy and a
+   constrained request helper as secondary layers.
 6. Add the Git projection and `agent_system_git` over the same tool runtime.
 7. Ship tool-owned skills, tool descriptions, and concise conditional
    guidance.
@@ -1406,8 +1428,8 @@ work, not new Agent System core environment implementations.
   schemas without weakening unknown-key rejection.
 - Whether future cross-plugin tools should retain the first implementation's visible
   `capability_not_configured` behavior or support per-agent omission.
-- The generic policy interface and default posture for GitHub and Git writes,
-  destructive operations, and unknown classifications.
+- The generic policy interface and default posture for the future Git tool and
+  third-party tools beyond the proving GitHub implementation.
 - The exact cron job schema, ownership marker, synchronization command, and
   removal policy.
 - The exact enforcement policy for direct GitHub HTTP, SDK, MCP, and browser
