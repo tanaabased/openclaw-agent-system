@@ -76,8 +76,10 @@ openclaw agent-system validate | grep -F 'valid' | grep -F 'github' | grep -F 'G
 
 # should report both tanaabot github key collections healthy through doctor
 cd "$TMPDIR/agent-system-github-tanaabot"
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'GitHub SSH authentication keys'
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'GitHub SSH signing keys'
+doctor_output="$TMPDIR/agent-system-github-doctor.txt"
+openclaw agent-system doctor | tee "$doctor_output"
+grep -F 'healthy' "$doctor_output" | grep -F 'GitHub SSH authentication keys'
+grep -F 'healthy' "$doctor_output" | grep -F 'GitHub SSH signing keys'
 
 # should keep both tanaabot github key collections unchanged on repeated install
 cd "$TMPDIR/agent-system-github-tanaabot"
