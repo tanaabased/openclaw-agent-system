@@ -128,7 +128,7 @@ describe('tools/github/tool', () => {
   it('should expose skill guidance only when github is configured', () => {
     const registry = new AgentSystemToolRegistry([createTool()]);
 
-    assert.equal(registry.guidance(manifest)[0]?.includes('$tanaab-github-cli'), true);
+    assert.equal(registry.guidance(manifest)[0]?.includes('$agent-system-github-cli'), true);
     assert.deepEqual(registry.guidance({ schemaVersion: 1, agent: { id: 'data' } }), []);
   });
 

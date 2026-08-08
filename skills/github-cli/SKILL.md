@@ -1,6 +1,6 @@
 ---
-name: tanaab-github-cli
-description: Tanaab-based GitHub CLI guidance for using the Agent System GitHub tool with the active agent's isolated credential and config.
+name: agent-system-github-cli
+description: Agent System GitHub CLI guidance for using the active agent's isolated GitHub credential, config, and operation policy.
 license: MIT
 metadata:
   type: integration

@@ -122,7 +122,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
     },
     guidance: {
       prompt:
-        'For GitHub work, use the $tanaab-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config.',
+        'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config.',
     },
     runner: {
       argv(input) {

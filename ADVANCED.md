@@ -157,7 +157,7 @@ Agent System does not inject these values into OpenClaw `exec`, Codex native she
 
 #### GitHub CLI Tool
 
-When `github` is configured, Agent System registers `agent_system_github`, packages `$tanaab-github-cli`, and adds concise preference guidance during `before_prompt_build`. The native tool, `agent-system tool gh`, and packaged `bin/gh` command use the same manifest binding, environment resolution, sanitized runner, output bounding, known-secret redaction, and metadata-only logging path.
+When `github` is configured, Agent System registers `agent_system_github`, packages `$agent-system-github-cli`, and adds concise preference guidance during `before_prompt_build`. The native tool, `agent-system tool gh`, and packaged `bin/gh` command use the same manifest binding, environment resolution, sanitized runner, output bounding, known-secret redaction, and metadata-only logging path.
 
 The native tool accepts `{ "argv": ["..."], "stdin": "..." }`; `argv` holds ordinary noninteractive `gh` arguments and optional `stdin` is capped at 64 KiB. The model never supplies the agent id, workspace, executable, credential name, or token. A declared token binding wins; otherwise the runtime selects `GH_TOKEN` and then `GITHUB_TOKEN` from the completed Agent System environment. When `github.username` is declared, every invocation first verifies the authenticated login in the same child environment.
 
@@ -464,4 +464,4 @@ Workspace installation scripts, non-mutating plans, and successful-run metadata 
 
 ### Diagnostics
 
-The planned `plan` command and broader tool policy, approval, persistent audit, direct-request, diagnostics, installation-script, and lifecycle doctor surfaces are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will expand their implemented command reference as each surface ships.
+The planned `plan` command, broader resource policy, durable approval choices, persistent audit storage, direct-request helper, richer executable diagnostics, and installation-script surfaces are not registered yet. [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) describes their intended boundaries; this guide will expand their implemented command reference as each surface ships.

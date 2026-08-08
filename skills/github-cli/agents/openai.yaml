@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System GitHub CLI'
-  short_description: 'Tanaab-based agent-scoped GitHub CLI operations'
+  short_description: 'Agent-scoped GitHub CLI operations'
   icon_small: './agents/assets/icon-small.svg'
   icon_large: './agents/assets/icon-large.svg'
   brand_color: '#00c88a'
-  default_prompt: 'Use $tanaab-github-cli and the agent_system_github tool for GitHub work with the active Agent System agent credential.'
+  default_prompt: 'Use $agent-system-github-cli and the agent_system_github tool for GitHub work with the active Agent System agent credential.'

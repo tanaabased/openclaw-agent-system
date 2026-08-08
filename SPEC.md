@@ -1067,7 +1067,7 @@ The existing consolidated environment resolver assembles declared dotenv and
 1Password sources only after trusted agent binding and input validation. The
 same internal registry and runtime compile the native `agent_system_github`
 tool, conditional `before_prompt_build` guidance, the packaged
-`$tanaab-github-cli` skill, and the `agent-system tool gh` CLI bridge used by
+`$agent-system-github-cli` skill, and the `agent-system tool gh` CLI bridge used by
 the Agent System-owned `bin/gh` launcher. Inside the credential-bearing
 runtime, executable resolution excludes the workspace bin, declared prepended
 paths, packaged bin, and calling launcher directory, resolves the remaining
