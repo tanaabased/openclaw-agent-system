@@ -4,9 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
-import GitHubAccountKeyService, {
-  validateGitHubAccountKeyDeclarations,
-} from '../tools/github/account-key-service.ts';
+import GitHubAccountKeyService from '../tools/github/account-key-service.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
 const publicKey =
@@ -45,20 +43,6 @@ describe('tools/github/account-key-service', () => {
 
   afterEach(async () => {
     await rm(temporaryDirectory, { recursive: true });
-  });
-
-  it('should reject malformed key-looking short forms without misclassifying key-named paths', () => {
-    assert.deepEqual(
-      validateGitHubAccountKeyDeclarations({
-        sshKeys: [
-          { source: 'ssh-ed25519 invalid', type: 'auto' },
-          { source: 'ssh-keys/tanaabot.pub', type: 'auto' },
-        ],
-        token: 'GH_TOKEN_TANAABOT',
-        username: 'tanaabot',
-      }).map(({ code, fieldPath }) => ({ code, fieldPath })),
-      [{ code: 'github-account-key-invalid', fieldPath: '/github/ssh-keys/0' }],
-    );
   });
 
   it('should resolve path and inline sources before reporting remote drift', async () => {

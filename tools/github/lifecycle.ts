@@ -5,11 +5,9 @@ import {
 } from '../../lib/lifecycle-registry.ts';
 import type GitHubConfigStore from './config-store.ts';
 import { resolveGitHubCliConfiguration } from './config-schema.ts';
-import {
-  GitHubAccountKeyError,
-  type default as GitHubAccountKeyService,
-  validateGitHubAccountKeyDeclarations,
-} from './account-key-service.ts';
+import { validateGitHubAccountKeyDeclarations } from './account-key-declarations.ts';
+import GitHubAccountKeyError from './account-key-error.ts';
+import type GitHubAccountKeyService from './account-key-service.ts';
 
 export interface GitHubLifecycleDependencies {
   accountKeyService?: Pick<GitHubAccountKeyService, 'inspect' | 'reconcile'>;

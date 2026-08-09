@@ -5,8 +5,8 @@ import runToolCli from '../../lib/tool-cli-runner.ts';
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import resolveManifestValue from '../../utils/resolve-manifest-value.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
+import GitHubAccountKeyError from './account-key-error.ts';
 import type GitHubConfigStore from './config-store.ts';
-import { GitHubAccountKeyError } from './account-key-service.ts';
 
 const baselineEnvironmentNames = [
   'HOME',

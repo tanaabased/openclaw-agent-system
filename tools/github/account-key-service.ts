@@ -3,17 +3,18 @@ import { lstat, open } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
-import parseSshPublicKey, {
-  looksLikeSshPublicKey,
-  type ParsedSshPublicKey,
-} from '../../utils/parse-ssh-public-key.ts';
-import type { AgentManifest, ManifestDiagnostic } from '../../utils/manifest-types.ts';
-import type { GitHubManifestConfiguration, GitHubPublicKeySource } from './config-schema.ts';
+import type { AgentManifest } from '../../utils/manifest-types.ts';
+import parseSshPublicKey, { type ParsedSshPublicKey } from '../../utils/parse-ssh-public-key.ts';
 import type GitHubAccountClient from './account-client.ts';
+import {
+  githubAccountKeyCategories,
+  isInlineGitHubAccountKeySource,
+  type GitHubAccountKeyCategory,
+  type GitHubAccountKeyCategoryConfiguration,
+} from './account-key-declarations.ts';
+import GitHubAccountKeyError from './account-key-error.ts';
 
 const maximumPublicKeyFileBytes = 64 * 1024;
-
-export type GitHubAccountKeyCategory = 'ssh' | 'ssh-signing';
 
 export interface GitHubAccountKeyInspection {
   category: GitHubAccountKeyCategory;
@@ -37,58 +38,6 @@ interface ResolvedGitHubAccountKey extends ParsedSshPublicKey {
   title: string;
 }
 
-interface KeyCategoryConfiguration {
-  category: GitHubAccountKeyCategory;
-  endpoint: '/user/keys' | '/user/ssh_signing_keys';
-  label: string;
-  sources: readonly GitHubPublicKeySource[];
-}
-
-export class GitHubAccountKeyError extends Error {
-  override name = 'GitHubAccountKeyError';
-
-  constructor(
-    readonly code: string,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
-
-function keyCategories(configuration: GitHubManifestConfiguration): KeyCategoryConfiguration[] {
-  return [
-    ...(configuration.sshKeys
-      ? [
-          {
-            category: 'ssh' as const,
-            endpoint: '/user/keys' as const,
-            label: 'SSH authentication',
-            sources: configuration.sshKeys,
-          },
-        ]
-      : []),
-    ...(configuration.sshSigningKeys
-      ? [
-          {
-            category: 'ssh-signing' as const,
-            endpoint: '/user/ssh_signing_keys' as const,
-            label: 'SSH signing',
-            sources: configuration.sshSigningKeys,
-          },
-        ]
-      : []),
-  ];
-}
-
-function sourceFieldPath(category: GitHubAccountKeyCategory, index: number): string {
-  return `/github/${category === 'ssh' ? 'ssh-keys' : 'ssh-signing-keys'}/${index}`;
-}
-
-function isInlineSource(source: GitHubPublicKeySource): boolean {
-  return source.type === 'key' || (source.type === 'auto' && looksLikeSshPublicKey(source.source));
-}
-
 function defaultKeyTitle(
   agentId: string,
   category: GitHubAccountKeyCategory,
@@ -97,71 +46,6 @@ function defaultKeyTitle(
   const fingerprintHex = Buffer.from(fingerprint.slice('SHA256:'.length), 'base64').toString('hex');
   const keyKind = category === 'ssh' ? 'ssh-authentication' : 'ssh-signing';
   return `agent-system-${agentId}-${keyKind}-${fingerprintHex.slice(0, 12)}`;
-}
-
-/** Validate deterministic account-key declarations without reading files or resolving credentials. */
-export function validateGitHubAccountKeyDeclarations(
-  configuration: GitHubManifestConfiguration,
-): ManifestDiagnostic[] {
-  const categories = keyCategories(configuration);
-  if (categories.length === 0) return [];
-
-  const diagnostics: ManifestDiagnostic[] = [];
-  if (!configuration.username) {
-    diagnostics.push({
-      code: 'github-account-key-username-required',
-      fieldPath: '/github/username',
-      message: 'GitHub account key management requires an explicit github.username.',
-      severity: 'error',
-    });
-  }
-  if (!configuration.token) {
-    diagnostics.push({
-      code: 'github-account-key-token-required',
-      fieldPath: '/github/token',
-      message: 'GitHub account key management requires an explicit github.token binding.',
-      severity: 'error',
-    });
-  }
-
-  for (const { category, sources } of categories) {
-    const fingerprints = new Set<string>();
-    sources.forEach((source, index) => {
-      const fieldPath = sourceFieldPath(category, index);
-      if (!isInlineSource(source) && /^~[^/]/u.test(source.source)) {
-        diagnostics.push({
-          code: 'github-account-key-path-invalid',
-          fieldPath,
-          message:
-            'GitHub account key paths may use only workspace-relative, absolute, or ~/ paths.',
-          severity: 'error',
-        });
-        return;
-      }
-      if (!isInlineSource(source)) return;
-
-      try {
-        const key = parseSshPublicKey(source.source);
-        if (fingerprints.has(key.fingerprint)) {
-          diagnostics.push({
-            code: 'github-account-key-duplicate',
-            fieldPath,
-            message: `The ${category} key ${key.fingerprint} is declared more than once.`,
-            severity: 'error',
-          });
-        }
-        fingerprints.add(key.fingerprint);
-      } catch (error) {
-        diagnostics.push({
-          code: 'github-account-key-invalid',
-          fieldPath,
-          message: error instanceof Error ? error.message : 'The GitHub SSH public key is invalid.',
-          severity: 'error',
-        });
-      }
-    });
-  }
-  return diagnostics;
 }
 
 function commandError(
@@ -244,15 +128,16 @@ export default class GitHubAccountKeyService {
     return results;
   }
 
-  async #resolveCategories(context: {
-    manifest: AgentManifest;
-    workspaceDir: string;
-  }): Promise<
-    Array<Omit<KeyCategoryConfiguration, 'sources'> & { keys: ResolvedGitHubAccountKey[] }>
+  async #resolveCategories(context: { manifest: AgentManifest; workspaceDir: string }): Promise<
+    Array<
+      Omit<GitHubAccountKeyCategoryConfiguration, 'sources'> & {
+        keys: ResolvedGitHubAccountKey[];
+      }
+    >
   > {
     const configuration = context.manifest.github ?? {};
     return Promise.all(
-      keyCategories(configuration).map(async (category) => ({
+      githubAccountKeyCategories(configuration).map(async (category) => ({
         ...category,
         keys: await this.#resolveSources(category, context),
       })),
@@ -260,7 +145,7 @@ export default class GitHubAccountKeyService {
   }
 
   async #resolveSources(
-    category: KeyCategoryConfiguration,
+    category: GitHubAccountKeyCategoryConfiguration,
     context: { manifest: AgentManifest; workspaceDir: string },
   ): Promise<ResolvedGitHubAccountKey[]> {
     const keys: ResolvedGitHubAccountKey[] = [];
@@ -268,7 +153,7 @@ export default class GitHubAccountKeyService {
     for (const [index, source] of category.sources.entries()) {
       let key: ParsedSshPublicKey;
       try {
-        key = isInlineSource(source)
+        key = isInlineGitHubAccountKeySource(source)
           ? parseSshPublicKey(source.source)
           : parseSshPublicKey(await this.#readKeyFile(source.source, context.workspaceDir));
       } catch (error) {
@@ -328,7 +213,7 @@ export default class GitHubAccountKeyService {
   }
 
   async #list(
-    category: Omit<KeyCategoryConfiguration, 'sources'>,
+    category: Omit<GitHubAccountKeyCategoryConfiguration, 'sources'>,
     client: { execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult> },
   ): Promise<Set<string>> {
     const result = await client.execute(['api', '--paginate', '--slurp', category.endpoint]);
@@ -370,7 +255,7 @@ export default class GitHubAccountKeyService {
   }
 
   async #create(
-    category: Omit<KeyCategoryConfiguration, 'sources'>,
+    category: Omit<GitHubAccountKeyCategoryConfiguration, 'sources'>,
     key: ResolvedGitHubAccountKey,
     client: { execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult> },
   ): Promise<void> {
