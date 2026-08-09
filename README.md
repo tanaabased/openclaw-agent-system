@@ -16,6 +16,9 @@ Agent System is designed to make an OpenClaw agent workspace self-onboarding: ru
 > [!NOTE]
 > Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
 
+> [!WARNING]
+> Agent System is still a work in progress. Check back regularly for updates.
+
 ## Overview
 
 Today, Agent System:

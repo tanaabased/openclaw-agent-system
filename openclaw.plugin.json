@@ -1,7 +1,7 @@
 {
   "id": "agent-system",
   "name": "Agent System",
-  "description": "Define reproducible identity, environment, and installation for OpenClaw agent workspaces.",
+  "description": "Better per-agent management for OpenClaw.",
   "version": "0.1.0",
   "activation": {
     "onStartup": true,

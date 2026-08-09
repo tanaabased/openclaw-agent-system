@@ -1,7 +1,7 @@
 {
   "name": "@tanaab/openclaw-agent-system",
   "version": "0.1.0",
-  "description": "Define reproducible identity, environment, and installation for OpenClaw agent workspaces.",
+  "description": "Better per-agent management for OpenClaw.",
   "license": "MIT",
   "type": "module",
   "packageManager": "bun@1.3.14",
