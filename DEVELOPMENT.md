@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, logging, and CLI references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
+This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
 
 ## Requirements
 
@@ -91,8 +91,6 @@ openclaw devguard exec -- agent-system validate
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
 
-Phase 1 manifest lifecycle events (`[agent-system] manifest_loaded`, `manifest_changed`, `manifest_invalid`, `manifest_shadowed`, and debug-only `manifest_absent`) appear in the `devguard run` terminal when `OPENCLAW_LOG_LEVEL=debug` is set. `devguard tail` shows DevGuard policy audit records, not the plugin logger stream. Manifest contents and values are never included in Agent System lifecycle logs.
-
 To exercise an agent-requested tool call and its audit records through `tanaabot`:
 
 ```sh
@@ -107,6 +105,24 @@ openclaw devguard exec -- agent \
 > The checked-in `probe` policy records the exec attempt and replaces the requested command with a non-mutating recorder, so the original command does not run. Use direct `devguard exec -- agent-system` for plugin behavior and the `tanaabot` request for tool-policy and logging work. Treat audit logs as sensitive and avoid `--unsafe-raw-stream` for routine development.
 
 Stop supervision with `Ctrl-C`; audit logs persist between runs. See DevGuard's [README](https://github.com/tanaabased/openclaw-devguard#usage) for its common workflow, [advanced reference](https://github.com/tanaabased/openclaw-devguard/blob/main/ADVANCED.md) for complete CLI, configuration, logging, and security details, and [development guide](https://github.com/tanaabased/openclaw-devguard/blob/main/DEVELOPMENT.md#install-from-source) when testing a source-linked DevGuard checkout.
+
+## Logging
+
+Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process for detailed Agent System
+lifecycle diagnostics. Agent System logs metadata through the OpenClaw plugin
+logger with an `[agent-system]` prefix and never includes manifest or environment
+values.
+
+| Events                 | Purpose                                      |
+| ---------------------- | -------------------------------------------- |
+| `manifest_*`           | Manifest discovery, validation, and changes  |
+| `environment_resolved` | Value-free environment resolution metadata   |
+| `tool_call_*`          | Tool start, completion, and failure metadata |
+
+During DevGuard development, these messages appear in the `devguard run` terminal.
+`devguard tail` reads DevGuard policy audit records instead of the plugin logger
+stream. Stable Agent System diagnostic identities are emitted as `code=<code>`
+metadata.
 
 ## Testing
 
@@ -142,7 +158,7 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/`](./examples/) run through GitHub Actions on macOS and Ubuntu. They install plugins and mutate isolated OpenClaw state, so they must not be used as routine local validation.
 
-The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `github` and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment id fixture.
+The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `github` and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment ID fixture.
 
 ## Coding Standards
 

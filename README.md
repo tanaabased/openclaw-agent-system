@@ -44,7 +44,7 @@ openclaw plugins enable agent-system
 openclaw plugins inspect agent-system --runtime --json
 ```
 
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for source-install caveats, the recommended isolated DevGuard workflow, and repository validation.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for source-install caveats, the recommended isolated DevGuard workflow, runtime logging, and repository validation.
 
 ## Current manifest
 
@@ -64,7 +64,7 @@ environment:
   set:
     AGENT_COLOR: green
     AGENT_EMAIL: $COMPANY_EMAIL
-  op: env_agent
+  op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   required:
     - AGENT_COLOR
 
@@ -86,7 +86,7 @@ github:
     telemetry: disabled
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `email`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; ordered workspace-relative executable directories under `environment.path-prepend`; `environment.required`; and GitHub CLI, account-key, and operation-policy configuration. `agent.id` is literal, while resolvable identity fields accept either literal strings or an explicit `from-environment` reference to the completed Agent System environment. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. See the [GitHub CLI tool guide](./tools/github/README.md) for its complete configuration and security contract.
+The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `email`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment IDs; ordered workspace-relative executable directories under `environment.path-prepend`; `environment.required`; and GitHub CLI, account-key, and operation-policy configuration. Use the opaque ID returned by [Copy environment ID in the 1Password app](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id), not the Environment's display name. `agent.id` is literal, while resolvable identity fields accept either literal strings or an explicit `from-environment` reference to the completed Agent System environment. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited. See the [GitHub CLI tool guide](./tools/github/README.md) for its complete configuration and security contract.
 
 1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks macOS Keychain or Linux Secret Service, then the agent-scoped file fallback, before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
 
@@ -135,7 +135,7 @@ openclaw agent-system env --agent tanaabot --json
 
 At runtime, the plugin loads a matching manifest at `session_start` and `before_prompt_build` and emits value-free manifest lifecycle diagnostics. It does not resolve or inject general environment values at either hook. Configured Agent System tools resolve only their declared environment values after trusted agent binding and authorization. The [GitHub CLI tool](./tools/github/README.md) provides the first complete tool integration, including isolated credentials and config, operation policy, approval support, packaged `gh` routing, and optional SSH account-key reconciliation. Installation projects only `PATH` into the explicitly supported OpenClaw exec and local Codex native shell surfaces; other generic command tools retain their own environment contracts. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `[agent-system] manifest_*`, `[agent-system] environment_*`, and tool-call messages.
 
-See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
+See [ADVANCED.md](./ADVANCED.md) for the complete core manifest, configuration, CLI, environment, and path references.
 
 ## Development
 

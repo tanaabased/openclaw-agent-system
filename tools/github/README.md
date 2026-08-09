@@ -47,7 +47,7 @@ agent:
   name: Tanaabot
 
 environment:
-  op: env_agent_github
+  op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   required:
     - GH_TOKEN_TANAABOT
 
@@ -153,7 +153,7 @@ supported. Files must be non-symlinked regular files no larger than 64 KiB and
 contain exactly one supported public key. Agent System never accepts private
 keys, removes remote keys, rotates keys, or changes existing titles.
 
-The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli-reference)
+The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
 commands validate declarations, reconcile missing keys and private GitHub CLI
 configuration, and report drift.
 
@@ -205,5 +205,6 @@ can bypass it.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
-- [Advanced](../../ADVANCED.md): complete manifest, lifecycle, logging, and CLI references
+- [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
+- [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md): model-facing GitHub guidance

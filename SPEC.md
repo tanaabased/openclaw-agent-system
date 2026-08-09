@@ -372,8 +372,8 @@ environment:
     AGENT_EMAIL: $COMPANY_EMAIL
 
   op:
-    - env_team
-    - env_emori
+    - b3v8n1q6m4z9k2r7t5w0x8c6pd
+    - z7q4m2n9v6k3p8r5t1w0x4c2ba
 
   path-prepend:
     - tools/bin
@@ -501,7 +501,7 @@ and remain outside version control.
 
 ### 1Password Environments
 
-`environment.op` accepts one Environment id or an ordered
+`environment.op` accepts one Environment ID or an ordered
 list of ids. A higher list index overrides a lower list index, and 1Password
 values override dotenv and `environment.set` values. Resolution is lazy and uses
 the agent's configured bootstrap credential without adding that credential to
@@ -641,7 +641,7 @@ timeout, or backend-specific input limit makes that adapter unavailable without
 exposing raw native or subprocess errors.
 
 These commands report only credential source, selected stores, and Environment
-count. They never print tokens, Environment ids, values, or raw SDK errors.
+count. They never print tokens, Environment IDs, values, or raw SDK errors.
 
 When `environment.op` is declared, `install` requires a stored credential that
 can access every declared Environment. It performs that check before reading or
