@@ -161,10 +161,15 @@ Schema-owned keys in YAML use kebab-case:
 schema-version: 1
 
 agent:
-  github-username: emoriwan
+  id: emori
 
-install:
-  working-directory: .
+environment:
+  path-prepend:
+    - tools/bin
+
+github:
+  config:
+    git-protocol: ssh
 ```
 
 The JavaScript representation uses camelCase:
@@ -173,10 +178,15 @@ The JavaScript representation uses camelCase:
 {
   schemaVersion: 1,
   agent: {
-    githubUsername: 'emoriwan',
+    id: 'emori',
   },
-  install: {
-    workingDirectory: '.',
+  environment: {
+    pathPrepend: ['tools/bin'],
+  },
+  github: {
+    config: {
+      gitProtocol: 'ssh',
+    },
   },
 }
 ```
@@ -1235,18 +1245,25 @@ payload model, and synchronization command remain Phase 3 design work.
 
 ## CLI Contract by Phase
 
+The currently registered command surface is:
+
 ```text
-openclaw agent-system validate [--json]
-openclaw agent-system env [--agent <id>]
+openclaw agent-system validate [--agent <id>] [--json]
+openclaw agent-system env [--agent <id>] [--json]
 openclaw agent-system credentials set op [--from-env | --stdin] [--store <id>] [--agent <id>]
 openclaw agent-system credentials validate op [--from-env | --store <id>] [--agent <id>]
 openclaw agent-system credentials unset op [--store <id>] [--agent <id>]
 openclaw agent-system tool gh [--agent <id>] -- api user
+openclaw agent-system install [--json]
+openclaw agent-system doctor [--agent <id>] [--json]
+```
+
+Later phases may add:
+
+```text
 openclaw agent-system capabilities inspect github --agent emori
 openclaw agent-system capabilities test github --agent emori
 openclaw agent-system plan
-openclaw agent-system install [--json]
-openclaw agent-system doctor [--agent <id>] [--json]
 ```
 
 `openclaw as` is an alias for the same canonical command tree, so, for example,
@@ -1266,23 +1283,26 @@ openclaw agent-system doctor [--agent <id>] [--json]
   credential without revealing values, and `credentials unset` removes every
   persistent copy or one exact backend entry idempotently.
 - `tool` runs one statically registered command using current-workspace
-  discovery or an explicit installed agent. `capabilities` later inspects tool compatibility, the selected
-  agent's non-secret binding, required executable or request adapter, credential
-  resolvability, authorization mode, and later policy without exposing secret values. Human-facing
-  commands may accept `--agent`; model-facing tools may not.
-- `plan` reports installation inputs, readiness, hash, and drift without running
-  the installation script.
+  discovery or an explicit installed agent. Human-facing commands may accept
+  `--agent`; model-facing tools may not.
 - `install` checks global credential prerequisites, then reconciles the
   foundational agent and path contributions followed by every configured
   capability contribution. The GitHub contribution owns generated GitHub CLI
-  config plus declared SSH authentication and signing keys. Phase 3 then resolves
-  the managed environment and explicitly executes a declared script.
+  config plus declared SSH authentication and signing keys.
 - `doctor` inspects OpenClaw registration and public identity, supported OpenClaw
   and Codex path projection, and every configured capability contribution
   without repair. The GitHub contribution inspects generated GitHub CLI config
-  and declared account keys. Later phases add credential access, required
-  variables, file permissions, expected tools and plugins, tool compatibility,
-  command routing, cron state, and installation-script drift.
+  and declared account keys.
+
+The planned `capabilities` command inspects tool compatibility, the selected
+agent's non-secret binding, required executable or request adapter, credential
+resolvability, authorization mode, and later policy without exposing secret
+values. The planned `plan` command reports installation inputs, readiness,
+hash, and drift without running the installation script. Phase 3 also extends
+`install` to resolve the managed environment and explicitly execute a declared
+script, and extends `doctor` with credential access, required
+variables, file permissions, expected tools and plugins, tool compatibility,
+command routing, cron state, and installation-script drift.
 
 Phase 1 owns `validate`, `env`, bootstrap credential management, executable path
 projection, and its narrow `doctor` checks. Phase 2 adds the registered tool command and capability
