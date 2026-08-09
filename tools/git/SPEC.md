@@ -2,22 +2,24 @@
 
 ## Status
 
-This document defines the planned Agent System Git tool. It owns Git-specific
+This document defines the Agent System Git tool. It owns Git-specific
 configuration, execution, policy, SSH authentication, signing, documentation,
 and verification decisions. The root [product specification](../../SPEC.md)
 owns the shared environment, tool-runtime, lifecycle, and security contracts.
 
-The first implementation slice is deliberately limited to the tool scaffold,
-agent identity projection, working-directory containment, policy, and direct
-verification. SSH authentication and signing follow only after the shared tool
-runtime can guarantee credential-resource cleanup.
+The first implementation slice now ships the tool scaffold, agent identity
+projection, working-directory containment, policy, and direct verification.
+SSH authentication and signing follow only after the shared tool runtime can
+guarantee credential-resource cleanup.
 
 ## Product Boundary
 
 The Git tool runs the real `git` executable as the active Agent System agent. It
 provides one execution path for model calls, explicit operator commands, and the
-packaged `git` shim without changing the Gateway environment, the operator's
-global Git configuration, or repository configuration.
+packaged `git` shim without changing the Gateway environment or storing managed
+identity in the operator's global or repository Git configuration. Requested
+Git operations such as `init` or `clone` may still create ordinary repository
+configuration as part of Git's own behavior.
 
 The stable surfaces are:
 
@@ -314,7 +316,7 @@ Official asset source:
 
 ## Delivery Plan
 
-### Slice 0: specification split
+### Slice 0: specification split (complete)
 
 - Create this tool-owned specification.
 - Reduce the root specification to shared architecture, invariants, and links
@@ -322,7 +324,7 @@ Official asset source:
 - Remove completed implementation checklists and duplicated GitHub behavior
   from the root specification without removing durable shared contracts.
 
-### Slice 1: scaffold and identity
+### Slice 1: scaffold and identity (complete)
 
 - Add the static manifest and model-input schemas, tool definition, policy,
   registration, guidance, CLI bridge, packaged shim, skill, icon assets, and

@@ -162,3 +162,21 @@ export default async function discoverManifest(workspaceDir: string): Promise<Ma
     diagnostics,
   };
 }
+
+/** Find the nearest manifest at or above a command working directory. */
+export async function discoverManifestFromDirectory(
+  commandDirectory: string,
+): Promise<ManifestDiscovery> {
+  const normalizedCommandDirectory = resolve(commandDirectory);
+  let currentDirectory = normalizedCommandDirectory;
+
+  while (true) {
+    const discovery = await discoverManifest(currentDirectory);
+    if (discovery.selected) return discovery;
+    const parentDirectory = dirname(currentDirectory);
+    if (parentDirectory === currentDirectory) break;
+    currentDirectory = parentDirectory;
+  }
+
+  return discoverManifest(normalizedCommandDirectory);
+}

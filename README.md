@@ -26,14 +26,16 @@ Today, Agent System:
 - registers an agent workspace with OpenClaw and reconciles its public identity
 - assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password Environment sources
 - supplies each Agent System tool only the agent-specific environment and credentials it declares instead of a shared global identity
+- configures `git` with the agent's author and committer identity without storing that identity in repository or global configuration
 - configures `gh` with the agent's GitHub identity, credentials, SSH keys, and private CLI settings
+- applies `allow`, `ask`, or `deny` policy to destructive and unknown Git operations
 - applies `allow`, `ask`, or `deny` policy to destructive, administrative, and unknown GitHub operations
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 
 Planned manifest capabilities include:
 
 - installing and configuring agent dependencies, plugins, and memory integrations
-- configuring agent-specific Git identity and `git` and GOG tooling
+- configuring agent-specific GOG tooling
 - reconciling agent-owned cron jobs and other scheduled work
 
 ## Installation
@@ -76,6 +78,11 @@ github:
     unknown: deny
   config:
     git-protocol: ssh
+
+git:
+  policy:
+    destructive: ask
+    unknown: deny
 ```
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
@@ -101,6 +108,7 @@ openclaw agent-system tool gh -- api user --jq .login
 
 Agent System tools apply a workspace's declared agent environment and policy to a specific command surface.
 
+- [Git](./tools/git/README.md)
 - [GitHub CLI](./tools/github/README.md)
 
 ## Development

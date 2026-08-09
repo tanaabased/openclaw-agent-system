@@ -1,0 +1,200 @@
+import { isAbsolute, relative, resolve } from 'node:path';
+
+import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
+import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
+import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
+import type { AgentManifest } from '../../utils/manifest-types.ts';
+import { isToolWorkingDirectoryContained } from '../../utils/resolve-tool-working-directory.ts';
+import type { GitToolConfiguration } from './config-schema.ts';
+import { gitIdentityEnvironment, resolveGitIdentity } from './identity.ts';
+import { authorizeGitOperation, classifyGitOperation, gitCommandPosition } from './policy.ts';
+import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
+
+interface ResolvedGitConfiguration {
+  identity: ReturnType<typeof resolveGitIdentity>;
+}
+
+export interface GitCommandResult {
+  exitCode: number | null;
+  stderr: string;
+  stdout: string;
+  truncated: boolean;
+}
+
+function toolError(code: AgentSystemToolErrorCode, message: string): never {
+  throw new AgentSystemToolError(code, message);
+}
+
+function isConfigRead(argv: readonly string[]): boolean {
+  const position = gitCommandPosition(argv);
+  const argumentsAfterCommand = position < 0 ? [] : argv.slice(position + 1);
+  if (argumentsAfterCommand.some((value) => value === '--')) return false;
+  if (
+    argumentsAfterCommand.some((value) =>
+      [
+        '--add',
+        '--edit',
+        '--file',
+        '--global',
+        '--local',
+        '--remove-section',
+        '--rename-section',
+        '--replace-all',
+        '--system',
+        '--unset',
+        '--unset-all',
+        '--worktree',
+        '-e',
+        '-f',
+      ].some((flag) => value === flag || value.startsWith(`${flag}=`)),
+    )
+  ) {
+    return false;
+  }
+  const values = argumentsAfterCommand.filter((value) => !value.startsWith('-'));
+  return values.length <= 1;
+}
+
+function validateInput(input: GitToolInput): void {
+  if (
+    input.argv.length === 0 ||
+    input.argv.some((argument) => argument.includes('\0')) ||
+    (input.stdin !== undefined && Buffer.byteLength(input.stdin) > 65_536)
+  ) {
+    toolError('invalid_arguments', 'The Git request is invalid.');
+  }
+  if (
+    input.cwd !== undefined &&
+    (input.cwd.includes('\0') ||
+      isAbsolute(input.cwd) ||
+      relative('.', input.cwd).split(/[\\/]/u).includes('..'))
+  ) {
+    toolError(
+      'invalid_arguments',
+      'The Git working directory must stay inside the agent workspace.',
+    );
+  }
+
+  const blockedOptions = ['--config-env', '--exec-path', '--git-dir', '--work-tree', '-C', '-c'];
+  if (
+    input.argv.some((argument) =>
+      blockedOptions.some(
+        (option) =>
+          argument === option ||
+          argument.startsWith(`${option}=`) ||
+          (option.length === 2 && argument.startsWith(option) && argument.length > 2),
+      ),
+    )
+  ) {
+    toolError(
+      'invalid_arguments',
+      'Agent System Git commands may not override executable, configuration, or working-directory boundaries.',
+    );
+  }
+
+  const position = gitCommandPosition(input.argv);
+  const command = position < 0 ? undefined : input.argv[position]?.toLowerCase();
+  if (!command && !input.argv.some((value) => value === '--help' || value === '--version')) {
+    toolError('invalid_arguments', 'The Git command is missing.');
+  }
+  if (command?.startsWith('credential')) {
+    toolError('invalid_arguments', 'Agent System Git commands may not manage credentials.');
+  }
+  if (command === 'config' && !isConfigRead(input.argv)) {
+    toolError(
+      'invalid_arguments',
+      'Agent System Git configuration is projected from agent.yaml and may not be mutated by git.',
+    );
+  }
+  if (command === 'remote') {
+    const subcommand = input.argv[position + 1]?.toLowerCase();
+    if (subcommand && !['get-url', 'show', '-v', '--verbose'].includes(subcommand)) {
+      toolError(
+        'invalid_arguments',
+        'Agent System Git commands may inspect but may not mutate repository remotes.',
+      );
+    }
+  }
+}
+
+function normalizeCommand(result: AgentSystemCliResult): GitCommandResult {
+  return {
+    exitCode: result.exitCode,
+    stderr: result.stderr,
+    stdout: result.stdout,
+    truncated: result.truncated,
+  };
+}
+
+function readConfiguration(manifest: AgentManifest): GitToolConfiguration | undefined {
+  if (manifest.git === undefined) return undefined;
+  return {
+    agent: {
+      ...(manifest.agent.email === undefined ? {} : { email: manifest.agent.email }),
+      ...(manifest.agent.name === undefined ? {} : { name: manifest.agent.name }),
+    },
+    git: manifest.git,
+  };
+}
+
+/** Define the fixed-executable Git tool over one agent-scoped identity. */
+export function createGitTool() {
+  return defineAgentSystemCliTool({
+    apiVersion: 1,
+    id: 'git',
+    authorization: {
+      authorize: authorizeGitOperation,
+      mode: 'agent-system',
+      policyId: 'agent-system.git',
+    },
+    configuration: {
+      read: readConfiguration,
+      resolve(configuration, resolver): ResolvedGitConfiguration {
+        return { identity: resolveGitIdentity(configuration, resolver) };
+      },
+    },
+    guidance: {
+      prompt:
+        'For Git work, use the $agent-system-git-cli skill and prefer agent_system_git over exec or direct git commands. Pass ordinary non-interactive git arguments in argv; Agent System supplies the active agent identity and contained working directory.',
+    },
+    runner: {
+      argv(input) {
+        return [...input.argv];
+      },
+      environment(configuration) {
+        return gitIdentityEnvironment(configuration.identity);
+      },
+      executable: 'git',
+      maxOutputBytes: 65_536,
+      stdin(input) {
+        return input.stdin;
+      },
+      timeoutMs: 30_000,
+      workingDirectory(input, _configuration, scope) {
+        if (scope.source === 'tool') return input.cwd ?? '.';
+        const commandDirectory = scope.commandWorkingDirectory;
+        if (
+          commandDirectory &&
+          isToolWorkingDirectoryContained(scope.workspaceDir, commandDirectory)
+        ) {
+          return resolve(commandDirectory);
+        }
+        return '.';
+      },
+    },
+    commands: [{ command: 'git' }],
+    tool: {
+      classify: classifyGitOperation,
+      description:
+        'Run Git with the active Agent System agent identity and a workspace-contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional workspace-relative cwd. Configuration mutation, credential commands, hooks, and working-directory escape options are unavailable.',
+      inputFromCommand(argv): GitToolInput {
+        return { argv: [...argv] };
+      },
+      label: 'Agent System Git',
+      name: 'agent_system_git',
+      normalize: normalizeCommand,
+      parameters: gitToolSchema,
+      validate: validateInput,
+    },
+  });
+}

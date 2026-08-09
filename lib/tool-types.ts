@@ -156,6 +156,15 @@ export interface AgentSystemCliToolDefinition<
     ): Promise<void> | void;
     stdin?(input: Static<TParameters>, configuration: TResolvedConfiguration): string | undefined;
     timeoutMs?: number;
+    workingDirectory?(
+      input: Static<TParameters>,
+      configuration: TResolvedConfiguration,
+      scope: {
+        commandWorkingDirectory?: string;
+        source: AgentSystemToolScope['source'];
+        workspaceDir: string;
+      },
+    ): string | undefined;
   };
   tool: {
     classify(

@@ -115,6 +115,10 @@ describe('lib/tool-manifest-binding', () => {
           calls.push(`agent:${agentId}:${trigger}`);
           return loadedManifest(agentId);
         },
+        async loadForCommandDirectory(path, trigger) {
+          calls.push(`command:${path}:${trigger}`);
+          return loadedManifest();
+        },
         async loadForWorkspace(path, expectedAgentId, trigger) {
           calls.push(`workspace:${path}:${String(expectedAgentId)}:${trigger}`);
           return loadedManifest();
@@ -124,7 +128,7 @@ describe('lib/tool-manifest-binding', () => {
     );
 
     assert.equal(result.manifest.agent.id, 'data');
-    assert.deepEqual(calls, [`workspace:${workspaceDir}:undefined:cli`, 'agent:data:cli']);
+    assert.deepEqual(calls, [`command:${workspaceDir}:cli`, 'agent:data:cli']);
   });
 
   it('should fail closed when workspace discovery or rebinding cannot be proven', async () => {

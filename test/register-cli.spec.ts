@@ -227,7 +227,7 @@ describe('lib/register-cli', () => {
       {
         argv: ['api', 'user'],
         command: 'gh',
-        scope: { agentId: 'data', source: 'command' },
+        scope: { agentId: 'data', source: 'command', workspaceDir: '/current' },
       },
     ]);
   });

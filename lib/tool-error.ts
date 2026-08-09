@@ -2,6 +2,7 @@ export type AgentSystemToolErrorCode =
   | 'agent_not_resolved'
   | 'approval_denied'
   | 'capability_not_configured'
+  | 'configuration_unavailable'
   | 'credential_unavailable'
   | 'execution_failed'
   | 'execution_timed_out'

@@ -7,6 +7,7 @@ configuration, CLI, environment, and path behavior. Start with the
 
 Tool-specific configuration, CLI, and routing documentation:
 
+- [Git tool](./tools/git/README.md)
 - [GitHub CLI tool](./tools/github/README.md)
 
 ## Manifest
@@ -127,6 +128,7 @@ Tools own their manifest schemas and document them beside their implementation:
 
 | Tool       | Manifest key | Configuration                                                               |
 | ---------- | ------------ | --------------------------------------------------------------------------- |
+| Git        | `git`        | [Configuration reference](./tools/git/README.md#configuration-reference)    |
 | GitHub CLI | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
 
 Adding a tool to this table does not enable it globally; the corresponding
@@ -242,6 +244,7 @@ openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 
 | Tool       | Command | CLI                                   | Shim                                           |
 | ---------- | ------- | ------------------------------------- | ---------------------------------------------- |
+| Git        | `git`   | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
 | GitHub CLI | `gh`    | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
 
 Registered tools preserve the child command's standard streams and exit code.

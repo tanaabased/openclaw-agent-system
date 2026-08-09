@@ -28,6 +28,8 @@ import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
+import createGitLifecycleContribution from './tools/git/lifecycle.ts';
+import { createGitTool } from './tools/git/tool.ts';
 import GitHubAccountClient from './tools/github/account-client.ts';
 import GitHubAccountKeyService from './tools/github/account-key-service.ts';
 import GitHubConfigStore from './tools/github/config-store.ts';
@@ -122,6 +124,7 @@ export default definePluginEntry({
         },
       }),
       createPathLifecycleContribution({ pathService }),
+      createGitLifecycleContribution(),
       createGitHubLifecycleContribution({
         accountKeyService: githubAccountKeyService,
         configStore: githubConfigStore,
@@ -150,6 +153,7 @@ export default definePluginEntry({
     const doctorService = new AgentDoctorService({ lifecycleRegistry });
     const toolApprovals = new AgentSystemToolApprovalReceiptStore();
     const toolRegistry = new AgentSystemToolRegistry([
+      createGitTool(),
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
     const toolRuntime = new AgentSystemToolRuntime({

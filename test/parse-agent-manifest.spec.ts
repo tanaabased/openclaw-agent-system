@@ -545,4 +545,37 @@ environment:
       new Set(['manifest-schema']),
     );
   });
+
+  it('should parse strict git identity and policy configuration', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  name: Tanaabot
+  email:
+    from-environment: GIT_EMAIL
+  policy:
+    destructive: ask
+    unknown: deny
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.git, {
+      name: 'Tanaabot',
+      email: { fromEnvironment: 'GIT_EMAIL' },
+      policy: { destructive: 'ask', unknown: 'deny' },
+    });
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  signing-key: private
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
 });

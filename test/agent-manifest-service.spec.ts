@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -181,5 +181,18 @@ describe('lib/agent-manifest-service', () => {
     await service.loadForAgentId('tanaabot');
 
     assert.equal(Object.values(logs).flat().join('\n').includes('extremely-sensitive'), false);
+  });
+
+  it('should discover the nearest ancestor manifest for a nested tool command', async () => {
+    const root = await temporaryRoot();
+    const nested = join(root, 'project', 'packages', 'app');
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: tanaabot\n');
+    const { service } = createService({ tanaabot: root });
+
+    const result = await service.loadForCommandDirectory(nested);
+
+    assert.equal(result.status, 'loaded');
+    assert.equal(result.status === 'loaded' ? result.scope.workspaceDir : undefined, root);
   });
 });

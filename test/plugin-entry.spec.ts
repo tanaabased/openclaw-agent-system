@@ -76,8 +76,8 @@ describe('index', () => {
 
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
-    assert.deepEqual(toolNames, ['agent_system_github']);
-    assert.deepEqual(policyIds, ['agent-system.github']);
+    assert.deepEqual(toolNames, ['agent_system_git', 'agent_system_github']);
+    assert.deepEqual(policyIds, ['agent-system.git', 'agent-system.github']);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

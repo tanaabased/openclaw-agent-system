@@ -28,6 +28,7 @@ jobs:
           - path
           - env
           - credentials
+          - git
           - github
           - tool
     steps:

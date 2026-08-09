@@ -108,10 +108,12 @@ Phase 2 delivers:
   Phase 1 prepended path, while preserving workspace-bin precedence; and
 - tool, capability, executable, config, and routing diagnostics.
 
-The shipped [GitHub CLI tool](tools/github/README.md) and planned
-[Git tool](tools/git/SPEC.md) own their configuration, command, policy,
-credential, documentation, and verification contracts. Broader resource policy
-and a constrained direct-request helper remain secondary Phase 2 work.
+The shipped [GitHub CLI tool](tools/github/README.md) and first
+[Git tool](tools/git/README.md) slice own their configuration, command, policy,
+credential, documentation, and verification contracts. Planned Git
+authentication and signing remain in the [tool specification](tools/git/SPEC.md).
+Broader resource policy and a constrained direct-request helper remain
+secondary Phase 2 work.
 
 Publishing the tool contract for third-party plugins follows only after
 OpenClaw exposes or accepts a supported typed cross-plugin capability. The

@@ -125,7 +125,12 @@ try {
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
+    'bin/git',
     'bin/gh',
+    'skills/git-cli/SKILL.md',
+    'skills/git-cli/agents/openai.yaml',
+    'skills/git-cli/agents/assets/icon-small.svg',
+    'skills/git-cli/agents/assets/icon-large.svg',
     'skills/github-cli/SKILL.md',
     'skills/github-cli/agents/openai.yaml',
     'skills/github-cli/agents/assets/icon-small.svg',
@@ -205,6 +210,13 @@ try {
 
   await check('ship an executable Agent System gh command', async () => {
     const commandPath = join(packageRoot, 'bin', 'gh');
+    await access(commandPath);
+    const result = await run(commandPath, ['--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship an executable Agent System git command', async () => {
+    const commandPath = join(packageRoot, 'bin', 'git');
     await access(commandPath);
     const result = await run(commandPath, ['--agent-system']);
     assert.equal(result.output, 'agent-system\n');

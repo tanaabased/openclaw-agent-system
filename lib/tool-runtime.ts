@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { Static, TSchema } from 'typebox';
 
 import resolveManifestValue from '../utils/resolve-manifest-value.ts';
+import resolveToolWorkingDirectory from '../utils/resolve-tool-working-directory.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import AgentSystemToolError from './tool-error.ts';
@@ -36,7 +37,8 @@ export interface AgentSystemToolRuntimeDependencies {
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'>;
   excludedExecutableDirectories?: readonly string[];
   logger: ToolLogger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'> &
+    Partial<Pick<AgentManifestService, 'loadForCommandDirectory'>>;
   runCli?: typeof runToolCli;
 }
 
@@ -213,6 +215,26 @@ export default class AgentSystemToolRuntime {
           return result.value;
         },
       });
+      let childWorkingDirectory = workspaceDir;
+      if (definition.runner.workingDirectory) {
+        try {
+          childWorkingDirectory = await resolveToolWorkingDirectory(
+            workspaceDir,
+            definition.runner.workingDirectory(input, resolvedConfiguration, {
+              ...(scope.source === 'command' && scope.workspaceDir
+                ? { commandWorkingDirectory: scope.workspaceDir }
+                : {}),
+              source: scope.source,
+              workspaceDir,
+            }),
+          );
+        } catch {
+          throw new AgentSystemToolError(
+            'invalid_arguments',
+            `The ${definition.id} tool working directory is invalid.`,
+          );
+        }
+      }
       await definition.runner.prepare?.(resolvedConfiguration, { agentId, workspaceDir });
       const childEnvironment: NodeJS.ProcessEnv = {};
       for (const name of baselineEnvironmentNames) {
@@ -250,7 +272,7 @@ export default class AgentSystemToolRuntime {
       const runRequest = (argv: string[], stdin?: string) =>
         this.#runCli({
           argv,
-          cwd: workspaceDir,
+          cwd: childWorkingDirectory,
           environment: childEnvironment,
           executable: definition.runner.executable,
           excludedExecutableDirectories: [
