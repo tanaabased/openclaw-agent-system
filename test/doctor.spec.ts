@@ -18,6 +18,7 @@ describe('cli/doctor', () => {
   it('should report path drift and set a failing exit code', async () => {
     const output: string[] = [];
     const exitCodes: number[] = [];
+    const commandDirectories: string[] = [];
 
     await doctorAgentSystem({
       doctorService: {
@@ -44,16 +45,18 @@ describe('cli/doctor', () => {
         async loadForAgentId() {
           return manifest;
         },
-        async loadForWorkspace() {
+        async loadForCommandDirectory(commandDirectory) {
+          commandDirectories.push(commandDirectory);
           return manifest;
         },
       },
       output: { writeStdout: (message) => output.push(message) },
       setExitCode: (code) => exitCodes.push(code),
       styles: createCliStyles({ NO_COLOR: '1' }),
-      workspaceDir: '/workspace',
+      workspaceDir: '/workspace/project',
     });
 
+    assert.deepEqual(commandDirectories, ['/workspace/project']);
     assert.deepEqual(exitCodes, [1]);
     assert.equal(output.join('').includes('Run openclaw agent-system install'), true);
   });
@@ -86,7 +89,7 @@ describe('cli/doctor', () => {
         async loadForAgentId() {
           return manifest;
         },
-        async loadForWorkspace() {
+        async loadForCommandDirectory() {
           return manifest;
         },
       },

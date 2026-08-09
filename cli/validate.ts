@@ -12,7 +12,7 @@ export interface ValidateAgentSystemOptions {
   agentId?: string;
   json: boolean;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
@@ -25,7 +25,7 @@ export default async function validateAgentSystem(
 ): Promise<void> {
   const result = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
+    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
     reportManifestFailure(result, options.logger);

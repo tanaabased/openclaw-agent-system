@@ -22,7 +22,10 @@ export interface AgentEnvironmentServiceDependencies {
     info(message: string): void;
   };
   loadDotenv?: typeof loadAgentDotenv;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<
+    AgentManifestService,
+    'loadForAgentId' | 'loadForCommandDirectory' | 'loadForWorkspace'
+  >;
   opEnvironmentService?: Pick<OpEnvironmentService, 'load'>;
 }
 
@@ -70,6 +73,16 @@ export default class AgentEnvironmentService {
         expectedAgentId,
         trigger,
       ),
+      trigger,
+    );
+  }
+
+  async loadForCommandDirectory(
+    commandDirectory: string,
+    trigger: ManifestLoadTrigger = 'cli',
+  ): Promise<AgentEnvironmentLoadResult> {
+    return this.#resolve(
+      await this.#dependencies.manifestService.loadForCommandDirectory(commandDirectory, trigger),
       trigger,
     );
   }

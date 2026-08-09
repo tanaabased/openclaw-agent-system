@@ -14,7 +14,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   credentialManager: Pick<OpCredentialManager, 'validate'>;
   fromEnvironment: boolean;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
   storeId?: string;
@@ -39,7 +39,7 @@ export default async function validateCredentialsAgentSystem(
 
   const loaded = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
+    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (loaded.status !== 'loaded') {
     reportManifestFailure(loaded, options.logger);
     options.setExitCode(1);

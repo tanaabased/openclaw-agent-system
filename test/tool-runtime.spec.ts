@@ -62,7 +62,7 @@ function createRuntime(options: {
       async loadForAgentId() {
         return loadedToolTestManifest();
       },
-      async loadForWorkspace() {
+      async loadForCommandDirectory() {
         return loadedToolTestManifest();
       },
     },

@@ -25,6 +25,11 @@ The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks,
 files larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML
 features such as anchors, aliases, and explicit tags.
 
+Without `--agent`, manifest-dependent Agent System commands and packaged tool
+shims begin at the current directory and walk upward to the nearest manifest.
+Explicit `--agent` selection and model-facing tool calls use the exact
+registered agent workspace instead of directory discovery.
+
 A minimal manifest binds one workspace to one agent:
 
 ```yaml

@@ -72,7 +72,7 @@ function createHarness(
           warn: (message) => logs.warn.push(message),
         },
         manifestService: {
-          async loadForWorkspace(workspaceDir) {
+          async loadForCommandDirectory(workspaceDir) {
             calls.workspace.push(workspaceDir);
             return options.manifest ?? validResult;
           },

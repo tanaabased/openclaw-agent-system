@@ -13,8 +13,7 @@ type LoadedAgentManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }
  * @throws {AgentSystemToolError} When agent identity or workspace ownership cannot be proven.
  */
 export default async function loadBoundToolManifest(
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'> &
-    Partial<Pick<AgentManifestService, 'loadForCommandDirectory'>>,
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>,
   scope: AgentSystemToolScope,
 ): Promise<LoadedAgentManifest> {
   if (scope.source === 'tool') {
@@ -56,9 +55,7 @@ export default async function loadBoundToolManifest(
       'Agent System could not resolve the tool command workspace.',
     );
   }
-  const discovered = manifestService.loadForCommandDirectory
-    ? await manifestService.loadForCommandDirectory(scope.workspaceDir, 'cli')
-    : await manifestService.loadForWorkspace(scope.workspaceDir, undefined, 'cli');
+  const discovered = await manifestService.loadForCommandDirectory(scope.workspaceDir, 'cli');
   if (discovered.status !== 'loaded') {
     throw new AgentSystemToolError(
       'agent_not_resolved',

@@ -104,7 +104,7 @@ function createRuntime(
       async loadForAgentId() {
         return loadedManifest(inputManifest);
       },
-      async loadForWorkspace() {
+      async loadForCommandDirectory() {
         return loadedManifest(inputManifest);
       },
     },

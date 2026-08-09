@@ -37,8 +37,7 @@ export interface AgentSystemToolRuntimeDependencies {
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'>;
   excludedExecutableDirectories?: readonly string[];
   logger: ToolLogger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'> &
-    Partial<Pick<AgentManifestService, 'loadForCommandDirectory'>>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   runCli?: typeof runToolCli;
 }
 

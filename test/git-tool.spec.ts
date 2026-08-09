@@ -80,9 +80,6 @@ describe('tools/git/tool', () => {
           assert.equal(path, repositoryDir);
           return loadedManifest();
         },
-        async loadForWorkspace() {
-          return loadedManifest();
-        },
       },
       async runCli(request) {
         requests.push(request);

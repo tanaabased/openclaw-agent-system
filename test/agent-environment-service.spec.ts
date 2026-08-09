@@ -32,6 +32,9 @@ describe('lib/agent-environment-service', () => {
         async loadForAgentId() {
           return loaded;
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -49,6 +52,31 @@ describe('lib/agent-environment-service', () => {
     assert.deepEqual(logs.error, []);
   });
 
+  it('should resolve environment after command-directory manifest discovery', async () => {
+    const commandDirectories: string[] = [];
+    const service = new AgentEnvironmentService({
+      hostEnvironment: { AGENT_COLOR_SOURCE: 'green' },
+      logger: { error() {}, info() {} },
+      manifestService: {
+        async loadForAgentId() {
+          throw new Error('agent discovery should not run');
+        },
+        async loadForCommandDirectory(commandDirectory) {
+          commandDirectories.push(commandDirectory);
+          return loaded;
+        },
+        async loadForWorkspace() {
+          throw new Error('exact workspace loading should not run');
+        },
+      },
+    });
+
+    const result = await service.loadForCommandDirectory('/workspace/project');
+
+    assert.equal(result.status, 'loaded');
+    assert.deepEqual(commandDirectories, ['/workspace/project']);
+  });
+
   it('should preserve non-loaded manifest results without logging environment state', async () => {
     const logs = { error: [] as string[], info: [] as string[] };
     const invalid: AgentManifestLoadResult = {
@@ -64,6 +92,9 @@ describe('lib/agent-environment-service', () => {
       },
       manifestService: {
         async loadForAgentId() {
+          return invalid;
+        },
+        async loadForCommandDirectory() {
           return invalid;
         },
         async loadForWorkspace() {
@@ -110,6 +141,9 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;
@@ -159,6 +193,9 @@ describe('lib/agent-environment-service', () => {
             },
           };
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -204,6 +241,9 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;
@@ -263,6 +303,9 @@ describe('lib/agent-environment-service', () => {
             },
           };
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -312,6 +355,9 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;

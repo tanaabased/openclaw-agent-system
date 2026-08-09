@@ -412,6 +412,12 @@ non-secret manifest data. Dotenv and 1Password values are resolved lazily for
 an explicit diagnostic, installation, Agent System tool, or packaged command action that
 needs them. A secret must not be fetched merely because an agent session starts.
 
+Every manifest-dependent current-directory CLI command and packaged tool shim
+walks upward and uses the nearest `.agent-system/agent.yaml` or `agent.yaml`.
+Explicit agent selection and authoritative model-tool context resolve the exact
+registered agent workspace instead; they never search an unrelated directory
+tree.
+
 ### Host environment lookup
 
 Agent System snapshots the plugin process environment as a reference lookup.

@@ -38,12 +38,14 @@ openclaw agent-system install
 # should identify the agent system git command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
 
-# should validate the inherited git identity declaration
+# should validate the inherited git identity from a nested directory
+mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"
 openclaw agent-system validate | grep -F 'valid' | grep -F 'git' | grep -F 'Git tool identity and policy configuration'
 
 # should preserve a nested repository directory and commit as tanaabot
-mkdir repository
-cd repository
+mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git init --quiet
 touch identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt

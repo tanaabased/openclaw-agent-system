@@ -34,7 +34,7 @@ describe('lib/tool-manifest-binding', () => {
           calls.push(`${agentId}:${trigger}`);
           return loadedManifest(agentId);
         },
-        async loadForWorkspace() {
+        async loadForCommandDirectory() {
           throw new Error('workspace discovery should not run');
         },
       },
@@ -53,7 +53,7 @@ describe('lib/tool-manifest-binding', () => {
       async loadForAgentId() {
         return loadedManifest('data', '/workspace/other');
       },
-      async loadForWorkspace() {
+      async loadForCommandDirectory() {
         return loadedManifest();
       },
     };
@@ -79,7 +79,7 @@ describe('lib/tool-manifest-binding', () => {
           calls.push(`${agentId}:${trigger}`);
           return loadedManifest(agentId);
         },
-        async loadForWorkspace() {
+        async loadForCommandDirectory() {
           throw new Error('workspace discovery should not run');
         },
       },
@@ -97,7 +97,7 @@ describe('lib/tool-manifest-binding', () => {
           async loadForAgentId() {
             return loadedManifest('emori');
           },
-          async loadForWorkspace() {
+          async loadForCommandDirectory() {
             return loadedManifest();
           },
         },
@@ -119,10 +119,6 @@ describe('lib/tool-manifest-binding', () => {
           calls.push(`command:${path}:${trigger}`);
           return loadedManifest();
         },
-        async loadForWorkspace(path, expectedAgentId, trigger) {
-          calls.push(`workspace:${path}:${String(expectedAgentId)}:${trigger}`);
-          return loadedManifest();
-        },
       },
       { source: 'command', workspaceDir },
     );
@@ -141,7 +137,7 @@ describe('lib/tool-manifest-binding', () => {
       async loadForAgentId() {
         return loadedManifest('data', '/workspace/other');
       },
-      async loadForWorkspace() {
+      async loadForCommandDirectory() {
         return unmanaged;
       },
     };
@@ -156,7 +152,7 @@ describe('lib/tool-manifest-binding', () => {
     );
     await assert.rejects(
       loadBoundToolManifest(
-        { ...service, loadForWorkspace: async () => loadedManifest() },
+        { ...service, loadForCommandDirectory: async () => loadedManifest() },
         { source: 'command', workspaceDir },
       ),
       isUnresolvedToolError,

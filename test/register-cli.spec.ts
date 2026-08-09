@@ -117,7 +117,7 @@ function createProgram() {
         calls.environmentAgent.push(agentId);
         return validEnvironmentResult;
       },
-      async loadForWorkspace(workspaceDir) {
+      async loadForCommandDirectory(workspaceDir) {
         calls.environmentWorkspace.push(workspaceDir);
         return validEnvironmentResult;
       },
@@ -138,7 +138,7 @@ function createProgram() {
         calls.agent.push(agentId);
         return validResult;
       },
-      async loadForWorkspace(workspaceDir) {
+      async loadForCommandDirectory(workspaceDir) {
         calls.workspace.push(workspaceDir);
         return validResult;
       },

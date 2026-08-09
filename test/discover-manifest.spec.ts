@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import discoverManifest, { maximumManifestBytes } from '../utils/discover-manifest.ts';
+import discoverManifest, {
+  discoverManifestFromDirectory,
+  maximumManifestBytes,
+} from '../utils/discover-manifest.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -33,6 +36,22 @@ describe('utils/discover-manifest', () => {
 
     assert.equal(result.selected?.status, 'readable');
     assert.equal(result.selected?.path, join(root, 'agent.yaml'));
+  });
+
+  it('should discover the nearest ancestor manifest from a nested directory', async () => {
+    const root = await temporaryRoot();
+    const workspace = join(root, 'workspace');
+    const nested = join(workspace, 'project', 'packages');
+    await mkdir(nested, { recursive: true });
+    await Promise.all([
+      writeFile(join(root, 'agent.yaml'), 'schema-version: 1\n'),
+      writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\n'),
+    ]);
+
+    const result = await discoverManifestFromDirectory(nested);
+
+    assert.equal(result.workspaceDir, workspace);
+    assert.equal(result.selected?.path, join(workspace, 'agent.yaml'));
   });
 
   it('should prefer .agent-system/agent.yaml and warn about the ignored shorthand', async () => {

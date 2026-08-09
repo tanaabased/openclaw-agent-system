@@ -63,7 +63,7 @@ function createHarness(
             calls.agent.push(agentId);
             return options.loadResult ?? loaded;
           },
-          async loadForWorkspace(workspaceDir) {
+          async loadForCommandDirectory(workspaceDir) {
             calls.workspace.push(workspaceDir);
             return options.loadResult ?? loaded;
           },
@@ -83,7 +83,7 @@ function createHarness(
 }
 
 describe('cli/env', () => {
-  it('should inspect the current manifest without exposing resolved values', async () => {
+  it('should inspect the nearest manifest without exposing resolved values', async () => {
     const { calls, output, run } = createHarness({ json: true });
 
     await run();
