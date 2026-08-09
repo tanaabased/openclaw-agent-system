@@ -1,76 +1,14 @@
 import assert from 'node:assert/strict';
 
-import { Type } from 'typebox';
-
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import AgentSystemToolApprovalReceiptStore from '../lib/tool-approval-receipt-store.ts';
-import AgentSystemToolRuntime, { AgentSystemToolError } from '../lib/tool-runtime.ts';
-import type {
-  AgentSystemAuditEvent,
-  AgentSystemAuthorizationDecision,
-  AgentSystemCliRunRequest,
-  AgentSystemCliToolDefinition,
-} from '../lib/tool-types.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
-
-const workspaceDir = '/workspace/data';
-const parameters = Type.Object(
-  { argument: Type.String({ minLength: 1 }) },
-  { additionalProperties: false },
-);
-const manifest: AgentManifest = { schemaVersion: 1, agent: { id: 'data' } };
-const loadedManifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
-  status: 'loaded',
-  scope: { agentId: 'data', workspaceDir },
-  path: `${workspaceDir}/agent.yaml`,
-  digest: 'manifest-digest',
-  manifest,
-  diagnostics: [],
-  validationChecks: [],
-};
-
-interface TestConfiguration {
-  token: string;
-}
-
-type TestDefinition = AgentSystemCliToolDefinition<
-  typeof parameters,
-  TestConfiguration,
-  TestConfiguration,
-  string
->;
-
-function createDefinition(
-  authorize: () => AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>,
-): TestDefinition {
-  return {
-    apiVersion: 1,
-    id: 'test-tool',
-    authorization: {
-      authorize,
-      mode: 'agent-system',
-      policyId: 'agent-system.test-tool',
-    },
-    configuration: {
-      read: () => ({ token: 'AGENT_TOKEN' }),
-      resolve: (configuration) => configuration,
-    },
-    runner: {
-      argv: (input) => [input.argument],
-      credentialBindings: (configuration) => ({ TOOL_TOKEN: configuration.token }),
-      executable: 'test-tool',
-    },
-    tool: {
-      classify: () => ({ action: 'inspect', risk: 'read', summary: 'Inspect test data.' }),
-      description: 'Exercise the generic Agent System tool runtime.',
-      inputFromCommand: ([argument = 'status']) => ({ argument }),
-      label: 'Test tool',
-      name: 'agent_system_test_tool',
-      normalize: (result) => result.stdout,
-      parameters,
-    },
-  };
-}
+import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
+import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
+import {
+  createToolTestDefinition,
+  loadedToolTestManifest,
+  toolTestWorkspaceDir,
+} from './tool-test-fixture.ts';
 
 function createRuntime(options: {
   approvals?: AgentSystemToolApprovalReceiptStore;
@@ -104,7 +42,7 @@ function createRuntime(options: {
         environmentCalls.push(agentId);
         events.push('environment');
         return {
-          ...loadedManifest,
+          ...loadedToolTestManifest(),
           environment: {
             values: { AGENT_TOKEN: 'private-token' },
             variables: [],
@@ -122,10 +60,10 @@ function createRuntime(options: {
     },
     manifestService: {
       async loadForAgentId() {
-        return loadedManifest;
+        return loadedToolTestManifest();
       },
       async loadForWorkspace() {
-        return loadedManifest;
+        return loadedToolTestManifest();
       },
     },
     runCli:
@@ -148,9 +86,11 @@ describe('lib/tool-runtime', () => {
     const events: string[] = [];
     const auditEvents: AgentSystemAuditEvent[] = [];
     const runtime = createRuntime({ auditEvents, events });
-    const definition = createDefinition(() => {
-      events.push('authorize');
-      return { status: 'denied', reason: 'Test policy denied this operation.' };
+    const definition = createToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'denied', reason: 'Test policy denied this operation.' };
+      },
     });
 
     await assert.rejects(
@@ -187,9 +127,11 @@ describe('lib/tool-runtime', () => {
         };
       },
     });
-    const definition = createDefinition(() => {
-      events.push('authorize');
-      return { status: 'allowed' };
+    const definition = createToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'allowed' };
+      },
     });
 
     const result = await runtime.executeCli(
@@ -232,7 +174,7 @@ describe('lib/tool-runtime', () => {
 
     await assert.rejects(
       runtime.executeCli(
-        createDefinition(() => ({ status: 'allowed' })),
+        createToolTestDefinition(),
         { argument: 'status' },
         { agentId: 'data', source: 'command' },
       ),
@@ -257,15 +199,17 @@ describe('lib/tool-runtime', () => {
     const input = { argument: 'delete' };
     approvals.record({ agentId: 'data', input, toolCallId: 'approved-call', toolId: 'test-tool' });
     const runtime = createRuntime({ approvals, environmentCalls });
-    const definition = createDefinition(() => ({
-      status: 'approval_required',
-      reason: 'Test policy requires approval.',
-      request: { description: 'Delete test data.', severity: 'critical', title: 'Delete data' },
-    }));
+    const definition = createToolTestDefinition({
+      authorize: () => ({
+        status: 'approval_required',
+        reason: 'Test policy requires approval.',
+        request: { description: 'Delete test data.', severity: 'critical', title: 'Delete data' },
+      }),
+    });
     const scope = {
       source: 'tool' as const,
       toolCallId: 'approved-call',
-      toolContext: { agentId: 'data', workspaceDir } as never,
+      toolContext: { agentId: 'data', workspaceDir: toolTestWorkspaceDir } as never,
     };
 
     await runtime.executeCli(definition, input, scope);

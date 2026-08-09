@@ -6,6 +6,8 @@ import type { Static, TSchema } from 'typebox';
 import resolveManifestValue from '../utils/resolve-manifest-value.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
+import AgentSystemToolError from './tool-error.ts';
+import loadBoundToolManifest from './tool-manifest-binding.ts';
 import {
   hashAgentSystemToolInput,
   type default as AgentSystemToolApprovalReceiptStore,
@@ -20,29 +22,6 @@ import type {
   AgentSystemToolExecutionResult,
   AgentSystemToolScope,
 } from './tool-types.ts';
-
-export type AgentSystemToolErrorCode =
-  | 'agent_not_resolved'
-  | 'approval_denied'
-  | 'capability_not_configured'
-  | 'credential_unavailable'
-  | 'execution_failed'
-  | 'execution_timed_out'
-  | 'invalid_arguments'
-  | 'operation_unclassified'
-  | 'tool_identity_mismatch'
-  | 'tool_unavailable';
-
-export class AgentSystemToolError extends Error {
-  override name = 'AgentSystemToolError';
-
-  constructor(
-    readonly code: AgentSystemToolErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 interface ToolLogger {
   error(message: string): void;
@@ -133,7 +112,7 @@ export default class AgentSystemToolRuntime {
     scope: AgentSystemToolScope,
     signal?: AbortSignal,
   ): Promise<AgentSystemToolExecutionResult> {
-    const loaded = await this.#loadBoundManifest(scope);
+    const loaded = await loadBoundToolManifest(this.#dependencies.manifestService, scope);
     const agentId = loaded.manifest.agent.id;
     const workspaceDir = loaded.scope.workspaceDir;
     const declaredConfiguration = definition.configuration.read(loaded.manifest);
@@ -368,73 +347,6 @@ export default class AgentSystemToolRuntime {
       );
       throw toolError;
     }
-  }
-
-  async #loadBoundManifest(scope: AgentSystemToolScope) {
-    if (scope.source === 'tool') {
-      const agentId = scope.toolContext?.agentId?.trim();
-      const workspaceDir = scope.toolContext?.workspaceDir;
-      if (!agentId || !workspaceDir) {
-        throw new AgentSystemToolError(
-          'agent_not_resolved',
-          'Agent System could not resolve the active OpenClaw agent.',
-        );
-      }
-      const result = await this.#dependencies.manifestService.loadForAgentId(agentId, 'cli');
-      if (
-        result.status !== 'loaded' ||
-        resolve(result.scope.workspaceDir) !== resolve(workspaceDir)
-      ) {
-        throw new AgentSystemToolError(
-          'agent_not_resolved',
-          'Agent System could not bind the active OpenClaw agent to this workspace.',
-        );
-      }
-      return result;
-    }
-
-    if (scope.agentId) {
-      const result = await this.#dependencies.manifestService.loadForAgentId(scope.agentId, 'cli');
-      if (result.status !== 'loaded' || result.manifest.agent.id !== scope.agentId) {
-        throw new AgentSystemToolError(
-          'agent_not_resolved',
-          `Agent System could not resolve OpenClaw agent ${scope.agentId}.`,
-        );
-      }
-      return result;
-    }
-
-    if (!scope.workspaceDir) {
-      throw new AgentSystemToolError(
-        'agent_not_resolved',
-        'Agent System could not resolve the tool command workspace.',
-      );
-    }
-    const discovered = await this.#dependencies.manifestService.loadForWorkspace(
-      scope.workspaceDir,
-      undefined,
-      'cli',
-    );
-    if (discovered.status !== 'loaded') {
-      throw new AgentSystemToolError(
-        'agent_not_resolved',
-        'Agent System could not resolve an agent manifest for this tool command.',
-      );
-    }
-    const result = await this.#dependencies.manifestService.loadForAgentId(
-      discovered.manifest.agent.id,
-      'cli',
-    );
-    if (
-      result.status !== 'loaded' ||
-      resolve(result.scope.workspaceDir) !== resolve(discovered.scope.workspaceDir)
-    ) {
-      throw new AgentSystemToolError(
-        'agent_not_resolved',
-        'Agent System could not bind this tool command workspace to its OpenClaw agent.',
-      );
-    }
-    return result;
   }
 
   async #recordAudit(event: AgentSystemAuditEvent): Promise<void> {

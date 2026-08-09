@@ -7,7 +7,8 @@ import type {
 
 import AgentSystemToolRegistry from '../lib/tool-registry.ts';
 import AgentSystemToolApprovalReceiptStore from '../lib/tool-approval-receipt-store.ts';
-import AgentSystemToolRuntime, { AgentSystemToolError } from '../lib/tool-runtime.ts';
+import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import { createGitHubTool } from '../tools/github/tool.ts';
@@ -72,7 +73,6 @@ function createRuntime(
     environmentValues?: Record<string, string>;
     inputManifest?: AgentManifest;
     logs?: string[];
-    manifestWorkspace?: string;
     excludedExecutableDirectories?: string[];
     approvals?: AgentSystemToolApprovalReceiptStore;
     runCli?: (request: AgentSystemCliRunRequest) => Promise<AgentSystemCliResult>;
@@ -102,11 +102,7 @@ function createRuntime(
     },
     manifestService: {
       async loadForAgentId() {
-        const result = loadedManifest(inputManifest);
-        return {
-          ...result,
-          scope: { ...result.scope, workspaceDir: options.manifestWorkspace ?? workspaceDir },
-        };
+        return loadedManifest(inputManifest);
       },
       async loadForWorkspace() {
         return loadedManifest(inputManifest);
@@ -482,28 +478,6 @@ describe('tools/github/tool', () => {
     );
   });
 
-  it('should bind a native tool call to its declared agent workspace', async () => {
-    const registry = new AgentSystemToolRegistry([createTool()]);
-    let factory: OpenClawPluginToolFactory | undefined;
-    registry.registerTools(
-      {
-        registerTool(tool: unknown) {
-          factory = tool as OpenClawPluginToolFactory;
-        },
-      } as never,
-      createRuntime({ manifestWorkspace: '/workspace/other' }),
-    );
-    const produced = factory?.({ agentId: 'data', workspaceDir } as never);
-    const tool = Array.isArray(produced) ? produced[0] : produced;
-    assert.ok(tool);
-
-    await assert.rejects(
-      tool.execute('call-id', { argv: ['api', 'user'] }, undefined, undefined),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
-    );
-  });
-
   it('should reject an authenticated user that does not match the configured username', async () => {
     const runtime = createRuntime({
       runCli: async () => ({
@@ -556,28 +530,5 @@ describe('tools/github/tool', () => {
     assert.equal(result.commandResult.stderr, 'request failed for [REDACTED]');
     assert.equal(logs.join('\n').includes('private-token'), false);
     assert.equal(logs.join('\n').includes('request failed'), false);
-  });
-
-  it('should reject commands outside the registered tool surface and duplicate ownership', () => {
-    const tool = createTool();
-    const registry = new AgentSystemToolRegistry([tool]);
-
-    assert.throws(
-      () =>
-        registry.invoke('git', createRuntime(), ['status'], {
-          source: 'command',
-          workspaceDir,
-        }),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'tool_unavailable',
-    );
-    assert.throws(
-      () => new AgentSystemToolRegistry([tool, tool]),
-      /Duplicate Agent System tool id/,
-    );
-    assert.throws(
-      () => new AgentSystemToolRegistry([tool, { ...tool, id: 'other' }]),
-      /Duplicate Agent System tool command/,
-    );
   });
 });

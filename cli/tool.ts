@@ -1,8 +1,6 @@
 import type AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import {
-  AgentSystemToolError,
-  type default as AgentSystemToolRuntime,
-} from '../lib/tool-runtime.ts';
+import AgentSystemToolError from '../lib/tool-error.ts';
+import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { CliOutput } from '../lib/cli-output.ts';
 import { type Logger, reportError } from '../lib/logger.ts';
 

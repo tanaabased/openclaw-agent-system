@@ -1,5 +1,5 @@
 import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
-import { AgentSystemToolError, type AgentSystemToolErrorCode } from '../../lib/tool-runtime.ts';
+import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import type GitHubConfigStore from './config-store.ts';

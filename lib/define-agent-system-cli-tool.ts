@@ -108,7 +108,7 @@ export default function defineAgentSystemCliTool<
                   ...decision.request,
                   allowedDecisions: ['allow-once', 'deny'],
                   onResolution(resolution) {
-                    if (resolution !== 'allow-once' && resolution !== 'allow-always') return;
+                    if (resolution !== 'allow-once') return;
                     approvals.record({ agentId, input, toolCallId, toolId: definition.id });
                   },
                   timeoutBehavior: 'deny',
