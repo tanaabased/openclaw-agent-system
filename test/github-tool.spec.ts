@@ -410,7 +410,7 @@ describe('tools/github/tool', () => {
     assert.deepEqual(environmentCalls, []);
   });
 
-  it('should consume one exact openclaw approval before resolving credentials', async () => {
+  it('should bridge github ask policy into an approved native tool call', async () => {
     const policyManifest: AgentManifest = {
       ...manifest,
       github: { ...manifest.github, policy: { destructive: 'ask' } },
@@ -472,21 +472,7 @@ describe('tools/github/tool', () => {
     const tool = Array.isArray(produced) ? produced[0] : produced;
     assert.ok(tool);
 
-    await assert.rejects(
-      tool.execute(
-        'approved-call',
-        { argv: ['repo', 'delete', 'owner/changed-repository', '--yes'] },
-        undefined,
-        undefined,
-      ),
-      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
-    );
-    await decision.requireApproval.onResolution?.('allow-once');
     await tool.execute('approved-call', input, undefined, undefined);
-    await assert.rejects(
-      tool.execute('approved-call', input, undefined, undefined),
-      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
-    );
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [

@@ -14,6 +14,10 @@ export interface AgentSystemApprovalReceipt {
   toolId: string;
 }
 
+export interface AgentSystemToolApprovalReceiptStoreDependencies {
+  now(): number;
+}
+
 const maximumReceipts = 1_024;
 const receiptLifetimeMs = 10 * 60 * 1_000;
 
@@ -23,10 +27,17 @@ export function hashAgentSystemToolInput(input: unknown): string {
 
 /** Keep bounded one-use proof that OpenClaw approved an exact Agent System tool call. */
 export default class AgentSystemToolApprovalReceiptStore {
+  readonly #dependencies: AgentSystemToolApprovalReceiptStoreDependencies;
   readonly #receipts = new Map<string, ApprovalReceipt>();
 
+  constructor(dependencies: Partial<AgentSystemToolApprovalReceiptStoreDependencies> = {}) {
+    this.#dependencies = {
+      now: dependencies.now ?? Date.now,
+    };
+  }
+
   record(receipt: AgentSystemApprovalReceipt): void {
-    const now = Date.now();
+    const now = this.#dependencies.now();
     this.#prune(now);
     this.#receipts.set(receipt.toolCallId, {
       agentId: receipt.agentId,
@@ -42,7 +53,7 @@ export default class AgentSystemToolApprovalReceiptStore {
   }
 
   consume(receipt: AgentSystemApprovalReceipt): boolean {
-    const now = Date.now();
+    const now = this.#dependencies.now();
     this.#prune(now);
     const stored = this.#receipts.get(receipt.toolCallId);
     this.#receipts.delete(receipt.toolCallId);
