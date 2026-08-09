@@ -16,13 +16,12 @@ as cron synchronization.
 
 Agent System also defines a tool contract so its own tools can share agent
 binding, credential resolution, policy, redaction, safe process execution, and
-audit behavior. The first GitHub CLI implementation applies compact
-destructive, admin, and unknown-operation policy before resolving credentials,
-while a least-privilege GitHub token remains the remote authorization boundary.
-Git and GitHub are the first tools; GOG and other service integrations may
-implement the same contract later. A public cross-plugin SDK remains a product
-goal, but depends on a supported OpenClaw runtime capability rather than an ad
-hoc process-global registry.
+audit behavior. The shipped [GitHub CLI tool](tools/github/README.md) proves that
+contract; the planned [Git tool](tools/git/SPEC.md) extends it to local Git
+identity, SSH authentication, and signing. GOG and other service integrations
+may implement the same contract later. A public cross-plugin SDK remains a
+product goal, but depends on a supported OpenClaw runtime capability rather than
+an ad hoc process-global registry.
 
 This specification records initial product intent and boundaries. The package is
 `@tanaab/openclaw-agent-system`, the OpenClaw plugin id is `agent-system`, the
@@ -103,17 +102,16 @@ Phase 2 delivers:
 - an internal Agent System tool contract and runtime service;
 - common operation metadata, authorization modes, redaction, audit, and error models;
 - a fixed-executable CLI runner with bounded stdin and output;
-- first-party `agent_system_git` and `agent_system_github` tools;
-- top-level `git` and `github` manifest projections;
+- first-party tools that statically compose their model and manifest schemas;
 - tool-owned skills, tool descriptions, and concise prompt guidance;
-- Agent System-packaged `git` and `gh` command launchers reached through the
+- Agent System-packaged command launchers reached through the
   Phase 1 prepended path, while preserving workspace-bin precedence; and
 - tool, capability, executable, config, and routing diagnostics.
 
-The first generic GitHub wrapper includes narrow destructive, admin, and
-unknown-operation classification plus agent-only interactive approval. Broader
-resource policy and a constrained direct-request helper remain secondary Phase
-2 work. GitHub token permissions remain the remote authorization boundary.
+The shipped [GitHub CLI tool](tools/github/README.md) and planned
+[Git tool](tools/git/SPEC.md) own their configuration, command, policy,
+credential, documentation, and verification contracts. Broader resource policy
+and a constrained direct-request helper remain secondary Phase 2 work.
 
 Publishing the tool contract for third-party plugins follows only after
 OpenClaw exposes or accepts a supported typed cross-plugin capability. The
@@ -932,204 +930,38 @@ redaction categories. They never contain tokens, authorization headers,
 resolved environments, private keys, bootstrap credentials, or unredacted
 sensitive input/output.
 
-## Git and GitHub Tools
+## First-Party Tools
 
-Git and GitHub are the proving tools because OpenClaw blocks several
-environment variables traditionally used to select per-agent identity,
-transport, signing, and credentials.
+First-party tools apply the shared runtime contract while owning their static
+schemas, configuration projections, fixed execution behavior, policy,
+credentials, documentation, and focused verification.
 
-### Manifest projections
+### GitHub CLI
 
-```yaml
-git:
-  name: EMORI
-  email:
-    from-environment: AGENT_GIT_EMAIL
-  transport:
-    type: ssh
-    private-key: GIT_SSH_PRIVATE_KEY
-  signing:
-    enabled: true
-    format: ssh
-    public-key: .agent-system/keys/git-signing.pub
-    private-key: GIT_SIGNING_PRIVATE_KEY
+The shipped GitHub CLI integration provides `agent_system_github`,
+`openclaw agent-system tool gh`, and the packaged `gh` shim. Its complete
+configuration and behavior reference lives in the
+[GitHub CLI tool README](tools/github/README.md). Shipped behavior belongs in
+that tool guide and `ADVANCED.md`, not in this product specification.
 
-github:
-  host: github.com
-  policy:
-    destructive: ask
-    admin: deny
-    unknown: deny
-  username:
-    from-environment: AGENT_GITHUB_USERNAME
-  token: GH_TOKEN
-  ssh-keys:
-    - ~/.ssh/id_ed25519.pub
-  ssh-signing-keys:
-    path: .agent-system/keys/git-signing.pub
-    title: Agent signing key
-  config:
-    git-protocol: ssh
-    color-labels: enabled
-    accessible-colors: disabled
-    spinner: enabled
-    telemetry: disabled
-```
+GitHub tokens remain the provider authorization boundary. Agent System adds
+agent binding, isolated generated configuration, destructive, admin, and
+unknown-operation policy, late credential resolution, bounded execution,
+redaction, and audit through the shared tool runtime.
 
-These sections project values from the completed environment. Git and GitHub
-credentials name resolved variables; they are never literal manifest values.
-The same projections feed tools, command launchers, installation, validation,
-`env`, and `doctor`, demonstrating that configuration sections do not map
-one-to-one to tool commands.
+### Git
 
-### GitHub tool
+The next first-party integration provides `agent_system_git`,
+`openclaw agent-system tool git`, and the packaged `git` shim over one fixed
+real Git executable. Its detailed manifest, identity, working-directory,
+policy, SSH authentication, signing, visual identity, delivery, and
+verification design lives in the [Git tool specification](tools/git/SPEC.md).
 
-The stable model-facing tool name is:
-
-```text
-agent_system_github(...)
-```
-
-The implemented surface selects a generic CLI-shaped request over one fixed,
-trusted `gh` executable:
-
-```json
-{
-  "argv": ["repo", "view", "tanaabased/openclaw-agent-system", "--json", "name"],
-  "stdin": "optional bounded command input"
-}
-```
-
-`argv` accepts ordinary noninteractive `gh` arguments and `stdin`, when used,
-is capped at 64 KiB. The model never supplies the agent id, workspace,
-executable, credential name, config directory, or token. The command adapter
-passes arguments unchanged and writes child stdout and stderr directly while
-preserving the exit code. The native tool returns structured `exitCode`,
-`stdout`, `stderr`, and `truncated` fields.
-
-`github.host` is optional and currently fixed to `github.com`.
-`github.username` is optional and resolvable from the completed Agent System
-environment. When declared, every operation performs a bounded
-`gh api user --jq .login` preflight in the same child environment and rejects a
-mismatched account. `github.token` is an optional environment binding. An
-explicit binding wins; otherwise Agent System selects `GH_TOKEN` and then
-`GITHUB_TOKEN` from the completed Agent System environment. The selected value
-is exposed only as `GH_TOKEN` to the child process.
-
-`github.ssh-keys` and `github.ssh-signing-keys` accept one source or an ordered
-list of sources. Short strings select either an OpenSSH public key line or a
-path; object forms select exactly one of `key` or `path` plus an optional title.
-The signing section is specifically for GitHub SSH signing keys, not GPG keys or
-local Git signing configuration. Declaring either section requires an explicit
-username and token binding because it authorizes account mutation.
-
-The GitHub lifecycle contribution validates declarations without resolving
-credentials or reading files. Doctor resolves public-key files and compares
-canonical fingerprints with the two GitHub account collections without repair.
-Install resolves all sources before remote work, verifies the configured login,
-lists both configured collections, adds only missing keys, and refetches them to
-verify convergence. Titles are creation metadata. Reconciliation is additive:
-Agent System does not remove, rotate, retitle, or prune account keys, and it does
-not add a separate permission-scope preflight before the actual API operations.
-
-Agent System owns a private per-agent `GH_CONFIG_DIR` beneath its machine-local
-state root. `install` and tool invocation both reconcile the same token-free
-`config.yml`, write only missing or drifted content, use owner-only directories
-and files, and reject symbolic links, non-regular files, unexpected ownership,
-or public permissions. Supported settings and defaults are:
-
-```yaml
-github:
-  config:
-    git-protocol: ssh
-    color-labels: enabled
-    accessible-colors: disabled
-    spinner: enabled
-    telemetry: disabled
-```
-
-The generated config also disables prompts and editor prompts and selects
-`cat` as the pager. Agent System never reads the operator's ordinary
-`~/.config/gh`, never writes a token to config, and blocks authentication
-mutation or token display, config mutation, aliases, extensions, and browser or
-editor launch paths. Those credential-containment boundaries apply before
-operation policy.
-
-The GitHub CLI tool classifies common command verbs, known hazardous verbs and
-flags, REST methods and sensitive routes, and GraphQL operation shape. Read and
-ordinary write operations are allowed. `github.policy.destructive`,
-`github.policy.admin`, and `github.policy.unknown` accept `allow`, `ask`, or
-`deny` and default to `deny`. Known hazards win over unknown classification, so
-`unknown: allow` cannot authorize a recognized destructive or admin operation.
-The classifier is deliberately compact and conservative rather than a complete
-versioned copy of the `gh` command tree; unfamiliar syntax stays unknown.
-
-`ask` uses OpenClaw's declared trusted tool policy only for native
-`agent_system_github` calls in an agent turn. OpenClaw offers `allow once` and
-`deny`; Agent System records an input-bound one-use approval receipt and
-consumes it before resolving credentials. Denial, timeout, unavailable approval
-delivery, input changes, and replay fail closed. Direct CLI and packaged
-launcher calls reject `ask` because they have no approval conversation. GitHub
-token permissions remain the remote authorization boundary, so users must
-still supply least-privilege tokens.
-
-The existing consolidated environment resolver assembles declared dotenv and
-1Password sources only after trusted agent binding and input validation. The
-same internal registry and runtime compile the native `agent_system_github`
-tool, conditional `before_prompt_build` guidance, the packaged
-`$agent-system-github-cli` skill, and the `agent-system tool gh` CLI bridge used by
-the Agent System-owned `bin/gh` launcher. Inside the credential-bearing
-runtime, executable resolution excludes the workspace bin, declared prepended
-paths, packaged bin, and calling launcher directory, resolves the remaining
-binary to an absolute real path, and launches it without a shell. The runtime
-bounds output, redacts the selected credential, and emits
-source-distinguished metadata-only lifecycle logs.
-
-Broader resource policy, durable approval choices, persistent audit storage, a
-direct request helper, richer executable diagnostics,
-and the supported cross-plugin registration capability remain follow-up work.
-The internal contract must not be exported as a third-party SDK before that
-supported OpenClaw capability exists and an external tool proves the boundary.
-
-When the CLI adapter is used, the child receives only values such as:
-
-```text
-GH_TOKEN=<action-scoped resolved value>
-GH_HOST=<configured host>
-GH_PROMPT_DISABLED=1
-GH_PAGER=cat
-GH_CONFIG_DIR=<private per-agent directory>
-PAGER=cat
-```
-
-The command surface preserves explicit color variables and sets `GH_FORCE_TTY`
-only when attached to a terminal. Native/model and CI invocations naturally
-remain uncolored because output is captured through pipes.
-
-For later surface expansion, direct HTTP or Octokit-backed conveniences may be
-added when they measurably improve model reliability, semantic approvals,
-structured output, or policy. They must compile to the same tool lifecycle and
-must not create a parallel credential or execution path.
-
-### Git tool
-
-The first Git surface follows the same pattern:
-
-```text
-agent_system_git({ argv, stdin?, cwd? })
-```
-
-It runs a fixed trusted `git` executable and applies the projected author,
-committer, signing, and transport settings only to that child. It classifies
-read, working-tree mutation, history mutation, network write, destructive, and
-unknown operations; constrains repository/worktree paths; and treats Git
-configuration, hooks, helpers, filters, and aliases as untrusted execution
-paths.
-
-Git and GitHub tools receive authoritative context from their OpenClaw tool
-factories, bind `manifest.agent.id` to the active agent, and resolve only the
-credentials required by the classified action. Neither tool accepts `agentId`,
-tokens, secret references, or executable paths from the model.
+The initial Git slice projects effective author and committer identity from
+`git.name` and `git.email`, falling back to the corresponding agent identity,
+without modifying Gateway, global, or repository configuration. SSH private-key
+materialization and signing follow only after the shared runtime guarantees
+invocation-scoped credential-resource cleanup.
 
 ### Tool verification contract
 
@@ -1339,8 +1171,8 @@ remain the first part of explicit `install` throughout these phases.
 - All Agent System tools use one operation metadata, authorization, redaction,
   error, and audit contract. Tool-specific policy and a future third-party API
   preserve that execution path.
-- Git and GitHub credentials are resolved only inside their Agent System-owned
-  action path and never placed in the Gateway environment.
+- Tool credentials are resolved only inside their Agent System-owned action
+  path and never placed in the Gateway environment.
 - Ordinary OpenClaw exec, local Codex native shell commands, Agent System-owned
   children, and packaged command routes use explicit path configuration
   rather than Gateway-wide or shell-startup mutation.
@@ -1349,68 +1181,41 @@ remain the first part of explicit `install` throughout these phases.
   plugins, or configuration automatically.
 - Read-only commands do not silently repair host or OpenClaw state.
 
-## Implementation Sequence
+## Remaining Delivery Sequence
 
-### Phase 1
+Completed behavior is documented in the user guides, tool READMEs, tests, and
+`CHANGELOG.md`. This section tracks only remaining product-level delivery.
 
-1. Preserve the existing plugin, CLI, manifest discovery, agent binding, safe
-   YAML parsing, casing, and public identity reconciliation foundation.
-2. Implement literal `environment.set` parsing and resolution with metadata-only
-   provenance and no generic command-environment injection.
-3. Implement `env` for current-workspace and explicit-agent selection with
-   machine-readable value-free output.
-4. Define the fixed output-source precedence, scalar-or-list normalization, and
-   scalar configuration references without resolving secrets at session startup.
-5. Implement `$NAME` and `${NAME}` host-lookup interpolation for
-   `environment.set`, followed by required-value checks.
-6. Implement ordered dotenv parsing and provenance, then ordered lazy 1Password
-   Environment resolution with the same merge contract.
-7. Implement agent-scoped OP credential management with explicit input,
-   environment-access validation, macOS Keychain, Linux Secret Service, the
-   hardened file fallback, and the permanent process-environment fallback.
-8. Resolve `environment.path-prepend`, create the workspace bin, and project the
-   deterministic prefix into ordinary OpenClaw exec and local Codex native shell
-   commands, with managed-config ownership and read-only drift diagnostics.
-9. Add direct unit coverage and minimal GitHub Actions-only Leia scenarios for
-   manifest binding, source precedence, value-free diagnostics, path
-   projection, and 1Password boundaries.
+### Git tool
 
-### Phase 2
+Implement the [Git tool specification](tools/git/SPEC.md) in independent
+identity, SSH authentication, signing, and constrained-configuration slices.
+Each slice statically composes its schema, reuses the shared tool runtime, and
+adds focused direct tests plus only the Leia coverage needed for a real
+installed-plugin boundary.
 
-1. Define and version the common tool, operation, risk, error, audit, and
-   compatibility contracts.
-2. Implement internal tool registration and the runtime Agent System service
-   used by the first-party proving tools.
-3. Implement the fixed-executable CLI runner, bounded stdin and output,
-   known-secret redaction, and tool test harness.
-4. Add the GitHub projection and generic `agent_system_github` CLI-shaped
-   schema over trusted `gh`, with isolated config and least-privilege provider
-   authorization.
-5. Add compact destructive, admin, and unknown-operation classification plus
-   agent-only OpenClaw approval; retain broader resource policy and a
-   constrained request helper as secondary layers.
-6. Add the Git projection and `agent_system_git` over the same tool runtime.
-7. Ship tool-owned skills, tool descriptions, and concise conditional
-   guidance.
-8. Ship and validate narrow `git` and `gh` launchers through the Phase 1 prepended path.
-9. Add tool/capability diagnostics, optional high-confidence bypass
-   blocking, and Leia scenarios for tool discovery, approval-before-secret,
-   agent separation, command routing, and secret-free results/audit.
-10. Propose a typed OpenClaw cross-plugin capability before exporting the
-    tool contract for third-party plugins.
+### Tool platform expansion
 
-### Phase 3
+1. Add broader resource policy and a constrained direct-request helper only
+   when a first-party tool proves the need.
+2. Propose a typed OpenClaw cross-plugin capability before exporting the tool
+   contract for third-party plugins.
+3. Add GOG or another external proving tool only after the supported public
+   boundary exists.
+
+### Lifecycle completion
 
 1. Complete installation planning, hashing, explicit idempotent-by-convention
    script execution, and successful-run state.
-2. Extend `doctor` with installation, tool, command-routing, and lifecycle drift.
+2. Extend `doctor` with installation, tool, command-routing, and lifecycle
+   drift.
 3. Define and implement explicitly synchronized cron desired state with stable
    ownership and idempotent reconciliation.
 4. Add other lifecycle-oriented manifest sections only after their ownership,
    desired-state, and removal semantics are explicit.
 5. Integrate Gateway startup with validation and drift reporting only.
 
-The CLI should remain a thin adapter over reusable discovery, configuration,
+The CLI remains a thin adapter over reusable discovery, configuration,
 environment, credential, identity, redaction, installation, and diagnostic
 services.
 
@@ -1429,7 +1234,7 @@ The first implementation does not include:
 - hard prevention of every possible Git or GitHub bypass; or
 - complete prediction or reversal of installation-script side effects.
 
-GOG and other tools beyond the Phase 2 Git/GitHub proving slice are later tool
+GOG and other tools beyond the first-party proving integrations are later tool
 work, not new Agent System core environment implementations.
 
 ## Open Decisions
@@ -1448,8 +1253,8 @@ work, not new Agent System core environment implementations.
   schemas without weakening unknown-key rejection.
 - Whether future cross-plugin tools should retain the first implementation's visible
   `capability_not_configured` behavior or support per-agent omission.
-- The generic policy interface and default posture for the future Git tool and
-  third-party tools beyond the proving GitHub implementation.
+- The generic policy interface and default posture for third-party tools beyond
+  the first-party proving implementations.
 - The exact cron job schema, ownership marker, synchronization command, and
   removal policy.
 - The exact enforcement policy for direct GitHub HTTP, SDK, MCP, and browser
