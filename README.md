@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System is designed to make an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, set up its dependencies, memory, and cron jobs, and equip its tools to operate with that agent's own credentials instead of a shared global identity.
+Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, reconcile its supported configuration, and equip its managed tools to operate with that agent's own environment and credentials instead of a shared global identity.
 
 > [!NOTE]
 > Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
@@ -40,14 +40,14 @@ Planned manifest capabilities include:
 
 ## Installation
 
-Once the first npm release is published, the production installation path will be:
+Install the current release from npm:
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system
 openclaw plugins enable agent-system
 ```
 
-Until then, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
 ## Usage
 

@@ -200,4 +200,27 @@ describe('lib/agent-manifest-service', () => {
     assert.equal(result.status === 'loaded' ? result.scope.workspaceDir : undefined, workspace);
     assert.equal(result.status === 'loaded' ? result.manifest.agent.id : undefined, 'tanaabot');
   });
+
+  it('should preserve an invalid nearest ancestor manifest for a nested command directory', async () => {
+    const root = await temporaryRoot();
+    const workspace = join(root, 'project');
+    const nested = join(workspace, 'packages', 'app');
+    const manifestPath = join(workspace, 'agent.yaml');
+    await mkdir(nested, { recursive: true });
+    await Promise.all([
+      writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: other\n'),
+      mkdir(manifestPath),
+    ]);
+    const { service } = createService({ tanaabot: root });
+
+    const result = await service.loadForCommandDirectory(nested);
+
+    assert.equal(result.status, 'invalid');
+    assert.equal(result.status === 'invalid' ? result.scope.workspaceDir : undefined, workspace);
+    assert.equal(result.status === 'invalid' ? result.path : undefined, manifestPath);
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-not-regular-file'],
+    );
+  });
 });

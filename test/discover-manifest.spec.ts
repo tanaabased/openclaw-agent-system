@@ -54,6 +54,27 @@ describe('utils/discover-manifest', () => {
     assert.equal(result.selected?.path, join(workspace, 'agent.yaml'));
   });
 
+  it('should stop at an invalid nearest ancestor manifest', async () => {
+    const root = await temporaryRoot();
+    const workspace = join(root, 'workspace');
+    const nested = join(workspace, 'project', 'packages');
+    await mkdir(nested, { recursive: true });
+    await Promise.all([
+      writeFile(join(root, 'agent.yaml'), 'schema-version: 1\n'),
+      mkdir(join(workspace, 'agent.yaml')),
+    ]);
+
+    const result = await discoverManifestFromDirectory(nested);
+
+    assert.equal(result.workspaceDir, workspace);
+    assert.equal(result.selected?.status, 'invalid');
+    assert.equal(result.selected?.path, join(workspace, 'agent.yaml'));
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-not-regular-file'],
+    );
+  });
+
   it('should prefer .agent-system/agent.yaml and warn about the ignored shorthand', async () => {
     const root = await temporaryRoot();
     await mkdir(join(root, '.agent-system'));
@@ -69,6 +90,28 @@ describe('utils/discover-manifest', () => {
     assert.deepEqual(
       result.diagnostics.map(({ code }) => code),
       ['manifest-shadowed'],
+    );
+  });
+
+  it('should reject an invalid preferred manifest instead of using the shorthand', async () => {
+    const root = await temporaryRoot();
+    const preferredDirectory = join(root, '.agent-system');
+    const preferredPath = join(preferredDirectory, 'agent.yaml');
+    await mkdir(preferredDirectory);
+    await Promise.all([
+      writeFile(join(root, 'target.yaml'), 'schema-version: 1\n'),
+      writeFile(join(root, 'agent.yaml'), 'schema-version: 1\n'),
+    ]);
+    await symlink(join(root, 'target.yaml'), preferredPath);
+
+    const result = await discoverManifest(root);
+
+    assert.equal(result.selected?.status, 'invalid');
+    assert.equal(result.selected?.path, preferredPath);
+    assert.equal(result.ignoredPath, join(root, 'agent.yaml'));
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['manifest-shadowed', 'manifest-not-regular-file'],
     );
   });
 
