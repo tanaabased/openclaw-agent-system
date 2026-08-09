@@ -2,7 +2,7 @@
   "id": "agent-system",
   "name": "Agent System",
   "description": "Better per-agent management for OpenClaw.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "activation": {
     "onStartup": true,
     "onCommands": ["agent-system", "as"]
