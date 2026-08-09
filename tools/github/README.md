@@ -166,10 +166,10 @@ openclaw agent-system tool gh [--agent <id>] -- <gh-arguments...>
 ```
 
 ```sh
-# Discover agent.yaml from the current workspace.
+# discover agent.yaml from the current workspace.
 openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 
-# Select one installed agent from any directory and verify its GitHub identity.
+# select one installed agent from any directory and verify its github identity.
 openclaw as tool gh --agent tanaabot -- api user --jq .login
 ```
 
@@ -186,10 +186,10 @@ permissions; they do not replace them.
 Installation projects the packaged `gh` shim onto supported agent command paths:
 
 ```sh
-# Confirm that this gh belongs to Agent System.
+# confirm that this gh belongs to agent system.
 gh --agent-system
 
-# Delegate an ordinary GitHub CLI command through the shared tool runtime.
+# delegate an ordinary github cli command through the shared tool runtime.
 gh repo view owner/repo --json name,url
 ```
 

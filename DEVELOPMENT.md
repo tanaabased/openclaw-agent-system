@@ -16,22 +16,22 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Install a linked development checkout in the normal OpenClaw profile:
 
 ```sh
-# Clone the repository and install its pinned dependencies.
+# clone the repository and install its pinned dependencies.
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
 bun install
 
-# Build the Node-targeted plugin.
+# build the node-targeted plugin.
 bun run build
 
-# If OpenClaw reports a conflicting installation, remove it before linking.
+# if openclaw reports a conflicting installation, remove it before linking.
 # openclaw plugins uninstall agent-system --force
 
-# Link and enable this checkout in the normal OpenClaw profile.
+# link and enable this checkout in the normal openclaw profile.
 openclaw plugins install --link .
 openclaw plugins enable agent-system
 
-# Confirm that OpenClaw loads this development build.
+# confirm that openclaw loads this development build.
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
 ```
@@ -43,18 +43,18 @@ The uninstall step is intentionally optional. Do not remove an existing installa
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.
 
 ```sh
-# Install the latest compatible stable DevGuard release.
+# install the latest compatible stable devguard release.
 openclaw plugins install npm:@tanaab/openclaw-devguard
 openclaw plugins enable openclaw-devguard
 openclaw plugins inspect openclaw-devguard --runtime --json
 
-# Initialize this checkout with tanaabot and its OAuth in isolated state.
+# initialize this checkout with tanaabot and its oauth in isolated state.
 openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth
 
-# Confirm that the isolated profile loads Agent System from this checkout.
+# confirm that the isolated profile loads agent system from this checkout.
 openclaw devguard exec -- plugins inspect agent-system --runtime --json
 
-# Validate tanaabot's resolved workspace manifest.
+# validate tanaabot's resolved workspace manifest.
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
 
@@ -63,30 +63,30 @@ Only [`devguard.json`](./devguard.json) is portable project configuration. Agent
 In the first terminal:
 
 ```sh
-# DevGuard has no --verbose flag; use OpenClaw debug logging instead.
+# devguard has no --verbose flag; use openclaw debug logging instead.
 OPENCLAW_LOG_LEVEL=debug openclaw devguard run
 
-# Or perform one build and live Gateway verification, then exit.
+# or perform one build and live gateway verification, then exit.
 OPENCLAW_LOG_LEVEL=debug openclaw devguard run --once
 ```
 
 In another terminal while `run` is active:
 
 ```sh
-# Follow DevGuard's tool-policy audit log; stop following with Ctrl-C.
+# follow devguard's tool-policy audit log; stop following with ctrl-c.
 openclaw devguard tail
 
-# Or print the current machine-readable records and exit.
+# or print the current machine-readable records and exit.
 openclaw devguard tail --json --no-follow
 
-# Verify the isolated profile, target build, Gateway, and policy hook.
+# verify the isolated profile, target build, gateway, and policy hook.
 openclaw devguard doctor
 
-# Exercise Agent System directly. Bare commands show help.
+# exercise agent system directly. bare commands show help.
 openclaw devguard exec -- agent-system
 openclaw devguard exec -- as
 
-# Validate the current directory or tanaabot's configured workspace.
+# validate the current directory or tanaabot's configured workspace.
 openclaw devguard exec -- agent-system validate
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
@@ -135,7 +135,7 @@ bun run lint
 bun run typecheck
 ```
 
-`bun run lint` runs both ESLint and the Prettier formatting check.
+`bun run lint` runs ESLint, the Prettier formatting check, and ShellCheck.
 
 ### Unit Tests
 
