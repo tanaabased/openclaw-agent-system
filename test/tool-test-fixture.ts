@@ -5,6 +5,7 @@ import type {
   AgentSystemAuthorizationDecision,
   AgentSystemCliToolDefinition,
   AgentSystemOperation,
+  AgentSystemToolResourceLease,
 } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
@@ -27,6 +28,16 @@ export type ToolTestDefinition = AgentSystemCliToolDefinition<
 >;
 
 export interface ToolTestDefinitionOptions {
+  acquireResources?(
+    input: { argument: string },
+    configuration: ToolTestConfiguration,
+    scope: {
+      agentId: string;
+      signal?: AbortSignal;
+      source: 'command' | 'tool';
+      workspaceDir: string;
+    },
+  ): Promise<AgentSystemToolResourceLease | undefined> | AgentSystemToolResourceLease | undefined;
   authorize?(
     operation: AgentSystemOperation,
     configuration: ToolTestConfiguration,
@@ -67,6 +78,7 @@ export function createToolTestDefinition(
     },
     guidance: { prompt: 'Use the Agent System test tool.' },
     runner: {
+      ...(options.acquireResources ? { acquireResources: options.acquireResources } : {}),
       argv: (input) => [input.argument],
       credentialBindings: (configuration) => ({ TOOL_TOKEN: configuration.token }),
       executable: 'test-tool',

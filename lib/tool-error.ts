@@ -8,6 +8,7 @@ export type AgentSystemToolErrorCode =
   | 'execution_timed_out'
   | 'invalid_arguments'
   | 'operation_unclassified'
+  | 'resource_cleanup_failed'
   | 'tool_identity_mismatch'
   | 'tool_unavailable';
 

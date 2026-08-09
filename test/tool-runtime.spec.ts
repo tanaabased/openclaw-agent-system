@@ -87,6 +87,10 @@ describe('lib/tool-runtime', () => {
     const auditEvents: AgentSystemAuditEvent[] = [];
     const runtime = createRuntime({ auditEvents, events });
     const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return { async dispose() {} };
+      },
       authorize() {
         events.push('authorize');
         return { status: 'denied', reason: 'Test policy denied this operation.' };
@@ -161,20 +165,339 @@ describe('lib/tool-runtime', () => {
     assert.equal(JSON.stringify(auditEvents).includes('private-token'), false);
   });
 
-  it('should report a stable error and failed audit when the executable is unavailable', async () => {
+  it('should merge resource environment, redact resource secrets, and dispose before success', async () => {
     const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
     const logs: string[] = [];
+    const requests: AgentSystemCliRunRequest[] = [];
     const runtime = createRuntime({
       auditEvents,
+      events,
       logs,
-      async runCli() {
-        throw new Error('runner exposed private-token');
+      runCli: async (request) => {
+        requests.push(request);
+        events.push('run');
+        return {
+          exitCode: 0,
+          stderr: 'lease-secret on stderr',
+          stdout: 'lease-secret on stdout',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources(input, configuration, scope) {
+        events.push('acquire');
+        assert.equal(input.argument, 'status');
+        assert.equal(configuration.token, 'AGENT_TOKEN');
+        assert.equal(scope.agentId, 'data');
+        assert.equal(scope.source, 'command');
+        assert.equal(scope.workspaceDir, toolTestWorkspaceDir);
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+          environment: { SSH_AUTH_SOCK: '/private/socket' },
+          sensitiveValues: ['lease-secret'],
+        };
+      },
+      authorize() {
+        events.push('authorize');
+        return { status: 'allowed' };
+      },
+    });
+
+    const result = await runtime.executeCli(
+      definition,
+      { argument: 'status' },
+      { agentId: 'data', source: 'command' },
+    );
+
+    assert.equal(requests[0]?.environment.SSH_AUTH_SOCK, '/private/socket');
+    assert.equal(result.commandResult.stderr, '[REDACTED] on stderr');
+    assert.equal(result.commandResult.stdout, '[REDACTED] on stdout');
+    assert.equal(result.output, '[REDACTED] on stdout');
+    assert.deepEqual(events, [
+      'authorize',
+      'audit:pending',
+      'environment',
+      'acquire',
+      'run',
+      'dispose',
+      'audit:completed',
+    ]);
+    assert.equal(JSON.stringify(auditEvents).includes('lease-secret'), false);
+    assert.equal(logs.join('\n').includes('lease-secret'), false);
+  });
+
+  it('should dispose resources before completing a nonzero child result', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const runtime = createRuntime({
+      auditEvents,
+      events,
+      runCli: async () => {
+        events.push('run');
+        return {
+          exitCode: 2,
+          stderr: 'command failed',
+          stdout: '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+
+    const result = await runtime.executeCli(
+      definition,
+      { argument: 'status' },
+      { agentId: 'data', source: 'command' },
+    );
+
+    assert.equal(result.commandResult.exitCode, 2);
+    assert.deepEqual(
+      auditEvents.map(({ phase, status }) => ({ phase, status })),
+      [
+        { phase: 'pending', status: undefined },
+        { phase: 'completed', status: 'exit-2' },
+      ],
+    );
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:completed']);
+  });
+
+  it('should dispose resources when preflight validation fails', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const runtime = createRuntime({
+      auditEvents,
+      events,
+      runCli: async () => {
+        events.push('run');
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: 'unexpected',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+    definition.runner.preflight = () => ({
+      argv: ['identity'],
+      validate() {
+        throw new AgentSystemToolError('tool_identity_mismatch', 'The identity did not match.');
       },
     });
 
     await assert.rejects(
       runtime.executeCli(
-        createToolTestDefinition(),
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'tool_identity_mismatch',
+    );
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
+    assert.equal(auditEvents.at(-1)?.status, 'tool_identity_mismatch');
+  });
+
+  it('should dispose resources when execution times out', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const runtime = createRuntime({
+      auditEvents,
+      events,
+      runCli: async () => {
+        events.push('run');
+        return {
+          exitCode: null,
+          stderr: '',
+          stdout: '',
+          timedOut: true,
+          truncated: false,
+        };
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'execution_timed_out',
+    );
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
+    assert.equal(auditEvents.at(-1)?.status, 'execution_timed_out');
+  });
+
+  it('should dispose resources when execution is cancelled', async () => {
+    const events: string[] = [];
+    const controller = new AbortController();
+    controller.abort();
+    const runtime = createRuntime({
+      events,
+      runCli: async (request) => {
+        events.push('run');
+        assert.equal(request.signal, controller.signal);
+        assert.equal(request.signal?.aborted, true);
+        return {
+          exitCode: null,
+          stderr: '',
+          stdout: '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources(_input, _configuration, scope) {
+        events.push('acquire');
+        assert.equal(scope.signal, controller.signal);
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+
+    const result = await runtime.executeCli(
+      definition,
+      { argument: 'status' },
+      { agentId: 'data', source: 'command' },
+      controller.signal,
+    );
+    assert.equal(result.commandResult.exitCode, null);
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:completed']);
+  });
+
+  it('should dispose resources when output normalization fails', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const runtime = createRuntime({ auditEvents, events });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+    definition.tool.normalize = () => {
+      throw new Error('normalization failed');
+    };
+
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'execution_failed',
+    );
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
+    assert.equal(auditEvents.at(-1)?.status, 'execution_failed');
+  });
+
+  it('should report resource cleanup failure without retrying disposal', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    let disposalCalls = 0;
+    const runtime = createRuntime({ auditEvents, events });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            disposalCalls += 1;
+            events.push('dispose');
+            throw new Error('cleanup exposed lease-secret');
+          },
+          sensitiveValues: ['lease-secret'],
+        };
+      },
+    });
+
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.code === 'resource_cleanup_failed' &&
+        !error.message.includes('lease-secret'),
+    );
+    assert.equal(disposalCalls, 1);
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
+    assert.equal(auditEvents.at(-1)?.status, 'resource_cleanup_failed');
+  });
+
+  it('should report a stable error and failed audit when the executable is unavailable', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const logs: string[] = [];
+    const runtime = createRuntime({
+      auditEvents,
+      events,
+      logs,
+      async runCli() {
+        events.push('run');
+        throw new Error('runner exposed private-token');
+      },
+    });
+    const definition = createToolTestDefinition({
+      acquireResources() {
+        events.push('acquire');
+        return {
+          async dispose() {
+            events.push('dispose');
+          },
+        };
+      },
+    });
+
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
         { argument: 'status' },
         { agentId: 'data', source: 'command' },
       ),
@@ -191,6 +514,7 @@ describe('lib/tool-runtime', () => {
       ],
     );
     assert.equal(logs.join('\n').includes('private-token'), false);
+    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
   });
 
   it('should consume one exact approval receipt before resolving credentials', async () => {

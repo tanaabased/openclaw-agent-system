@@ -21,6 +21,7 @@ import type {
   AgentSystemCliToolDefinition,
   AgentSystemCliResult,
   AgentSystemToolExecutionResult,
+  AgentSystemToolResourceLease,
   AgentSystemToolScope,
 } from './tool-types.ts';
 
@@ -190,6 +191,21 @@ export default class AgentSystemToolRuntime {
       `tool_call_started auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} risk=${quote(operation.risk)} source=${quote(scope.source)}`,
     );
 
+    let resourceLease: AgentSystemToolResourceLease | undefined;
+    const disposeResources = async () => {
+      const lease = resourceLease;
+      resourceLease = undefined;
+      if (!lease) return;
+      try {
+        await lease.dispose();
+      } catch {
+        throw new AgentSystemToolError(
+          'resource_cleanup_failed',
+          `The ${definition.id} tool could not clean up invocation resources.`,
+        );
+      }
+    };
+
     try {
       const environmentResult = await this.#dependencies.environmentService.loadForAgentId(
         agentId,
@@ -267,6 +283,16 @@ export default class AgentSystemToolRuntime {
         childEnvironment[childName] = value;
         secretValues.push(value);
       }
+      resourceLease = await definition.runner.acquireResources?.(input, resolvedConfiguration, {
+        agentId,
+        ...(signal === undefined ? {} : { signal }),
+        source: scope.source,
+        workspaceDir,
+      });
+      if (resourceLease) {
+        Object.assign(childEnvironment, resourceLease.environment);
+        secretValues.push(...(resourceLease.sensitiveValues ?? []));
+      }
 
       const runRequest = (argv: string[], stdin?: string) =>
         this.#runCli({
@@ -333,6 +359,7 @@ export default class AgentSystemToolRuntime {
         );
       }
       const output = definition.tool.normalize(redactedResult, resolvedConfiguration);
+      await disposeResources();
       const durationMs = Date.now() - startedAt;
       await this.#recordAudit({
         ...baseAudit,
@@ -349,9 +376,15 @@ export default class AgentSystemToolRuntime {
       );
       return { auditId, commandResult: redactedResult, operation, output };
     } catch (error) {
+      let failure = error;
+      try {
+        await disposeResources();
+      } catch (cleanupError) {
+        failure = cleanupError;
+      }
       const toolError =
-        error instanceof AgentSystemToolError
-          ? error
+        failure instanceof AgentSystemToolError
+          ? failure
           : new AgentSystemToolError(
               'execution_failed',
               `The ${definition.id} tool request failed.`,

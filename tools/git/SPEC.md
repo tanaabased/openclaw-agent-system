@@ -7,10 +7,11 @@ configuration, execution, policy, SSH authentication, signing, documentation,
 and verification decisions. The root [product specification](../../SPEC.md)
 owns the shared environment, tool-runtime, lifecycle, and security contracts.
 
-The first implementation slice now ships the tool scaffold, agent identity
+The first implementation slice ships the tool scaffold, agent identity
 projection, working-directory containment, policy, and direct verification.
-SSH authentication and signing follow only after the shared tool runtime can
-guarantee credential-resource cleanup.
+The SSH runtime foundation adds invocation-scoped resource cleanup and a
+cross-platform OpenSSH compatibility proof without accepting SSH manifest
+configuration. Authentication and signing build on that foundation.
 
 ## Product Boundary
 
@@ -209,6 +210,12 @@ exactly one source:
   key. It is resolved late with the agent's stored 1Password bootstrap
   credential and never promoted into the general environment.
 
+Managed authentication requires `ssh-agent`, `ssh-add`, and `ssh-keygen` from
+OpenSSH. The source-development Brewfile installs the Homebrew `openssh`
+formula. Installed hosts remain responsible for providing these executables;
+the authentication slice adds stable readiness diagnostics rather than falling
+back to ambient SSH agents or identities.
+
 ### Credential-resource lease
 
 Private-key support requires a shared invocation-scoped resource contract. The
@@ -216,11 +223,12 @@ tool runtime must be able to acquire child environment and a finalizer, then run
 preflight and main execution inside `try/finally` so cleanup occurs after
 success, failure, timeout, cancellation, or partial preparation.
 
-Conceptually:
+The shared runtime contract is:
 
 ```ts
-interface AgentSystemCredentialLease {
-  environment: Record<string, string>;
+interface AgentSystemToolResourceLease {
+  environment?: Readonly<Record<string, string>>;
+  sensitiveValues?: readonly string[];
   dispose(): Promise<void>;
 }
 ```
@@ -244,9 +252,11 @@ the headless default because it requires a desktop session and user approval.
 The headless path uses the stored service-account credential to resolve the
 declared item only after authorization.
 
-The first SSH slice supports unencrypted source material and returns a stable
-noninteractive error for encrypted or locked keys. Passphrase bindings and
-askpass behavior remain deferred until a concrete use case justifies them.
+The initial authentication slice supports unencrypted source material and
+returns a stable noninteractive error for encrypted or locked keys. A later SSH
+authentication slice adds explicit passphrase bindings and an owner-controlled
+askpass channel without passing the secret through arguments or Git's child
+environment.
 
 ## SSH Commit Signing
 
@@ -336,15 +346,30 @@ Official asset source:
 - Add focused unit tests and one minimal matrix-backed `examples/git` Leia
   scenario.
 
-### Slice 2: SSH authentication
+### Slice 2A: SSH runtime foundation (complete)
 
+- Add OpenSSH to the source-development Brewfile.
 - Add the credential-resource lease to the shared runtime with guaranteed
   cleanup tests.
 - Complete the macOS and Ubuntu raw-key loading compatibility spike.
+- Keep SSH manifest configuration unavailable until the runtime foundation is
+  proven.
+
+### Slice 2B: SSH authentication
+
 - Add path, environment, and 1Password key sources.
 - Start and clean up one isolated SSH agent per invocation.
 - Add source validation, readiness diagnostics, unit tests, and a narrowly
   justified SSH Leia scenario when an install-shaped boundary needs proof.
+
+### Slice 2C: encrypted SSH keys
+
+- Add environment and 1Password passphrase bindings without literal secret
+  values.
+- Provide passphrases through an owner-controlled noninteractive askpass
+  channel.
+- Keep passphrases out of arguments, Git's child environment, logs, audit,
+  errors, and results.
 
 ### Slice 3: SSH signing
 
@@ -385,8 +410,8 @@ identity. Resolver variants and containment edge cases remain direct unit tests.
 
 - Whether a supported OpenSSH stdin-loading path eliminates temporary private
   key files on every supported platform.
-- Whether passphrase-protected source files justify a dedicated secret binding
-  and noninteractive askpass adapter.
+- Which owner-controlled IPC mechanism should deliver passphrases to a
+  noninteractive askpass adapter.
 - Whether the 1Password desktop SSH agent should become a declared workstation
   mode.
 - Whether explicitly approved worktrees outside the agent workspace need a

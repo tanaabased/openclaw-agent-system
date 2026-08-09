@@ -103,6 +103,13 @@ export interface AgentSystemAuditEvent {
   truncated?: boolean;
 }
 
+/** Invocation-scoped child environment and resources that must be disposed before audit success. */
+export interface AgentSystemToolResourceLease {
+  dispose(): Promise<void>;
+  environment?: Readonly<Record<string, string>>;
+  sensitiveValues?: readonly string[];
+}
+
 export interface AgentSystemCliToolDefinition<
   TParameters extends TSchema,
   TDeclaredConfiguration,
@@ -129,6 +136,17 @@ export interface AgentSystemCliToolDefinition<
   commands?: AgentSystemToolCommand[];
   guidance?: AgentSystemToolGuidance;
   runner: {
+    /** Acquire after authorization; implementations must clean partial resources before throwing. */
+    acquireResources?(
+      input: Static<TParameters>,
+      configuration: TResolvedConfiguration,
+      scope: {
+        agentId: string;
+        signal?: AbortSignal;
+        source: AgentSystemToolScope['source'];
+        workspaceDir: string;
+      },
+    ): Promise<AgentSystemToolResourceLease | undefined> | AgentSystemToolResourceLease | undefined;
     argv(input: Static<TParameters>, configuration: TResolvedConfiguration): string[];
     credentialBindings?(
       configuration: TResolvedConfiguration,

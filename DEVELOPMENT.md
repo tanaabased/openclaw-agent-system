@@ -6,6 +6,8 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
+- Homebrew dependencies from [Brewfile](./Brewfile), including Git, GitHub CLI,
+  OpenSSH, OpenClaw, and ClawHub
 - OpenClaw 2026.7.1-2 or newer
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
@@ -16,9 +18,10 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Install a linked development checkout in the normal OpenClaw profile:
 
 ```sh
-# clone the repository and install its pinned dependencies.
+# clone the repository and install its system and javascript dependencies.
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
+brew bundle
 bun install
 
 # build the node-targeted plugin.
@@ -144,6 +147,16 @@ bun run test
 ```
 
 The default Mocha suite keeps behavior-focused specifications flat in [`test/`](./test/).
+
+### OpenSSH Compatibility
+
+```sh
+bun run test:openssh
+```
+
+This repository check proves isolated `ssh-agent` startup, private-key loading
+through `ssh-add` standard input, fingerprint visibility, and socket cleanup.
+It runs separately from the deterministic Mocha unit suite.
 
 ### Build And Package Validation
 
