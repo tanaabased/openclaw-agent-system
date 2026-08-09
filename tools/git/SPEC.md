@@ -354,6 +354,10 @@ Official asset source:
 - Complete the macOS and Ubuntu raw-key loading compatibility spike.
 - Keep SSH manifest configuration unavailable until the runtime foundation is
   proven.
+- Treat `test:openssh`, its repository task, and its unit-workflow step as
+  temporary spike scaffolding rather than a third test category. Remove all
+  three as soon as the Slice 2B `examples/git` Leia scenario proves managed SSH
+  authentication on macOS and Ubuntu.
 
 ### Slice 2B: SSH authentication
 
