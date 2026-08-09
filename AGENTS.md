@@ -11,6 +11,7 @@
 
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, logging, and CLI reference material in `ADVANCED.md`.
+- Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put source installation, DevGuard usage, validation, and coding standards in `DEVELOPMENT.md`.
 - Treat `SPEC.md` as product intent and `CHANGELOG.md` as the record of implemented changes.
 
