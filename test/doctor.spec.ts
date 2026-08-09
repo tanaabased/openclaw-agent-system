@@ -11,6 +11,7 @@ const manifest: AgentManifestLoadResult = {
   digest: 'abc123',
   manifest: { schemaVersion: 1, agent: { id: 'data', name: 'Data' } },
   diagnostics: [],
+  validationChecks: [],
 };
 
 describe('cli/doctor', () => {
@@ -26,6 +27,7 @@ describe('cli/doctor', () => {
             findings: [
               {
                 code: 'openclaw-exec-path-drift',
+                component: 'path',
                 message: 'OpenClaw exec path drifted.',
                 remediation: 'Run openclaw agent-system install from this workspace.',
                 status: 'drift',
@@ -68,6 +70,7 @@ describe('cli/doctor', () => {
             findings: [
               {
                 code: 'codex-config-manual',
+                component: 'path',
                 message: 'Codex workspace configuration is user-managed.',
                 status: 'manual',
               },

@@ -37,15 +37,15 @@ openclaw agent-system install
 # should identify the agent system gh command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --agent-system | grep -Fx 'agent-system'
 
-# should discover the current agent manifest for a tool command
+# should pass generic gh arguments through the current agent manifest
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
-openclaw as tool gh -- api user | grep -F '"login": "tanaabot"'
+openclaw as tool gh -- repo view tanaabased/openclaw-agent-system --json name --jq .name | grep -Fx 'openclaw-agent-system'
 
 # should run a tool command for an explicit installed agent outside its workspace
 cd "$TMPDIR"
-openclaw as tool gh --agent tanaabot -- api user | grep -F '"login": "tanaabot"'
+openclaw as tool gh --agent tanaabot -- api user --jq .login | grep -Fx 'tanaabot'
 
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user | grep -F '"login": "tanaabot"'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
 ```

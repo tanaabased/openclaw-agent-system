@@ -22,6 +22,7 @@ jobs:
         example:
           - install
           - validate
+          - doctor
           - agent
           - identity
           - path

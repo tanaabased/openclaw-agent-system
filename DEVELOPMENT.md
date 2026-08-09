@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, logging, and CLI references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
+This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
 
 ## Requirements
 
@@ -16,22 +16,22 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Install a linked development checkout in the normal OpenClaw profile:
 
 ```sh
-# Clone the repository and install its pinned dependencies.
+# clone the repository and install its pinned dependencies.
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
 bun install
 
-# Build the Node-targeted plugin.
+# build the node-targeted plugin.
 bun run build
 
-# If OpenClaw reports a conflicting installation, remove it before linking.
+# if openclaw reports a conflicting installation, remove it before linking.
 # openclaw plugins uninstall agent-system --force
 
-# Link and enable this checkout in the normal OpenClaw profile.
+# link and enable this checkout in the normal openclaw profile.
 openclaw plugins install --link .
 openclaw plugins enable agent-system
 
-# Confirm that OpenClaw loads this development build.
+# confirm that openclaw loads this development build.
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
 ```
@@ -43,18 +43,18 @@ The uninstall step is intentionally optional. Do not remove an existing installa
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.
 
 ```sh
-# Install the latest compatible stable DevGuard release.
+# install the latest compatible stable devguard release.
 openclaw plugins install npm:@tanaab/openclaw-devguard
 openclaw plugins enable openclaw-devguard
 openclaw plugins inspect openclaw-devguard --runtime --json
 
-# Initialize this checkout with tanaabot and its OAuth in isolated state.
+# initialize this checkout with tanaabot and its oauth in isolated state.
 openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth
 
-# Confirm that the isolated profile loads Agent System from this checkout.
+# confirm that the isolated profile loads agent system from this checkout.
 openclaw devguard exec -- plugins inspect agent-system --runtime --json
 
-# Validate tanaabot's resolved workspace manifest.
+# validate tanaabot's resolved workspace manifest.
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
 
@@ -63,35 +63,33 @@ Only [`devguard.json`](./devguard.json) is portable project configuration. Agent
 In the first terminal:
 
 ```sh
-# DevGuard has no --verbose flag; use OpenClaw debug logging instead.
+# devguard has no --verbose flag; use openclaw debug logging instead.
 OPENCLAW_LOG_LEVEL=debug openclaw devguard run
 
-# Or perform one build and live Gateway verification, then exit.
+# or perform one build and live gateway verification, then exit.
 OPENCLAW_LOG_LEVEL=debug openclaw devguard run --once
 ```
 
 In another terminal while `run` is active:
 
 ```sh
-# Follow DevGuard's tool-policy audit log; stop following with Ctrl-C.
+# follow devguard's tool-policy audit log; stop following with ctrl-c.
 openclaw devguard tail
 
-# Or print the current machine-readable records and exit.
+# or print the current machine-readable records and exit.
 openclaw devguard tail --json --no-follow
 
-# Verify the isolated profile, target build, Gateway, and policy hook.
+# verify the isolated profile, target build, gateway, and policy hook.
 openclaw devguard doctor
 
-# Exercise Agent System directly. Bare commands show help.
+# exercise agent system directly. bare commands show help.
 openclaw devguard exec -- agent-system
 openclaw devguard exec -- as
 
-# Validate the current directory or tanaabot's configured workspace.
+# validate the current directory or tanaabot's configured workspace.
 openclaw devguard exec -- agent-system validate
 openclaw devguard exec -- agent-system validate --agent tanaabot
 ```
-
-Phase 1 manifest lifecycle events (`[agent-system] manifest_loaded`, `manifest_changed`, `manifest_invalid`, `manifest_shadowed`, and debug-only `manifest_absent`) appear in the `devguard run` terminal when `OPENCLAW_LOG_LEVEL=debug` is set. `devguard tail` shows DevGuard policy audit records, not the plugin logger stream. Manifest contents and values are never included in Agent System lifecycle logs.
 
 To exercise an agent-requested tool call and its audit records through `tanaabot`:
 
@@ -108,6 +106,24 @@ openclaw devguard exec -- agent \
 
 Stop supervision with `Ctrl-C`; audit logs persist between runs. See DevGuard's [README](https://github.com/tanaabased/openclaw-devguard#usage) for its common workflow, [advanced reference](https://github.com/tanaabased/openclaw-devguard/blob/main/ADVANCED.md) for complete CLI, configuration, logging, and security details, and [development guide](https://github.com/tanaabased/openclaw-devguard/blob/main/DEVELOPMENT.md#install-from-source) when testing a source-linked DevGuard checkout.
 
+## Logging
+
+Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process for detailed Agent System
+lifecycle diagnostics. Agent System logs metadata through the OpenClaw plugin
+logger with an `[agent-system]` prefix and never includes manifest or environment
+values.
+
+| Events                 | Purpose                                      |
+| ---------------------- | -------------------------------------------- |
+| `manifest_*`           | Manifest discovery, validation, and changes  |
+| `environment_resolved` | Value-free environment resolution metadata   |
+| `tool_call_*`          | Tool start, completion, and failure metadata |
+
+During DevGuard development, these messages appear in the `devguard run` terminal.
+`devguard tail` reads DevGuard policy audit records instead of the plugin logger
+stream. Stable Agent System diagnostic identities are emitted as `code=<code>`
+metadata.
+
 ## Testing
 
 Run the narrowest relevant check while iterating, then complete the repository-only suite before handoff.
@@ -119,7 +135,7 @@ bun run lint
 bun run typecheck
 ```
 
-`bun run lint` runs both ESLint and the Prettier formatting check.
+`bun run lint` runs ESLint, the Prettier formatting check, and ShellCheck.
 
 ### Unit Tests
 
@@ -142,19 +158,22 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/`](./examples/) run through GitHub Actions on macOS and Ubuntu. They install plugins and mutate isolated OpenClaw state, so they must not be used as routine local validation.
 
-The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `github` and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment id fixture.
+The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `github` and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment ID fixture.
 
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
 
-| Path       | Responsibility                             |
-| ---------- | ------------------------------------------ |
-| `index.ts` | Plugin registration                        |
-| `cli/`     | One implementation file per subcommand     |
-| `lib/`     | CLI registration and product orchestration |
-| `utils/`   | Independently testable functions           |
-| `scripts/` | Development and release tasks              |
-| `test/`    | Flat behavior-focused unit tests           |
+| Path                  | Responsibility                                               |
+| --------------------- | ------------------------------------------------------------ |
+| `index.ts`            | Static plugin, tool, and lifecycle registration              |
+| `cli/`                | One implementation file per subcommand                       |
+| `lib/`                | CLI registration, lifecycle registry, and orchestration      |
+| `tools/<capability>/` | Tool schemas, execution, and optional lifecycle contribution |
+| `utils/`              | Independently testable functions                             |
+| `scripts/`            | Development and release tasks                                |
+| `test/`               | Flat behavior-focused unit tests                             |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
+
+Foundational `agent` and `path` lifecycle contributions live in `lib/`; capability contributions remain beside their optional model-facing tool definitions. Declaration validation is deterministic and side-effect free, doctor inspection is read-only, and reconciliation runs only through explicit install after global prerequisites pass. Register contributions in deterministic dependency order in `index.ts`, return explicit unchanged outcomes, and cover validation, inspection, reconciliation, and component-aware presentation directly. Public lifecycle behavior is exercised by the GitHub Actions-only `validate`, `install`, and `doctor` Leia scenarios.

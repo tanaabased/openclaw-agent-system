@@ -1,0 +1,6 @@
+schema-version: 1
+
+agent:
+  id: install-data
+  name: Install Data
+  description: Agent System lifecycle installation scenario

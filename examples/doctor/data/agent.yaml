@@ -1,0 +1,6 @@
+schema-version: 1
+
+agent:
+  id: doctor-data
+  name: Doctor Data
+  description: Agent System lifecycle doctor scenario

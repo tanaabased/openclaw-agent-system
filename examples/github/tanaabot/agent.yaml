@@ -9,5 +9,13 @@ environment:
 
 github:
   host: github.com
+  policy:
+    destructive: allow
   username: tanaabot
   token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    path: generated-auth.pub
+    title: agent-system-leia-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__-ssh-authentication
+  ssh-signing-keys:
+    path: generated-signing.pub
+    title: agent-system-leia-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__-ssh-signing

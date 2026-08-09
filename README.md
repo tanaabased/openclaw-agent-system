@@ -1,54 +1,52 @@
 # Agent System
 
 <p align="center">
-  <img src="./assets/agent-system.png" alt="Agent System mark" width="200" />
+  <img src="./assets/agent-system.png" alt="Agent System mark" width="180" />
 </p>
 
 <p align="center">
   <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-linter.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-linter.yml?label=lint" alt="Lint workflow" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-unit-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-unit-tests.yml?label=tests" alt="Unit test workflow" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-tests.yml?label=examples" alt="Example test workflow" /></a>
-  <img src="https://img.shields.io/badge/OpenClaw-plugin-00c88a" alt="OpenClaw plugin" />
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-tests.yml?label=Leia" alt="Leia example tests" /></a>
+  <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
+  <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System is an OpenClaw plugin for giving an agent workspace a reproducible identity, deterministic environment, secure credential boundary, agent-aware tools, and explicit installation procedure.
+Agent System is designed to make an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, set up its dependencies, memory, and cron jobs, and equip its tools to operate with that agent's own credentials instead of a shared global identity.
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. The plugin supports macOS and Linux; CI exercises macOS 26 and Ubuntu 24.04. The current implementation handles workspace manifests, OpenClaw agent registration and public identity, explicit per-agent environment values from dotenv, inline, and 1Password Environment sources, agent-scoped OP credential management through macOS Keychain, Linux Secret Service, and an owner-only file fallback, executable path projection for OpenClaw exec and local Codex native shell commands, and an initial read-only GitHub tool pilot. Git identity and workspace installation scripts remain product work described in [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md).
+> Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
 
 ## Overview
 
-Agent System is intended to turn one strict, workspace-owned `agent.yaml` manifest into:
+Today, Agent System:
 
-- a stable public and Git identity
-- a deterministic environment assembled from declared sources
-- secure access to host bootstrap credentials such as a 1Password service-account token
-- agent-aware tools that consume only declared action credentials
-- an inspectable installation plan and an explicitly invoked installation flow
-- read-only validation and drift diagnostics
+- registers an agent workspace with OpenClaw and reconciles its public identity
+- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password Environment sources
+- supplies each Agent System tool only the agent-specific environment and credentials it declares instead of a shared global identity
+- configures `gh` with the agent's GitHub identity, credentials, SSH keys, and private CLI settings
+- applies `allow`, `ask`, or `deny` policy to destructive, administrative, and unknown GitHub operations
+- validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 
-YAML schema keys use kebab-case while TypeScript uses camelCase. The scaffold includes focused TypeScript ports of Core Next's `encode` and `decode` utilities as the initial conversion primitives. Manifest code will apply those primitives only to schema-owned keys so literal values such as environment-variable names remain unchanged.
+Planned manifest capabilities include:
+
+- installing and configuring agent dependencies, plugins, and memory integrations
+- configuring agent-specific Git identity and `git` and GOG tooling
+- reconciling agent-owned cron jobs and other scheduled work
 
 ## Installation
 
-Install the current development build from a source checkout:
+Once the first npm release is published, the production installation path will be:
 
 ```sh
-git clone https://github.com/tanaabased/openclaw-agent-system.git
-cd openclaw-agent-system
-bun install
-bun run build
-openclaw plugins install --link .
+openclaw plugins install npm:@tanaab/openclaw-agent-system
 openclaw plugins enable agent-system
-openclaw plugins inspect agent-system --runtime --json
 ```
 
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for source-install caveats, the recommended isolated DevGuard workflow, and repository validation.
+Until then, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
-## Current manifest
+## Usage
 
-An agent workspace opts into Agent System with `.agent-system/agent.yaml` or the shorter root-level `agent.yaml`:
+Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand.
 
 ```yaml
 schema-version: 1
@@ -60,79 +58,51 @@ agent:
     from-environment: AGENT_EMAIL
 
 environment:
-  dotenv: .agent-system/env/base.env
-  set:
-    AGENT_COLOR: green
-    AGENT_EMAIL: $COMPANY_EMAIL
-  op: env_agent
+  # import this agent's email and github token from one 1password environment.
+  op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   required:
-    - AGENT_COLOR
+    - AGENT_EMAIL
+    - GH_TOKEN_TANAABOT
 
 github:
-  host: github.com
-  username:
-    from-environment: GITHUB_USERNAME
-  token: GITHUB_TOKEN
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  policy:
+    destructive: ask
+    admin: deny
+    unknown: deny
+  config:
+    git-protocol: ssh
 ```
 
-The preferred `.agent-system/agent.yaml` wins when both files exist. The current schema accepts the identity fields `id`, `name`, `email`, `description`, and `avatar`; ordered dotenv paths; string values under `environment.set`; ordered 1Password Environment ids; ordered workspace-relative executable directories under `environment.path-prepend`; `environment.required`; and the initial `github` tool configuration. `agent.id` is literal; `agent.name`, `agent.email`, and `github.username` accept either literal strings or an explicit `from-environment` reference to the completed Agent System environment. `github.token` is an environment-variable name, never a literal token. Precedence is dotenv, then explicit set values, then 1Password Environments. Set values may reference the plugin process environment or external-source values with `$NAME` or `${NAME}`; host values are lookup inputs and are not automatically inherited.
-
-1Password resolution uses the official JavaScript SDK and occurs only for an explicit environment consumer such as `agent-system env`. Agent System checks macOS Keychain or Linux Secret Service, then the agent-scoped file fallback, before its permanent `OP_SERVICE_ACCOUNT_TOKEN` process-environment fallback. The token is reserved bootstrap state: Agent System never exports it as an agent environment variable or prints it in normal diagnostics.
-
-Unsupported sections and unknown or incorrectly cased keys fail validation. Anchors, aliases, explicit tags, symlinked manifests, and symlinked `.agent-system` directories are rejected.
-
-## Usage
-
-Validate the current directory or one configured OpenClaw agent workspace:
+From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
 
 ```sh
-openclaw agent-system validate
-openclaw agent-system validate --agent tanaabot
-openclaw as validate --agent tanaabot
-```
-
-When the manifest declares `environment.op`, validate and store the process token before installation:
-
-```sh
-openclaw agent-system credentials validate op
+# persist the current 1password service account token for this agent.
 openclaw agent-system credentials set op --from-env
-openclaw agent-system credentials validate op
-```
 
-Install the agent represented by the current workspace:
-
-```sh
-cd /path/to/agent-workspace
+# validate the manifest, then reconcile the agent and its configured components.
+openclaw agent-system validate
 openclaw agent-system install
-```
 
-`install` requires `agent.name`, resolves it from the completed Agent System environment when declared with `from-environment`, adds the OpenClaw agent when absent, and reconciles the manifest-owned name and optional avatar. `agent.email` remains lazy until a consumer such as the planned Git tool needs it. Install also creates the workspace `bin/` directory, prepends the workspace bin, declared workspace paths, and Agent System's packaged bin to OpenClaw exec, and manages the equivalent literal path in `.codex/config.toml` for local Codex native shell commands. Agent System-owned Codex config is visibly listed in the workspace `.gitignore`; an existing user-managed Codex config is left untouched with a warning. If `environment.op` is declared, installation first verifies stored access before environment resolution or OpenClaw mutation; it does not use the process-token fallback, prompt, import the process token, or store credentials. It is safe to rerun when the agent already matches. An existing agent id bound to another workspace is reported as a conflict instead of being silently replaced.
-
-Inspect supported path projection for drift without repairing it:
-
-```sh
+# inspect managed state without changing it.
 openclaw agent-system doctor
-openclaw agent-system doctor --agent tanaabot --json
+
+# verify the github identity supplied by this agent's environment.
+openclaw agent-system tool gh -- api user --jq .login
 ```
 
-Resolve and inspect Agent System environment metadata without printing values:
+`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. See [Advanced](./ADVANCED.md) for the complete manifest and CLI references.
 
-```sh
-openclaw agent-system env
-openclaw agent-system env --agent tanaabot --json
-```
+## Tools
 
-At runtime, the plugin loads a matching manifest at `session_start` and `before_prompt_build` and emits value-free manifest lifecycle diagnostics. It does not resolve or inject general environment values at either hook. A configured `github` section adds concise guidance for the `agent_system_github` tool; its initial surface supports only the authenticated-user request `{"argv":["api","user"]}`. The shared tool runtime binds the request to trusted agent context, classifies and authorizes the read before environment resolution, adds only the declared token to a sanitized `gh` child process, validates the returned login against `github.username` when configured, bounds output, and emits metadata-only call logs. The same path is available explicitly as `openclaw as tool gh -- api user`; the packaged `gh` command delegates there, while a workspace-owned `bin/gh` remains the higher-priority override. Installation projects only `PATH` into the explicitly supported OpenClaw exec and local Codex native shell surfaces; other generic command tools retain their own environment contracts. Run OpenClaw with `OPENCLAW_LOG_LEVEL=debug` to see value-free `[agent-system] manifest_*`, `[agent-system] environment_*`, and tool call messages.
+Agent System tools apply a workspace's declared agent environment and policy to a specific command surface.
 
-See [ADVANCED.md](./ADVANCED.md) for the complete current manifest, logging, and CLI references, plus clearly marked planned surfaces.
+- [GitHub CLI](./tools/github/README.md)
 
 ## Development
 
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for source installation, the recommended DevGuard workflow with `tanaabot`, repository testing, package validation, and coding standards.
-
-## Project direction
-
-[SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) defines the first implementation path and its security boundaries. It is product intent rather than evidence that a feature has already shipped.
+See [Development](./DEVELOPMENT.md) for source installation, the recommended DevGuard workflow, validation, and coding standards.
 
 ## Issues, Questions and Support
 

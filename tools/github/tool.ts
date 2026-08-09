@@ -1,63 +1,95 @@
 import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
-import { AgentSystemToolError, type AgentSystemToolErrorCode } from '../../lib/tool-runtime.ts';
+import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
-import type { GitHubManifestConfiguration } from './config-schema.ts';
+import type GitHubConfigStore from './config-store.ts';
+import {
+  resolveGitHubCliConfiguration,
+  type GitHubCliConfiguration,
+  type GitHubManifestConfiguration,
+} from './config-schema.ts';
+import {
+  authorizeGitHubOperation,
+  classifyGitHubOperation,
+  githubCommandPosition,
+} from './policy.ts';
 import { githubToolSchema, type GitHubToolInput } from './tool-schema.ts';
 
 interface ResolvedGitHubConfiguration {
+  cli: GitHubCliConfiguration;
   host: 'github.com';
-  tokenBinding: string;
+  tokenBindings: readonly string[];
   username?: string;
 }
 
-export interface GitHubUserResult {
-  host: 'github.com';
-  id: number;
-  login: string;
+export interface GitHubCommandResult {
+  exitCode: number | null;
+  stderr: string;
+  stdout: string;
+  truncated: boolean;
+}
+
+export interface GitHubToolDependencies {
+  configStore: Pick<GitHubConfigStore, 'configDirectory' | 'reconcile'>;
 }
 
 function toolError(code: AgentSystemToolErrorCode, message: string): never {
   throw new AgentSystemToolError(code, message);
 }
 
-function normalizeUser(
-  result: AgentSystemCliResult,
-  configuration: ResolvedGitHubConfiguration,
-): GitHubUserResult {
-  if (result.exitCode !== 0) {
-    toolError('execution_failed', 'GitHub rejected the authenticated user request.');
-  }
-  if (result.truncated) {
-    toolError('execution_failed', 'GitHub returned more data than Agent System permits.');
+function validateInput(input: GitHubToolInput): void {
+  if (
+    input.argv.length === 0 ||
+    input.argv.some((argument) => argument.includes('\0')) ||
+    (input.stdin !== undefined && Buffer.byteLength(input.stdin) > 65_536)
+  ) {
+    toolError('invalid_arguments', 'The GitHub CLI request is invalid.');
   }
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(result.stdout);
-  } catch {
-    toolError('execution_failed', 'GitHub returned an invalid user response.');
-  }
+  const blockedFlags = ['--browser', '--editor', '--host', '--hostname', '--show-token', '--web'];
   if (
-    !payload ||
-    typeof payload !== 'object' ||
-    typeof (payload as { id?: unknown }).id !== 'number' ||
-    typeof (payload as { login?: unknown }).login !== 'string'
+    input.argv.some(
+      (argument) =>
+        argument === '-w' ||
+        blockedFlags.some((flag) => argument === flag || argument.startsWith(`${flag}=`)),
+    )
   ) {
-    toolError('execution_failed', 'GitHub returned an incomplete user response.');
-  }
-  const { id, login } = payload as { id: number; login: string };
-  if (configuration.username && login.toLowerCase() !== configuration.username.toLowerCase()) {
     toolError(
-      'tool_identity_mismatch',
-      `GitHub returned ${login}, not the configured username ${configuration.username}.`,
+      'invalid_arguments',
+      'Agent System GitHub commands may not override identity or launch a browser or editor.',
     );
   }
 
+  const position = githubCommandPosition(input.argv);
+  const command = position < 0 ? undefined : input.argv[position];
+  const subcommand = position < 0 ? undefined : input.argv[position + 1];
+  if (!command) toolError('invalid_arguments', 'The GitHub CLI command is missing.');
+  if (command === 'alias' || command === 'extension') {
+    toolError(
+      'invalid_arguments',
+      'Agent System GitHub commands may not manage aliases or extensions.',
+    );
+  }
+  if (command === 'auth' && subcommand !== 'status') {
+    toolError(
+      'invalid_arguments',
+      'Agent System GitHub commands may inspect auth status but may not reveal or mutate authentication.',
+    );
+  }
+  if (command === 'config' && subcommand !== 'get' && subcommand !== 'list') {
+    toolError(
+      'invalid_arguments',
+      'Agent System GitHub config is generated from agent.yaml and may not be mutated by gh.',
+    );
+  }
+}
+
+function normalizeCommand(result: AgentSystemCliResult): GitHubCommandResult {
   return {
-    host: configuration.host,
-    id,
-    login,
+    exitCode: result.exitCode,
+    stderr: result.stderr,
+    stdout: result.stdout,
+    truncated: result.truncated,
   };
 }
 
@@ -65,74 +97,98 @@ function readConfiguration(manifest: AgentManifest): GitHubManifestConfiguration
   return manifest.github;
 }
 
-const githubTool = defineAgentSystemCliTool({
-  apiVersion: 1,
-  id: 'github',
-  configuration: {
-    read: readConfiguration,
-    resolve(configuration, resolver): ResolvedGitHubConfiguration {
-      return {
-        host: configuration.host ?? 'github.com',
-        tokenBinding: configuration.token,
-        ...(configuration.username
-          ? { username: resolver.resolve(configuration.username, '/github/username') }
-          : {}),
-      };
+/** Define the fixed-executable GitHub CLI tool over one agent-scoped configuration store. */
+export function createGitHubTool(dependencies: GitHubToolDependencies) {
+  return defineAgentSystemCliTool({
+    apiVersion: 1,
+    id: 'github',
+    authorization: {
+      authorize: authorizeGitHubOperation,
+      mode: 'agent-system',
+      policyId: 'agent-system.github',
     },
-  },
-  guidance: {
-    prompt:
-      'For GitHub operations, prefer the agent_system_github tool over ordinary exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. The initial tool supports only argv ["api", "user"] to identify the configured account.',
-  },
-  runner: {
-    argv(input) {
-      return [...input.argv, '--jq', '{id: .id, login: .login}'];
+    configuration: {
+      read: readConfiguration,
+      resolve(configuration, resolver): ResolvedGitHubConfiguration {
+        return {
+          cli: resolveGitHubCliConfiguration(configuration),
+          host: configuration.host ?? 'github.com',
+          tokenBindings: configuration.token ? [configuration.token] : ['GH_TOKEN', 'GITHUB_TOKEN'],
+          ...(configuration.username
+            ? { username: resolver.resolve(configuration.username, '/github/username') }
+            : {}),
+        };
+      },
     },
-    credentialBindings(configuration) {
-      return { GH_TOKEN: configuration.tokenBinding };
+    guidance: {
+      prompt:
+        'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config.',
     },
-    environment(configuration) {
-      return {
-        GH_HOST: configuration.host,
-        GH_PAGER: 'cat',
-        GH_PROMPT_DISABLED: '1',
-        NO_COLOR: '1',
-        PAGER: 'cat',
-      };
+    runner: {
+      argv(input) {
+        return [...input.argv];
+      },
+      credentialBindings(configuration) {
+        return { GH_TOKEN: { anyOf: configuration.tokenBindings } };
+      },
+      environment(configuration, scope) {
+        return {
+          GH_CONFIG_DIR: dependencies.configStore.configDirectory(scope.agentId),
+          ...(scope.source === 'command' && scope.terminalColumns
+            ? { GH_FORCE_TTY: String(scope.terminalColumns) }
+            : {}),
+          GH_HOST: configuration.host,
+          GH_PAGER: 'cat',
+          GH_PROMPT_DISABLED: '1',
+          PAGER: 'cat',
+        };
+      },
+      executable: 'gh',
+      maxOutputBytes: 65_536,
+      preflight(configuration) {
+        if (!configuration.username) return undefined;
+        return {
+          argv: ['api', 'user', '--jq', '.login'],
+          validate(result) {
+            if (result.exitCode !== 0) {
+              toolError('execution_failed', 'GitHub rejected the authenticated user check.');
+            }
+            if (result.truncated) {
+              toolError('execution_failed', 'GitHub returned an invalid authenticated user check.');
+            }
+            const actual = result.stdout.trim();
+            if (actual.toLowerCase() !== configuration.username?.toLowerCase()) {
+              toolError(
+                'tool_identity_mismatch',
+                `GitHub returned ${actual || 'an unknown user'}, not the configured username ${configuration.username}.`,
+              );
+            }
+          },
+        };
+      },
+      async prepare(configuration, scope) {
+        await dependencies.configStore.reconcile(scope.agentId, configuration.cli);
+      },
+      stdin(input) {
+        return input.stdin;
+      },
+      timeoutMs: 30_000,
     },
-    executable: 'gh',
-    maxOutputBytes: 32_768,
-    timeoutMs: 30_000,
-  },
-  commands: [{ command: 'gh' }],
-  tool: {
-    classify() {
-      return {
-        action: 'github.viewer.get',
-        risk: 'read',
-        summary: 'Read the authenticated GitHub account',
-        resources: [{ type: 'host', id: 'github.com' }],
-      };
+    commands: [{ command: 'gh' }],
+    tool: {
+      classify(input) {
+        return classifyGitHubOperation(input);
+      },
+      description:
+        'Run the trusted GitHub CLI with the active Agent System agent credential and isolated configuration. Supply ordinary non-interactive gh arguments in argv and optional bounded stdin. Authentication mutation, credential display, config mutation, aliases, extensions, browsers, and editors are unavailable.',
+      inputFromCommand(argv): GitHubToolInput {
+        return { argv: [...argv] };
+      },
+      label: 'Agent System GitHub CLI',
+      name: 'agent_system_github',
+      normalize: normalizeCommand,
+      parameters: githubToolSchema,
+      validate: validateInput,
     },
-    description:
-      'Use GitHub with the current Agent System configuration. The initial read-only surface accepts argv ["api", "user"] to identify the configured account.',
-    inputFromCommand(argv): GitHubToolInput {
-      const isUserRequest = argv[0] === 'api' && argv[1] === 'user';
-      const hasNoFormatting = argv.length === 2;
-      const hasLoginProjection = argv.length === 4 && argv[2] === '--jq' && argv[3] === '.login';
-      if (!isUserRequest || (!hasNoFormatting && !hasLoginProjection)) {
-        toolError(
-          'invalid_arguments',
-          'The initial Agent System GitHub tool supports only: gh api user [--jq .login]',
-        );
-      }
-      return { argv: ['api', 'user'] };
-    },
-    label: 'Agent System GitHub',
-    name: 'agent_system_github',
-    normalize: normalizeUser,
-    parameters: githubToolSchema,
-  },
-});
-
-export default githubTool;
+  });
+}

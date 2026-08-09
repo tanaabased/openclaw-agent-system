@@ -67,10 +67,13 @@ export default function registerAgentSystemCli(
     .command('validate')
     .description('Discover and validate the workspace Agent System manifest.')
     .option('--agent <id>', 'Validate the configured workspace for an OpenClaw agent.')
+    .option('--json', 'Write structured JSON output.')
     .action(async () => {
-      const agentId = validate.opts().agent;
+      const commandOptions = validate.opts();
+      const agentId = commandOptions.agent;
       await validateAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
+        json: commandOptions.json === true,
         logger: options.logger,
         manifestService: options.manifestService,
         output,
@@ -100,7 +103,7 @@ export default function registerAgentSystemCli(
     });
   const doctor = agentSystem
     .command('doctor')
-    .description('Inspect Agent System workspace and executable-path drift.')
+    .description('Inspect Agent System agent, path, and configured capability drift.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
@@ -131,6 +134,9 @@ export default function registerAgentSystemCli(
         logger: options.logger,
         output,
         setExitCode,
+        ...(process.stdout.isTTY && process.stdout.columns > 0
+          ? { terminalColumns: process.stdout.columns }
+          : {}),
         toolRegistry: options.toolRegistry,
         toolRuntime: options.toolRuntime,
         workspaceDir: cwd(),
@@ -213,12 +219,14 @@ export default function registerAgentSystemCli(
         workspaceDir: cwd(),
       });
     });
-  agentSystem
+  const install = agentSystem
     .command('install')
-    .description('Install the workspace agent and reconcile its identity and executable paths.')
+    .description('Install the workspace agent and reconcile configured lifecycle state.')
+    .option('--json', 'Write structured JSON output.')
     .action(async () => {
       await installAgentSystem({
         installService: options.installService,
+        json: install.opts().json === true,
         logger: options.logger,
         manifestService: options.manifestService,
         output,

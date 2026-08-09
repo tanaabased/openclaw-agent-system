@@ -30,6 +30,7 @@ interface PackResult {
 
 interface PluginManifest {
   id?: string;
+  skills?: string[];
   version?: string;
 }
 
@@ -110,6 +111,7 @@ try {
       'bin',
       'cli',
       'lib',
+      'skills',
       'tools',
       'utils',
     ]);
@@ -124,6 +126,10 @@ try {
     'dist/index.js.map',
     'index.ts',
     'bin/gh',
+    'skills/github-cli/SKILL.md',
+    'skills/github-cli/agents/openai.yaml',
+    'skills/github-cli/agents/assets/icon-small.svg',
+    'skills/github-cli/agents/assets/icon-large.svg',
     'assets/agent-system.png',
     'README.md',
     'ADVANCED.md',
@@ -167,6 +173,7 @@ try {
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
+    assert.deepEqual(manifest.skills, ['./skills']);
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
   });
 

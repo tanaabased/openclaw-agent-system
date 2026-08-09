@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -70,6 +70,21 @@ describe('lib/tool-cli-runner', () => {
     assert.equal(result.stdout, 'selected');
   });
 
+  it('should pass bounded stdin directly to the fixed executable', async () => {
+    const result = await runToolCli({
+      argv: ['-e', 'process.stdin.pipe(process.stdout)'],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      stdin: 'request-body',
+      timeoutMs: 1000,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, 'request-body');
+  });
+
   it('should bound combined standard output and error capture', async () => {
     const script = join(root, 'output.mjs');
     await writeFile(script, "process.stdout.write('abc');\nprocess.stderr.write('def');\n");
@@ -103,6 +118,50 @@ describe('lib/tool-cli-runner', () => {
 
     assert.equal(result.exitCode, null);
     assert.equal(result.timedOut, true);
+  });
+
+  it('should terminate the full child process group after its graceful timeout', async function () {
+    this.timeout(5_000);
+    const markerPath = join(root, 'grandchild-survived');
+    const grandchildPath = join(root, 'grandchild.mjs');
+    const parentPath = join(root, 'parent.mjs');
+    await writeFile(
+      grandchildPath,
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "process.on('SIGTERM', () => {});",
+        "setTimeout(() => { writeFileSync(process.argv[2], 'survived'); process.exit(24); }, 3000);",
+        'setInterval(() => {}, 1000);',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      parentPath,
+      [
+        "import { spawn } from 'node:child_process';",
+        "spawn(process.execPath, [process.argv[2], process.argv[3]], { stdio: 'inherit' });",
+        "process.on('SIGTERM', () => {});",
+        'setTimeout(() => process.exit(23), 4000);',
+        'setInterval(() => {}, 1000);',
+        '',
+      ].join('\n'),
+    );
+
+    const result = await runToolCli({
+      argv: [parentPath, grandchildPath, markerPath],
+      cwd: root,
+      environment: process.env,
+      executable: process.execPath,
+      maxOutputBytes: 1024,
+      timeoutMs: 1_000,
+    });
+
+    assert.equal(result.exitCode, null);
+    assert.equal(result.timedOut, true);
+    await assert.rejects(
+      access(markerPath),
+      (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT',
+    );
   });
 
   it('should terminate immediately when the request is already aborted', async () => {

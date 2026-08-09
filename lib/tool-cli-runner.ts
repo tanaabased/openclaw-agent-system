@@ -4,6 +4,8 @@ import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from './tool-types.ts';
 
+const forcedTerminationGraceMs = 100;
+
 function isInside(path: string, directory: string): boolean {
   const difference = relative(resolve(directory), resolve(path));
   return difference === '' || (!difference.startsWith('..') && !isAbsolute(difference));
@@ -59,7 +61,7 @@ export async function resolveToolExecutable(
   throw new Error('tool executable is unavailable');
 }
 
-/** Run one fixed executable without a shell while bounding time and captured output. */
+/** Run one fixed executable in its own process group while bounding time and captured output. */
 export default async function runToolCli(
   request: AgentSystemCliRunRequest,
 ): Promise<AgentSystemCliResult> {
@@ -70,10 +72,13 @@ export default async function runToolCli(
   );
   const child = spawn(executable, request.argv, {
     cwd: request.cwd,
+    detached: true,
     env: request.environment,
     shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
+  child.stdin.on('error', () => undefined);
+  child.stdin.end(request.stdin);
   let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let capturedBytes = 0;
@@ -96,10 +101,25 @@ export default async function runToolCli(
 
   const exit = new Promise<number | null>((resolveExit, reject) => {
     child.once('error', reject);
-    child.once('exit', (code) => resolveExit(code));
+    child.once('close', (code) => resolveExit(code));
   });
 
-  const terminate = () => child.kill('SIGTERM');
+  let forcedTermination: NodeJS.Timeout | undefined;
+  const signalProcessGroup = (signal: NodeJS.Signals) => {
+    if (child.pid === undefined) {
+      child.kill(signal);
+      return;
+    }
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      child.kill(signal);
+    }
+  };
+  const terminate = () => {
+    signalProcessGroup('SIGTERM');
+    forcedTermination ??= setTimeout(() => signalProcessGroup('SIGKILL'), forcedTerminationGraceMs);
+  };
   const abort = () => terminate();
   if (request.signal?.aborted) abort();
   else request.signal?.addEventListener('abort', abort, { once: true });
@@ -120,6 +140,7 @@ export default async function runToolCli(
     };
   } finally {
     clearTimeout(timeout);
+    if (forcedTermination) clearTimeout(forcedTermination);
     request.signal?.removeEventListener('abort', abort);
   }
 }

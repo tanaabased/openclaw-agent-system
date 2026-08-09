@@ -1,9 +1,7 @@
 import type AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import {
-  AgentSystemToolError,
-  type default as AgentSystemToolRuntime,
-} from '../lib/tool-runtime.ts';
-import { type CliOutput, writeCliJson } from '../lib/cli-output.ts';
+import AgentSystemToolError from '../lib/tool-error.ts';
+import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
+import type { CliOutput } from '../lib/cli-output.ts';
 import { type Logger, reportError } from '../lib/logger.ts';
 
 export interface RunAgentSystemToolOptions {
@@ -13,6 +11,7 @@ export interface RunAgentSystemToolOptions {
   logger: Logger;
   output: CliOutput;
   setExitCode(code: number): void;
+  terminalColumns?: number;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
   toolRuntime: AgentSystemToolRuntime;
   workspaceDir: string;
@@ -29,12 +28,21 @@ export default async function runAgentSystemTool(
       options.argv,
       {
         source: 'command',
+        ...(options.terminalColumns === undefined
+          ? {}
+          : { terminalColumns: options.terminalColumns }),
         ...(options.agentId
           ? { agentId: options.agentId }
           : { workspaceDir: options.workspaceDir }),
       },
     );
-    writeCliJson(options.output, result.output);
+    if (result.commandResult.stdout) options.output.writeStdout(result.commandResult.stdout);
+    if (result.commandResult.stderr) {
+      (options.output.writeStderr ?? options.output.writeStdout)(result.commandResult.stderr);
+    }
+    if (result.commandResult.exitCode !== 0) {
+      options.setExitCode(result.commandResult.exitCode ?? 1);
+    }
   } catch (error) {
     reportError(
       options.logger,

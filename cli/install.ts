@@ -3,7 +3,14 @@ import {
   type default as AgentInstallService,
 } from '../lib/agent-install-service.ts';
 import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import { type CliOutput, type CliStyles, writeCliSummary } from '../lib/cli-output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliJson,
+  writeCliSummary,
+} from '../lib/cli-output.ts';
+import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
+import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 import {
   type Logger,
   reportError,
@@ -14,6 +21,7 @@ import {
 
 export interface InstallAgentSystemOptions {
   installService: Pick<AgentInstallService, 'install'>;
+  json: boolean;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForWorkspace'>;
   output: CliOutput;
@@ -22,7 +30,7 @@ export interface InstallAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Reconcile the current manifest's OpenClaw agent, identity, and executable paths. */
+/** Reconcile every configured lifecycle component for the current workspace manifest. */
 export default async function installAgentSystem(
   options: InstallAgentSystemOptions,
 ): Promise<void> {
@@ -47,84 +55,25 @@ export default async function installAgentSystem(
       options.logger.warn(
         formatDiagnostic({
           code: warning.code,
-          component: 'install',
+          component: warning.component,
           message: warning.message,
         }),
       );
     }
-    if (installed.actions.length === 0) {
-      writeCliSummary(
-        options.output,
-        [
-          {
-            label: 'unchanged',
-            style: 'status',
-            value: `OpenClaw agent ${installed.agentId}`,
-          },
-          { label: 'workspace', style: 'target', value: installed.workspaceDir },
-        ],
-        options.styles,
-      );
-      return;
+    if (options.json) writeCliJson(options.output, installed);
+    else {
+      const lines = lifecyclePresentationLines(installed.outcomes);
+      lines.push({ label: 'workspace', style: 'target' as const, value: installed.workspaceDir });
+      writeCliSummary(options.output, lines, options.styles);
     }
-    const lines = [];
-    if (installed.actions.includes('add-agent')) {
-      lines.push({
-        label: 'created',
-        style: 'action' as const,
-        value: `OpenClaw agent ${installed.agentId}`,
-      });
-    }
-    if (installed.actions.includes('set-identity')) {
-      lines.push({
-        label: 'updated',
-        style: 'action' as const,
-        value: `OpenClaw identity for ${installed.agentId}`,
-      });
-    }
-    if (installed.actions.includes('create-workspace-bin')) {
-      lines.push({
-        label: 'created',
-        style: 'action' as const,
-        value: 'workspace bin directory',
-      });
-    }
-    if (installed.actions.includes('set-exec-path')) {
-      lines.push({
-        label: 'updated',
-        style: 'action' as const,
-        value: `OpenClaw exec path for ${installed.agentId}`,
-      });
-    }
-    if (installed.actions.includes('create-codex-config')) {
-      lines.push({
-        label: 'created',
-        style: 'action' as const,
-        value: 'Codex workspace path configuration',
-      });
-    }
-    if (installed.actions.includes('update-codex-config')) {
-      lines.push({
-        label: 'updated',
-        style: 'action' as const,
-        value: 'Codex workspace path configuration',
-      });
-    }
-    if (installed.actions.includes('update-gitignore')) {
-      lines.push({
-        label: 'updated',
-        style: 'action' as const,
-        value: 'workspace .gitignore',
-      });
-    }
-    lines.push({ label: 'workspace', style: 'target' as const, value: installed.workspaceDir });
-    writeCliSummary(options.output, lines, options.styles);
   } catch (error) {
     reportError(
       options.logger,
-      'install',
+      error instanceof AgentSystemLifecycleError ? error.component : 'install',
       error,
-      error instanceof AgentInstallError ? error.code : undefined,
+      error instanceof AgentInstallError || error instanceof AgentSystemLifecycleError
+        ? error.code
+        : undefined,
     );
     options.setExitCode(1);
   }

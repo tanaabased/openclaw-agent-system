@@ -48,6 +48,7 @@ describe('lib/register-hooks', () => {
             digest: 'digest',
             manifest: { schemaVersion: 1, agent: { id: 'data' } },
             diagnostics: [],
+            validationChecks: [],
           } as const;
         },
       },

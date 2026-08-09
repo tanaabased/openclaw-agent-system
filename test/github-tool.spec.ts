@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
+import type {
+  OpenClawPluginToolFactory,
+  PluginTrustedToolPolicyRegistration,
+} from 'openclaw/plugin-sdk/plugin-entry';
 
 import AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import AgentSystemToolRuntime, { AgentSystemToolError } from '../lib/tool-runtime.ts';
+import AgentSystemToolApprovalReceiptStore from '../lib/tool-approval-receipt-store.ts';
+import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
-import githubTool from '../tools/github/tool.ts';
+import { createGitHubTool } from '../tools/github/tool.ts';
 
 const workspaceDir = '/workspace/data';
 const manifest: AgentManifest = {
@@ -25,53 +30,69 @@ const manifest: AgentManifest = {
   },
 };
 
-function loadedManifest() {
+function loadedManifest(inputManifest = manifest) {
   return {
     status: 'loaded' as const,
-    scope: { agentId: 'data', workspaceDir },
+    scope: { agentId: inputManifest.agent.id, workspaceDir },
     path: `${workspaceDir}/agent.yaml`,
     digest: 'manifest-digest',
-    manifest,
+    manifest: inputManifest,
     diagnostics: [],
+    validationChecks: [],
   };
 }
 
-function loadedEnvironment() {
+function loadedEnvironment(
+  inputManifest = manifest,
+  values: Record<string, string> = {
+    GH_TOKEN_TANAABOT: 'private-token',
+    GITHUB_USERNAME: 'tanaabot',
+  },
+) {
   return {
-    ...loadedManifest(),
-    environment: {
-      values: {
-        GH_TOKEN_TANAABOT: 'private-token',
-        GITHUB_USERNAME: 'tanaabot',
-      },
-      variables: [],
-    },
+    ...loadedManifest(inputManifest),
+    environment: { values, variables: [] },
   };
+}
+
+function createTool(reconciliations: string[] = []) {
+  return createGitHubTool({
+    configStore: {
+      configDirectory: (agentId) => `/private/${agentId}/tools/gh`,
+      async reconcile(agentId) {
+        reconciliations.push(agentId);
+        return { configDir: `/private/${agentId}/tools/gh`, status: 'unchanged' };
+      },
+    },
+  });
 }
 
 function createRuntime(
   options: {
-    authorize?: () => Promise<{ status: 'allowed' } | { status: 'denied'; reason: string }>;
     environmentCalls?: string[];
+    environmentValues?: Record<string, string>;
+    inputManifest?: AgentManifest;
     logs?: string[];
-    manifestWorkspace?: string;
     excludedExecutableDirectories?: string[];
+    approvals?: AgentSystemToolApprovalReceiptStore;
     runCli?: (request: AgentSystemCliRunRequest) => Promise<AgentSystemCliResult>;
   } = {},
 ) {
+  const inputManifest = options.inputManifest ?? manifest;
   const logs = options.logs ?? [];
   const environmentCalls = options.environmentCalls ?? [];
   return new AgentSystemToolRuntime({
-    ...(options.authorize ? { authorize: options.authorize } : {}),
+    ...(options.approvals ? { approvals: options.approvals } : {}),
     baseEnvironment: {
       HOME: '/home/runner',
+      NO_COLOR: '1',
       PATH: '/usr/bin',
       SHOULD_NOT_INHERIT: 'private-host-value',
     },
     environmentService: {
       async loadForAgentId(agentId) {
         environmentCalls.push(agentId);
-        return loadedEnvironment();
+        return loadedEnvironment(inputManifest, options.environmentValues);
       },
     },
     excludedExecutableDirectories: options.excludedExecutableDirectories ?? ['/package/bin'],
@@ -81,22 +102,18 @@ function createRuntime(
     },
     manifestService: {
       async loadForAgentId() {
-        const result = loadedManifest();
-        return {
-          ...result,
-          scope: { ...result.scope, workspaceDir: options.manifestWorkspace ?? workspaceDir },
-        };
+        return loadedManifest(inputManifest);
       },
       async loadForWorkspace() {
-        return loadedManifest();
+        return loadedManifest(inputManifest);
       },
     },
     runCli:
       options.runCli ??
-      (async () => ({
+      (async (request) => ({
         exitCode: 0,
         stderr: '',
-        stdout: '{"id":222685891,"login":"tanaabot"}',
+        stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '{"name":"project"}\n',
         timedOut: false,
         truncated: false,
       })),
@@ -104,15 +121,16 @@ function createRuntime(
 }
 
 describe('tools/github/tool', () => {
-  it('should expose guidance only when github is configured', () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should expose skill guidance only when github is configured', () => {
+    const registry = new AgentSystemToolRegistry([createTool()]);
 
-    assert.equal(registry.guidance(manifest)[0]?.includes('agent_system_github'), true);
+    assert.equal(registry.guidance(manifest)[0]?.includes('$agent-system-github-cli'), true);
     assert.deepEqual(registry.guidance({ schemaVersion: 1, agent: { id: 'data' } }), []);
   });
 
-  it('should read the configured user through a sanitized child environment', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should run generic gh arguments through a sanitized agent environment', async () => {
+    const reconciliations: string[] = [];
+    const registry = new AgentSystemToolRegistry([createTool(reconciliations)]);
     const logs: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];
     const runtime = createRuntime({
@@ -123,57 +141,144 @@ describe('tools/github/tool', () => {
         return {
           exitCode: 0,
           stderr: '',
-          stdout: '{"id":222685891,"login":"tanaabot"}',
+          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '{"name":"project"}\n',
           timedOut: false,
           truncated: false,
         };
       },
     });
 
-    const result = await registry.invoke('gh', runtime, ['api', 'user', '--jq', '.login'], {
-      source: 'command',
-      workspaceDir,
-    });
+    const result = await registry.invoke(
+      'gh',
+      runtime,
+      ['repo', 'view', 'tanaabased/openclaw-agent-system', '--json', 'name'],
+      { source: 'command', terminalColumns: 120, workspaceDir },
+    );
 
     assert.deepEqual(result.output, {
-      host: 'github.com',
-      id: 222685891,
-      login: 'tanaabot',
+      exitCode: 0,
+      stderr: '',
+      stdout: '{"name":"project"}\n',
+      truncated: false,
     });
-    assert.deepEqual(requests[0]?.argv, ['api', 'user', '--jq', '{id: .id, login: .login}']);
-    assert.equal(requests[0]?.executable, 'gh');
-    assert.equal(requests[0]?.environment.GH_TOKEN, 'private-token');
-    assert.equal(requests[0]?.environment.SHOULD_NOT_INHERIT, undefined);
-    assert.deepEqual(requests[0]?.excludedExecutableDirectories, [
+    assert.deepEqual(
+      requests.map(({ argv }) => argv),
+      [
+        ['api', 'user', '--jq', '.login'],
+        ['repo', 'view', 'tanaabased/openclaw-agent-system', '--json', 'name'],
+      ],
+    );
+    assert.equal(requests[1]?.environment.GH_TOKEN, 'private-token');
+    assert.equal(requests[1]?.environment.GH_CONFIG_DIR, '/private/data/tools/gh');
+    assert.equal(requests[1]?.environment.GH_FORCE_TTY, '120');
+    assert.equal(requests[1]?.environment.NO_COLOR, '1');
+    assert.equal(requests[1]?.environment.SHOULD_NOT_INHERIT, undefined);
+    assert.deepEqual(requests[1]?.excludedExecutableDirectories, [
       `${workspaceDir}/bin`,
       `${workspaceDir}/commands`,
       '/package/bin',
       '/source/bin',
     ]);
+    assert.deepEqual(reconciliations, ['data']);
     assert.equal(logs.join('\n').includes('private-token'), false);
-    assert.equal(
-      logs.some((line) => line.includes('source="command"')),
-      true,
-    );
   });
 
-  it('should deny unapproved operations before resolving any environment', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
-    const environmentCalls: string[] = [];
+  it('should fall back from GH_TOKEN to GITHUB_TOKEN inside the completed agent environment', async () => {
+    const fallbackManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      github: {},
+    };
+    const captured: string[] = [];
     const runtime = createRuntime({
-      authorize: async () => ({ status: 'denied', reason: 'policy denied' }),
-      environmentCalls,
+      inputManifest: fallbackManifest,
+      environmentValues: { GITHUB_TOKEN: 'fallback-token' },
+      runCli: async (request) => {
+        captured.push(request.environment.GH_TOKEN ?? '');
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: 'project\n',
+          timedOut: false,
+          truncated: false,
+        };
+      },
     });
 
-    await assert.rejects(
-      registry.invoke('gh', runtime, ['api', 'user'], { source: 'command', workspaceDir }),
-      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+    await new AgentSystemToolRegistry([createTool()]).invoke(
+      'gh',
+      runtime,
+      ['repo', 'view', '--json', 'name', '--jq', '.name'],
+      { source: 'command', workspaceDir },
     );
-    assert.deepEqual(environmentCalls, []);
+
+    assert.deepEqual(captured, ['fallback-token']);
   });
 
-  it('should bind a native tool call to its declared agent workspace', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should prefer GH_TOKEN over GITHUB_TOKEN when no explicit binding is declared', async () => {
+    const fallbackManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      github: {},
+    };
+    const captured: string[] = [];
+    await new AgentSystemToolRegistry([createTool()]).invoke(
+      'gh',
+      createRuntime({
+        inputManifest: fallbackManifest,
+        environmentValues: { GH_TOKEN: 'preferred-token', GITHUB_TOKEN: 'fallback-token' },
+        runCli: async (request) => {
+          captured.push(request.environment.GH_TOKEN ?? '');
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: 'project\n',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      }),
+      ['repo', 'view'],
+      { source: 'command', workspaceDir },
+    );
+
+    assert.deepEqual(captured, ['preferred-token']);
+  });
+
+  it('should fail when neither the explicit nor fallback credential is available', async () => {
+    const fallbackManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      github: {},
+    };
+
+    await assert.rejects(
+      new AgentSystemToolRegistry([createTool()]).invoke(
+        'gh',
+        createRuntime({ inputManifest: fallbackManifest, environmentValues: {} }),
+        ['repo', 'view'],
+        { source: 'command', workspaceDir },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'credential_unavailable',
+    );
+  });
+
+  it('should keep generic stdin bounded and forward it without a shell', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const registry = new AgentSystemToolRegistry([createTool()]);
+    const runtime = createRuntime({
+      runCli: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
     let factory: OpenClawPluginToolFactory | undefined;
     registry.registerTools(
       {
@@ -181,102 +286,248 @@ describe('tools/github/tool', () => {
           factory = tool as OpenClawPluginToolFactory;
         },
       } as never,
-      createRuntime({ manifestWorkspace: '/workspace/other' }),
+      runtime,
     );
     const produced = factory?.({ agentId: 'data', workspaceDir } as never);
     const tool = Array.isArray(produced) ? produced[0] : produced;
     assert.ok(tool);
 
-    await assert.rejects(
-      tool.execute('call-id', { argv: ['api', 'user'] }, undefined, undefined),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
+    await tool.execute(
+      'call-id',
+      {
+        argv: ['api', 'graphql', '--input', '-'],
+        stdin: '{"query":"query Viewer { viewer { login } }"}',
+      },
+      undefined,
+      undefined,
     );
+
+    assert.equal(requests[1]?.stdin, '{"query":"query Viewer { viewer { login } }"}');
   });
 
-  it('should reject unsupported gh arguments before loading tool credentials', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should reject credential, config, extension, and interactive escape paths before credentials load', async () => {
+    const environmentCalls: string[] = [];
+    const registry = new AgentSystemToolRegistry([createTool()]);
+
+    for (const argv of [
+      ['auth', 'token'],
+      ['auth', 'login'],
+      ['config', 'set', 'git_protocol', 'ssh'],
+      ['alias', 'set', 'mine', '!sh'],
+      ['extension', 'exec', 'mine'],
+      ['auth', 'status', '--show-token'],
+      ['api', 'user', '--hostname=example.com'],
+      ['repo', 'view', '--web'],
+    ]) {
+      await assert.rejects(
+        registry.invoke('gh', createRuntime({ environmentCalls }), argv, {
+          source: 'command',
+          workspaceDir,
+        }),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+      );
+    }
+    assert.deepEqual(environmentCalls, []);
+  });
+
+  it('should deny destructive github operations before credentials load', async () => {
     const environmentCalls: string[] = [];
 
     await assert.rejects(
-      registry.invoke('gh', createRuntime({ environmentCalls }), ['api', 'repos'], {
-        source: 'command',
-        workspaceDir,
-      }),
+      new AgentSystemToolRegistry([createTool()]).invoke(
+        'gh',
+        createRuntime({ environmentCalls }),
+        ['repo', 'delete', 'owner/repository', '--yes'],
+        { source: 'command', workspaceDir },
+      ),
       (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+        error instanceof AgentSystemToolError &&
+        error.code === 'approval_denied' &&
+        error.message.includes('github.policy.destructive'),
     );
     assert.deepEqual(environmentCalls, []);
   });
 
-  it('should reject commands outside the registered tool surface', () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should allow explicitly permitted unknown github operations through the shared runtime', async () => {
+    const policyManifest: AgentManifest = {
+      ...manifest,
+      github: { ...manifest.github, policy: { unknown: 'allow' } },
+    };
+    const requests: AgentSystemCliRunRequest[] = [];
 
-    assert.throws(
-      () =>
-        registry.invoke('git', createRuntime(), ['status'], {
-          source: 'command',
-          workspaceDir,
-        }),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'tool_unavailable',
+    await new AgentSystemToolRegistry([createTool()]).invoke(
+      'gh',
+      createRuntime({
+        inputManifest: policyManifest,
+        runCli: async (request) => {
+          requests.push(request);
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      }),
+      ['repo', 'vaporize', 'owner/repository'],
+      { source: 'command', workspaceDir },
+    );
+
+    assert.deepEqual(
+      requests.map(({ argv }) => argv),
+      [
+        ['api', 'user', '--jq', '.login'],
+        ['repo', 'vaporize', 'owner/repository'],
+      ],
     );
   });
 
-  it('should reject duplicate tool and command ownership', () => {
-    assert.throws(
-      () => new AgentSystemToolRegistry([githubTool, githubTool]),
-      /Duplicate Agent System tool id/,
+  it('should reject ask policy through the direct noninteractive command path', async () => {
+    const policyManifest: AgentManifest = {
+      ...manifest,
+      github: { ...manifest.github, policy: { destructive: 'ask' } },
+    };
+    const environmentCalls: string[] = [];
+
+    await assert.rejects(
+      new AgentSystemToolRegistry([createTool()]).invoke(
+        'gh',
+        createRuntime({ environmentCalls, inputManifest: policyManifest }),
+        ['repo', 'delete', 'owner/repository', '--yes'],
+        { source: 'command', workspaceDir },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.code === 'approval_denied' &&
+        error.message.includes('require approval in an OpenClaw agent conversation'),
     );
-    assert.throws(
-      () => new AgentSystemToolRegistry([githubTool, { ...githubTool, id: 'other' }]),
-      /Duplicate Agent System tool command/,
+    assert.deepEqual(environmentCalls, []);
+  });
+
+  it('should bridge github ask policy into an approved native tool call', async () => {
+    const policyManifest: AgentManifest = {
+      ...manifest,
+      github: { ...manifest.github, policy: { destructive: 'ask' } },
+    };
+    const approvals = new AgentSystemToolApprovalReceiptStore();
+    const registry = new AgentSystemToolRegistry([createTool()]);
+    let policy: PluginTrustedToolPolicyRegistration | undefined;
+    registry.registerTrustedPolicies(
+      {
+        registerTrustedToolPolicy(registration) {
+          policy = registration;
+        },
+      },
+      {
+        async loadForAgentId() {
+          return loadedManifest(policyManifest);
+        },
+      },
+      approvals,
+    );
+    assert.ok(policy);
+    const input = { argv: ['repo', 'delete', 'owner/repository', '--yes'] };
+    const decision = await policy.evaluate(
+      { params: input, toolName: 'agent_system_github', toolCallId: 'approved-call' },
+      {
+        agentId: 'data',
+        toolCallId: 'approved-call',
+        toolName: 'agent_system_github',
+      },
+    );
+    assert.ok(decision && 'requireApproval' in decision && decision.requireApproval);
+    await decision.requireApproval.onResolution?.('allow-once');
+
+    const requests: AgentSystemCliRunRequest[] = [];
+    const runtime = createRuntime({
+      approvals,
+      inputManifest: policyManifest,
+      runCli: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    let factory: OpenClawPluginToolFactory | undefined;
+    registry.registerTools(
+      {
+        registerTool(tool: unknown) {
+          factory = tool as OpenClawPluginToolFactory;
+        },
+      } as never,
+      runtime,
+    );
+    const produced = factory?.({ agentId: 'data', workspaceDir } as never);
+    const tool = Array.isArray(produced) ? produced[0] : produced;
+    assert.ok(tool);
+
+    await tool.execute('approved-call', input, undefined, undefined);
+    assert.deepEqual(
+      requests.map(({ argv }) => argv),
+      [
+        ['api', 'user', '--jq', '.login'],
+        ['repo', 'delete', 'owner/repository', '--yes'],
+      ],
     );
   });
 
   it('should reject an authenticated user that does not match the configured username', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
     const runtime = createRuntime({
       runCli: async () => ({
         exitCode: 0,
         stderr: '',
-        stdout: '{"id":1,"login":"someone-else"}',
+        stdout: 'someone-else\n',
         timedOut: false,
         truncated: false,
       }),
     });
 
     await assert.rejects(
-      registry.invoke('gh', runtime, ['api', 'user'], { source: 'command', workspaceDir }),
+      new AgentSystemToolRegistry([createTool()]).invoke('gh', runtime, ['repo', 'view'], {
+        source: 'command',
+        workspaceDir,
+      }),
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'tool_identity_mismatch',
     );
   });
 
-  it('should keep child failure output out of lifecycle logs', async () => {
-    const registry = new AgentSystemToolRegistry([githubTool]);
+  it('should return a nonzero gh result without exposing credentials in output or logs', async () => {
     const logs: string[] = [];
-    const runtime = createRuntime({
-      logs,
-      runCli: async () => ({
-        exitCode: 1,
-        resolvedExecutable: '/workspace/source/bin/gh',
-        stderr: 'request failed for private-token',
-        stdout: '',
-        timedOut: false,
-        truncated: false,
+    const result = await new AgentSystemToolRegistry([createTool()]).invoke(
+      'gh',
+      createRuntime({
+        logs,
+        runCli: async (request) =>
+          request.argv[0] === 'api'
+            ? {
+                exitCode: 0,
+                stderr: '',
+                stdout: 'tanaabot\n',
+                timedOut: false,
+                truncated: false,
+              }
+            : {
+                exitCode: 4,
+                stderr: 'request failed for private-token',
+                stdout: '',
+                timedOut: false,
+                truncated: false,
+              },
       }),
-    });
+      ['repo', 'view', 'missing/repo'],
+      { source: 'command', workspaceDir },
+    );
 
-    await assert.rejects(
-      registry.invoke('gh', runtime, ['api', 'user'], { source: 'command', workspaceDir }),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError && error.code === 'execution_failed',
-    );
-    assert.equal(
-      logs.some((line) => line.startsWith('tool_call_failed') && line.includes('execution_failed')),
-      true,
-    );
+    assert.equal(result.commandResult.exitCode, 4);
+    assert.equal(result.commandResult.stderr, 'request failed for [REDACTED]');
     assert.equal(logs.join('\n').includes('private-token'), false);
     assert.equal(logs.join('\n').includes('request failed'), false);
   });

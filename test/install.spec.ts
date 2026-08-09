@@ -4,19 +4,22 @@ import installAgentSystem from '../cli/install.ts';
 import type { AgentInstallResult } from '../lib/agent-install-service.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import { createCliStyles } from '../lib/cli-output.ts';
+import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 
-const validResult: AgentManifestLoadResult = {
+const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
   scope: { workspaceDir: '/workspace' },
   path: '/workspace/agent.yaml',
   digest: 'abc123',
   manifest: { schemaVersion: 1, agent: { id: 'tanaabot', name: 'Tanaabot' } },
   diagnostics: [],
+  validationChecks: [],
 };
 
 function createHarness(
   options: {
     install?: AgentInstallResult | Error;
+    json?: boolean;
     manifest?: AgentManifestLoadResult;
   } = {},
 ) {
@@ -41,7 +44,20 @@ function createHarness(
             if (options.install instanceof Error) throw options.install;
             return (
               options.install ?? {
-                actions: ['add-agent', 'set-identity'],
+                outcomes: [
+                  {
+                    code: 'add-agent',
+                    component: 'agent',
+                    message: 'OpenClaw agent tanaabot',
+                    status: 'created',
+                  },
+                  {
+                    code: 'set-identity',
+                    component: 'agent',
+                    message: 'OpenClaw identity for tanaabot',
+                    status: 'updated',
+                  },
+                ],
                 agentId: 'tanaabot',
                 warnings: [],
                 workspaceDir: '/workspace',
@@ -49,6 +65,7 @@ function createHarness(
             );
           },
         },
+        json: options.json ?? false,
         logger: {
           error: (message) => logs.error.push(message),
           info: (message) => logs.info.push(message),
@@ -69,19 +86,54 @@ function createHarness(
 }
 
 describe('cli/install', () => {
-  it('should install a loaded workspace manifest and report completed actions', async () => {
+  it('should install a loaded workspace manifest and report completed outcomes', async () => {
     const { calls, output, run } = createHarness({
       install: {
-        actions: [
-          'add-agent',
-          'set-identity',
-          'create-workspace-bin',
-          'set-exec-path',
-          'create-codex-config',
-          'update-gitignore',
+        outcomes: [
+          {
+            code: 'add-agent',
+            component: 'agent',
+            message: 'OpenClaw agent tanaabot',
+            status: 'created',
+          },
+          {
+            code: 'set-identity',
+            component: 'agent',
+            message: 'OpenClaw identity for tanaabot',
+            status: 'updated',
+          },
+          {
+            code: 'create-workspace-bin',
+            component: 'path',
+            message: 'workspace bin directory',
+            status: 'created',
+          },
+          {
+            code: 'set-exec-path',
+            component: 'path',
+            message: 'OpenClaw exec path for tanaabot',
+            status: 'updated',
+          },
+          {
+            code: 'create-codex-config',
+            component: 'path',
+            message: 'Codex workspace path configuration',
+            status: 'created',
+          },
+          {
+            code: 'update-gitignore',
+            component: 'path',
+            message: 'workspace .gitignore',
+            status: 'updated',
+          },
+          {
+            code: 'create-github-config',
+            component: 'github',
+            message: 'private GitHub CLI config',
+            status: 'created',
+          },
         ],
         agentId: 'tanaabot',
-        codexStatus: 'managed',
         warnings: [],
         workspaceDir: '/workspace',
       },
@@ -94,19 +146,26 @@ describe('cli/install', () => {
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
     assert.deepEqual(output, [
-      'created    OpenClaw agent tanaabot\nupdated    OpenClaw identity for tanaabot\ncreated    workspace bin directory\nupdated    OpenClaw exec path for tanaabot\ncreated    Codex workspace path configuration\nupdated    workspace .gitignore\nworkspace  /workspace\n',
+      'created    agent   OpenClaw agent tanaabot\nupdated    agent   OpenClaw identity for tanaabot\ncreated    path    workspace bin directory\nupdated    path    OpenClaw exec path for tanaabot\ncreated    path    Codex workspace path configuration\nupdated    path    workspace .gitignore\ncreated    github  private GitHub CLI config\nworkspace          /workspace\n',
     ]);
   });
 
   it('should warn without styling a user-managed codex configuration', async () => {
     const { logs, run } = createHarness({
       install: {
-        actions: [],
+        outcomes: [
+          {
+            code: 'path-unchanged',
+            component: 'path',
+            message: 'Executable path projection for tanaabot',
+            status: 'unchanged',
+          },
+        ],
         agentId: 'tanaabot',
-        codexStatus: 'manual',
         warnings: [
           {
             code: 'codex-config-user-managed',
+            component: 'path',
             message: 'The existing .codex/config.toml is user-managed.',
           },
         ],
@@ -117,18 +176,69 @@ describe('cli/install', () => {
     await run();
 
     assert.deepEqual(logs.warn, [
-      'install: The existing .codex/config.toml is user-managed. code=codex-config-user-managed',
+      'path: The existing .codex/config.toml is user-managed. code=codex-config-user-managed',
     ]);
   });
 
-  it('should report an unchanged installed agent', async () => {
+  it('should report explicit unchanged outcomes for every component', async () => {
     const { output, run } = createHarness({
-      install: { actions: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' },
+      install: {
+        outcomes: [
+          {
+            code: 'agent-unchanged',
+            component: 'agent',
+            message: 'OpenClaw registration and identity for tanaabot',
+            status: 'unchanged',
+          },
+          {
+            code: 'path-unchanged',
+            component: 'path',
+            message: 'Executable path projection for tanaabot',
+            status: 'unchanged',
+          },
+          {
+            code: 'github-config-unchanged',
+            component: 'github',
+            message: 'private GitHub CLI config',
+            status: 'unchanged',
+          },
+        ],
+        agentId: 'tanaabot',
+        warnings: [],
+        workspaceDir: '/workspace',
+      },
     });
 
     await run();
 
-    assert.deepEqual(output, ['unchanged  OpenClaw agent tanaabot\nworkspace  /workspace\n']);
+    assert.deepEqual(output, [
+      'unchanged  agent   OpenClaw registration and identity for tanaabot\nunchanged  path    Executable path projection for tanaabot\nunchanged  github  private GitHub CLI config\nworkspace          /workspace\n',
+    ]);
+  });
+
+  it('should write structured json from the same install result', async () => {
+    const { output, run } = createHarness({
+      json: true,
+      install: {
+        outcomes: [
+          {
+            code: 'agent-unchanged',
+            component: 'agent',
+            message: 'OpenClaw registration and identity for tanaabot',
+            status: 'unchanged',
+          },
+        ],
+        agentId: 'tanaabot',
+        warnings: [],
+        workspaceDir: '/workspace',
+      },
+    });
+
+    await run();
+
+    const result = JSON.parse(output.join(''));
+    assert.equal(result.outcomes[0].component, 'agent');
+    assert.equal(result.outcomes[0].status, 'unchanged');
   });
 
   it('should report installation failures and set a failing exit code', async () => {
@@ -140,6 +250,23 @@ describe('cli/install', () => {
 
     assert.deepEqual(exitCodes, [1]);
     assert.deepEqual(logs.error, ['install: agent workspace conflict']);
+  });
+
+  it('should attribute lifecycle reconciliation failures to their component', async () => {
+    const { exitCodes, logs, run } = createHarness({
+      install: new AgentSystemLifecycleError(
+        'github',
+        'github-config-reconcile-failed',
+        'GitHub config reconciliation failed.',
+      ),
+    });
+
+    await run();
+
+    assert.deepEqual(exitCodes, [1]);
+    assert.deepEqual(logs.error, [
+      'github: GitHub config reconciliation failed. code=github-config-reconcile-failed',
+    ]);
   });
 
   it('should not install an invalid workspace manifest', async () => {

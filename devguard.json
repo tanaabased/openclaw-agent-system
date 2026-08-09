@@ -13,6 +13,9 @@
     "watch": [
       "cli",
       "lib",
+      "scripts",
+      "skills",
+      "tools",
       "utils",
       "index.ts",
       "openclaw.plugin.json",

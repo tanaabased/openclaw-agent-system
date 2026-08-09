@@ -1,18 +1,23 @@
 import ansis, { Ansis } from 'ansis';
 import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
-export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'>;
+export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
+  writeStderr?(value: string): void;
+};
 
 export interface CliStyles {
   action(value: string): string;
+  error(value: string): string;
   field(value: string): string;
   status(value: string): string;
   target(value: string): string;
+  warning(value: string): string;
 }
 
 export interface CliSummaryLine {
+  component?: string;
   label: string;
-  style: 'action' | 'field' | 'status' | 'target';
+  style: 'action' | 'error' | 'field' | 'status' | 'target' | 'warning';
   value: string;
 }
 
@@ -34,9 +39,11 @@ export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): C
 
   return {
     action: (value) => color.tp(value),
+    error: (value) => color.bold(color.red(value)),
     field: (value) => color.dim(value),
     status: (value) => color.bold(color.green(value)),
     target: (value) => color.ts(value),
+    warning: (value) => color.bold(color.yellow(value)),
   };
 }
 
@@ -46,13 +53,19 @@ export function renderCliSummary(
   lines: readonly CliSummaryLine[],
   styles: CliStyles = defaultCliStyles,
 ): string[] {
-  const width = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
-  return lines.map(({ label, style, value }) => {
-    const formattedLabel = label.padEnd(width);
-    if (style === 'action') return `${styles.action(formattedLabel)}${styles.target(value)}`;
-    if (style === 'status') return `${styles.status(formattedLabel)}${styles.target(value)}`;
-    if (style === 'target') return `${styles.field(formattedLabel)}${styles.target(value)}`;
-    return `${styles.field(formattedLabel)}${value}`;
+  const labelWidth = Math.max(0, ...lines.map(({ label }) => label.length)) + 2;
+  const componentWidth = Math.max(0, ...lines.map(({ component }) => component?.length ?? 0));
+  return lines.map(({ component, label, style, value }) => {
+    const formattedLabel = label.padEnd(labelWidth);
+    const formattedComponent =
+      componentWidth === 0 ? '' : `${(component ?? '').padEnd(componentWidth)}  `;
+    const prefix = `${formattedLabel}${formattedComponent}`;
+    if (style === 'action') return `${styles.action(prefix)}${styles.target(value)}`;
+    if (style === 'error') return `${styles.error(prefix)}${value}`;
+    if (style === 'status') return `${styles.status(prefix)}${styles.target(value)}`;
+    if (style === 'target') return `${styles.field(prefix)}${styles.target(value)}`;
+    if (style === 'warning') return `${styles.warning(prefix)}${value}`;
+    return `${styles.field(prefix)}${value}`;
   });
 }
 
@@ -74,5 +87,6 @@ export function writeCliJson(output: CliOutput, value: unknown): void {
 }
 
 export const defaultCliOutput: CliOutput = {
+  writeStderr: (value) => process.stderr.write(value),
   writeStdout: (value) => defaultRuntime.writeStdout(value),
 };

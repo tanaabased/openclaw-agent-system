@@ -17,7 +17,12 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true })));
 });
 
-function createService(workspaces: Record<string, string>) {
+function createService(
+  workspaces: Record<string, string>,
+  validateManifest?: NonNullable<
+    ConstructorParameters<typeof AgentManifestService>[0]['validateManifest']
+  >,
+) {
   const logs = {
     debug: [] as string[],
     error: [] as string[],
@@ -42,6 +47,7 @@ function createService(workspaces: Record<string, string>) {
       if (!workspace) throw new Error('unknown agent');
       return workspace;
     },
+    ...(validateManifest ? { validateManifest } : {}),
   });
 
   return { service, logs, workspaceResolutions: () => workspaceResolutions };
@@ -87,6 +93,61 @@ describe('lib/agent-manifest-service', () => {
       result.diagnostics.some(({ code }) => code === 'agent-id-mismatch'),
       true,
     );
+  });
+
+  it('should reject lifecycle declaration errors with contributor attribution', async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: tanaabot\n');
+    const { service } = createService({ tanaabot: root }, () => ({
+      checks: [],
+      diagnostics: [
+        {
+          code: 'github-declaration-invalid',
+          component: 'github',
+          message: 'The GitHub declaration is invalid.',
+          severity: 'error',
+        },
+      ],
+    }));
+
+    const result = await service.loadForAgentId('tanaabot');
+
+    assert.equal(result.status, 'invalid');
+    assert.deepEqual(result.diagnostics.at(-1), {
+      code: 'github-declaration-invalid',
+      component: 'github',
+      message: 'The GitHub declaration is invalid.',
+      severity: 'error',
+    });
+  });
+
+  it('should carry successful lifecycle checks with the loaded manifest', async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: tanaabot\n');
+    const { service } = createService({ tanaabot: root }, () => ({
+      checks: [
+        {
+          code: 'agent-declaration-valid',
+          component: 'agent',
+          message: 'OpenClaw agent declaration',
+          status: 'valid',
+        },
+      ],
+      diagnostics: [],
+    }));
+
+    const result = await service.loadForAgentId('tanaabot');
+
+    assert.equal(result.status, 'loaded');
+    if (result.status !== 'loaded') return;
+    assert.deepEqual(result.validationChecks, [
+      {
+        code: 'agent-declaration-valid',
+        component: 'agent',
+        message: 'OpenClaw agent declaration',
+        status: 'valid',
+      },
+    ]);
   });
 
   it('should cache unchanged manifests and reload a changed file', async () => {

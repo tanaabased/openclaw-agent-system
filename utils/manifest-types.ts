@@ -22,6 +22,7 @@ export interface AgentManifest {
 
 export interface ManifestDiagnostic {
   code: string;
+  component?: string;
   message: string;
   severity: 'error' | 'warning';
   fieldPath?: string;

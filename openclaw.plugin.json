@@ -18,8 +18,10 @@
     }
   ],
   "contracts": {
-    "tools": ["agent_system_github"]
+    "tools": ["agent_system_github"],
+    "trustedToolPolicies": ["agent-system.github"]
   },
+  "skills": ["./skills"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

@@ -112,6 +112,147 @@ github:
     });
   });
 
+  it('should parse optional github credentials and all supported cli config settings', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  config:
+    git-protocol: ssh
+    color-labels: disabled
+    accessible-colors: enabled
+    spinner: disabled
+    telemetry: enabled
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github, {
+      config: {
+        gitProtocol: 'ssh',
+        colorLabels: 'disabled',
+        accessibleColors: 'enabled',
+        spinner: 'disabled',
+        telemetry: 'enabled',
+      },
+    });
+  });
+
+  it('should parse narrow github hazard policy decisions', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    destructive: allow
+    admin: ask
+    unknown: allow
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github?.policy, {
+      destructive: 'allow',
+      admin: 'ask',
+      unknown: 'allow',
+    });
+  });
+
+  it('should reject unsupported github policy decisions and policy keys', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    destructive: prompt
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    write: deny
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
+
+  it('should normalize github ssh authentication and signing key short and object forms', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev
+    - path: keys/generated-auth.pub
+      title: Generated authentication key
+  ssh-signing-keys:
+    key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev
+    title: Tanaabot signing key
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github, {
+      username: 'tanaabot',
+      token: 'GH_TOKEN_TANAABOT',
+      sshKeys: [
+        {
+          source:
+            'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev',
+          type: 'auto',
+        },
+        {
+          source: 'keys/generated-auth.pub',
+          title: 'Generated authentication key',
+          type: 'path',
+        },
+      ],
+      sshSigningKeys: [
+        {
+          source:
+            'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev',
+          title: 'Tanaabot signing key',
+          type: 'key',
+        },
+      ],
+    });
+  });
+
+  it('should reject empty key arrays and ambiguous github key objects', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  ssh-keys: []
+`).has('manifest-schema'),
+      true,
+    );
+    const ambiguous = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  ssh-signing-keys:
+    key: ssh-ed25519 invalid
+    path: keys/signing.pub
+`);
+    assert.equal(ambiguous.status, 'invalid');
+  });
+
   it('should reject literal-like github tokens and unknown github keys', () => {
     assert.equal(
       diagnosticCodes(`
