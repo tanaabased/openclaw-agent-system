@@ -27,14 +27,7 @@ Today, Agent System:
 - assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
 - wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
 - applies each tool's operation-specific `allow`, `ask`, or `deny` policy before resolving credentials or executing the operation
-- uses a shared tool contract intended to become a public API for compatible tools from other OpenClaw plugins
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
-
-Planned capabilities include:
-
-- installing and configuring agent dependencies, plugins, and memory integrations
-- accepting compatible tools from other OpenClaw plugins through a public API
-- reconciling agent-owned cron jobs and other scheduled work
 
 ## Installation
 
@@ -104,8 +97,13 @@ openclaw agent-system tool gh -- api user --jq .login
 
 Agent System currently ships wrappers for:
 
-- [`git`](./tools/git/README.md)
-- [`gh`](./tools/github/README.md)
+- [`git`](./tools/git/README.md) for ordinary Git and managed worktrees
+- [`gh`](./tools/github/README.md) for GitHub CLI operations
+
+> [!TIP]
+> For managed agents, disable competing Git and GitHub skills, plugins, and tool
+> wrappers so requests consistently use Agent System's agent-scoped identity and
+> policy boundaries.
 
 Each wrapper uses the shared Agent System runtime for trusted agent binding,
 environment and credential resolution, operation policy, execution, redaction,

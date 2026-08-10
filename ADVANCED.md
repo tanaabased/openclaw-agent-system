@@ -297,10 +297,8 @@ official JavaScript SDK. Each value is the opaque ID returned by
 [Copy environment ID in the 1Password app](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id),
 not the Environment's display name. Agent System loads dotenv and 1Password
 values only for an explicit environment consumer; passive manifest discovery
-never reads them. Direct secret references and Environments share one
-authenticated SDK client per resolution. `environment.required` applies when
-the complete environment is resolved, not to unrelated actions that do not
-consume it.
+never reads them. `environment.required` applies when the complete environment
+is resolved, not to unrelated actions that do not consume it.
 
 For 1Password access, Agent System checks macOS Keychain or Linux Secret Service,
 then the agent-scoped owner-only file store, and finally the
