@@ -1,0 +1,14 @@
+schema-version: 1
+
+agent:
+  id: localbot
+  name: Localbot
+  email: localbot@tanaab.dev
+
+git:
+  worktrees:
+    repositories:
+      local:
+        agent-system: ../../..
+  policy:
+    delete: allow

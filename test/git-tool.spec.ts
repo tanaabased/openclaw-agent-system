@@ -169,6 +169,7 @@ describe('tools/git/tool', () => {
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
     );
+    manifest.git = { policy: { unknown: 'allow' } };
     for (const argv of [
       ['worktree'],
       ['worktree', 'add', '../outside', 'main'],

@@ -5,7 +5,6 @@ import type { GitToolInput } from './tool-schema.ts';
 export type GitPolicyHazard = Exclude<keyof GitPolicyConfiguration, 'unknown'>;
 
 const hazardOrder: readonly GitPolicyHazard[] = ['force', 'rewrite', 'discard', 'delete'];
-const rawWorktreeMutationAttribute = 'git.worktree.rawMutation';
 const readCommands = new Set([
   'annotate',
   'archive',
@@ -151,10 +150,6 @@ function hazardous(command: string, hazards: readonly GitPolicyHazard[]): AgentS
 
 export function gitOperationHazards(operation: AgentSystemOperation): GitPolicyHazard[] {
   return hazardOrder.filter((hazard) => operation.attributes?.[`git.policy.${hazard}`] === true);
-}
-
-export function isRawGitWorktreeMutationOperation(operation: AgentSystemOperation): boolean {
-  return operation.attributes?.[rawWorktreeMutationAttribute] === true;
 }
 
 function classifyBranch(argv: readonly string[], command: string): AgentSystemOperation {
@@ -358,7 +353,7 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
   }
   if (command === 'worktree') {
     return isRawGitWorktreeMutation(input.argv)
-      ? operation('unknown', command, [], { [rawWorktreeMutationAttribute]: true })
+      ? operation('unknown', command)
       : operation('read', command);
   }
   if (command === 'replace') {
