@@ -30,6 +30,7 @@ import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
 import AgentSystemToolRegistry from './tool-registry.ts';
 import AgentSystemToolRuntime from './tool-runtime.ts';
+import createToolSecurityLifecycleContribution from './tool-security-lifecycle.ts';
 import WorkspaceGitignoreService from './workspace-gitignore-service.ts';
 
 /** Assemble and register the complete Agent System runtime. */
@@ -122,6 +123,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
       },
     }),
+    createToolSecurityLifecycleContribution({ readConfig }),
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,

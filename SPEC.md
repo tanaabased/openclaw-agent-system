@@ -779,6 +779,14 @@ sandbox state to a tool factory. The model must never supply an agent id,
 account selector that bypasses the manifest binding, executable path, token, or
 secret reference.
 
+Native model-facing tools are the agent-bound execution surface. The
+`openclaw agent-system tool` and `credentials` command trees are trusted
+operator interfaces: `--agent` intentionally selects an installed agent, and
+workspace discovery can select the same identity from its directory. Packaged
+shims delegate to the operator command path. Agent System must document this
+boundary and `doctor` must warn when configured tools coexist with generic
+command execution that may reach those operator interfaces.
+
 Native Agent System tools execute in the Gateway plugin process. A sandboxed
 originating session adds an OpenClaw tool-policy gate but does not automatically
 relocate tool code or its child process into the configured sandbox. A
@@ -907,11 +915,12 @@ operator-selected `--agent` and invokes a validated real executable without
 recursion. Native and command requests share operation metadata, authorization
 mode, credentials, redaction, audit, and errors; logs distinguish their source.
 
-Launchers are routing convenience, not hard isolation. Absolute binary paths, PATH
-replacement, `command -p`, direct HTTP/SDK traffic, other tools, node-host
-execution, and non-OpenClaw processes may bypass them. Sandbox use requires the
-launcher and its runtime bridge to exist inside or be mounted into the sandbox.
-`doctor` reports unsupported or incomplete routes.
+Launchers are operator-compatible routing convenience, not hard isolation.
+Absolute binary paths, PATH replacement, `command -p`, direct HTTP/SDK traffic,
+other tools, node-host execution, and non-OpenClaw processes may bypass them.
+Sandbox use requires the launcher and its runtime bridge to exist inside or be
+mounted into the sandbox. `doctor` reports unsupported or incomplete routes and
+warns when agent command execution may reach operator command surfaces.
 
 ### Errors and audit
 

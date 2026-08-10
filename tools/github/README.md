@@ -20,9 +20,10 @@ One shared runtime provides three GitHub interfaces:
 | `openclaw agent-system tool gh` | Explicit operator command                                    |
 | `gh`                            | Packaged compatibility shim on supported agent command paths |
 
-Every interface binds the request to one trusted agent workspace, applies the
-configured operation policy before loading credentials, resolves only that
-agent's selected token, and launches the real `gh` executable without a shell.
+The model-facing tool binds the request to trusted OpenClaw agent context. The
+CLI and shim are operator interfaces that select an agent by option or workspace.
+All three then apply policy before loading the selected agent's credential and
+launch the real `gh` executable without a shell.
 
 ## Requirements
 
@@ -159,6 +160,10 @@ configuration, and report drift.
 
 ## CLI
 
+This is a trusted operator interface for administration, testing, and debugging.
+Agents should use `agent_system_github`; an agent with unrestricted host command
+access could otherwise select another installed agent.
+
 ### Usage
 
 ```text
@@ -199,9 +204,9 @@ launcher directory, and never receives a credential. The runtime resolves the
 real `gh` executable while excluding Agent System-managed command paths to
 prevent substitution and wrapper recursion.
 
-The shim is routing convenience, not universal interception. Absolute binaries,
-replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated host processes
-can bypass it.
+The shim is an operator-compatible routing convenience, not an agent security
+boundary or universal interception. Absolute binaries, replaced `PATH` values,
+direct HTTP, SDKs, MCP tools, and unrelated host processes can bypass it.
 
 ## Further Reading
 

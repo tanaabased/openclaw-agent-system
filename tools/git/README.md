@@ -19,12 +19,14 @@ One shared runtime provides five Git interfaces:
 | ------------------------------------- | ------------------------------------------------------------ |
 | `agent_system_git`                    | Model-facing ordinary Git tool                               |
 | `agent_system_git_worktree`           | Model-facing managed-worktree tool                           |
-| `openclaw agent-system tool git`      | Explicit ordinary Git command                                |
-| `openclaw agent-system tool worktree` | Explicit managed-worktree command                            |
+| `openclaw agent-system tool git`      | Explicit operator Git command                                |
+| `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
 | `git`                                 | Packaged compatibility shim on supported agent command paths |
 
-Every interface binds the request to one trusted agent workspace, applies
-policy, resolves its identity, and launches the real `git` without a shell.
+The model-facing tools bind requests to trusted OpenClaw agent context. The CLI
+and shim are operator interfaces that select an agent by option or workspace.
+Every interface applies policy, resolves the selected identity, and launches the
+real `git` without a shell.
 
 ## Requirements
 
@@ -226,6 +228,11 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 ## CLI
 
+These are trusted operator interfaces for administration, testing, and
+debugging. Agents should use `agent_system_git` and
+`agent_system_git_worktree`; an agent with unrestricted host command access
+could otherwise select another installed agent.
+
 ### Usage
 
 ```text
@@ -284,8 +291,9 @@ passes arguments to `openclaw agent-system tool git`, exports its canonical
 directory, and preserves the caller's directory. The runtime excludes managed
 command paths when resolving the real `git` to prevent wrapper recursion.
 
-The shim is routing convenience, not universal interception. Absolute binaries,
-replaced `PATH` values, and unrelated host processes can bypass it.
+The shim is an operator-compatible routing convenience, not an agent security
+boundary. Absolute binaries, replaced `PATH` values, and unrelated host
+processes can bypass it.
 
 ## Further Reading
 
