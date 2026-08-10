@@ -230,6 +230,11 @@ configuration, executable, credential, and working-directory escape paths. A
 repository's own Git configuration can still name helpers, filters, aliases,
 and diff programs, so the wrapper does not make an untrusted checkout safe.
 
+Raw `git worktree` access currently permits only read-only `list`. Mutating and
+unknown worktree subcommands remain unavailable until Agent System can validate
+their repository and destination operands through its semantic worktree
+interface.
+
 ## CLI
 
 ```text

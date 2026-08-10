@@ -13,6 +13,7 @@ import type { GitToolInput } from './tool-schema.ts';
 export type GitPolicyHazard = Exclude<keyof GitPolicyConfiguration, 'unknown'>;
 
 const hazardOrder: readonly GitPolicyHazard[] = ['force', 'rewrite', 'discard', 'delete'];
+const rawWorktreeMutationAttribute = 'git.worktree.rawMutation';
 const readCommands = new Set([
   'annotate',
   'archive',
@@ -97,6 +98,16 @@ export function gitCommandPosition(argv: readonly string[]): number {
     if (!value.startsWith('-')) return index;
   }
   return -1;
+}
+
+/** Keep raw worktree mutation closed until the semantic worktree service owns its operands. */
+export function isRawGitWorktreeMutation(argv: readonly string[]): boolean {
+  if (argv.some((value) => value === '--help' || value === '-h' || value === '--version')) {
+    return false;
+  }
+  const position = gitCommandPosition(argv);
+  if (position < 0 || argv[position]?.toLowerCase() !== 'worktree') return false;
+  return argv[position + 1]?.toLowerCase() !== 'list';
 }
 
 function hasFlag(argv: readonly string[], flags: readonly string[]): boolean {
@@ -354,21 +365,9 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
     return operation('write', command);
   }
   if (command === 'worktree') {
-    const subcommand = argv[0]?.toLowerCase();
-    if (subcommand === 'remove') {
-      return hasFlag(argv, ['--force', '-f'])
-        ? hazardous(command, ['force', 'discard', 'delete'])
-        : hazardous(command, ['delete']);
-    }
-    if (subcommand === 'prune') {
-      return hasFlag(argv, ['--dry-run', '-n'])
-        ? operation('read', command)
-        : hazardous(command, ['delete']);
-    }
-    if (subcommand === 'add' && hasFlag(argv, ['-B'])) {
-      return hazardous(command, ['force', 'rewrite']);
-    }
-    return operation(subcommand === 'list' ? 'read' : 'write', command);
+    return isRawGitWorktreeMutation(input.argv)
+      ? operation('unknown', command, [], { [rawWorktreeMutationAttribute]: true })
+      : operation('read', command);
   }
   if (command === 'replace') {
     if (argv.length === 0 || hasFlag(argv, ['--list', '-l'])) return operation('read', command);
@@ -409,6 +408,13 @@ export async function authorizeGitOperation(
   configuration: GitToolConfiguration,
   dependencies: GitAuthorizationDependencies = {},
 ): Promise<AgentSystemAuthorizationDecision> {
+  if (operation.attributes?.[rawWorktreeMutationAttribute] === true) {
+    return {
+      status: 'denied',
+      reason:
+        'Raw Git worktree mutation is unavailable until Agent System can validate its operands.',
+    };
+  }
   if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };
   const extension = operation.attributes?.['git.extension'];
   if (

@@ -17,7 +17,12 @@ import {
   type GitConfigurationEntry,
   resolveGitIdentity,
 } from './identity.ts';
-import { authorizeGitOperation, classifyGitOperation, gitCommandPosition } from './policy.ts';
+import {
+  authorizeGitOperation,
+  classifyGitOperation,
+  gitCommandPosition,
+  isRawGitWorktreeMutation,
+} from './policy.ts';
 import gitCommandHasSigningControl from './signing-control.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
@@ -145,6 +150,12 @@ function validateInput(input: GitToolInput): void {
   const command = position < 0 ? undefined : input.argv[position]?.toLowerCase();
   if (!command && !input.argv.some((value) => value === '--help' || value === '--version')) {
     toolError('invalid_arguments', 'The Git command is missing.');
+  }
+  if (isRawGitWorktreeMutation(input.argv)) {
+    toolError(
+      'invalid_arguments',
+      'Raw Git worktree mutation is unavailable until Agent System can validate its operands.',
+    );
   }
   if (command?.startsWith('credential')) {
     toolError('invalid_arguments', 'Agent System Git commands may not manage credentials.');

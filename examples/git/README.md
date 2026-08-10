@@ -78,6 +78,18 @@ PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'T
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%G? %GS' | grep -Fx 'G tanaabot@tanaab.dev'
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git verify-commit HEAD
 
+# should allow read-only raw worktree listing
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git worktree list --porcelain | grep -F 'worktree '
+
+# should reject raw worktree mutation before git execution
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
+if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git worktree add --detach "$TMPDIR/agent-system-raw-worktree" HEAD 2>&1)"; then
+  exit 1
+fi
+printf '%s\n' "$output" | grep -F 'code=invalid_arguments'
+test ! -e "$TMPDIR/agent-system-raw-worktree"
+
 # should create and locally verify a trusted signed tag
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git tag --message 'verify managed signing' agent-system-signing-test

@@ -120,7 +120,7 @@ describe('tools/git/tool', () => {
     assert.equal(requests[0]?.environment.SHOULD_NOT_INHERIT, undefined);
   });
 
-  it('should reject escape options and destructive defaults before loading environment', async () => {
+  it('should reject escape options, raw worktrees, and destructive defaults before loading environment', async () => {
     const environmentCalls: string[] = [];
     const registry = new AgentSystemToolRegistry([createGitTool()]);
     const runtime = createRuntime([], environmentCalls);
@@ -133,6 +133,27 @@ describe('tools/git/tool', () => {
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
     );
+    for (const argv of [
+      ['worktree'],
+      ['worktree', 'add', '../outside', 'main'],
+      ['worktree', 'move', 'old', '../outside'],
+      ['worktree', 'remove', 'old'],
+      ['worktree', 'repair'],
+      ['worktree', 'lock', 'old'],
+      ['worktree', 'unlock', 'old'],
+      ['worktree', 'prune', '--dry-run'],
+      ['worktree', 'future-command'],
+    ]) {
+      await assert.rejects(
+        registry.invoke('git', runtime, argv, {
+          source: 'command',
+          workspaceDir: repositoryDir,
+        }),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+        argv.join(' '),
+      );
+    }
     await assert.rejects(
       registry.invoke('git', runtime, ['reset', '--hard', 'HEAD'], {
         source: 'command',
@@ -141,6 +162,18 @@ describe('tools/git/tool', () => {
       (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
     );
     assert.deepEqual(environmentCalls, []);
+  });
+
+  it('should allow read-only raw worktree listing', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const registry = new AgentSystemToolRegistry([createGitTool()]);
+
+    await registry.invoke('git', createRuntime(requests), ['worktree', 'list', '--porcelain'], {
+      source: 'command',
+      workspaceDir: repositoryDir,
+    });
+
+    assert.deepEqual(requests[0]?.argv, ['worktree', 'list', '--porcelain']);
   });
 
   it('should authorize only declared external extensions before loading environment', async () => {

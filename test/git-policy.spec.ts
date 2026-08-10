@@ -23,6 +23,7 @@ describe('tools/git/policy', () => {
       ['bundle', 'verify', 'example.bundle'],
       ['show-branch'],
       ['sparse-checkout', 'list'],
+      ['worktree', 'list'],
     ]) {
       const operation = classifyGitOperation({ argv });
       assert.equal(operation.risk, 'read');
@@ -76,10 +77,6 @@ describe('tools/git/policy', () => {
       { argv: ['notes', 'remove', 'HEAD'], hazards: ['delete'] },
       { argv: ['notes', '--ref', 'review', 'remove', 'HEAD'], hazards: ['delete'] },
       { argv: ['rerere', 'gc'], hazards: ['delete'] },
-      {
-        argv: ['worktree', 'remove', '--force', 'old'],
-        hazards: ['force', 'discard', 'delete'],
-      },
       { argv: ['reflog', 'expire', '--all'], hazards: ['delete'] },
       { argv: ['gc'], hazards: ['delete'] },
       { argv: ['maintenance', 'run'], hazards: ['delete'] },
@@ -118,9 +115,31 @@ describe('tools/git/policy', () => {
     for (const argv of [
       ['clean', '--dry-run'],
       ['reflog', 'expire', '--dry-run', '--all'],
-      ['worktree', 'prune', '--dry-run'],
     ]) {
       assert.equal(classifyGitOperation({ argv }).risk, 'read', argv.join(' '));
+    }
+  });
+
+  it('should deny every raw worktree mutation independently of unknown policy', async () => {
+    for (const argv of [
+      ['worktree'],
+      ['worktree', 'add', '../outside', 'main'],
+      ['worktree', 'move', 'old', '../outside'],
+      ['worktree', 'remove', '--force', 'old'],
+      ['worktree', 'repair'],
+      ['worktree', 'lock', 'old'],
+      ['worktree', 'unlock', 'old'],
+      ['worktree', 'prune', '--dry-run'],
+      ['worktree', 'future-command'],
+    ]) {
+      const operation = classifyGitOperation({ argv });
+      assert.equal(operation.risk, 'unknown', argv.join(' '));
+      const decision = await authorizeGitOperation(operation, {
+        ...configuration,
+        git: { policy: { unknown: 'allow' } },
+      });
+      assert.equal(decision.status, 'denied', argv.join(' '));
+      assert.match(decision.reason, /raw git worktree mutation/iu, argv.join(' '));
     }
   });
 
