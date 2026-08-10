@@ -1,12 +1,17 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
-- Added agent-scoped Git identity, effect-specific policy, packaged routing, and isolated per-invocation SSH authentication.
-- Added direct 1Password secret references for named environment values and OP-backed Git SSH key loading.
-- Added environment-bound SSH commit and tag signing with universal Git helpers, separate invocation-scoped agents, and optional local allowed-signers verification.
-- Added exact external Git extension policy and broader ordinary built-in command coverage.
-- Added deterministic agent-owned Git worktree preparation, discovery, and non-forced removal with managed clone onboarding, local repository overrides, policy, lifecycle roots, and focused guidance.
-- Added the reusable packaged tool launcher for current and future command shims.
-- Fixed Git private-key path containment, packaged shim resolution, hazardous command classification, and raw worktree mutation containment.
+### New Features
+
+- Added direct 1Password secret references for named environment values. [#5](https://github.com/tanaabased/openclaw-agent-system/pull/5)
+- Added the Agent System-managed [`git`](./tools/git/README.md) tool. [#5](https://github.com/tanaabased/openclaw-agent-system/pull/5)
+
+### Bug Fixes
+
+- Fixed Git private-key path containment, packaged shim resolution, managed-worktree manifest discovery, and policy handling for hazardous commands and raw worktree mutations. [#5](https://github.com/tanaabased/openclaw-agent-system/pull/5)
+
+### Notes
+
+- Added a reusable packaged launcher for Agent System command shims. [#5](https://github.com/tanaabased/openclaw-agent-system/pull/5)
 
 ## v0.1.1 - [August 9, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.1.1)
 
