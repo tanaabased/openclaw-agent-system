@@ -1,10 +1,9 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
 
 import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
-import { isToolWorkingDirectoryContained } from '../../utils/resolve-tool-working-directory.ts';
 import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
 import type {
   GitSigningConfiguration,
@@ -26,12 +25,14 @@ import {
 import gitCommandHasSigningControl from './signing-control.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
+import resolveGitWorktreeLayout from './worktree-layout.ts';
 
 interface ResolvedGitConfiguration {
   externalExtensions: string[];
   identity: ReturnType<typeof resolveGitIdentity>;
   signing?: GitSigningConfiguration;
   ssh?: GitSshConfiguration;
+  worktrees?: NonNullable<GitToolConfiguration['git']['worktrees']>;
 }
 
 export interface GitToolDependencies {
@@ -120,12 +121,11 @@ function validateInput(input: GitToolInput): void {
   if (
     input.cwd !== undefined &&
     (input.cwd.includes('\0') ||
-      isAbsolute(input.cwd) ||
-      relative('.', input.cwd).split(/[\\/]/u).includes('..'))
+      (!isAbsolute(input.cwd) && relative('.', input.cwd).split(/[\\/]/u).includes('..')))
   ) {
     toolError(
       'invalid_arguments',
-      'The Git working directory must stay inside the agent workspace.',
+      'The Git working directory must stay inside the agent workspace or configured worktree root.',
     );
   }
 
@@ -154,7 +154,7 @@ function validateInput(input: GitToolInput): void {
   if (isRawGitWorktreeMutation(input.argv)) {
     toolError(
       'invalid_arguments',
-      'Raw Git worktree mutation is unavailable until Agent System can validate its operands.',
+      'Raw Git worktree mutation is unavailable; use agent_system_git_worktree for managed lifecycle changes.',
     );
   }
   if (command?.startsWith('credential')) {
@@ -227,6 +227,9 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
             ? {}
             : { signing: configuration.git.signing }),
           ...(configuration.git.ssh === undefined ? {} : { ssh: configuration.git.ssh }),
+          ...(configuration.git.worktrees === undefined
+            ? {}
+            : { worktrees: configuration.git.worktrees }),
         };
       },
     },
@@ -288,23 +291,20 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
         return input.stdin;
       },
       timeoutMs: 30_000,
+      admittedWorkingDirectories(_input, configuration, scope) {
+        return configuration.worktrees
+          ? [resolveGitWorktreeLayout(scope.workspaceDir, configuration.worktrees).worktreeRoot]
+          : [];
+      },
       workingDirectory(input, _configuration, scope) {
-        if (scope.source === 'tool') return input.cwd ?? '.';
-        const commandDirectory = scope.commandWorkingDirectory;
-        if (
-          commandDirectory &&
-          isToolWorkingDirectoryContained(scope.workspaceDir, commandDirectory)
-        ) {
-          return resolve(commandDirectory);
-        }
-        return '.';
+        return scope.source === 'tool' ? (input.cwd ?? '.') : scope.commandWorkingDirectory;
       },
     },
     commands: [{ command: 'git' }],
     tool: {
       classify: classifyGitOperation,
       description:
-        'Run Git with the active Agent System agent identity, managed SSH signing, and a workspace-contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional workspace-relative cwd. Configuration mutation, signing overrides, credential commands, hooks, and working-directory escape options are unavailable.',
+        'Run Git with the active Agent System agent identity, managed SSH signing, and a contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional cwd inside the agent workspace or configured worktree root. Configuration mutation, signing overrides, credential commands, hooks, and working-directory escape options are unavailable.',
       inputFromCommand(argv): GitToolInput {
         return { argv: [...argv] };
       },

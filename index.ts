@@ -14,6 +14,7 @@ import AgentPathService from './lib/agent-path-service.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from './lib/agent-manifest-service.ts';
 import createCredentialStores from './lib/credential-store-registry.ts';
 import CodexPathConfigService from './lib/codex-path-config-service.ts';
+import defineAgentSystemSemanticTool from './lib/define-agent-system-semantic-tool.ts';
 import { resolveFileCredentialStoreRoot } from './lib/file-credential-store.ts';
 import OpCredentialManager from './lib/op-credential-manager.ts';
 import OpCredentialInput from './lib/op-credential-input.ts';
@@ -28,10 +29,15 @@ import AgentSystemToolRuntime from './lib/tool-runtime.ts';
 import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
+import WorkspaceGitignoreService from './lib/workspace-gitignore-service.ts';
 import createGitLifecycleContribution from './tools/git/lifecycle.ts';
 import createGitExtensionResolver from './tools/git/extension.ts';
 import GitSshResourceService from './tools/git/ssh-resource-service.ts';
 import { createGitTool } from './tools/git/tool.ts';
+import GitWorktreeGitRunnerFactory from './tools/git/worktree-git-runner.ts';
+import GitWorktreeLayoutService from './tools/git/worktree-layout-service.ts';
+import GitWorktreeService from './tools/git/worktree-service.ts';
+import { createGitWorktreeToolDefinition } from './tools/git/worktree-tool.ts';
 import GitHubAccountClient from './tools/github/account-client.ts';
 import GitHubAccountKeyService from './tools/github/account-key-service.ts';
 import GitHubConfigStore from './tools/github/config-store.ts';
@@ -85,9 +91,10 @@ export default definePluginEntry({
       credentialService: opCredentialService,
       environmentService: opEnvironmentService,
     });
+    const gitignoreService = new WorkspaceGitignoreService();
     const pathService = new AgentPathService({
       basePath: process.env.PATH ?? '',
-      codexConfigService: new CodexPathConfigService(),
+      codexConfigService: new CodexPathConfigService({ gitignoreService }),
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);
       },
@@ -130,6 +137,25 @@ export default definePluginEntry({
       excludedExecutableDirectories: excludedToolExecutableDirectories,
       path: process.env.PATH ?? '',
     });
+    const gitWorktreeLayoutService = new GitWorktreeLayoutService({
+      baseEnvironment: process.env,
+      ...(process.getuid === undefined ? {} : { currentUid: process.getuid() }),
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
+      gitignoreService,
+      ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
+    });
+    const gitWorktreeService = new GitWorktreeService({
+      layoutService: gitWorktreeLayoutService,
+    });
+    const gitWorktreeRunnerFactory = new GitWorktreeGitRunnerFactory({
+      baseEnvironment: process.env,
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
+      sshResourceService: gitSshResourceService,
+    });
+    const gitWorktreeDefinition = createGitWorktreeToolDefinition({
+      runnerFactory: gitWorktreeRunnerFactory,
+      service: gitWorktreeService,
+    });
     const lifecycleRegistry = new AgentSystemLifecycleRegistry([
       createAgentLifecycleContribution({
         environmentService: lifecycleEnvironmentService,
@@ -140,7 +166,10 @@ export default definePluginEntry({
         },
       }),
       createPathLifecycleContribution({ pathService }),
-      createGitLifecycleContribution({ sshResourceService: gitSshResourceService }),
+      createGitLifecycleContribution({
+        sshResourceService: gitSshResourceService,
+        worktreeLayoutService: gitWorktreeLayoutService,
+      }),
       createGitHubLifecycleContribution({
         accountKeyService: githubAccountKeyService,
         configStore: githubConfigStore,
@@ -173,6 +202,7 @@ export default definePluginEntry({
         extensionAvailable: gitExtensionAvailable,
         sshResourceService: gitSshResourceService,
       }),
+      defineAgentSystemSemanticTool(gitWorktreeDefinition),
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
     const toolRuntime = new AgentSystemToolRuntime({

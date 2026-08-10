@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
+
 import AgentSystemToolError from '../lib/tool-error.ts';
 import AgentSystemToolRegistry from '../lib/tool-registry.ts';
 import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
@@ -118,6 +120,40 @@ describe('tools/git/tool', () => {
     assert.equal(requests[0]?.environment.GIT_COMMITTER_EMAIL, 'data@example.com');
     assert.equal(requests[0]?.environment.GIT_CONFIG_GLOBAL, '/dev/null');
     assert.equal(requests[0]?.environment.SHOULD_NOT_INHERIT, undefined);
+  });
+
+  it('should admit an explicit cwd inside the configured worktree root', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const worktreePath = join(root, 'external-worktrees', 'task-1');
+    await mkdir(worktreePath, { recursive: true });
+    manifest.git = { worktrees: { root: join(root, 'external-worktrees') } };
+    const registered = createGitTool();
+    const runtime = createRuntime(requests);
+    let factory: OpenClawPluginToolFactory | undefined;
+    registered.registerTools(
+      {
+        registerTool(tool: unknown) {
+          factory = tool as OpenClawPluginToolFactory;
+        },
+      } as never,
+      runtime,
+    );
+    const produced = factory?.({
+      agentId: 'data',
+      workspaceDir,
+    });
+    const tool = Array.isArray(produced) ? produced[0] : produced;
+    assert.ok(tool);
+
+    const result = await tool.execute(
+      'call-1',
+      { argv: ['status', '--short'], cwd: worktreePath },
+      new AbortController().signal,
+      undefined,
+    );
+
+    assert.equal(requests[0]?.cwd, await realpath(worktreePath));
+    assert.equal((result.details as { output: { exitCode: number } }).output.exitCode, 0);
   });
 
   it('should reject escape options, raw worktrees, and destructive defaults before loading environment', async () => {

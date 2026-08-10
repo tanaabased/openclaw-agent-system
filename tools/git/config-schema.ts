@@ -37,6 +37,18 @@ const externalGitAllowedSignersFileSchema = Type.String({
     '^(?![A-Za-z]:[\\\\/])(?![\\/~])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
 });
 
+const externalGitWorktreePathSchema = Type.String({
+  maxLength: 4096,
+  minLength: 1,
+  pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+});
+
+const externalGitRepositoryIdSchema = Type.String({
+  maxLength: 256,
+  minLength: 1,
+  pattern: '^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]*$',
+});
+
 export const externalGitSectionSchema = Type.Object(
   {
     email: Type.Optional(externalResolvableStringSchema),
@@ -83,6 +95,27 @@ export const externalGitSectionSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    worktrees: Type.Optional(
+      Type.Object(
+        {
+          repositories: Type.Optional(
+            Type.Object(
+              {
+                local: Type.Optional(
+                  Type.Record(externalGitRepositoryIdSchema, externalGitWorktreePathSchema, {
+                    additionalProperties: false,
+                  }),
+                ),
+                root: Type.Optional(externalGitWorktreePathSchema),
+              },
+              { additionalProperties: false },
+            ),
+          ),
+          root: Type.Optional(externalGitWorktreePathSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -110,6 +143,14 @@ export interface GitSigningConfiguration {
   key: EnvironmentBinding;
 }
 
+export interface GitWorktreeConfiguration {
+  repositories?: {
+    local?: Record<string, string>;
+    root?: string;
+  };
+  root?: string;
+}
+
 export interface GitManifestConfiguration {
   email?: ResolvableString;
   extensions?: Record<string, GitPolicyDecision>;
@@ -117,6 +158,7 @@ export interface GitManifestConfiguration {
   policy?: Partial<GitPolicyConfiguration>;
   signing?: GitSigningConfiguration;
   ssh?: GitSshConfiguration;
+  worktrees?: GitWorktreeConfiguration;
 }
 
 export interface GitToolConfiguration {
@@ -174,6 +216,25 @@ export function decodeGitSection(value: ExternalGitSection): GitManifestConfigur
                 ? { path: source.path }
                 : { fromEnvironment: source['from-environment'] },
             ),
+          },
+        }),
+    ...(value.worktrees === undefined
+      ? {}
+      : {
+          worktrees: {
+            ...(value.worktrees.repositories === undefined
+              ? {}
+              : {
+                  repositories: {
+                    ...(value.worktrees.repositories.local === undefined
+                      ? {}
+                      : { local: { ...value.worktrees.repositories.local } }),
+                    ...(value.worktrees.repositories.root === undefined
+                      ? {}
+                      : { root: value.worktrees.repositories.root }),
+                  },
+                }),
+            ...(value.worktrees.root === undefined ? {} : { root: value.worktrees.root }),
           },
         }),
   };

@@ -175,6 +175,13 @@ export interface AgentSystemCliToolDefinition<
     ): Promise<void> | void;
     stdin?(input: Static<TParameters>, configuration: TResolvedConfiguration): string | undefined;
     timeoutMs?: number;
+    admittedWorkingDirectories?(
+      input: Static<TParameters>,
+      configuration: TResolvedConfiguration,
+      scope: {
+        workspaceDir: string;
+      },
+    ): Promise<readonly string[]> | readonly string[];
     workingDirectory?(
       input: Static<TParameters>,
       configuration: TResolvedConfiguration,
@@ -183,7 +190,7 @@ export interface AgentSystemCliToolDefinition<
         source: AgentSystemToolScope['source'];
         workspaceDir: string;
       },
-    ): string | undefined;
+    ): Promise<string | undefined> | string | undefined;
   };
   tool: {
     classify(
@@ -195,6 +202,54 @@ export interface AgentSystemCliToolDefinition<
     label: string;
     name: string;
     normalize(result: AgentSystemCliResult, configuration: TResolvedConfiguration): TOutput;
+    parameters: TParameters;
+    validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
+  };
+}
+
+export interface AgentSystemSemanticToolDefinition<
+  TParameters extends TSchema,
+  TDeclaredConfiguration,
+  TResolvedConfiguration,
+  TOutput,
+> {
+  apiVersion: 1;
+  authorization?: AgentSystemCliToolDefinition<
+    TParameters,
+    TDeclaredConfiguration,
+    TResolvedConfiguration,
+    TOutput
+  >['authorization'];
+  configuration: AgentSystemCliToolDefinition<
+    TParameters,
+    TDeclaredConfiguration,
+    TResolvedConfiguration,
+    TOutput
+  >['configuration'];
+  commands?: AgentSystemToolCommand[];
+  execute(
+    input: Static<TParameters>,
+    configuration: TResolvedConfiguration,
+    scope: {
+      agentId: string;
+      resolveEnvironment(name: string): string | undefined;
+      signal?: AbortSignal;
+      source: AgentSystemToolScope['source'];
+      toolContext?: OpenClawPluginToolContext;
+      workspaceDir: string;
+    },
+  ): Promise<TOutput>;
+  guidance?: AgentSystemToolGuidance;
+  id: string;
+  tool: {
+    classify(
+      input: Static<TParameters>,
+      configuration: TDeclaredConfiguration,
+    ): AgentSystemOperation;
+    description: string;
+    inputFromCommand(argv: string[]): Static<TParameters>;
+    label: string;
+    name: string;
     parameters: TParameters;
     validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
   };

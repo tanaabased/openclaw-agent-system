@@ -91,6 +91,90 @@ describe('tools/git/lifecycle', () => {
     assert.equal(inspections, 1);
   });
 
+  it('should inspect and reconcile managed worktree roots only when configured', async () => {
+    const calls: string[] = [];
+    const layout = {
+      ignoreEntries: ['/.agent-system/repositories/', '/.agent-system/worktrees/'],
+      localRepositories: { canon: '/repos/canon' },
+      repositoryRoot: '/workspace/.agent-system/repositories',
+      worktreeRoot: '/workspace/.agent-system/worktrees',
+      workspaceDir: '/workspace',
+    };
+    const contribution = createGitLifecycleContribution({
+      worktreeLayoutService: {
+        async inspect() {
+          calls.push('inspect');
+          return {
+            gitignored: true,
+            layout,
+            localRepositories: { canon: 'ready' as const },
+            repositoryRoot: 'ready' as const,
+            tracked: false,
+            worktreeRoot: 'ready' as const,
+          };
+        },
+        async reconcile() {
+          calls.push('reconcile');
+          return {
+            actions: ['create-repository-root' as const, 'create-worktree-root' as const],
+            gitignored: true,
+            layout,
+            localRepositories: { canon: 'ready' as const },
+            repositoryRoot: 'ready' as const,
+            tracked: false,
+            worktreeRoot: 'ready' as const,
+          };
+        },
+      },
+    });
+    const context = {
+      manifest: {
+        schemaVersion: 1 as const,
+        agent: { id: 'data', email: 'data@example.com', name: 'Data' },
+        git: { worktrees: { repositories: { local: { canon: '/repos/canon' } } } },
+      },
+      workspaceDir: '/workspace',
+    };
+
+    assert.deepEqual(await contribution.inspect?.(context), [
+      {
+        code: 'git-repositories-root-ready',
+        message: 'Git managed repositories root is ready.',
+        status: 'healthy',
+      },
+      {
+        code: 'git-worktrees-root-ready',
+        message: 'Git managed worktrees root is ready.',
+        status: 'healthy',
+      },
+      {
+        code: 'git-worktree-roots-gitignored',
+        message: 'Git managed repository and worktree roots are ignored.',
+        status: 'healthy',
+      },
+      {
+        code: 'git-worktree-local-repository-ready',
+        message: 'Git local repository override canon is ready.',
+        status: 'healthy',
+      },
+    ]);
+    assert.deepEqual(await contribution.reconcile?.(context), {
+      outcomes: [
+        {
+          code: 'git-worktrees-create-repository-root',
+          message: 'Git managed repository root',
+          status: 'created',
+        },
+        {
+          code: 'git-worktrees-create-worktree-root',
+          message: 'Git managed worktree root',
+          status: 'created',
+        },
+      ],
+    });
+    assert.deepEqual(calls, ['inspect', 'reconcile']);
+  });
+
   it('should report missing openssh dependencies as blocked', async () => {
     const contribution = createGitLifecycleContribution({
       sshResourceService: {

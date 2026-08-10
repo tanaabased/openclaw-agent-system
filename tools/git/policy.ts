@@ -412,7 +412,7 @@ export async function authorizeGitOperation(
     return {
       status: 'denied',
       reason:
-        'Raw Git worktree mutation is unavailable until Agent System can validate its operands.',
+        'Raw Git worktree mutation is unavailable; use agent_system_git_worktree for managed lifecycle changes.',
     };
   }
   if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };

@@ -39,8 +39,9 @@ Use `agent_system_git` for working-tree and repository operations when the activ
 ## When Not to Use
 
 - Use `agent_system_github` for GitHub issues, pull requests, releases, Actions, or API work.
+- Use `$agent-system-git-worktree` to prepare, locate, or remove managed worktrees.
 - Do not use this skill when the active agent manifest does not configure `git`.
-- Do not use it to mutate Git configuration, manage credentials, or escape the agent workspace.
+- Do not use it to mutate Git configuration, manage credentials, or escape admitted roots.
 
 ## Prerequisites
 
@@ -51,7 +52,7 @@ Use `agent_system_git` for working-tree and repository operations when the activ
 
 ## Inputs
 
-Pass ordinary noninteractive `git` arguments in `argv`. Native tool calls may provide a workspace-relative `cwd`; direct shim calls preserve the caller's directory when it is inside the agent workspace. Use `stdin` only for ordinary command input below 64 KiB.
+Pass ordinary noninteractive `git` arguments in `argv`. Native tool calls may provide a `cwd` inside the agent workspace or configured worktree root; direct shim calls preserve an admitted caller directory. Use `stdin` only for ordinary command input below 64 KiB.
 
 ```json
 { "argv": ["status", "--short"], "cwd": "project" }
@@ -72,7 +73,7 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 ## Failure Handling
 
 - Treat a nonzero `exitCode` and returned `stderr` as the underlying `git` failure.
-- Report missing tool, unresolved identity, manifest binding, and workspace-containment errors directly.
+- Report missing tool, unresolved identity, manifest binding, and working-directory containment errors directly.
 - When OpenClaw requests approval, wait for the operator's decision and do not reshape the command to avoid policy.
 - Do not work around denied or unknown operations with `exec`, direct `git`, alternate working-directory flags, or configuration overrides.
 - Let Agent System apply configured signing automatically; do not pass signing-control flags or select another key.
@@ -95,4 +96,4 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 - Confirm the tool used the active agent rather than a model-supplied identity.
 - Confirm the effective author and committer match the manifest when creating a commit.
 - When signing is configured, confirm created commits and tags are signed and use local trust claims only when an allowed-signers file verifies them.
-- Confirm the selected working directory stays inside the bound agent workspace.
+- Confirm the selected working directory stays inside the bound agent workspace or configured worktree root.

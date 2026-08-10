@@ -182,13 +182,18 @@ export default function pluginMetadataFailures(
     'short command alias is missing',
   );
   check(
-    containsExactly(manifest.contracts?.tools, ['agent_system_git', 'agent_system_github']),
+    containsExactly(manifest.contracts?.tools, [
+      'agent_system_git',
+      'agent_system_git_worktree',
+      'agent_system_github',
+    ]),
     'tool-contract',
     'plugin must declare exactly the registered Agent System tools',
   );
   check(
     containsExactly(manifest.contracts?.trustedToolPolicies, [
       'agent-system.git',
+      'agent-system.git-worktree',
       'agent-system.github',
     ]),
     'tool-policy-contract',

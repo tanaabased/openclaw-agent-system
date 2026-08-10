@@ -199,6 +199,47 @@ github:
     });
   });
 
+  it('should parse git worktree defaults and local repository overrides', () => {
+    const defaults = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  worktrees: {}
+`);
+    const expanded = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  worktrees:
+    root: .agent-system/worktrees
+    repositories:
+      root: .agent-system/repositories
+      local:
+        tanaabased/openclaw-agent-system: ~/tanaab/openclaw-agent-system
+        canon: ../canon
+`);
+
+    assert.equal(defaults.status, 'valid');
+    if (defaults.status === 'valid') {
+      assert.deepEqual(defaults.manifest.git, { worktrees: {} });
+    }
+    assert.equal(expanded.status, 'valid');
+    if (expanded.status === 'valid') {
+      assert.deepEqual(expanded.manifest.git?.worktrees, {
+        root: '.agent-system/worktrees',
+        repositories: {
+          root: '.agent-system/repositories',
+          local: {
+            'tanaabased/openclaw-agent-system': '~/tanaab/openclaw-agent-system',
+            canon: '../canon',
+          },
+        },
+      });
+    }
+  });
+
   it('should reject unsupported github policy decisions and policy keys', () => {
     assert.equal(
       diagnosticCodes(`

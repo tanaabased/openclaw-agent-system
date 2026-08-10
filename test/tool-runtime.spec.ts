@@ -5,6 +5,7 @@ import AgentSystemToolError from '../lib/tool-error.ts';
 import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
 import {
+  createSemanticToolTestDefinition,
   createToolTestDefinition,
   loadedToolTestManifest,
   toolTestWorkspaceDir,
@@ -82,6 +83,70 @@ function createRuntime(options: {
 }
 
 describe('lib/tool-runtime', () => {
+  it('should run semantic operations through authorization, environment, and audit', async () => {
+    const auditEvents: AgentSystemAuditEvent[] = [];
+    const events: string[] = [];
+    const runtime = createRuntime({ auditEvents, events });
+    const definition = createSemanticToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'allowed' };
+      },
+      async execute(input, configuration) {
+        events.push('execute');
+        return `${input.argument}:${configuration.token}`;
+      },
+    });
+
+    const result = await runtime.executeSemantic(
+      definition,
+      { argument: 'status' },
+      { agentId: 'data', source: 'command' },
+    );
+
+    assert.equal(result.output, 'status:AGENT_TOKEN');
+    assert.equal(result.commandResult.stdout, '"status:AGENT_TOKEN"\n');
+    assert.deepEqual(events, [
+      'authorize',
+      'audit:pending',
+      'environment',
+      'execute',
+      'audit:completed',
+    ]);
+    assert.deepEqual(
+      auditEvents.map(({ phase, status }) => ({ phase, status })),
+      [
+        { phase: 'pending', status: undefined },
+        { phase: 'completed', status: 'ok' },
+      ],
+    );
+  });
+
+  it('should deny semantic operations before resolving the environment', async () => {
+    const events: string[] = [];
+    const runtime = createRuntime({ events });
+    const definition = createSemanticToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'denied', reason: 'Test policy denied this operation.' };
+      },
+      async execute() {
+        events.push('execute');
+        return 'unexpected';
+      },
+    });
+
+    await assert.rejects(
+      runtime.executeSemantic(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+    );
+    assert.deepEqual(events, ['authorize']);
+  });
+
   it('should deny an operation before resolving its credential environment', async () => {
     const events: string[] = [];
     const auditEvents: AgentSystemAuditEvent[] = [];

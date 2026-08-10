@@ -233,6 +233,46 @@ describe('lib/register-cli', () => {
     ]);
   });
 
+  it('should route worktree operations through the registered tool command', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'tool',
+      'worktree',
+      '--agent',
+      'data',
+      '--',
+      'prepare',
+      'repo',
+      'task-123',
+      'origin/main',
+      '--clone-url',
+      'git@github.com:example/repo.git',
+      '--branch',
+      'agent/task-123',
+    ]);
+
+    assert.deepEqual(calls.tool, [
+      {
+        argv: [
+          'prepare',
+          'repo',
+          'task-123',
+          'origin/main',
+          '--clone-url',
+          'git@github.com:example/repo.git',
+          '--branch',
+          'agent/task-123',
+        ],
+        command: 'worktree',
+        scope: { agentId: 'data', source: 'command', workspaceDir: '/current' },
+      },
+    ]);
+  });
+
   it('should show command help when invoked without a subcommand', async () => {
     const { output, program } = createProgram();
 

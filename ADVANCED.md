@@ -250,10 +250,11 @@ public provider contract is planned in [Tool API](./API.md).
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 ```
 
-| Tool  | Command | CLI                                   | Shim                                           |
-| ----- | ------- | ------------------------------------- | ---------------------------------------------- |
-| `git` | `git`   | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
-| `gh`  | `gh`    | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
+| Tool           | Command    | CLI                                              | Shim                                           |
+| -------------- | ---------- | ------------------------------------------------ | ---------------------------------------------- |
+| `git`          | `git`      | [Usage](./tools/git/README.md#cli)               | [Packaged shim](./tools/git/README.md#shim)    |
+| `git-worktree` | `worktree` | [Usage](./tools/git/README.md#managed-worktrees) | none                                           |
+| `gh`           | `gh`       | [Usage](./tools/github/README.md#cli)            | [Packaged shim](./tools/github/README.md#shim) |
 
 Registered tools preserve the child command's standard streams and exit code.
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.

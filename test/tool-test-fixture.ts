@@ -5,6 +5,7 @@ import type {
   AgentSystemAuthorizationDecision,
   AgentSystemCliToolDefinition,
   AgentSystemOperation,
+  AgentSystemSemanticToolDefinition,
   AgentSystemToolResourceLease,
 } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
@@ -21,6 +22,13 @@ export interface ToolTestConfiguration {
 }
 
 export type ToolTestDefinition = AgentSystemCliToolDefinition<
+  typeof toolTestParameters,
+  ToolTestConfiguration,
+  ToolTestConfiguration,
+  string
+>;
+
+export type SemanticToolTestDefinition = AgentSystemSemanticToolDefinition<
   typeof toolTestParameters,
   ToolTestConfiguration,
   ToolTestConfiguration,
@@ -92,6 +100,39 @@ export function createToolTestDefinition(
       normalize: (result) => result.stdout,
       parameters: toolTestParameters,
       ...(options.validate ? { validate: options.validate } : {}),
+    },
+  };
+}
+
+export function createSemanticToolTestDefinition(
+  options: {
+    authorize?: ToolTestDefinitionOptions['authorize'];
+    execute?(input: { argument: string }, configuration: ToolTestConfiguration): Promise<string>;
+  } = {},
+): SemanticToolTestDefinition {
+  return {
+    apiVersion: 1,
+    id: 'test-semantic-tool',
+    authorization: {
+      authorize: options.authorize ?? (() => ({ status: 'allowed' })),
+      mode: 'agent-system',
+      policyId: 'agent-system.test-semantic-tool',
+    },
+    commands: [{ command: 'test-semantic-tool' }],
+    configuration: {
+      read: () => ({ token: 'AGENT_TOKEN' }),
+      resolve: (configuration) => configuration,
+    },
+    execute:
+      options.execute ??
+      (async (input, configuration) => `${input.argument}:${configuration.token}`),
+    tool: {
+      classify: () => ({ action: 'inspect', risk: 'read', summary: 'Inspect test data.' }),
+      description: 'Exercise the semantic Agent System tool runtime.',
+      inputFromCommand: ([argument = 'status']) => ({ argument }),
+      label: 'Test Semantic Tool',
+      name: 'agent_system_test_semantic_tool',
+      parameters: toolTestParameters,
     },
   };
 }

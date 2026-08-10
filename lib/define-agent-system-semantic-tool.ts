@@ -1,16 +1,16 @@
 import type { TSchema } from 'typebox';
 
 import defineAgentSystemTool from './define-agent-system-tool.ts';
-import type { AgentSystemCliToolDefinition } from './tool-types.ts';
+import type { AgentSystemSemanticToolDefinition } from './tool-types.ts';
 
-/** Compile one command-backed definition into native and CLI tool surfaces. */
-export default function defineAgentSystemCliTool<
+/** Compile one semantic definition into native and command tool surfaces. */
+export default function defineAgentSystemSemanticTool<
   TParameters extends TSchema,
   TDeclaredConfiguration,
   TResolvedConfiguration,
   TOutput,
 >(
-  definition: AgentSystemCliToolDefinition<
+  definition: AgentSystemSemanticToolDefinition<
     TParameters,
     TDeclaredConfiguration,
     TResolvedConfiguration,
@@ -18,6 +18,6 @@ export default function defineAgentSystemCliTool<
   >,
 ) {
   return defineAgentSystemTool(definition, (runtime, input, scope, signal) =>
-    runtime.executeCli(definition, input, scope, signal),
+    runtime.executeSemantic(definition, input, scope, signal),
   );
 }

@@ -1,10 +1,11 @@
 # Git Tool Example
 
 This scenario verifies the packaged Agent System `git` shim, Git declaration
-validation, nested workspace discovery, agent identity on a real commit, and
-isolated SSH authentication using generated and 1Password-backed private keys.
-It also verifies OP-backed SSH commit and tag signing through a public allowed
-signers file. It does not start a Gateway or invoke a model.
+validation, nested workspace discovery, agent identity on a real commit,
+deterministic managed worktrees, and isolated SSH authentication using generated and
+1Password-backed private keys. It also verifies OP-backed SSH commit and tag
+signing through a public allowed signers file. It does not start a Gateway or
+invoke a model.
 
 ## Setup
 
@@ -89,6 +90,33 @@ if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git worktree add --detach "$TMPD
 fi
 printf '%s\n' "$output" | grep -F 'code=invalid_arguments'
 test ! -e "$TMPDIR/agent-system-raw-worktree"
+
+# should prepare a managed network repository worktree
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'
+
+# should return the same managed worktree on repeated preparation
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | grep -F '"status": "existing"'
+openclaw agent-system tool worktree -- list agent-system | grep -F '"status": "active"'
+
+# should route the packaged shim from the managed worktree to tanaabot
+cd "$(jq -r .path "$TMPDIR/agent-system-worktree.json")"
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
+printf 'managed worktree\n' > agent-system-worktree.txt
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git add agent-system-worktree.txt
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git commit --quiet --message 'verify managed worktree identity'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%G? %GS' | grep -Fx 'G tanaabot@tanaab.dev'
+
+# should report managed worktree roots as healthy
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git managed repository and worktree roots are ignored'
+
+# should remove the clean managed worktree through delete policy
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+openclaw agent-system tool worktree -- remove agent-system leia-work | grep -F '"status": "removed"'
+openclaw agent-system tool worktree -- list agent-system | grep -Fx '[]'
 
 # should create and locally verify a trusted signed tag
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"

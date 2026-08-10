@@ -62,8 +62,8 @@ const manifest: PluginManifest = {
     { name: 'as', cliCommand: 'as' },
   ],
   contracts: {
-    tools: ['agent_system_git', 'agent_system_github'],
-    trustedToolPolicies: ['agent-system.git', 'agent-system.github'],
+    tools: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
+    trustedToolPolicies: ['agent-system.git', 'agent-system.git-worktree', 'agent-system.github'],
   },
   skills: ['./skills'],
   configSchema: {

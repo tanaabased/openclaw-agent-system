@@ -13,8 +13,11 @@ environment:
       from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
 
 git:
+  worktrees: {}
   extensions:
     agent-system-test: allow
+  policy:
+    delete: allow
   signing:
     key: OP_SSH_KEY
     allowed-signers-file: .agent-system/allowed_signers
