@@ -60,6 +60,7 @@ openclaw agent-system validate | grep -F 'valid' | grep -F 'git' | grep -F 'Git 
 # should preserve a nested repository directory and commit as tanaabot
 mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
+export AGENT_SYSTEM_LEIA_GIT_PRIVATE_KEY="$(cat "$TMPDIR/agent-system-git-tanaabot/id_ed25519")"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git init --quiet
 touch identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt
