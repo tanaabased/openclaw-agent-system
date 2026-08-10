@@ -6,8 +6,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
-- Homebrew dependencies from [Brewfile](./Brewfile), including Git, GitHub CLI,
-  OpenSSH, OpenClaw, and ClawHub
+- Homebrew dependencies from [Brewfile](./Brewfile)
 - OpenClaw 2026.7.1-2 or newer
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
@@ -161,8 +160,6 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/`](./examples/) run through GitHub Actions on macOS and Ubuntu. They install plugins and mutate isolated OpenClaw state, so they must not be used as routine local validation.
 
-The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `git`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `git`, `github`, and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment ID fixture.
-
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
@@ -179,6 +176,14 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | `test/`               | Flat behavior-focused unit tests                             |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
+
+### Tool Providers
+
+First-party tool implementations live in `tools/<capability>/` and use Agent
+System's internal tool contract. The planned public provider boundary is
+documented in [Tool API](./API.md); it is not available to third-party OpenClaw
+plugins until a supported typed cross-plugin capability and package export are
+implemented.
 
 Ordinary tool shims in `bin/` delegate to the sibling `agent-system-tool`
 launcher with their fixed registered command name. Keep argument handling,

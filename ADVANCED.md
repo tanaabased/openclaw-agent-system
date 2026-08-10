@@ -7,8 +7,8 @@ configuration, CLI, environment, and path behavior. Start with the
 
 Tool-specific configuration, CLI, and routing documentation:
 
-- [Git tool](./tools/git/README.md)
-- [GitHub CLI tool](./tools/github/README.md)
+- [`git`](./tools/git/README.md)
+- [`gh`](./tools/github/README.md)
 
 ## Manifest
 
@@ -24,11 +24,6 @@ validates the manifest but does not resolve environment values or mutate state.
 The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks,
 files larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML
 features such as anchors, aliases, and explicit tags.
-
-Without `--agent`, manifest-dependent Agent System commands and packaged tool
-shims begin at the current directory and walk upward to the nearest manifest.
-Explicit `--agent` selection and model-facing tool calls use the exact
-registered agent workspace instead of directory discovery.
 
 A minimal manifest binds one workspace to one agent:
 
@@ -92,13 +87,13 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 
 ### `agent`
 
-| Field         | Type                               | Required      | Behavior                                                           |
-| ------------- | ---------------------------------- | ------------- | ------------------------------------------------------------------ |
-| `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.              |
-| `name`        | string or `from-environment` value | for `install` | OpenClaw display name applied by `install`.                        |
-| `email`       | string or `from-environment` value | no            | Default Git author and committer email when `git.email` is absent. |
-| `description` | string                             | no            | Validated for later identity surfaces.                             |
-| `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained.   |
+| Field         | Type                               | Required      | Behavior                                                         |
+| ------------- | ---------------------------------- | ------------- | ---------------------------------------------------------------- |
+| `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
+| `name`        | string or `from-environment` value | for `install` | Agent display name applied to OpenClaw by `install`.             |
+| `email`       | string or `from-environment` value | no            | Agent email available to configured consumers.                   |
+| `description` | string                             | no            | Agent description retained for configured consumers.             |
+| `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained. |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -111,6 +106,9 @@ agent:
 
 A missing or empty referenced value fails the action that consumes it. A
 dollar-prefixed scalar in these fields remains literal.
+
+Identity fields do not configure tools by themselves; a tool may explicitly use
+them as defaults.
 
 ### `environment`
 
@@ -131,10 +129,10 @@ identifiers remain literal and are never casing-converted. See
 
 Tools own their manifest schemas and document them beside their implementation:
 
-| Tool       | Manifest key | Configuration                                                               |
-| ---------- | ------------ | --------------------------------------------------------------------------- |
-| Git        | `git`        | [Configuration reference](./tools/git/README.md#configuration-reference)    |
-| GitHub CLI | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
+| Tool  | Manifest key | Configuration                                                               |
+| ----- | ------------ | --------------------------------------------------------------------------- |
+| `git` | `git`        | [Configuration reference](./tools/git/README.md#configuration-reference)    |
+| `gh`  | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
 
 Adding a tool to this table does not enable it globally; the corresponding
 manifest section opts the workspace into that capability.
@@ -240,17 +238,18 @@ responsibility. Tool-specific lifecycle checks are documented in each tool guide
 
 ### `openclaw agent-system tool`
 
-Runs a registered command through its Agent System tool. It is a closed registry,
-not an arbitrary executable or raw-secret interface.
+Runs a registered command through its Agent System tool. The current release
+uses a closed registry, not an arbitrary executable or raw-secret interface. A
+public provider contract is planned in [Tool API](./API.md).
 
 ```text
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 ```
 
-| Tool       | Command | CLI                                   | Shim                                           |
-| ---------- | ------- | ------------------------------------- | ---------------------------------------------- |
-| Git        | `git`   | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
-| GitHub CLI | `gh`    | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
+| Tool  | Command | CLI                                   | Shim                                           |
+| ----- | ------- | ------------------------------------- | ---------------------------------------------- |
+| `git` | `git`   | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
+| `gh`  | `gh`    | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
 
 Registered tools preserve the child command's standard streams and exit code.
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.

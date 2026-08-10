@@ -139,6 +139,7 @@ try {
     'skills/github-cli/agents/assets/icon-large.svg',
     'assets/agent-system.png',
     'README.md',
+    'API.md',
     'ADVANCED.md',
     'DEVELOPMENT.md',
     'CHANGELOG.md',

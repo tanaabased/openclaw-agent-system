@@ -16,14 +16,11 @@ as cron synchronization.
 
 Agent System also defines a tool contract so its own tools can share agent
 binding, credential resolution, policy, redaction, safe process execution, and
-audit behavior. The shipped [GitHub CLI](tools/github/README.md) and
-[Git](tools/git/README.md) tools prove that contract. Git currently provides
-local identity, workspace containment, operation policy, and unencrypted SSH
-authentication from declared paths or the completed environment. Direct
-1Password key references, encrypted keys, and signing remain planned. GOG and
-other service integrations may implement the same contract later. A public
-cross-plugin SDK remains a product goal, but depends on a supported OpenClaw
-runtime capability rather than an ad hoc process-global registry.
+audit behavior. The shipped first-party tools prove that contract and own their
+specific configuration, policy, credential, lifecycle, and security behavior.
+Other integrations may implement the same contract later. Publishing it as a
+versioned public API remains a product goal, but depends on a supported OpenClaw
+cross-plugin runtime capability rather than an ad hoc process-global registry.
 
 This specification records initial product intent and boundaries. The package is
 `@tanaab/openclaw-agent-system`, the OpenClaw plugin id is `agent-system`, the
@@ -62,8 +59,8 @@ The manifest composes configuration sections over the environment runtime. A
 section is not required to map one-to-one to a tool:
 
 - `agent` configures core OpenClaw identity and workspace binding;
-- `git` and `github` supply values used by tools, packaged command launchers,
-  installation, and diagnostics;
+- capability sections supply values used by their tools, packaged command
+  launchers, installation, and diagnostics;
 - `environment` defines common values and executable path additions;
 - `install` defines explicit operator-run reconciliation;
 - future `cron` configuration describes scheduled desired state; and
@@ -97,7 +94,7 @@ Phase 1 delivers:
 - focused Leia coverage of installed-plugin, agent-binding, environment, and
   value-free diagnostic boundaries.
 
-### Phase 2: tool API and first tools
+### Phase 2: tool contract and first tools
 
 Phase 2 delivers:
 
@@ -110,17 +107,15 @@ Phase 2 delivers:
   Phase 1 prepended path, while preserving workspace-bin precedence; and
 - tool, capability, executable, config, and routing diagnostics.
 
-The shipped [GitHub CLI](tools/github/README.md) and
-[Git](tools/git/README.md) tools own their configuration, command, policy,
-credential, documentation, and verification contracts. The Git tool currently
-supports unencrypted path and completed-environment SSH key sources; direct
-1Password key references, encrypted keys, and signing remain in the
-[tool specification](tools/git/SPEC.md). Broader resource policy and a
-constrained direct-request helper remain secondary Phase 2 work.
+Each shipped tool owns its configuration, command, policy, credential,
+documentation, and verification contracts. Planned additions to a tool remain
+in its owning guide or specification. Broader resource policy and a constrained
+direct-request helper remain secondary Phase 2 work.
 
-Publishing the tool contract for third-party plugins follows only after
-OpenClaw exposes or accepts a supported typed cross-plugin capability. The
-first-party vertical slice must not invent a private runtime service locator.
+Publishing the contract as the versioned public [Tool API](API.md) for
+third-party plugins follows only after OpenClaw exposes or accepts a supported
+typed cross-plugin capability. The first-party vertical slice must not invent a
+private runtime service locator.
 
 ### Phase 3: lifecycle completion
 
@@ -254,19 +249,18 @@ Identity follows these rules:
 - `agent.id` is a literal stable machine identifier because Agent System must
   bind the manifest before resolving its environment. It does not change
   implicitly when the display name changes.
-- `agent.name` is a literal or environment-backed display name and the default
-  Git author and committer name.
-- `agent.email` is a literal or environment-backed default Git author and
-  committer email. OpenClaw identity does not currently consume it, so install
-  does not resolve it; the Git tool resolves it when an invocation needs it.
+- `agent.name` is a literal or environment-backed display name available to
+  configured consumers.
+- `agent.email` is a literal or environment-backed email available to
+  configured consumers. OpenClaw identity does not currently consume it, so
+  install does not resolve it.
 - `agent.description` and `agent.avatar` remain literal values.
 - Explicit `install` requires `agent.name` and reconciles `agent.id`, `agent.name`,
   and a declared `agent.avatar` with OpenClaw's agent registration and identity.
 - An existing OpenClaw agent id bound to another workspace is a conflict; Agent
   System does not silently repoint it.
-- Core identity does not imply Git, GitHub, tool, environment, install, or
-  cron configuration. Those sections may reference `agent` values but retain
-  their own validation and lifecycle.
+- Core identity does not configure capabilities by itself. Capability sections
+  may reference `agent` values but retain their own validation and lifecycle.
 
 ## Manifest Value Kinds
 
@@ -658,13 +652,13 @@ mutating OpenClaw state. Installation does not prompt, read
 `OP_SERVICE_ACCOUNT_TOKEN`, or store credentials; its failure points users to
 the explicit `credentials set` command.
 
-## Agent System Tool API
+## Agent System Tool Contract
 
 The tool contract lets Agent System register stable, agent-aware tools
 without duplicating identity, environment, credential, execution, redaction,
-or audit machinery. The same contract is intended to
-become a public tool API once OpenClaw has a supported cross-plugin runtime
-capability.
+or audit machinery. Publishing this contract as a stable, versioned public
+[Tool API](API.md) is a product goal once OpenClaw has a supported typed
+cross-plugin runtime capability.
 
 The responsibility boundary is:
 
@@ -1211,10 +1205,12 @@ real installed-plugin boundary.
 
 1. Add broader resource policy and a constrained direct-request helper only
    when a first-party tool proves the need.
-2. Propose a typed OpenClaw cross-plugin capability before exporting the tool
-   contract for third-party plugins.
-3. Add GOG or another external proving tool only after the supported public
-   boundary exists.
+2. Propose and implement a typed OpenClaw cross-plugin registration and runtime
+   capability.
+3. Export a versioned Agent System provider API with strict schema,
+   compatibility, policy, credential, lifecycle, and audit boundaries.
+4. Prove the public boundary with a compatible tool from another OpenClaw
+   plugin.
 
 ### Lifecycle completion
 
@@ -1244,11 +1240,11 @@ The first implementation does not include:
 - structured dependency or plugin declarations;
 - automatic installation at Gateway startup;
 - use of interactive or login shell startup files as a credential source;
-- hard prevention of every possible Git or GitHub bypass; or
+- hard prevention of every possible tool bypass; or
 - complete prediction or reversal of installation-script side effects.
 
-GOG and other tools beyond the first-party proving integrations are later tool
-work, not new Agent System core environment implementations.
+Tools beyond the first-party proving integrations are later tool work, not new
+Agent System core environment implementations.
 
 ## Open Decisions
 

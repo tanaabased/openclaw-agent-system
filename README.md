@@ -25,17 +25,15 @@ Today, Agent System:
 
 - registers an agent workspace with OpenClaw and reconciles its public identity
 - assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password Environment sources
-- supplies each Agent System tool only the agent-specific environment and credentials it declares instead of a shared global identity
-- configures `git` with the agent's author and committer identity without storing that identity in repository or global configuration
-- configures `gh` with the agent's GitHub identity, credentials, SSH keys, and private CLI settings
-- applies exact extension policy plus `allow`, `ask`, or `deny` selectors to force, rewrite, discard, delete, and unknown Git operations
-- applies `allow`, `ask`, or `deny` policy to destructive, administrative, and unknown GitHub operations
+- wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
+- applies each tool's operation-specific `allow`, `ask`, or `deny` policy before resolving credentials or executing the operation
+- uses a shared tool contract intended to become a public API for compatible tools from other OpenClaw plugins
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 
-Planned manifest capabilities include:
+Planned capabilities include:
 
 - installing and configuring agent dependencies, plugins, and memory integrations
-- configuring agent-specific GOG tooling
+- accepting compatible tools from other OpenClaw plugins through a public API
 - reconciling agent-owned cron jobs and other scheduled work
 
 ## Installation
@@ -63,29 +61,21 @@ agent:
     from-environment: AGENT_EMAIL
 
 environment:
-  # import this agent's email and github token from one 1password environment.
+  # import this agent's identity and tool credentials from one 1password environment.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   required:
     - AGENT_EMAIL
     - GH_TOKEN_TANAABOT
+    - SSH_KEY
 
 github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
-  policy:
-    destructive: ask
-    admin: deny
-    unknown: deny
-  config:
-    git-protocol: ssh
 
 git:
-  policy:
-    delete: ask
-    discard: ask
-    force: deny
-    rewrite: ask
-    unknown: deny
+  ssh:
+    private-keys:
+      from-environment: SSH_KEY
 ```
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
@@ -109,10 +99,15 @@ openclaw agent-system tool gh -- api user --jq .login
 
 ## Tools
 
-Agent System tools apply a workspace's declared agent environment and policy to a specific command surface.
+Agent System currently ships wrappers for:
 
-- [Git](./tools/git/README.md)
-- [GitHub CLI](./tools/github/README.md)
+- [`git`](./tools/git/README.md)
+- [`gh`](./tools/github/README.md)
+
+Each wrapper uses the shared Agent System runtime for trusted agent binding,
+environment and credential resolution, operation policy, execution, redaction,
+and auditing. A public [Tool API](./API.md) is planned so other OpenClaw plugins
+can add compatible wrappers through the same runtime.
 
 ## Development
 

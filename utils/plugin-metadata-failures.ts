@@ -94,6 +94,7 @@ const requiredPackageFiles = [
   'assets/agent-system.png',
   'openclaw.plugin.json',
   'README.md',
+  'API.md',
   'ADVANCED.md',
   'DEVELOPMENT.md',
   'CHANGELOG.md',

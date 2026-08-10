@@ -23,6 +23,7 @@ const packageMetadata: PackageMetadata = {
     'assets/agent-system.png',
     'openclaw.plugin.json',
     'README.md',
+    'API.md',
     'ADVANCED.md',
     'DEVELOPMENT.md',
     'CHANGELOG.md',
@@ -136,7 +137,8 @@ describe('utils/plugin-metadata-failures', () => {
         {
           ...packageMetadata,
           files: packageMetadata.files?.filter(
-            (path) => !['cli/', 'skills/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+            (path) =>
+              !['cli/', 'skills/', 'API.md', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
           ),
         },
         manifest,
@@ -144,6 +146,7 @@ describe('utils/plugin-metadata-failures', () => {
       [
         { code: 'package-file', message: 'package files must include cli/' },
         { code: 'package-file', message: 'package files must include skills/' },
+        { code: 'package-file', message: 'package files must include API.md' },
         { code: 'package-file', message: 'package files must include ADVANCED.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
       ],
