@@ -105,7 +105,9 @@ describe('lib/tool-runtime', () => {
     );
 
     assert.equal(result.output, 'status:AGENT_TOKEN');
-    assert.equal(result.commandResult.stdout, '"status:AGENT_TOKEN"\n');
+    assert.equal(result.kind, 'semantic');
+    assert.equal(Object.hasOwn(result, 'commandResult'), false);
+    assert.equal(auditEvents.at(-1)?.truncated, undefined);
     assert.deepEqual(events, [
       'authorize',
       'audit:pending',

@@ -151,7 +151,6 @@ export function createGitWorktreeToolDefinition(
     id: 'git-worktree',
     authorization: {
       authorize: authorizeGitOperation,
-      mode: 'agent-system',
       policyId: 'agent-system.git-worktree',
     },
     configuration: {

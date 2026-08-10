@@ -806,7 +806,7 @@ interface AgentSystemOperation {
 An Agent System-policy tool must not let destructive, admin, or unknown
 operations silently inherit read or ordinary-write policy. The GitHub CLI
 wrapper uses Agent System policy, while its selected GitHub token remains the
-provider's final authorization boundary. Credential containment checks remain
+remote service's final authorization boundary. Credential containment checks remain
 mandatory regardless of the manifest decision.
 
 The shared runtime lifecycle is:
@@ -830,41 +830,16 @@ exact request and asks before tool execution. An `allow once` response records
 a short-lived receipt bound to the agent, tool-call id, tool, and exact input;
 the runtime consumes it once at step 6. Direct command and launcher invocations
 have no originating approval conversation and reject an `ask` decision.
-Authorization mode and operation metadata remain explicit so provider
+Authorization mode and operation metadata remain explicit so remote-service
 authorization and Agent System policy do not become parallel execution paths.
 
 ### Tool definitions
 
-The internal tool contract supports a general direct executor and a
-fixed-executable CLI adapter. The exact TypeScript names remain subject to
-implementation validation, but the future public contract is conceptually:
-
-```ts
-defineAgentSystemTool(api, {
-  name,
-  capability,
-  description,
-  inputSchema,
-  classify,
-  execute,
-  normalize,
-  redact,
-  guidance,
-});
-
-defineAgentSystemCliTool(api, {
-  name,
-  capability,
-  description,
-  executable,
-  credentials,
-  classify,
-  validate,
-  normalize,
-  redact,
-  guidance,
-});
-```
+The internal tool contract supports general direct execution and a
+fixed-executable CLI adapter. A future cross-plugin boundary must preserve the
+same trusted agent binding, policy, credential, lifecycle, redaction, and audit
+invariants without making current internal TypeScript helpers public. The
+planned public surface belongs in [Tool API](./API.md).
 
 Tool execution context exposes purpose-built operations such as an
 approved fixed-executable runner and an origin-constrained fetch helper. It
@@ -967,7 +942,7 @@ configuration and behavior reference lives in the
 [GitHub CLI tool README](tools/github/README.md). Shipped behavior belongs in
 that tool guide and `ADVANCED.md`, not in this product specification.
 
-GitHub tokens remain the provider authorization boundary. Agent System adds
+GitHub tokens remain the remote-service authorization boundary. Agent System adds
 agent binding, isolated generated configuration, destructive, admin, and
 unknown-operation policy, late credential resolution, bounded execution,
 redaction, and audit through the shared tool runtime.
@@ -1219,7 +1194,7 @@ Completed behavior is documented in the user guides, tool READMEs, tests, and
    when a first-party tool proves the need.
 2. Propose and implement a typed OpenClaw cross-plugin registration and runtime
    capability.
-3. Export a versioned Agent System provider API with strict schema,
+3. Export a versioned Agent System Tool API with strict schema,
    compatibility, policy, credential, lifecycle, and audit boundaries.
 4. Prove the public boundary with a compatible tool from another OpenClaw
    plugin.

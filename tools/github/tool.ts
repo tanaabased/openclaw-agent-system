@@ -104,7 +104,6 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
     id: 'github',
     authorization: {
       authorize: authorizeGitHubOperation,
-      mode: 'agent-system',
       policyId: 'agent-system.github',
     },
     configuration: {

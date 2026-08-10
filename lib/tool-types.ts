@@ -122,7 +122,6 @@ export interface AgentSystemCliToolDefinition<
       operation: AgentSystemOperation,
       configuration: TDeclaredConfiguration,
     ): AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>;
-    mode: 'agent-system' | 'provider';
     policyId?: string;
   };
   id: string;
@@ -255,12 +254,33 @@ export interface AgentSystemSemanticToolDefinition<
   };
 }
 
-export interface AgentSystemToolExecutionResult {
+export interface AgentSystemToolExecutionMetadata {
   auditId: string;
-  commandResult: AgentSystemCliResult;
   operation: AgentSystemOperation;
-  output: unknown;
 }
+
+export interface AgentSystemCliToolExecutionPayload<TOutput = unknown> {
+  commandResult: AgentSystemCliResult;
+  kind: 'cli';
+  output: TOutput;
+}
+
+export interface AgentSystemSemanticToolExecutionPayload<TOutput = unknown> {
+  kind: 'semantic';
+  output: TOutput;
+}
+
+export type AgentSystemToolExecutionPayload<TOutput = unknown> =
+  AgentSystemCliToolExecutionPayload<TOutput> | AgentSystemSemanticToolExecutionPayload<TOutput>;
+
+export type AgentSystemCliToolExecutionResult<TOutput = unknown> =
+  AgentSystemToolExecutionMetadata & AgentSystemCliToolExecutionPayload<TOutput>;
+
+export type AgentSystemSemanticToolExecutionResult<TOutput = unknown> =
+  AgentSystemToolExecutionMetadata & AgentSystemSemanticToolExecutionPayload<TOutput>;
+
+export type AgentSystemToolExecutionResult<TOutput = unknown> =
+  AgentSystemCliToolExecutionResult<TOutput> | AgentSystemSemanticToolExecutionResult<TOutput>;
 
 export interface RegisteredAgentSystemTool {
   apiVersion: 1;

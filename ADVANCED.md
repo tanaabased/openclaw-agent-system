@@ -244,7 +244,7 @@ responsibility. Tool-specific lifecycle checks are documented in each tool guide
 
 Runs a registered command through its Agent System tool. The current release
 uses a closed registry, not an arbitrary executable or raw-secret interface. A
-public provider contract is planned in [Tool API](./API.md).
+public tool integration contract is planned in [Tool API](./API.md).
 
 ```text
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>

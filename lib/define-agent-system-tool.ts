@@ -24,7 +24,6 @@ interface ToolDefinition<TParameters extends TSchema, TDeclaredConfiguration> {
       operation: AgentSystemOperation,
       configuration: TDeclaredConfiguration,
     ): AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>;
-    mode: 'agent-system' | 'provider';
     policyId?: string;
   };
   commands?: AgentSystemToolCommand[];
@@ -89,9 +88,7 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
     });
 
   const registerTrustedPolicy =
-    definition.authorization?.mode === 'agent-system' &&
-    definition.authorization.authorize &&
-    definition.authorization.policyId
+    definition.authorization?.authorize && definition.authorization.policyId
       ? (
           api: Parameters<NonNullable<RegisteredAgentSystemTool['registerTrustedPolicy']>>[0],
           manifestService: Pick<AgentManifestService, 'loadForAgentId'>,

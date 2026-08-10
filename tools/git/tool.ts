@@ -17,11 +17,11 @@ import {
   resolveGitIdentity,
 } from './identity.ts';
 import {
-  authorizeGitOperation,
   classifyGitOperation,
   gitCommandPosition,
   isRawGitWorktreeMutation,
-} from './policy.ts';
+} from './operation-classifier.ts';
+import { authorizeGitOperation } from './policy.ts';
 import gitCommandHasSigningControl from './signing-control.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
@@ -214,7 +214,6 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
           extensionAvailable: dependencies.extensionAvailable,
         });
       },
-      mode: 'agent-system',
       policyId: 'agent-system.git',
     },
     configuration: {

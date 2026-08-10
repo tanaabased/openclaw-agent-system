@@ -30,6 +30,7 @@ describe('lib/define-agent-system-cli-tool', () => {
         calls.push({ input, scope, ...(signal ? { signal } : {}) });
         return {
           auditId: 'audit-id',
+          kind: 'cli' as const,
           commandResult: {
             exitCode: 0,
             stderr: '',

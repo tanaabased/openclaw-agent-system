@@ -17,13 +17,7 @@ describe('lib/define-agent-system-semantic-tool', () => {
         calls.push({ input, scope });
         return {
           auditId: 'audit-id',
-          commandResult: {
-            exitCode: 0,
-            stderr: '',
-            stdout: '',
-            timedOut: false,
-            truncated: false,
-          },
+          kind: 'semantic' as const,
           operation: { action: 'inspect', risk: 'read', summary: 'Inspect test data.' },
           output: 'semantic-result',
         };

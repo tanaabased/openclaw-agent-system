@@ -1,7 +1,7 @@
 # Tool API
 
-This guide records the planned public provider contract for OpenClaw plugins
-that want to add tools compatible with [Agent System](./README.md).
+This guide records the planned public tool integration contract for OpenClaw
+plugins that want to add tools compatible with [Agent System](./README.md).
 
 > [!IMPORTANT]
 > The public Tool API is not available in the current release. Agent System's
@@ -22,7 +22,7 @@ Agent System will own:
 - scoped environment and credential resolution
 - safe execution, redaction, auditing, and common diagnostics
 
-Each provider will own:
+Each compatible tool will own:
 
 - a stable tool id, model-input schema, and optional manifest schema
 - command or API behavior and operation classification
@@ -39,20 +39,20 @@ A compatible request will follow one shared sequence:
 4. resolve only the credentials and resources needed for the approved operation
 5. execute, redact, audit, and dispose of temporary material
 
-Providers will not receive a general raw-secret interface. Provider schemas and
-implementations will be statically supplied by installed plugin code, never
-loaded from a workspace manifest.
+Compatible tools will not receive a general raw-secret interface. Tool schemas
+and implementations will be statically supplied by installed plugin code,
+never loaded from a workspace manifest.
 
-## Planned Provider Contract
+## Planned Tool Integration Contract
 
 The eventual versioned contract is expected to cover:
 
 | Surface                  | Purpose                                                   |
 | ------------------------ | --------------------------------------------------------- |
-| API version              | Declare compatibility with the Agent System provider API. |
-| Provider id              | Give the provider a stable diagnostic and ownership key.  |
+| API version              | Declare compatibility with the Agent System Tool API.     |
+| Tool id                  | Give the tool a stable diagnostic and ownership key.      |
 | Tool definitions         | Supply static model schemas and operation behavior.       |
-| Configuration projection | Validate and resolve the provider's manifest section.     |
+| Configuration projection | Validate and resolve the tool's manifest section.         |
 | Lifecycle contributions  | Add optional validation, doctor, and install behavior.    |
 | Runtime handle           | Request approved execution and narrowly scoped resources. |
 
@@ -63,13 +63,13 @@ boundaries are real would create an API that Agent System cannot support.
 
 ## Security Requirements
 
-A public provider must preserve these boundaries:
+A public tool integration must preserve these boundaries:
 
 - policy and approval happen before credential resolution
-- provider input cannot select executable code, schemas, or modules
+- tool input cannot select executable code, schemas, or modules
 - secrets never enter model input, provenance, logs, diagnostics, or errors
 - temporary credentials have the smallest practical action scope and lifetime
-- remote provider permissions remain the final authorization boundary
+- remote-service permissions remain the final authorization boundary
 
 ## First-Party References
 

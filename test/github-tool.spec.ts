@@ -526,6 +526,8 @@ describe('tools/github/tool', () => {
       { source: 'command', workspaceDir },
     );
 
+    assert.equal(result.kind, 'cli');
+    if (result.kind !== 'cli') throw new Error('Expected CLI execution result.');
     assert.equal(result.commandResult.exitCode, 4);
     assert.equal(result.commandResult.stderr, 'request failed for [REDACTED]');
     assert.equal(logs.join('\n').includes('private-token'), false);

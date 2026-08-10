@@ -21,6 +21,7 @@ describe('cli/tool', () => {
         async invoke() {
           return {
             auditId: 'audit-id',
+            kind: 'cli' as const,
             commandResult: {
               exitCode: 4,
               stderr: 'not found\n',
@@ -44,5 +45,35 @@ describe('cli/tool', () => {
     assert.deepEqual(stdout, ['partial\n']);
     assert.deepEqual(stderr, ['not found\n']);
     assert.deepEqual(exitCodes, [4]);
+  });
+
+  it('should serialize semantic output for command invocation', async () => {
+    const stdout: string[] = [];
+
+    await runAgentSystemTool({
+      argv: ['list'],
+      command: 'worktree',
+      logger: { error() {}, info() {}, warn() {} },
+      output: { writeStdout: (value) => stdout.push(value) },
+      setExitCode() {},
+      toolRegistry: {
+        async invoke() {
+          return {
+            auditId: 'audit-id',
+            kind: 'semantic' as const,
+            operation: {
+              action: 'git.worktree.list',
+              risk: 'read' as const,
+              summary: 'List managed worktrees.',
+            },
+            output: [{ id: 'task-1', status: 'active' }],
+          };
+        },
+      },
+      toolRuntime: {} as never,
+      workspaceDir: '/workspace',
+    });
+
+    assert.deepEqual(stdout, ['[\n  {\n    "id": "task-1",\n    "status": "active"\n  }\n]\n']);
   });
 });

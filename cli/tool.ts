@@ -35,6 +35,11 @@ export default async function runAgentSystemTool(
         workspaceDir: options.workspaceDir,
       },
     );
+    if (result.kind === 'semantic') {
+      const serialized = JSON.stringify(result.output, undefined, 2);
+      if (serialized !== undefined) options.output.writeStdout(`${serialized}\n`);
+      return;
+    }
     if (result.commandResult.stdout) options.output.writeStdout(result.commandResult.stdout);
     if (result.commandResult.stderr) {
       (options.output.writeStderr ?? options.output.writeStdout)(result.commandResult.stderr);

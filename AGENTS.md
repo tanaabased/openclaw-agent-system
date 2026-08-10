@@ -13,7 +13,7 @@
 - Treat `agent.yaml` as workspace-owned desired state, not global OpenClaw configuration, an agent biography, or a secret store.
 - Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
-- Apply tool policy and approval before resolving credentials. Provider token permissions remain the final remote authorization boundary.
+- Apply tool policy and approval before resolving credentials. Remote-service token permissions remain the final authorization boundary.
 
 ## Documentation
 
@@ -52,6 +52,7 @@
 
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
 - Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, and `github` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
+- Keep the synthetic Leia SSH-key preparation shared across the `pr-examples-tests.yml` matrix. It creates an isolated per-job fixture rather than exposing a shared credential, and preserving one uniform workflow path is preferred over conditionally gating it to the Git scenario. Do not recommend narrowing this setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
 
 ## Validation
 

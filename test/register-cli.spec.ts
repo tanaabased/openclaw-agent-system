@@ -150,6 +150,7 @@ function createProgram() {
         calls.tool.push({ argv, command, scope });
         return {
           auditId: 'audit-id',
+          kind: 'cli' as const,
           commandResult: {
             exitCode: 0,
             stderr: '',

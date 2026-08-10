@@ -1,4 +1,4 @@
-import { gitCommandPosition } from './policy.ts';
+import { gitCommandPosition } from './operation-classifier.ts';
 import type { GitToolInput } from './tool-schema.ts';
 
 const commitSigningCommands = new Set([

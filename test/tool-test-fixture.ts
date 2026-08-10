@@ -76,7 +76,6 @@ export function createToolTestDefinition(
     id: 'test-tool',
     authorization: {
       authorize: options.authorize ?? (() => ({ status: 'allowed' })),
-      mode: 'agent-system',
       policyId: 'agent-system.test-tool',
     },
     commands: [{ command: 'test-tool' }],
@@ -115,7 +114,6 @@ export function createSemanticToolTestDefinition(
     id: 'test-semantic-tool',
     authorization: {
       authorize: options.authorize ?? (() => ({ status: 'allowed' })),
-      mode: 'agent-system',
       policyId: 'agent-system.test-semantic-tool',
     },
     commands: [{ command: 'test-semantic-tool' }],
