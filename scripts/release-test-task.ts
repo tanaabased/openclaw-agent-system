@@ -126,6 +126,7 @@ try {
     'dist/index.js.map',
     'index.ts',
     'bin/agent-system-ssh',
+    'bin/agent-system-tool',
     'bin/git',
     'bin/gh',
     'skills/git-cli/SKILL.md',
@@ -210,6 +211,13 @@ try {
     const commandPath = join(packageRoot, 'bin', 'git');
     await access(commandPath);
     const result = await run(commandPath, ['--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship the reusable Agent System tool launcher', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-tool');
+    await access(commandPath);
+    const result = await run(commandPath, ['git', '--agent-system']);
     assert.equal(result.output, 'agent-system\n');
   });
 

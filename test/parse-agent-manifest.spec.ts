@@ -555,6 +555,9 @@ git:
   name: Tanaabot
   email:
     from-environment: GIT_EMAIL
+  extensions:
+    lfs: allow
+    town: ask
   policy:
     delete: ask
     discard: deny
@@ -568,6 +571,10 @@ git:
     assert.deepEqual(result.manifest.git, {
       name: 'Tanaabot',
       email: { fromEnvironment: 'GIT_EMAIL' },
+      extensions: {
+        lfs: 'allow',
+        town: 'ask',
+      },
       policy: {
         delete: 'ask',
         discard: 'deny',
@@ -595,6 +602,28 @@ git:
   policy:
     destructive: ask
 `).has('manifest-unknown-key'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  extensions:
+    Town: allow
+`).has('manifest-unknown-key'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  extensions:
+    town: prompt
+`).has('manifest-schema'),
       true,
     );
   });

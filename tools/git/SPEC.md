@@ -67,6 +67,10 @@ git:
   email:
     from-environment: GIT_EMAIL
 
+  extensions:
+    lfs: allow
+    town: ask
+
   policy:
     delete: deny
     discard: deny
@@ -176,7 +180,7 @@ provider's broad hazard classes:
 | `rewrite` | `allow`, `ask`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
 | `discard` | `allow`, `ask`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
 | `delete`  | `allow`, `ask`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
-| `unknown` | `allow`, `ask`, `deny` | `deny`  | Unrecognized aliases, helpers, or command syntax       |
+| `unknown` | `allow`, `ask`, `deny` | `deny`  | Aliases, undeclared helpers, or unsupported syntax     |
 
 Recognized reads and ordinary writes are allowed. Hazard selectors take
 precedence over the command's ordinary behavior and accumulate when an
@@ -185,18 +189,28 @@ a force push selects `force` and `rewrite`; `reset --hard` selects `rewrite` and
 `discard`; a forced worktree removal selects `force`, `discard`, and `delete`.
 
 Ambiguous `checkout` forms select `discard`; callers use `switch` for branches
-and `restore` for paths when they need precise policy. Truly unrecognized
-commands retain a separate fail-closed boundary because Git may resolve them as
-repository aliases or arbitrary `git-*` helpers. Operators may explicitly allow
-that extension surface through `unknown`.
+and `restore` for paths when they need precise policy. Supported public Git
+command families are classified as reads, ordinary writes, or selected hazards;
+unsupported internal and plumbing syntax remains fail-closed.
+
+`git.extensions` is an exact mapping from external helper names to `allow`,
+`ask`, or `deny`. A `town` declaration applies only when `git-town` resolves as
+an executable on the effective process `PATH`, so repository aliases do not
+qualify. Built-in command and hazard classification always takes precedence.
+Agent System also masks each declared alias name through command-scoped
+configuration so a missing helper cannot fall back to repository alias content.
+The selected extension decision applies to the helper's complete private
+argument surface. Commands without an exact declaration retain the `unknown`
+decision, which may still explicitly allow the broad alias and helper surface.
 
 `ask` is available only to native `agent_system_git` calls with an originating
 OpenClaw approval conversation. Direct CLI and shim invocations reject an ask
 decision. Policy is applied before environment resolution or future SSH-key
 materialization.
 
-The classifier remains selector-first and compact rather than mirroring the
-entire versioned Git command tree. Tests own every recognized hazard and every
+The classifier remains selector-first and recognizes stable public command
+families rather than mirroring Git's versioned internal command tree. Tests own
+every recognized hazard, ordinary public family, extension boundary, and
 credential or executable escape hatch.
 
 ## SSH Authentication

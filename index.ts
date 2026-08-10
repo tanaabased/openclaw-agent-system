@@ -29,6 +29,7 @@ import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
 import createGitLifecycleContribution from './tools/git/lifecycle.ts';
+import createGitExtensionResolver from './tools/git/extension.ts';
 import GitSshResourceService from './tools/git/ssh-resource-service.ts';
 import { createGitTool } from './tools/git/tool.ts';
 import GitHubAccountClient from './tools/github/account-client.ts';
@@ -123,6 +124,10 @@ export default definePluginEntry({
       ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
       launcherPath: join(packageDir, 'bin', 'agent-system-ssh'),
     });
+    const gitExtensionAvailable = createGitExtensionResolver({
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
+      path: process.env.PATH ?? '',
+    });
     const lifecycleRegistry = new AgentSystemLifecycleRegistry([
       createAgentLifecycleContribution({
         environmentService: lifecycleEnvironmentService,
@@ -162,7 +167,10 @@ export default definePluginEntry({
     const doctorService = new AgentDoctorService({ lifecycleRegistry });
     const toolApprovals = new AgentSystemToolApprovalReceiptStore();
     const toolRegistry = new AgentSystemToolRegistry([
-      createGitTool({ sshResourceService: gitSshResourceService }),
+      createGitTool({
+        extensionAvailable: gitExtensionAvailable,
+        sshResourceService: gitSshResourceService,
+      }),
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
     const toolRuntime = new AgentSystemToolRuntime({

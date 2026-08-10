@@ -13,11 +13,13 @@ import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
 
 interface ResolvedGitConfiguration {
+  externalExtensions: string[];
   identity: ReturnType<typeof resolveGitIdentity>;
   ssh?: GitSshConfiguration;
 }
 
 export interface GitToolDependencies {
+  extensionAvailable?(name: string): Promise<boolean> | boolean;
   sshResourceService?: Pick<GitSshResourceService, 'acquire'> &
     Partial<Pick<GitSshResourceService, 'launcherEnvironment'>>;
 }
@@ -151,7 +153,11 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
     apiVersion: 1,
     id: 'git',
     authorization: {
-      authorize: authorizeGitOperation,
+      authorize(operation, configuration) {
+        return authorizeGitOperation(operation, configuration, {
+          extensionAvailable: dependencies.extensionAvailable,
+        });
+      },
       mode: 'agent-system',
       policyId: 'agent-system.git',
     },
@@ -159,6 +165,7 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
       read: readConfiguration,
       resolve(configuration, resolver): ResolvedGitConfiguration {
         return {
+          externalExtensions: Object.keys(configuration.git.extensions ?? {}).sort(),
           identity: resolveGitIdentity(configuration, resolver),
           ...(configuration.git.ssh === undefined ? {} : { ssh: configuration.git.ssh }),
         };
@@ -197,7 +204,11 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
           );
         }
         return {
-          ...gitIdentityEnvironment(configuration.identity),
+          ...gitIdentityEnvironment(
+            configuration.identity,
+            process.platform,
+            configuration.externalExtensions,
+          ),
           ...sshEnvironment,
         };
       },

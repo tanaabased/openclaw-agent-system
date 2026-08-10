@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -lt 1 ]; then
+  printf '%s\n' 'agent-system: a tool command is required' >&2
+  exit 2
+fi
+
+agent_system_tool_command=$1
+shift
+case "$agent_system_tool_command" in
+  '' | *[!a-z0-9-]*)
+    printf '%s\n' 'agent-system: the tool command is invalid' >&2
+    exit 2
+    ;;
+esac
+
+if [ "$#" -eq 1 ] && [ "$1" = '--agent-system' ]; then
+  printf '%s\n' agent-system
+  exit 0
+fi
+
+if ! agent_system_launcher_dir=$(
+  CDPATH='' cd -P "$(dirname "$0")" &&
+  pwd -P
+); then
+  printf '%s\n' 'agent-system: could not resolve the tool launcher directory' >&2
+  exit 1
+fi
+AGENT_SYSTEM_TOOL_LAUNCHER_DIR=$agent_system_launcher_dir
+export AGENT_SYSTEM_TOOL_LAUNCHER_DIR
+
+exec openclaw agent-system tool "$agent_system_tool_command" -- "$@"

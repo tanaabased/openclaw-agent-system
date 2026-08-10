@@ -18,7 +18,7 @@ describe('tools/git/identity', () => {
     );
 
     assert.deepEqual(identity, { email: 'git@example.com', name: 'Git Name' });
-    const environment = gitIdentityEnvironment(identity, 'darwin');
+    const environment = gitIdentityEnvironment(identity, 'darwin', ['town']);
     assert.equal(environment.GIT_AUTHOR_NAME, 'Git Name');
     assert.equal(environment.GIT_COMMITTER_EMAIL, 'git@example.com');
     assert.equal(environment.GIT_CONFIG_GLOBAL, '/dev/null');
@@ -27,6 +27,9 @@ describe('tools/git/identity', () => {
     assert.equal(environment.GIT_CONFIG_VALUE_3, '/dev/null');
     assert.equal(environment.GIT_CONFIG_KEY_4, 'credential.helper');
     assert.equal(environment.GIT_CONFIG_VALUE_4, '');
+    assert.equal(environment.GIT_CONFIG_KEY_5, 'alias.town');
+    assert.equal(environment.GIT_CONFIG_VALUE_5, '');
+    assert.equal(environment.GIT_CONFIG_COUNT, '6');
   });
 
   it('should fail with a stable configuration error when effective identity is unavailable', () => {

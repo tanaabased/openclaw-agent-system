@@ -170,6 +170,7 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | Path                  | Responsibility                                               |
 | --------------------- | ------------------------------------------------------------ |
 | `index.ts`            | Static plugin, tool, and lifecycle registration              |
+| `bin/`                | Packaged shims and shared tool or SSH launchers              |
 | `cli/`                | One implementation file per subcommand                       |
 | `lib/`                | CLI registration, lifecycle registry, and orchestration      |
 | `tools/<capability>/` | Tool schemas, execution, and optional lifecycle contribution |
@@ -178,5 +179,10 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | `test/`               | Flat behavior-focused unit tests                             |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
+
+Ordinary tool shims in `bin/` delegate to the sibling `agent-system-tool`
+launcher with their fixed registered command name. Keep argument handling,
+launcher-directory resolution, and the `--agent-system` probe in that shared
+launcher so future shims inherit the same failure and routing contract.
 
 Foundational `agent` and `path` lifecycle contributions live in `lib/`; capability contributions remain beside their optional model-facing tool definitions. Declaration validation is deterministic and side-effect free, doctor inspection is read-only, and reconciliation runs only through explicit install after global prerequisites pass. Register contributions in deterministic dependency order in `index.ts`, return explicit unchanged outcomes, and cover validation, inspection, reconciliation, and component-aware presentation directly. Public lifecycle behavior is exercised by the GitHub Actions-only `validate`, `install`, and `doctor` Leia scenarios.

@@ -909,16 +909,17 @@ third-party plugin route.
 
 ### Packaged command launchers
 
-Phase 2 may ship narrow executable launchers in Agent System's packaged `bin/`
+Phase 2 ships narrow executable shims in Agent System's packaged `bin/`
 directory. Phase 1 prepends the workspace bin first and the packaged bin last,
-so an agent-owned command remains the explicit higher-priority override. A
-packaged launcher passes its arguments unchanged to
+so an agent-owned command remains the explicit higher-priority override. Each
+shim delegates to the packaged `agent-system-tool` launcher, which resolves its
+canonical directory once and passes arguments unchanged to
 `openclaw agent-system tool <command> -- ...` through the caller's ordinary
-`PATH` and never receives agent credentials. The tool runtime then derives the
-agent from a trusted installed binding or an explicit operator-selected
-`--agent` and invokes a validated real executable without recursion. Native and
-command requests share operation metadata, authorization mode, credentials,
-redaction, audit, and errors; logs distinguish their source.
+`PATH`. The launcher never receives agent credentials. The tool runtime then
+derives the agent from a trusted installed binding or an explicit
+operator-selected `--agent` and invokes a validated real executable without
+recursion. Native and command requests share operation metadata, authorization
+mode, credentials, redaction, audit, and errors; logs distinguish their source.
 
 Launchers are routing convenience, not hard isolation. Absolute binary paths, PATH
 replacement, `command -p`, direct HTTP/SDK traffic, other tools, node-host

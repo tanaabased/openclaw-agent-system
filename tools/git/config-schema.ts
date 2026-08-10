@@ -32,6 +32,13 @@ const externalGitPrivateKeySourceSchema = Type.Union([
 export const externalGitSectionSchema = Type.Object(
   {
     email: Type.Optional(externalResolvableStringSchema),
+    extensions: Type.Optional(
+      Type.Record(
+        Type.String({ pattern: '^[a-z0-9][a-z0-9-]*$' }),
+        externalGitPolicyDecisionSchema,
+        { additionalProperties: false },
+      ),
+    ),
     name: Type.Optional(externalResolvableStringSchema),
     policy: Type.Optional(
       Type.Object(
@@ -83,6 +90,7 @@ export interface GitSshConfiguration {
 
 export interface GitManifestConfiguration {
   email?: ResolvableString;
+  extensions?: Record<string, GitPolicyDecision>;
   name?: ResolvableString;
   policy?: Partial<GitPolicyConfiguration>;
   ssh?: GitSshConfiguration;
@@ -121,6 +129,7 @@ export function decodeGitSection(value: ExternalGitSection): GitManifestConfigur
         : [privateKeys];
   return {
     ...(value.email === undefined ? {} : { email: decodeResolvableString(value.email) }),
+    ...(value.extensions === undefined ? {} : { extensions: { ...value.extensions } }),
     ...(value.name === undefined ? {} : { name: decodeResolvableString(value.name) }),
     ...(value.policy === undefined ? {} : { policy: { ...value.policy } }),
     ...(normalizedPrivateKeys === undefined

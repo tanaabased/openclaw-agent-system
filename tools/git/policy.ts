@@ -15,28 +15,47 @@ export type GitPolicyHazard = Exclude<keyof GitPolicyConfiguration, 'unknown'>;
 const hazardOrder: readonly GitPolicyHazard[] = ['force', 'rewrite', 'discard', 'delete'];
 const readCommands = new Set([
   'annotate',
+  'archive',
   'blame',
   'cat-file',
+  'check-attr',
+  'check-ignore',
+  'check-mailmap',
+  'check-ref-format',
+  'cherry',
   'count-objects',
   'describe',
   'diff',
+  'diff-files',
+  'diff-index',
   'diff-tree',
+  'difftool',
+  'fast-export',
   'for-each-ref',
   'fsck',
   'grep',
   'help',
+  'interpret-trailers',
   'log',
   'ls-files',
   'ls-remote',
   'ls-tree',
   'merge-base',
+  'merge-tree',
   'name-rev',
+  'patch-id',
+  'range-diff',
+  'request-pull',
   'rev-list',
   'rev-parse',
   'shortlog',
   'show',
+  'show-branch',
   'show-ref',
   'status',
+  'var',
+  'verify-commit',
+  'verify-tag',
   'version',
   'whatchanged',
 ]);
@@ -44,22 +63,32 @@ const writeCommands = new Set([
   'add',
   'am',
   'apply',
+  'backfill',
+  'bugreport',
   'cherry-pick',
   'clone',
   'commit',
+  'diagnose',
   'fetch',
   'format-patch',
   'init',
   'merge',
+  'mergetool',
   'mv',
+  'pack-refs',
   'pull',
   'push',
   'rebase',
   'repack',
   'revert',
   'rm',
+  'stage',
   'submodule',
 ]);
+
+export interface GitAuthorizationDependencies {
+  extensionAvailable?(name: string): Promise<boolean> | boolean;
+}
 
 export function gitCommandPosition(argv: readonly string[]): number {
   for (let index = 0; index < argv.length; index += 1) {
@@ -85,6 +114,14 @@ function hasForceRefspec(argv: readonly string[]): boolean {
   return argv.some((argument) => argument.startsWith('+') && argument.length > 1);
 }
 
+function pullRebases(argv: readonly string[]): boolean {
+  return argv.some((argument) => {
+    if (argument === '--rebase' || argument === '-r') return true;
+    if (!argument.startsWith('--rebase=')) return false;
+    return argument.slice('--rebase='.length).toLowerCase() !== 'false';
+  });
+}
+
 function uniqueHazards(hazards: readonly GitPolicyHazard[]): GitPolicyHazard[] {
   return hazardOrder.filter((hazard) => hazards.includes(hazard));
 }
@@ -93,17 +130,16 @@ function operation(
   risk: AgentSystemRisk,
   command: string,
   hazards: readonly GitPolicyHazard[] = [],
+  attributes: Record<string, string | number | boolean> = {},
 ): AgentSystemOperation {
   const selectedHazards = uniqueHazards(hazards);
+  const operationAttributes = {
+    ...Object.fromEntries(selectedHazards.map((hazard) => [`git.policy.${hazard}`, true])),
+    ...attributes,
+  };
   return {
     action: 'git.cli.invoke',
-    ...(selectedHazards.length === 0
-      ? {}
-      : {
-          attributes: Object.fromEntries(
-            selectedHazards.map((hazard) => [`git.policy.${hazard}`, true]),
-          ),
-        }),
+    ...(Object.keys(operationAttributes).length === 0 ? {} : { attributes: operationAttributes }),
     risk,
     summary: `Run git ${command}`,
     resources: [{ type: 'workspace', id: 'active-agent' }],
@@ -144,6 +180,12 @@ function classifyFetch(argv: readonly string[], command: string): AgentSystemOpe
   }
   if (hasFlag(argv, ['--prune', '--prune-tags', '-p', '-P'])) hazards.push('delete');
   return hazards.length === 0 ? operation('write', command) : hazardous(command, hazards);
+}
+
+function classifyPull(argv: readonly string[], command: string): AgentSystemOperation {
+  const operation = classifyFetch(argv, command);
+  if (!pullRebases(argv)) return operation;
+  return hazardous(command, [...gitOperationHazards(operation), 'rewrite']);
 }
 
 function classifyPush(argv: readonly string[], command: string): AgentSystemOperation {
@@ -197,6 +239,52 @@ function classifySwitch(argv: readonly string[], command: string): AgentSystemOp
   return operation('write', command);
 }
 
+function classifyBisect(argv: readonly string[], command: string): AgentSystemOperation {
+  const subcommand = argv[0]?.toLowerCase();
+  return ['log', 'visualize', 'view'].includes(subcommand ?? '')
+    ? operation('read', command)
+    : operation('write', command);
+}
+
+function classifyBundle(argv: readonly string[], command: string): AgentSystemOperation {
+  const subcommand = argv[0]?.toLowerCase();
+  return ['list-heads', 'verify'].includes(subcommand ?? '')
+    ? operation('read', command)
+    : operation('write', command);
+}
+
+function classifyNotes(argv: readonly string[], command: string): AgentSystemOperation {
+  let subcommand: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index]?.toLowerCase();
+    if (value === '--ref') {
+      index += 1;
+      continue;
+    }
+    if (value?.startsWith('--ref=')) continue;
+    if (value && !value.startsWith('-')) {
+      subcommand = value;
+      break;
+    }
+  }
+  if (!subcommand || ['get-ref', 'list', 'show'].includes(subcommand)) {
+    return operation('read', command);
+  }
+  return ['prune', 'remove'].includes(subcommand)
+    ? hazardous(command, ['delete'])
+    : operation('write', command);
+}
+
+function classifyRerere(argv: readonly string[], command: string): AgentSystemOperation {
+  const subcommand = argv[0]?.toLowerCase();
+  if (['diff', 'remaining', 'status'].includes(subcommand ?? '')) {
+    return operation('read', command);
+  }
+  return ['clear', 'forget', 'gc'].includes(subcommand ?? '')
+    ? hazardous(command, ['delete'])
+    : operation('write', command);
+}
+
 /** Classify stable Git command shapes before the executable can resolve git-* helpers. */
 export function classifyGitOperation(input: GitToolInput): AgentSystemOperation {
   const position = gitCommandPosition(input.argv);
@@ -209,6 +297,15 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
   if (command === 'config') return operation('read', command);
   if (command === 'branch') return classifyBranch(argv, command);
   if (command === 'tag') return classifyTag(argv, command);
+  if (command === 'bisect') return classifyBisect(argv, command);
+  if (command === 'bundle') return classifyBundle(argv, command);
+  if (command === 'notes') return classifyNotes(argv, command);
+  if (command === 'rerere') return classifyRerere(argv, command);
+  if (command === 'sparse-checkout') {
+    return argv[0]?.toLowerCase() === 'list'
+      ? operation('read', command)
+      : operation('write', command);
+  }
   if (command === 'remote') return operation('read', command);
   if (command === 'clean') {
     return hasFlag(argv, ['--dry-run', '-n'])
@@ -224,7 +321,8 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
   if (command === 'checkout') return classifyCheckout(argv, command);
   if (command === 'switch') return classifySwitch(argv, command);
   if (command === 'push') return classifyPush(argv, command);
-  if (command === 'fetch' || command === 'pull') return classifyFetch(argv, command);
+  if (command === 'fetch') return classifyFetch(argv, command);
+  if (command === 'pull') return classifyPull(argv, command);
   if (command === 'commit') {
     return hasFlag(argv, ['--amend'])
       ? hazardous(command, ['rewrite'])
@@ -283,11 +381,18 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
       ? hazardous(command, ['force', 'discard'])
       : operation('write', command);
   }
-  if (command === 'filter-branch') return hazardous(command, ['rewrite']);
-  if (command === 'gc' || command === 'prune') return hazardous(command, ['delete']);
+  if (command === 'fast-import' || command === 'filter-branch') {
+    return hazardous(command, ['rewrite']);
+  }
+  if (command === 'gc' || command === 'maintenance' || command === 'prune') {
+    return hazardous(command, ['delete']);
+  }
+  if (command === 'repack' && hasFlag(argv, ['--delete-redundant', '-A', '-d'])) {
+    return hazardous(command, ['delete']);
+  }
   if (readCommands.has(command)) return operation('read', command);
   if (writeCommands.has(command)) return operation('write', command);
-  return operation('unknown', command);
+  return operation('unknown', command, [], { 'git.extension': command });
 }
 
 function policyReferences(hazards: readonly (GitPolicyHazard | 'unknown')[]): string {
@@ -299,11 +404,44 @@ function hazardLabel(hazards: readonly (GitPolicyHazard | 'unknown')[]): string 
 }
 
 /** Apply the manifest's Git-specific hazard policy after classification. */
-export function authorizeGitOperation(
+export async function authorizeGitOperation(
   operation: AgentSystemOperation,
   configuration: GitToolConfiguration,
-): AgentSystemAuthorizationDecision {
+  dependencies: GitAuthorizationDependencies = {},
+): Promise<AgentSystemAuthorizationDecision> {
   if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };
+  const extension = operation.attributes?.['git.extension'];
+  if (
+    operation.risk === 'unknown' &&
+    typeof extension === 'string' &&
+    Object.hasOwn(configuration.git.extensions ?? {}, extension)
+  ) {
+    const decision = configuration.git.extensions?.[extension] ?? 'deny';
+    if (decision === 'deny') {
+      return {
+        status: 'denied',
+        reason: `Git extension ${extension} is denied by git.extensions.${extension}.`,
+      };
+    }
+    if (!(await dependencies.extensionAvailable?.(extension))) {
+      return {
+        status: 'denied',
+        reason: `Git extension ${extension} is unavailable as an external git-${extension} executable.`,
+      };
+    }
+    if (decision === 'ask') {
+      return {
+        status: 'approval_required',
+        reason: `Git extension ${extension} requires approval in an OpenClaw agent conversation; direct tool commands cannot request approval.`,
+        request: {
+          description: `Allow the active agent to ${operation.summary.toLowerCase()}?`,
+          severity: 'warning',
+          title: `Approve Git extension ${extension}`,
+        },
+      };
+    }
+    return { status: 'allowed' };
+  }
   const policy = resolveGitPolicyConfiguration(configuration.git);
   const hazards: Array<GitPolicyHazard | 'unknown'> =
     operation.risk === 'destructive' ? gitOperationHazards(operation) : ['unknown'];

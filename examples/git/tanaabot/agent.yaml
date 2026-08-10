@@ -11,6 +11,8 @@ environment:
     GIT_SSH_PRIVATE_KEY: $AGENT_SYSTEM_LEIA_GIT_PRIVATE_KEY
 
 git:
+  extensions:
+    agent-system-test: allow
   ssh:
     private-keys:
       from-environment: GIT_SSH_PRIVATE_KEY

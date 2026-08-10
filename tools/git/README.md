@@ -48,6 +48,9 @@ agent:
     from-environment: AGENT_EMAIL
 
 git:
+  extensions:
+    lfs: allow
+    town: ask
   ssh:
     private-keys:
       from-environment: GIT_SSH_PRIVATE_KEY
@@ -76,6 +79,25 @@ fall through to repository, global, or system Git identity.
 
 Sets both author and committer email for the Git child. A missing or unresolved
 effective value fails the operation.
+
+### `git.extensions`
+
+| Type                                     | Required | Default |
+| ---------------------------------------- | -------- | ------- |
+| exact command-to-policy-decision mapping | no       | none    |
+
+Assigns `allow`, `ask`, or `deny` to named external Git helpers. A key such as
+`town` applies only when `git-town` is executable on the effective process
+`PATH`; repository aliases do not satisfy the declaration. Built-in command
+and hazard classification takes precedence over a matching extension name.
+Agent System masks the same alias name in command-scoped configuration so a
+missing or disappearing helper cannot fall back to repository alias content.
+
+An allowed extension is trusted for its complete private argument surface,
+which Agent System cannot classify. An undeclared command falls through to
+`git.policy.unknown`; an exact decision can therefore permit one helper while
+the remaining extension surface stays denied. A declared helper that is not
+executable is denied rather than falling back to an alias.
 
 ### `git.ssh.private-keys`
 
@@ -113,20 +135,22 @@ tool call completes. Local-only commands do not acquire SSH resources. Run
 | `rewrite` | `allow`, `ask`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
 | `discard` | `allow`, `ask`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
 | `delete`  | `allow`, `ask`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
-| `unknown` | `allow`, `ask`, `deny` | `deny`  | Unrecognized aliases, helpers, or command syntax       |
+| `unknown` | `allow`, `ask`, `deny` | `deny`  | Aliases, undeclared helpers, or unsupported syntax     |
 
-Recognized reads and ordinary writes are allowed. Hazard selectors take
+Supported public reads and ordinary writes are allowed. Hazard selectors take
 precedence and one invocation may select several policies; every selected
 policy must allow the operation. For example, a force push selects `force` and
 `rewrite`, while `reset --hard` selects `rewrite` and `discard`.
 
 `checkout` is ambiguous between branch switching and path restoration. Prefer
 `switch` for branches and `restore` for paths; otherwise Agent System treats the
-ambiguous form as `discard`. `unknown: allow` also permits Git to discover
-aliases and `git-*` helpers, so retain the deny default unless that extension
-surface is trusted explicitly. `ask` works only through `agent_system_git`
-during an OpenClaw agent turn; direct CLI and shim invocations reject operations
-that require an approval conversation.
+ambiguous form as `discard`. Public command families with internal or
+destructive syntax remain effect-classified or `unknown`; low-level plumbing is
+not automatically trusted. `unknown: allow` permits Git to discover aliases and
+undeclared `git-*` helpers, so prefer exact `git.extensions` declarations.
+`ask` works only through `agent_system_git` during an OpenClaw agent turn;
+direct CLI and shim invocations reject operations that require an approval
+conversation.
 
 Agent System disables operator-global and system Git configuration, terminal
 prompts, hooks, pagers, and editors for the child. Managed SSH also bypasses
@@ -168,8 +192,9 @@ git --agent-system
 git status --short
 ```
 
-The shim passes arguments through `openclaw agent-system tool git` and preserves
-the caller's directory when it is inside the bound workspace. The runtime
+The shim delegates through the reusable packaged `agent-system-tool` launcher,
+which passes arguments to `openclaw agent-system tool git`, exports the
+canonical launcher directory, and preserves the caller's directory. The runtime
 resolves the real `git` executable while excluding Agent System-managed command
 paths to prevent wrapper recursion.
 

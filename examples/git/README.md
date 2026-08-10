@@ -52,6 +52,10 @@ AGENT_SYSTEM_LEIA_GIT_PRIVATE_KEY="$(cat "$TMPDIR/agent-system-git-tanaabot/id_e
 # should identify the agent system git command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
 
+# should run one explicitly allowed external git extension
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+PATH="$GITHUB_WORKSPACE/examples/git/tanaabot/bin:$GITHUB_WORKSPACE/bin:$PATH" git agent-system-test | grep -Fx 'agent-system-extension'
+
 # should deny an alternate force push before git execution
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git push origin +main:main 2>&1)"; then

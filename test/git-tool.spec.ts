@@ -140,6 +140,37 @@ describe('tools/git/tool', () => {
     assert.deepEqual(environmentCalls, []);
   });
 
+  it('should authorize only declared external extensions before loading environment', async () => {
+    const environmentCalls: string[] = [];
+    const requests: AgentSystemCliRunRequest[] = [];
+    manifest.git = { extensions: { town: 'allow' } };
+    const registry = new AgentSystemToolRegistry([
+      createGitTool({ extensionAvailable: async (name) => name === 'town' }),
+    ]);
+    const runtime = createRuntime(requests, environmentCalls);
+
+    await registry.invoke('git', runtime, ['town', 'status'], {
+      source: 'command',
+      workspaceDir: repositoryDir,
+    });
+    assert.deepEqual(environmentCalls, ['data']);
+    assert.deepEqual(requests[0]?.argv, ['town', 'status']);
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_5, 'alias.town');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_VALUE_5, '');
+
+    environmentCalls.length = 0;
+    manifest.git = { extensions: { missing: 'allow' } };
+    await assert.rejects(
+      registry.invoke('git', runtime, ['missing'], {
+        source: 'command',
+        workspaceDir: repositoryDir,
+      }),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'operation_unclassified',
+    );
+    assert.deepEqual(environmentCalls, []);
+  });
+
   it('should acquire managed ssh only for remote-capable commands', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];

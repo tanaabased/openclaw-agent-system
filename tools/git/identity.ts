@@ -52,6 +52,7 @@ export function resolveGitIdentity(
 export function gitIdentityEnvironment(
   identity: ResolvedGitIdentity,
   platform: NodeJS.Platform = process.platform,
+  externalExtensions: readonly string[] = [],
 ): Record<string, string> {
   const nullPath = platform === 'win32' ? 'NUL' : '/dev/null';
   const configuration = [
@@ -60,6 +61,7 @@ export function gitIdentityEnvironment(
     ['user.useConfigOnly', 'true'],
     ['core.hooksPath', nullPath],
     ['credential.helper', ''],
+    ...externalExtensions.map((extension) => [`alias.${extension}`, ''] as const),
   ] as const;
   const environment: Record<string, string> = {
     GIT_AUTHOR_EMAIL: identity.email,
