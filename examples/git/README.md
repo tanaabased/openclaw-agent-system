@@ -52,6 +52,13 @@ AGENT_SYSTEM_LEIA_GIT_PRIVATE_KEY="$(cat "$TMPDIR/agent-system-git-tanaabot/id_e
 # should identify the agent system git command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
 
+# should deny an alternate force push before git execution
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git push origin +main:main 2>&1)"; then
+  exit 1
+fi
+printf '%s\n' "$output" | grep -F 'git.policy.destructive'
+
 # should validate the inherited git identity from a nested directory
 mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"

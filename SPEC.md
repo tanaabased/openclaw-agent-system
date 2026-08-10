@@ -16,12 +16,14 @@ as cron synchronization.
 
 Agent System also defines a tool contract so its own tools can share agent
 binding, credential resolution, policy, redaction, safe process execution, and
-audit behavior. The shipped [GitHub CLI tool](tools/github/README.md) proves that
-contract; the planned [Git tool](tools/git/SPEC.md) extends it to local Git
-identity, SSH authentication, and signing. GOG and other service integrations
-may implement the same contract later. A public cross-plugin SDK remains a
-product goal, but depends on a supported OpenClaw runtime capability rather than
-an ad hoc process-global registry.
+audit behavior. The shipped [GitHub CLI](tools/github/README.md) and
+[Git](tools/git/README.md) tools prove that contract. Git currently provides
+local identity, workspace containment, operation policy, and unencrypted SSH
+authentication from declared paths or the completed environment. Direct
+1Password key references, encrypted keys, and signing remain planned. GOG and
+other service integrations may implement the same contract later. A public
+cross-plugin SDK remains a product goal, but depends on a supported OpenClaw
+runtime capability rather than an ad hoc process-global registry.
 
 This specification records initial product intent and boundaries. The package is
 `@tanaab/openclaw-agent-system`, the OpenClaw plugin id is `agent-system`, the
@@ -108,12 +110,13 @@ Phase 2 delivers:
   Phase 1 prepended path, while preserving workspace-bin precedence; and
 - tool, capability, executable, config, and routing diagnostics.
 
-The shipped [GitHub CLI tool](tools/github/README.md) and first
-[Git tool](tools/git/README.md) slice own their configuration, command, policy,
-credential, documentation, and verification contracts. Planned Git
-authentication and signing remain in the [tool specification](tools/git/SPEC.md).
-Broader resource policy and a constrained direct-request helper remain
-secondary Phase 2 work.
+The shipped [GitHub CLI](tools/github/README.md) and
+[Git](tools/git/README.md) tools own their configuration, command, policy,
+credential, documentation, and verification contracts. The Git tool currently
+supports unencrypted path and completed-environment SSH key sources; direct
+1Password key references, encrypted keys, and signing remain in the
+[tool specification](tools/git/SPEC.md). Broader resource policy and a
+constrained direct-request helper remain secondary Phase 2 work.
 
 Publishing the tool contract for third-party plugins follows only after
 OpenClaw exposes or accepts a supported typed cross-plugin capability. The
@@ -255,7 +258,7 @@ Identity follows these rules:
   Git author and committer name.
 - `agent.email` is a literal or environment-backed default Git author and
   committer email. OpenClaw identity does not currently consume it, so install
-  does not resolve it until a later Git consumer needs it.
+  does not resolve it; the Git tool resolves it when an invocation needs it.
 - `agent.description` and `agent.avatar` remain literal values.
 - Explicit `install` requires `agent.name` and reconciles `agent.id`, `agent.name`,
   and a declared `agent.avatar` with OpenClaw's agent registration and identity.
@@ -959,17 +962,18 @@ redaction, and audit through the shared tool runtime.
 
 ### Git
 
-The next first-party integration provides `agent_system_git`,
+The shipped Git integration provides `agent_system_git`,
 `openclaw agent-system tool git`, and the packaged `git` shim over one fixed
 real Git executable. Its detailed manifest, identity, working-directory,
 policy, SSH authentication, signing, visual identity, delivery, and
 verification design lives in the [Git tool specification](tools/git/SPEC.md).
 
-The initial Git slice projects effective author and committer identity from
+The Git tool projects effective author and committer identity from
 `git.name` and `git.email`, falling back to the corresponding agent identity,
-without modifying Gateway, global, or repository configuration. SSH private-key
-materialization and signing follow only after the shared runtime guarantees
-invocation-scoped credential-resource cleanup.
+without modifying Gateway, global, or repository configuration. Remote-capable
+commands can load unencrypted private keys from declared paths or the completed
+Agent System environment into an isolated invocation-scoped SSH agent. Direct
+1Password key references, encrypted keys, and signing remain future slices.
 
 ### Tool verification contract
 
@@ -1196,11 +1200,11 @@ Completed behavior is documented in the user guides, tool READMEs, tests, and
 
 ### Git tool
 
-Implement the [Git tool specification](tools/git/SPEC.md) in independent
-identity, SSH authentication, signing, and constrained-configuration slices.
-Each slice statically composes its schema, reuses the shared tool runtime, and
-adds focused direct tests plus only the Leia coverage needed for a real
-installed-plugin boundary.
+Continue the [Git tool specification](tools/git/SPEC.md) with direct 1Password
+key references, encrypted-key support, signing, and constrained-configuration
+slices. Each slice statically composes its schema, reuses the shared tool
+runtime, and adds focused direct tests plus only the Leia coverage needed for a
+real installed-plugin boundary.
 
 ### Tool platform expansion
 

@@ -72,6 +72,10 @@ function hasFlag(argv: readonly string[], flags: readonly string[]): boolean {
   );
 }
 
+function hasForceRefspec(argv: readonly string[]): boolean {
+  return argv.some((argument) => argument.startsWith('+') && argument.length > 1);
+}
+
 function operation(risk: AgentSystemRisk, command: string): AgentSystemOperation {
   return {
     action: 'git.cli.invoke',
@@ -82,15 +86,24 @@ function operation(risk: AgentSystemRisk, command: string): AgentSystemOperation
 }
 
 function classifyBranch(argv: readonly string[]): AgentSystemRisk {
-  if (hasFlag(argv, ['--delete', '-d', '-D'])) return 'destructive';
+  if (hasFlag(argv, ['--delete', '--force', '-d', '-D', '-f', '-M', '-C'])) {
+    return 'destructive';
+  }
   if (argv.length === 0 || hasFlag(argv, ['--list', '--show-current', '-l'])) return 'read';
   return 'write';
 }
 
 function classifyTag(argv: readonly string[]): AgentSystemRisk {
-  if (hasFlag(argv, ['--delete', '-d'])) return 'destructive';
+  if (hasFlag(argv, ['--delete', '--force', '-d', '-f'])) return 'destructive';
   if (argv.length === 0 || hasFlag(argv, ['--list', '-l'])) return 'read';
   return 'write';
+}
+
+function classifyFetch(argv: readonly string[]): AgentSystemRisk {
+  return hasForceRefspec(argv) ||
+    hasFlag(argv, ['--force', '--prune', '--prune-tags', '-f', '-p', '-P'])
+    ? 'destructive'
+    : 'write';
 }
 
 /** Classify stable Git command shapes before the executable can resolve git-* helpers. */
@@ -123,18 +136,31 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
   }
   if (command === 'checkout' || command === 'switch') {
     return operation(
-      hasFlag(argv, ['--discard-changes', '--force', '-f']) ? 'destructive' : 'write',
+      hasFlag(argv, ['--discard-changes', '--force', '-f', '-B', '-C']) ? 'destructive' : 'write',
       command,
     );
   }
   if (command === 'push') {
     const deletesRef = argv.some((value) => value.startsWith(':'));
     return operation(
-      deletesRef || hasFlag(argv, ['--delete', '--force', '--force-with-lease', '-d', '-f'])
+      deletesRef ||
+        hasForceRefspec(argv) ||
+        hasFlag(argv, [
+          '--delete',
+          '--force',
+          '--force-with-lease',
+          '--mirror',
+          '--prune',
+          '-d',
+          '-f',
+        ])
         ? 'destructive'
         : 'write',
       command,
     );
+  }
+  if (command === 'fetch' || command === 'pull') {
+    return operation(classifyFetch(argv), command);
   }
   if (command === 'reflog') {
     return operation(

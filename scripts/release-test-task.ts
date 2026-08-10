@@ -199,16 +199,6 @@ try {
     assert.equal(typeof builtModule.default?.register, 'function');
   });
 
-  await check('ship an executable Agent System path probe', async () => {
-    const probePath = join(packageRoot, 'bin', 'agent-system-test');
-    await access(probePath);
-    const result = await run(probePath, []);
-    const packageMetadata = JSON.parse(
-      await readFile(join(packageRoot, 'package.json'), 'utf8'),
-    ) as PackageMetadata;
-    assert.equal(result.output.trim(), packageMetadata.version);
-  });
-
   await check('ship an executable Agent System gh command', async () => {
     const commandPath = join(packageRoot, 'bin', 'gh');
     await access(commandPath);

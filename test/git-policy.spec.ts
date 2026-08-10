@@ -25,7 +25,18 @@ describe('tools/git/policy', () => {
   it('should classify destructive operations before unknown policy applies', () => {
     for (const argv of [
       ['push', '--force', 'origin', 'main'],
+      ['push', 'origin', '+main:main'],
+      ['push', '--mirror', 'origin'],
+      ['push', '--prune', 'origin'],
+      ['fetch', '--force', 'origin'],
+      ['fetch', '--prune-tags', 'origin'],
+      ['pull', '--prune', 'origin'],
       ['branch', '-D', 'old'],
+      ['branch', '-M', 'main'],
+      ['branch', '-C', 'copy'],
+      ['tag', '-f', 'release'],
+      ['checkout', '-B', 'main'],
+      ['switch', '-C', 'main'],
       ['reset', '--hard', 'HEAD~1'],
       ['clean', '-fd'],
       ['prune'],
@@ -33,6 +44,21 @@ describe('tools/git/policy', () => {
       const operation = classifyGitOperation({ argv });
       assert.equal(operation.risk, 'destructive');
       assert.equal(authorizeGitOperation(operation, configuration).status, 'denied');
+    }
+  });
+
+  it('should preserve ordinary ref and branch updates as writes', () => {
+    for (const argv of [
+      ['push', 'origin', 'main'],
+      ['fetch', 'origin', 'main'],
+      ['pull', 'origin', 'main'],
+      ['branch', '-m', 'renamed'],
+      ['branch', '-c', 'copy'],
+      ['tag', 'release'],
+      ['checkout', '-b', 'feature'],
+      ['switch', '-c', 'feature'],
+    ]) {
+      assert.equal(classifyGitOperation({ argv }).risk, 'write');
     }
   });
 

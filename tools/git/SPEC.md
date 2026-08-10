@@ -87,8 +87,9 @@ Agent System never falls through to a host or repository Git identity. An empty
 `git: {}` section is valid only when the agent section supplies both effective
 values.
 
-Future SSH authentication and signing fields are defined below but must not be
-added to the manifest schema until their owning runtime behavior exists.
+Future direct 1Password, encrypted-key, and signing fields are defined below
+but must not be added to the manifest schema until their owning runtime behavior
+exists.
 
 ## Tool Input and Execution
 
@@ -171,8 +172,9 @@ The initial Git policy has two configurable hazard classes:
 | `unknown`     | `allow`, `ask`, `deny` | `deny`  | Syntax Agent System cannot classify safely |
 
 Read and ordinary write operations are allowed. Known destructive operations
-include force pushes, ref deletion, destructive reset and clean modes, and
-object-pruning operations. Known hazards take precedence over unknown policy.
+include force refspecs, mirror and prune modes, forced branch and tag
+replacement, ref deletion, destructive reset and clean modes, and object-pruning
+operations. Known hazards take precedence over unknown policy.
 
 `ask` is available only to native `agent_system_git` calls with an originating
 OpenClaw approval conversation. Direct CLI and shim invocations reject an ask
@@ -243,12 +245,10 @@ temporary socket directory, loads only the selected keys, gives Git only
 directory. Raw private-key values never enter Git arguments, child environment,
 logs, audit, errors, or returned output.
 
-Before implementation, a macOS and Ubuntu compatibility spike must determine
-whether OpenSSH can reliably load raw key material without an Agent
-System-created private-key file. If it cannot, the documented fallback is an
-owner-only `0600` temporary file removed by the guaranteed finalizer. The
-product must not claim that a key never touched disk unless that behavior is
-proven on every supported platform.
+The completed macOS and Ubuntu compatibility proof established that OpenSSH can
+load raw completed-environment key material through `ssh-add` standard input.
+Agent System therefore does not create a private-key file for that source.
+Path sources continue to read the operator-declared file without copying it.
 
 The 1Password desktop SSH agent may be supported later as an explicit
 workstation mode where private key material never leaves 1Password. It is not

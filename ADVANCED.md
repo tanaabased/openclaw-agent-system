@@ -92,13 +92,13 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 
 ### `agent`
 
-| Field         | Type                               | Required      | Behavior                                                         |
-| ------------- | ---------------------------------- | ------------- | ---------------------------------------------------------------- |
-| `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
-| `name`        | string or `from-environment` value | for `install` | OpenClaw display name applied by `install`.                      |
-| `email`       | string or `from-environment` value | no            | Reserved for a Git identity consumer.                            |
-| `description` | string                             | no            | Validated for later identity surfaces.                           |
-| `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained. |
+| Field         | Type                               | Required      | Behavior                                                           |
+| ------------- | ---------------------------------- | ------------- | ------------------------------------------------------------------ |
+| `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.              |
+| `name`        | string or `from-environment` value | for `install` | OpenClaw display name applied by `install`.                        |
+| `email`       | string or `from-environment` value | no            | Default Git author and committer email when `git.email` is absent. |
+| `description` | string                             | no            | Validated for later identity surfaces.                             |
+| `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained.   |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
