@@ -75,11 +75,11 @@ PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git commit --quiet --message 'verify managed identity'
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
 
-# should resolve generated and 1password-backed keys into the managed ssh agent
+# should report managed ssh dependencies as healthy
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git SSH authentication dependencies are available'
 
-# should authenticate to github through the isolated agent system ssh identity
+# should load both configured keys and authenticate with the registered generated key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git ls-remote git@github.com:tanaabased/openclaw-agent-system.git HEAD | grep -F 'HEAD'
 ```

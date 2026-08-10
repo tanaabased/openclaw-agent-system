@@ -984,8 +984,9 @@ The Git tool projects effective author and committer identity from
 `git.name` and `git.email`, falling back to the corresponding agent identity,
 without modifying Gateway, global, or repository configuration. Remote-capable
 commands can load unencrypted private keys from declared paths or the completed
-Agent System environment into an isolated invocation-scoped SSH agent. Direct
-1Password key references, encrypted keys, and signing remain future slices.
+Agent System environment into an isolated invocation-scoped SSH agent.
+Completed-environment keys may come from direct 1Password secret references;
+encrypted keys and signing remain future slices.
 
 ### Tool verification contract
 
