@@ -118,11 +118,13 @@ export default definePluginEntry({
       ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
     });
     const gitSshResourceService = new GitSshResourceService({
+      authenticationLauncherPath: join(packageDir, 'bin', 'agent-system-ssh'),
       baseEnvironment: process.env,
       ...(process.getuid === undefined ? {} : { currentUid: process.getuid() }),
       excludedExecutableDirectories: excludedToolExecutableDirectories,
       ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
-      launcherPath: join(packageDir, 'bin', 'agent-system-ssh'),
+      signingKeyLauncherPath: join(packageDir, 'bin', 'agent-system-ssh-signing-key'),
+      signingProgramPath: join(packageDir, 'bin', 'agent-system-ssh-keygen'),
     });
     const gitExtensionAvailable = createGitExtensionResolver({
       excludedExecutableDirectories: excludedToolExecutableDirectories,

@@ -174,7 +174,7 @@ describe('tools/git/tool', () => {
     assert.deepEqual(environmentCalls, []);
   });
 
-  it('should acquire managed ssh only for remote-capable commands', async () => {
+  it('should prepare managed ssh for every configured git invocation', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];
     manifest.git = {
@@ -193,12 +193,6 @@ describe('tools/git/tool', () => {
               environment: { GIT_SSH: '/package/bin/agent-system-ssh' },
             };
           },
-          launcherEnvironment() {
-            return {
-              GIT_SSH: '/package/bin/agent-system-ssh',
-              GIT_SSH_VARIANT: 'ssh',
-            };
-          },
         },
       }),
     ]);
@@ -208,9 +202,8 @@ describe('tools/git/tool', () => {
       source: 'command',
       workspaceDir: repositoryDir,
     });
-    assert.deepEqual(events, []);
+    assert.deepEqual(events, ['acquire:1', 'dispose']);
     assert.equal(requests[0]?.environment.GIT_SSH, '/package/bin/agent-system-ssh');
-    assert.equal(requests[0]?.environment.AGENT_SYSTEM_SSH_CONFIG, undefined);
     await registry.invoke(
       'git',
       runtime,
@@ -218,11 +211,11 @@ describe('tools/git/tool', () => {
       { source: 'command', workspaceDir: repositoryDir },
     );
 
-    assert.deepEqual(events, ['acquire:1', 'dispose']);
+    assert.deepEqual(events, ['acquire:1', 'dispose', 'acquire:1', 'dispose']);
     assert.equal(requests[1]?.environment.GIT_SSH, '/package/bin/agent-system-ssh');
   });
 
-  it('should materialize a signing key only for signed object creation', async () => {
+  it('should prepare universal signing helpers without exposing a generic ssh socket', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];
     const allowedSignersFile = join(workspaceDir, '.agent-system', 'allowed_signers');
@@ -250,10 +243,12 @@ describe('tools/git/tool', () => {
                 events.push('dispose');
               },
               environment: {
-                GIT_CONFIG_COUNT: '11',
-                GIT_CONFIG_KEY_10: 'user.signingKey',
-                GIT_CONFIG_VALUE_10: 'key::ssh-ed25519 AAAATEST',
-                SSH_AUTH_SOCK: '/tmp/signing-agent.sock',
+                AGENT_SYSTEM_SSH_SIGNING_SOCKET: '/tmp/signing-agent.sock',
+                GIT_CONFIG_COUNT: '12',
+                GIT_CONFIG_KEY_10: 'gpg.ssh.defaultKeyCommand',
+                GIT_CONFIG_KEY_11: 'gpg.ssh.program',
+                GIT_CONFIG_VALUE_10: "'/package/bin/agent-system-ssh-signing-key'",
+                GIT_CONFIG_VALUE_11: "'/package/bin/agent-system-ssh-keygen'",
               },
               sensitiveValues: ['private-key-material'],
             };
@@ -267,8 +262,8 @@ describe('tools/git/tool', () => {
       source: 'command',
       workspaceDir: repositoryDir,
     });
-    assert.deepEqual(events, []);
-    assert.equal(requests[0]?.environment.GIT_CONFIG_COUNT, '10');
+    assert.deepEqual(events, ['acquire', 'dispose']);
+    assert.equal(requests[0]?.environment.GIT_CONFIG_COUNT, '12');
     assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_5, 'gpg.format');
     assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_6, 'commit.gpgSign');
     assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_7, 'tag.gpgSign');
@@ -276,17 +271,23 @@ describe('tools/git/tool', () => {
     assert.equal(requests[0]?.environment.GIT_CONFIG_VALUE_8, await realpath(allowedSignersFile));
     assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_9, 'gpg.minTrustLevel');
     assert.equal(requests[0]?.environment.GIT_CONFIG_VALUE_9, 'fully');
-    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_10, undefined);
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_10, 'gpg.ssh.defaultKeyCommand');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_11, 'gpg.ssh.program');
+    assert.equal(requests[0]?.environment.SSH_AUTH_SOCK, undefined);
 
     await registry.invoke('git', runtime, ['commit', '--message', 'signed'], {
       source: 'command',
       workspaceDir: repositoryDir,
     });
-    assert.deepEqual(events, ['acquire', 'dispose']);
-    assert.equal(requests[1]?.environment.GIT_CONFIG_COUNT, '11');
-    assert.equal(requests[1]?.environment.GIT_CONFIG_KEY_10, 'user.signingKey');
-    assert.equal(requests[1]?.environment.GIT_CONFIG_VALUE_10, 'key::ssh-ed25519 AAAATEST');
-    assert.equal(requests[1]?.environment.SSH_AUTH_SOCK, '/tmp/signing-agent.sock');
+    assert.deepEqual(events, ['acquire', 'dispose', 'acquire', 'dispose']);
+    assert.equal(requests[1]?.environment.GIT_CONFIG_COUNT, '12');
+    assert.equal(requests[1]?.environment.GIT_CONFIG_KEY_10, 'gpg.ssh.defaultKeyCommand');
+    assert.equal(requests[1]?.environment.GIT_CONFIG_KEY_11, 'gpg.ssh.program');
+    assert.equal(
+      requests[1]?.environment.AGENT_SYSTEM_SSH_SIGNING_SOCKET,
+      '/tmp/signing-agent.sock',
+    );
+    assert.equal(requests[1]?.environment.SSH_AUTH_SOCK, undefined);
     assert.equal(
       Object.values(requests[1]?.environment ?? {}).includes('private-key-material'),
       false,

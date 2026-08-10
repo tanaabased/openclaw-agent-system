@@ -18,8 +18,7 @@ import {
   resolveGitIdentity,
 } from './identity.ts';
 import { authorizeGitOperation, classifyGitOperation, gitCommandPosition } from './policy.ts';
-import { gitCommandHasSigningControl, gitCommandUsesSigningResources } from './signing-command.ts';
-import gitCommandUsesSshResources from './ssh-command.ts';
+import gitCommandHasSigningControl from './signing-control.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
 
@@ -32,8 +31,7 @@ interface ResolvedGitConfiguration {
 
 export interface GitToolDependencies {
   extensionAvailable?(name: string): Promise<boolean> | boolean;
-  sshResourceService?: Pick<GitSshResourceService, 'acquire'> &
-    Partial<Pick<GitSshResourceService, 'launcherEnvironment'>>;
+  sshResourceService?: Pick<GitSshResourceService, 'acquire'>;
 }
 
 export interface GitCommandResult {
@@ -226,13 +224,9 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
         'For Git work, use the $agent-system-git-cli skill and prefer agent_system_git over exec or direct git commands. Pass ordinary non-interactive git arguments in argv; Agent System supplies the active agent identity and contained working directory.',
     },
     runner: {
-      acquireResources(input, configuration, scope) {
-        const authentication =
-          configuration.ssh && gitCommandUsesSshResources(input) ? configuration.ssh : undefined;
-        const signing =
-          configuration.signing && gitCommandUsesSigningResources(input)
-            ? configuration.signing
-            : undefined;
+      acquireResources(_input, configuration, scope) {
+        const authentication = configuration.ssh;
+        const signing = configuration.signing;
         if (!authentication && !signing) return undefined;
         if (!dependencies.sshResourceService) {
           throw new AgentSystemToolError(
@@ -268,15 +262,6 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
         return [...input.argv];
       },
       environment(configuration, scope) {
-        const sshEnvironment = configuration.ssh
-          ? dependencies.sshResourceService?.launcherEnvironment?.()
-          : undefined;
-        if (configuration.ssh && !sshEnvironment) {
-          throw new AgentSystemToolError(
-            'credential_unavailable',
-            'Git SSH authentication is unavailable in this runtime.',
-          );
-        }
         return {
           ...gitIdentityEnvironment(
             configuration.identity,
@@ -284,7 +269,6 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
             configuration.externalExtensions,
             signingConfiguration(configuration.signing, scope.workspaceDir),
           ),
-          ...sshEnvironment,
         };
       },
       executable: 'git',

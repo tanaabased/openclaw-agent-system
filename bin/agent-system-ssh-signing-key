@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+
+: "${AGENT_SYSTEM_SSH_ADD_EXECUTABLE:?agent-system: managed ssh-add executable is unavailable}"
+: "${AGENT_SYSTEM_SSH_SIGNING_SOCKET:?agent-system: managed signing socket is unavailable}"
+
+SSH_AUTH_SOCK="$AGENT_SYSTEM_SSH_SIGNING_SOCKET"
+export SSH_AUTH_SOCK
+
+public_key=$("$AGENT_SYSTEM_SSH_ADD_EXECUTABLE" -L)
+case "$public_key" in
+  '' | *'
+'*)
+    printf '%s\n' 'agent-system: managed signing agent did not return exactly one public key' >&2
+    exit 1
+    ;;
+esac
+
+printf 'key::%s\n' "$public_key"

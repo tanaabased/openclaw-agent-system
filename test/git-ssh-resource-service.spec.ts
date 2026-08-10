@@ -10,6 +10,11 @@ const secondPrivateKey =
   '-----BEGIN OPENSSH PRIVATE KEY-----\nsecond-private\n-----END OPENSSH PRIVATE KEY-----';
 const publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest agent-system';
 const secondPublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISecond agent-system';
+const helperPaths = {
+  authenticationLauncherPath: '/package/bin/agent-system-ssh',
+  signingKeyLauncherPath: '/package/bin/agent-system-ssh-signing-key',
+  signingProgramPath: '/package/bin/agent-system-ssh-keygen',
+};
 
 describe('tools/git/ssh-resource-service', () => {
   it('should load every private key without exposing private material to git', async () => {
@@ -17,12 +22,12 @@ describe('tools/git/ssh-resource-service', () => {
     const commands: CredentialCommandOptions[] = [];
     const writes = new Map<string, string>();
     const service = new GitSshResourceService({
+      ...helperPaths,
       baseEnvironment: { HOME: '/home/data', PATH: '/system/bin', SHOULD_NOT_INHERIT: 'private' },
       createTemporaryDirectory: async () => {
         events.push('create');
         return '/tmp/as-ssh-test';
       },
-      launcherPath: '/package/bin/agent-system-ssh',
       loadPrivateKeys: async (_sources, context) => {
         assert.equal(context.resolveEnvironment('GIT_SSH_PRIVATE_KEY'), privateKey);
         assert.equal(context.resolveEnvironment('OP_SSH_PRIVATE_KEY'), secondPrivateKey);
@@ -92,7 +97,6 @@ describe('tools/git/ssh-resource-service', () => {
       GIT_SSH: '/package/bin/agent-system-ssh',
       GIT_SSH_VARIANT: 'ssh',
       SSH_ASKPASS_REQUIRE: 'never',
-      SSH_AUTH_SOCK: '/tmp/as-ssh-test/a',
     });
     assert.deepEqual(lease.sensitiveValues, [privateKey, secondPrivateKey]);
     assert.deepEqual(
@@ -128,9 +132,9 @@ describe('tools/git/ssh-resource-service', () => {
   it('should clean partial resources and return a stable error for locked keys', async () => {
     const events: string[] = [];
     const service = new GitSshResourceService({
+      ...helperPaths,
       baseEnvironment: { PATH: '/system/bin' },
       createTemporaryDirectory: async () => '/tmp/as-ssh-test',
-      launcherPath: '/package/bin/agent-system-ssh',
       loadPrivateKeys: async () => [privateKey],
       removeTemporaryDirectory: async () => {
         events.push('remove');
@@ -169,8 +173,8 @@ describe('tools/git/ssh-resource-service', () => {
 
   it('should report exactly which openssh executables are unavailable', async () => {
     const service = new GitSshResourceService({
+      ...helperPaths,
       baseEnvironment: { PATH: '/system/bin' },
-      launcherPath: '/package/bin/agent-system-ssh',
       resolveExecutable: async (name) => {
         if (name !== 'ssh') throw new Error('missing');
         return `/system/bin/${name}`;
@@ -184,9 +188,9 @@ describe('tools/git/ssh-resource-service', () => {
     const commands: CredentialCommandOptions[] = [];
     const executables: string[] = [];
     const service = new GitSshResourceService({
+      ...helperPaths,
       baseEnvironment: { PATH: '/system/bin' },
       createTemporaryDirectory: async () => '/tmp/as-signing-test',
-      launcherPath: '/package/bin/agent-system-ssh',
       loadPrivateKeys: async (sources) => {
         assert.deepEqual(sources, [{ fromEnvironment: 'GIT_SIGNING_KEY' }]);
         return [privateKey];
@@ -228,11 +232,15 @@ describe('tools/git/ssh-resource-service', () => {
     assert.deepEqual(executables, ['ssh-agent', 'ssh-add', 'ssh-keygen']);
     assert.equal(lease.environment?.GIT_SSH, undefined);
     assert.deepEqual(lease.environment, {
-      GIT_CONFIG_COUNT: '9',
-      GIT_CONFIG_KEY_8: 'user.signingKey',
-      GIT_CONFIG_VALUE_8: 'key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest',
+      AGENT_SYSTEM_SSH_ADD_EXECUTABLE: '/system/bin/ssh-add',
+      AGENT_SYSTEM_SSH_KEYGEN_EXECUTABLE: '/system/bin/ssh-keygen',
+      AGENT_SYSTEM_SSH_SIGNING_SOCKET: '/tmp/as-signing-test/s',
+      GIT_CONFIG_COUNT: '10',
+      GIT_CONFIG_KEY_8: 'gpg.ssh.defaultKeyCommand',
+      GIT_CONFIG_KEY_9: 'gpg.ssh.program',
+      GIT_CONFIG_VALUE_8: "'/package/bin/agent-system-ssh-signing-key'",
+      GIT_CONFIG_VALUE_9: "'/package/bin/agent-system-ssh-keygen'",
       SSH_ASKPASS_REQUIRE: 'never',
-      SSH_AUTH_SOCK: '/tmp/as-signing-test/a',
     });
     assert.equal(commands[0]?.input, `${privateKey}\n`);
     assert.deepEqual(lease.sensitiveValues, [privateKey]);
@@ -243,9 +251,9 @@ describe('tools/git/ssh-resource-service', () => {
     const writes = new Map<string, string>();
     const sockets: string[] = [];
     const service = new GitSshResourceService({
+      ...helperPaths,
       baseEnvironment: { PATH: '/system/bin' },
       createTemporaryDirectory: async () => '/tmp/as-combined-test',
-      launcherPath: '/package/bin/agent-system-ssh',
       loadPrivateKeys: async (sources) =>
         sources[0] && 'fromEnvironment' in sources[0] && sources[0].fromEnvironment === 'AUTH_KEY'
           ? [privateKey]
@@ -297,10 +305,9 @@ describe('tools/git/ssh-resource-service', () => {
     );
     assert.match(writes.get('/tmp/as-combined-test/c') ?? '', /IdentityFile/u);
     assert.equal(lease.environment?.GIT_SSH, '/package/bin/agent-system-ssh');
-    assert.equal(
-      lease.environment?.GIT_CONFIG_VALUE_8,
-      'key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISecond',
-    );
+    assert.equal(lease.environment?.GIT_CONFIG_KEY_8, 'gpg.ssh.defaultKeyCommand');
+    assert.equal(lease.environment?.AGENT_SYSTEM_SSH_SIGNING_SOCKET, '/tmp/as-combined-test/s');
+    assert.equal(lease.environment?.SSH_AUTH_SOCK, undefined);
     await lease.dispose();
   });
 });

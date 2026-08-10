@@ -140,10 +140,13 @@ git:
 The Git schema does not duplicate `from-op`; secret acquisition belongs to the
 shared environment contract. Encrypted keys are not yet supported.
 
-Remote-capable commands start a fresh isolated `ssh-agent`, load selected keys
-through standard input, expose only its private socket and public-key selector
-files to the Git child, and remove the agent and temporary directory before the
-tool call completes. Local-only commands do not acquire SSH resources. Run
+Every authorized Git invocation with managed authentication starts a fresh
+isolated `ssh-agent` and loads the selected keys through standard input. Agent
+System projects its fixed `GIT_SSH` helper for the complete invocation, and Git
+calls that helper only when an operation actually uses SSH transport. The Git
+child receives no generic `SSH_AUTH_SOCK`; the helper selects only the declared
+authentication identities through a private SSH configuration. Agent System
+removes the agent and temporary directory before the tool call completes. Run
 `openclaw agent-system doctor` to check installed-host OpenSSH readiness.
 
 ### `git.signing`
@@ -170,13 +173,14 @@ git:
     allowed-signers-file: .agent-system/allowed_signers
 ```
 
-Only commands that may create a signed commit or tag select and materialize the
-key. Agent System loads it through standard input into an invocation-scoped
-`ssh-agent`, derives its public key, and supplies only the agent socket and
-command-scoped SSH signing configuration to Git. Signing-control arguments are
-rejected so a tool call cannot disable signing or select another key.
-Authentication and signing remain independent even when both declarations name
-the same key.
+Every authorized Git invocation with signing configured loads the key through
+standard input into a dedicated invocation-scoped `ssh-agent`. Agent System
+projects Git's `gpg.ssh.defaultKeyCommand` and `gpg.ssh.program` helpers, and Git
+calls them only when it selects or uses an SSH signing key. The Git child
+receives no generic `SSH_AUTH_SOCK`; each helper selects the signing agent only
+for its own process. Signing-control arguments are rejected so a tool call
+cannot disable signing or select another key. Authentication and signing use
+separate agents even when both declarations name the same underlying key.
 
 The optional allowed-signers file is public trust policy. It must be a regular,
 non-symlinked file inside the agent workspace and use the OpenSSH allowed
@@ -187,11 +191,11 @@ tanaabot@tanaab.dev ssh-ed25519 AAAA... tanaabot@tanaab.dev
 ```
 
 When present, `git log --show-signature`, `git verify-commit`, and
-`git verify-tag` require a fully trusted signer without resolving the private
-key. Protect changes to a repository-owned trust file through normal review and
-branch controls; an untrusted checkout cannot establish trust merely by adding
-its own key. Hosting-provider signing-key registration remains a separate
-provider operation.
+`git verify-tag` require a fully trusted signer. Protect changes to a
+repository-owned trust file through normal review and branch controls; an
+untrusted checkout cannot establish trust merely by adding its own key.
+Hosting-provider signing-key registration remains a separate provider
+operation.
 
 ### `git.policy`
 

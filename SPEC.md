@@ -986,9 +986,10 @@ without modifying Gateway, global, or repository configuration. Remote-capable
 commands can load unencrypted private keys from declared paths or the completed
 Agent System environment into an isolated invocation-scoped SSH agent.
 Completed-environment keys may come from direct 1Password secret references;
-environment-bound SSH commit and tag signing includes optional local trusted
-verification. Explicitly allowed worktrees are the next Git slice. Encrypted
-keys and passphrase delivery remain deferred.
+environment-bound SSH commit and tag signing uses separate invocation-scoped
+agents and Git's transport and signing helper contracts, with optional local
+trusted verification. Explicitly allowed worktrees are the next Git slice.
+Encrypted keys and passphrase delivery remain deferred.
 
 ### Tool verification contract
 

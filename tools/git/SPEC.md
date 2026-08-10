@@ -269,11 +269,16 @@ interface AgentSystemToolResourceLease {
 }
 ```
 
-The Git implementation starts one isolated `ssh-agent` in an owner-only
-temporary socket directory, loads only the selected keys, gives Git only
-`SSH_AUTH_SOCK`, and kills and waits for the agent before removing its socket
-directory. Raw private-key values never enter Git arguments, child environment,
-logs, audit, errors, or returned output.
+The Git implementation starts an isolated authentication `ssh-agent` in an
+owner-only temporary socket directory for every authorized invocation with
+managed authentication configured. It loads only the declared authentication
+keys and projects the fixed `GIT_SSH` helper for the complete invocation. Git
+decides whether an operation actually needs that helper. The Git child receives
+no generic `SSH_AUTH_SOCK`; the helper uses a private SSH configuration whose
+`IdentityAgent` and `IdentityFile` selectors admit only the declared
+authentication identities. Agent System kills and waits for the agent before
+removing its socket directory. Raw private-key values never enter Git arguments,
+child environment, logs, audit, errors, or returned output.
 
 OpenSSH loads raw completed-environment key material through `ssh-add` standard
 input, so Agent System does not create a private-key file for that source. Path
@@ -316,30 +321,33 @@ OpenPGP or X.509 key sources.
 `key` is an environment binding: its scalar value names one variable in the
 completed Agent System environment and can never contain private-key material.
 Unlike authentication keys, signing does not accept filesystem paths or source
-arrays. Agent System consumes the private key only for operations that can
-create a signed commit or tag, loads it into the isolated agent, determines its
-matching public key, and projects only command-scoped Git settings:
+arrays. For every authorized invocation with signing configured, Agent System
+loads the private key into a dedicated isolated signing agent and projects only
+command-scoped Git settings:
 
 ```text
 gpg.format=ssh
-user.signingKey=key::<public-key>
 commit.gpgSign=true
 tag.gpgSign=true
+gpg.ssh.defaultKeyCommand=<agent-system-signing-key-helper>
+gpg.ssh.program=<agent-system-ssh-keygen-helper>
 ```
 
-The classifier identifies every supported public operation that may create a
-commit or tag so the signing resource exists before Git starts. Agent System
-relies on the projected Git settings rather than rewriting those operations
-with `--gpg-sign`. Ordinary reads do not select or materialize the private
-signing key.
-Model-supplied signing-control flags, including flags that disable signing or
-select an alternate key, are configuration escape hatches and fail before
-environment or key resolution.
+Git calls `gpg.ssh.defaultKeyCommand` only when a signature needs a dynamic
+public-key selection and calls `gpg.ssh.program` when it signs or verifies. Each
+helper selects the dedicated signing socket only for its own process; the Git
+child receives no generic `SSH_AUTH_SOCK`. Agent System therefore does not
+classify commands to predict signing behavior, and nested Git calls or declared
+extensions inherit the same durable helper contract. Model-supplied
+signing-control flags, including flags that disable signing or select an
+alternate key, are configuration escape hatches and fail before environment or
+key resolution.
 
-Authentication and signing remain independently configurable even when the
-operator selects the same underlying key. A signing key held by the isolated
-agent is not automatically offered for remote authentication; the managed SSH
-configuration continues to select only declared authentication identities.
+Authentication and signing remain independently configurable and use separate
+agents even when the operator selects the same underlying key. The signing
+socket is not visible through `SSH_AUTH_SOCK`, so transport cannot automatically
+offer a signing key for authentication. The managed SSH configuration continues
+to select only declared authentication identities.
 
 ### Allowed signers and local verification
 
@@ -356,7 +364,7 @@ When configured, Agent System projects the canonical path through
 validity windows, collaborator keys, or SSH certificate authorities using the
 OpenSSH allowed-signers format. Commands such as `git log --show-signature`,
 `git verify-commit`, and `git verify-tag` can therefore verify trusted SSH
-signatures without resolving the private signing key.
+signatures through the same fixed signing-program helper.
 
 A repository-owned allowed-signers file is trustworthy only when changes to
 that file are themselves protected. Agent System documents that boundary and
@@ -404,12 +412,16 @@ The signing implementation additionally verifies:
 - the presence of `git.signing` signs every supported commit- and tag-producing
   operation with SSH and no per-kind toggle;
 - the selected public key matches the configured private signing key;
-- signing resources are acquired only for operations that may create signed
-  objects;
+- configured authentication and signing resources are prepared for every
+  authorized Git invocation without command-use classification;
+- Git selects the fixed authentication, signing-key, and signing-program helpers
+  only when their official integration points are needed;
+- authentication and signing use distinct agents and neither socket is exposed
+  to the Git child through `SSH_AUTH_SOCK`;
 - signing-disable and alternate-key escape hatches fail before credential
   resolution;
 - an allowed-signers file distinguishes trusted, untrusted, invalid, and
-  unsigned objects without resolving a private key; and
+  unsigned objects independently of private signing-key selection; and
 - signing keys and derived sensitive material remain absent from Git arguments,
   child environment, logs, audit, errors, and results.
 

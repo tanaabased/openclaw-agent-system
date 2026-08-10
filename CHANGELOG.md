@@ -3,7 +3,7 @@
 - Added agent-scoped Git identity, effect-specific policy, packaged routing, and isolated per-invocation SSH authentication.
 - Added direct 1Password secret references for named environment values and OP-backed Git SSH key loading.
 - Added exact external Git extension policy and broader ordinary built-in command coverage.
-- Added environment-bound SSH commit and tag signing with optional local allowed-signers verification.
+- Added environment-bound SSH commit and tag signing with universal Git helpers, separate invocation-scoped agents, and optional local allowed-signers verification.
 - Added the reusable packaged tool launcher for current and future command shims.
 - Fixed Git private-key path containment, packaged shim resolution, and hazardous command classification.
 
