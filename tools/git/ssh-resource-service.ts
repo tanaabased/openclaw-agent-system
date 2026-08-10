@@ -9,7 +9,7 @@ import runCredentialCommand, {
   type CredentialCommandOptions,
   type CredentialCommandResult,
 } from '../../utils/run-credential-command.ts';
-import type { GitSshConfiguration } from './config-schema.ts';
+import type { GitSigningConfiguration, GitSshConfiguration } from './config-schema.ts';
 import loadGitSshAgent, {
   type GitSshAgentProcess,
   type StartGitSshAgentOptions,
@@ -22,6 +22,16 @@ export interface GitSshResourceScope {
   resolveEnvironment(name: string): string | undefined;
   signal?: AbortSignal;
   workspaceDir: string;
+}
+
+export interface GitSshResourceRequest {
+  authentication?: GitSshConfiguration;
+  signing?: Pick<GitSigningConfiguration, 'key'> & { gitConfigurationOffset: number };
+}
+
+export interface GitSshDependencyRequirements {
+  authentication?: boolean;
+  signing?: boolean;
 }
 
 export interface GitSshResourceServiceDependencies {
@@ -84,6 +94,12 @@ function publicKeys(result: CredentialCommandResult): string[] {
   return keys;
 }
 
+function publicKeySelector(publicKey: string): string {
+  const [type, material] = publicKey.split(/\s+/u);
+  if (!type || !material) throw new Error('invalid public key');
+  return `${type} ${material}`;
+}
+
 /** Own invocation-scoped OpenSSH resources for Git without exposing private keys to Git. */
 export default class GitSshResourceService {
   readonly #dependencies: GitSshResourceServiceDependencies;
@@ -123,9 +139,14 @@ export default class GitSshResourceService {
   }
 
   /** Report missing installed-host OpenSSH dependencies without mutating the host. */
-  async inspectDependencies(): Promise<{ missing: string[] }> {
+  async inspectDependencies(
+    requirements: GitSshDependencyRequirements = { authentication: true },
+  ): Promise<{ missing: string[] }> {
     const missing: string[] = [];
-    for (const name of ['ssh', 'ssh-agent', 'ssh-add']) {
+    const names = new Set(['ssh-agent', 'ssh-add']);
+    if (requirements.authentication) names.add('ssh');
+    if (requirements.signing) names.add('ssh-keygen');
+    for (const name of names) {
       try {
         await this.#resolveExecutable(name);
       } catch {
@@ -145,17 +166,23 @@ export default class GitSshResourceService {
 
   /** Start, populate, and project one isolated ssh-agent for a single Git invocation. */
   async acquire(
-    configuration: GitSshConfiguration,
+    request: GitSshResourceRequest,
     scope: GitSshResourceScope,
   ): Promise<AgentSystemToolResourceLease> {
     let agent: GitSshAgentProcess | undefined;
+    let signingAgent: GitSshAgentProcess | undefined;
     let directory: string | undefined;
     const cleanup = async () => {
       let failure: unknown;
       try {
-        await agent?.dispose();
+        await signingAgent?.dispose();
       } catch (error) {
         failure = error;
+      }
+      try {
+        await agent?.dispose();
+      } catch (error) {
+        failure ??= error;
       }
       try {
         if (directory) await this.#removeTemporaryDirectory(directory);
@@ -163,15 +190,20 @@ export default class GitSshResourceService {
         failure ??= error;
       }
       agent = undefined;
+      signingAgent = undefined;
       directory = undefined;
       if (failure) throw failure;
     };
 
     try {
-      const ssh = await this.#resolveExecutable('ssh');
+      if (!request.authentication && !request.signing) {
+        throw new Error('no SSH resources requested');
+      }
+      const ssh = request.authentication ? await this.#resolveExecutable('ssh') : undefined;
       const sshAgent = await this.#resolveExecutable('ssh-agent');
       const sshAdd = await this.#resolveExecutable('ssh-add');
-      const privateKeys = await this.#loadPrivateKeys(configuration.privateKeys, {
+      if (request.signing) await this.#resolveExecutable('ssh-keygen');
+      const sourceContext = {
         ...(this.#dependencies.currentUid === undefined
           ? {}
           : { currentUid: this.#dependencies.currentUid }),
@@ -180,7 +212,14 @@ export default class GitSshResourceService {
           : { homeDirectory: this.#dependencies.homeDirectory }),
         resolveEnvironment: scope.resolveEnvironment,
         workspaceDir: scope.workspaceDir,
-      });
+      };
+      const authenticationKeys = request.authentication
+        ? await this.#loadPrivateKeys(request.authentication.privateKeys, sourceContext)
+        : [];
+      const signingKeys = request.signing
+        ? await this.#loadPrivateKeys([{ fromEnvironment: request.signing.key }], sourceContext)
+        : [];
+      const signingKey = signingKeys[0];
       const resourceDirectory = this.#dependencies.createTemporaryDirectory
         ? await this.#dependencies.createTemporaryDirectory()
         : await mkdtemp(join(tmpdir(), 'as-ssh-'));
@@ -195,53 +234,110 @@ export default class GitSshResourceService {
         socketPath,
       });
       const agentEnvironment = { ...environment, SSH_AUTH_SOCK: socketPath };
-      for (const privateKey of privateKeys) {
-        const result = await this.#runCommand({
-          args: ['-'],
-          command: sshAdd,
-          environment: agentEnvironment,
-          input: privateKey.endsWith('\n') ? privateKey : `${privateKey}\n`,
-          maximumOutputBytes: 16_384,
-          timeoutMs: 10_000,
-        });
-        if (result.status !== 'completed' || result.exitCode !== 0) {
-          throw new AgentSystemToolError(
-            'credential_unavailable',
-            'A configured Git SSH private key could not be loaded noninteractively.',
-          );
+      const addPrivateKeys = async (
+        privateKeys: readonly string[],
+        targetEnvironment: NodeJS.ProcessEnv,
+      ) => {
+        for (const privateKey of privateKeys) {
+          const result = await this.#runCommand({
+            args: ['-'],
+            command: sshAdd,
+            environment: targetEnvironment,
+            input: privateKey.endsWith('\n') ? privateKey : `${privateKey}\n`,
+            maximumOutputBytes: 16_384,
+            timeoutMs: 10_000,
+          });
+          if (result.status !== 'completed' || result.exitCode !== 0) {
+            throw new AgentSystemToolError(
+              'credential_unavailable',
+              'A configured Git SSH private key could not be loaded noninteractively.',
+            );
+          }
         }
-      }
-      const listedKeys = publicKeys(
-        await this.#runCommand({
+      };
+      const listPublicKeys = (targetEnvironment: NodeJS.ProcessEnv) =>
+        this.#runCommand({
           args: ['-L'],
           command: sshAdd,
-          environment: agentEnvironment,
+          environment: targetEnvironment,
           maximumOutputBytes: 65_536,
           timeoutMs: 10_000,
-        }),
-      );
+        }).then(publicKeys);
+
+      let signingPublicKey: string | undefined;
+      if (signingKey && request.authentication) {
+        const signingSocketPath = join(resourceDirectory, 's');
+        signingAgent = await this.#startAgent({
+          environment,
+          executable: sshAgent,
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+          socketPath: signingSocketPath,
+        });
+        const signingEnvironment = { ...environment, SSH_AUTH_SOCK: signingSocketPath };
+        await addPrivateKeys([signingKey], signingEnvironment);
+        const keys = await listPublicKeys(signingEnvironment);
+        if (keys.length !== 1) throw new Error('signing agent returned an unexpected key count');
+        [signingPublicKey] = keys;
+        await signingAgent.dispose();
+        signingAgent = undefined;
+      }
+
+      await addPrivateKeys(authenticationKeys, agentEnvironment);
+      const authenticationPublicKeys = request.authentication
+        ? await listPublicKeys(agentEnvironment)
+        : [];
+      if (signingKey) {
+        await addPrivateKeys([signingKey], agentEnvironment);
+        if (!signingPublicKey) {
+          const keys = await listPublicKeys(agentEnvironment);
+          if (keys.length !== 1) throw new Error('signing agent returned an unexpected key count');
+          [signingPublicKey] = keys;
+        }
+      }
       const identityPaths: string[] = [];
-      for (const [index, publicKey] of listedKeys.entries()) {
+      for (const [index, publicKey] of authenticationPublicKeys.entries()) {
         const path = join(resourceDirectory, `k${index}.pub`);
         await this.#writePrivateFile(path, `${publicKey}\n`);
         identityPaths.push(path);
       }
-      const configPath = join(resourceDirectory, 'c');
-      await this.#writePrivateFile(
-        configPath,
-        [
-          'Host *',
-          '  BatchMode yes',
-          '  ForwardAgent no',
-          '  IdentitiesOnly yes',
-          `  IdentityAgent ${quoteSshConfigValue(socketPath)}`,
-          ...identityPaths.map((path) => `  IdentityFile ${quoteSshConfigValue(path)}`),
-          '  KbdInteractiveAuthentication no',
-          '  PasswordAuthentication no',
-          '  PreferredAuthentications publickey',
-          '',
-        ].join('\n'),
-      );
+      const configPath = request.authentication ? join(resourceDirectory, 'c') : undefined;
+      if (configPath) {
+        await this.#writePrivateFile(
+          configPath,
+          [
+            'Host *',
+            '  BatchMode yes',
+            '  ForwardAgent no',
+            '  IdentitiesOnly yes',
+            `  IdentityAgent ${quoteSshConfigValue(socketPath)}`,
+            ...identityPaths.map((path) => `  IdentityFile ${quoteSshConfigValue(path)}`),
+            '  KbdInteractiveAuthentication no',
+            '  PasswordAuthentication no',
+            '  PreferredAuthentications publickey',
+            '',
+          ].join('\n'),
+        );
+      }
+
+      const leaseEnvironment: Record<string, string> = {
+        SSH_ASKPASS_REQUIRE: 'never',
+        SSH_AUTH_SOCK: socketPath,
+      };
+      if (request.authentication && configPath && ssh) {
+        Object.assign(leaseEnvironment, {
+          AGENT_SYSTEM_SSH_CONFIG: configPath,
+          AGENT_SYSTEM_SSH_EXECUTABLE: ssh,
+          ...this.launcherEnvironment(),
+        });
+      }
+      if (request.signing && signingPublicKey) {
+        const index = request.signing.gitConfigurationOffset;
+        Object.assign(leaseEnvironment, {
+          GIT_CONFIG_COUNT: String(index + 1),
+          [`GIT_CONFIG_KEY_${index}`]: 'user.signingKey',
+          [`GIT_CONFIG_VALUE_${index}`]: `key::${publicKeySelector(signingPublicKey)}`,
+        });
+      }
 
       let disposed = false;
       return {
@@ -250,14 +346,8 @@ export default class GitSshResourceService {
           disposed = true;
           await cleanup();
         },
-        environment: {
-          AGENT_SYSTEM_SSH_CONFIG: configPath,
-          AGENT_SYSTEM_SSH_EXECUTABLE: ssh,
-          ...this.launcherEnvironment(),
-          SSH_ASKPASS_REQUIRE: 'never',
-          SSH_AUTH_SOCK: socketPath,
-        },
-        sensitiveValues: privateKeys,
+        environment: leaseEnvironment,
+        sensitiveValues: [...authenticationKeys, ...signingKeys],
       };
     } catch (error) {
       try {
@@ -271,7 +361,7 @@ export default class GitSshResourceService {
       if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'credential_unavailable',
-        'Git SSH authentication resources could not be prepared.',
+        'Git SSH authentication or signing resources could not be prepared.',
       );
     }
   }

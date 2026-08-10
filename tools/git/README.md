@@ -6,8 +6,8 @@
 
 The Git tool runs ordinary noninteractive `git` commands with the active
 agent's declared identity, contained workspace, optional isolated SSH identity,
-and operation policy. It is the preferred Git path when an Agent System
-workspace declares `git`.
+SSH commit and tag signing, and operation policy. It is the preferred Git path
+when an Agent System workspace declares `git`.
 
 [Agent System](../../README.md) · [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md)
 
@@ -31,7 +31,8 @@ launches the real `git` executable without a shell.
 - Git available as `git`
 - An Agent System workspace manifest with `git` configured
 - An effective Git name and email declared by `git` or `agent`
-- OpenSSH `ssh`, `ssh-agent`, and `ssh-add` when managed SSH keys are configured
+- OpenSSH `ssh`, `ssh-agent`, and `ssh-add` when managed authentication keys are configured
+- OpenSSH `ssh-agent`, `ssh-add`, and `ssh-keygen` when signing is configured
 
 ## Configuration Reference
 
@@ -54,6 +55,9 @@ git:
   ssh:
     private-keys:
       from-environment: GIT_SSH_PRIVATE_KEY
+  signing:
+    key: GIT_SIGNING_KEY
+    allowed-signers-file: .agent-system/allowed_signers
   policy:
     delete: ask
     discard: ask
@@ -141,6 +145,53 @@ through standard input, expose only its private socket and public-key selector
 files to the Git child, and remove the agent and temporary directory before the
 tool call completes. Local-only commands do not acquire SSH resources. Run
 `openclaw agent-system doctor` to check installed-host OpenSSH readiness.
+
+### `git.signing`
+
+| Field                  | Type                    | Required | Default |
+| ---------------------- | ----------------------- | -------- | ------- |
+| `key`                  | environment binding     | yes      | none    |
+| `allowed-signers-file` | workspace-relative path | no       | none    |
+
+The presence of `git.signing` SSH-signs every commit and tag. `key` names one
+variable in the completed Agent System environment; it is never private-key
+material itself and does not accept a literal value, path, array, or nested
+`from-environment` object:
+
+```yaml
+environment:
+  set:
+    GIT_SIGNING_KEY:
+      from-op: 'op://vault/item/private key?ssh-format=openssh'
+
+git:
+  signing:
+    key: GIT_SIGNING_KEY
+    allowed-signers-file: .agent-system/allowed_signers
+```
+
+Only commands that may create a signed commit or tag select and materialize the
+key. Agent System loads it through standard input into an invocation-scoped
+`ssh-agent`, derives its public key, and supplies only the agent socket and
+command-scoped SSH signing configuration to Git. Signing-control arguments are
+rejected so a tool call cannot disable signing or select another key.
+Authentication and signing remain independent even when both declarations name
+the same key.
+
+The optional allowed-signers file is public trust policy. It must be a regular,
+non-symlinked file inside the agent workspace and use the OpenSSH allowed
+signers format:
+
+```text
+tanaabot@tanaab.dev ssh-ed25519 AAAA... tanaabot@tanaab.dev
+```
+
+When present, `git log --show-signature`, `git verify-commit`, and
+`git verify-tag` require a fully trusted signer without resolving the private
+key. Protect changes to a repository-owned trust file through normal review and
+branch controls; an untrusted checkout cannot establish trust merely by adding
+its own key. Hosting-provider signing-key registration remains a separate
+provider operation.
 
 ### `git.policy`
 

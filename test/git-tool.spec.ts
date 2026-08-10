@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -65,7 +65,10 @@ describe('tools/git/tool', () => {
           return {
             ...loadedManifest(),
             environment: {
-              values: { AGENT_EMAIL: 'data@example.com' },
+              values: {
+                AGENT_EMAIL: 'data@example.com',
+                GIT_SIGNING_KEY: 'private-key-material',
+              },
               variables: [],
             },
           };
@@ -181,7 +184,7 @@ describe('tools/git/tool', () => {
       createGitTool({
         sshResourceService: {
           async acquire(configuration, scope) {
-            events.push(`acquire:${configuration.privateKeys.length}`);
+            events.push(`acquire:${configuration.authentication?.privateKeys.length ?? 0}`);
             assert.equal(scope.resolveEnvironment('AGENT_EMAIL'), 'data@example.com');
             return {
               async dispose() {
@@ -217,5 +220,98 @@ describe('tools/git/tool', () => {
 
     assert.deepEqual(events, ['acquire:1', 'dispose']);
     assert.equal(requests[1]?.environment.GIT_SSH, '/package/bin/agent-system-ssh');
+  });
+
+  it('should materialize a signing key only for signed object creation', async () => {
+    const events: string[] = [];
+    const requests: AgentSystemCliRunRequest[] = [];
+    const allowedSignersFile = join(workspaceDir, '.agent-system', 'allowed_signers');
+    await mkdir(join(workspaceDir, '.agent-system'), { recursive: true });
+    await writeFile(allowedSignersFile, 'data@example.com ssh-ed25519 AAAA\n');
+    manifest.git = {
+      signing: {
+        allowedSignersFile: '.agent-system/allowed_signers',
+        key: 'GIT_SIGNING_KEY',
+      },
+    };
+    const registry = new AgentSystemToolRegistry([
+      createGitTool({
+        sshResourceService: {
+          async acquire(configuration, scope) {
+            assert.equal(configuration.authentication, undefined);
+            assert.deepEqual(configuration.signing, {
+              gitConfigurationOffset: 10,
+              key: 'GIT_SIGNING_KEY',
+            });
+            assert.equal(scope.resolveEnvironment('GIT_SIGNING_KEY'), 'private-key-material');
+            events.push('acquire');
+            return {
+              async dispose() {
+                events.push('dispose');
+              },
+              environment: {
+                GIT_CONFIG_COUNT: '11',
+                GIT_CONFIG_KEY_10: 'user.signingKey',
+                GIT_CONFIG_VALUE_10: 'key::ssh-ed25519 AAAATEST',
+                SSH_AUTH_SOCK: '/tmp/signing-agent.sock',
+              },
+              sensitiveValues: ['private-key-material'],
+            };
+          },
+        },
+      }),
+    ]);
+    const runtime = createRuntime(requests);
+
+    await registry.invoke('git', runtime, ['verify-commit', 'HEAD'], {
+      source: 'command',
+      workspaceDir: repositoryDir,
+    });
+    assert.deepEqual(events, []);
+    assert.equal(requests[0]?.environment.GIT_CONFIG_COUNT, '10');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_5, 'gpg.format');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_6, 'commit.gpgSign');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_7, 'tag.gpgSign');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_8, 'gpg.ssh.allowedSignersFile');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_VALUE_8, await realpath(allowedSignersFile));
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_9, 'gpg.minTrustLevel');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_VALUE_9, 'fully');
+    assert.equal(requests[0]?.environment.GIT_CONFIG_KEY_10, undefined);
+
+    await registry.invoke('git', runtime, ['commit', '--message', 'signed'], {
+      source: 'command',
+      workspaceDir: repositoryDir,
+    });
+    assert.deepEqual(events, ['acquire', 'dispose']);
+    assert.equal(requests[1]?.environment.GIT_CONFIG_COUNT, '11');
+    assert.equal(requests[1]?.environment.GIT_CONFIG_KEY_10, 'user.signingKey');
+    assert.equal(requests[1]?.environment.GIT_CONFIG_VALUE_10, 'key::ssh-ed25519 AAAATEST');
+    assert.equal(requests[1]?.environment.SSH_AUTH_SOCK, '/tmp/signing-agent.sock');
+    assert.equal(
+      Object.values(requests[1]?.environment ?? {}).includes('private-key-material'),
+      false,
+    );
+  });
+
+  it('should reject signing controls before loading the completed environment', async () => {
+    const environmentCalls: string[] = [];
+    manifest.git = { signing: { key: 'GIT_SIGNING_KEY' } };
+    const registry = new AgentSystemToolRegistry([createGitTool()]);
+    const runtime = createRuntime([], environmentCalls);
+
+    for (const argv of [
+      ['commit', '--no-gpg-sign', '--message', 'unsigned'],
+      ['tag', '--no-sign', 'v1.0.0'],
+    ]) {
+      await assert.rejects(
+        registry.invoke('git', runtime, argv, {
+          source: 'command',
+          workspaceDir: repositoryDir,
+        }),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+      );
+    }
+    assert.deepEqual(environmentCalls, []);
   });
 });

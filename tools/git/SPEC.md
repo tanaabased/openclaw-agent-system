@@ -14,7 +14,9 @@ cross-platform OpenSSH compatibility proof. The first authentication slice
 adds unencrypted path and completed-environment key sources through an isolated
 per-invocation SSH agent. Generic direct OP environment values now provide the
 1Password-backed authentication path without adding a Git-specific secret
-source. Encrypted keys and signing build on that foundation.
+source. Environment-bound SSH commit and tag signing with optional local trusted
+verification is complete. Explicitly allowed worktrees are next; encrypted keys
+and configurable Git preferences remain deferred.
 
 ## Product Boundary
 
@@ -95,8 +97,8 @@ Agent System never falls through to a host or repository Git identity. An empty
 `git: {}` section is valid only when the agent section supplies both effective
 values.
 
-Future encrypted-key and signing fields are defined below but must not be added
-to the manifest schema until their owning runtime behavior exists.
+The signing fields defined below are implemented. Encrypted-key and passphrase
+fields remain deferred and are not part of the active schema plan.
 
 ## Tool Input and Execution
 
@@ -129,8 +131,11 @@ runner capability required by the first Git slice:
 - model arguments may not use `-C`, `--git-dir`, or `--work-tree` to bypass the
   validated working directory.
 
-Explicit operator-selected worktrees outside the workspace remain deferred
-until the product defines an owned allowlist and diagnostic model.
+Explicit operator-selected worktrees outside the workspace are the planned
+slice after signing. Their exact declaration remains open, but the resulting
+design must use an operator-owned allowlist, canonical containment, and stable
+diagnostics rather than reopening `-C`, `--git-dir`, or `--work-tree` as generic
+model arguments.
 
 ### Identity projection
 
@@ -205,8 +210,8 @@ decision, which may still explicitly allow the broad alias and helper surface.
 
 `ask` is available only to native `agent_system_git` calls with an originating
 OpenClaw approval conversation. Direct CLI and shim invocations reject an ask
-decision. Policy is applied before environment resolution or future SSH-key
-materialization.
+decision. Policy is applied before environment resolution or any SSH
+authentication or signing-key materialization.
 
 The classifier remains selector-first and recognizes stable public command
 families rather than mirroring Git's versioned internal command tree. Tests own
@@ -281,16 +286,15 @@ the headless default because it requires a desktop session and user approval.
 The headless path uses the stored service-account credential to resolve the
 declared item only after authorization.
 
-The initial authentication slice supports unencrypted source material and
-returns a stable noninteractive error for encrypted or locked keys. A later SSH
-authentication slice adds explicit passphrase bindings and an owner-controlled
-askpass channel without passing the secret through arguments or Git's child
-environment.
+The authentication contract supports unencrypted source material and returns a
+stable noninteractive error for encrypted or locked keys. Passphrase bindings
+and an owner-controlled askpass channel remain deferred until the product owns
+a safe IPC design. Any future passphrase support must keep the secret out of
+arguments, Git's child environment, logs, audit, errors, and results.
 
-## SSH Commit Signing
+## SSH Commit and Tag Signing
 
-SSH signing is the third Git delivery slice and reuses the credential-resource
-lease:
+SSH signing reuses the credential-resource lease:
 
 ```yaml
 environment:
@@ -300,41 +304,93 @@ environment:
 
 git:
   signing:
-    key:
-      from-environment: GIT_SIGNING_KEY
-    commits: true
-    tags: false
+    key: GIT_SIGNING_KEY
+    allowed-signers-file: .agent-system/allowed_signers
 ```
 
-The signing key accepts the same source union as authentication keys. Agent
-System loads it into the isolated agent, determines its matching public key, and
-projects only command-scoped Git settings:
+The presence of `git.signing` enables SSH signing for every commit and tag. The
+manifest does not expose `format`, `enabled`, `commits`, or `tags` switches:
+absence disables managed signing and presence selects one complete signing
+contract. Agent System supports only the SSH signature format and does not add
+OpenPGP or X.509 key sources.
+
+`key` is an environment binding: its scalar value names one variable in the
+completed Agent System environment and can never contain private-key material.
+Unlike authentication keys, signing does not accept filesystem paths or source
+arrays. Agent System consumes the private key only for operations that can
+create a signed commit or tag, loads it into the isolated agent, determines its
+matching public key, and projects only command-scoped Git settings:
 
 ```text
 gpg.format=ssh
 user.signingKey=key::<public-key>
-commit.gpgSign=true|false
-tag.gpgSign=true|false
+commit.gpgSign=true
+tag.gpgSign=true
 ```
 
-Authentication and signing remain independently configurable even when an
-operator selects the same underlying key. GitHub registration of the public
-authentication or signing key remains owned by `github.ssh-keys` and
-`github.ssh-signing-keys`; the Git tool does not mutate a hosting provider.
+The classifier identifies every supported public operation that may create a
+commit or tag so the signing resource exists before Git starts. Agent System
+relies on the projected Git settings rather than rewriting those operations
+with `--gpg-sign`. Ordinary reads do not select or materialize the private
+signing key.
+Model-supplied signing-control flags, including flags that disable signing or
+select an alternate key, are configuration escape hatches and fail before
+environment or key resolution.
 
-## Additional Git Configuration
+Authentication and signing remain independently configurable even when the
+operator selects the same underlying key. A signing key held by the isolated
+agent is not automatically offered for remote authentication; the managed SSH
+configuration continues to select only declared authentication identities.
 
-Later versions may add a closed allowlist of declarative settings with safe
-defaults, such as:
+### Allowed signers and local verification
 
-- `init.defaultBranch`;
-- `pull.rebase`;
-- `fetch.prune`; and
-- `push.default`.
+`allowed-signers-file` is optional and names one literal workspace-relative
+file. Manifest validation rejects absolute, empty, and escaping declarations.
+Runtime inspection and execution require a canonical, regular, non-symlinked
+file inside the workspace. The file is public trust policy rather than a
+credential, so Agent System neither resolves it through the environment nor
+generates or mutates it.
 
-The manifest does not expose an arbitrary Git configuration map. Arbitrary
-configuration would reintroduce executable helpers, filters, aliases, hooks,
-and path escape hatches through a trusted configuration projection.
+When configured, Agent System projects the canonical path through
+`gpg.ssh.allowedSignersFile` and requires fully trusted verification through
+`gpg.minTrustLevel=fully`. The file may retain current and rotated signer keys,
+validity windows, collaborator keys, or SSH certificate authorities using the
+OpenSSH allowed-signers format. Commands such as `git log --show-signature`,
+`git verify-commit`, and `git verify-tag` can therefore verify trusted SSH
+signatures without resolving the private signing key.
+
+A repository-owned allowed-signers file is trustworthy only when changes to
+that file are themselves protected. Agent System documents that boundary and
+does not describe a key as trusted merely because an untrusted checkout added
+it. When the field is absent, signing still works and hosting providers may
+verify registered keys, but local Git verification has no Agent System-managed
+trust store.
+
+GitHub registration of the public authentication or signing key remains owned
+by `github.ssh-keys` and `github.ssh-signing-keys`; the Git tool does not mutate
+a hosting provider.
+
+## Deferred Git Configuration
+
+Agent System does not currently plan a general Git-preferences slice. Git
+configuration and operation policy have different ownership: configuration
+changes Git behavior, while policy authorizes the resulting effects. A future
+setting must therefore ship with its schema, command-scoped projection, policy
+effects, doctor behavior, and focused verification as one evidence-backed
+change.
+
+Previously considered settings illustrate the coupling:
+
+- `init.defaultBranch` is comparatively effect-neutral;
+- `pull.rebase` can make `pull` select the `rewrite` policy;
+- `fetch.prune` can make `fetch` select the `delete` policy; and
+- `push.default` changes which refs an otherwise implicit push targets.
+
+These settings remain deferred until concrete usage justifies them. The
+manifest will never expose an arbitrary Git configuration map because that
+would reintroduce executable helpers, filters, aliases, hooks, and path escape
+hatches through a trusted configuration projection. Internal security
+overrides remain implementation details rather than user preferences.
 
 ## Documentation, Skill, and Visual Identity
 
@@ -408,28 +464,26 @@ Official asset source:
 - Prove a real vault key and a distinct environment-provided key in the existing
   Git Leia scenario.
 
-### Slice 2C: encrypted SSH keys
+### Slice 3: SSH commit and tag signing (complete)
 
-- Add environment and 1Password passphrase bindings without literal secret
-  values.
-- Provide passphrases through an owner-controlled noninteractive askpass
-  channel.
-- Keep passphrases out of arguments, Git's child environment, logs, audit,
-  errors, and results.
+- Add one signing-key declaration whose presence signs every commit and tag.
+- Resolve the matching public key and project only SSH signing settings into
+  the Git child.
+- Support an optional workspace-owned allowed-signers file for local trusted
+  verification without private-key resolution.
+- Reject operation-level signing disablement and alternate-key overrides.
+- Add commit, tag, and local verification tests without coupling provider
+  registration to local Git execution.
 
-### Slice 3: SSH signing
+### Slice 4: explicitly allowed worktrees (planned)
 
-- Add signing configuration and public-key resolution.
-- Project SSH signing settings into only the Git child.
-- Add commit and tag signing tests without coupling provider registration to
-  local Git execution.
-
-### Slice 4: constrained configuration expansion
-
-- Add only proven, schema-owned Git settings.
-- Expand doctor and policy classification where real usage or failures justify
-  it.
-- Keep each additional Leia scenario focused on one runtime boundary.
+- Design the exact declaration only after signing is complete.
+- Admit additional canonical worktree roots only through explicit
+  operator-owned desired state.
+- Preserve model-input containment and keep `-C`, `--git-dir`, and
+  `--work-tree` unavailable as generic bypasses.
+- Define policy, lifecycle, doctor, and removal behavior before adding the
+  schema.
 
 ## Verification Contract
 
@@ -449,20 +503,37 @@ The Git implementation must directly verify:
   logs, audit, errors, and results; and
 - credential-resource cleanup on every terminal path.
 
+The signing implementation additionally verifies:
+
+- the presence of `git.signing` signs every supported commit- and tag-producing
+  operation with SSH and no per-kind toggle;
+- the selected public key matches the configured private signing key;
+- signing resources are acquired only for operations that may create signed
+  objects;
+- signing-disable and alternate-key escape hatches fail before credential
+  resolution;
+- an allowed-signers file distinguishes trusted, untrusted, invalid, and
+  unsigned objects without resolving a private key; and
+- signing keys and derived sensitive material remain absent from Git arguments,
+  child environment, logs, audit, errors, and results.
+
 The Git Leia scenario proves the installed package, shim, shared runtime,
 identity fallback, real local `git` invocation, resulting author and committer
 identity, OpenSSH readiness, and isolated SSH authentication against GitHub on
 macOS and Ubuntu. Resolver variants and containment edge cases remain direct
-unit tests.
+unit tests. The scenario includes one signed commit, one signed tag, and local
+verification through a checked-in public allowed-signers fixture; signing does
+not add a second scenario solely for the same runtime boundary.
 
 ## Deferred Decisions
 
 - Which owner-controlled IPC mechanism should deliver passphrases to a
-  noninteractive askpass adapter.
+  noninteractive askpass adapter if encrypted keys are later supported.
 - Whether the 1Password desktop SSH agent should become a declared workstation
   mode.
-- Whether explicitly approved worktrees outside the agent workspace need a
-  durable allowlist.
+- The exact declaration, ownership, and removal shape for explicitly allowed
+  worktrees outside the agent workspace.
+- Which individual Git preferences, if any, justify schema and policy expansion.
 - Which additional Git operations need semantic convenience tools beyond the
   generic CLI-shaped surface.
 

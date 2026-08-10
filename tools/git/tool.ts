@@ -5,9 +5,20 @@ import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/t
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import { isToolWorkingDirectoryContained } from '../../utils/resolve-tool-working-directory.ts';
-import type { GitSshConfiguration, GitToolConfiguration } from './config-schema.ts';
-import { gitIdentityEnvironment, resolveGitIdentity } from './identity.ts';
+import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
+import type {
+  GitSigningConfiguration,
+  GitSshConfiguration,
+  GitToolConfiguration,
+} from './config-schema.ts';
+import {
+  gitIdentityConfiguration,
+  gitIdentityEnvironment,
+  type GitConfigurationEntry,
+  resolveGitIdentity,
+} from './identity.ts';
 import { authorizeGitOperation, classifyGitOperation, gitCommandPosition } from './policy.ts';
+import { gitCommandHasSigningControl, gitCommandUsesSigningResources } from './signing-command.ts';
 import gitCommandUsesSshResources from './ssh-command.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
@@ -15,6 +26,7 @@ import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
 interface ResolvedGitConfiguration {
   externalExtensions: string[];
   identity: ReturnType<typeof resolveGitIdentity>;
+  signing?: GitSigningConfiguration;
   ssh?: GitSshConfiguration;
 }
 
@@ -65,6 +77,35 @@ function isConfigRead(argv: readonly string[]): boolean {
   return values.length <= 1;
 }
 
+function signingConfiguration(
+  signing: GitSigningConfiguration | undefined,
+  workspaceDir: string,
+): GitConfigurationEntry[] {
+  if (!signing) return [];
+  const configuration: GitConfigurationEntry[] = [
+    ['gpg.format', 'ssh'],
+    ['commit.gpgSign', 'true'],
+    ['tag.gpgSign', 'true'],
+  ];
+  if (signing.allowedSignersFile) {
+    try {
+      configuration.push(
+        [
+          'gpg.ssh.allowedSignersFile',
+          resolveGitAllowedSignersFile(signing.allowedSignersFile, workspaceDir),
+        ],
+        ['gpg.minTrustLevel', 'fully'],
+      );
+    } catch {
+      throw new AgentSystemToolError(
+        'configuration_unavailable',
+        'The configured Git SSH allowed signers file is unavailable or unsafe.',
+      );
+    }
+  }
+  return configuration;
+}
+
 function validateInput(input: GitToolInput): void {
   if (
     input.argv.length === 0 ||
@@ -109,6 +150,12 @@ function validateInput(input: GitToolInput): void {
   }
   if (command?.startsWith('credential')) {
     toolError('invalid_arguments', 'Agent System Git commands may not manage credentials.');
+  }
+  if (gitCommandHasSigningControl(input)) {
+    toolError(
+      'invalid_arguments',
+      'Agent System Git signing configuration may not be overridden by command arguments.',
+    );
   }
   if (command === 'config' && !isConfigRead(input.argv)) {
     toolError(
@@ -167,6 +214,9 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
         return {
           externalExtensions: Object.keys(configuration.git.extensions ?? {}).sort(),
           identity: resolveGitIdentity(configuration, resolver),
+          ...(configuration.git.signing === undefined
+            ? {}
+            : { signing: configuration.git.signing }),
           ...(configuration.git.ssh === undefined ? {} : { ssh: configuration.git.ssh }),
         };
       },
@@ -177,23 +227,47 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
     },
     runner: {
       acquireResources(input, configuration, scope) {
-        if (!configuration.ssh || !gitCommandUsesSshResources(input)) return undefined;
+        const authentication =
+          configuration.ssh && gitCommandUsesSshResources(input) ? configuration.ssh : undefined;
+        const signing =
+          configuration.signing && gitCommandUsesSigningResources(input)
+            ? configuration.signing
+            : undefined;
+        if (!authentication && !signing) return undefined;
         if (!dependencies.sshResourceService) {
           throw new AgentSystemToolError(
             'credential_unavailable',
-            'Git SSH authentication is unavailable in this runtime.',
+            'Git SSH authentication or signing is unavailable in this runtime.',
           );
         }
-        return dependencies.sshResourceService.acquire(configuration.ssh, {
-          resolveEnvironment: scope.resolveEnvironment,
-          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-          workspaceDir: scope.workspaceDir,
-        });
+        const staticSigningConfiguration = signingConfiguration(
+          configuration.signing,
+          scope.workspaceDir,
+        );
+        const gitConfigurationOffset =
+          gitIdentityConfiguration(
+            configuration.identity,
+            process.platform,
+            configuration.externalExtensions,
+          ).length + staticSigningConfiguration.length;
+        return dependencies.sshResourceService.acquire(
+          {
+            ...(authentication === undefined ? {} : { authentication }),
+            ...(signing === undefined
+              ? {}
+              : { signing: { key: signing.key, gitConfigurationOffset } }),
+          },
+          {
+            resolveEnvironment: scope.resolveEnvironment,
+            ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+            workspaceDir: scope.workspaceDir,
+          },
+        );
       },
       argv(input) {
         return [...input.argv];
       },
-      environment(configuration) {
+      environment(configuration, scope) {
         const sshEnvironment = configuration.ssh
           ? dependencies.sshResourceService?.launcherEnvironment?.()
           : undefined;
@@ -208,6 +282,7 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
             configuration.identity,
             process.platform,
             configuration.externalExtensions,
+            signingConfiguration(configuration.signing, scope.workspaceDir),
           ),
           ...sshEnvironment,
         };
@@ -234,7 +309,7 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
     tool: {
       classify: classifyGitOperation,
       description:
-        'Run Git with the active Agent System agent identity and a workspace-contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional workspace-relative cwd. Configuration mutation, credential commands, hooks, and working-directory escape options are unavailable.',
+        'Run Git with the active Agent System agent identity, managed SSH signing, and a workspace-contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional workspace-relative cwd. Configuration mutation, signing overrides, credential commands, hooks, and working-directory escape options are unavailable.',
       inputFromCommand(argv): GitToolInput {
         return { argv: [...argv] };
       },

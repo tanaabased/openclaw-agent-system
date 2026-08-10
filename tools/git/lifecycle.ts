@@ -1,4 +1,5 @@
 import type { AgentSystemLifecycleContribution } from '../../lib/lifecycle-registry.ts';
+import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 
 export interface GitLifecycleDependencies {
@@ -12,36 +13,64 @@ export default function createGitLifecycleContribution(
   return {
     id: 'git',
     isConfigured: (manifest) => manifest.git !== undefined,
-    async inspect({ manifest }) {
-      if (!manifest.git?.ssh?.privateKeys.length) return [];
+    async inspect({ manifest, workspaceDir }) {
+      const authentication = Boolean(manifest.git?.ssh?.privateKeys.length);
+      const signing = Boolean(manifest.git?.signing);
+      if (!authentication && !signing) return [];
+      const diagnostics = [];
+      const allowedSignersFile = manifest.git?.signing?.allowedSignersFile;
+      if (allowedSignersFile) {
+        try {
+          resolveGitAllowedSignersFile(allowedSignersFile, workspaceDir);
+          diagnostics.push({
+            code: 'git-signing-allowed-signers-ready',
+            message: 'Git SSH allowed signers file is available.',
+            status: 'healthy' as const,
+          });
+        } catch {
+          diagnostics.push({
+            code: 'git-signing-allowed-signers-unavailable',
+            message: 'Git SSH allowed signers file is unavailable or unsafe.',
+            remediation:
+              'Provide a regular non-symlinked allowed signers file inside the agent workspace.',
+            status: 'blocked' as const,
+          });
+        }
+      }
       if (!dependencies.sshResourceService) {
-        return [
-          {
-            code: 'git-ssh-runtime-unavailable',
-            message: 'Git SSH authentication is unavailable in this runtime.',
-            remediation: 'Reload Agent System with its Git SSH runtime enabled.',
-            status: 'blocked',
-          },
-        ];
+        diagnostics.push({
+          code: 'git-ssh-runtime-unavailable',
+          message: 'Git SSH authentication or signing is unavailable in this runtime.',
+          remediation: 'Reload Agent System with its Git SSH runtime enabled.',
+          status: 'blocked' as const,
+        });
+        return diagnostics;
       }
-      const { missing } = await dependencies.sshResourceService.inspectDependencies();
+      const { missing } = await dependencies.sshResourceService.inspectDependencies({
+        authentication,
+        signing,
+      });
+      const capability =
+        authentication && signing
+          ? 'authentication and signing'
+          : authentication
+            ? 'authentication'
+            : 'signing';
       if (missing.length > 0) {
-        return [
-          {
-            code: 'git-ssh-dependencies-missing',
-            message: `Git SSH authentication requires missing executables: ${missing.join(', ')}.`,
-            remediation: 'Install OpenSSH and make ssh, ssh-agent, and ssh-add available on PATH.',
-            status: 'blocked',
-          },
-        ];
+        diagnostics.push({
+          code: 'git-ssh-dependencies-missing',
+          message: `Git SSH ${capability} requires missing executables: ${missing.join(', ')}.`,
+          remediation: `Install OpenSSH and make ${missing.join(', ')} available on PATH.`,
+          status: 'blocked' as const,
+        });
+        return diagnostics;
       }
-      return [
-        {
-          code: 'git-ssh-dependencies-ready',
-          message: 'Git SSH authentication dependencies are available.',
-          status: 'healthy',
-        },
-      ];
+      diagnostics.push({
+        code: 'git-ssh-dependencies-ready',
+        message: `Git SSH ${capability} dependencies are available.`,
+        status: 'healthy' as const,
+      });
+      return diagnostics;
     },
     validate: ({ manifest }) => {
       const diagnostics = [];

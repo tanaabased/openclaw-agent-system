@@ -3,7 +3,8 @@
 This scenario verifies the packaged Agent System `git` shim, Git declaration
 validation, nested workspace discovery, agent identity on a real commit, and
 isolated SSH authentication using generated and 1Password-backed private keys.
-It does not start a Gateway or invoke a model.
+It also verifies OP-backed SSH commit and tag signing through a public allowed
+signers file. It does not start a Gateway or invoke a model.
 
 ## Setup
 
@@ -66,7 +67,7 @@ mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"
 openclaw agent-system validate | grep -F 'valid' | grep -F 'git' | grep -F 'Git tool identity and policy configuration'
 
-# should preserve a nested repository directory and commit as tanaabot
+# should preserve a nested repository directory and create a trusted signed commit as tanaabot
 mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git init --quiet
@@ -74,10 +75,17 @@ touch identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git commit --quiet --message 'verify managed identity'
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%G? %GS' | grep -Fx 'G tanaabot@tanaab.dev'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git verify-commit HEAD
+
+# should create and locally verify a trusted signed tag
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git tag --message 'verify managed signing' agent-system-signing-test
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git verify-tag agent-system-signing-test
 
 # should report managed ssh dependencies as healthy
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git SSH authentication dependencies are available'
+openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git SSH authentication and signing dependencies are available'
 
 # should load both configured keys and authenticate with the registered generated key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"

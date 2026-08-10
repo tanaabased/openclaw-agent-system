@@ -68,10 +68,12 @@ describe('tools/git/ssh-resource-service', () => {
 
     const lease = await service.acquire(
       {
-        privateKeys: [
-          { fromEnvironment: 'GIT_SSH_PRIVATE_KEY' },
-          { fromEnvironment: 'OP_SSH_PRIVATE_KEY' },
-        ],
+        authentication: {
+          privateKeys: [
+            { fromEnvironment: 'GIT_SSH_PRIVATE_KEY' },
+            { fromEnvironment: 'OP_SSH_PRIVATE_KEY' },
+          ],
+        },
       },
       {
         resolveEnvironment: (name) =>
@@ -152,7 +154,11 @@ describe('tools/git/ssh-resource-service', () => {
 
     await assert.rejects(
       service.acquire(
-        { privateKeys: [{ fromEnvironment: 'GIT_SSH_PRIVATE_KEY' }] },
+        {
+          authentication: {
+            privateKeys: [{ fromEnvironment: 'GIT_SSH_PRIVATE_KEY' }],
+          },
+        },
         { resolveEnvironment: () => privateKey, workspaceDir: '/workspace' },
       ),
       (error: unknown) =>
@@ -172,5 +178,129 @@ describe('tools/git/ssh-resource-service', () => {
     });
 
     assert.deepEqual(await service.inspectDependencies(), { missing: ['ssh-agent', 'ssh-add'] });
+  });
+
+  it('should project one environment-bound signing key without ssh authentication', async () => {
+    const commands: CredentialCommandOptions[] = [];
+    const executables: string[] = [];
+    const service = new GitSshResourceService({
+      baseEnvironment: { PATH: '/system/bin' },
+      createTemporaryDirectory: async () => '/tmp/as-signing-test',
+      launcherPath: '/package/bin/agent-system-ssh',
+      loadPrivateKeys: async (sources) => {
+        assert.deepEqual(sources, [{ fromEnvironment: 'GIT_SIGNING_KEY' }]);
+        return [privateKey];
+      },
+      removeTemporaryDirectory: async () => undefined,
+      resolveExecutable: async (name) => {
+        executables.push(name);
+        return `/system/bin/${name}`;
+      },
+      async runCommand(options) {
+        commands.push(options);
+        return options.args[0] === '-L'
+          ? {
+              exitCode: 0,
+              status: 'completed',
+              stderr: Buffer.alloc(0),
+              stdout: Buffer.from(`${publicKey}\n`),
+            }
+          : {
+              exitCode: 0,
+              status: 'completed',
+              stderr: Buffer.alloc(0),
+              stdout: Buffer.alloc(0),
+            };
+      },
+      secureTemporaryDirectory: async () => undefined,
+      startAgent: async (options) => ({
+        dispose: async () => undefined,
+        socketPath: options.socketPath,
+      }),
+      writePrivateFile: async () => undefined,
+    });
+
+    const lease = await service.acquire(
+      { signing: { gitConfigurationOffset: 8, key: 'GIT_SIGNING_KEY' } },
+      { resolveEnvironment: () => privateKey, workspaceDir: '/workspace' },
+    );
+
+    assert.deepEqual(executables, ['ssh-agent', 'ssh-add', 'ssh-keygen']);
+    assert.equal(lease.environment?.GIT_SSH, undefined);
+    assert.deepEqual(lease.environment, {
+      GIT_CONFIG_COUNT: '9',
+      GIT_CONFIG_KEY_8: 'user.signingKey',
+      GIT_CONFIG_VALUE_8: 'key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest',
+      SSH_ASKPASS_REQUIRE: 'never',
+      SSH_AUTH_SOCK: '/tmp/as-signing-test/a',
+    });
+    assert.equal(commands[0]?.input, `${privateKey}\n`);
+    assert.deepEqual(lease.sensitiveValues, [privateKey]);
+    await lease.dispose();
+  });
+
+  it('should keep a distinct signing key out of remote authentication selectors', async () => {
+    const writes = new Map<string, string>();
+    const sockets: string[] = [];
+    const service = new GitSshResourceService({
+      baseEnvironment: { PATH: '/system/bin' },
+      createTemporaryDirectory: async () => '/tmp/as-combined-test',
+      launcherPath: '/package/bin/agent-system-ssh',
+      loadPrivateKeys: async (sources) =>
+        sources[0] && 'fromEnvironment' in sources[0] && sources[0].fromEnvironment === 'AUTH_KEY'
+          ? [privateKey]
+          : [secondPrivateKey],
+      removeTemporaryDirectory: async () => undefined,
+      resolveExecutable: async (name) => `/system/bin/${name}`,
+      async runCommand(options) {
+        return options.args[0] === '-L'
+          ? {
+              exitCode: 0,
+              status: 'completed',
+              stderr: Buffer.alloc(0),
+              stdout: Buffer.from(
+                `${options.environment?.SSH_AUTH_SOCK?.endsWith('/s') ? secondPublicKey : publicKey}\n`,
+              ),
+            }
+          : {
+              exitCode: 0,
+              status: 'completed',
+              stderr: Buffer.alloc(0),
+              stdout: Buffer.alloc(0),
+            };
+      },
+      secureTemporaryDirectory: async () => undefined,
+      startAgent: async (options) => {
+        sockets.push(options.socketPath);
+        return { dispose: async () => undefined, socketPath: options.socketPath };
+      },
+      writePrivateFile: async (path, contents) => {
+        writes.set(path, contents);
+      },
+    });
+
+    const lease = await service.acquire(
+      {
+        authentication: { privateKeys: [{ fromEnvironment: 'AUTH_KEY' }] },
+        signing: { gitConfigurationOffset: 8, key: 'SIGNING_KEY' },
+      },
+      { resolveEnvironment: () => privateKey, workspaceDir: '/workspace' },
+    );
+
+    assert.deepEqual(sockets, ['/tmp/as-combined-test/a', '/tmp/as-combined-test/s']);
+    assert.equal(writes.get('/tmp/as-combined-test/k0.pub'), `${publicKey}\n`);
+    assert.equal(
+      [...writes]
+        .filter(([path]) => path.endsWith('.pub'))
+        .some(([, value]) => value.includes(secondPublicKey)),
+      false,
+    );
+    assert.match(writes.get('/tmp/as-combined-test/c') ?? '', /IdentityFile/u);
+    assert.equal(lease.environment?.GIT_SSH, '/package/bin/agent-system-ssh');
+    assert.equal(
+      lease.environment?.GIT_CONFIG_VALUE_8,
+      'key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISecond',
+    );
+    await lease.dispose();
   });
 });

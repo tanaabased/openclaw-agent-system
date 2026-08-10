@@ -8,6 +8,8 @@ export interface ResolvedGitIdentity {
   name: string;
 }
 
+export type GitConfigurationEntry = readonly [key: string, value: string];
+
 function resolveIdentityValue(
   value: ResolvableString | undefined,
   fieldPath: string,
@@ -48,28 +50,55 @@ export function resolveGitIdentity(
   };
 }
 
-/** Build a child-only Git identity and noninteractive configuration environment. */
-export function gitIdentityEnvironment(
+/** Build the fixed child-only Git identity and security configuration entries. */
+export function gitIdentityConfiguration(
   identity: ResolvedGitIdentity,
   platform: NodeJS.Platform = process.platform,
   externalExtensions: readonly string[] = [],
-): Record<string, string> {
+): GitConfigurationEntry[] {
   const nullPath = platform === 'win32' ? 'NUL' : '/dev/null';
-  const configuration = [
+  return [
     ['user.name', identity.name],
     ['user.email', identity.email],
     ['user.useConfigOnly', 'true'],
     ['core.hooksPath', nullPath],
     ['credential.helper', ''],
     ...externalExtensions.map((extension) => [`alias.${extension}`, ''] as const),
-  ] as const;
+  ];
+}
+
+/** Encode ordered command-scoped Git configuration without mutating a config file. */
+export function gitConfigurationEnvironment(
+  configuration: readonly GitConfigurationEntry[],
+): Record<string, string> {
+  const environment: Record<string, string> = {
+    GIT_CONFIG_COUNT: String(configuration.length),
+  };
+  configuration.forEach(([key, value], index) => {
+    environment[`GIT_CONFIG_KEY_${index}`] = key;
+    environment[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return environment;
+}
+
+/** Build a child-only Git identity and noninteractive configuration environment. */
+export function gitIdentityEnvironment(
+  identity: ResolvedGitIdentity,
+  platform: NodeJS.Platform = process.platform,
+  externalExtensions: readonly string[] = [],
+  additionalConfiguration: readonly GitConfigurationEntry[] = [],
+): Record<string, string> {
+  const nullPath = platform === 'win32' ? 'NUL' : '/dev/null';
+  const configuration = [
+    ...gitIdentityConfiguration(identity, platform, externalExtensions),
+    ...additionalConfiguration,
+  ];
   const environment: Record<string, string> = {
     GIT_AUTHOR_EMAIL: identity.email,
     GIT_AUTHOR_NAME: identity.name,
     GIT_ATTR_NOSYSTEM: '1',
     GIT_COMMITTER_EMAIL: identity.email,
     GIT_COMMITTER_NAME: identity.name,
-    GIT_CONFIG_COUNT: String(configuration.length),
     GIT_CONFIG_GLOBAL: nullPath,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_EDITOR: 'true',
@@ -78,9 +107,5 @@ export function gitIdentityEnvironment(
     GIT_TERMINAL_PROMPT: '0',
     PAGER: 'cat',
   };
-  configuration.forEach(([key, value], index) => {
-    environment[`GIT_CONFIG_KEY_${index}`] = key;
-    environment[`GIT_CONFIG_VALUE_${index}`] = value;
-  });
-  return environment;
+  return { ...environment, ...gitConfigurationEnvironment(configuration) };
 }

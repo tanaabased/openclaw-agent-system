@@ -703,6 +703,44 @@ git:
     }
   });
 
+  it('should parse one environment-bound git signing key and public trust file', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  signing:
+    key: GIT_SIGNING_KEY
+    allowed-signers-file: .agent-system/allowed_signers
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.git?.signing, {
+      allowedSignersFile: '.agent-system/allowed_signers',
+      key: 'GIT_SIGNING_KEY',
+    });
+  });
+
+  it('should reject literal, wrapped, path, and escaping git signing keys', () => {
+    for (const signing of [
+      'key: private-key-material',
+      'key: { from-environment: GIT_SIGNING_KEY }',
+      'key: { path: ~/.ssh/id_ed25519 }',
+      'key: GIT_SIGNING_KEY\n    allowed-signers-file: ../allowed_signers',
+    ]) {
+      const codes = diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  signing:
+    ${signing}
+`);
+      assert.equal(codes.has('manifest-schema') || codes.has('manifest-unknown-key'), true);
+    }
+  });
+
   it('should reject empty, ambiguous, and direct 1password git key sources', () => {
     for (const privateKeys of [
       '[]',

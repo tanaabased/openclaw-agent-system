@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import createGitLifecycleContribution from '../tools/git/lifecycle.ts';
 
@@ -112,10 +115,60 @@ describe('tools/git/lifecycle', () => {
         {
           code: 'git-ssh-dependencies-missing',
           message: 'Git SSH authentication requires missing executables: ssh-agent, ssh-add.',
-          remediation: 'Install OpenSSH and make ssh, ssh-agent, and ssh-add available on PATH.',
+          remediation: 'Install OpenSSH and make ssh-agent, ssh-add available on PATH.',
           status: 'blocked',
         },
       ],
     );
+  });
+
+  it('should inspect signing dependencies and the public trust file without credentials', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-git-lifecycle-'));
+    const workspaceDir = join(root, 'workspace');
+    await mkdir(join(workspaceDir, '.agent-system'), { recursive: true });
+    await writeFile(
+      join(workspaceDir, '.agent-system', 'allowed_signers'),
+      'data@example.com ssh-ed25519 AAAA\n',
+    );
+    const contribution = createGitLifecycleContribution({
+      sshResourceService: {
+        async inspectDependencies(requirements) {
+          assert.deepEqual(requirements, { authentication: false, signing: true });
+          return { missing: [] };
+        },
+      },
+    });
+
+    try {
+      assert.deepEqual(
+        await contribution.inspect?.({
+          manifest: {
+            schemaVersion: 1,
+            agent: { id: 'data', email: 'data@example.com', name: 'Data' },
+            git: {
+              signing: {
+                allowedSignersFile: '.agent-system/allowed_signers',
+                key: 'GIT_SIGNING_KEY',
+              },
+            },
+          },
+          workspaceDir,
+        }),
+        [
+          {
+            code: 'git-signing-allowed-signers-ready',
+            message: 'Git SSH allowed signers file is available.',
+            status: 'healthy',
+          },
+          {
+            code: 'git-ssh-dependencies-ready',
+            message: 'Git SSH signing dependencies are available.',
+            status: 'healthy',
+          },
+        ],
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });

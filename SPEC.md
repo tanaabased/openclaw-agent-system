@@ -986,7 +986,9 @@ without modifying Gateway, global, or repository configuration. Remote-capable
 commands can load unencrypted private keys from declared paths or the completed
 Agent System environment into an isolated invocation-scoped SSH agent.
 Completed-environment keys may come from direct 1Password secret references;
-encrypted keys and signing remain future slices.
+environment-bound SSH commit and tag signing includes optional local trusted
+verification. Explicitly allowed worktrees are the next Git slice. Encrypted
+keys and configurable Git preferences remain deferred.
 
 ### Tool verification contract
 
@@ -1213,10 +1215,9 @@ Completed behavior is documented in the user guides, tool READMEs, tests, and
 
 ### Git tool
 
-Continue the [Git tool specification](tools/git/SPEC.md) with encrypted-key
-support, signing, and constrained-configuration slices. Each slice statically
-composes its schema, reuses the shared tool runtime, and adds focused direct
-tests plus only the Leia coverage needed for a real installed-plugin boundary.
+Continue the [Git tool specification](tools/git/SPEC.md) with an explicitly
+allowed worktree design. The worktree schema remains open until its ownership,
+policy, doctor, and removal contracts are explicit.
 
 ### Tool platform expansion
 
@@ -1251,7 +1252,8 @@ The first implementation does not include:
 
 - backups;
 - memories;
-- Git worktree management;
+- encrypted Git SSH keys and passphrase delivery;
+- configurable Git behavior preferences;
 - notification routing;
 - broad sandbox policy;
 - structured dependency or plugin declarations;
@@ -1269,6 +1271,8 @@ Agent System core environment implementations.
   stable shared configuration package.
 - The managed location and format for successful installation metadata.
 - The exact Linux headless service-credential integration.
+- The exact declaration, ownership, and removal shape for explicitly allowed
+  Git worktrees outside an agent workspace.
 - The final compile-time SDK export/package boundary and typed OpenClaw
   cross-plugin tool capability.
 - Which high-value GitHub operations justify semantic HTTP/Octokit conveniences

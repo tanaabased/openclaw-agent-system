@@ -3,9 +3,10 @@ import { Type, type Static } from 'typebox';
 import {
   decodeResolvableString,
   environmentVariableNameSchema,
+  externalEnvironmentBindingSchema,
   externalResolvableStringSchema,
 } from '../../utils/manifest-value-schemas.ts';
-import type { ResolvableString } from '../../utils/manifest-value-types.ts';
+import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
 
 const externalGitPolicyDecisionSchema = Type.Union([
   Type.Literal('allow'),
@@ -29,6 +30,13 @@ const externalGitPrivateKeySourceSchema = Type.Union([
   ),
 ]);
 
+const externalGitAllowedSignersFileSchema = Type.String({
+  maxLength: 4096,
+  minLength: 1,
+  pattern:
+    '^(?![A-Za-z]:[\\\\/])(?![\\/~])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+});
+
 export const externalGitSectionSchema = Type.Object(
   {
     email: Type.Optional(externalResolvableStringSchema),
@@ -48,6 +56,15 @@ export const externalGitSectionSchema = Type.Object(
           force: Type.Optional(externalGitPolicyDecisionSchema),
           rewrite: Type.Optional(externalGitPolicyDecisionSchema),
           unknown: Type.Optional(externalGitPolicyDecisionSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    signing: Type.Optional(
+      Type.Object(
+        {
+          'allowed-signers-file': Type.Optional(externalGitAllowedSignersFileSchema),
+          key: externalEnvironmentBindingSchema,
         },
         { additionalProperties: false },
       ),
@@ -88,11 +105,17 @@ export interface GitSshConfiguration {
   privateKeys: GitPrivateKeySource[];
 }
 
+export interface GitSigningConfiguration {
+  allowedSignersFile?: string;
+  key: EnvironmentBinding;
+}
+
 export interface GitManifestConfiguration {
   email?: ResolvableString;
   extensions?: Record<string, GitPolicyDecision>;
   name?: ResolvableString;
   policy?: Partial<GitPolicyConfiguration>;
+  signing?: GitSigningConfiguration;
   ssh?: GitSshConfiguration;
 }
 
@@ -132,6 +155,16 @@ export function decodeGitSection(value: ExternalGitSection): GitManifestConfigur
     ...(value.extensions === undefined ? {} : { extensions: { ...value.extensions } }),
     ...(value.name === undefined ? {} : { name: decodeResolvableString(value.name) }),
     ...(value.policy === undefined ? {} : { policy: { ...value.policy } }),
+    ...(value.signing === undefined
+      ? {}
+      : {
+          signing: {
+            key: value.signing.key,
+            ...(value.signing['allowed-signers-file'] === undefined
+              ? {}
+              : { allowedSignersFile: value.signing['allowed-signers-file'] }),
+          },
+        }),
     ...(normalizedPrivateKeys === undefined
       ? {}
       : {

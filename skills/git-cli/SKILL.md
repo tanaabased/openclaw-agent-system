@@ -1,6 +1,6 @@
 ---
 name: agent-system-git-cli
-description: Agent System Git guidance for using the active agent's managed identity, contained workspace, and operation policy.
+description: Agent System Git guidance for using the active agent's managed identity, SSH signing, contained workspace, and operation policy.
 license: MIT
 metadata:
   type: integration
@@ -28,7 +28,7 @@ metadata:
 
 ## Overview
 
-Use `agent_system_git` for working-tree and repository operations when the active agent manifest contains `git`. It applies the agent's operation policy, then runs the trusted `git` executable in a contained workspace directory with the agent's declared author and committer identity.
+Use `agent_system_git` for working-tree and repository operations when the active agent manifest contains `git`. It applies the agent's operation policy, then runs the trusted `git` executable in a contained workspace directory with the agent's declared author and committer identity and any configured SSH signing key.
 
 ## When to Use
 
@@ -47,6 +47,7 @@ Use `agent_system_git` for working-tree and repository operations when the activ
 - The active agent has a valid Agent System manifest with `git` configured.
 - The manifest resolves both an effective name and email from `git` or `agent`.
 - `git` is installed; the plugin skill metadata provides the Homebrew install hint.
+- OpenSSH is installed when the manifest configures authentication or signing keys.
 
 ## Inputs
 
@@ -74,6 +75,7 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 - Report missing tool, unresolved identity, manifest binding, and workspace-containment errors directly.
 - When OpenClaw requests approval, wait for the operator's decision and do not reshape the command to avoid policy.
 - Do not work around denied or unknown operations with `exec`, direct `git`, alternate working-directory flags, or configuration overrides.
+- Let Agent System apply configured signing automatically; do not pass signing-control flags or select another key.
 - Repository-owned configuration remains a code-execution surface; do not run Git in an untrusted checkout solely because Agent System supplies the identity.
 
 ## Workflow
@@ -92,4 +94,5 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 
 - Confirm the tool used the active agent rather than a model-supplied identity.
 - Confirm the effective author and committer match the manifest when creating a commit.
+- When signing is configured, confirm created commits and tags are signed and use local trust claims only when an allowed-signers file verifies them.
 - Confirm the selected working directory stays inside the bound agent workspace.

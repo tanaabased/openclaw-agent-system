@@ -15,6 +15,9 @@ environment:
 git:
   extensions:
     agent-system-test: allow
+  signing:
+    key: OP_SSH_KEY
+    allowed-signers-file: .agent-system/allowed_signers
   ssh:
     private-keys:
       - from-environment: SSH_KEY
