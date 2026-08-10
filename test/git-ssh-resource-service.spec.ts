@@ -239,7 +239,7 @@ describe('tools/git/ssh-resource-service', () => {
       GIT_CONFIG_KEY_8: 'gpg.ssh.defaultKeyCommand',
       GIT_CONFIG_KEY_9: 'gpg.ssh.program',
       GIT_CONFIG_VALUE_8: "'/package/bin/agent-system-ssh-signing-key'",
-      GIT_CONFIG_VALUE_9: "'/package/bin/agent-system-ssh-keygen'",
+      GIT_CONFIG_VALUE_9: '/package/bin/agent-system-ssh-keygen',
       SSH_ASKPASS_REQUIRE: 'never',
     });
     assert.equal(commands[0]?.input, `${privateKey}\n`);

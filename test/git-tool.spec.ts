@@ -248,7 +248,7 @@ describe('tools/git/tool', () => {
                 GIT_CONFIG_KEY_10: 'gpg.ssh.defaultKeyCommand',
                 GIT_CONFIG_KEY_11: 'gpg.ssh.program',
                 GIT_CONFIG_VALUE_10: "'/package/bin/agent-system-ssh-signing-key'",
-                GIT_CONFIG_VALUE_11: "'/package/bin/agent-system-ssh-keygen'",
+                GIT_CONFIG_VALUE_11: '/package/bin/agent-system-ssh-keygen',
               },
               sensitiveValues: ['private-key-material'],
             };

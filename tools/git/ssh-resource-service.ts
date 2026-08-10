@@ -337,7 +337,7 @@ export default class GitSshResourceService {
           [`GIT_CONFIG_KEY_${index}`]: 'gpg.ssh.defaultKeyCommand',
           [`GIT_CONFIG_VALUE_${index}`]: shellQuote(this.#dependencies.signingKeyLauncherPath),
           [`GIT_CONFIG_KEY_${index + 1}`]: 'gpg.ssh.program',
-          [`GIT_CONFIG_VALUE_${index + 1}`]: shellQuote(this.#dependencies.signingProgramPath),
+          [`GIT_CONFIG_VALUE_${index + 1}`]: this.#dependencies.signingProgramPath,
         });
       }
 
