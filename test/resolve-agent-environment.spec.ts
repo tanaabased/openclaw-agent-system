@@ -205,6 +205,59 @@ describe('utils/resolve-agent-environment', () => {
     });
   });
 
+  it('should resolve direct op secrets as sensitive environment.set values', () => {
+    const resolved = resolveAgentEnvironment(
+      {
+        schemaVersion: 1,
+        agent: { id: 'data' },
+        environment: {
+          required: ['SSH_KEY'],
+          set: { SSH_KEY: { fromOp: 'op://vault/item/private key' } },
+        },
+      },
+      {},
+      {
+        set: {
+          sensitiveNames: ['SSH_KEY'],
+          values: { SSH_KEY: 'private-key-value' },
+        },
+      },
+    );
+
+    assert.deepEqual(resolved, {
+      status: 'resolved',
+      environment: {
+        sensitiveNames: ['SSH_KEY'],
+        values: { SSH_KEY: 'private-key-value' },
+        variables: [
+          {
+            name: 'SSH_KEY',
+            overriddenSources: [],
+            required: true,
+            source: 'environment.set',
+          },
+        ],
+      },
+    });
+  });
+
+  it('should reject unresolved direct op secrets without exposing references', () => {
+    const reference = 'op://private-vault/private-item/private-field';
+    const resolved = resolveAgentEnvironment(
+      {
+        schemaVersion: 1,
+        agent: { id: 'data' },
+        environment: { set: { SSH_KEY: { fromOp: reference } } },
+      },
+      {},
+    );
+
+    assert.equal(resolved.status, 'invalid');
+    if (resolved.status !== 'invalid') return;
+    assert.equal(resolved.diagnostics[0]?.code, 'op-secret-unavailable');
+    assert.equal(JSON.stringify(resolved.diagnostics).includes(reference), false);
+  });
+
   it('should reject every attempt to export the 1password bootstrap token', () => {
     const privateToken = 'private-bootstrap-token';
     const resolved = resolveAgentEnvironment(
@@ -215,7 +268,7 @@ describe('utils/resolve-agent-environment', () => {
           required: ['OP_SERVICE_ACCOUNT_TOKEN'],
           set: {
             ALIAS: '$OP_SERVICE_ACCOUNT_TOKEN',
-            OP_SERVICE_ACCOUNT_TOKEN: 'literal-token',
+            OP_SERVICE_ACCOUNT_TOKEN: { fromOp: 'op://private-vault/private-item/private-field' },
           },
         },
       },
@@ -242,6 +295,7 @@ describe('utils/resolve-agent-environment', () => {
       ],
     );
     assert.equal(JSON.stringify(resolved.diagnostics).includes(privateToken), false);
+    assert.equal(JSON.stringify(resolved.diagnostics).includes('private-vault'), false);
   });
 
   it('should resolve a manifest without environment data to empty collections', () => {

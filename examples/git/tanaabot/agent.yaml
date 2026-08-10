@@ -9,13 +9,16 @@ environment:
   op: jglytdfegfggijqkalco2cxexa
   set:
     SSH_KEY: $TEST_SSH_KEY
+    OP_SSH_KEY:
+      from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
 
 git:
   extensions:
     agent-system-test: allow
   ssh:
     private-keys:
-      from-environment: SSH_KEY
+      - from-environment: SSH_KEY
+      - from-environment: OP_SSH_KEY
 
 github:
   username: tanaabot

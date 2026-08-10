@@ -94,6 +94,7 @@ function createProgram() {
           status: 'valid',
           agentId: manifest.agent.id,
           environmentCount: 1,
+          secretCount: 0,
           source: options.storeId ? `store:${options.storeId}` : 'process-environment',
         };
       },

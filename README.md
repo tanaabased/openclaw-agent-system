@@ -24,7 +24,7 @@ Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw ag
 Today, Agent System:
 
 - registers an agent workspace with OpenClaw and reconciles its public identity
-- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password Environment sources
+- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
 - wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
 - applies each tool's operation-specific `allow`, `ask`, or `deny` policy before resolving credentials or executing the operation
 - uses a shared tool contract intended to become a public API for compatible tools from other OpenClaw plugins
@@ -61,8 +61,11 @@ agent:
     from-environment: AGENT_EMAIL
 
 environment:
-  # import this agent's identity and tool credentials from one 1password environment.
+  # import this agent's identity and tool credentials from 1password.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
+  set:
+    SSH_KEY:
+      from-op: 'op://v4u7l2t9n5p8r1c6x3z0m4q7da/ssh-key/private key?ssh-format=openssh'
   required:
     - AGENT_EMAIL
     - GH_TOKEN_TANAABOT

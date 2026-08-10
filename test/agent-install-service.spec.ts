@@ -64,6 +64,34 @@ describe('lib/agent-install-service', () => {
     assert.deepEqual(calls, ['credential:data', 'reconcile']);
   });
 
+  it('should validate stored op access for direct secrets before lifecycle reconciliation', async () => {
+    const calls: string[] = [];
+    const service = new AgentInstallService({
+      credentialManager: {
+        async validateStoredForInstall() {
+          calls.push('credential');
+          return { status: 'ready' };
+        },
+      },
+      lifecycleRegistry: {
+        async reconcile() {
+          calls.push('reconcile');
+          return { outcomes: [], warnings: [] };
+        },
+      },
+    });
+
+    await service.install({
+      manifest: {
+        ...manifest,
+        environment: { set: { SSH_KEY: { fromOp: 'op://vault/item/private key' } } },
+      },
+      workspaceDir: '/workspace/data',
+    });
+
+    assert.deepEqual(calls, ['credential', 'reconcile']);
+  });
+
   it('should stop before reconciliation when stored op access is invalid', async () => {
     let reconciliations = 0;
     const service = new AgentInstallService({

@@ -1,6 +1,6 @@
 # Environment Example
 
-This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv and 1Password Environment resolution, host references, required-value enforcement, and value-free environment inspection without invoking a model.
+This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv, 1Password Environment, and direct secret resolution; host references; required-value enforcement; and value-free environment inspection without invoking a model.
 
 ## Setup
 
@@ -51,10 +51,17 @@ cd "$GITHUB_WORKSPACE/examples/env/missing-required"
 if output=$(openclaw agent-system env 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'code=environment-required-missing'
 
-# should resolve a live 1password environment without exposing values or its bootstrap token
+# should resolve live 1password environments and direct secrets without exposing values or the bootstrap token
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"
 openclaw agent-system env --json | grep -F '"name": "VIBES"'
 openclaw agent-system env --json | grep -F '"source": "environment.op[0]"'
+openclaw agent-system env --json | grep -F '"name": "OP_SSH_KEY"'
+openclaw agent-system env --json | grep -F '"source": "environment.set"'
 openclaw agent-system env --json | grep -F '"required": true'
 if openclaw agent-system env --json | grep -Fq -e '"values":' -e "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; fi
+
+# should validate access to every declared 1password resource without returning values
+cd "$GITHUB_WORKSPACE/examples/env/onepassword"
+openclaw agent-system credentials validate op --from-env | grep -F 'environments' | grep -F '1'
+openclaw agent-system credentials validate op --from-env | grep -F 'secrets' | grep -F '1'
 ```

@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import collectOpEnvironmentRequirements, {
+  hasOpEnvironmentRequirements,
+} from '../utils/collect-op-environment-requirements.ts';
 import loadAgentDotenv from '../utils/load-agent-dotenv.ts';
 import resolveAgentEnvironment, {
   type AgentEnvironmentInputSource,
@@ -108,17 +111,18 @@ export default class AgentEnvironmentService {
       };
     }
 
-    const opEnvironmentIds = result.manifest.environment?.op ?? [];
+    const opRequirements = collectOpEnvironmentRequirements(result.manifest);
+    let opSet: { sensitiveNames: string[]; values: Record<string, string> } | undefined;
     let opSources: AgentEnvironmentInputSource[] = [];
-    if (opEnvironmentIds.length > 0) {
+    if (hasOpEnvironmentRequirements(opRequirements)) {
       const opEnvironmentService = this.#dependencies.opEnvironmentService;
       if (!opEnvironmentService) {
         const diagnostics = [
           ...result.diagnostics,
           {
             code: 'op-integration-unavailable',
-            fieldPath: '/environment/op',
-            message: 'OP Environment resolution is unavailable in this runtime.',
+            fieldPath: '/environment',
+            message: 'OP resource resolution is unavailable in this runtime.',
             severity: 'error' as const,
           },
         ];
@@ -130,7 +134,7 @@ export default class AgentEnvironmentService {
           diagnostics,
         };
       }
-      const op = await opEnvironmentService.load(result.manifest.agent.id, opEnvironmentIds);
+      const op = await opEnvironmentService.load(result.manifest.agent.id, opRequirements);
       if (op.status === 'invalid') {
         const diagnostics = [...result.diagnostics, ...op.diagnostics];
         this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
@@ -141,12 +145,14 @@ export default class AgentEnvironmentService {
           diagnostics,
         };
       }
+      opSet = op.set;
       opSources = op.sources;
     }
 
     const resolution = resolveAgentEnvironment(result.manifest, this.#hostEnvironment, {
       dotenv: dotenv.sources,
       op: opSources,
+      ...(opSet ? { set: opSet } : {}),
     });
     if (resolution.status === 'invalid') {
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];

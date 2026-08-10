@@ -5,5 +5,9 @@ agent:
 
 environment:
   op: jglytdfegfggijqkalco2cxexa
+  set:
+    OP_SSH_KEY:
+      from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
   required:
+    - OP_SSH_KEY
     - VIBES

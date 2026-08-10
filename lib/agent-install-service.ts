@@ -1,4 +1,7 @@
 import type { AgentManifest } from '../utils/manifest-types.ts';
+import collectOpEnvironmentRequirements, {
+  hasOpEnvironmentRequirements,
+} from '../utils/collect-op-environment-requirements.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type AgentSystemLifecycleRegistry from './lifecycle-registry.ts';
 import type {
@@ -43,7 +46,7 @@ export default class AgentInstallService {
   }
 
   async install(input: AgentInstallInput): Promise<AgentInstallResult> {
-    if ((input.manifest.environment?.op?.length ?? 0) > 0) {
+    if (hasOpEnvironmentRequirements(collectOpEnvironmentRequirements(input.manifest))) {
       const credentialManager = this.#dependencies.credentialManager;
       if (!credentialManager) {
         throw new AgentInstallError(

@@ -2,8 +2,8 @@
 
 This scenario verifies the packaged Agent System `git` shim, Git declaration
 validation, nested workspace discovery, agent identity on a real commit, and
-isolated SSH authentication against GitHub. It does not start a Gateway or
-invoke a model.
+isolated SSH authentication using generated and 1Password-backed private keys.
+It does not start a Gateway or invoke a model.
 
 ## Setup
 
@@ -75,7 +75,7 @@ PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git commit --quiet --message 'verify managed identity'
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
 
-# should report managed git ssh dependencies healthy
+# should resolve generated and 1password-backed keys into the managed ssh agent
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git SSH authentication dependencies are available'
 

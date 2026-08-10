@@ -12,8 +12,9 @@ projection, working-directory containment, policy, and direct verification.
 The SSH runtime foundation adds invocation-scoped resource cleanup and a
 cross-platform OpenSSH compatibility proof. The first authentication slice
 adds unencrypted path and completed-environment key sources through an isolated
-per-invocation SSH agent. Direct 1Password key references, encrypted keys, and
-signing build on that foundation.
+per-invocation SSH agent. Generic direct OP environment values now provide the
+1Password-backed authentication path without adding a Git-specific secret
+source. Encrypted keys and signing build on that foundation.
 
 ## Product Boundary
 
@@ -94,9 +95,8 @@ Agent System never falls through to a host or repository Git identity. An empty
 `git: {}` section is valid only when the agent section supplies both effective
 values.
 
-Future direct 1Password, encrypted-key, and signing fields are defined below
-but must not be added to the manifest schema until their owning runtime behavior
-exists.
+Future encrypted-key and signing fields are defined below but must not be added
+to the manifest schema until their owning runtime behavior exists.
 
 ## Tool Input and Execution
 
@@ -217,7 +217,7 @@ credential or executable escape hatch.
 
 SSH authentication is the second Git delivery slice. It uses explicit source
 objects so Agent System never guesses whether a string is a path, environment
-binding, or 1Password reference:
+binding, or another value:
 
 ```yaml
 git:
@@ -237,12 +237,9 @@ exactly one source:
   workspace.
 - `from-environment` names one value in the completed Agent System environment
   that contains OpenSSH private-key material. The completed environment may
-  receive that value from literals, dotenv, or a declared 1Password
-  Environment.
-
-A later source slice adds direct `from-onepassword` `op://` references. Those
-references require a dedicated late-bound 1Password resolver and real
-credential proof; they are not accepted as shorthand for environment loading.
+  receive that value from literals, dotenv, a declared 1Password Environment,
+  or an `environment.set` `from-op` reference. Git does not duplicate the shared
+  direct-secret resolver in its own schema.
 
 Managed authentication requires `ssh`, `ssh-agent`, and `ssh-add` from OpenSSH.
 The source-development Brewfile installs the Homebrew `openssh`
@@ -296,10 +293,15 @@ SSH signing is the third Git delivery slice and reuses the credential-resource
 lease:
 
 ```yaml
+environment:
+  set:
+    GIT_SIGNING_KEY:
+      from-op: 'op://vault-id/item-id/private key?ssh-format=openssh'
+
 git:
   signing:
     key:
-      from-onepassword: 'op://vault-id/item-id/private key?ssh-format=openssh'
+      from-environment: GIT_SIGNING_KEY
     commits: true
     tags: false
 ```
@@ -397,13 +399,14 @@ Official asset source:
 - Add source validation, readiness diagnostics, unit tests, and a narrowly
   focused SSH assertion to the existing Git Leia scenario.
 
-### Slice 2B2: direct 1Password SSH key sources
+### Slice 2B2: 1Password-backed SSH authentication (complete)
 
-- Add a dedicated resolver for declared `op://` private-key references.
-- Resolve only after authorization with the agent's stored bootstrap
-  credential.
-- Add a real credential-backed fixture without widening general environment
-  access.
+- Add shared `environment.set` `from-op` resolution for declared secret
+  references after credential access is established.
+- Feed the resolved value to Git through its existing `from-environment` source
+  instead of adding a Git-specific resolver.
+- Prove a real vault key and a distinct environment-provided key in the existing
+  Git Leia scenario.
 
 ### Slice 2C: encrypted SSH keys
 

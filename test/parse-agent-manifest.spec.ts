@@ -91,6 +91,45 @@ agent:
     }
   });
 
+  it('should parse direct op secret references only in environment.set object form', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  set:
+    LITERAL_REFERENCE: op://vault/item/field
+    SSH_KEY:
+      from-op: op://vault/item/keys/private%20key?ssh-format=openssh
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.environment?.set, {
+      LITERAL_REFERENCE: 'op://vault/item/field',
+      SSH_KEY: { fromOp: 'op://vault/item/keys/private%20key?ssh-format=openssh' },
+    });
+  });
+
+  it('should reject malformed or expanded environment.set op reference objects', () => {
+    for (const value of [
+      '{ from-op: vault/item/field }',
+      '{ from-op: op://vault/item }',
+      '{ from-op: op://vault/item/field, fallback: value }',
+      '{ from-environment: SSH_KEY }',
+    ]) {
+      const codes = diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+environment:
+  set:
+    SSH_KEY: ${value}
+`);
+      assert.equal(codes.has('manifest-schema') || codes.has('manifest-unknown-key'), true);
+    }
+  });
+
   it('should parse github identity and an environment-only credential binding', () => {
     const result = parseAgentManifest(`
 schema-version: 1

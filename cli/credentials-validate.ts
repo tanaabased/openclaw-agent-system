@@ -22,7 +22,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Validate an OP credential against every Environment declared by the manifest. */
+/** Validate an OP credential against every OP resource declared by the manifest. */
 export default async function validateCredentialsAgentSystem(
   options: ValidateCredentialsAgentSystemOptions,
 ): Promise<void> {
@@ -64,6 +64,7 @@ export default async function validateCredentialsAgentSystem(
       { label: 'valid', style: 'status', value: `op credential for ${result.agentId}` },
       { label: 'source', style: 'target', value: result.source },
       { label: 'environments', style: 'field', value: String(result.environmentCount) },
+      { label: 'secrets', style: 'field', value: String(result.secretCount) },
     ],
     options.styles,
   );

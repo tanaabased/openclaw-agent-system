@@ -132,6 +132,7 @@ describe('cli/credentials', () => {
             status: 'valid',
             agentId: 'data',
             environmentCount: 1,
+            secretCount: 2,
             source: 'store:file',
           };
         },
@@ -148,7 +149,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, [
-      'valid         op credential for data\nsource        store:file\nenvironments  1\n',
+      'valid         op credential for data\nsource        store:file\nenvironments  1\nsecrets       2\n',
     ]);
   });
 
@@ -164,6 +165,7 @@ describe('cli/credentials', () => {
             status: 'valid',
             agentId: 'data',
             environmentCount: 1,
+            secretCount: 0,
             source: 'process-environment',
           };
         },

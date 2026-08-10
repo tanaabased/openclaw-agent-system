@@ -1,5 +1,6 @@
 import type { GetVariablesResponse } from '@1password/sdk';
 
+import type { OpEnvironmentRequirements } from '../utils/collect-op-environment-requirements.ts';
 import type { ManifestDiagnostic } from '../utils/manifest-types.ts';
 import type { AgentEnvironmentInputSource } from '../utils/resolve-agent-environment.ts';
 import type OpCredentialService from './op-credential-service.ts';
@@ -7,6 +8,7 @@ import type { OpCredentialResolveOptions, OpCredentialSource } from './op-creden
 
 export interface OpEnvironmentClient {
   getVariables(environmentId: string): Promise<GetVariablesResponse>;
+  resolveSecret(reference: string): Promise<string>;
 }
 
 export type CreateOpEnvironmentClient = (
@@ -21,6 +23,10 @@ export type OpEnvironmentLoadResult =
     }
   | {
       status: 'loaded';
+      set: {
+        sensitiveNames: string[];
+        values: Record<string, string>;
+      };
       sources: AgentEnvironmentInputSource[];
     };
 
@@ -32,6 +38,7 @@ export type OpTokenValidationResult =
   | {
       status: 'valid';
       environmentCount: number;
+      secretCount: number;
     };
 
 export type OpCredentialValidationResult =
@@ -39,6 +46,7 @@ export type OpCredentialValidationResult =
   | {
       status: 'valid';
       environmentCount: number;
+      secretCount: number;
       source: OpCredentialSource;
     };
 
@@ -49,6 +57,7 @@ export interface OpEnvironmentServiceDependencies {
 }
 
 const environmentVariableNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const environmentFieldPath = '/environment';
 const opFieldPath = '/environment/op';
 
 async function createSdkClient(
@@ -65,18 +74,25 @@ async function createSdkClient(
     getVariables(environmentId) {
       return client.environments.getVariables(environmentId);
     },
+    resolveSecret(reference) {
+      return client.secrets.resolve(reference);
+    },
   };
 }
 
-function diagnostic(code: string, message: string, fieldPath = opFieldPath): ManifestDiagnostic {
+function diagnostic(
+  code: string,
+  message: string,
+  fieldPath = environmentFieldPath,
+): ManifestDiagnostic {
   return { code, fieldPath, message, severity: 'error' };
 }
 
-function invalid(code: string, message: string, fieldPath = opFieldPath) {
+function invalid(code: string, message: string, fieldPath = environmentFieldPath) {
   return { status: 'invalid' as const, diagnostics: [diagnostic(code, message, fieldPath)] };
 }
 
-/** Lazily authenticate, validate access, and load ordered OP Environment variables. */
+/** Lazily authenticate, validate access, and load declared OP resources. */
 export default class OpEnvironmentService {
   readonly #createClient: CreateOpEnvironmentClient;
   readonly #credentialService: Pick<OpCredentialService, 'resolveServiceAccountToken'>;
@@ -88,46 +104,62 @@ export default class OpEnvironmentService {
     this.#integrationVersion = dependencies.integrationVersion;
   }
 
-  async load(agentId: string, environmentIds: readonly string[]): Promise<OpEnvironmentLoadResult> {
-    if (environmentIds.length === 0) return { status: 'loaded', sources: [] };
+  async load(
+    agentId: string,
+    requirements: OpEnvironmentRequirements,
+  ): Promise<OpEnvironmentLoadResult> {
+    if (requirements.environmentIds.length === 0 && requirements.secrets.length === 0) {
+      return { status: 'loaded', set: { sensitiveNames: [], values: {} }, sources: [] };
+    }
 
     const credential = await this.#resolveCredential(agentId);
     if (credential.status !== 'resolved') return credential;
-    return this.#loadWithToken(credential.token, environmentIds);
+    return this.#loadWithToken(credential.token, requirements);
   }
 
   async validate(
     agentId: string,
-    environmentIds: readonly string[],
+    requirements: OpEnvironmentRequirements,
     options: OpCredentialResolveOptions = {},
   ): Promise<OpCredentialValidationResult> {
-    if (environmentIds.length === 0) {
+    if (requirements.environmentIds.length === 0 && requirements.secrets.length === 0) {
       return invalid(
-        'op-environment-not-configured',
-        'The manifest does not declare an OP Environment to validate.',
+        'op-resource-not-configured',
+        'The manifest does not declare an OP resource to validate.',
       );
     }
 
     const credential = await this.#resolveCredential(agentId, options);
     if (credential.status !== 'resolved') return credential;
-    const result = await this.validateToken(credential.token, environmentIds);
+    const result = await this.validateToken(credential.token, requirements);
     return result.status === 'valid' ? { ...result, source: credential.source } : result;
   }
 
   async validateToken(
     token: string,
-    environmentIds: readonly string[],
+    requirements: OpEnvironmentRequirements,
   ): Promise<OpTokenValidationResult> {
-    if (environmentIds.length === 0) {
+    if (requirements.environmentIds.length === 0 && requirements.secrets.length === 0) {
       return invalid(
-        'op-environment-not-configured',
-        'The manifest does not declare an OP Environment to validate.',
+        'op-resource-not-configured',
+        'The manifest does not declare an OP resource to validate.',
       );
     }
 
     const client = await this.#authenticatedClient(token);
     if (client.status === 'invalid') return client;
-    for (const [index, environmentId] of environmentIds.entries()) {
+    for (const secret of requirements.secrets) {
+      try {
+        await client.client.resolveSecret(secret.reference);
+      } catch {
+        return invalid(
+          'op-secret-unavailable',
+          'A declared OP secret could not be accessed with the selected credential.',
+          `/environment/set/${secret.name}`,
+        );
+      }
+    }
+    for (const [index, environmentId] of requirements.environmentIds.entries()) {
       try {
         await client.client.getVariables(environmentId);
       } catch {
@@ -138,7 +170,11 @@ export default class OpEnvironmentService {
         );
       }
     }
-    return { status: 'valid', environmentCount: environmentIds.length };
+    return {
+      status: 'valid',
+      environmentCount: requirements.environmentIds.length,
+      secretCount: requirements.secrets.length,
+    };
   }
 
   async #resolveCredential(
@@ -161,7 +197,7 @@ export default class OpEnvironmentService {
     if (credential.status === 'missing') {
       return invalid(
         'op-credential-missing',
-        'OP Environment resolution requires an available service-account credential.',
+        'OP resource resolution requires an available service-account credential.',
       );
     }
     return invalid(credential.code, credential.message);
@@ -188,13 +224,26 @@ export default class OpEnvironmentService {
 
   async #loadWithToken(
     token: string,
-    environmentIds: readonly string[],
+    requirements: OpEnvironmentRequirements,
   ): Promise<OpEnvironmentLoadResult> {
     const client = await this.#authenticatedClient(token);
     if (client.status === 'invalid') return client;
 
+    const setValues = new Map<string, string>();
+    for (const secret of requirements.secrets) {
+      try {
+        setValues.set(secret.name, await client.client.resolveSecret(secret.reference));
+      } catch {
+        return invalid(
+          'op-secret-unavailable',
+          'A declared OP secret could not be resolved.',
+          `/environment/set/${secret.name}`,
+        );
+      }
+    }
+
     const sources: AgentEnvironmentInputSource[] = [];
-    for (const [index, environmentId] of environmentIds.entries()) {
+    for (const [index, environmentId] of requirements.environmentIds.entries()) {
       let response: GetVariablesResponse;
       try {
         response = await client.client.getVariables(environmentId);
@@ -233,6 +282,13 @@ export default class OpEnvironmentService {
       });
     }
 
-    return { status: 'loaded', sources };
+    return {
+      status: 'loaded',
+      set: {
+        sensitiveNames: requirements.secrets.map(({ name }) => name),
+        values: Object.fromEntries(setValues),
+      },
+      sources,
+    };
   }
 }

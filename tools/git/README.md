@@ -118,8 +118,23 @@ git:
 `path` reads an existing owner-only regular file. Relative paths remain inside
 the agent workspace; absolute and `~/` paths are explicit operator choices.
 `from-environment` reads the named value from the completed Agent System
-environment, so dotenv and 1Password Environment sources can supply the key.
-Direct `op://` key references and encrypted keys are not yet supported.
+environment, so dotenv, 1Password Environments, and direct OP secret references
+can supply the key. For example:
+
+```yaml
+environment:
+  set:
+    GIT_SSH_PRIVATE_KEY:
+      from-op: 'op://vault/item/private key?ssh-format=openssh'
+
+git:
+  ssh:
+    private-keys:
+      from-environment: GIT_SSH_PRIVATE_KEY
+```
+
+The Git schema does not duplicate `from-op`; secret acquisition belongs to the
+shared environment contract. Encrypted keys are not yet supported.
 
 Remote-capable commands start a fresh isolated `ssh-agent`, load selected keys
 through standard input, expose only its private socket and public-key selector

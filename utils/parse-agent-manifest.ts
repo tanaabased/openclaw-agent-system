@@ -6,6 +6,10 @@ import { decodeAgentSection, externalAgentSectionSchema } from './agent-section-
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from '../tools/github/config-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './manifest-types.ts';
+import {
+  decodeEnvironmentSetValue,
+  externalOpSecretReferenceSchema,
+} from './manifest-value-schemas.ts';
 
 const externalAgentManifestSchema = Type.Object(
   {
@@ -60,7 +64,10 @@ const externalAgentManifestSchema = Type.Object(
             }),
           ),
           set: Type.Optional(
-            Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), Type.String()),
+            Type.Record(
+              Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }),
+              Type.Union([Type.String(), externalOpSecretReferenceSchema]),
+            ),
           ),
         },
         { additionalProperties: false },
@@ -138,7 +145,16 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
             ...(value.environment.required === undefined
               ? {}
               : { required: [...value.environment.required] }),
-            ...(value.environment.set === undefined ? {} : { set: { ...value.environment.set } }),
+            ...(value.environment.set === undefined
+              ? {}
+              : {
+                  set: Object.fromEntries(
+                    Object.entries(value.environment.set).map(([name, input]) => [
+                      name,
+                      decodeEnvironmentSetValue(input),
+                    ]),
+                  ),
+                }),
           },
         }),
     ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),

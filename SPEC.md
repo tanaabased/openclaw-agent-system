@@ -7,12 +7,12 @@ reproducible identity, deterministic environment, agent-aware tools, and
 explicit lifecycle procedures.
 
 The environment runtime is the product's foundation. It resolves declared
-literal values, dotenv files, and 1Password Environments while allowing explicit
-references to a host-environment snapshot without copying that snapshot into the
-agent environment. Higher layers consume the assembled environment through
-purpose-built configuration projections, Agent System-owned tools, packaged
-command launchers, diagnostics, installation, and later lifecycle features such
-as cron synchronization.
+literal values, dotenv files, direct 1Password secret references, and 1Password
+Environments while allowing explicit references to a host-environment snapshot
+without copying that snapshot into the agent environment. Higher layers consume
+the assembled environment through purpose-built configuration projections,
+Agent System-owned tools, packaged command launchers, diagnostics, installation,
+and later lifecycle features such as cron synchronization.
 
 Agent System also defines a tool contract so its own tools can share agent
 binding, credential resolution, policy, redaction, safe process execution, and
@@ -84,7 +84,7 @@ Phase 1 delivers:
 - strict manifest discovery, parsing, casing, and agent binding;
 - inline strings and restricted references to environment lookup values;
 - ordered dotenv sources;
-- lazy 1Password Environment resolution;
+- lazy 1Password Environment and direct secret resolution;
 - macOS Keychain and Linux Secret Service bootstrap storage, ephemeral CI
   bootstrap, and a hardened credential-file fallback;
 - required-variable validation, provenance, value-free consolidated `env`
@@ -334,22 +334,21 @@ not imply that OpenClaw's built-in `exec`, Codex native shell commands, ACP
 backends, CLI backends, MCP tools, or third-party tools can receive it.
 
 The current implementation loads ordered workspace-contained dotenv files and
-ordered 1Password Environments, accepts strings under `environment.set`,
-resolves restricted `$NAME` and `${NAME}` references against a fixed
-host-environment snapshot plus the ordered external-source lookup, validates
-`environment.required`, and implements value-free `env` diagnostics with
-provenance. Agent-scoped OP credential validation and persistent storage through
-macOS Keychain, Linux Secret Service, and the hardened file fallback are also
-implemented. Executable path projection is implemented separately for ordinary
-OpenClaw exec and local Codex native shell commands. This completes the Phase 1
-environment foundation. Action-scoped tool consumption, known-secret
-classification, and tool-output redaction begin with the Phase 2 tool
-runtime.
+ordered 1Password Environments, accepts strings or `from-op` objects under
+`environment.set`, resolves restricted `$NAME` and `${NAME}` references against
+a fixed host-environment snapshot plus the ordered external-source lookup,
+validates `environment.required`, and implements value-free `env` diagnostics
+with provenance. Agent-scoped OP credential validation and persistent storage
+through macOS Keychain, Linux Secret Service, and the hardened file fallback are
+also implemented. Executable path projection is implemented separately for
+ordinary OpenClaw exec and local Codex native shell commands. This completes the
+Phase 1 environment foundation. Action-scoped tool consumption, known-secret
+classification, and tool-output redaction begin with the Phase 2 tool runtime.
 
 The completed Phase 1 environment has three output sources in a fixed order:
 
 1. ordered dotenv files;
-2. inline strings declared in `environment.set`; and
+2. inline strings or direct OP secrets declared in `environment.set`; and
 3. ordered 1Password Environments.
 
 The host process environment is a lookup input, not an output source. A manifest
@@ -367,6 +366,8 @@ environment:
     AGENT_SYSTEM_AGENT_ID: emori
     NODE_ENV: development
     AGENT_EMAIL: $COMPANY_EMAIL
+    SSH_KEY:
+      from-op: 'op://vault/item/private key?ssh-format=openssh'
 
   op:
     - b3v8n1q6m4z9k2r7t5w0x8c6pd
@@ -403,6 +404,14 @@ non-empty list of unique strings and normalize the scalar form to a one-item
 list. Empty strings, empty declared lists, and duplicate entries are invalid.
 The resolver must retain provenance so diagnostics can explain which source
 supplied or overrode a variable without printing its value.
+
+An `environment.set` string remains literal unless it uses the restricted
+interpolation syntax. An object containing exactly one `from-op` key resolves
+the declared 1Password secret reference into that environment name. Direct OP
+values are always sensitive, retain `environment.set` provenance, and do not
+become interpolation inputs for other `environment.set` entries. A scalar
+`op://` value remains literal. Resolution authenticates one SDK client for all
+direct references and ordered Environments needed by one action.
 
 Manifest discovery and routine Gateway hooks load and cache only validated
 non-secret manifest data. Dotenv and 1Password values are resolved lazily for
@@ -475,6 +484,7 @@ Inline environment values are strings and support `$UPPERCASE_NAME` and
 - `$$` produces one literal `$`.
 - Values resolve once against the host lookup plus the ordered external source
   maps. `environment.set` values do not reference one another.
+- `from-op` objects resolve directly and do not support interpolation.
 - Plain values without interpolation remain literal strings.
 - Commands, backticks, shell substitutions, and arbitrary expressions never run.
 - A missing interpolation is a validation error.
@@ -502,13 +512,19 @@ higher list index overrides a lower list index, and `environment.set` overrides
 the final dotenv layer. Secret-bearing files should use owner-only permissions
 and remain outside version control.
 
-### 1Password Environments
+### 1Password resources
 
 `environment.op` accepts one Environment ID or an ordered
 list of ids. A higher list index overrides a lower list index, and 1Password
 values override dotenv and `environment.set` values. Resolution is lazy and uses
 the agent's configured bootstrap credential without adding that credential to
 the output environment.
+
+`environment.set.<NAME>.from-op` accepts one valid 1Password secret reference.
+It uses the same bootstrap credential and resolution pass as `environment.op`,
+but joins the `environment.set` layer rather than overriding it as a later
+source. Failures identify the environment name and stable diagnostic code
+without returning the reference or resolved value.
 
 ### Required values and output safety
 
@@ -579,15 +595,15 @@ consumer, not a replacement environment for generic command execution.
 
 ## 1Password Bootstrap Credentials
 
-The service-account token that unlocks a 1Password Environment is host bootstrap
-credential state. It must not be stored in `agent.yaml`, in the Environment it
-unlocks, or in OpenClaw's global JSON configuration.
+The service-account token that unlocks declared 1Password resources is host
+bootstrap credential state. It must not be stored in `agent.yaml`, in an
+Environment it unlocks, or in OpenClaw's global JSON configuration.
 
 Credential storage is host state selected by CLI adapters, not manifest state.
 Automatic resolution prefers the macOS login Keychain on macOS or Secret
 Service on Linux before the file fallback. Other platforms use the file store.
-The manifest remains portable and declares only the OP Environments that
-require access.
+The manifest remains portable and declares only the OP Environments and secret
+references that require access.
 
 `OP_SERVICE_ACCOUNT_TOKEN` is the always-supported process-environment fallback
 after configured credential providers. It is read only by Agent System, is
@@ -608,10 +624,10 @@ files, writes through a private temporary file and atomic rename, and fails
 closed when the store is unsafe. Unsetting removes the directory entry but does
 not claim secure erasure from the underlying storage medium.
 
-Agent System uses the bootstrap token internally to retrieve the requested
-1Password Environment, then passes only the resolved Environment values to the
-authorized Agent System-owned target process. Each service account should have
-the smallest practical scope.
+Agent System uses the bootstrap token internally to retrieve only the requested
+1Password resources, then passes resolved values only to the authorized Agent
+System-owned consumer. Each service account should have the smallest practical
+scope.
 
 The credential lifecycle separates input from persistent storage:
 
@@ -625,7 +641,7 @@ Without an input flag, `set` prompts through a masked interactive terminal.
 `--from-env` reads `OP_SERVICE_ACCOUNT_TOKEN`; `--stdin` supports redirected or
 piped automation without putting the token in process arguments. Non-interactive
 set operations require one of those explicit sources. Every source is validated
-against each `environment.op` declaration before storage.
+against each declared OP Environment and direct secret before storage.
 
 Omitting `--store` lets `set` use the first usable registered backend and lets
 `unset` remove every persisted copy. Persistent order is Keychain then file on
@@ -643,14 +659,15 @@ standard input. A missing binding or executable, unavailable or locked session,
 timeout, or backend-specific input limit makes that adapter unavailable without
 exposing raw native or subprocess errors.
 
-These commands report only credential source, selected stores, and Environment
-count. They never print tokens, Environment IDs, values, or raw SDK errors.
+These commands report only credential source, selected stores, Environment
+count, and direct-secret count. They never print tokens, Environment IDs,
+secret references, values, or raw SDK errors.
 
-When `environment.op` is declared, `install` requires a stored credential that
-can access every declared Environment. It performs that check before reading or
-mutating OpenClaw state. Installation does not prompt, read
-`OP_SERVICE_ACCOUNT_TOKEN`, or store credentials; its failure points users to
-the explicit `credentials set` command.
+When any OP Environment or direct secret is declared, `install` requires a
+stored credential that can access every declared resource. It performs that
+check before reading or mutating OpenClaw state. Installation does not prompt,
+read `OP_SERVICE_ACCOUNT_TOKEN`, or store credentials; its failure points users
+to the explicit `credentials set` command.
 
 ## Agent System Tool Contract
 
@@ -1195,11 +1212,10 @@ Completed behavior is documented in the user guides, tool READMEs, tests, and
 
 ### Git tool
 
-Continue the [Git tool specification](tools/git/SPEC.md) with direct 1Password
-key references, encrypted-key support, signing, and constrained-configuration
-slices. Each slice statically composes its schema, reuses the shared tool
-runtime, and adds focused direct tests plus only the Leia coverage needed for a
-real installed-plugin boundary.
+Continue the [Git tool specification](tools/git/SPEC.md) with encrypted-key
+support, signing, and constrained-configuration slices. Each slice statically
+composes its schema, reuses the shared tool runtime, and adds focused direct
+tests plus only the Leia coverage needed for a real installed-plugin boundary.
 
 ### Tool platform expansion
 
