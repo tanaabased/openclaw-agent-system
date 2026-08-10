@@ -148,16 +148,6 @@ bun run test
 
 The default Mocha suite keeps behavior-focused specifications flat in [`test/`](./test/).
 
-### OpenSSH Compatibility
-
-```sh
-bun run test:openssh
-```
-
-This repository check proves isolated `ssh-agent` startup, private-key loading
-through `ssh-add` standard input, fingerprint visibility, and socket cleanup.
-It runs separately from the deterministic Mocha unit suite.
-
 ### Build And Package Validation
 
 ```sh
