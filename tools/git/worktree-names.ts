@@ -21,7 +21,3 @@ export function gitWorktreeRepositoryDirectoryName(repositoryId: string): string
 export function gitWorktreeDirectoryName(repositoryId: string, workId: string): string {
   return `${slug(workId, 'work')}-${digest(`${repositoryId}\0${workId}`)}`;
 }
-
-export function gitWorktreeDefaultBranch(repositoryId: string, workId: string): string {
-  return `agent-system/${gitWorktreeDirectoryName(repositoryId, workId)}`;
-}

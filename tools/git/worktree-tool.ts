@@ -102,14 +102,13 @@ function parseCommand(argv: string[]): GitWorktreeToolInput {
   }
 
   const positional: string[] = [];
-  const options: { branch?: string; cloneUrl?: string } = {};
+  let cloneUrl: string | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
     const value = arguments_[index] ?? '';
-    if (value === '--branch' || value === '--clone-url') {
+    if (value === '--clone-url') {
       const optionValue = arguments_[index + 1];
       if (!optionValue) throw new Error(`The ${value} option requires a value.`);
-      if (value === '--branch') options.branch = optionValue;
-      else options.cloneUrl = optionValue;
+      cloneUrl = optionValue;
       index += 1;
     } else if (value.startsWith('-')) {
       throw new Error(`Unknown worktree option: ${value}.`);
@@ -119,16 +118,15 @@ function parseCommand(argv: string[]): GitWorktreeToolInput {
   }
   if (positional.length !== 3) {
     throw new Error(
-      'Usage: worktree prepare <repository-id> <work-id> <base-ref> [--clone-url <url>] [--branch <branch>].',
+      'Usage: worktree prepare <repository-id> <work-id> <base-ref> [--clone-url <url>].',
     );
   }
   return {
     action,
     baseRef: positional[2] ?? '',
-    ...(options.branch === undefined ? {} : { branch: options.branch }),
     repository: {
       id: positional[0] ?? '',
-      ...(options.cloneUrl === undefined ? {} : { cloneUrl: options.cloneUrl }),
+      ...(cloneUrl === undefined ? {} : { cloneUrl }),
     },
     workId: positional[1] ?? '',
   };
@@ -186,7 +184,6 @@ export function createGitWorktreeToolDefinition(
         if (input.action === 'prepare') {
           result = await dependencies.service.prepare(context, {
             baseRef: input.baseRef,
-            ...(input.branch === undefined ? {} : { branch: input.branch }),
             ...(input.repository.cloneUrl === undefined
               ? {}
               : { cloneUrl: input.repository.cloneUrl }),

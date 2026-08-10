@@ -230,7 +230,7 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 ```text
 openclaw agent-system tool git [--agent <id>] -- <git-arguments...>
-openclaw agent-system tool worktree [--agent <id>] -- prepare <repository-id> <work-id> <base-ref> [--clone-url <url>] [--branch <branch>]
+openclaw agent-system tool worktree [--agent <id>] -- prepare <repository-id> <work-id> <base-ref> [--clone-url <url>]
 openclaw agent-system tool worktree [--agent <id>] -- list [repository-id]
 openclaw agent-system tool worktree [--agent <id>] -- remove <repository-id> <work-id>
 ```
@@ -243,14 +243,14 @@ openclaw agent-system tool git -- status --short
 openclaw as tool git --agent tanaabot -- status --short
 
 # prepare a deterministic worktree from the latest remote branch.
-openclaw agent-system tool worktree -- prepare agent-system task-123 origin/main \
+openclaw agent-system tool worktree -- prepare agent-system 123-fix-agent-path-resolution origin/main \
   --clone-url https://github.com/tanaabased/openclaw-agent-system.git
 
 # list current agent-owned worktrees from git.
 openclaw agent-system tool worktree -- list agent-system
 
 # request removal; direct cli requires git.policy.delete: allow.
-openclaw agent-system tool worktree -- remove agent-system task-123
+openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-resolution
 ```
 
 ### Behavior
@@ -261,6 +261,10 @@ external roots require trusted agent context or an explicit `--agent`.
 
 `prepare` is idempotent, `list` is read-only, and `remove` uses non-forced Git
 removal. Dirty worktrees, branches, and refs remain intact.
+
+Agent System names both the branch and directory `<work-id-slug>-<digest>`.
+Prefer `<task-id>-<brief-kebab-case-description>` for the work id when a
+description is available; otherwise use `<task-id>`.
 
 ## Shim
 

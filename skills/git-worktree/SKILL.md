@@ -39,19 +39,19 @@ Use `agent_system_git_worktree` to prepare, list, or remove deterministic worktr
 ## When Not to Use
 
 - Use `$agent-system-git-cli` for status, diff, commits, branches, fetch, pull, or push.
-- Do not invent repository ids, work ids, clone URLs, or base refs when the prompt does not provide enough context.
+- Do not invent repository ids, stable work identifiers, clone URLs, or base refs when the prompt does not provide enough context.
 - Do not use raw `git worktree` mutation or direct filesystem deletion as a substitute for this tool.
 
 ## Prerequisites
 
 - The active agent manifest configures `git.worktrees` and has been installed.
-- The request supplies a stable repository id and work id.
+- The request supplies a stable repository id and work identifier.
 - Preparing a missing managed clone also requires a supported network clone URL.
 - `git` is installed; SSH authentication is available when the remote requires it.
 
 ## Inputs
 
-Prepare one worktree from an existing ref. `branch` is optional; omit it unless external orchestration owns the branch name.
+Prepare one worktree from an existing ref. When a task id is available, use `<task-id>-<brief-kebab-case-description>` as the stable work id when a description is available and `<task-id>` otherwise. Agent System derives the branch and directory name.
 
 ```json
 {
@@ -60,7 +60,7 @@ Prepare one worktree from an existing ref. `branch` is optional; omit it unless 
     "id": "agent-system",
     "cloneUrl": "https://github.com/tanaabased/openclaw-agent-system.git"
   },
-  "workId": "task-123",
+  "workId": "123-fix-agent-path-resolution",
   "baseRef": "origin/main"
 }
 ```
@@ -74,7 +74,7 @@ List all managed worktrees or narrow the result to one repository.
 Remove one deterministic worktree.
 
 ```json
-{ "action": "remove", "repositoryId": "agent-system", "workId": "task-123" }
+{ "action": "remove", "repositoryId": "agent-system", "workId": "123-fix-agent-path-resolution" }
 ```
 
 ## Outputs
@@ -91,7 +91,7 @@ Remove one deterministic worktree.
 
 ## Workflow
 
-1. Confirm the repository id, work id, base ref, and optional clone URL from the request or notification.
+1. Confirm the repository id, work identifier, base ref, and optional clone URL from the request or notification, then include a brief kebab-case description in the stable work id when available.
 2. Invoke `agent_system_git_worktree` with `prepare`; reuse an `existing` result.
 3. Pass the returned canonical `path` as `cwd` on every `agent_system_git` call for that work.
 4. Use ordinary Git status, branch, diff, commit, fetch, and push operations through `agent_system_git`.
@@ -106,6 +106,7 @@ Remove one deterministic worktree.
 ## Validation
 
 - Confirm the returned repository id and work id match the request.
+- Confirm the returned branch equals the final directory name in the returned path.
 - Confirm subsequent `agent_system_git` calls use the exact returned path as `cwd`.
 - Confirm a repeated preparation returns the same path with `existing` status.
 - Confirm removal succeeds without force and no further worktree is listed for that path.

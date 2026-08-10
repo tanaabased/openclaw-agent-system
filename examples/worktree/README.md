@@ -37,11 +37,12 @@ openclaw agent-system install
 ```bash
 # should prepare a managed network repository worktree
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'
+jq -e '(.branch == (.path | split("/") | last)) and (.branch | startswith("123-verify-worktree-flow-"))' "$TMPDIR/agent-system-worktree.json"
 
 # should return the same managed worktree on repeated preparation
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | grep -F '"status": "existing"'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | grep -F '"status": "existing"'
 openclaw agent-system tool worktree -- list agent-system | grep -F '"status": "active"'
 
 # should route the packaged shim from the managed worktree to tanaabot
@@ -67,6 +68,6 @@ openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git 
 
 # should remove the clean managed worktree through delete policy
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
-openclaw agent-system tool worktree -- remove agent-system leia-work | grep -F '"status": "removed"'
+openclaw agent-system tool worktree -- remove agent-system 123-verify-worktree-flow | grep -F '"status": "removed"'
 openclaw agent-system tool worktree -- list agent-system | grep -Fx '[]'
 ```

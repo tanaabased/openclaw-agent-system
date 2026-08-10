@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 
 import {
-  gitWorktreeDefaultBranch,
   gitWorktreeDirectoryName,
   gitWorktreeRepositoryDirectoryName,
 } from '../tools/git/worktree-names.ts';
@@ -12,11 +11,13 @@ describe('tools/git/worktree-names', () => {
       gitWorktreeRepositoryDirectoryName('tanaabased/openclaw-agent-system'),
       /^tanaabased-openclaw-agent-system-[a-f0-9]{10}\.git$/u,
     );
-    const directory = gitWorktreeDirectoryName('owner/repository', 'issue-123');
-    assert.match(directory, /^issue-123-[a-f0-9]{10}$/u);
-    assert.equal(
-      gitWorktreeDefaultBranch('owner/repository', 'issue-123'),
-      `agent-system/${directory}`,
+    assert.match(
+      gitWorktreeDirectoryName('owner/repository', '123-fix-agent-path-resolution'),
+      /^123-fix-agent-path-resolution-[a-f0-9]{10}$/u,
+    );
+    assert.notEqual(
+      gitWorktreeDirectoryName('owner/repository', 'Issue 123'),
+      gitWorktreeDirectoryName('owner/repository', 'issue-123'),
     );
   });
 });

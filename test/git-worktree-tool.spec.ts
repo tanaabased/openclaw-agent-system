@@ -120,13 +120,10 @@ describe('tools/git/worktree-tool', () => {
         'origin/main',
         '--clone-url',
         'https://example.com/repo.git',
-        '--branch',
-        'agent/task-1',
       ]),
       {
         action: 'prepare',
         baseRef: 'origin/main',
-        branch: 'agent/task-1',
         repository: { cloneUrl: 'https://example.com/repo.git', id: 'repo' },
         workId: 'task-1',
       },
@@ -141,6 +138,28 @@ describe('tools/git/worktree-tool', () => {
       workId: 'task-1',
     });
     assert.throws(() => definition.tool.inputFromCommand(['attach', 'task-1']));
+    assert.throws(() =>
+      definition.tool.inputFromCommand([
+        'prepare',
+        'repo',
+        'task-1',
+        'origin/main',
+        '--branch',
+        'agent/task-1',
+      ]),
+    );
+    assert.throws(() =>
+      definition.tool.validate?.(
+        {
+          action: 'prepare',
+          baseRef: 'origin/main',
+          branch: 'agent/task-1',
+          repository: { id: 'repo' },
+          workId: 'task-1',
+        } as never,
+        declared,
+      ),
+    );
     assert.throws(() =>
       definition.tool.validate?.(
         {

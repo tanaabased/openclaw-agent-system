@@ -24,13 +24,16 @@ configuration as part of Git's own behavior.
 
 The stable surfaces are:
 
-| Surface                          | Purpose                                  |
-| -------------------------------- | ---------------------------------------- |
-| `agent_system_git`               | Model-facing ordinary Git tool           |
-| `openclaw agent-system tool git` | Explicit ordinary Git command            |
-| `git`                            | Packaged compatibility shim              |
-| `skills/git-cli`                 | Ordinary Git guidance                    |
-| `tools/git/README.md`            | User-facing tool and configuration guide |
+| Surface                               | Purpose                                  |
+| ------------------------------------- | ---------------------------------------- |
+| `agent_system_git`                    | Model-facing ordinary Git tool           |
+| `agent_system_git_worktree`           | Model-facing managed worktree tool       |
+| `openclaw agent-system tool git`      | Explicit ordinary Git command            |
+| `openclaw agent-system tool worktree` | Explicit managed worktree command        |
+| `git`                                 | Packaged compatibility shim              |
+| `skills/git-cli`                      | Ordinary Git guidance                    |
+| `skills/git-worktree`                 | Managed worktree guidance                |
+| `tools/git/README.md`                 | User-facing tool and configuration guide |
 
 The tool binds the active agent from trusted OpenClaw or installed-agent
 context. The model never supplies an agent id, executable path, credential
@@ -125,6 +128,14 @@ shared runner contract:
   outside the workspace; and
 - model arguments may not use `-C`, `--git-dir`, or `--work-tree` to bypass the
   validated working directory.
+
+### Managed worktrees
+
+Worktree preparation accepts a repository id, stable work id, base ref, and
+optional clone URL. Callers do not choose the branch. Agent System derives one
+`<work-id-slug>-<digest>` name and uses it for both the branch and worktree
+directory leaf. Work ids should use `<task-id>-<brief-kebab-case-description>`
+when a description is available and `<task-id>` otherwise.
 
 ### Identity projection
 

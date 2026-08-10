@@ -5,11 +5,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
-import {
-  gitWorktreeDefaultBranch,
-  gitWorktreeDirectoryName,
-  gitWorktreeRepositoryDirectoryName,
-} from './worktree-names.ts';
+import { gitWorktreeDirectoryName, gitWorktreeRepositoryDirectoryName } from './worktree-names.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 
 export interface GitWorktreeGitResult {
@@ -31,7 +27,6 @@ export interface GitWorktreeServiceContext {
 
 export interface GitWorktreePrepareInput {
   baseRef: string;
-  branch?: string;
   cloneUrl?: string;
   repositoryId: string;
   workId: string;
@@ -136,8 +131,8 @@ export default class GitWorktreeService {
       input.cloneUrl,
       true,
     );
-    const path = this.#worktreePath(layout, input.repositoryId, input.workId);
-    const branch = input.branch ?? gitWorktreeDefaultBranch(input.repositoryId, input.workId);
+    const branch = gitWorktreeDirectoryName(input.repositoryId, input.workId);
+    const path = this.#worktreePath(layout, input.repositoryId, branch);
     const registered = await this.#registeredWorktrees(context, repository);
     const existing = registered.find((worktree) => worktree.path === path);
     if (existing) {
@@ -226,7 +221,11 @@ export default class GitWorktreeService {
     validateIdentifier(workId, 'work id');
     const layout = await this.#readyLayout(context);
     const repository = await this.#resolveRepository(context, layout, repositoryId);
-    const path = this.#worktreePath(layout, repositoryId, workId);
+    const path = this.#worktreePath(
+      layout,
+      repositoryId,
+      gitWorktreeDirectoryName(repositoryId, workId),
+    );
     const existing = (await this.#registeredWorktrees(context, repository)).find(
       (worktree) => worktree.path === path,
     );
@@ -257,15 +256,14 @@ export default class GitWorktreeService {
     validateIdentifier(input.repositoryId, 'repository id');
     validateIdentifier(input.workId, 'work id');
     validateIdentifier(input.baseRef, 'base ref');
-    if (input.branch !== undefined) validateIdentifier(input.branch, 'branch');
     if (input.cloneUrl !== undefined) normalizeGitWorktreeRemote(input.cloneUrl);
   }
 
-  #worktreePath(layout: GitWorktreeLayout, repositoryId: string, workId: string): string {
+  #worktreePath(layout: GitWorktreeLayout, repositoryId: string, name: string): string {
     return join(
       layout.worktreeRoot,
       gitWorktreeRepositoryDirectoryName(repositoryId).replace(/\.git$/u, ''),
-      gitWorktreeDirectoryName(repositoryId, workId),
+      name,
     );
   }
 
