@@ -93,11 +93,11 @@ test ! -e "$TMPDIR/agent-system-raw-worktree"
 
 # should prepare a managed network repository worktree
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'
 
 # should return the same managed worktree on repeated preparation
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | grep -F '"status": "existing"'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system leia-work origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | grep -F '"status": "existing"'
 openclaw agent-system tool worktree -- list agent-system | grep -F '"status": "active"'
 
 # should route the packaged shim from the managed worktree to tanaabot

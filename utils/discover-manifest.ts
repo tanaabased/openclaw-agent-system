@@ -1,5 +1,5 @@
 import { lstat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import type { ManifestDiagnostic } from './manifest-types.ts';
 
@@ -171,6 +171,13 @@ export async function discoverManifestFromDirectory(
   let currentDirectory = normalizedCommandDirectory;
 
   while (true) {
+    // A manifest inside the reserved directory belongs to its parent workspace.
+    if (basename(currentDirectory) === '.agent-system') {
+      const parentDirectory = dirname(currentDirectory);
+      if (parentDirectory === currentDirectory) break;
+      currentDirectory = parentDirectory;
+      continue;
+    }
     const discovery = await discoverManifest(currentDirectory);
     if (discovery.selected) return discovery;
     const parentDirectory = dirname(currentDirectory);

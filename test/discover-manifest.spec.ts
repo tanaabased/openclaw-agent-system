@@ -54,6 +54,20 @@ describe('utils/discover-manifest', () => {
     assert.equal(result.selected?.path, join(workspace, 'agent.yaml'));
   });
 
+  it('should discover the parent workspace from inside its managed worktree root', async () => {
+    const root = await temporaryRoot();
+    const workspace = join(root, 'workspace');
+    const manifestDirectory = join(workspace, '.agent-system');
+    const nested = join(manifestDirectory, 'worktrees', 'repo', 'task');
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(manifestDirectory, 'agent.yaml'), 'schema-version: 1\n');
+
+    const result = await discoverManifestFromDirectory(nested);
+
+    assert.equal(result.workspaceDir, workspace);
+    assert.equal(result.selected?.path, join(manifestDirectory, 'agent.yaml'));
+  });
+
   it('should stop at an invalid nearest ancestor manifest', async () => {
     const root = await temporaryRoot();
     const workspace = join(root, 'workspace');
