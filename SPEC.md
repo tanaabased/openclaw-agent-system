@@ -988,7 +988,7 @@ Agent System environment into an isolated invocation-scoped SSH agent.
 Completed-environment keys may come from direct 1Password secret references;
 environment-bound SSH commit and tag signing includes optional local trusted
 verification. Explicitly allowed worktrees are the next Git slice. Encrypted
-keys and configurable Git preferences remain deferred.
+keys and passphrase delivery remain deferred.
 
 ### Tool verification contract
 
@@ -1253,7 +1253,6 @@ The first implementation does not include:
 - backups;
 - memories;
 - encrypted Git SSH keys and passphrase delivery;
-- configurable Git behavior preferences;
 - notification routing;
 - broad sandbox policy;
 - structured dependency or plugin declarations;
