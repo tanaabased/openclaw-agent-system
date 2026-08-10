@@ -29,6 +29,7 @@ jobs:
           - env
           - credentials
           - git
+          - worktree
           - github
           - tool
     steps:
