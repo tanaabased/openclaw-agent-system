@@ -94,6 +94,7 @@ function createProgram() {
           status: 'valid',
           agentId: manifest.agent.id,
           environmentCount: 1,
+          secretCount: 0,
           source: options.storeId ? `store:${options.storeId}` : 'process-environment',
         };
       },
@@ -117,7 +118,7 @@ function createProgram() {
         calls.environmentAgent.push(agentId);
         return validEnvironmentResult;
       },
-      async loadForWorkspace(workspaceDir) {
+      async loadForCommandDirectory(workspaceDir) {
         calls.environmentWorkspace.push(workspaceDir);
         return validEnvironmentResult;
       },
@@ -138,7 +139,7 @@ function createProgram() {
         calls.agent.push(agentId);
         return validResult;
       },
-      async loadForWorkspace(workspaceDir) {
+      async loadForCommandDirectory(workspaceDir) {
         calls.workspace.push(workspaceDir);
         return validResult;
       },
@@ -227,7 +228,47 @@ describe('lib/register-cli', () => {
       {
         argv: ['api', 'user'],
         command: 'gh',
-        scope: { agentId: 'data', source: 'command' },
+        scope: { agentId: 'data', source: 'command', workspaceDir: '/current' },
+      },
+    ]);
+  });
+
+  it('should route worktree operations through the registered tool command', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'tool',
+      'worktree',
+      '--agent',
+      'data',
+      '--',
+      'prepare',
+      'repo',
+      'task-123',
+      'origin/main',
+      '--clone-url',
+      'git@github.com:example/repo.git',
+      '--branch',
+      'agent/task-123',
+    ]);
+
+    assert.deepEqual(calls.tool, [
+      {
+        argv: [
+          'prepare',
+          'repo',
+          'task-123',
+          'origin/main',
+          '--clone-url',
+          'git@github.com:example/repo.git',
+          '--branch',
+          'agent/task-123',
+        ],
+        command: 'worktree',
+        scope: { agentId: 'data', source: 'command', workspaceDir: '/current' },
       },
     ]);
   });

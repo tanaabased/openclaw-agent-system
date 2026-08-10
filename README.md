@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System is designed to make an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, set up its dependencies, memory, and cron jobs, and equip its tools to operate with that agent's own credentials instead of a shared global identity.
+Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, reconcile its supported configuration, and equip its managed tools to operate with that agent's own environment and credentials instead of a shared global identity.
 
 > [!NOTE]
 > Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
@@ -24,28 +24,21 @@ Agent System is designed to make an OpenClaw agent workspace self-onboarding: ru
 Today, Agent System:
 
 - registers an agent workspace with OpenClaw and reconciles its public identity
-- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password Environment sources
-- supplies each Agent System tool only the agent-specific environment and credentials it declares instead of a shared global identity
-- configures `gh` with the agent's GitHub identity, credentials, SSH keys, and private CLI settings
-- applies `allow`, `ask`, or `deny` policy to destructive, administrative, and unknown GitHub operations
+- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
+- wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
+- applies each tool's operation-specific `allow`, `ask`, or `deny` policy before resolving credentials or executing the operation
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
-
-Planned manifest capabilities include:
-
-- installing and configuring agent dependencies, plugins, and memory integrations
-- configuring agent-specific Git identity and `git` and GOG tooling
-- reconciling agent-owned cron jobs and other scheduled work
 
 ## Installation
 
-Once the first npm release is published, the production installation path will be:
+Install the current release from npm:
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system
 openclaw plugins enable agent-system
 ```
 
-Until then, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
 ## Usage
 
@@ -61,21 +54,24 @@ agent:
     from-environment: AGENT_EMAIL
 
 environment:
-  # import this agent's email and github token from one 1password environment.
+  # import this agent's identity and tool credentials from 1password.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
+  set:
+    SSH_KEY:
+      from-op: 'op://v4u7l2t9n5p8r1c6x3z0m4q7da/ssh-key/private key?ssh-format=openssh'
   required:
     - AGENT_EMAIL
     - GH_TOKEN_TANAABOT
+    - SSH_KEY
 
 github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
-  policy:
-    destructive: ask
-    admin: deny
-    unknown: deny
-  config:
-    git-protocol: ssh
+
+git:
+  ssh:
+    private-keys:
+      from-environment: SSH_KEY
 ```
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
@@ -99,9 +95,20 @@ openclaw agent-system tool gh -- api user --jq .login
 
 ## Tools
 
-Agent System tools apply a workspace's declared agent environment and policy to a specific command surface.
+Agent System currently ships wrappers for:
 
-- [GitHub CLI](./tools/github/README.md)
+- [`git`](./tools/git/README.md) for ordinary Git and managed worktrees
+- [`gh`](./tools/github/README.md) for GitHub CLI operations
+
+> [!TIP]
+> For managed agents, disable competing Git and GitHub skills, plugins, and tool
+> wrappers so requests consistently use Agent System's agent-scoped identity and
+> policy boundaries.
+
+Each wrapper uses the shared Agent System runtime for trusted agent binding,
+environment and credential resolution, operation policy, execution, redaction,
+and auditing. A public [Tool API](./API.md) is planned so other OpenClaw plugins
+can add compatible wrappers through the same runtime.
 
 ## Development
 

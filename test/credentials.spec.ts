@@ -24,13 +24,15 @@ function harness() {
   const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
   const output: string[] = [];
   const exitCodes: number[] = [];
+  const manifestDirectories: string[] = [];
   return {
     exitCodes,
     manifestService: {
       async loadForAgentId() {
         return loaded;
       },
-      async loadForWorkspace() {
+      async loadForCommandDirectory(commandDirectory: string) {
+        manifestDirectories.push(commandDirectory);
         return loaded;
       },
     },
@@ -46,7 +48,7 @@ function harness() {
       },
     },
     output: { writeStdout: (message: string) => output.push(message) },
-    records: { logs, output },
+    records: { logs, manifestDirectories, output },
     setExitCode(code: number) {
       exitCodes.push(code);
     },
@@ -84,6 +86,7 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(calls, ['read:environment', 'set:data:private-token:automatic']);
+    assert.deepEqual(test.records.manifestDirectories, ['/workspace']);
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, ['stored  op credential for data\nstore   file\n']);
   });
@@ -129,6 +132,7 @@ describe('cli/credentials', () => {
             status: 'valid',
             agentId: 'data',
             environmentCount: 1,
+            secretCount: 2,
             source: 'store:file',
           };
         },
@@ -145,7 +149,7 @@ describe('cli/credentials', () => {
 
     assert.deepEqual(test.exitCodes, []);
     assert.deepEqual(test.records.output, [
-      'valid         op credential for data\nsource        store:file\nenvironments  1\n',
+      'valid         op credential for data\nsource        store:file\nenvironments  1\nsecrets       2\n',
     ]);
   });
 
@@ -161,6 +165,7 @@ describe('cli/credentials', () => {
             status: 'valid',
             agentId: 'data',
             environmentCount: 1,
+            secretCount: 0,
             source: 'process-environment',
           };
         },

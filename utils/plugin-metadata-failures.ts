@@ -63,9 +63,9 @@ export type PluginMetadataFailureCode =
   | 'alias-command'
   | 'canonical-command-alias'
   | 'short-command-alias'
-  | 'github-tool-contract'
-  | 'github-tool-policy-contract'
-  | 'github-skill-contract'
+  | 'tool-contract'
+  | 'tool-policy-contract'
+  | 'skill-contract'
   | 'config-schema-type'
   | 'config-schema-strictness'
   | 'package-file'
@@ -94,6 +94,7 @@ const requiredPackageFiles = [
   'assets/agent-system.png',
   'openclaw.plugin.json',
   'README.md',
+  'API.md',
   'ADVANCED.md',
   'DEVELOPMENT.md',
   'CHANGELOG.md',
@@ -181,19 +182,27 @@ export default function pluginMetadataFailures(
     'short command alias is missing',
   );
   check(
-    containsExactly(manifest.contracts?.tools, ['agent_system_github']),
-    'github-tool-contract',
-    'plugin must declare exactly the registered Agent System GitHub tool',
+    containsExactly(manifest.contracts?.tools, [
+      'agent_system_git',
+      'agent_system_git_worktree',
+      'agent_system_github',
+    ]),
+    'tool-contract',
+    'plugin must declare exactly the registered Agent System tools',
   );
   check(
-    containsExactly(manifest.contracts?.trustedToolPolicies, ['agent-system.github']),
-    'github-tool-policy-contract',
-    'plugin must declare exactly the registered Agent System GitHub policy',
+    containsExactly(manifest.contracts?.trustedToolPolicies, [
+      'agent-system.git',
+      'agent-system.git-worktree',
+      'agent-system.github',
+    ]),
+    'tool-policy-contract',
+    'plugin must declare exactly the registered Agent System tool policies',
   );
   check(
     containsExactly(manifest.skills, ['./skills']),
-    'github-skill-contract',
-    'plugin must load its packaged GitHub CLI skill directory',
+    'skill-contract',
+    'plugin must load its packaged skill directory',
   );
   check(
     manifest.configSchema?.type === 'object',

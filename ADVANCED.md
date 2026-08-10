@@ -7,7 +7,8 @@ configuration, CLI, environment, and path behavior. Start with the
 
 Tool-specific configuration, CLI, and routing documentation:
 
-- [GitHub CLI tool](./tools/github/README.md)
+- [`git`](./tools/git/README.md)
+- [`gh`](./tools/github/README.md)
 
 ## Manifest
 
@@ -67,6 +68,8 @@ environment:
     AGENT_COLOR: green
     AGENT_EMAIL: $COMPANY_EMAIL
     NODE_ENV: development
+    SSH_KEY:
+      from-op: 'op://v4u7l2t9n5p8r1c6x3z0m4q7da/ssh-key/private key?ssh-format=openssh'
   op:
     - b3v8n1q6m4z9k2r7t5w0x8c6pd
     - z7q4m2n9v6k3p8r5t1w0x4c2ba
@@ -89,9 +92,9 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 | Field         | Type                               | Required      | Behavior                                                         |
 | ------------- | ---------------------------------- | ------------- | ---------------------------------------------------------------- |
 | `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
-| `name`        | string or `from-environment` value | for `install` | OpenClaw display name applied by `install`.                      |
-| `email`       | string or `from-environment` value | no            | Reserved for a Git identity consumer.                            |
-| `description` | string                             | no            | Validated for later identity surfaces.                           |
+| `name`        | string or `from-environment` value | for `install` | Agent display name applied to OpenClaw by `install`.             |
+| `email`       | string or `from-environment` value | no            | Agent email available to configured consumers.                   |
+| `description` | string                             | no            | Agent description retained for configured consumers.             |
 | `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained. |
 
 `name` and `email` accept a literal or an explicit reference to the completed
@@ -106,15 +109,18 @@ agent:
 A missing or empty referenced value fails the action that consumes it. A
 dollar-prefixed scalar in these fields remains literal.
 
+Identity fields do not configure tools by themselves; a tool may explicitly use
+them as defaults.
+
 ### `environment`
 
-| Field          | Type                  | Required | Behavior                                                              |
-| -------------- | --------------------- | -------- | --------------------------------------------------------------------- |
-| `dotenv`       | string or string list | no       | Ordered workspace-relative dotenv files.                              |
-| `set`          | string map            | no       | Explicit values merged over dotenv values.                            |
-| `op`           | string or string list | no       | Ordered 1Password Environment IDs merged after `set`.                 |
-| `path-prepend` | string or string list | no       | Ordered workspace-relative executable directories.                    |
-| `required`     | string list           | no       | Names that fail complete environment resolution when absent or empty. |
+| Field          | Type                    | Required | Behavior                                                              |
+| -------------- | ----------------------- | -------- | --------------------------------------------------------------------- |
+| `dotenv`       | string or string list   | no       | Ordered workspace-relative dotenv files.                              |
+| `set`          | string or `from-op` map | no       | Explicit values merged over dotenv values.                            |
+| `op`           | string or string list   | no       | Ordered 1Password Environment IDs merged after `set`.                 |
+| `path-prepend` | string or string list   | no       | Ordered workspace-relative executable directories.                    |
+| `required`     | string list             | no       | Names that fail complete environment resolution when absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
@@ -125,9 +131,10 @@ identifiers remain literal and are never casing-converted. See
 
 Tools own their manifest schemas and document them beside their implementation:
 
-| Tool       | Manifest key | Configuration                                                               |
-| ---------- | ------------ | --------------------------------------------------------------------------- |
-| GitHub CLI | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
+| Tool  | Manifest key | Configuration                                                               |
+| ----- | ------------ | --------------------------------------------------------------------------- |
+| `git` | `git`        | [Configuration reference](./tools/git/README.md#configuration-reference)    |
+| `gh`  | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
 
 Adding a tool to this table does not enable it globally; the corresponding
 manifest section opts the workspace into that capability.
@@ -175,7 +182,8 @@ override count. JSON adds the agent id, workspace, and manifest path.
 ### `openclaw agent-system credentials`
 
 Manages the agent-scoped credential used to access declared 1Password
-Environments. The current credential target is `op`.
+Environments and direct secret references. The current credential target is
+`op`.
 
 ```text
 openclaw agent-system credentials set op [--agent <id>] [--from-env | --stdin] [--store <id>]
@@ -191,7 +199,7 @@ openclaw agent-system credentials unset op [--agent <id>] [--store <id>]
 
 Without an input option, `set` uses a masked interactive prompt and fails with
 guidance in a noninteractive session. Tokens are never accepted as command
-arguments. Every set path verifies access to all declared 1Password Environments
+arguments. Every set path verifies access to all declared 1Password resources
 before storage.
 
 Automatic persistent selection prefers Keychain then file on macOS and Secret
@@ -213,10 +221,11 @@ executable paths, and configured capability state.
 openclaw agent-system install [--json]
 ```
 
-Installation validates first and, when `environment.op` is declared, requires a
-working persistent credential before applying changes. It creates or updates only
-owned state, verifies the result, and reports unchanged state on repeated runs.
-An existing agent id bound to another workspace fails instead of being repointed.
+Installation validates first and, when an OP Environment or direct secret is
+declared, requires a working persistent credential before applying changes. It
+creates or updates only owned state, verifies the result, and reports unchanged
+state on repeated runs. An existing agent id bound to another workspace fails
+instead of being repointed.
 
 ### `openclaw agent-system doctor`
 
@@ -233,24 +242,27 @@ responsibility. Tool-specific lifecycle checks are documented in each tool guide
 
 ### `openclaw agent-system tool`
 
-Runs a registered command through its Agent System tool. It is a closed registry,
-not an arbitrary executable or raw-secret interface.
+Runs a registered command through its Agent System tool. The current release
+uses a closed registry, not an arbitrary executable or raw-secret interface. A
+public provider contract is planned in [Tool API](./API.md).
 
 ```text
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 ```
 
-| Tool       | Command | CLI                                   | Shim                                           |
-| ---------- | ------- | ------------------------------------- | ---------------------------------------------- |
-| GitHub CLI | `gh`    | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
+| Tool           | Command    | CLI                                              | Shim                                           |
+| -------------- | ---------- | ------------------------------------------------ | ---------------------------------------------- |
+| `git`          | `git`      | [Usage](./tools/git/README.md#cli)               | [Packaged shim](./tools/git/README.md#shim)    |
+| `git-worktree` | `worktree` | [Usage](./tools/git/README.md#managed-worktrees) | none                                           |
+| `gh`           | `gh`       | [Usage](./tools/github/README.md#cli)            | [Packaged shim](./tools/github/README.md#shim) |
 
 Registered tools preserve the child command's standard streams and exit code.
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.
 
 ## Environment
 
-Environment names must match `^[A-Za-z_][A-Za-z0-9_]*$`, and configured values
-must be YAML strings. Source precedence is fixed:
+Environment names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Configured values are
+YAML strings or direct OP secret reference objects. Source precedence is fixed:
 
 ```text
 environment.dotenv[0] < later dotenv files < environment.set < environment.op[0] < later 1Password Environments
@@ -261,18 +273,32 @@ files. Agent System accepts blank lines, comments, optional `export`, and quoted
 or unquoted `NAME=value` entries. Dotenv values do not interpolate or execute
 shell syntax.
 
-`environment.set` supports one-pass `$NAME` and `${NAME}` references for uppercase
-names; `$$` emits a literal `$`. References use a snapshot of the plugin process
-environment plus the ordered external sources. Host values are lookup-only, and
-set values do not reference one another.
+`environment.set` strings support one-pass `$NAME` and `${NAME}` references for
+uppercase names; `$$` emits a literal `$`. References use a snapshot of the
+plugin process environment plus the ordered external sources. Host values are
+lookup-only, and set values do not reference one another.
+
+A `from-op` object resolves one 1Password secret reference directly into the
+named environment value:
+
+```yaml
+environment:
+  set:
+    SSH_KEY:
+      from-op: 'op://vault/item/private key?ssh-format=openssh'
+```
+
+Direct values are always sensitive and retain `environment.set` provenance.
+The reference itself is never returned in diagnostics. A scalar beginning with
+`op://` remains a literal string; direct resolution requires the object form.
 
 `environment.op` loads each declared 1Password Environment in order through the
 official JavaScript SDK. Each value is the opaque ID returned by
 [Copy environment ID in the 1Password app](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id),
 not the Environment's display name. Agent System loads dotenv and 1Password
 values only for an explicit environment consumer; passive manifest discovery
-never reads them. `environment.required` applies when the complete environment is
-resolved, not to unrelated actions that do not consume it.
+never reads them. `environment.required` applies when the complete environment
+is resolved, not to unrelated actions that do not consume it.
 
 For 1Password access, Agent System checks macOS Keychain or Linux Secret Service,
 then the agent-scoped owner-only file store, and finally the

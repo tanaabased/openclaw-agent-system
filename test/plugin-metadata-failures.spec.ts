@@ -23,6 +23,7 @@ const packageMetadata: PackageMetadata = {
     'assets/agent-system.png',
     'openclaw.plugin.json',
     'README.md',
+    'API.md',
     'ADVANCED.md',
     'DEVELOPMENT.md',
     'CHANGELOG.md',
@@ -61,8 +62,8 @@ const manifest: PluginManifest = {
     { name: 'as', cliCommand: 'as' },
   ],
   contracts: {
-    tools: ['agent_system_github'],
-    trustedToolPolicies: ['agent-system.github'],
+    tools: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
+    trustedToolPolicies: ['agent-system.git', 'agent-system.git-worktree', 'agent-system.github'],
   },
   skills: ['./skills'],
   configSchema: {
@@ -102,9 +103,9 @@ describe('utils/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
-        'github-tool-contract',
-        'github-tool-policy-contract',
-        'github-skill-contract',
+        'tool-contract',
+        'tool-policy-contract',
+        'skill-contract',
         'config-schema-type',
         'config-schema-strictness',
         'package-file',
@@ -136,7 +137,8 @@ describe('utils/plugin-metadata-failures', () => {
         {
           ...packageMetadata,
           files: packageMetadata.files?.filter(
-            (path) => !['cli/', 'skills/', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+            (path) =>
+              !['cli/', 'skills/', 'API.md', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
           ),
         },
         manifest,
@@ -144,6 +146,7 @@ describe('utils/plugin-metadata-failures', () => {
       [
         { code: 'package-file', message: 'package files must include cli/' },
         { code: 'package-file', message: 'package files must include skills/' },
+        { code: 'package-file', message: 'package files must include API.md' },
         { code: 'package-file', message: 'package files must include ADVANCED.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
       ],

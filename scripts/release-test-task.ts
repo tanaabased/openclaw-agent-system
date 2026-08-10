@@ -103,19 +103,22 @@ try {
   });
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
-  const trackedSourcePaths = await check('inventory checked-in package sources', async () => {
-    const result = await run('git', [
-      'ls-files',
-      '-z',
-      '--',
-      'bin',
-      'cli',
-      'lib',
-      'skills',
-      'tools',
-      'utils',
+  const packageSourcePaths = await check('inventory working-tree package sources', async () => {
+    const sourceDirectories = ['bin', 'cli', 'lib', 'skills', 'tools', 'utils'];
+    const [candidates, deleted] = await Promise.all([
+      run('git', [
+        'ls-files',
+        '--cached',
+        '--others',
+        '--exclude-standard',
+        '-z',
+        '--',
+        ...sourceDirectories,
+      ]),
+      run('git', ['ls-files', '--deleted', '-z', '--', ...sourceDirectories]),
     ]);
-    const paths = result.output.split('\0').filter(Boolean);
+    const deletedPaths = new Set(deleted.output.split('\0').filter(Boolean));
+    const paths = candidates.output.split('\0').filter((path) => path && !deletedPaths.has(path));
     assert.notEqual(paths.length, 0, 'package source inventory must not be empty');
     return paths;
   });
@@ -125,20 +128,30 @@ try {
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
+    'bin/agent-system-ssh',
+    'bin/agent-system-ssh-keygen',
+    'bin/agent-system-ssh-signing-key',
+    'bin/agent-system-tool',
+    'bin/git',
     'bin/gh',
+    'skills/git-cli/SKILL.md',
+    'skills/git-cli/agents/openai.yaml',
+    'skills/git-cli/agents/assets/icon-small.svg',
+    'skills/git-cli/agents/assets/icon-large.svg',
     'skills/github-cli/SKILL.md',
     'skills/github-cli/agents/openai.yaml',
     'skills/github-cli/agents/assets/icon-small.svg',
     'skills/github-cli/agents/assets/icon-large.svg',
     'assets/agent-system.png',
     'README.md',
+    'API.md',
     'ADVANCED.md',
     'DEVELOPMENT.md',
     'CHANGELOG.md',
     'LICENSE',
   ];
   await check('include required package files', () => {
-    for (const path of [...requiredArtifactPaths, ...trackedSourcePaths]) {
+    for (const path of [...requiredArtifactPaths, ...packageSourcePaths]) {
       assert.equal(packedPaths.has(path), true, `packed plugin is missing ${path}`);
     }
   });
@@ -193,21 +206,62 @@ try {
     assert.equal(typeof builtModule.default?.register, 'function');
   });
 
-  await check('ship an executable Agent System path probe', async () => {
-    const probePath = join(packageRoot, 'bin', 'agent-system-test');
-    await access(probePath);
-    const result = await run(probePath, []);
-    const packageMetadata = JSON.parse(
-      await readFile(join(packageRoot, 'package.json'), 'utf8'),
-    ) as PackageMetadata;
-    assert.equal(result.output.trim(), packageMetadata.version);
-  });
-
   await check('ship an executable Agent System gh command', async () => {
     const commandPath = join(packageRoot, 'bin', 'gh');
     await access(commandPath);
     const result = await run(commandPath, ['--agent-system']);
     assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship an executable Agent System git command', async () => {
+    const commandPath = join(packageRoot, 'bin', 'git');
+    await access(commandPath);
+    const result = await run(commandPath, ['--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship the reusable Agent System tool launcher', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-tool');
+    await access(commandPath);
+    const result = await run(commandPath, ['git', '--agent-system']);
+    assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship an executable Agent System ssh launcher', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-ssh');
+    await access(commandPath);
+    await run(commandPath, ['github.com'], {
+      env: {
+        ...environment,
+        AGENT_SYSTEM_SSH_CONFIG: '/dev/null',
+        AGENT_SYSTEM_SSH_EXECUTABLE: '/usr/bin/true',
+      },
+    });
+  });
+
+  await check('ship an executable Agent System ssh signing-key helper', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-ssh-signing-key');
+    await access(commandPath);
+    const result = await run(commandPath, [], {
+      env: {
+        ...environment,
+        AGENT_SYSTEM_SSH_ADD_EXECUTABLE: '/bin/echo',
+        AGENT_SYSTEM_SSH_SIGNING_SOCKET: '/tmp/agent-system-signing.sock',
+      },
+    });
+    assert.equal(result.output, 'key::-L\n');
+  });
+
+  await check('ship an executable Agent System ssh-keygen helper', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-ssh-keygen');
+    await access(commandPath);
+    await run(commandPath, ['-Y', 'verify'], {
+      env: {
+        ...environment,
+        AGENT_SYSTEM_SSH_KEYGEN_EXECUTABLE: '/usr/bin/true',
+        AGENT_SYSTEM_SSH_SIGNING_SOCKET: '/tmp/agent-system-signing.sock',
+      },
+    });
   });
 
   await check('pass ClawHub package validation without warnings', async () => {

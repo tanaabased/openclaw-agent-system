@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import OpEnvironmentService from '../lib/op-environment-service.ts';
 
 describe('lib/op-environment-service', () => {
-  it('should remain lazy when no 1password environments are declared', async () => {
+  it('should remain lazy when no op resources are declared', async () => {
     let credentialCalls = 0;
     let clientCalls = 0;
     const service = new OpEnvironmentService({
@@ -24,7 +24,11 @@ describe('lib/op-environment-service', () => {
       integrationVersion: 'test',
     });
 
-    assert.deepEqual(await service.load('data', []), { status: 'loaded', sources: [] });
+    assert.deepEqual(await service.load('data', { environmentIds: [], secrets: [] }), {
+      status: 'loaded',
+      set: { sensitiveNames: [], values: {} },
+      sources: [],
+    });
     assert.equal(credentialCalls, 0);
     assert.equal(clientCalls, 0);
   });
@@ -39,17 +43,20 @@ describe('lib/op-environment-service', () => {
       integrationVersion: 'test',
     });
 
-    assert.deepEqual(await service.load('data', ['private-environment-id']), {
-      status: 'invalid',
-      diagnostics: [
-        {
-          code: 'op-credential-missing',
-          fieldPath: '/environment/op',
-          message: 'OP Environment resolution requires an available service-account credential.',
-          severity: 'error',
-        },
-      ],
-    });
+    assert.deepEqual(
+      await service.load('data', { environmentIds: ['private-environment-id'], secrets: [] }),
+      {
+        status: 'invalid',
+        diagnostics: [
+          {
+            code: 'op-credential-missing',
+            fieldPath: '/environment',
+            message: 'OP resource resolution requires an available service-account credential.',
+            severity: 'error',
+          },
+        ],
+      },
+    );
   });
 
   it('should hide credential-provider failures', async () => {
@@ -62,7 +69,10 @@ describe('lib/op-environment-service', () => {
       integrationVersion: 'test',
     });
 
-    const result = await service.load('data', ['private-environment-id']);
+    const result = await service.load('data', {
+      environmentIds: ['private-environment-id'],
+      secrets: [],
+    });
 
     assert.equal(result.status, 'invalid');
     assert.equal(JSON.stringify(result).includes('private-provider-error'), false);
@@ -88,6 +98,9 @@ describe('lib/op-environment-service', () => {
                   : [{ masked: true, name: 'PRIVATE_VALUE', value: 'agent-private' }],
             };
           },
+          async resolveSecret() {
+            throw new Error('not expected');
+          },
         };
       },
       credentialService: {
@@ -103,21 +116,25 @@ describe('lib/op-environment-service', () => {
       integrationVersion: '1.2.3',
     });
 
-    assert.deepEqual(await service.load('data', ['env-team', 'env-agent']), {
-      status: 'loaded',
-      sources: [
-        {
-          source: 'environment.op[0]',
-          sensitiveNames: ['PRIVATE_VALUE'],
-          values: { PUBLIC_VALUE: 'team-public', PRIVATE_VALUE: 'team-private' },
-        },
-        {
-          source: 'environment.op[1]',
-          sensitiveNames: ['PRIVATE_VALUE'],
-          values: { PRIVATE_VALUE: 'agent-private' },
-        },
-      ],
-    });
+    assert.deepEqual(
+      await service.load('data', { environmentIds: ['env-team', 'env-agent'], secrets: [] }),
+      {
+        status: 'loaded',
+        set: { sensitiveNames: [], values: {} },
+        sources: [
+          {
+            source: 'environment.op[0]',
+            sensitiveNames: ['PRIVATE_VALUE'],
+            values: { PUBLIC_VALUE: 'team-public', PRIVATE_VALUE: 'team-private' },
+          },
+          {
+            source: 'environment.op[1]',
+            sensitiveNames: ['PRIVATE_VALUE'],
+            values: { PRIVATE_VALUE: 'agent-private' },
+          },
+        ],
+      },
+    );
     assert.deepEqual(clientInputs, [{ integrationVersion: '1.2.3', token: 'private-token' }]);
     assert.deepEqual(environmentCalls, ['env-team', 'env-agent']);
   });
@@ -127,6 +144,9 @@ describe('lib/op-environment-service', () => {
       createClient: async () => ({
         async getVariables() {
           throw new Error('private-sdk-response');
+        },
+        async resolveSecret() {
+          throw new Error('not expected');
         },
       }),
       credentialService: {
@@ -141,7 +161,10 @@ describe('lib/op-environment-service', () => {
       integrationVersion: 'test',
     });
 
-    const result = await service.load('data', ['private-environment-id']);
+    const result = await service.load('data', {
+      environmentIds: ['private-environment-id'],
+      secrets: [],
+    });
 
     assert.equal(result.status, 'invalid');
     assert.equal(JSON.stringify(result).includes('private-sdk-response'), false);
@@ -161,6 +184,9 @@ describe('lib/op-environment-service', () => {
           async getVariables() {
             return { variables };
           },
+          async resolveSecret() {
+            throw new Error('not expected');
+          },
         }),
         credentialService: {
           async resolveServiceAccountToken() {
@@ -174,7 +200,10 @@ describe('lib/op-environment-service', () => {
         integrationVersion: 'test',
       });
 
-      const result = await service.load('data', ['environment-id']);
+      const result = await service.load('data', {
+        environmentIds: ['environment-id'],
+        secrets: [],
+      });
       assert.equal(result.status, 'invalid');
       assert.equal(JSON.stringify(result).includes('private-'), false);
     }
@@ -187,6 +216,9 @@ describe('lib/op-environment-service', () => {
         async getVariables(environmentId) {
           calls.push(environmentId);
           return { variables: [{ masked: true, name: 'SECRET', value: 'private-value' }] };
+        },
+        async resolveSecret() {
+          throw new Error('not expected');
         },
       }),
       credentialService: {
@@ -204,13 +236,18 @@ describe('lib/op-environment-service', () => {
     });
 
     assert.deepEqual(
-      await service.validate('data', ['private-one', 'private-two'], {
-        storeId: 'file',
-        allowEnvironmentFallback: false,
-      }),
+      await service.validate(
+        'data',
+        { environmentIds: ['private-one', 'private-two'], secrets: [] },
+        {
+          storeId: 'file',
+          allowEnvironmentFallback: false,
+        },
+      ),
       {
         status: 'valid',
         environmentCount: 2,
+        secretCount: 0,
         source: { id: 'file', type: 'store' },
       },
     );
@@ -226,6 +263,9 @@ describe('lib/op-environment-service', () => {
           async getVariables() {
             return { variables: [] };
           },
+          async resolveSecret() {
+            throw new Error('not expected');
+          },
         };
       },
       credentialService: {
@@ -236,10 +276,100 @@ describe('lib/op-environment-service', () => {
       integrationVersion: 'test',
     });
 
-    assert.deepEqual(await service.validateToken('private-candidate', ['private-id']), {
-      status: 'valid',
-      environmentCount: 1,
-    });
+    assert.deepEqual(
+      await service.validateToken('private-candidate', {
+        environmentIds: ['private-id'],
+        secrets: [],
+      }),
+      {
+        status: 'valid',
+        environmentCount: 1,
+        secretCount: 0,
+      },
+    );
     assert.deepEqual(tokens, ['private-candidate']);
+  });
+
+  it('should resolve direct secrets and environments through one authenticated sdk client', async () => {
+    let clientCalls = 0;
+    const calls: string[] = [];
+    const service = new OpEnvironmentService({
+      createClient: async () => {
+        clientCalls += 1;
+        return {
+          async getVariables(environmentId) {
+            calls.push(`environment:${environmentId}`);
+            return { variables: [{ masked: false, name: 'PUBLIC', value: 'public-value' }] };
+          },
+          async resolveSecret(reference) {
+            calls.push(`secret:${reference}`);
+            return 'private-secret';
+          },
+        };
+      },
+      credentialService: {
+        async resolveServiceAccountToken() {
+          return {
+            status: 'resolved',
+            source: { id: 'file', type: 'store' },
+            token: 'private-token',
+          } as const;
+        },
+      },
+      integrationVersion: 'test',
+    });
+
+    assert.deepEqual(
+      await service.load('data', {
+        environmentIds: ['env-id'],
+        secrets: [{ name: 'SSH_KEY', reference: 'op://vault/item/private key' }],
+      }),
+      {
+        status: 'loaded',
+        set: { sensitiveNames: ['SSH_KEY'], values: { SSH_KEY: 'private-secret' } },
+        sources: [
+          {
+            source: 'environment.op[0]',
+            sensitiveNames: [],
+            values: { PUBLIC: 'public-value' },
+          },
+        ],
+      },
+    );
+    assert.equal(clientCalls, 1);
+    assert.deepEqual(calls, ['secret:op://vault/item/private key', 'environment:env-id']);
+  });
+
+  it('should hide direct secret references and sdk errors from failure diagnostics', async () => {
+    const service = new OpEnvironmentService({
+      createClient: async () => ({
+        async getVariables() {
+          throw new Error('not expected');
+        },
+        async resolveSecret() {
+          throw new Error('private-sdk-error');
+        },
+      }),
+      credentialService: {
+        async resolveServiceAccountToken() {
+          return {
+            status: 'resolved',
+            source: { id: 'file', type: 'store' },
+            token: 'private-token',
+          } as const;
+        },
+      },
+      integrationVersion: 'test',
+    });
+
+    const result = await service.load('data', {
+      environmentIds: [],
+      secrets: [{ name: 'SSH_KEY', reference: 'op://private-vault/private-item/private-field' }],
+    });
+
+    assert.equal(result.status, 'invalid');
+    assert.equal(JSON.stringify(result).includes('private-sdk-error'), false);
+    assert.equal(JSON.stringify(result).includes('private-vault'), false);
+    assert.equal(JSON.stringify(result).includes('SSH_KEY'), true);
   });
 });

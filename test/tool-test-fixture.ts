@@ -5,6 +5,8 @@ import type {
   AgentSystemAuthorizationDecision,
   AgentSystemCliToolDefinition,
   AgentSystemOperation,
+  AgentSystemSemanticToolDefinition,
+  AgentSystemToolResourceLease,
 } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
@@ -26,7 +28,24 @@ export type ToolTestDefinition = AgentSystemCliToolDefinition<
   string
 >;
 
+export type SemanticToolTestDefinition = AgentSystemSemanticToolDefinition<
+  typeof toolTestParameters,
+  ToolTestConfiguration,
+  ToolTestConfiguration,
+  string
+>;
+
 export interface ToolTestDefinitionOptions {
+  acquireResources?(
+    input: { argument: string },
+    configuration: ToolTestConfiguration,
+    scope: {
+      agentId: string;
+      signal?: AbortSignal;
+      source: 'command' | 'tool';
+      workspaceDir: string;
+    },
+  ): Promise<AgentSystemToolResourceLease | undefined> | AgentSystemToolResourceLease | undefined;
   authorize?(
     operation: AgentSystemOperation,
     configuration: ToolTestConfiguration,
@@ -67,6 +86,7 @@ export function createToolTestDefinition(
     },
     guidance: { prompt: 'Use the Agent System test tool.' },
     runner: {
+      ...(options.acquireResources ? { acquireResources: options.acquireResources } : {}),
       argv: (input) => [input.argument],
       credentialBindings: (configuration) => ({ TOOL_TOKEN: configuration.token }),
       executable: 'test-tool',
@@ -80,6 +100,39 @@ export function createToolTestDefinition(
       normalize: (result) => result.stdout,
       parameters: toolTestParameters,
       ...(options.validate ? { validate: options.validate } : {}),
+    },
+  };
+}
+
+export function createSemanticToolTestDefinition(
+  options: {
+    authorize?: ToolTestDefinitionOptions['authorize'];
+    execute?(input: { argument: string }, configuration: ToolTestConfiguration): Promise<string>;
+  } = {},
+): SemanticToolTestDefinition {
+  return {
+    apiVersion: 1,
+    id: 'test-semantic-tool',
+    authorization: {
+      authorize: options.authorize ?? (() => ({ status: 'allowed' })),
+      mode: 'agent-system',
+      policyId: 'agent-system.test-semantic-tool',
+    },
+    commands: [{ command: 'test-semantic-tool' }],
+    configuration: {
+      read: () => ({ token: 'AGENT_TOKEN' }),
+      resolve: (configuration) => configuration,
+    },
+    execute:
+      options.execute ??
+      (async (input, configuration) => `${input.argument}:${configuration.token}`),
+    tool: {
+      classify: () => ({ action: 'inspect', risk: 'read', summary: 'Inspect test data.' }),
+      description: 'Exercise the semantic Agent System tool runtime.',
+      inputFromCommand: ([argument = 'status']) => ({ argument }),
+      label: 'Test Semantic Tool',
+      name: 'agent_system_test_semantic_tool',
+      parameters: toolTestParameters,
     },
   };
 }

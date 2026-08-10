@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+
+: "${AGENT_SYSTEM_SSH_CONFIG:?agent-system: managed ssh config is unavailable}"
+: "${AGENT_SYSTEM_SSH_EXECUTABLE:?agent-system: managed ssh executable is unavailable}"
+
+exec "$AGENT_SYSTEM_SSH_EXECUTABLE" -F "$AGENT_SYSTEM_SSH_CONFIG" "$@"

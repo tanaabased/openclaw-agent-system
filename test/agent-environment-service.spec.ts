@@ -32,6 +32,9 @@ describe('lib/agent-environment-service', () => {
         async loadForAgentId() {
           return loaded;
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -49,6 +52,31 @@ describe('lib/agent-environment-service', () => {
     assert.deepEqual(logs.error, []);
   });
 
+  it('should resolve environment after command-directory manifest discovery', async () => {
+    const commandDirectories: string[] = [];
+    const service = new AgentEnvironmentService({
+      hostEnvironment: { AGENT_COLOR_SOURCE: 'green' },
+      logger: { error() {}, info() {} },
+      manifestService: {
+        async loadForAgentId() {
+          throw new Error('agent discovery should not run');
+        },
+        async loadForCommandDirectory(commandDirectory) {
+          commandDirectories.push(commandDirectory);
+          return loaded;
+        },
+        async loadForWorkspace() {
+          throw new Error('exact workspace loading should not run');
+        },
+      },
+    });
+
+    const result = await service.loadForCommandDirectory('/workspace/project');
+
+    assert.equal(result.status, 'loaded');
+    assert.deepEqual(commandDirectories, ['/workspace/project']);
+  });
+
   it('should preserve non-loaded manifest results without logging environment state', async () => {
     const logs = { error: [] as string[], info: [] as string[] };
     const invalid: AgentManifestLoadResult = {
@@ -64,6 +92,9 @@ describe('lib/agent-environment-service', () => {
       },
       manifestService: {
         async loadForAgentId() {
+          return invalid;
+        },
+        async loadForCommandDirectory() {
           return invalid;
         },
         async loadForWorkspace() {
@@ -110,6 +141,9 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;
@@ -159,6 +193,9 @@ describe('lib/agent-environment-service', () => {
             },
           };
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
@@ -174,7 +211,13 @@ describe('lib/agent-environment-service', () => {
   });
 
   it('should load declared 1password environments after dotenv and environment.set', async () => {
-    const calls: Array<{ agentId: string; environmentIds: readonly string[] }> = [];
+    const calls: Array<{
+      agentId: string;
+      requirements: {
+        environmentIds: string[];
+        secrets: Array<{ name: string; reference: string }>;
+      };
+    }> = [];
     const logs = { error: [] as string[], info: [] as string[] };
     const service = new AgentEnvironmentService({
       hostEnvironment: {},
@@ -205,13 +248,16 @@ describe('lib/agent-environment-service', () => {
             },
           };
         },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
         async loadForWorkspace() {
           return loaded;
         },
       },
       opEnvironmentService: {
-        async load(agentId, environmentIds) {
-          calls.push({ agentId, environmentIds });
+        async load(agentId, requirements) {
+          calls.push({ agentId, requirements });
           const sources: AgentEnvironmentInputSource[] = [
             {
               source: 'environment.op[0]',
@@ -225,6 +271,7 @@ describe('lib/agent-environment-service', () => {
           ];
           return {
             status: 'loaded',
+            set: { sensitiveNames: [], values: {} },
             sources,
           };
         },
@@ -235,7 +282,12 @@ describe('lib/agent-environment-service', () => {
 
     assert.equal(result.status, 'loaded');
     if (result.status !== 'loaded') return;
-    assert.deepEqual(calls, [{ agentId: 'data', environmentIds: ['env-team', 'env-agent'] }]);
+    assert.deepEqual(calls, [
+      {
+        agentId: 'data',
+        requirements: { environmentIds: ['env-team', 'env-agent'], secrets: [] },
+      },
+    ]);
     assert.deepEqual(result.environment.values, {
       LAYERED: 'agent-value',
       PRIVATE_VALUE: 'private-value',
@@ -243,6 +295,54 @@ describe('lib/agent-environment-service', () => {
     assert.deepEqual(result.environment.sensitiveNames, ['PRIVATE_VALUE']);
     assert.equal(logs.info[0]?.includes('private-value'), false);
     assert.deepEqual(logs.error, []);
+  });
+
+  it('should resolve direct op secrets as sensitive environment.set values', async () => {
+    const service = new AgentEnvironmentService({
+      hostEnvironment: {},
+      logger: { error() {}, info() {} },
+      manifestService: {
+        async loadForAgentId() {
+          return {
+            ...loaded,
+            manifest: {
+              ...loaded.manifest,
+              environment: {
+                set: { SSH_KEY: { fromOp: 'op://vault/item/private key' } },
+              },
+            },
+          };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
+        },
+        async loadForWorkspace() {
+          return loaded;
+        },
+      },
+      opEnvironmentService: {
+        async load(agentId, requirements) {
+          assert.equal(agentId, 'data');
+          assert.deepEqual(requirements, {
+            environmentIds: [],
+            secrets: [{ name: 'SSH_KEY', reference: 'op://vault/item/private key' }],
+          });
+          return {
+            status: 'loaded',
+            set: { sensitiveNames: ['SSH_KEY'], values: { SSH_KEY: 'private-key-value' } },
+            sources: [],
+          };
+        },
+      },
+    });
+
+    const result = await service.loadForAgentId('data');
+
+    assert.equal(result.status, 'loaded');
+    if (result.status !== 'loaded') return;
+    assert.deepEqual(result.environment.values, { SSH_KEY: 'private-key-value' });
+    assert.deepEqual(result.environment.sensitiveNames, ['SSH_KEY']);
+    assert.equal(result.environment.variables[0]?.source, 'environment.set');
   });
 
   it('should report 1password failures without logging source details', async () => {
@@ -262,6 +362,9 @@ describe('lib/agent-environment-service', () => {
               environment: { op: ['private-environment-id'] },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;
@@ -312,6 +415,9 @@ describe('lib/agent-environment-service', () => {
               },
             },
           };
+        },
+        async loadForCommandDirectory() {
+          return loaded;
         },
         async loadForWorkspace() {
           return loaded;

@@ -9,9 +9,13 @@ import {
   renderCodexPathConfig,
 } from '../utils/codex-path-config.ts';
 import type { AgentPathProjection } from '../utils/resolve-agent-paths.ts';
+import WorkspaceGitignoreService from './workspace-gitignore-service.ts';
 
 const gitignoreEntry = '.codex/config.toml';
-const gitignoreBlock = `# Agent System local Codex configuration.\n${gitignoreEntry}\n`;
+const gitignoreBlock = {
+  comment: '# Agent System local Codex configuration.',
+  entries: [gitignoreEntry],
+} as const;
 
 export type CodexPathConfigStatus = 'created' | 'updated' | 'unchanged' | 'manual';
 
@@ -63,47 +67,35 @@ async function writeAtomic(path: string, source: string, mode = 0o600): Promise<
   }
 }
 
-async function existingFileMode(path: string, fallback: number): Promise<number> {
-  try {
-    const stats = await lstat(path);
-    if (!stats.isFile()) {
-      throw new Error(`${path} must be a regular file and may not be a symbolic link.`);
-    }
-    return stats.mode & 0o777;
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return fallback;
-    throw error;
-  }
-}
-
-function hasGitignoreEntry(source: string | undefined): boolean {
-  return (
-    source
-      ?.split(/\r?\n/u)
-      .map((line) => line.trim())
-      .includes(gitignoreEntry) === true
-  );
+export interface CodexPathConfigServiceDependencies {
+  gitignoreService?: Pick<WorkspaceGitignoreService, 'includes' | 'reconcile'>;
 }
 
 /** Own the generated Codex workspace config without overwriting manual configuration. */
 export default class CodexPathConfigService {
+  readonly #gitignoreService: Pick<WorkspaceGitignoreService, 'includes' | 'reconcile'>;
+
+  constructor(dependencies: CodexPathConfigServiceDependencies = {}) {
+    this.#gitignoreService = dependencies.gitignoreService ?? new WorkspaceGitignoreService();
+  }
+
   async inspect(
     workspaceDir: string,
     projection: AgentPathProjection,
   ): Promise<CodexPathConfigInspection> {
     const configPath = join(workspaceDir, '.codex', 'config.toml');
     const source = await readRegularFile(configPath);
-    const gitignoreSource = await readRegularFile(join(workspaceDir, '.gitignore'));
+    const gitignored = await this.#gitignoreService.includes(workspaceDir, [gitignoreEntry]);
     if (source === undefined) {
       return {
-        gitignored: hasGitignoreEntry(gitignoreSource),
+        gitignored,
         ownership: 'absent',
         pathMatches: false,
       };
     }
     const inspection = inspectCodexPathConfig(source, projection);
     return {
-      gitignored: hasGitignoreEntry(gitignoreSource),
+      gitignored,
       ownership: inspection.ownership,
       pathMatches: inspection.pathMatches,
     };
@@ -135,21 +127,10 @@ export default class CodexPathConfigService {
           : 'updated';
     if (status !== 'unchanged') await writeAtomic(configPath, desiredSource);
 
-    const gitignorePath = join(workspaceDir, '.gitignore');
-    const gitignoreSource = await readRegularFile(gitignorePath);
-    const gitignored = hasGitignoreEntry(gitignoreSource);
-    if (!gitignored) {
-      const separator = gitignoreSource && !gitignoreSource.endsWith('\n\n') ? '\n' : '';
-      const mode = await existingFileMode(gitignorePath, 0o644);
-      await writeAtomic(
-        gitignorePath,
-        `${gitignoreSource ?? ''}${separator}${gitignoreBlock}`,
-        mode,
-      );
-    }
+    const gitignoreUpdated = await this.#gitignoreService.reconcile(workspaceDir, gitignoreBlock);
     return {
       gitignored: true,
-      gitignoreUpdated: !gitignored,
+      gitignoreUpdated,
       ownership: 'managed',
       pathMatches: true,
       status,

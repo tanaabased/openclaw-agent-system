@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import discoverManifest, {
+  discoverManifestFromDirectory,
   maximumManifestBytes,
   type ManifestDiscovery,
 } from '../utils/discover-manifest.ts';
@@ -219,6 +220,14 @@ export default class AgentManifestService {
 
     this.#inFlight.set(inFlightKey, load);
     return load;
+  }
+
+  async loadForCommandDirectory(
+    commandDirectory: string,
+    trigger: ManifestLoadTrigger = 'cli',
+  ): Promise<AgentManifestLoadResult> {
+    const discovery = await discoverManifestFromDirectory(commandDirectory);
+    return this.loadForWorkspace(discovery.workspaceDir, undefined, trigger);
   }
 
   async #loadDiscovered(

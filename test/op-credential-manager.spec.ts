@@ -27,9 +27,13 @@ describe('lib/op-credential-manager', () => {
         async validate() {
           throw new Error('not expected');
         },
-        async validateToken(token, environmentIds) {
-          calls.push(`validate:${token}:${environmentIds.length}`);
-          return { status: 'valid', environmentCount: environmentIds.length };
+        async validateToken(token, requirements) {
+          calls.push(`validate:${token}:${requirements.environmentIds.length}`);
+          return {
+            status: 'valid',
+            environmentCount: requirements.environmentIds.length,
+            secretCount: requirements.secrets.length,
+          };
         },
       },
     });
@@ -90,13 +94,17 @@ describe('lib/op-credential-manager', () => {
         },
       },
       environmentService: {
-        async validate(agentId, environmentIds, options) {
+        async validate(agentId, requirements, options) {
           assert.equal(agentId, 'data');
-          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
+          assert.deepEqual(requirements, {
+            environmentIds: ['environment-one', 'environment-two'],
+            secrets: [],
+          });
           assert.deepEqual(options, { storeId: 'file', allowEnvironmentFallback: false });
           return {
             status: 'valid',
             environmentCount: 2,
+            secretCount: 0,
             source: { id: 'file', type: 'store' },
           };
         },
@@ -110,6 +118,7 @@ describe('lib/op-credential-manager', () => {
       status: 'valid',
       agentId: 'data',
       environmentCount: 2,
+      secretCount: 0,
       source: 'store:file',
     });
   });
@@ -129,10 +138,13 @@ describe('lib/op-credential-manager', () => {
         async validate() {
           throw new Error('not expected');
         },
-        async validateToken(token, environmentIds) {
+        async validateToken(token, requirements) {
           assert.equal(token, 'environment-token');
-          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
-          return { status: 'valid', environmentCount: 2 };
+          assert.deepEqual(requirements, {
+            environmentIds: ['environment-one', 'environment-two'],
+            secrets: [],
+          });
+          return { status: 'valid', environmentCount: 2, secretCount: 0 };
         },
       },
     });
@@ -141,6 +153,7 @@ describe('lib/op-credential-manager', () => {
       status: 'valid',
       agentId: 'data',
       environmentCount: 2,
+      secretCount: 0,
       source: 'process-environment',
     });
   });
@@ -157,9 +170,12 @@ describe('lib/op-credential-manager', () => {
         },
       },
       environmentService: {
-        async validate(agentId, environmentIds, options) {
+        async validate(agentId, requirements, options) {
           assert.equal(agentId, 'data');
-          assert.deepEqual(environmentIds, ['environment-one', 'environment-two']);
+          assert.deepEqual(requirements, {
+            environmentIds: ['environment-one', 'environment-two'],
+            secrets: [],
+          });
           assert.deepEqual(options, { allowEnvironmentFallback: false });
           return {
             status: 'invalid',
@@ -216,5 +232,58 @@ describe('lib/op-credential-manager', () => {
       storeIds: ['file'],
       unavailableStoreIds: [],
     });
+  });
+
+  it('should require and validate credentials for direct op secrets without environments', async () => {
+    const optionCalls: Array<{ allowEnvironmentFallback?: boolean }> = [];
+    const directSecretManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'data', name: 'Data' },
+      environment: {
+        set: { SSH_KEY: { fromOp: 'op://vault/item/private key' } },
+      },
+    };
+    const manager = new OpCredentialManager({
+      credentialService: {
+        environmentServiceAccountToken: () => undefined,
+        async removeServiceAccountToken() {
+          return { status: 'missing', storeIds: ['file'], unavailableStoreIds: [] };
+        },
+        async storeServiceAccountToken() {
+          return { status: 'stored', storeId: 'file' };
+        },
+      },
+      environmentService: {
+        async validate(agentId, requirements, options) {
+          assert.equal(agentId, 'data');
+          assert.deepEqual(requirements, {
+            environmentIds: [],
+            secrets: [{ name: 'SSH_KEY', reference: 'op://vault/item/private key' }],
+          });
+          optionCalls.push(options ?? {});
+          return {
+            status: 'valid',
+            environmentCount: 0,
+            secretCount: 1,
+            source: { id: 'file', type: 'store' },
+          };
+        },
+        async validateToken() {
+          throw new Error('not expected');
+        },
+      },
+    });
+
+    assert.deepEqual(await manager.validateStoredForInstall(directSecretManifest), {
+      status: 'ready',
+    });
+    assert.deepEqual(await manager.validate(directSecretManifest), {
+      status: 'valid',
+      agentId: 'data',
+      environmentCount: 0,
+      secretCount: 1,
+      source: 'store:file',
+    });
+    assert.deepEqual(optionCalls, [{ allowEnvironmentFallback: false }, {}]);
   });
 });

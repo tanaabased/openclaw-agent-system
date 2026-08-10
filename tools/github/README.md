@@ -193,10 +193,11 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-The shim passes arguments through `openclaw agent-system tool gh` and never
-receives a credential. The runtime resolves the real `gh` executable while
-excluding Agent System-managed command paths to prevent substitution and wrapper
-recursion.
+The shim delegates through the reusable packaged `agent-system-tool` launcher,
+which passes arguments to `openclaw agent-system tool gh`, exports the canonical
+launcher directory, and never receives a credential. The runtime resolves the
+real `gh` executable while excluding Agent System-managed command paths to
+prevent substitution and wrapper recursion.
 
 The shim is routing convenience, not universal interception. Absolute binaries,
 replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated host processes

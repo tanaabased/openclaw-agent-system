@@ -1,0 +1,34 @@
+schema-version: 1
+
+agent:
+  id: tanaabot
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+  set:
+    SSH_KEY: $TEST_SSH_KEY
+    OP_SSH_KEY:
+      from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
+
+git:
+  worktrees: {}
+  extensions:
+    agent-system-test: allow
+  policy:
+    delete: allow
+  signing:
+    key: OP_SSH_KEY
+    allowed-signers-file: .agent-system/allowed_signers
+  ssh:
+    private-keys:
+      - from-environment: SSH_KEY
+      - from-environment: OP_SSH_KEY
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  policy:
+    admin: allow
+    destructive: allow

@@ -31,9 +31,8 @@ export default async function runAgentSystemTool(
         ...(options.terminalColumns === undefined
           ? {}
           : { terminalColumns: options.terminalColumns }),
-        ...(options.agentId
-          ? { agentId: options.agentId }
-          : { workspaceDir: options.workspaceDir }),
+        ...(options.agentId ? { agentId: options.agentId } : {}),
+        workspaceDir: options.workspaceDir,
       },
     );
     if (result.commandResult.stdout) options.output.writeStdout(result.commandResult.stdout);

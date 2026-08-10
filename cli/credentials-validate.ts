@@ -14,7 +14,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   credentialManager: Pick<OpCredentialManager, 'validate'>;
   fromEnvironment: boolean;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
   storeId?: string;
@@ -22,7 +22,7 @@ export interface ValidateCredentialsAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Validate an OP credential against every Environment declared by the manifest. */
+/** Validate an OP credential against every OP resource declared by the manifest. */
 export default async function validateCredentialsAgentSystem(
   options: ValidateCredentialsAgentSystemOptions,
 ): Promise<void> {
@@ -39,7 +39,7 @@ export default async function validateCredentialsAgentSystem(
 
   const loaded = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
+    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (loaded.status !== 'loaded') {
     reportManifestFailure(loaded, options.logger);
     options.setExitCode(1);
@@ -64,6 +64,7 @@ export default async function validateCredentialsAgentSystem(
       { label: 'valid', style: 'status', value: `op credential for ${result.agentId}` },
       { label: 'source', style: 'target', value: result.source },
       { label: 'environments', style: 'field', value: String(result.environmentCount) },
+      { label: 'secrets', style: 'field', value: String(result.secretCount) },
     ],
     options.styles,
   );

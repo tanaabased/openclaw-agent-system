@@ -6,6 +6,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
+- Homebrew dependencies from [Brewfile](./Brewfile)
 - OpenClaw 2026.7.1-2 or newer
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
@@ -16,9 +17,10 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Install a linked development checkout in the normal OpenClaw profile:
 
 ```sh
-# clone the repository and install its pinned dependencies.
+# clone the repository and install its system and javascript dependencies.
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
+brew bundle
 bun install
 
 # build the node-targeted plugin.
@@ -158,8 +160,6 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/`](./examples/) run through GitHub Actions on macOS and Ubuntu. They install plugins and mutate isolated OpenClaw state, so they must not be used as routine local validation.
 
-The shared final Leia step receives the repository's model and 1Password test credentials. Only the `agent`, `path`, and `github` scenarios may consume model authentication. Only the `env`, `credentials`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`; `github` and `tool` load account tokens from their declared 1Password Environments rather than workflow environment variables. Each consuming scenario owns its non-secret 1Password Environment ID fixture.
-
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
@@ -167,6 +167,7 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | Path                  | Responsibility                                               |
 | --------------------- | ------------------------------------------------------------ |
 | `index.ts`            | Static plugin, tool, and lifecycle registration              |
+| `bin/`                | Packaged shims and shared tool or SSH launchers              |
 | `cli/`                | One implementation file per subcommand                       |
 | `lib/`                | CLI registration, lifecycle registry, and orchestration      |
 | `tools/<capability>/` | Tool schemas, execution, and optional lifecycle contribution |
@@ -175,5 +176,18 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 | `test/`               | Flat behavior-focused unit tests                             |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
+
+### Tool Providers
+
+First-party tool implementations live in `tools/<capability>/` and use Agent
+System's internal tool contract. The planned public provider boundary is
+documented in [Tool API](./API.md); it is not available to third-party OpenClaw
+plugins until a supported typed cross-plugin capability and package export are
+implemented.
+
+Ordinary tool shims in `bin/` delegate to the sibling `agent-system-tool`
+launcher with their fixed registered command name. Keep argument handling,
+launcher-directory resolution, and the `--agent-system` probe in that shared
+launcher so future shims inherit the same failure and routing contract.
 
 Foundational `agent` and `path` lifecycle contributions live in `lib/`; capability contributions remain beside their optional model-facing tool definitions. Declaration validation is deterministic and side-effect free, doctor inspection is read-only, and reconciliation runs only through explicit install after global prerequisites pass. Register contributions in deterministic dependency order in `index.ts`, return explicit unchanged outcomes, and cover validation, inspection, reconciliation, and component-aware presentation directly. Public lifecycle behavior is exercised by the GitHub Actions-only `validate`, `install`, and `doctor` Leia scenarios.

@@ -20,6 +20,10 @@ export interface AgentEnvironmentInputSource {
 export interface AgentEnvironmentExternalSources {
   dotenv?: readonly AgentEnvironmentInputSource[];
   op?: readonly AgentEnvironmentInputSource[];
+  set?: {
+    sensitiveNames?: readonly string[];
+    values: Record<string, string>;
+  };
 }
 
 export interface ResolvedAgentEnvironment {
@@ -80,6 +84,8 @@ export default function resolveAgentEnvironment(
     ),
     ...inputValues,
   ]);
+  const resolvedSet = externalSources.set ?? { values: {} };
+  const resolvedSetSensitivity = new Set(resolvedSet.sensitiveNames ?? []);
   const setSensitivity = new Map<string, boolean>();
   const setValues = Object.fromEntries(
     Object.entries(manifest.environment?.set ?? {}).flatMap(([name, input]) => {
@@ -91,6 +97,19 @@ export default function resolveAgentEnvironment(
           severity: 'error',
         });
         return [];
+      }
+      if (typeof input !== 'string') {
+        if (!(name in resolvedSet.values)) {
+          diagnostics.push({
+            code: 'op-secret-unavailable',
+            fieldPath: `/environment/set/${name}`,
+            message: `Environment variable ${name} could not be resolved from its OP secret.`,
+            severity: 'error',
+          });
+          return [];
+        }
+        setSensitivity.set(name, resolvedSetSensitivity.has(name));
+        return [[name, resolvedSet.values[name] as string] as const];
       }
       const interpolated = interpolateEnvironmentValue(input, interpolationLookup);
       const referencesBootstrapToken = interpolated.references.includes(opServiceAccountTokenName);

@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+: "${AGENT_SYSTEM_SSH_KEYGEN_EXECUTABLE:?agent-system: managed ssh-keygen executable is unavailable}"
+: "${AGENT_SYSTEM_SSH_SIGNING_SOCKET:?agent-system: managed signing socket is unavailable}"
+
+SSH_AUTH_SOCK="$AGENT_SYSTEM_SSH_SIGNING_SOCKET"
+export SSH_AUTH_SOCK
+
+exec "$AGENT_SYSTEM_SSH_KEYGEN_EXECUTABLE" "$@"

@@ -23,7 +23,7 @@ export interface InstallAgentSystemOptions {
   installService: Pick<AgentInstallService, 'install'>;
   json: boolean;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
@@ -34,11 +34,7 @@ export interface InstallAgentSystemOptions {
 export default async function installAgentSystem(
   options: InstallAgentSystemOptions,
 ): Promise<void> {
-  const result = await options.manifestService.loadForWorkspace(
-    options.workspaceDir,
-    undefined,
-    'cli',
-  );
+  const result = await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (result.status !== 'loaded') {
     reportManifestFailure(result, options.logger);
     options.setExitCode(1);

@@ -1,4 +1,7 @@
 import type { AgentManifest } from '../utils/manifest-types.ts';
+import collectOpEnvironmentRequirements, {
+  hasOpEnvironmentRequirements,
+} from '../utils/collect-op-environment-requirements.ts';
 import type OpCredentialService from './op-credential-service.ts';
 import type OpEnvironmentService from './op-environment-service.ts';
 
@@ -17,6 +20,7 @@ export type CredentialValidationResult =
   | {
       agentId: string;
       environmentCount: number;
+      secretCount: number;
       source: string;
       status: 'valid';
     };
@@ -66,8 +70,8 @@ export default class OpCredentialManager {
     token: string,
     storeId?: string,
   ): Promise<CredentialSetResult> {
-    const environmentIds = manifest.environment?.op ?? [];
-    const validation = await this.#environmentService.validateToken(token, environmentIds);
+    const requirements = collectOpEnvironmentRequirements(manifest);
+    const validation = await this.#environmentService.validateToken(token, requirements);
     if (validation.status === 'invalid') return failure(validation);
 
     const stored = await this.#credentialService.storeServiceAccountToken(
@@ -85,7 +89,7 @@ export default class OpCredentialManager {
     manifest: AgentManifest,
     options: { fromEnvironment?: boolean; storeId?: string } = {},
   ): Promise<CredentialValidationResult> {
-    const environmentIds = manifest.environment?.op ?? [];
+    const requirements = collectOpEnvironmentRequirements(manifest);
     if (options.fromEnvironment) {
       const token = this.#credentialService.environmentServiceAccountToken();
       if (!token) {
@@ -95,19 +99,20 @@ export default class OpCredentialManager {
           message: 'OP_SERVICE_ACCOUNT_TOKEN is not available to validate.',
         };
       }
-      const validation = await this.#environmentService.validateToken(token, environmentIds);
+      const validation = await this.#environmentService.validateToken(token, requirements);
       if (validation.status === 'invalid') return failure(validation);
       return {
         status: 'valid',
         agentId: manifest.agent.id,
         environmentCount: validation.environmentCount,
+        secretCount: validation.secretCount,
         source: 'process-environment',
       };
     }
 
     const validated = await this.#environmentService.validate(
       manifest.agent.id,
-      environmentIds,
+      requirements,
       options.storeId ? { storeId: options.storeId, allowEnvironmentFallback: false } : {},
     );
     if (validated.status === 'invalid') return failure(validated);
@@ -115,6 +120,7 @@ export default class OpCredentialManager {
       status: 'valid',
       agentId: manifest.agent.id,
       environmentCount: validated.environmentCount,
+      secretCount: validated.secretCount,
       source:
         validated.source.type === 'store' ? `store:${validated.source.id}` : 'process-environment',
     };
@@ -134,10 +140,10 @@ export default class OpCredentialManager {
   }
 
   async validateStoredForInstall(manifest: AgentManifest): Promise<CredentialInstallReadiness> {
-    const environmentIds = manifest.environment?.op ?? [];
-    if (environmentIds.length === 0) return { status: 'ready' };
+    const requirements = collectOpEnvironmentRequirements(manifest);
+    if (!hasOpEnvironmentRequirements(requirements)) return { status: 'ready' };
 
-    const validated = await this.#environmentService.validate(manifest.agent.id, environmentIds, {
+    const validated = await this.#environmentService.validate(manifest.agent.id, requirements, {
       allowEnvironmentFallback: false,
     });
     if (validated.status === 'valid') return { status: 'ready' };

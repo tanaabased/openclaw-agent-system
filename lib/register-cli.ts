@@ -34,10 +34,10 @@ export interface RegisterAgentSystemCliOptions {
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
   doctorService: Pick<AgentDoctorService, 'inspect'>;
-  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
+  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   installService: Pick<AgentInstallService, 'install'>;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output?: CliOutput;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
   toolRuntime: AgentSystemToolRuntime;

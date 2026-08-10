@@ -1,4 +1,5 @@
-import type { ResolvableString } from './manifest-value-types.ts';
+import type { EnvironmentSetValue, ResolvableString } from './manifest-value-types.ts';
+import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from '../tools/github/config-schema.ts';
 
 export interface AgentManifest {
@@ -15,8 +16,9 @@ export interface AgentManifest {
     op?: string[];
     pathPrepend?: string[];
     required?: string[];
-    set?: Record<string, string>;
+    set?: Record<string, EnvironmentSetValue>;
   };
+  git?: GitManifestConfiguration;
   github?: GitHubManifestConfiguration;
 }
 

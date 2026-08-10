@@ -46,7 +46,7 @@ function createHarness(
             calls.agent.push(agentId);
             return options.agent ?? validResult;
           },
-          async loadForWorkspace(workspaceDir) {
+          async loadForCommandDirectory(workspaceDir) {
             calls.workspace.push(workspaceDir);
             return options.workspace ?? validResult;
           },
@@ -60,7 +60,7 @@ function createHarness(
 }
 
 describe('cli/validate', () => {
-  it('should validate the current workspace with a human-readable table', async () => {
+  it('should validate the nearest workspace with a human-readable table', async () => {
     const { calls, output, run } = createHarness();
 
     await run();

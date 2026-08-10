@@ -10,7 +10,7 @@ import type { AgentEnvironmentVariable } from '../utils/resolve-agent-environmen
 
 export interface EnvAgentSystemOptions {
   agentId?: string;
-  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForWorkspace'>;
+  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   json: boolean;
   logger: Logger;
   output: CliOutput;
@@ -48,7 +48,7 @@ function writeHuman(output: CliOutput, view: EnvironmentView, styles?: CliStyles
 export default async function envAgentSystem(options: EnvAgentSystemOptions): Promise<void> {
   const result = options.agentId
     ? await options.environmentService.loadForAgentId(options.agentId, 'cli')
-    : await options.environmentService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
+    : await options.environmentService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
     reportManifestFailure(result, options.logger);

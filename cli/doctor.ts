@@ -14,7 +14,7 @@ export interface DoctorAgentSystemOptions {
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   json: boolean;
   logger: Logger;
-  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForWorkspace'>;
+  manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
@@ -25,7 +25,7 @@ export interface DoctorAgentSystemOptions {
 export default async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<void> {
   const manifest = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForWorkspace(options.workspaceDir, undefined, 'cli');
+    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (manifest.status !== 'loaded') {
     reportManifestFailure(manifest, options.logger);
     options.setExitCode(1);
