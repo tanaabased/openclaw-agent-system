@@ -5,13 +5,21 @@ import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/t
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import { isToolWorkingDirectoryContained } from '../../utils/resolve-tool-working-directory.ts';
-import type { GitToolConfiguration } from './config-schema.ts';
+import type { GitSshConfiguration, GitToolConfiguration } from './config-schema.ts';
 import { gitIdentityEnvironment, resolveGitIdentity } from './identity.ts';
 import { authorizeGitOperation, classifyGitOperation, gitCommandPosition } from './policy.ts';
+import gitCommandUsesSshResources from './ssh-command.ts';
+import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
 
 interface ResolvedGitConfiguration {
   identity: ReturnType<typeof resolveGitIdentity>;
+  ssh?: GitSshConfiguration;
+}
+
+export interface GitToolDependencies {
+  sshResourceService?: Pick<GitSshResourceService, 'acquire'> &
+    Partial<Pick<GitSshResourceService, 'launcherEnvironment'>>;
 }
 
 export interface GitCommandResult {
@@ -138,7 +146,7 @@ function readConfiguration(manifest: AgentManifest): GitToolConfiguration | unde
 }
 
 /** Define the fixed-executable Git tool over one agent-scoped identity. */
-export function createGitTool() {
+export function createGitTool(dependencies: GitToolDependencies = {}) {
   return defineAgentSystemCliTool({
     apiVersion: 1,
     id: 'git',
@@ -150,7 +158,10 @@ export function createGitTool() {
     configuration: {
       read: readConfiguration,
       resolve(configuration, resolver): ResolvedGitConfiguration {
-        return { identity: resolveGitIdentity(configuration, resolver) };
+        return {
+          identity: resolveGitIdentity(configuration, resolver),
+          ...(configuration.git.ssh === undefined ? {} : { ssh: configuration.git.ssh }),
+        };
       },
     },
     guidance: {
@@ -158,11 +169,37 @@ export function createGitTool() {
         'For Git work, use the $agent-system-git-cli skill and prefer agent_system_git over exec or direct git commands. Pass ordinary non-interactive git arguments in argv; Agent System supplies the active agent identity and contained working directory.',
     },
     runner: {
+      acquireResources(input, configuration, scope) {
+        if (!configuration.ssh || !gitCommandUsesSshResources(input)) return undefined;
+        if (!dependencies.sshResourceService) {
+          throw new AgentSystemToolError(
+            'credential_unavailable',
+            'Git SSH authentication is unavailable in this runtime.',
+          );
+        }
+        return dependencies.sshResourceService.acquire(configuration.ssh, {
+          resolveEnvironment: scope.resolveEnvironment,
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+          workspaceDir: scope.workspaceDir,
+        });
+      },
       argv(input) {
         return [...input.argv];
       },
       environment(configuration) {
-        return gitIdentityEnvironment(configuration.identity);
+        const sshEnvironment = configuration.ssh
+          ? dependencies.sshResourceService?.launcherEnvironment?.()
+          : undefined;
+        if (configuration.ssh && !sshEnvironment) {
+          throw new AgentSystemToolError(
+            'credential_unavailable',
+            'Git SSH authentication is unavailable in this runtime.',
+          );
+        }
+        return {
+          ...gitIdentityEnvironment(configuration.identity),
+          ...sshEnvironment,
+        };
       },
       executable: 'git',
       maxOutputBytes: 65_536,

@@ -29,6 +29,7 @@ import { createAgentSystemLogger } from './lib/logger.ts';
 import registerAgentSystemCli from './lib/register-cli.ts';
 import registerAgentSystemHooks from './lib/register-hooks.ts';
 import createGitLifecycleContribution from './tools/git/lifecycle.ts';
+import GitSshResourceService from './tools/git/ssh-resource-service.ts';
 import { createGitTool } from './tools/git/tool.ts';
 import GitHubAccountClient from './tools/github/account-client.ts';
 import GitHubAccountKeyService from './tools/github/account-key-service.ts';
@@ -57,6 +58,10 @@ export default definePluginEntry({
       rootDir: privateStateRoot,
     });
     const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
+    const excludedToolExecutableDirectories = [
+      join(packageDir, 'bin'),
+      ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
+    ];
     const credentialStores = createCredentialStores({
       currentUid: process.getuid?.(),
       environment: process.env,
@@ -107,12 +112,16 @@ export default definePluginEntry({
         baseEnvironment: process.env,
         configStore: githubConfigStore,
         environmentService: lifecycleEnvironmentService,
-        excludedExecutableDirectories: [
-          join(packageDir, 'bin'),
-          ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
-        ],
+        excludedExecutableDirectories: excludedToolExecutableDirectories,
       }),
       ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
+    });
+    const gitSshResourceService = new GitSshResourceService({
+      baseEnvironment: process.env,
+      ...(process.getuid === undefined ? {} : { currentUid: process.getuid() }),
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
+      ...(process.env.HOME ? { homeDirectory: process.env.HOME } : {}),
+      launcherPath: join(packageDir, 'bin', 'agent-system-ssh'),
     });
     const lifecycleRegistry = new AgentSystemLifecycleRegistry([
       createAgentLifecycleContribution({
@@ -124,7 +133,7 @@ export default definePluginEntry({
         },
       }),
       createPathLifecycleContribution({ pathService }),
-      createGitLifecycleContribution(),
+      createGitLifecycleContribution({ sshResourceService: gitSshResourceService }),
       createGitHubLifecycleContribution({
         accountKeyService: githubAccountKeyService,
         configStore: githubConfigStore,
@@ -153,17 +162,14 @@ export default definePluginEntry({
     const doctorService = new AgentDoctorService({ lifecycleRegistry });
     const toolApprovals = new AgentSystemToolApprovalReceiptStore();
     const toolRegistry = new AgentSystemToolRegistry([
-      createGitTool(),
+      createGitTool({ sshResourceService: gitSshResourceService }),
       createGitHubTool({ configStore: githubConfigStore }),
     ]);
     const toolRuntime = new AgentSystemToolRuntime({
       approvals: toolApprovals,
       baseEnvironment: process.env,
       environmentService,
-      excludedExecutableDirectories: [
-        join(packageDir, 'bin'),
-        ...(toolLauncherDirectory ? [toolLauncherDirectory] : []),
-      ],
+      excludedExecutableDirectories: excludedToolExecutableDirectories,
       logger,
       manifestService,
     });

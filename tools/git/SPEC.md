@@ -10,8 +10,10 @@ owns the shared environment, tool-runtime, lifecycle, and security contracts.
 The first implementation slice ships the tool scaffold, agent identity
 projection, working-directory containment, policy, and direct verification.
 The SSH runtime foundation adds invocation-scoped resource cleanup and a
-cross-platform OpenSSH compatibility proof without accepting SSH manifest
-configuration. Authentication and signing build on that foundation.
+cross-platform OpenSSH compatibility proof. The first authentication slice
+adds unencrypted path and completed-environment key sources through an isolated
+per-invocation SSH agent. Direct 1Password key references, encrypted keys, and
+signing build on that foundation.
 
 ## Product Boundary
 
@@ -193,7 +195,6 @@ git:
     private-keys:
       - path: ~/.ssh/id_ed25519
       - from-environment: GIT_SSH_PRIVATE_KEY
-      - from-onepassword: 'op://vault-id/item-id/private key?ssh-format=openssh'
 ```
 
 `private-keys` accepts one source or an ordered list. Every object contains
@@ -205,13 +206,16 @@ exactly one source:
   permissions, loads it without modifying it, and does not copy it into the
   workspace.
 - `from-environment` names one value in the completed Agent System environment
-  that contains OpenSSH private-key material.
-- `from-onepassword` contains an `op://` reference to a 1Password SSH private
-  key. It is resolved late with the agent's stored 1Password bootstrap
-  credential and never promoted into the general environment.
+  that contains OpenSSH private-key material. The completed environment may
+  receive that value from literals, dotenv, or a declared 1Password
+  Environment.
 
-Managed authentication requires `ssh-agent`, `ssh-add`, and `ssh-keygen` from
-OpenSSH. The source-development Brewfile installs the Homebrew `openssh`
+A later source slice adds direct `from-onepassword` `op://` references. Those
+references require a dedicated late-bound 1Password resolver and real
+credential proof; they are not accepted as shorthand for environment loading.
+
+Managed authentication requires `ssh`, `ssh-agent`, and `ssh-add` from OpenSSH.
+The source-development Brewfile installs the Homebrew `openssh`
 formula. Installed hosts remain responsible for providing these executables;
 the authentication slice adds stable readiness diagnostics rather than falling
 back to ambient SSH agents or identities.
@@ -356,15 +360,23 @@ Official asset source:
   proven.
 - Treat `test:openssh`, its repository task, and its unit-workflow step as
   temporary spike scaffolding rather than a third test category. Remove all
-  three as soon as the Slice 2B `examples/git` Leia scenario proves managed SSH
+  three as soon as the Slice 2B1 `examples/git` Leia scenario proves managed SSH
   authentication on macOS and Ubuntu.
 
-### Slice 2B: SSH authentication
+### Slice 2B1: unencrypted SSH authentication (implemented; CI proof pending)
 
-- Add path, environment, and 1Password key sources.
+- Add path and completed-environment key sources.
 - Start and clean up one isolated SSH agent per invocation.
 - Add source validation, readiness diagnostics, unit tests, and a narrowly
-  justified SSH Leia scenario when an install-shaped boundary needs proof.
+  focused SSH assertion to the existing Git Leia scenario.
+
+### Slice 2B2: direct 1Password SSH key sources
+
+- Add a dedicated resolver for declared `op://` private-key references.
+- Resolve only after authorization with the agent's stored bootstrap
+  credential.
+- Add a real credential-backed fixture without widening general environment
+  access.
 
 ### Slice 2C: encrypted SSH keys
 
@@ -402,18 +414,18 @@ The Git implementation must directly verify:
 - argument, configuration, helper, and credential escape-hatch rejection;
 - destructive and unknown policy before environment or key resolution;
 - bounded child input/output, cancellation, timeout, and process-tree cleanup;
-- private keys absent from schemas, arguments, child environment, logs, audit,
-  errors, and results; and
-- credential-resource cleanup on every terminal path before SSH support ships.
+- raw private-key values absent from schemas, arguments, Git child environment,
+  logs, audit, errors, and results; and
+- credential-resource cleanup on every terminal path.
 
-The first Leia scenario proves only the installed package, shim, shared runtime,
-identity fallback, real `git` invocation, and resulting author and committer
-identity. Resolver variants and containment edge cases remain direct unit tests.
+The Git Leia scenario proves the installed package, shim, shared runtime,
+identity fallback, real local `git` invocation, resulting author and committer
+identity, OpenSSH readiness, and isolated SSH authentication against GitHub on
+macOS and Ubuntu. Resolver variants and containment edge cases remain direct
+unit tests.
 
 ## Deferred Decisions
 
-- Whether a supported OpenSSH stdin-loading path eliminates temporary private
-  key files on every supported platform.
 - Which owner-controlled IPC mechanism should deliver passphrases to a
   noninteractive askpass adapter.
 - Whether the 1Password desktop SSH agent should become a declared workstation

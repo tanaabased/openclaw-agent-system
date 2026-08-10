@@ -5,4 +5,18 @@ agent:
   name: Tanaabot
   email: tanaabot@tanaab.dev
 
-git: {}
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+  set:
+    GIT_SSH_PRIVATE_KEY: $AGENT_SYSTEM_LEIA_GIT_PRIVATE_KEY
+
+git:
+  ssh:
+    private-keys:
+      from-environment: GIT_SSH_PRIVATE_KEY
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  policy:
+    destructive: allow

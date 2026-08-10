@@ -5,8 +5,9 @@
 </p>
 
 The Git tool runs ordinary noninteractive `git` commands with the active
-agent's declared identity, contained workspace, and operation policy. It is the
-preferred Git path when an Agent System workspace declares `git`.
+agent's declared identity, contained workspace, optional isolated SSH identity,
+and operation policy. It is the preferred Git path when an Agent System
+workspace declares `git`.
 
 [Agent System](../../README.md) · [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md)
 
@@ -30,6 +31,7 @@ launches the real `git` executable without a shell.
 - Git available as `git`
 - An Agent System workspace manifest with `git` configured
 - An effective Git name and email declared by `git` or `agent`
+- OpenSSH `ssh`, `ssh-agent`, and `ssh-add` when managed SSH keys are configured
 
 ## Configuration Reference
 
@@ -46,6 +48,9 @@ agent:
     from-environment: AGENT_EMAIL
 
 git:
+  ssh:
+    private-keys:
+      from-environment: GIT_SSH_PRIVATE_KEY
   policy:
     destructive: ask
     unknown: deny
@@ -69,6 +74,34 @@ fall through to repository, global, or system Git identity.
 Sets both author and committer email for the Git child. A missing or unresolved
 effective value fails the operation.
 
+### `git.ssh.private-keys`
+
+| Type                          | Required | Default |
+| ----------------------------- | -------- | ------- |
+| key source or key source list | no       | none    |
+
+Selects one or more unencrypted OpenSSH private keys in declaration order:
+
+```yaml
+git:
+  ssh:
+    private-keys:
+      - path: ~/.ssh/id_ed25519
+      - from-environment: GIT_SSH_PRIVATE_KEY
+```
+
+`path` reads an existing owner-only regular file. Relative paths remain inside
+the agent workspace; absolute and `~/` paths are explicit operator choices.
+`from-environment` reads the named value from the completed Agent System
+environment, so dotenv and 1Password Environment sources can supply the key.
+Direct `op://` key references and encrypted keys are not yet supported.
+
+Remote-capable commands start a fresh isolated `ssh-agent`, load selected keys
+through standard input, expose only its private socket and public-key selector
+files to the Git child, and remove the agent and temporary directory before the
+tool call completes. Local-only commands do not acquire SSH resources. Run
+`openclaw agent-system doctor` to check installed-host OpenSSH readiness.
+
 ### `git.policy`
 
 | Field         | Values                 | Default | Covers                                  |
@@ -81,7 +114,9 @@ Read and ordinary write operations are allowed. `ask` works only through
 reject operations that require an approval conversation.
 
 Agent System disables operator-global and system Git configuration, terminal
-prompts, hooks, pagers, and editors for the child. It rejects command-line
+prompts, hooks, pagers, and editors for the child. Managed SSH also bypasses
+ambient SSH configuration and identities while retaining normal host-key
+verification. It rejects command-line
 configuration, executable, credential, and working-directory escape paths. A
 repository's own Git configuration can still name helpers, filters, aliases,
 and diff programs, so the wrapper does not make an untrusted checkout safe.
@@ -130,7 +165,7 @@ replaced `PATH` values, and unrelated host processes can bypass it.
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
-- [Git tool specification](./SPEC.md): planned SSH authentication and signing work
+- [Git tool specification](./SPEC.md): planned SSH source, encrypted-key, and signing work
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 
 The Git logo is by [Jason Long](https://git-scm.com/downloads/logos) and is

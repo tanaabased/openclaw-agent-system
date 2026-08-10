@@ -285,6 +285,9 @@ export default class AgentSystemToolRuntime {
       }
       resourceLease = await definition.runner.acquireResources?.(input, resolvedConfiguration, {
         agentId,
+        resolveEnvironment(name) {
+          return values[name];
+        },
         ...(signal === undefined ? {} : { signal }),
         source: scope.source,
         workspaceDir,

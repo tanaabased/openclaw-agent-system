@@ -139,4 +139,52 @@ describe('tools/git/tool', () => {
     );
     assert.deepEqual(environmentCalls, []);
   });
+
+  it('should acquire managed ssh only for remote-capable commands', async () => {
+    const events: string[] = [];
+    const requests: AgentSystemCliRunRequest[] = [];
+    manifest.git = {
+      ssh: { privateKeys: [{ fromEnvironment: 'GIT_SSH_PRIVATE_KEY' }] },
+    };
+    const registry = new AgentSystemToolRegistry([
+      createGitTool({
+        sshResourceService: {
+          async acquire(configuration, scope) {
+            events.push(`acquire:${configuration.privateKeys.length}`);
+            assert.equal(scope.resolveEnvironment('AGENT_EMAIL'), 'data@example.com');
+            return {
+              async dispose() {
+                events.push('dispose');
+              },
+              environment: { GIT_SSH: '/package/bin/agent-system-ssh' },
+            };
+          },
+          launcherEnvironment() {
+            return {
+              GIT_SSH: '/package/bin/agent-system-ssh',
+              GIT_SSH_VARIANT: 'ssh',
+            };
+          },
+        },
+      }),
+    ]);
+    const runtime = createRuntime(requests);
+
+    await registry.invoke('git', runtime, ['status', '--short'], {
+      source: 'command',
+      workspaceDir: repositoryDir,
+    });
+    assert.deepEqual(events, []);
+    assert.equal(requests[0]?.environment.GIT_SSH, '/package/bin/agent-system-ssh');
+    assert.equal(requests[0]?.environment.AGENT_SYSTEM_SSH_CONFIG, undefined);
+    await registry.invoke(
+      'git',
+      runtime,
+      ['ls-remote', 'git@github.com:tanaabased/openclaw-agent-system.git', 'HEAD'],
+      { source: 'command', workspaceDir: repositoryDir },
+    );
+
+    assert.deepEqual(events, ['acquire:1', 'dispose']);
+    assert.equal(requests[1]?.environment.GIT_SSH, '/package/bin/agent-system-ssh');
+  });
 });

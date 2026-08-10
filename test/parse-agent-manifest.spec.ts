@@ -578,4 +578,73 @@ git:
       true,
     );
   });
+
+  it('should normalize one or many git ssh private key sources', () => {
+    const one = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  ssh:
+    private-keys:
+      from-environment: GIT_SSH_PRIVATE_KEY
+`);
+    const many = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  ssh:
+    private-keys:
+      - path: ~/.ssh/id_ed25519
+      - from-environment: GIT_SSH_PRIVATE_KEY
+`);
+
+    assert.equal(one.status, 'valid');
+    assert.equal(many.status, 'valid');
+    if (one.status === 'valid') {
+      assert.deepEqual(one.manifest.git?.ssh?.privateKeys, [
+        { fromEnvironment: 'GIT_SSH_PRIVATE_KEY' },
+      ]);
+    }
+    if (many.status === 'valid') {
+      assert.deepEqual(many.manifest.git?.ssh?.privateKeys, [
+        { path: '~/.ssh/id_ed25519' },
+        { fromEnvironment: 'GIT_SSH_PRIVATE_KEY' },
+      ]);
+    }
+  });
+
+  it('should reject empty, ambiguous, and direct 1password git key sources', () => {
+    for (const privateKeys of [
+      '[]',
+      '{ path: key, from-environment: GIT_SSH_PRIVATE_KEY }',
+      '{ from-onepassword: op://vault/item/private-key }',
+    ]) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  ssh:
+    private-keys: ${privateKeys}
+`).has(privateKeys.includes('from-') ? 'manifest-unknown-key' : 'manifest-schema'),
+        true,
+      );
+    }
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  ssh:
+    private-keys:
+      - path: keys/id_ed25519
+      - path: keys/id_ed25519
+`).has('manifest-schema'),
+      true,
+    );
+  });
 });

@@ -142,6 +142,7 @@ export interface AgentSystemCliToolDefinition<
       configuration: TResolvedConfiguration,
       scope: {
         agentId: string;
+        resolveEnvironment(name: string): string | undefined;
         signal?: AbortSignal;
         source: AgentSystemToolScope['source'];
         workspaceDir: string;

@@ -1,10 +1,48 @@
 import type { AgentSystemLifecycleContribution } from '../../lib/lifecycle-registry.ts';
+import type GitSshResourceService from './ssh-resource-service.ts';
+
+export interface GitLifecycleDependencies {
+  sshResourceService?: Pick<GitSshResourceService, 'inspectDependencies'>;
+}
 
 /** Validate the declaration-only Git identity and policy contract. */
-export default function createGitLifecycleContribution(): AgentSystemLifecycleContribution {
+export default function createGitLifecycleContribution(
+  dependencies: GitLifecycleDependencies = {},
+): AgentSystemLifecycleContribution {
   return {
     id: 'git',
     isConfigured: (manifest) => manifest.git !== undefined,
+    async inspect({ manifest }) {
+      if (!manifest.git?.ssh?.privateKeys.length) return [];
+      if (!dependencies.sshResourceService) {
+        return [
+          {
+            code: 'git-ssh-runtime-unavailable',
+            message: 'Git SSH authentication is unavailable in this runtime.',
+            remediation: 'Reload Agent System with its Git SSH runtime enabled.',
+            status: 'blocked',
+          },
+        ];
+      }
+      const { missing } = await dependencies.sshResourceService.inspectDependencies();
+      if (missing.length > 0) {
+        return [
+          {
+            code: 'git-ssh-dependencies-missing',
+            message: `Git SSH authentication requires missing executables: ${missing.join(', ')}.`,
+            remediation: 'Install OpenSSH and make ssh, ssh-agent, and ssh-add available on PATH.',
+            status: 'blocked',
+          },
+        ];
+      }
+      return [
+        {
+          code: 'git-ssh-dependencies-ready',
+          message: 'Git SSH authentication dependencies are available.',
+          status: 'healthy',
+        },
+      ];
+    },
     validate: ({ manifest }) => {
       const diagnostics = [];
       if (manifest.git?.name === undefined && manifest.agent.name === undefined) {

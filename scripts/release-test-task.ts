@@ -125,6 +125,7 @@ try {
     'dist/index.js',
     'dist/index.js.map',
     'index.ts',
+    'bin/agent-system-ssh',
     'bin/git',
     'bin/gh',
     'skills/git-cli/SKILL.md',
@@ -220,6 +221,18 @@ try {
     await access(commandPath);
     const result = await run(commandPath, ['--agent-system']);
     assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship an executable Agent System ssh launcher', async () => {
+    const commandPath = join(packageRoot, 'bin', 'agent-system-ssh');
+    await access(commandPath);
+    await run(commandPath, ['github.com'], {
+      env: {
+        ...environment,
+        AGENT_SYSTEM_SSH_CONFIG: '/dev/null',
+        AGENT_SYSTEM_SSH_EXECUTABLE: '/usr/bin/true',
+      },
+    });
   });
 
   await check('pass ClawHub package validation without warnings', async () => {
