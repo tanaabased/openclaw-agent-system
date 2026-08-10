@@ -68,7 +68,10 @@ git:
     from-environment: GIT_EMAIL
 
   policy:
-    destructive: deny
+    delete: deny
+    discard: deny
+    force: deny
+    rewrite: deny
     unknown: deny
 ```
 
@@ -164,24 +167,35 @@ command-scoped override, and the skill must keep this trust boundary explicit.
 
 ## Operation Policy
 
-The initial Git policy has two configurable hazard classes:
+Git policy uses effect-specific selectors rather than inheriting the GitHub
+provider's broad hazard classes:
 
-| Field         | Values                 | Default | Covers                                     |
-| ------------- | ---------------------- | ------- | ------------------------------------------ |
-| `destructive` | `allow`, `ask`, `deny` | `deny`  | Irrecoverable local or remote mutations    |
-| `unknown`     | `allow`, `ask`, `deny` | `deny`  | Syntax Agent System cannot classify safely |
+| Field     | Values                 | Default | Covers                                                 |
+| --------- | ---------------------- | ------- | ------------------------------------------------------ |
+| `force`   | `allow`, `ask`, `deny` | `deny`  | Explicit safety overrides and forced ref replacement   |
+| `rewrite` | `allow`, `ask`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
+| `discard` | `allow`, `ask`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
+| `delete`  | `allow`, `ask`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
+| `unknown` | `allow`, `ask`, `deny` | `deny`  | Unrecognized aliases, helpers, or command syntax       |
 
-Read and ordinary write operations are allowed. Known destructive operations
-include force refspecs, mirror and prune modes, forced branch and tag
-replacement, ref deletion, destructive reset and clean modes, and object-pruning
-operations. Known hazards take precedence over unknown policy.
+Recognized reads and ordinary writes are allowed. Hazard selectors take
+precedence over the command's ordinary behavior and accumulate when an
+invocation has several effects. Every selected policy must allow the operation:
+a force push selects `force` and `rewrite`; `reset --hard` selects `rewrite` and
+`discard`; a forced worktree removal selects `force`, `discard`, and `delete`.
+
+Ambiguous `checkout` forms select `discard`; callers use `switch` for branches
+and `restore` for paths when they need precise policy. Truly unrecognized
+commands retain a separate fail-closed boundary because Git may resolve them as
+repository aliases or arbitrary `git-*` helpers. Operators may explicitly allow
+that extension surface through `unknown`.
 
 `ask` is available only to native `agent_system_git` calls with an originating
 OpenClaw approval conversation. Direct CLI and shim invocations reject an ask
 decision. Policy is applied before environment resolution or future SSH-key
 materialization.
 
-The classifier should remain compact and conservative rather than mirroring the
+The classifier remains selector-first and compact rather than mirroring the
 entire versioned Git command tree. Tests own every recognized hazard and every
 credential or executable escape hatch.
 
@@ -346,7 +360,7 @@ Official asset source:
 - Add effective name and email resolution with agent fallbacks.
 - Add workspace-contained working-directory support to the shared runner.
 - Project process-local identity and noninteractive Git configuration.
-- Add compact destructive and unknown classification.
+- Add compact Git-specific hazard and unknown classification.
 - Add focused unit tests and one minimal matrix-backed `examples/git` Leia
   scenario.
 
@@ -411,7 +425,8 @@ The Git implementation must directly verify:
 - workspace and symlink containment for the effective working directory;
 - fixed executable resolution without launcher recursion;
 - argument, configuration, helper, and credential escape-hatch rejection;
-- destructive and unknown policy before environment or key resolution;
+- force, rewrite, discard, delete, and unknown policy before environment or key
+  resolution;
 - bounded child input/output, cancellation, timeout, and process-tree cleanup;
 - raw private-key values absent from schemas, arguments, Git child environment,
   logs, audit, errors, and results; and

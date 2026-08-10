@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { open, realpath } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import AgentSystemToolError from '../../lib/tool-error.ts';
 import type { GitPrivateKeySource } from './config-schema.ts';
@@ -15,6 +15,7 @@ export interface GitPrivateKeySourceContext {
 }
 
 export interface GitPrivateKeySourceDependencies {
+  canonicalizeDirectory?(path: string): Promise<string>;
   readPrivateKeyFile?(path: string, currentUid?: number): Promise<string>;
 }
 
@@ -90,6 +91,7 @@ export async function loadGitPrivateKeySources(
   context: GitPrivateKeySourceContext,
   dependencies: GitPrivateKeySourceDependencies = {},
 ): Promise<string[]> {
+  const canonicalizeDirectory = dependencies.canonicalizeDirectory ?? realpath;
   const readPrivateKeyFile = dependencies.readPrivateKeyFile ?? readGitPrivateKeyFile;
   try {
     return await Promise.all(
@@ -99,11 +101,21 @@ export async function loadGitPrivateKeySources(
           if (value === undefined) throw new Error('environment value is unavailable');
           return validatePrivateKeyMaterial(value);
         }
-        const path = resolveGitPrivateKeyPath(
+        let path = resolveGitPrivateKeyPath(
           source.path,
           context.workspaceDir,
           context.homeDirectory,
         );
+        if (!isAbsolute(source.path) && !source.path.startsWith('~')) {
+          const [canonicalWorkspace, canonicalParent] = await Promise.all([
+            canonicalizeDirectory(context.workspaceDir),
+            canonicalizeDirectory(dirname(path)),
+          ]);
+          if (!isContained(canonicalWorkspace, canonicalParent)) {
+            throw new Error('relative path escapes workspace through a symlink');
+          }
+          path = join(canonicalParent, basename(path));
+        }
         return readPrivateKeyFile(path, context.currentUid);
       }),
     );

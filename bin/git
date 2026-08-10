@@ -10,7 +10,7 @@ if [ "$#" -eq 1 ]; then
 fi
 
 if ! agent_system_launcher_dir=$(
-  CDPATH='' cd -P "$(dirname "$0")"
+  CDPATH='' cd -P "$(dirname "$0")" &&
   pwd -P
 ); then
   printf '%s\n' 'agent-system: could not resolve the git launcher directory' >&2

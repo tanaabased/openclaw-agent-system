@@ -28,7 +28,7 @@ Today, Agent System:
 - supplies each Agent System tool only the agent-specific environment and credentials it declares instead of a shared global identity
 - configures `git` with the agent's author and committer identity without storing that identity in repository or global configuration
 - configures `gh` with the agent's GitHub identity, credentials, SSH keys, and private CLI settings
-- applies `allow`, `ask`, or `deny` policy to destructive and unknown Git operations
+- applies `allow`, `ask`, or `deny` policy to force, rewrite, discard, delete, and unknown Git operations
 - applies `allow`, `ask`, or `deny` policy to destructive, administrative, and unknown GitHub operations
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 
@@ -81,7 +81,10 @@ github:
 
 git:
   policy:
-    destructive: ask
+    delete: ask
+    discard: ask
+    force: deny
+    rewrite: ask
     unknown: deny
 ```
 

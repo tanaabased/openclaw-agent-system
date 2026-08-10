@@ -52,7 +52,10 @@ git:
     private-keys:
       from-environment: GIT_SSH_PRIVATE_KEY
   policy:
-    destructive: ask
+    delete: ask
+    discard: ask
+    force: deny
+    rewrite: ask
     unknown: deny
 ```
 
@@ -104,14 +107,26 @@ tool call completes. Local-only commands do not acquire SSH resources. Run
 
 ### `git.policy`
 
-| Field         | Values                 | Default | Covers                                  |
-| ------------- | ---------------------- | ------- | --------------------------------------- |
-| `destructive` | `allow`, `ask`, `deny` | `deny`  | Irrecoverable local or remote mutations |
-| `unknown`     | `allow`, `ask`, `deny` | `deny`  | Unclassified Git command syntax         |
+| Field     | Values                 | Default | Covers                                                 |
+| --------- | ---------------------- | ------- | ------------------------------------------------------ |
+| `force`   | `allow`, `ask`, `deny` | `deny`  | Explicit safety overrides and forced ref replacement   |
+| `rewrite` | `allow`, `ask`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
+| `discard` | `allow`, `ask`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
+| `delete`  | `allow`, `ask`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
+| `unknown` | `allow`, `ask`, `deny` | `deny`  | Unrecognized aliases, helpers, or command syntax       |
 
-Read and ordinary write operations are allowed. `ask` works only through
-`agent_system_git` during an OpenClaw agent turn; direct CLI and shim invocations
-reject operations that require an approval conversation.
+Recognized reads and ordinary writes are allowed. Hazard selectors take
+precedence and one invocation may select several policies; every selected
+policy must allow the operation. For example, a force push selects `force` and
+`rewrite`, while `reset --hard` selects `rewrite` and `discard`.
+
+`checkout` is ambiguous between branch switching and path restoration. Prefer
+`switch` for branches and `restore` for paths; otherwise Agent System treats the
+ambiguous form as `discard`. `unknown: allow` also permits Git to discover
+aliases and `git-*` helpers, so retain the deny default unless that extension
+surface is trusted explicitly. `ask` works only through `agent_system_git`
+during an OpenClaw agent turn; direct CLI and shim invocations reject operations
+that require an approval conversation.
 
 Agent System disables operator-global and system Git configuration, terminal
 prompts, hooks, pagers, and editors for the child. Managed SSH also bypasses

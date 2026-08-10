@@ -36,7 +36,10 @@ export const externalGitSectionSchema = Type.Object(
     policy: Type.Optional(
       Type.Object(
         {
-          destructive: Type.Optional(externalGitPolicyDecisionSchema),
+          delete: Type.Optional(externalGitPolicyDecisionSchema),
+          discard: Type.Optional(externalGitPolicyDecisionSchema),
+          force: Type.Optional(externalGitPolicyDecisionSchema),
+          rewrite: Type.Optional(externalGitPolicyDecisionSchema),
           unknown: Type.Optional(externalGitPolicyDecisionSchema),
         },
         { additionalProperties: false },
@@ -65,7 +68,10 @@ type ExternalGitSection = Static<typeof externalGitSectionSchema>;
 export type GitPolicyDecision = 'allow' | 'ask' | 'deny';
 
 export interface GitPolicyConfiguration {
-  destructive: GitPolicyDecision;
+  delete: GitPolicyDecision;
+  discard: GitPolicyDecision;
+  force: GitPolicyDecision;
+  rewrite: GitPolicyDecision;
   unknown: GitPolicyDecision;
 }
 
@@ -91,7 +97,10 @@ export interface GitToolConfiguration {
 }
 
 export const defaultGitPolicyConfiguration: GitPolicyConfiguration = {
-  destructive: 'deny',
+  delete: 'deny',
+  discard: 'deny',
+  force: 'deny',
+  rewrite: 'deny',
   unknown: 'deny',
 };
 

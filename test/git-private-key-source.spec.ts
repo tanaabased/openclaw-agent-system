@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import AgentSystemToolError from '../lib/tool-error.ts';
 import {
@@ -52,6 +55,9 @@ describe('tools/git/private-key-source', () => {
         workspaceDir: '/workspace',
       },
       {
+        async canonicalizeDirectory(path) {
+          return path;
+        },
         async readPrivateKeyFile(path, currentUid) {
           reads.push({ ...(currentUid === undefined ? {} : { currentUid }), path });
           return 'file-private-key';
@@ -61,6 +67,29 @@ describe('tools/git/private-key-source', () => {
 
     assert.deepEqual(result, ['file-private-key', 'environment-private-key']);
     assert.deepEqual(reads, [{ currentUid: 501, path: '/workspace/keys/id_ed25519' }]);
+  });
+
+  it('should reject a relative key whose parent escapes through an intermediate symlink', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-git-private-key-'));
+    try {
+      const workspaceDir = join(root, 'workspace');
+      const outsideDir = join(root, 'outside');
+      await mkdir(workspaceDir);
+      await mkdir(outsideDir);
+      await writeFile(join(outsideDir, 'id_ed25519'), 'private-key', { mode: 0o600 });
+      await symlink(outsideDir, join(workspaceDir, 'keys'), 'dir');
+
+      await assert.rejects(
+        loadGitPrivateKeySources([{ path: 'keys/id_ed25519' }], {
+          resolveEnvironment: () => undefined,
+          workspaceDir,
+        }),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && error.code === 'credential_unavailable',
+      );
+    } finally {
+      await rm(root, { recursive: true });
+    }
   });
 
   it('should hide unavailable or invalid private key details behind one stable error', async () => {
