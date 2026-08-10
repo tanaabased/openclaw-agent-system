@@ -991,6 +991,22 @@ agents and Git's transport and signing helper contracts, with optional local
 trusted verification. Explicitly allowed worktrees are the next Git slice.
 Encrypted keys and passphrase delivery remain deferred.
 
+Worktrees are durable Git job resources rather than OpenClaw session resources.
+One stable opaque work id identifies one repository worktree and branch, and
+several conversations may attach to that work over time. A trusted OpenClaw
+session key may select or attach the active worktree, but it is not the work id
+and session end, reset, or compaction never removes the worktree.
+
+The portable Agent System boundary begins with an operator-approved local
+repository and ends with safe worktree preparation, lookup, Git execution, and
+explicit removal. Assignment events, repository catalogs, agent selection,
+Codex task creation, OpenClaw session creation, provider-specific work-item
+interpretation, organizational branch naming, and issue or pull-request
+lifecycle remain external orchestration concerns. External callers hand Agent
+System an opaque work id, an approved local repository selector, a display
+label, a base ref, and an optional branch through an explicit supported surface;
+Agent System does not infer those values from a session title or notification.
+
 ### Tool verification contract
 
 The shared tool harness and each proving tool must directly verify:
@@ -1216,9 +1232,29 @@ Completed behavior is documented in the user guides, tool READMEs, tests, and
 
 ### Git tool
 
-Continue the [Git tool specification](tools/git/SPEC.md) with an explicitly
-allowed worktree design. The worktree schema remains open until its ownership,
-policy, doctor, and removal contracts are explicit.
+Implement the [Git tool specification](tools/git/SPEC.md) worktree slice in this
+order:
+
+1. Fail closed for raw path-mutating `git worktree` forms until Agent System can
+   parse and validate their repository and destination operands. Keep `-C`,
+   `--git-dir`, and `--work-tree` unavailable as generic bypasses.
+2. Add an operator-owned worktree-root declaration, approved local repository
+   selection, and an owner-only Agent System state store. Active jobs are
+   runtime state and never become manifest desired state.
+3. Add one semantic Git worktree service with idempotent `prepare`, `inspect`,
+   `list`, `attach`, and `remove` operations. Expose it through a narrow native
+   tool and operator CLI while keeping ordinary repository commands on
+   `agent_system_git`.
+4. Admit an external working directory only when its canonical path matches an
+   active registered worktree. Resolve command and shim calls made from that
+   worktree back to their owning installed agent without copying the agent
+   manifest into the checkout.
+5. Bind trusted OpenClaw session context to a stable work id and let Git default
+   to that worktree. Other OpenClaw, Codex, ACP, MCP, and third-party execution
+   surfaces require their own explicit working-directory adapters.
+6. Add validation, policy, audit, doctor, stale-state recovery, documentation,
+   direct tests, and installed Git scenario coverage before describing the
+   feature as supported.
 
 ### Tool platform expansion
 
@@ -1271,8 +1307,9 @@ Agent System core environment implementations.
   stable shared configuration package.
 - The managed location and format for successful installation metadata.
 - The exact Linux headless service-credential integration.
-- The exact declaration, ownership, and removal shape for explicitly allowed
-  Git worktrees outside an agent workspace.
+- Whether the operator-owned Git worktree root should default to Agent System
+  local state or remain an explicit required declaration. A workspace-relative
+  root must be ignored, untracked, and outside every approved source checkout.
 - The final compile-time SDK export/package boundary and typed OpenClaw
   cross-plugin tool capability.
 - Which high-value GitHub operations justify semantic HTTP/Octokit conveniences
