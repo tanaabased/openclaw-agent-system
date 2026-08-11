@@ -104,4 +104,37 @@ describe('channels/github/lib/work-event-client', () => {
     assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
   });
+
+  it('should fetch a separate bounded canonical briefing projection', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response({
+          body: 'b'.repeat(9_000),
+          htmlUrl: 'https://github.com/tanaabased/example/issues/7',
+          labels: Array.from({ length: 22 }, (_, index) => `label-${index}`),
+          milestone: {
+            description: 'm'.repeat(1_100),
+            dueOn: '2026-09-01T00:00:00Z',
+            title: 'Phase 2',
+          },
+          title: 'Deliver notifications',
+        });
+      },
+    });
+
+    const briefing = await client.getBriefing('tanaabased', 'example', 7);
+
+    assert.equal(briefing.bodyExcerpt.length, 8_192);
+    assert.equal(briefing.bodyTruncated, true);
+    assert.equal(briefing.labels.length, 20);
+    assert.equal(briefing.labelsTruncated, true);
+    assert.equal(briefing.milestone?.descriptionExcerpt?.length, 1_024);
+    assert.equal(briefing.milestone?.descriptionTruncated, true);
+    assert.equal(briefing.url, 'https://github.com/tanaabased/example/issues/7');
+    assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
+    assert.ok(requests[0]?.some((value) => value.includes('htmlUrl:.html_url')));
+  });
 });

@@ -5,6 +5,8 @@ import type AgentManifestService from '../../lib/agent-manifest-service.ts';
 import AgentSystemToolError from '../../lib/tool-error.ts';
 import resolveManifestValue from '../../utils/resolve-manifest-value.ts';
 import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
+import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
+import { gitWorktreeDirectoryName } from './worktree-names.ts';
 import type { GitWorktreeResult } from './worktree-service.ts';
 
 export interface TrustedGitHubWorktreeInput {
@@ -53,12 +55,43 @@ function unavailable(agentId: string, reason: string): AgentSystemToolError {
   );
 }
 
-/** Prepare one provider-admitted GitHub worktree through the existing Git definition. */
+/** Inspect or prepare one provider-admitted worktree through the existing Git definition. */
 export default class TrustedGitWorktreeService {
   readonly #dependencies: TrustedGitWorktreeServiceDependencies;
 
   public constructor(dependencies: TrustedGitWorktreeServiceDependencies) {
     this.#dependencies = dependencies;
+  }
+
+  public async inspectGitHub(
+    input: TrustedGitHubWorktreeInput,
+  ): Promise<TrustedGitHubWorktreeResult | undefined> {
+    const agentId = requiredText(input.agentId, 'The notification agent id');
+    const repositoryDatabaseId = positiveInteger(
+      input.repositoryDatabaseId,
+      'The GitHub repository database id',
+    );
+    const itemDatabaseId = positiveInteger(
+      input.itemDatabaseId,
+      'The GitHub work-item database id',
+    );
+    if (input.itemType !== 'issue' && input.itemType !== 'pull-request') {
+      throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
+    }
+    const repositoryId = `github-${repositoryDatabaseId}`;
+    const workId = `${input.itemType}-${itemDatabaseId}`;
+    const result = await this.#execute(agentId, { action: 'list', repositoryId }, input.signal);
+    if (!Array.isArray(result)) {
+      throw new AgentSystemToolError(
+        'execution_failed',
+        'Git worktree inspection returned an unexpected result.',
+      );
+    }
+    const branch = gitWorktreeDirectoryName(repositoryId, workId);
+    const match = result.find(
+      (worktree) => worktree.repositoryId === repositoryId && worktree.branch === branch,
+    );
+    return match ? { ...match, workId } : undefined;
   }
 
   public async prepareGitHub(
@@ -89,6 +122,26 @@ export default class TrustedGitWorktreeService {
       workId,
     };
 
+    const result = await this.#execute(agentId, toolInput, input.signal);
+    if (
+      Array.isArray(result) ||
+      !result.workId ||
+      result.workId !== workId ||
+      result.repositoryId !== repositoryId
+    ) {
+      throw new AgentSystemToolError(
+        'execution_failed',
+        'Git worktree preparation returned an unexpected identity.',
+      );
+    }
+    return { ...result, workId };
+  }
+
+  async #execute(
+    agentId: string,
+    toolInput: GitWorktreeToolInput,
+    signal?: AbortSignal,
+  ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
       throw unavailable(agentId, 'the trusted manifest is not loaded');
@@ -138,26 +191,14 @@ export default class TrustedGitWorktreeService {
         return resolution.value;
       },
     });
-    const result = await this.#dependencies.definition.execute(toolInput, configuration, {
+    return this.#dependencies.definition.execute(toolInput, configuration, {
       agentId,
       resolveEnvironment(name) {
         return values[name];
       },
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      ...(signal === undefined ? {} : { signal }),
       source: 'command',
       workspaceDir: loaded.scope.workspaceDir,
     });
-    if (
-      Array.isArray(result) ||
-      !result.workId ||
-      result.workId !== workId ||
-      result.repositoryId !== repositoryId
-    ) {
-      throw new AgentSystemToolError(
-        'execution_failed',
-        'Git worktree preparation returned an unexpected identity.',
-      );
-    }
-    return { ...result, workId };
   }
 }

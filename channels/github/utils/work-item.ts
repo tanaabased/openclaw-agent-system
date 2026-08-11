@@ -34,6 +34,21 @@ export interface GitHubCanonicalWorkItem {
   updatedAt: string;
 }
 
+export interface GitHubCanonicalWorkItemBriefing {
+  bodyExcerpt: string;
+  bodyTruncated: boolean;
+  labels: string[];
+  labelsTruncated: boolean;
+  milestone?: {
+    descriptionExcerpt?: string;
+    descriptionTruncated: boolean;
+    dueOn?: string;
+    title: string;
+  };
+  title: string;
+  url: string;
+}
+
 export interface GitHubAssignmentEvent {
   actor: GitHubIdentity;
   assignee: GitHubIdentity;

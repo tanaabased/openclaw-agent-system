@@ -1,19 +1,19 @@
 # GitHub Notifications Plan
 
-Status: Phases 0 and 1 implemented; Phase 2A repository seams plus Phases 2B
-and 2C implemented; Phase 2A installed proof and Phases 2D through 6 remain
+Status: Phases 0 and 1 and Phase 2A through 2D repository behavior implemented;
+Phase 2 installed proof and Phases 2E through 6 remain
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
-inspection/reconciliation, typed read-only GitHub monitor, trust admission,
-private durable state, and deterministic unit coverage. The monitor deliberately
-does not register production assignment delivery, create a worktree, or start a
-real agent briefing.
+inspection/reconciliation, typed GitHub monitor, trust admission, private durable
+state, recoverable assignment delivery, trusted managed-worktree preparation,
+and a bounded local-only briefing session with deterministic unit coverage.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
-Phase 0 routing foundation and Phase 1 read-only discovery described below are
-implemented; installed assignment delivery, work execution, the approved-mention
-conversation bridge, and operational recovery remain planned behavior.
+Phase 0 routing foundation, Phase 1 read-only discovery, and Phase 2A through 2D
+assignment delivery described below are implemented; installed proof, retirement
+and failure recovery, work execution, and the approved-mention conversation
+bridge remain planned behavior.
 
 ## Recommendation
 
@@ -738,7 +738,7 @@ scenario exercises them.
   metadata, and briefing idempotency key before deciding whether to resume.
   Never infer completion from a stale local stage alone.
 
-#### Phase 2D: Deliver the Bounded Briefing
+#### Phase 2D: Deliver the Bounded Briefing (implemented; installed proof pending)
 
 - After admission, fetch a separate bounded canonical briefing projection with
   the title, URL, body excerpt, labels, and milestone summary. Keep all textual
@@ -763,6 +763,15 @@ scenario exercises them.
   metadata is durable. A timeout or ambiguous response must reconcile the
   provider event id and session transcript before retrying, never create another
   briefing speculatively.
+
+Implemented delivery reuses the Phase 2C orchestrator and optimized private
+state codec. The monitor reconciles persisted nonterminal assignments before a
+normal poll is due, while honoring failure backoff, and introduces no second
+delivery queue or state store. The production adapter rechecks canonical GitHub
+authority, uses only the trusted managed-worktree service, creates or adopts the
+exact routed session through the trusted Gateway runtime, and sends one bounded
+local-only no-tools briefing. The owning GitHub Actions-only installed proof
+remains Phase 2F work.
 
 #### Phase 2E: Retirement and Failure Recovery
 

@@ -117,7 +117,8 @@ Agent System includes a local-only
 [GitHub notifications channel](./channels/github/README.md). Its Gateway service
 observes and classifies assigned GitHub issues and pull requests after verifying
 the exact agent route, account identity, repository policy, and assigning actor.
-Worktree preparation and automated briefing are not yet enabled.
+New approved assignments create one managed worktree and one deterministic,
+local-only no-tools briefing session. The channel has no outbound GitHub adapter.
 
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.

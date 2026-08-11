@@ -4,6 +4,7 @@ import GitHubNotificationMonitorService from '../channels/github/lib/monitor-ser
 import { GitHubAccountClientError } from '../lib/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const workspaceDir = '/workspace/tanaabot';
 const manifest: AgentManifest = {
@@ -33,6 +34,48 @@ function loadedManifest() {
 }
 
 describe('channels/github/lib/monitor-service', () => {
+  it('should reconcile persisted delivery backlog before the next remote poll', async () => {
+    let connected = 0;
+    const reconciled: string[] = [];
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new Error('the monitor poll should remain deferred');
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          reconciled.push(itemKey);
+        },
+      },
+      clock: () => 1_000,
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => undefined,
+      },
+    });
+
+    await service.runOnce();
+
+    assert.equal(connected, 0);
+    assert.deepEqual(reconciled, [notificationItemKey]);
+  });
+
   it('should verify exact routing before resolving a credential', async () => {
     let connected = 0;
     let state: GitHubNotificationMonitorState | undefined;
@@ -43,6 +86,7 @@ describe('channels/github/lib/monitor-service', () => {
           throw new Error('should not connect');
         },
       },
+      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
@@ -82,6 +126,7 @@ describe('channels/github/lib/monitor-service', () => {
           );
         },
       },
+      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 10_000,
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       manifestService: { loadForAgentId: async () => loadedManifest() },

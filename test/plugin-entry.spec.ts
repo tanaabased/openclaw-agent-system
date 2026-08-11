@@ -49,10 +49,21 @@ describe('index', () => {
             return '/workspace';
           },
         },
+        channel: {
+          reply: {
+            dispatchReplyWithBufferedBlockDispatcher() {},
+          },
+          session: {
+            async recordInboundSession() {},
+          },
+        },
         config: {
           current() {
             return {};
           },
+        },
+        gateway: {
+          async request() {},
         },
       },
       session: {

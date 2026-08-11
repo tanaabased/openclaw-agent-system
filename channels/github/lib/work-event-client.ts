@@ -5,6 +5,7 @@ import {
   type GitHubAssignedItemCandidate,
   type GitHubAssignmentEvent,
   type GitHubCanonicalWorkItem,
+  type GitHubCanonicalWorkItemBriefing,
   type GitHubIdentity,
   type GitHubRepositoryIdentity,
   type GitHubRepositoryPermission,
@@ -13,6 +14,11 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
+const maximumBodyLength = 8_192;
+const maximumLabels = 20;
+const maximumLabelLength = 100;
+const maximumMilestoneDescriptionLength = 1_024;
+const maximumTitleLength = 256;
 
 export class GitHubWorkEventClientError extends Error {
   override name = 'GitHubWorkEventClientError';
@@ -83,6 +89,20 @@ function timestamp(value: unknown, label: string): string {
   return parsed;
 }
 
+function boundedText(value: unknown, label: string, maximumLength: number): string {
+  if (typeof value !== 'string') throw new Error(`GitHub returned invalid ${label}.`);
+  return value.slice(0, maximumLength);
+}
+
+function optionalBoundedText(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  return boundedText(value, label, maximumLength);
+}
+
 function hasControlCharacter(value: string): boolean {
   return [...value].some((character) => {
     const code = character.codePointAt(0) ?? 0;
@@ -112,7 +132,7 @@ function repositoryEndpoint(owner: string, name: string): string {
   return `/repos/${owner}/${name}`;
 }
 
-/** Fixed-endpoint, bounded GitHub REST access for assignment control facts. */
+/** Fixed-endpoint, bounded GitHub REST access for control facts and briefing data. */
 export default class GitHubWorkEventClient {
   readonly #client: ConnectedGitHubAccountClient;
   #rateLimit: GitHubRateLimit = {};
@@ -263,6 +283,81 @@ export default class GitHubWorkEventClient {
       number: positiveInteger(value.number, 'work-item number'),
       state,
       updatedAt: timestamp(value.updatedAt, 'work-item update time'),
+    };
+  }
+
+  async getBriefing(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<GitHubCanonicalWorkItemBriefing> {
+    const response = await this.#api(
+      [
+        this.#itemEndpoint(owner, name, number),
+        '--jq',
+        '{title,htmlUrl:.html_url,body,labels:[.labels[].name],milestone:(if .milestone then {title:.milestone.title,description:.milestone.description,dueOn:.milestone.due_on} else null end)}',
+      ],
+      'work-item briefing',
+    );
+    const value = record(response.value, 'work-item briefing');
+    const rawTitle = string(value.title, 'work-item briefing title');
+    const rawBody =
+      value.body === null ? '' : boundedText(value.body, 'work-item body', 512 * 1024);
+    if (!Array.isArray(value.labels)) throw new Error('GitHub returned invalid work-item labels.');
+    const rawUrl = string(value.htmlUrl, 'work-item briefing URL');
+    const url = new URL(rawUrl);
+    const expectedPath = new RegExp(
+      `^/${owner.replaceAll('.', '\\.')}/${name.replaceAll('.', '\\.')}/(?:issues|pull)/${number}$`,
+      'iu',
+    );
+    if (
+      url.origin !== 'https://github.com' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !expectedPath.test(url.pathname)
+    ) {
+      throw new Error('GitHub returned an unsupported work-item briefing URL.');
+    }
+    const parsedLabels = value.labels.map((label) => string(label, 'work-item label'));
+    const labels = parsedLabels.slice(0, maximumLabels).map((label) => {
+      const parsed = label.slice(0, maximumLabelLength).trim();
+      if (!parsed) throw new Error('GitHub returned an invalid work-item label.');
+      return parsed;
+    });
+    let milestone: GitHubCanonicalWorkItemBriefing['milestone'];
+    if (value.milestone !== null && value.milestone !== undefined) {
+      const rawMilestone = record(value.milestone, 'work-item milestone');
+      const rawDescription = optionalBoundedText(
+        rawMilestone.description,
+        'work-item milestone description',
+        512 * 1024,
+      );
+      const dueOn =
+        rawMilestone.dueOn === null || rawMilestone.dueOn === undefined
+          ? undefined
+          : timestamp(rawMilestone.dueOn, 'work-item milestone due date');
+      milestone = {
+        ...(rawDescription === undefined
+          ? {}
+          : { descriptionExcerpt: rawDescription.slice(0, maximumMilestoneDescriptionLength) }),
+        descriptionTruncated:
+          rawDescription !== undefined && rawDescription.length > maximumMilestoneDescriptionLength,
+        ...(dueOn === undefined ? {} : { dueOn }),
+        title: boundedText(rawMilestone.title, 'work-item milestone title', maximumTitleLength),
+      };
+    }
+    return {
+      bodyExcerpt: rawBody.slice(0, maximumBodyLength),
+      bodyTruncated: rawBody.length > maximumBodyLength,
+      labels,
+      labelsTruncated:
+        parsedLabels.length > maximumLabels ||
+        parsedLabels.some((label) => label.length > maximumLabelLength),
+      ...(milestone === undefined ? {} : { milestone }),
+      title: rawTitle.slice(0, maximumTitleLength),
+      url: rawUrl,
     };
   }
 

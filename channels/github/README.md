@@ -6,14 +6,14 @@
 
 The GitHub notifications channel observes authorized GitHub work assignments
 for agent-scoped local OpenClaw routing. It owns the static
-`agent-system-github` channel, its exact per-agent route, the read-only Gateway
+`agent-system-github` channel, its exact per-agent route, the Gateway
 monitor, and the `github.notifications` manifest contract.
 
 [Agent System](../../README.md) · [GitHub CLI tool](../../tools/github/README.md)
 
 ## Current Behavior
 
-The current release provides the channel, routing, and observe-only trust core:
+The current release provides the channel, routing, trust core, and local assignment delivery:
 
 - strict `github.notifications` manifest validation
 - one activation-only channel account whose id is the Agent System agent id
@@ -27,11 +27,17 @@ The current release provides the channel, routing, and observe-only trust core:
 - immutable actor admission, self-event suppression, and active-item revocation checks
 - private atomic control state containing no token or issue/comment content
 - deterministic work-item conversation ids for inbound assignment delivery
+- policy-authorized managed worktree preparation through the Git capability
+- restart-safe, value-free delivery checkpoints and side-effect reconciliation
+- a separate bounded title, URL, body-excerpt, label, and milestone projection
+- one deterministic local session with plugin-owned work-item and worktree metadata
+- a no-tools automated briefing turn whose GitHub content is explicitly untrusted
 - local-only behavior with no outbound GitHub adapter
 
-The monitor classifies assignment control events but does not dispatch them into
-the inbound channel yet. It does not fetch issue bodies or comments, prepare
-worktrees, create sessions, run an agent, or write to GitHub.
+After a new assignment is admitted, the monitor prepares or adopts one managed
+worktree and one deterministic OpenClaw session, then starts one local briefing
+turn. It does not fetch comments, publish the response, or otherwise write to
+GitHub.
 
 ## Requirements
 
@@ -129,6 +135,12 @@ controls can defer the next poll, and transient failures use exponential backoff
 Polls never overlap for the same agent. Stopping the plugin service aborts its
 timer and any active GitHub CLI child process.
 
+Delivery state is checkpointed before and after worktree preparation, session
+creation, and briefing dispatch. On restart, the monitor inspects the canonical
+worktree, exact routed session, plugin metadata, and assignment event before it
+resumes. It never treats a stale local stage as proof that an external side
+effect completed.
+
 `doctor` reports whether the route is ready and whether the monitor is pending,
 healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
 counts, and diagnostic codes, but not tokens, response bodies, issue content, or
@@ -151,12 +163,20 @@ The channel intentionally registers no outbound adapter. Automated briefing
 responses remain in the local OpenClaw transcript and cannot be published to
 GitHub through this channel.
 
+The automated briefing turn sets `disableTools: true` and an empty per-turn
+tool allowlist. The worktree path is stored as value-free session metadata and
+included in the briefing for later operator- or agent-led work; the briefing
+turn itself cannot invoke it.
+
 ## Trust Boundary
 
 GitHub content is untrusted project data. The monitor authorizes transitions
 using only the verified account identity, immutable actor identity, canonical
 repository and owner identities, effective repository permission, item state,
-and assignment event. It does not fetch issue bodies or comments.
+and assignment event. Only after those checks pass does it fetch a separate,
+bounded briefing projection. GitHub text is marked as untrusted project data,
+is never interpreted as notification control state, and is not persisted in the
+private monitor record. Comments are not fetched in this phase.
 
 The channel configuration contains no token values. Credential resolution must
 remain lazy and occur only in the explicit consumer that contacts GitHub.

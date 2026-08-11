@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
+import { gitWorktreeDirectoryName } from '../tools/git/worktree-names.ts';
 
 const manifest: AgentManifest = {
   agent: { email: 'data@example.com', id: 'data', name: 'Data' },
@@ -10,7 +11,7 @@ const manifest: AgentManifest = {
   schemaVersion: 1,
 };
 
-function fixture(options: { deny?: boolean } = {}) {
+function fixture(options: { deny?: boolean; listed?: boolean } = {}) {
   const events: string[] = [];
   const prepared: Array<{
     baseRef: string;
@@ -21,10 +22,9 @@ function fixture(options: { deny?: boolean } = {}) {
   const baseDefinition = createGitWorktreeToolDefinition({
     runnerFactory: {
       async acquire(configuration, scope, acquireOptions) {
-        events.push('acquire');
+        events.push(acquireOptions?.authentication ? 'acquire-authenticated' : 'acquire-read');
         assert.equal(configuration.identity.name, 'Data');
         assert.equal(scope.workspaceDir, '/workspace/data');
-        assert.equal(acquireOptions?.authentication, true);
         return {
           async dispose() {
             events.push('dispose');
@@ -39,7 +39,17 @@ function fixture(options: { deny?: boolean } = {}) {
     },
     service: {
       async list() {
-        return [];
+        events.push('list');
+        return options.listed
+          ? [
+              {
+                branch: gitWorktreeDirectoryName('github-7', 'issue-3'),
+                path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+                repositoryId: 'github-7',
+                status: 'active' as const,
+              },
+            ]
+          : [];
       },
       async prepare(_context, input) {
         events.push('prepare');
@@ -126,7 +136,7 @@ describe('tools/git/trusted-worktree-service', () => {
       'manifest',
       'authorize',
       'environment',
-      'acquire',
+      'acquire-authenticated',
       'prepare',
       'dispose',
     ]);
@@ -157,6 +167,30 @@ describe('tools/git/trusted-worktree-service', () => {
       /denied for test/u,
     );
     assert.deepEqual(events, ['manifest', 'authorize']);
+  });
+
+  it('should inspect the deterministic worktree through the read-only definition', async () => {
+    const { events, service } = fixture({ listed: true });
+
+    const result = await service.inspectGitHub({
+      agentId: 'data',
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemType: 'issue',
+      repositoryDatabaseId: 7,
+    });
+
+    assert.equal(result?.workId, 'issue-3');
+    assert.equal(result?.repositoryId, 'github-7');
+    assert.deepEqual(events, [
+      'manifest',
+      'authorize',
+      'environment',
+      'acquire-read',
+      'list',
+      'dispose',
+    ]);
   });
 
   it('should derive identifiers internally and reject invalid provider ids', async () => {

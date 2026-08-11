@@ -12,9 +12,11 @@ import type {
 } from '../channels/github/utils/monitor-state.ts';
 
 export interface GitHubNotificationAssignmentBoundaryInput {
+  agentId: string;
   delivery: GitHubNotificationDeliveryState;
   item: GitHubNotificationItemState;
   signal?: AbortSignal;
+  workspaceDir: string;
 }
 
 export interface GitHubNotificationAssignmentAuthority {
@@ -131,7 +133,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         return;
       }
 
-      const observation = await this.#observe(item, delivery, signal);
+      const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
@@ -157,11 +159,24 @@ export default class GitHubNotificationAssignmentOrchestrator {
         const checkpoint = this.#boundary(state, itemKey);
         if (!checkpoint) return;
         if (
-          !(await this.#authorize(checkpoint.item, checkpoint.delivery, signal, state, itemKey))
+          !(await this.#authorize(
+            agentId,
+            state.workspaceDir,
+            checkpoint.item,
+            checkpoint.delivery,
+            signal,
+            state,
+            itemKey,
+          ))
         ) {
           return;
         }
-        const worktree = await this.#dependencies.worktrees.prepare({ ...checkpoint, signal });
+        const worktree = await this.#dependencies.worktrees.prepare({
+          agentId,
+          ...checkpoint,
+          signal,
+          workspaceDir: state.workspaceDir,
+        });
         await this.#checkpointWorktree(state, itemKey, worktree);
         continue;
       }
@@ -177,14 +192,24 @@ export default class GitHubNotificationAssignmentOrchestrator {
         const checkpoint = this.#boundary(state, itemKey);
         if (!checkpoint) return;
         if (
-          !(await this.#authorize(checkpoint.item, checkpoint.delivery, signal, state, itemKey))
+          !(await this.#authorize(
+            agentId,
+            state.workspaceDir,
+            checkpoint.item,
+            checkpoint.delivery,
+            signal,
+            state,
+            itemKey,
+          ))
         ) {
           return;
         }
         const session = await this.#dependencies.sessions.prepare({
+          agentId,
           ...checkpoint,
           signal,
           worktree,
+          workspaceDir: state.workspaceDir,
         });
         await this.#checkpointSession(state, itemKey, session);
         continue;
@@ -192,13 +217,25 @@ export default class GitHubNotificationAssignmentOrchestrator {
       await this.#checkpointDelivery(state, itemKey, { ...delivery, stage: 'briefing-running' });
       const checkpoint = this.#boundary(state, itemKey);
       if (!checkpoint) return;
-      if (!(await this.#authorize(checkpoint.item, checkpoint.delivery, signal, state, itemKey))) {
+      if (
+        !(await this.#authorize(
+          agentId,
+          state.workspaceDir,
+          checkpoint.item,
+          checkpoint.delivery,
+          signal,
+          state,
+          itemKey,
+        ))
+      ) {
         return;
       }
       const session = await this.#dependencies.sessions.dispatchBriefing({
+        agentId,
         ...checkpoint,
         signal,
         worktree,
+        workspaceDir: state.workspaceDir,
       });
       await this.#checkpointSession(state, itemKey, session);
     }
@@ -209,31 +246,55 @@ export default class GitHubNotificationAssignmentOrchestrator {
   }
 
   async #observe(
+    agentId: string,
+    workspaceDir: string,
     item: GitHubNotificationItemState,
     delivery: GitHubNotificationDeliveryState,
     signal?: AbortSignal,
   ): Promise<GitHubNotificationDeliveryObservation> {
-    const authority = await this.#dependencies.authority.inspect({ delivery, item, signal });
+    const authority = await this.#dependencies.authority.inspect({
+      agentId,
+      delivery,
+      item,
+      signal,
+      workspaceDir,
+    });
     if (!authority.authorized) return { authority };
-    const worktree = await this.#dependencies.worktrees.inspect({ delivery, item, signal });
+    const worktree = await this.#dependencies.worktrees.inspect({
+      agentId,
+      delivery,
+      item,
+      signal,
+      workspaceDir,
+    });
     if (!worktree) return { authority };
     const session = await this.#dependencies.sessions.inspect({
+      agentId,
       delivery,
       item,
       signal,
       worktree,
+      workspaceDir,
     });
     return { authority, ...(session ? { session } : {}), worktree };
   }
 
   async #authorize(
+    agentId: string,
+    workspaceDir: string,
     item: GitHubNotificationItemState,
     delivery: GitHubNotificationDeliveryState,
     signal: AbortSignal | undefined,
     state: GitHubNotificationMonitorState,
     itemKey: string,
   ): Promise<boolean> {
-    const authority = await this.#dependencies.authority.inspect({ delivery, item, signal });
+    const authority = await this.#dependencies.authority.inspect({
+      agentId,
+      delivery,
+      item,
+      signal,
+      workspaceDir,
+    });
     if (authority.authorized) return true;
     await this.#retire(
       state,
