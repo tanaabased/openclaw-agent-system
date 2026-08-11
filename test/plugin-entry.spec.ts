@@ -26,6 +26,7 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const channelIds: string[] = [];
     const policyIds: string[] = [];
     const toolNames: string[] = [];
     const logger = {
@@ -65,6 +66,10 @@ describe('index', () => {
         registrar = nextRegistrar;
         options = nextOptions;
       },
+      registerChannel(registration: { plugin?: { id: string }; id?: string }) {
+        const id = registration.plugin?.id ?? registration.id;
+        if (id) channelIds.push(id);
+      },
       registerTool(_tool: unknown, toolOptions?: { name?: string }) {
         if (toolOptions?.name) toolNames.push(toolOptions.name);
       },
@@ -77,6 +82,7 @@ describe('index', () => {
 
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
+    assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

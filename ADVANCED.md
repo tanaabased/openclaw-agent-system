@@ -45,7 +45,10 @@ tool-provided sections.
 ## Configuration
 
 Agent System currently owns no global plugin settings. Its public configuration
-is the per-workspace manifest plus any configured tool sections.
+is the per-workspace manifest plus any configured tool sections. When
+`github.notifications` is present, `install` projects only a non-secret channel
+account and exact agent binding into global OpenClaw configuration; notification
+policy and credentials remain workspace-owned.
 
 A complete core configuration can contain:
 

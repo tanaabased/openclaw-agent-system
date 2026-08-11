@@ -25,6 +25,11 @@ CLI and shim are operator interfaces that select an agent by option or workspace
 All three then apply policy before loading the selected agent's credential and
 launch the real `gh` executable without a shell.
 
+The same manifest section also owns the Day Zero foundation for a future GitHub
+assignment monitor: a local-only `agent-system-github` channel and its exact
+agent route. No polling, GitHub content ingestion, worktree creation, or
+automatic briefing is implemented yet.
+
 ## Requirements
 
 - Agent System installed and enabled
@@ -70,6 +75,16 @@ github:
     accessible-colors: disabled
     spinner: enabled
     telemetry: disabled
+  notifications:
+    interval-minutes: 5
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    repository-policy:
+      minimum-permission: write
+      allowed-owners:
+        - login: tanaabased
+          node-id: O_kgDOB7x6Qw
 ```
 
 ### `github.host`
@@ -154,9 +169,39 @@ supported. Files must be non-symlinked regular files no larger than 64 KiB and
 contain exactly one supported public key. Agent System never accepts private
 keys, removes remote keys, rotates keys, or changes existing titles.
 
+### `github.notifications`
+
+| Field                                  | Required | Default |
+| -------------------------------------- | -------- | ------- |
+| `interval-minutes`                     | no       | `5`     |
+| `approved-actors`                      | yes      | none    |
+| `repository-policy.minimum-permission` | no       | `write` |
+| `repository-policy.allowed-owners`     | no       | any     |
+
+The presence of `github.notifications` enables the notification routing
+foundation. The interval must be from `1` through `1440`; polling is planned but
+does not run in the current implementation. Each actor and allowed owner uses a
+human-readable `login` plus an opaque GitHub `node-id`. Node ids must be unique
+within each list. `username` and the environment-bound `token` declaration are
+required when notifications are enabled, but installation does not resolve the
+token or contact GitHub.
+
+`install` creates an activation-only `agent-system-github` account whose id is
+the manifest agent id and one account-scoped route back to that same agent and
+workspace. The route uses per-account, per-conversation session scope. A private
+ownership receipt allows later repair and cleanup while preserving unrelated
+accounts and bindings. Conflicting, duplicate, partially unowned, or rebound
+state fails closed. Removing `github.notifications` and running `install` again
+removes only the receipt-backed account and binding.
+
+The channel intentionally has no outbound adapter, so it cannot publish an
+assistant reply to GitHub. See the [implementation plan](../../NOTIFICATIONS_PLAN.md)
+for the later monitor, authorization, worktree, briefing, comment, and explicit
+publish phases.
+
 The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
 commands validate declarations, reconcile missing keys and private GitHub CLI
-configuration, and report drift.
+configuration and notification routing, and report drift.
 
 ## CLI
 

@@ -1,9 +1,16 @@
 # GitHub Notifications Plan
 
-Status: proposed
+Status: Phase 0 implemented; later phases proposed
 
-This document plans an Agent System-owned GitHub work-notification channel. It
-describes intended behavior, not configuration accepted by the current release.
+Phase 0 now ships the strict manifest schema, static local-only channel,
+account-scoped routing projection, private ownership receipt, lifecycle
+inspection/reconciliation, and injected inbound-kernel proof. It deliberately
+does not poll GitHub, resolve a token, create a worktree, or start a real agent
+briefing.
+
+This document plans an Agent System-owned GitHub work-notification channel. The
+Phase 0 configuration and routing foundation described below are implemented;
+remote event discovery and work execution remain planned behavior.
 
 ## Recommendation
 
@@ -228,20 +235,23 @@ Lifecycle ownership:
   account-scoped binding, agent id, and workspace all agree. OpenClaw's fallback
   to the default agent must never activate this channel.
 
-Prefer supported OpenClaw writers over editing `openclaw.json` directly. Phase
-0 should use the credentialless channel setup path for the account if the pinned
-SDK supports it, and `openclaw agents bind --agent <agent-id> --bind
-agent-system-github:<agent-id>` for routing. If a setup hook cannot create an
-activation-only account, use `config.get` plus a hash-guarded `config.patch` for
-that exact channel-account path; continue to use `agents bind` and `unbind` for
-the shared bindings array so unrelated routes are preserved.
+The pinned SDK exposes a supported transactional `mutateConfigFile` boundary
+with explicit reload intent. Phase 0 therefore creates or removes the
+activation-only account and exact binding in one focused source-config mutation
+with `afterWrite: auto`, then verifies the resolved route before writing or
+removing the private receipt. The mutation preserves unrelated channel accounts
+and bindings and avoids editing `openclaw.json` directly or leaving a
+multi-command half-install behind.
 
 OpenClaw hot-applies `bindings` and restarts only the affected channel for
 `channels.*` changes under the default hybrid reload mode, so routine install
 does not need to restart the whole Gateway. If reload watching is disabled,
 installation should report that a manual Gateway restart is still required.
-The exact JSON shape and public writer sequence remain Phase 0 SDK proof, but
-the ownership, fail-closed routing, and no-secret-duplication rules are fixed.
+The implemented binding also sets `dmScope: per-account-channel-peer`, so each
+stable GitHub work-item conversation becomes a distinct session. The owning
+GitHub Actions-only Leia scenario starts the Gateway before install and verifies
+runtime config convergence and cleanup. Repository validation never mutates the
+developer's live Gateway.
 
 ## Trust and Prompt-Injection Model
 
@@ -447,7 +457,7 @@ Session guidance should require:
 
 ## Phased Implementation
 
-### Phase 0: Platform Contract Spike
+### Phase 0: Platform Contract Spike (implemented)
 
 Goal: prove the design against the supported OpenClaw SDK before adding remote
 polling.
@@ -477,9 +487,14 @@ polling.
 - Finalize the strict `github.notifications` schema and static plugin manifest
   channel metadata.
 
-Exit criteria: a direct unit or injected-runtime test proves channel
-registration, install/doctor reconciliation, one synthetic session route,
-local-only delivery, fail-closed binding mismatch, and owned cleanup.
+Implemented proof includes channel registration, strict schema normalization,
+install/doctor reconciliation, idempotency, unrelated-state preservation, one
+synthetic inbound-kernel session route, local-only delivery, explicit rejection
+of default or mismatched routing, and receipt-backed cleanup. The pinned public
+SDK still has no direct external-plugin setter for an arbitrary native session
+title, cwd, or archive state, so the fixed fallbacks remain session extension
+metadata, explicit tool cwd, and logical retirement. The Leia scenario is the
+operational hot-reload proof and remains GitHub Actions-only.
 
 ### Phase 1: Read-only Monitor and Trust Core
 

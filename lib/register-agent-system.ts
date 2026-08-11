@@ -8,6 +8,7 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
+import { githubNotificationChannel } from '../tools/github/notification-channel.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
 import AgentEnvironmentService from './agent-environment-service.ts';
@@ -26,6 +27,9 @@ import OpCredentialService from './op-credential-service.ts';
 import OpEnvironmentService from './op-environment-service.ts';
 import createPathLifecycleContribution from './path-lifecycle.ts';
 import PathProjectionStore from './path-projection-store.ts';
+import createNotificationLifecycleContribution from './notification-lifecycle.ts';
+import NotificationRoutingReceiptStore from './notification-routing-receipt-store.ts';
+import NotificationRoutingService from './notification-routing-service.ts';
 import registerAgentSystemCli from './register-cli.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
@@ -115,6 +119,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
+  const notificationRoutingService = new NotificationRoutingService({
+    mutateConfigFile(params) {
+      return api.runtime.config.mutateConfigFile(params);
+    },
+    readConfig,
+    receiptStore: new NotificationRoutingReceiptStore(privateStateRoot),
+  });
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -128,6 +139,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
+    createNotificationLifecycleContribution({ routingService: notificationRoutingService }),
   ]);
   const manifestService = new AgentManifestService({
     getConfig: () => api.runtime.config.current(),
@@ -168,6 +180,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     lifecycleRegistry,
   });
 
+  api.registerChannel({ plugin: githubNotificationChannel });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService, toolApprovals);
   registerAgentCommandSecurity(api, {

@@ -42,6 +42,21 @@ const externalGitHubPolicyDecisionSchema = Type.Union([
   Type.Literal('ask'),
   Type.Literal('deny'),
 ]);
+const externalGitHubIdentitySchema = Type.Object(
+  {
+    login: Type.String({
+      maxLength: 100,
+      minLength: 1,
+      pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$',
+    }),
+    'node-id': Type.String({
+      maxLength: 255,
+      minLength: 1,
+      pattern: '^[^\\u0000\\r\\n\\s]+$',
+    }),
+  },
+  { additionalProperties: false },
+);
 
 export const externalGitHubSectionSchema = Type.Object(
   {
@@ -62,6 +77,32 @@ export const externalGitHubSectionSchema = Type.Object(
       ),
     ),
     host: Type.Optional(Type.Literal('github.com')),
+    notifications: Type.Optional(
+      Type.Object(
+        {
+          'approved-actors': Type.Array(externalGitHubIdentitySchema, {
+            minItems: 1,
+            uniqueItems: true,
+          }),
+          'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
+          'repository-policy': Type.Optional(
+            Type.Object(
+              {
+                'allowed-owners': Type.Optional(
+                  Type.Array(externalGitHubIdentitySchema, {
+                    minItems: 1,
+                    uniqueItems: true,
+                  }),
+                ),
+                'minimum-permission': Type.Optional(Type.Literal('write')),
+              },
+              { additionalProperties: false },
+            ),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     policy: Type.Optional(
       Type.Object(
         {
@@ -90,11 +131,26 @@ export type GitHubPublicKeySource =
 export interface GitHubManifestConfiguration {
   config?: Partial<GitHubCliConfiguration>;
   host?: 'github.com';
+  notifications?: GitHubNotificationsConfiguration;
   policy?: Partial<GitHubPolicyConfiguration>;
   sshKeys?: GitHubPublicKeySource[];
   sshSigningKeys?: GitHubPublicKeySource[];
   token?: EnvironmentBinding;
   username?: ResolvableString;
+}
+
+export interface GitHubIdentityPin {
+  login: string;
+  nodeId: string;
+}
+
+export interface GitHubNotificationsConfiguration {
+  approvedActors: GitHubIdentityPin[];
+  intervalMinutes: number;
+  repositoryPolicy: {
+    allowedOwners?: GitHubIdentityPin[];
+    minimumPermission: 'write';
+  };
 }
 
 export interface GitHubCliConfiguration {
@@ -141,6 +197,12 @@ export function resolveGitHubPolicyConfiguration(
 
 /** Decode schema-owned GitHub keys without transforming environment-variable names. */
 export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifestConfiguration {
+  const decodeIdentity = (
+    identity: Static<typeof externalGitHubIdentitySchema>,
+  ): GitHubIdentityPin => ({
+    login: identity.login,
+    nodeId: identity['node-id'],
+  });
   const decodeKeySources = (
     sources: NonNullable<ExternalGitHubSection['ssh-keys']>,
   ): GitHubPublicKeySource[] =>
@@ -175,6 +237,26 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
         }
       : {}),
     ...(value.host ? { host: value.host } : {}),
+    ...(value.notifications
+      ? {
+          notifications: {
+            approvedActors: value.notifications['approved-actors'].map(decodeIdentity),
+            intervalMinutes: value.notifications['interval-minutes'] ?? 5,
+            repositoryPolicy: {
+              minimumPermission:
+                value.notifications['repository-policy']?.['minimum-permission'] ?? 'write',
+              ...(value.notifications['repository-policy']?.['allowed-owners'] === undefined
+                ? {}
+                : {
+                    allowedOwners:
+                      value.notifications['repository-policy']['allowed-owners'].map(
+                        decodeIdentity,
+                      ),
+                  }),
+            },
+          },
+        }
+      : {}),
     ...(value.policy ? { policy: { ...value.policy } } : {}),
     ...(value['ssh-keys'] ? { sshKeys: decodeKeySources(value['ssh-keys']) } : {}),
     ...(value['ssh-signing-keys']

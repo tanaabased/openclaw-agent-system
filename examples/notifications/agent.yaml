@@ -1,0 +1,20 @@
+schema-version: 1
+
+agent:
+  id: notification-data
+  name: Notification Data
+
+github:
+  host: github.com
+  username: notification-data
+  token: GH_TOKEN_NOTIFICATION_DATA
+  notifications:
+    interval-minutes: 5
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    repository-policy:
+      minimum-permission: write
+      allowed-owners:
+        - login: tanaabased
+          node-id: O_kgDOB7x6Qw
