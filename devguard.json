@@ -11,6 +11,7 @@
       "args": ["run", "plugin:check"]
     },
     "watch": [
+      "channels",
       "cli",
       "lib",
       "scripts",

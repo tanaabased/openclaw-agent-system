@@ -104,7 +104,7 @@ try {
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
   const packageSourcePaths = await check('inventory working-tree package sources', async () => {
-    const sourceDirectories = ['bin', 'cli', 'lib', 'skills', 'tools', 'utils'];
+    const sourceDirectories = ['bin', 'channels', 'cli', 'lib', 'skills', 'tools', 'utils'];
     const [candidates, deleted] = await Promise.all([
       run('git', [
         'ls-files',
