@@ -239,10 +239,15 @@ Installation validates first and, when an OP Environment or direct secret is
 declared, requires a working persistent credential before applying changes. It
 creates or updates only owned state, verifies the result, and reports unchanged
 state on repeated runs. An existing agent id bound to another workspace fails
-instead of being repointed. It also grants the native Git, managed-worktree, and
-GitHub tools selected by the manifest. Agent System preserves unrelated entries,
-uses an existing exact `tools.allow` list when present and `tools.alsoAllow`
-otherwise, and removes its own stale grants when capabilities disappear.
+instead of being repointed. It also reconciles per-agent grants for the native
+Git, managed-worktree, and GitHub tools selected by the manifest. Agent System
+preserves unrelated entries, uses an existing exact `tools.allow` list when
+present and `tools.alsoAllow` otherwise, removes its owned entries from the other
+allowlist, and removes stale grants when capabilities disappear. An explicit
+per-agent `tools.deny` entry that blocks a selected tool is operator-owned state,
+so doctor reports it as blocked and install refuses to override it. Global,
+provider, group, and sandbox policies remain separate runtime authorization
+layers and can still make a granted tool unavailable.
 
 ### `openclaw agent-system doctor`
 

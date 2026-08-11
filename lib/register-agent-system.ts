@@ -116,6 +116,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
+  const toolRegistry = new AgentSystemToolRegistry([
+    ...gitCapability.tools,
+    ...githubCapability.tools,
+  ]);
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -129,6 +133,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       readConfig,
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);
+      },
+      toolGrants(manifest) {
+        return {
+          desired: toolRegistry.configuredToolNames(manifest),
+          owned: toolRegistry.allToolNames(),
+        };
       },
     }),
     createToolSecurityLifecycleContribution({ readConfig }),
@@ -158,10 +168,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   environmentServiceRef.current = environmentService;
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
   const toolApprovals = new AgentSystemToolApprovalReceiptStore();
-  const toolRegistry = new AgentSystemToolRegistry([
-    ...gitCapability.tools,
-    ...githubCapability.tools,
-  ]);
   const toolRuntime = new AgentSystemToolRuntime({
     approvals: toolApprovals,
     baseEnvironment: process.env,

@@ -2,7 +2,7 @@
 
 ### Bug Fixes
 
-- Reconciled manifest-derived native tool access during install and added doctor detection for grant drift.
+- Fixed manifest-derived tool access across both per-agent allowlists and blocked installs on explicit deny conflicts. [#9](https://github.com/tanaabased/openclaw-agent-system/pull/9)
 
 ## v0.2.1 - [August 11, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.1)
 

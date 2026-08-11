@@ -26,7 +26,7 @@ Today, Agent System:
 - registers an agent workspace with OpenClaw and reconciles its public identity
 - assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
 - wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
-- grants each agent access only to the native Agent System tools enabled by its manifest
+- reconciles each agent's per-agent grants for the native Agent System tools enabled by its manifest
 - applies each tool's operation-specific `allow`, `ask`, or `deny` policy before resolving credentials or executing the operation
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 

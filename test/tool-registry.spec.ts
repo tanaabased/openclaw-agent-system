@@ -16,6 +16,24 @@ function registeredTestTool(): RegisteredAgentSystemTool {
 }
 
 describe('lib/tool-registry', () => {
+  it('should project owned and manifest-configured native tool names', () => {
+    const configured = registeredTestTool();
+    const unconfigured: RegisteredAgentSystemTool = {
+      ...configured,
+      commands: [{ command: 'other-tool' }],
+      id: 'other-tool',
+      isConfigured: () => false,
+      toolNames: ['agent_system_other_tool'],
+    };
+    const registry = new AgentSystemToolRegistry([configured, unconfigured]);
+
+    assert.deepEqual(registry.allToolNames(), [
+      'agent_system_test_tool',
+      'agent_system_other_tool',
+    ]);
+    assert.deepEqual(registry.configuredToolNames(toolTestManifest), ['agent_system_test_tool']);
+  });
+
   it('should expose guidance only for configured tool definitions', () => {
     const configured = new AgentSystemToolRegistry([registeredTestTool()]);
     const unconfigured = new AgentSystemToolRegistry([

@@ -46,7 +46,7 @@ cd "$TMPDIR/tool-access"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -c . | grep -Fx '["message","agent_system_git","agent_system_git_worktree","agent_system_github"]'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -c 'sort' | grep -Fx '["agent_system_git","agent_system_git_worktree","agent_system_github","message"]'
 ```
 
 ```bash

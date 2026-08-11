@@ -13,6 +13,22 @@ const manifest: AgentManifest = {
   github: {},
 };
 const context = { manifest, workspaceDir: '/workspace/emori' };
+const ownedToolNames = [
+  'agent_system_git',
+  'agent_system_git_worktree',
+  'agent_system_github',
+] as const;
+
+function toolGrants(currentManifest: AgentManifest) {
+  return {
+    desired: [
+      ...(currentManifest.git === undefined ? [] : ['agent_system_git']),
+      ...(currentManifest.git?.worktrees === undefined ? [] : ['agent_system_git_worktree']),
+      ...(currentManifest.github === undefined ? [] : ['agent_system_github']),
+    ],
+    owned: ownedToolNames,
+  };
+}
 
 function createHarness(config: OpenClawConfig) {
   let mutations = 0;
@@ -22,6 +38,7 @@ function createHarness(config: OpenClawConfig) {
       return { result: mutate(config) as boolean | undefined };
     },
     readConfig: () => config,
+    toolGrants,
   });
   return { contribution, mutations: () => mutations };
 }
@@ -124,6 +141,38 @@ describe('lib/tool-access-lifecycle', () => {
     assert.equal(config.agents?.list?.[0]?.tools?.alsoAllow, undefined);
   });
 
+  it('should move owned grants to an existing exact allowlist and clean both lists', async () => {
+    const config: OpenClawConfig = {
+      agents: {
+        list: [
+          {
+            id: 'emori',
+            tools: {
+              allow: ['read', 'agent_system_git'],
+              alsoAllow: [
+                'message',
+                'agent_system_git',
+                'agent_system_git_worktree',
+                'agent_system_github',
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const { contribution } = createHarness(config);
+
+    await contribution.reconcile?.(context);
+
+    assert.deepEqual(config.agents?.list?.[0]?.tools?.allow, [
+      'read',
+      'agent_system_git',
+      'agent_system_git_worktree',
+      'agent_system_github',
+    ]);
+    assert.deepEqual(config.agents?.list?.[0]?.tools?.alsoAllow, ['message']);
+  });
+
   it('should remove stale owned grants when capabilities disappear', async () => {
     const config: OpenClawConfig = {
       agents: {
@@ -164,6 +213,38 @@ describe('lib/tool-access-lifecycle', () => {
     );
   });
 
+  it('should report explicit deny conflicts as blocked and refuse reconciliation', async () => {
+    const { contribution, mutations } = createHarness({
+      agents: {
+        list: [
+          {
+            id: 'emori',
+            tools: {
+              alsoAllow: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
+              deny: ['agent_system_github'],
+            },
+          },
+        ],
+      },
+    });
+
+    assert.deepEqual(await contribution.inspect?.(context), [
+      {
+        code: 'agent-tool-access-denied',
+        message: 'OpenClaw agents.list[].tools.deny for emori blocks agent_system_github.',
+        remediation:
+          'Remove the conflicting entries from agents.list[].tools.deny, then run openclaw agent-system install from this workspace.',
+        status: 'blocked',
+      },
+    ]);
+    await assert.rejects(
+      () => contribution.reconcile!(context),
+      (error: unknown) =>
+        error instanceof AgentSystemLifecycleError && error.code === 'agent-tool-access-denied',
+    );
+    assert.equal(mutations(), 0);
+  });
+
   it('should fail when config mutation does not converge', async () => {
     const contribution = createToolAccessLifecycleContribution({
       async mutateConfigFile() {
@@ -172,6 +253,7 @@ describe('lib/tool-access-lifecycle', () => {
       readConfig: () => ({
         agents: { list: [{ id: 'emori', tools: { alsoAllow: ['message'] } }] },
       }),
+      toolGrants,
     });
 
     await assert.rejects(

@@ -1,9 +1,11 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
 import planAgentToolAccess, {
+  type AgentToolAccessGrants,
   type AgentToolAccessPlan,
   type CurrentAgentToolAccessState,
 } from '../utils/plan-agent-tool-access.ts';
+import type { AgentManifest } from '../utils/manifest-types.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
@@ -16,6 +18,7 @@ export interface ToolAccessLifecycleDependencies {
     mutate(config: OpenClawConfig): boolean | void;
   }): Promise<{ result?: boolean }>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  toolGrants(manifest: AgentManifest): AgentToolAccessGrants;
 }
 
 function findAgent(config: OpenClawConfig, agentId: string) {
@@ -33,6 +36,7 @@ function currentAgentToolAccess(
     exists: true,
     ...(agent.tools?.allow === undefined ? {} : { allow: [...agent.tools.allow] }),
     ...(agent.tools?.alsoAllow === undefined ? {} : { alsoAllow: [...agent.tools.alsoAllow] }),
+    ...(agent.tools?.deny === undefined ? {} : { deny: [...agent.tools.deny] }),
   };
 }
 
@@ -43,8 +47,23 @@ function describeDrift(
   const details: string[] = [];
   if (plan.missing.length > 0) details.push(`is missing ${plan.missing.join(', ')}`);
   if (plan.stale.length > 0) details.push(`contains stale ${plan.stale.join(', ')}`);
+  if (plan.misplaced.length > 0) {
+    details.push(`has ${plan.misplaced.join(', ')} in the other allowlist`);
+  }
   if (details.length === 0) details.push('does not contain each required grant exactly once');
   return `OpenClaw agents.list[].tools.${plan.target} for ${agentId} ${details.join(' and ')}.`;
+}
+
+function describeDeniedToolAccess(agentId: string, denied: readonly string[]): string {
+  return `OpenClaw agents.list[].tools.deny for ${agentId} blocks ${denied.join(', ')}.`;
+}
+
+function deniedToolAccessError(agentId: string, denied: readonly string[]) {
+  return new AgentSystemLifecycleError(
+    'tool-access',
+    'agent-tool-access-denied',
+    describeDeniedToolAccess(agentId, denied),
+  );
 }
 
 /** Own manifest-derived access to Agent System's native model-facing tools. */
@@ -56,7 +75,7 @@ export default function createToolAccessLifecycleContribution(
     isConfigured: () => true,
     async inspect(context) {
       const plan = planAgentToolAccess(
-        context.manifest,
+        dependencies.toolGrants(context.manifest),
         currentAgentToolAccess(await dependencies.readConfig(), context.manifest.agent.id),
       );
       if (plan.status === 'missing-agent') {
@@ -66,6 +85,17 @@ export default function createToolAccessLifecycleContribution(
             message: `OpenClaw tool access for ${context.manifest.agent.id} cannot be inspected until the agent is registered.`,
             remediation: 'Run openclaw agent-system install from this workspace.',
             status: 'drift',
+          },
+        ];
+      }
+      if (plan.denied.length > 0) {
+        return [
+          {
+            code: 'agent-tool-access-denied',
+            message: describeDeniedToolAccess(context.manifest.agent.id, plan.denied),
+            remediation:
+              'Remove the conflicting entries from agents.list[].tools.deny, then run openclaw agent-system install from this workspace.',
+            status: 'blocked',
           },
         ];
       }
@@ -87,7 +117,7 @@ export default function createToolAccessLifecycleContribution(
     async reconcile(context) {
       const agentId = context.manifest.agent.id;
       const before = planAgentToolAccess(
-        context.manifest,
+        dependencies.toolGrants(context.manifest),
         currentAgentToolAccess(await dependencies.readConfig(), agentId),
       );
       if (before.status === 'missing-agent') {
@@ -97,6 +127,7 @@ export default function createToolAccessLifecycleContribution(
           `OpenClaw agent ${agentId} is unavailable for tool access setup.`,
         );
       }
+      if (before.denied.length > 0) throw deniedToolAccessError(agentId, before.denied);
       if (!before.changed) {
         return {
           outcomes: [
@@ -122,21 +153,28 @@ export default function createToolAccessLifecycleContribution(
             );
           }
           const plan = planAgentToolAccess(
-            context.manifest,
+            dependencies.toolGrants(context.manifest),
             currentAgentToolAccess(config, agentId),
           );
           if (plan.status === 'missing-agent') return false;
+          if (plan.denied.length > 0) throw deniedToolAccessError(agentId, plan.denied);
           if (!plan.changed) return false;
           agent.tools ??= {};
-          agent.tools[plan.target] = [...plan.next];
+          if (plan.next.allow !== undefined) agent.tools.allow = [...plan.next.allow];
+          if (plan.next.alsoAllow !== undefined) {
+            agent.tools.alsoAllow = [...plan.next.alsoAllow];
+          }
           return true;
         },
       });
 
       const verification = planAgentToolAccess(
-        context.manifest,
+        dependencies.toolGrants(context.manifest),
         currentAgentToolAccess(await dependencies.readConfig(), agentId),
       );
+      if (verification.status !== 'missing-agent' && verification.denied.length > 0) {
+        throw deniedToolAccessError(agentId, verification.denied);
+      }
       if (verification.status === 'missing-agent' || verification.changed) {
         throw new AgentSystemLifecycleError(
           'tool-access',

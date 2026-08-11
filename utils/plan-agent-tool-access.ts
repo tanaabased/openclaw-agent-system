@@ -1,13 +1,14 @@
-import type { AgentManifest } from './manifest-types.ts';
-
-export const agentSystemToolGrants = [
-  'agent_system_git',
-  'agent_system_git_worktree',
-  'agent_system_github',
-] as const;
-
-export type AgentSystemToolGrant = (typeof agentSystemToolGrants)[number];
 export type AgentToolAccessTarget = 'allow' | 'alsoAllow';
+
+export interface AgentToolAccessGrants {
+  desired: readonly string[];
+  owned: readonly string[];
+}
+
+export interface AgentToolAccessLists {
+  allow?: string[];
+  alsoAllow?: string[];
+}
 
 export type CurrentAgentToolAccessState =
   | { exists: false }
@@ -15,61 +16,114 @@ export type CurrentAgentToolAccessState =
       exists: true;
       allow?: readonly string[];
       alsoAllow?: readonly string[];
+      deny?: readonly string[];
     };
 
 export type AgentToolAccessPlan =
   | { status: 'missing-agent' }
   | {
       changed: boolean;
-      current: string[];
-      desired: AgentSystemToolGrant[];
-      missing: AgentSystemToolGrant[];
-      next: string[];
-      stale: AgentSystemToolGrant[];
+      denied: string[];
+      desired: string[];
+      misplaced: string[];
+      missing: string[];
+      next: AgentToolAccessLists;
+      stale: string[];
       status: 'ready';
       target: AgentToolAccessTarget;
     };
 
-function isAgentSystemToolGrant(value: string): value is AgentSystemToolGrant {
-  return (agentSystemToolGrants as readonly string[]).includes(value);
+function normalizedToolName(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-function uniqueGrants(grants: readonly AgentSystemToolGrant[]): AgentSystemToolGrant[] {
-  return grants.filter((grant, index) => grants.indexOf(grant) === index);
+function uniqueToolNames(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const normalized = normalizedToolName(value);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
-/** Project one manifest to the exact native Agent System tools its agent may invoke. */
-export function desiredAgentSystemToolGrants(manifest: AgentManifest): AgentSystemToolGrant[] {
-  return [
-    ...(manifest.git === undefined ? [] : ['agent_system_git' as const]),
-    ...(manifest.git?.worktrees === undefined ? [] : ['agent_system_git_worktree' as const]),
-    ...(manifest.github === undefined ? [] : ['agent_system_github' as const]),
-  ];
+function matchesToolPolicyPattern(toolName: string, pattern: string): boolean {
+  const normalizedName = normalizedToolName(toolName);
+  const normalizedPattern = normalizedToolName(pattern);
+  if (!normalizedPattern) return false;
+  if (!normalizedPattern.includes('*')) return normalizedName === normalizedPattern;
+  const expression = normalizedPattern
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*');
+  return new RegExp(`^${expression}$`).test(normalizedName);
 }
 
-/** Compare manifest-derived grants with one agent's additive or exact allowlist. */
+/** Compare registry-owned grants with both per-agent allowlists without changing explicit denies. */
 export default function planAgentToolAccess(
-  manifest: AgentManifest,
+  grants: AgentToolAccessGrants,
   current: CurrentAgentToolAccessState,
 ): AgentToolAccessPlan {
   if (!current.exists) return { status: 'missing-agent' };
 
+  const owned = uniqueToolNames(grants.owned);
+  const ownedByName = new Map(owned.map((name) => [normalizedToolName(name), name]));
+  const desired = uniqueToolNames(grants.desired).filter((name) =>
+    ownedByName.has(normalizedToolName(name)),
+  );
+  const desiredNames = new Set(desired.map(normalizedToolName));
+  const isOwned = (name: string) => ownedByName.has(normalizedToolName(name));
+  const canonicalOwnedNames = (names: readonly string[]) =>
+    uniqueToolNames(
+      names.flatMap((name) => {
+        const canonical = ownedByName.get(normalizedToolName(name));
+        return canonical === undefined ? [] : [canonical];
+      }),
+    );
+
   const target: AgentToolAccessTarget = current.allow === undefined ? 'alsoAllow' : 'allow';
-  const grants = [...(current[target] ?? [])];
-  const desired = desiredAgentSystemToolGrants(manifest);
-  const managed = grants.filter(isAgentSystemToolGrant);
-  const missing = desired.filter((grant) => !managed.includes(grant));
-  const stale = uniqueGrants(managed.filter((grant) => !desired.includes(grant)));
-  const changed = managed.length !== desired.length || missing.length > 0 || stale.length > 0;
+  const other: AgentToolAccessTarget = target === 'allow' ? 'alsoAllow' : 'allow';
+  const targetEntries = [...(current[target] ?? [])];
+  const otherEntries = [...(current[other] ?? [])];
+  const targetOwned = targetEntries.filter(isOwned);
+  const otherOwned = otherEntries.filter(isOwned);
+  const missing = desired.filter(
+    (name) => !targetOwned.some((entry) => normalizedToolName(entry) === normalizedToolName(name)),
+  );
+  const stale = canonicalOwnedNames([...targetOwned, ...otherOwned]).filter(
+    (name) => !desiredNames.has(normalizedToolName(name)),
+  );
+  const misplaced = canonicalOwnedNames(otherOwned).filter((name) =>
+    desiredNames.has(normalizedToolName(name)),
+  );
+  const changed =
+    targetOwned.length !== desired.length ||
+    otherOwned.length > 0 ||
+    missing.length > 0 ||
+    stale.length > 0;
+  const nextTarget = changed
+    ? [...targetEntries.filter((name) => !isOwned(name)), ...desired]
+    : targetEntries;
+  const nextOther = changed ? otherEntries.filter((name) => !isOwned(name)) : otherEntries;
+  const next: AgentToolAccessLists = {
+    ...(current.allow === undefined && target !== 'allow'
+      ? {}
+      : { allow: target === 'allow' ? nextTarget : nextOther }),
+    ...(current.alsoAllow === undefined && target !== 'alsoAllow'
+      ? {}
+      : { alsoAllow: target === 'alsoAllow' ? nextTarget : nextOther }),
+  };
+  const denied = desired.filter((name) =>
+    (current.deny ?? []).some((pattern) => matchesToolPolicyPattern(name, pattern)),
+  );
 
   return {
     changed,
-    current: grants,
+    denied,
     desired,
+    misplaced,
     missing,
-    next: changed
-      ? [...grants.filter((grant) => !isAgentSystemToolGrant(grant)), ...desired]
-      : grants,
+    next,
     stale,
     status: 'ready',
     target,
