@@ -40,12 +40,16 @@ const event: GitHubNotificationAssignmentEvent = {
 const route = resolveNotificationRoute(config, desired, 'github:R_kgDOExample:42');
 const sessionDependencies = {
   loadBriefing: async () => ({
-    bodyExcerpt: 'Implement the notification session.',
-    bodyTruncated: false,
-    labels: ['feature'],
-    labelsTruncated: false,
-    title: event.title,
-    url: 'https://github.com/tanaabased/openclaw-agent-system/issues/42',
+    assignmentActor: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+    assignmentAt: '2026-08-11T12:00:00Z',
+    projection: {
+      bodyExcerpt: 'Implement the notification session.',
+      bodyTruncated: false,
+      labels: ['feature'],
+      labelsTruncated: false,
+      title: event.title,
+      url: 'https://github.com/tanaabased/openclaw-agent-system/issues/42',
+    },
   }),
   readConfig: () => config,
 };
@@ -171,6 +175,7 @@ describe('channels/github/lib/session-service', () => {
 
   it('should dispatch one bounded local no-tools briefing and mark it active', async () => {
     const metadataStatuses: string[] = [];
+    const sessionPatches: Array<Record<string, unknown> | undefined> = [];
     let dispatches = 0;
     let records = 0;
     const service = new GitHubNotificationSessionService({
@@ -180,6 +185,7 @@ describe('channels/github/lib/session-service', () => {
         return {};
       }) as never,
       async gatewayRequest(method, params) {
+        if (method === 'sessions.patch') sessionPatches.push(params);
         if (method === 'sessions.pluginPatch') {
           metadataStatuses.push((params?.value as { status: string }).status);
         }
@@ -203,8 +209,60 @@ describe('channels/github/lib/session-service', () => {
 
     assert.equal(records, 1);
     assert.equal(dispatches, 1);
+    assert.equal(sessionPatches.length, 1);
+    assert.equal(sessionPatches[0]?.sendPolicy, 'deny');
     assert.deepEqual(metadataStatuses, ['briefing', 'active']);
     assert.deepEqual(observed, { id: 'session-1', key: route.sessionKey, status: 'active' });
+  });
+
+  it('should reapply outbound denial after partial session preparation', async () => {
+    let patchAttempts = 0;
+    const service = new GitHubNotificationSessionService({
+      ...sessionDependencies,
+      dispatchReplyWithBufferedBlockDispatcher: (async () => ({})) as never,
+      async gatewayRequest(method, params) {
+        if (method === 'sessions.create') {
+          return { key: route.sessionKey, ok: true, sessionId: 'session-1' };
+        }
+        if (method === 'sessions.patch') {
+          patchAttempts += 1;
+          assert.equal(params?.sendPolicy, 'deny');
+          if (patchAttempts === 1) throw new Error('session patch interrupted');
+          return { key: route.sessionKey, ok: true };
+        }
+        if (method === 'sessions.describe') {
+          return {
+            session: {
+              archived: false,
+              key: route.sessionKey,
+              sessionId: 'session-1',
+            },
+          };
+        }
+        if (method === 'chat.history') return { messages: [] };
+        return { key: route.sessionKey, ok: true };
+      },
+      pluginId: 'agent-system',
+      recordInboundSession: (async () => undefined) as never,
+    });
+
+    await assert.rejects(service.prepare(assignmentInput), /session patch interrupted/u);
+    assert.deepEqual(await service.inspect(assignmentInput), {
+      id: 'session-1',
+      key: route.sessionKey,
+      status: 'ready',
+    });
+    await service.dispatchBriefing({
+      ...assignmentInput,
+      delivery: {
+        ...assignmentInput.delivery,
+        sessionId: 'session-1',
+        sessionKey: route.sessionKey,
+        stage: 'session-ready',
+      },
+    });
+
+    assert.equal(patchAttempts, 2);
   });
 
   it('should prepare a local-only no-tools turn in the managed worktree', async () => {

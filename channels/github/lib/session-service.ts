@@ -15,9 +15,12 @@ import {
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channel.ts';
-import { buildGitHubNotificationBriefing } from '../utils/briefing.ts';
+import {
+  buildGitHubNotificationBriefing,
+  maximumGitHubNotificationBriefingLength,
+  type GitHubNotificationBriefingData,
+} from '../utils/briefing.ts';
 import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
-import type { GitHubCanonicalWorkItemBriefing } from '../utils/work-item.ts';
 import {
   githubNotificationSessionEntrySlot,
   githubNotificationSessionExtensionNamespace,
@@ -31,8 +34,6 @@ import {
   type ResolvedNotificationRoute,
 } from '../utils/routing.ts';
 
-const maximumBriefingLength = 16_384;
-
 type GatewayRequest = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
 export interface GitHubNotificationSessionServiceDependencies {
@@ -40,7 +41,7 @@ export interface GitHubNotificationSessionServiceDependencies {
   gatewayRequest: GatewayRequest;
   loadBriefing(
     input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubCanonicalWorkItemBriefing>;
+  ): Promise<GitHubNotificationBriefingData>;
   pluginId: string;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: AssembledInboundReply['recordInboundSession'];
@@ -52,7 +53,6 @@ export interface GitHubNotificationSessionTurnInput {
   event: GitHubNotificationAssignmentEvent;
   label: string;
   route: ResolvedNotificationRoute;
-  sessionPrepared?: boolean;
   worktreeBranch: string;
   worktreePath: string;
 }
@@ -305,7 +305,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       await this.#dependencies.gatewayRequest('chat.history', {
         agentId: input.agentId,
         limit: 50,
-        maxChars: maximumBriefingLength,
+        maxChars: maximumGitHubNotificationBriefingLength,
         sessionKey: assignment.route.sessionKey,
       }),
       input.delivery.assignmentEventId,
@@ -324,13 +324,14 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession> {
     const assignment = await this.#resolveAssignment(input);
-    const projection = await this.#dependencies.loadBriefing(input);
+    const data = await this.#dependencies.loadBriefing(input);
     const briefing = buildGitHubNotificationBriefing({
+      ...data,
       item: input.item,
-      projection,
       worktree: input.worktree,
     });
-    await runGitHubNotificationAssignment(assignment.event, {
+    const event = { ...assignment.event, timestamp: Date.parse(data.assignmentAt) };
+    await runGitHubNotificationAssignment(event, {
       config: assignment.config,
       desired: assignment.desired,
       prepareTurn: (event, route) =>
@@ -340,7 +341,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
           event,
           label: assignment.label,
           route,
-          sessionPrepared: true,
           worktreeBranch: input.worktree.branch,
           worktreePath: input.worktree.path,
         }),
@@ -357,7 +357,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     const briefing = requiredText(
       input.briefing,
       'GitHub notification briefings',
-      maximumBriefingLength,
+      maximumGitHubNotificationBriefingLength,
     );
     const eventId = requiredText(input.event.id, 'GitHub notification event ids', 256);
     const label = requiredText(input.label, 'GitHub notification session labels', 120);
@@ -437,16 +437,14 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     return {
       accountId: input.route.accountId,
       afterRecord: async () => {
-        if (!input.sessionPrepared) {
-          const result = await this.#dependencies.gatewayRequest('sessions.patch', {
-            agentId: input.route.agentId,
-            archived: false,
-            key: input.route.sessionKey,
-            label,
-            sendPolicy: 'deny',
-          });
-          assertSessionPatchResult(result, input.route.sessionKey);
-        }
+        const result = await this.#dependencies.gatewayRequest('sessions.patch', {
+          agentId: input.route.agentId,
+          archived: false,
+          key: input.route.sessionKey,
+          label,
+          sendPolicy: 'deny',
+        });
+        assertSessionPatchResult(result, input.route.sessionKey);
         const metadataResult = await this.#dependencies.gatewayRequest('sessions.pluginPatch', {
           key: input.route.sessionKey,
           namespace: githubNotificationSessionExtensionNamespace,

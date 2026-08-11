@@ -44,6 +44,7 @@ function provider(assigned = true) {
           identity: notificationAccount,
           async execute(argv: string[]) {
             const endpoint = argv.find((value) => value.startsWith('/repos/')) ?? '';
+            const projection = argv.find((value) => value.includes('htmlUrl:.html_url'));
             if (endpoint.endsWith('/permission')) return response({ permission: 'write' });
             if (endpoint.endsWith('/events')) {
               return response([
@@ -56,6 +57,15 @@ function provider(assigned = true) {
                   nodeId: 'EV_assignment',
                 },
               ]);
+            }
+            if (endpoint.endsWith('/issues/12') && projection) {
+              return response({
+                body: 'Implement assignment delivery.',
+                htmlUrl: 'https://github.com/tanaabased/example/issues/12',
+                labels: ['feature'],
+                milestone: null,
+                title: 'Deliver notifications',
+              });
             }
             if (endpoint.endsWith('/issues/12')) {
               return response({
@@ -117,6 +127,21 @@ describe('channels/github/lib/assignment-provider', () => {
     assert.deepEqual(await provider(false).inspect(input()), {
       authorized: false,
       reasonCode: 'item-unassigned',
+    });
+  });
+
+  it('should load transient briefing data with exact assignment provenance', async () => {
+    assert.deepEqual(await provider().briefing(input()), {
+      assignmentActor: notificationActor,
+      assignmentAt: '2026-08-11T12:00:00Z',
+      projection: {
+        bodyExcerpt: 'Implement assignment delivery.',
+        bodyTruncated: false,
+        labels: ['feature'],
+        labelsTruncated: false,
+        title: 'Deliver notifications',
+        url: 'https://github.com/tanaabased/example/issues/12',
+      },
     });
   });
 });

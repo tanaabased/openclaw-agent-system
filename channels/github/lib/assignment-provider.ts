@@ -8,7 +8,7 @@ import type {
 import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
-import type { GitHubCanonicalWorkItemBriefing } from '../utils/work-item.ts';
+import type { GitHubNotificationBriefingData } from '../utils/briefing.ts';
 import GitHubWorkEventClient, { GitHubWorkEventClientError } from './work-event-client.ts';
 
 export interface GitHubNotificationAssignmentProviderDependencies {
@@ -110,14 +110,38 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
 
   async briefing(
     input: GitHubNotificationAssignmentBoundaryInput,
-  ): Promise<GitHubCanonicalWorkItemBriefing> {
+  ): Promise<GitHubNotificationBriefingData> {
     const context = await this.#connect(input);
     if (!context) throw new Error('GitHub notification configuration is no longer available.');
-    return context.client.getBriefing(
-      input.item.repositoryOwner,
-      input.item.repositoryName,
-      input.item.number,
+    const [projection, eventPage] = await Promise.all([
+      context.client.getBriefing(
+        input.item.repositoryOwner,
+        input.item.repositoryName,
+        input.item.number,
+      ),
+      context.client.listAssignmentEvents(
+        input.item.repositoryOwner,
+        input.item.repositoryName,
+        input.item.number,
+      ),
+    ]);
+    if (eventPage.truncated) {
+      throw new Error('GitHub assignment history exceeded its briefing boundary.');
+    }
+    const assignment = eventPage.events.find(
+      (event) =>
+        event.event === 'assigned' &&
+        event.nodeId === input.delivery.assignmentEventId &&
+        event.actor.nodeId === input.item.assignmentActorNodeId &&
+        event.assignee.nodeId === context.client.identity.nodeId,
     );
+    if (!assignment)
+      throw new Error('The admitted GitHub assignment event is no longer available.');
+    return {
+      assignmentActor: assignment.actor,
+      assignmentAt: assignment.createdAt,
+      projection,
+    };
   }
 
   async #connect(input: GitHubNotificationAssignmentBoundaryInput): Promise<
