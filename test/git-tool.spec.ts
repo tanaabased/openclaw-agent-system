@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -154,6 +154,89 @@ describe('tools/git/tool', () => {
 
     assert.equal(requests[0]?.cwd, await realpath(worktreePath));
     assert.equal((result.details as { output: { exitCode: number } }).output.exitCode, 0);
+  });
+
+  it('should admit declared local repositories only for operator commands', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const localRepository = join(root, 'sources', 'agent-system');
+    const outside = join(root, 'outside');
+    const worktreeRoot = join(root, 'external-worktrees');
+    await Promise.all([
+      mkdir(localRepository, { recursive: true }),
+      mkdir(outside, { recursive: true }),
+      mkdir(worktreeRoot, { recursive: true }),
+    ]);
+    await symlink(outside, join(localRepository, 'escape'));
+    manifest.git = {
+      worktrees: {
+        repositories: { local: { 'agent-system': localRepository } },
+        root: worktreeRoot,
+      },
+    };
+    const registry = new AgentSystemToolRegistry([createGitTool()]);
+    const runtime = createRuntime(requests);
+
+    await registry.invoke('git', runtime, ['fetch', 'origin'], {
+      agentId: 'data',
+      source: 'command',
+      workspaceDir: localRepository,
+    });
+    assert.equal(requests[0]?.cwd, await realpath(localRepository));
+
+    for (const workspace of [outside, join(localRepository, 'escape')]) {
+      await assert.rejects(
+        registry.invoke('git', runtime, ['status', '--short'], {
+          agentId: 'data',
+          source: 'command',
+          workspaceDir: workspace,
+        }),
+        (error: unknown) =>
+          error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+      );
+    }
+    assert.equal(requests.length, 1);
+  });
+
+  it('should keep declared local repositories unavailable to native tools', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const localRepository = join(root, 'sources', 'agent-system');
+    const worktreeRoot = join(root, 'external-worktrees');
+    await Promise.all([
+      mkdir(localRepository, { recursive: true }),
+      mkdir(worktreeRoot, { recursive: true }),
+    ]);
+    manifest.git = {
+      worktrees: {
+        repositories: { local: { 'agent-system': localRepository } },
+        root: worktreeRoot,
+      },
+    };
+    const registered = createGitTool();
+    const runtime = createRuntime(requests);
+    let factory: OpenClawPluginToolFactory | undefined;
+    registered.registerTools(
+      {
+        registerTool(tool: unknown) {
+          factory = tool as OpenClawPluginToolFactory;
+        },
+      } as never,
+      runtime,
+    );
+    const produced = factory?.({ agentId: 'data', workspaceDir });
+    const tool = Array.isArray(produced) ? produced[0] : produced;
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.execute(
+        'call-1',
+        { argv: ['status', '--short'], cwd: localRepository },
+        new AbortController().signal,
+        undefined,
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
+    );
+    assert.deepEqual(requests, []);
   });
 
   it('should reject escape options, raw worktrees, and destructive defaults before loading environment', async () => {
