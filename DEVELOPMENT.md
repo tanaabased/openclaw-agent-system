@@ -177,10 +177,10 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
 
-### Tool Providers
+### Tool Integrations
 
 First-party tool implementations live in `tools/<capability>/` and use Agent
-System's internal tool contract. The planned public provider boundary is
+System's internal tool contract. The planned public Tool API boundary is
 documented in [Tool API](./API.md); it is not available to third-party OpenClaw
 plugins until a supported typed cross-plugin capability and package export are
 implemented.

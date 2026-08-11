@@ -8,7 +8,6 @@
 ### Bug Fixes
 
 - Fixed managed repositories to refresh remotes only when creating a worktree while leaving configured local repositories untouched. [#6](https://github.com/tanaabased/openclaw-agent-system/pull/6)
-- Fixed raw Git worktree mutations to follow `git.policy.unknown` instead of an unconditional special-case denial. [#6](https://github.com/tanaabased/openclaw-agent-system/pull/6)
 
 ### Notes
 
