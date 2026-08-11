@@ -31,7 +31,7 @@ cp "$GITHUB_WORKSPACE/examples/notifications/agent.yaml" "$TMPDIR/agent-system-n
 
 # should start the default gateway before routing installation
 (
-  exec openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
+  exec env OPENCLAW_NO_RESPAWN=1 openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
 ) &
 echo "$!" > "$TMPDIR/gateway.pid"
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait

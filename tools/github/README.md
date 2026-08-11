@@ -195,9 +195,7 @@ state fails closed. Removing `github.notifications` and running `install` again
 removes only the receipt-backed account and binding.
 
 The channel intentionally has no outbound adapter, so it cannot publish an
-assistant reply to GitHub. See the [implementation plan](../../NOTIFICATIONS_PLAN.md)
-for the later monitor, authorization, worktree, briefing, comment, and explicit
-publish phases.
+assistant reply to GitHub.
 
 The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
 commands validate declarations, reconcile missing keys and private GitHub CLI

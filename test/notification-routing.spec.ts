@@ -34,9 +34,9 @@ describe('utils/notification-routing', () => {
 
     const receipt = createNotificationRoutingReceipt(desired);
     assert.equal(planNotificationRouting(current, desired, receipt).kind, 'noop');
-    const first = resolveNotificationRoute(current, desired, 'github:R_1:issue:12');
-    const repeated = resolveNotificationRoute(current, desired, 'github:R_1:issue:12');
-    const second = resolveNotificationRoute(current, desired, 'github:R_1:issue:13');
+    const first = resolveNotificationRoute(current, desired, 'github:R_1:12');
+    const repeated = resolveNotificationRoute(current, desired, 'github:R_1:12');
+    const second = resolveNotificationRoute(current, desired, 'github:R_1:13');
 
     assert.equal(first.matchedBy, 'binding.account');
     assert.equal(first.agentId, 'data');
@@ -119,7 +119,7 @@ describe('utils/notification-routing', () => {
     };
 
     assert.throws(
-      () => resolveNotificationRoute(current, desired, 'github:R_1:issue:12'),
+      () => resolveNotificationRoute(current, desired, 'github:R_1:12'),
       /exact agent-system-github:data binding/u,
     );
   });

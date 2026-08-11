@@ -1,16 +1,18 @@
 # GitHub Notifications Plan
 
-Status: Phase 0 implemented; later phases proposed
+Status: Phase 0 routing foundation implemented; installed inbound delivery and
+later phases proposed
 
 Phase 0 now ships the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
-inspection/reconciliation, and injected inbound-kernel proof. It deliberately
-does not poll GitHub, resolve a token, create a worktree, or start a real agent
-briefing.
+inspection/reconciliation, and an injected inbound-kernel route-selection test.
+It deliberately does not register production assignment delivery, poll GitHub,
+resolve a token, create a worktree, or start a real agent briefing.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
 Phase 0 configuration and routing foundation described below are implemented;
-remote event discovery and work execution remain planned behavior.
+installed inbound delivery, remote event discovery, and work execution remain
+planned behavior.
 
 ## Recommendation
 
@@ -243,15 +245,16 @@ removing the private receipt. The mutation preserves unrelated channel accounts
 and bindings and avoids editing `openclaw.json` directly or leaving a
 multi-command half-install behind.
 
-OpenClaw hot-applies `bindings` and restarts only the affected channel for
-`channels.*` changes under the default hybrid reload mode, so routine install
-does not need to restart the whole Gateway. If reload watching is disabled,
-installation should report that a manual Gateway restart is still required.
-The implemented binding also sets `dmScope: per-account-channel-peer`, so each
-stable GitHub work-item conversation becomes a distinct session. The owning
-GitHub Actions-only Leia scenario starts the Gateway before install and verifies
-runtime config convergence and cleanup. Repository validation never mutates the
-developer's live Gateway.
+OpenClaw hot-applies `bindings`. Updating an existing `channels.*` account can
+restart only the affected channel, while creating or removing the top-level
+channel configuration can require a full Gateway restart. The owning GitHub
+Actions-only Leia scenario runs the Gateway with in-process restarts enabled,
+then verifies runtime config convergence and cleanup without losing process
+tracking. If reload watching is disabled, installation should report that a
+manual Gateway restart is still required. The implemented binding also sets
+`dmScope: per-account-channel-peer`, so each stable GitHub work-item conversation
+becomes a distinct session. Repository validation never mutates the developer's
+live Gateway.
 
 ## Trust and Prompt-Injection Model
 
@@ -457,7 +460,7 @@ Session guidance should require:
 
 ## Phased Implementation
 
-### Phase 0: Platform Contract Spike (implemented)
+### Phase 0: Platform Contract Spike (routing foundation implemented)
 
 Goal: prove the design against the supported OpenClaw SDK before adding remote
 polling.
@@ -465,14 +468,14 @@ polling.
 - Update or confirm the pinned OpenClaw compatibility version before using any
   newer channel API.
 - Register an inert `agent-system-github` channel in discovery and full modes.
-- Dispatch a synthetic assignment through the current channel inbound API and
-  prove deterministic agent/session routing.
-- Prove a local-only reply appears in the OpenClaw session without an outbound
-  GitHub side effect.
-- Determine whether the current host supports a session label and per-session
-  cwd. Record the fallback contract if it does not.
-- Determine the supported retirement/archive seam. Keep logical retirement if
-  native archive is unavailable.
+- Exercise a synthetic assignment through the current channel inbound helper in
+  a unit test and prove deterministic route selection.
+- Before Phase 2 enables assignment delivery, prove a local-only reply appears
+  in the installed OpenClaw session without an outbound GitHub side effect.
+- Before Phase 2, determine whether the current host supports a session label
+  and per-session cwd. Record the fallback contract if it does not.
+- Before Phase 2, determine the supported retirement/archive seam. Keep logical
+  retirement if native archive is unavailable.
 - Finalize an activation-only multi-account channel schema whose account id is
   the Agent System agent id.
 - Add a notifications lifecycle contribution that always participates so
@@ -482,19 +485,20 @@ polling.
   under `channels.*`.
 - Record a private ownership receipt, reject a binding owned by another agent,
   preserve unrelated accounts and bindings, and verify the post-install route.
-- Prove channel and binding hot reload under the default Gateway mode and report
-  the manual-restart case when reload is disabled.
+- Prove binding hot reload and channel configuration convergence, including a
+  full in-process Gateway restart when the top-level channel appears or leaves.
+  Report the manual-restart case when reload is disabled.
 - Finalize the strict `github.notifications` schema and static plugin manifest
   channel metadata.
 
 Implemented proof includes channel registration, strict schema normalization,
 install/doctor reconciliation, idempotency, unrelated-state preservation, one
-synthetic inbound-kernel session route, local-only delivery, explicit rejection
-of default or mismatched routing, and receipt-backed cleanup. The pinned public
-SDK still has no direct external-plugin setter for an arbitrary native session
-title, cwd, or archive state, so the fixed fallbacks remain session extension
-metadata, explicit tool cwd, and logical retirement. The Leia scenario is the
-operational hot-reload proof and remains GitHub Actions-only.
+injected inbound-kernel route-selection test, explicit rejection of default or
+mismatched routing, and receipt-backed cleanup. It does not yet prove production
+assignment delivery, real transcript recording, or native session title, cwd,
+and archive behavior. Those installed-runtime seams remain Phase 2 entry work.
+The Leia scenario is the operational configuration-reload proof and remains
+GitHub Actions-only.
 
 ### Phase 1: Read-only Monitor and Trust Core
 

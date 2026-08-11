@@ -53,7 +53,8 @@ export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChanne
     id: githubNotificationChannelId,
     label: 'Agent System GitHub Notifications',
     selectionLabel: 'Agent System GitHub Notifications',
-    docsPath: 'https://github.com/tanaabased/openclaw-agent-system/blob/main/NOTIFICATIONS_PLAN.md',
+    docsPath:
+      'https://github.com/tanaabased/openclaw-agent-system/blob/main/tools/github/README.md',
     blurb: 'Routes authorized GitHub work assignments into agent-scoped local sessions.',
     exposure: { configured: true, docs: true, setup: false },
     forceAccountBinding: true,
@@ -100,14 +101,14 @@ export interface GitHubNotificationAssignmentEvent {
 }
 
 export function githubNotificationConversationId(
-  event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'itemType' | 'repositoryId'>,
+  event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'repositoryId'>,
 ): string {
   if (!Number.isSafeInteger(event.itemNumber) || event.itemNumber < 1) {
     throw new Error('GitHub notification item numbers must be positive safe integers.');
   }
   const repositoryId = event.repositoryId.trim();
   if (!repositoryId) throw new Error('GitHub notification repository ids must not be empty.');
-  return `github:${encodeURIComponent(repositoryId)}:${event.itemType}:${event.itemNumber}`;
+  return `github:${encodeURIComponent(repositoryId)}:${event.itemNumber}`;
 }
 
 export interface GitHubNotificationInboundDependencies<TDispatchResult> {
