@@ -61,18 +61,18 @@ cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e 'sort == ["agent_system_git","agent_system_git_worktree","agent_system_github","message"]'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e 'length == 4 and index("agent_system_git") != null and index("agent_system_git_worktree") != null and index("agent_system_github") != null and index("message") != null'
 ```
 
 ```bash
-# should move owned grants to an exact allowlist and clean the additive allowlist
+# should reconcile selected native tools through an exact allowlist
+openclaw config unset 'agents.list[0].tools.alsoAllow'
 openclaw config set 'agents.list[0].tools.allow' '["read"]' --strict-json
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.allow' --json | jq -e 'sort == ["agent_system_git","agent_system_git_worktree","agent_system_github","read"]'
-openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e '. == ["message"]'
+openclaw config get 'agents.list[0].tools.allow' --json | jq -e 'length == 4 and index("agent_system_git") != null and index("agent_system_git_worktree") != null and index("agent_system_github") != null and index("read") != null'
 ```
 
 ```bash
@@ -101,6 +101,5 @@ cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.allow' --json | jq -e '. == ["read"]'
-openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e '. == ["message"]'
+openclaw config get 'agents.list[0].tools' --json | jq -e '.allow == ["read"] and (has("alsoAllow") | not)'
 ```
