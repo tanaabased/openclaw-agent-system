@@ -61,7 +61,8 @@ cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e 'length == 4 and index("agent_system_git") != null and index("agent_system_git_worktree") != null and index("agent_system_github") != null and index("message") != null'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e 'index("message") != null'
+openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
 ```
 
 ```bash
@@ -72,7 +73,8 @@ cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
-openclaw config get 'agents.list[0].tools.allow' --json | jq -e 'length == 4 and index("agent_system_git") != null and index("agent_system_git_worktree") != null and index("agent_system_github") != null and index("read") != null'
+openclaw config get 'agents.list[0].tools.allow' --json | jq -e 'index("read") != null'
+openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
 ```
 
 ```bash
@@ -86,9 +88,8 @@ openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"
 # should block a selected native tool denied by operator policy
 openclaw config set 'agents.list[0].tools.deny' '["agent_system_github"]' --strict-json
 cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor --json 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F '"code": "agent-tool-access-denied"'
-printf '%s\n' "$output" | grep -F '"status": "blocked"'
+if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'blocked' | grep -F 'tool-access' | grep -F 'agent_system_github'
 if output=$(openclaw agent-system install --json 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
 ```
