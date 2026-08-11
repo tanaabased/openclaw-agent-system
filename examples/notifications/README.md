@@ -38,7 +38,8 @@ echo "$!" > "$TMPDIR/gateway.pid"
 
 # should install the agent and exact notification route through agent system
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system install --json | grep -F '"component": "github-notifications"' | grep -F '"status": "updated"'
+openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 ```
 
 ## Testing
@@ -53,16 +54,17 @@ openclaw agents bindings --json | grep -F 'agent-system-github' | grep -F 'notif
 
 # should report healthy routing and keep repeated installation unchanged
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system doctor --json | grep -F '"component": "github-notifications"' | grep -F '"status": "healthy"'
-openclaw agent-system install --json | grep -F '"component": "github-notifications"' | grep -F '"status": "unchanged"'
+openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "github-notifications" and .status == "healthy")'
+openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "unchanged")'
 
 # should remove only the owned route when notifications leave the manifest
 cp "$GITHUB_WORKSPACE/examples/notifications/disabled-agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system install --json | grep -F '"component": "github-notifications"' | grep -F '"status": "removed"'
+openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "removed")'
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 if openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled'; then exit 1; fi
 if openclaw agents bindings --json | grep -Fq 'agent-system-github'; then exit 1; fi
-openclaw agent-system doctor --json | grep -F '"component": "github-notifications"' | grep -F '"status": "healthy"'
+openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 ```
 
 ## Cleanup

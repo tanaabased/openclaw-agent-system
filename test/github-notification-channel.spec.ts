@@ -47,6 +47,9 @@ describe('tools/github/notification-channel', () => {
     assert.equal(githubNotificationChannel.id, 'agent-system-github');
     assert.deepEqual(githubNotificationChannel.config.listAccountIds(config), ['data']);
     assert.equal(githubNotificationChannel.config.resolveAccount(config, 'data').enabled, true);
+    assert.deepEqual(githubNotificationChannel.reload, {
+      configPrefixes: ['channels.agent-system-github'],
+    });
     assert.equal(githubNotificationChannel.outbound, undefined);
     assert.equal(githubNotificationChannel.message?.send, undefined);
     assert.deepEqual(githubNotificationChannel.message?.receive, {

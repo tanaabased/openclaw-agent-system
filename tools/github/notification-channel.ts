@@ -59,6 +59,7 @@ export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChanne
     forceAccountBinding: true,
   },
   capabilities: { chatTypes: ['direct'], blockStreaming: true },
+  reload: { configPrefixes: [`channels.${githubNotificationChannelId}`] },
   config: {
     listAccountIds(config) {
       return Object.keys(channelAccounts(config)).sort();
