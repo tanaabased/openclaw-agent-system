@@ -12,6 +12,7 @@ import GitHubNotificationMonitorService from '../channels/github/lib/monitor-ser
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
+import { githubNotificationSessionExtension } from '../channels/github/lib/session-extension.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
@@ -94,7 +95,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
 
   // Agent inspection and reconciliation run only after synchronous plugin registration completes.
   const environmentServiceRef: { current?: AgentEnvironmentService } = {};
+  const manifestServiceRef: { current?: AgentManifestService } = {};
   const lifecycleEnvironmentService = {
+    loadForAgentId(agentId: string, trigger?: ManifestLoadTrigger) {
+      const service = environmentServiceRef.current;
+      if (!service) throw new Error('Agent System environment service is unavailable.');
+      return service.loadForAgentId(agentId, trigger);
+    },
     loadForWorkspace(
       workspaceDir: string,
       expectedAgentId?: string,
@@ -105,6 +112,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return service.loadForWorkspace(workspaceDir, expectedAgentId, trigger);
     },
   };
+  const lifecycleManifestService = {
+    loadForAgentId(agentId: string, trigger?: ManifestLoadTrigger) {
+      const service = manifestServiceRef.current;
+      if (!service) throw new Error('Agent System manifest service is unavailable.');
+      return service.loadForAgentId(agentId, trigger);
+    },
+  };
   const capabilityDependencies = {
     baseEnvironment: process.env,
     ...(currentUid === undefined ? {} : { currentUid }),
@@ -113,7 +127,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   };
   const gitCapability = createGitCapability({
     ...capabilityDependencies,
+    environmentService: lifecycleEnvironmentService,
     gitignoreService,
+    manifestService: lifecycleManifestService,
     packageDir,
   });
   const githubCapability = createGitHubCapability({
@@ -166,6 +182,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return lifecycleRegistry.validate({ manifest, workspaceDir });
     },
   });
+  manifestServiceRef.current = manifestService;
   const environmentService = new AgentEnvironmentService({
     hostEnvironment: process.env,
     logger,
@@ -201,6 +218,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
 
   api.registerChannel({ plugin: githubNotificationChannel });
+  api.session.state.registerSessionExtension(githubNotificationSessionExtension);
   if (api.registrationMode === undefined || api.registrationMode === 'full') {
     api.registerService(notificationMonitorService.pluginService());
   }

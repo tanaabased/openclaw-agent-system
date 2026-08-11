@@ -29,6 +29,7 @@ describe('index', () => {
     const channelIds: string[] = [];
     const policyIds: string[] = [];
     const serviceIds: string[] = [];
+    const sessionExtensionNamespaces: string[] = [];
     const toolNames: string[] = [];
     const logger = {
       debug() {},
@@ -51,6 +52,13 @@ describe('index', () => {
         config: {
           current() {
             return {};
+          },
+        },
+      },
+      session: {
+        state: {
+          registerSessionExtension(extension: { namespace: string }) {
+            sessionExtensionNamespaces.push(extension.namespace);
           },
         },
       },
@@ -88,6 +96,7 @@ describe('index', () => {
     assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(serviceIds, ['agent-system-github-notifications']);
+    assert.deepEqual(sessionExtensionNamespaces, ['work-item']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

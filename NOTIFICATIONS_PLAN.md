@@ -1,7 +1,8 @@
 # GitHub Notifications Plan
 
 Status: Phase 1 read-only monitor implemented; installed observe-only proof
-awaiting pull-request CI; Phase 2 and later behavior proposed
+passed on pull-request CI; Phase 2A implementation in progress; Phases 2 through
+6 define feature completion
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
@@ -12,8 +13,8 @@ real agent briefing.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
 Phase 0 routing foundation and Phase 1 read-only discovery described below are
-implemented; installed inbound delivery and work execution remain planned
-behavior.
+implemented; installed assignment delivery, work execution, the approved-mention
+conversation bridge, and operational recovery remain planned behavior.
 
 ## Recommendation
 
@@ -32,10 +33,15 @@ identity and token contract, and does not yet justify a provider-neutral
 notification abstraction. If another provider later proves the same lifecycle,
 extract common orchestration then rather than designing it speculatively now.
 
-The channel should create a local OpenClaw conversation record, but it should
-not automatically publish every assistant reply to GitHub. An explicit publish
-action is a safer later addition: automatic mirroring could expose private chat,
-local paths, failed attempts, or sensitive output.
+The channel should form a selective conversational bridge, not mirror two
+transcripts. Only a canonical comment from an approved immutable actor that
+directly mentions the verified agent is eligible to create an inbound turn.
+For a turn that originated from such a comment, the agent produces a separate,
+bounded GitHub-facing response draft derived from the local response. That
+response passes normal GitHub write policy and approval before publication.
+Local-only turns remain local unless an operator explicitly publishes an
+update. Tool traces, hidden context, local paths, failed attempts, and the full
+OpenClaw transcript are never synchronization inputs.
 
 ## Important Corrections to the Initial Idea
 
@@ -61,6 +67,16 @@ local paths, failed attempts, or sensitive output.
 - A linked issue closes when the pull request is merged into the default branch,
   not merely when the pull request is closed. Use `Closes #<number>` in the pull
   request body and request review from the original assigner when possible.
+- Treat a direct agent mention as an addressing signal, not authorization. The
+  provider-returned comment author node id must still match an approved actor,
+  the comment must belong to the canonical active work item or its linked pull
+  request, and the current comment revision must contain an exact standalone
+  mention of the verified agent login.
+- Do not call the conversational bridge comment synchronization. An admitted
+  GitHub comment creates one local turn, and that turn may produce one distinct
+  GitHub-facing response. The published response is intentionally less detailed
+  than the local transcript and must be rendered from an explicit bounded
+  publishable payload rather than by copying or redacting the transcript.
 
 ## MVP Outcome
 
@@ -104,6 +120,40 @@ under normal Agent System tool policy and approval rules.
 - destructive session or worktree cleanup
 - multiple GitHub hosts
 - a generic cross-provider notifications framework
+
+## Feature-complete Outcome
+
+For this plan, feature complete means the GitHub notifications channel supports
+the full assignment-driven conversation lifecycle on `github.com`, not every
+event or integration GitHub can provide. After Phases 0 through 6, it will:
+
+- discover and safely admit approved assignments;
+- prepare or reuse one deterministic managed worktree and OpenClaw session;
+- keep the issue, linked pull request, worktree, and session correlated through
+  completion and retirement;
+- accept new or materially edited issue, pull-request conversation, and linked
+  review comments only when the canonical human author is approved and the
+  current comment revision contains an exact standalone
+  `@<verified-github-login>` mention in author-written prose;
+- route each admitted comment to the existing local session with immutable
+  provenance and bounded untrusted content;
+- produce at most one bounded, conversational GitHub-facing response for that
+  GitHub-originated turn, subject to mandatory secret-safety checks, normal
+  write policy, and approval;
+- support an explicit publish action for selected local updates without making
+  the whole local transcript remotely visible;
+- suppress self-events and duplicate delivery across retries, edits, restarts,
+  and ambiguous provider-write outcomes;
+- expose sufficient status, replay, retirement, and explicit cleanup controls
+  to operate and recover the channel safely; and
+- prove the complete lifecycle in deterministic tests and the installed
+  GitHub Actions-only scenario.
+
+Signed webhooks or GitHub App installation management, team or app actors,
+review-request workflows, multiple GitHub hosts, repository-specific actor
+sets, and additional notification providers are later expansions. Polling can
+deliver the complete behavior above; webhooks improve latency and scale but do
+not change its semantic contract.
 
 ## Proposed Manifest Shape
 
@@ -271,6 +321,8 @@ of a GitHub object a trusted instruction.
   clone URL, and default branch returned by GitHub
 - assignment or unassignment event id, actor node id, assignee node id, and
   timestamp returned by GitHub
+- canonical comment node id, author node id, repository and item association,
+  revision timestamp, and URL returned by GitHub
 - worktree result returned by the existing Agent System service
 - deterministic session and work-item ids generated locally
 
@@ -287,6 +339,16 @@ is fetched only after admission and is placed in a bounded, explicitly labelled
 data block. The automated briefing turn should receive no mutating tools. It may
 summarize the data and propose an approach, but it cannot turn pasted issue text
 into a side effect.
+
+Comment admission additionally requires the current canonical comment body to
+contain an exact standalone `@<verified-github-login>` mention in author-written
+prose. The verified login comes from `github.username` after it matches the
+authenticated `/user` response; `@agent` is not a literal product keyword.
+The login comparison follows GitHub's case-insensitive username semantics while
+still requiring one complete standalone mention token.
+Mention detection is a routing condition over untrusted content, not an
+authorization boundary. Mentions inside quoted text, code blocks, inline code,
+or hidden markup do not address the agent.
 
 Subsequent interactive turns use normal Agent System policy. The GitHub token's
 repository permissions remain the final remote authorization boundary.
@@ -316,6 +378,30 @@ revocation does not require an approved actor.
 Events authored by the agent itself and outbound records already written by
 Agent System are ignored to prevent feedback loops.
 
+### Comment Admission
+
+A comment creates an agent turn only when all of these are true:
+
+1. the work item is active and already has the exact routed session;
+2. the comment belongs to the canonical issue, pull-request conversation, or a
+   pull request already correlated to that work item;
+3. GitHub's canonical response identifies a human author whose opaque node id
+   matches `approved-actors` and is not the authenticated agent;
+4. the current canonical body contains an exact standalone mention of
+   `@<verified-github-login>` in author-written prose;
+5. the comment node id and current revision have not already been delivered;
+6. the comment is not an outbound comment previously written by Agent System;
+   and
+7. the item has not been retired, closed, transferred, or otherwise lost its
+   admission authority.
+
+An edit is eligible for one new turn only when its canonical revision changes
+materially and the current body still satisfies the mention rule. Adding the
+mention may make a previously ignored comment eligible; removing it before
+delivery makes the comment ineligible. Deletion never creates an instruction.
+Pull-request review requests and reviews without an addressed comment remain a
+separate future workflow.
+
 ## Polling and State
 
 Use an authenticated account-wide issue and pull-request search for discovery,
@@ -341,8 +427,11 @@ only non-secret facts:
 - repository identity, verified permission, and poll high-water mark
 - conditional-request metadata when supported
 - processed event node ids
+- processed comment node ids and revision timestamps
 - active and retired work-item records
 - assigner, assignee, worktree, branch, session, and linked pull request ids
+- outbound comment node ids and locally generated operation ids used only for
+  retry reconciliation and loop suppression
 - last successful poll, current backoff, and stable diagnostic code
 
 Do not persist tokens, issue bodies, comment bodies, model prompts, or command
@@ -428,19 +517,73 @@ The automated briefing is local-only. A no-op or suppressed outbound adapter
 must not post its answer to GitHub. The response remains visible in the OpenClaw
 session transcript.
 
-The pinned SDK exposes channel inbound routing and long-lived plugin services,
-but it does not expose a clear external-plugin API for setting an arbitrary
-native session title, binding its cwd, or archiving it. Phase 0 must prove these
-behaviors. Safe fallbacks are:
+After the initial briefing, an admitted GitHub comment creates one turn in that
+same session. Its prompt contains immutable provenance, the exact source URL,
+and a bounded untrusted-content block. The local response may be as detailed as
+normal work requires. For a GitHub-originated turn, the workflow separately
+constructs a bounded GitHub-facing response containing only an appropriate
+conversational update, decision, question, or next step. It must not derive that
+response from tool traces or the wider transcript, and redaction alone is not a
+sufficient publication boundary.
 
-- project worktree and issue metadata through a plugin session extension;
+The GitHub-facing response is published only after normal tool policy and any
+required approval. If publication is denied or fails, the local response and a
+recoverable unpublished status remain in the session. A local operator turn is
+never published automatically; it requires the explicit publish action. Every
+successful write records the exact published text and provider comment id in
+the local session and records the provider id in private state for loop
+suppression.
+
+### GitHub-facing Secret Safety
+
+A GitHub-facing response must never contain a secret or secret-bearing private
+information. This is a fail-closed publication invariant, not a best-effort
+prompt instruction.
+
+- Construct the remote response from a separate, bounded publishable payload
+  with explicit fields. Never pass the full transcript, tool trace, environment,
+  command output, or arbitrary local files into a sanitizer for publication.
+- Exclude content with secret provenance, including resolved environment values,
+  access tokens, authorization headers, private or signing keys, credential
+  references paired with values, signed URLs, cookies, and tool output marked
+  sensitive.
+- Run deterministic secret detection and sanitization before showing the exact
+  preview for policy or approval. Cover common token, key, credential, and
+  high-entropy secret forms, and replace detected material with a stable safe
+  placeholder.
+- Resolve the GitHub credential only after policy and approval. Immediately
+  before the provider write, check the exact UTF-8 bytes again, including against
+  sensitive values already held by that explicit consumer. Never resolve
+  unrelated secrets merely to expand the scan.
+- If the final check detects secret material, sensitive provenance is unclear,
+  the content changed after approval, or the sanitizer cannot complete, abort
+  publication. Regenerate and preview a safe response rather than silently
+  sending altered text.
+- Never log, diagnose, persist in monitor state, or include in approval metadata
+  the detected secret, its source value, or the rejected unsanitized payload.
+
+Tests use synthetic canary secrets to prove that known token and key forms,
+values already held by the writer, and secret-derived content cannot reach the
+provider adapter, logs, diagnostics, approval records, or durable control state.
+
+The pinned SDK exposes channel inbound routing, long-lived plugin services, and
+trusted Gateway methods for creating and patching sessions, including label,
+plugin metadata, abort, and archive fields. Its `spawnedCwd` and
+`spawnedWorkspaceDir` patches are restricted to `subagent:*` and `acp:*`
+lineage, so they cannot bind this ordinary routed channel session to a cwd. The
+session adapter must use the supported fallback:
+
+- project worktree and issue metadata through a plugin session extension and
+  pass the projected path explicitly as cwd to later Agent System tool calls;
 - a conversation label derived from the returned branch;
 - explicit tool `cwd` values pointing at the managed worktree;
 - logical retirement in Agent System state without deleting the OpenClaw
   transcript.
 
-Do not depend on the bundled-only `scheduleSessionTurn` helper. The channel's
-accepted inbound event should start the briefing turn directly.
+Do not schedule an immediate assignment through `scheduleSessionTurn` or bypass
+the channel kernel with `sessions.send`. The accepted inbound event starts one
+assembled channel turn directly so the runtime can enforce a per-turn no-tools
+policy. Durable transition claims and reconciliation own duplicate prevention.
 
 ## Pull-request Completion Contract
 
@@ -530,23 +673,127 @@ responses and no local work is created.
 
 Goal: complete the core MVP user experience.
 
-- Expose the existing worktree service to the trusted workflow orchestrator;
-  do not shell through the model-facing tool or impersonate a tool call.
-- Treat an admitted assignment as authority only for deterministic worktree
-  preparation and one read-only briefing turn.
-- Derive the internal repository id from the immutable GitHub repository id and
-  prepare the provider-authorized clone URL and default branch with the
-  deterministic work id.
-- Persist the returned branch and path.
-- Dispatch the sanitized assignment through the channel into its deterministic
-  session.
-- Restrict the automated turn to non-mutating capabilities and bounded context.
-- Project work-item metadata into the session using the supported extension or
-  fallback contract.
-- Honor unassignment by retiring routing and cancelling in-flight work without
-  deleting the transcript or worktree.
-- Recover correctly from failure before worktree creation, after worktree
-  creation, and after session creation.
+#### Phase 2A: Prove the Installed Session Contract
+
+- Add a narrow session adapter around supported public OpenClaw surfaces rather
+  than reading or rewriting session files directly.
+- Prove that the channel kernel can create or adopt the exact deterministic
+  routed session and that the trusted plugin Gateway runtime can set its label,
+  patch a plugin-owned metadata namespace, abort an active briefing, and archive
+  a retired session without deleting its transcript.
+- Prove that the channel inbound kernel can record the GitHub provenance and
+  start one immediate local turn with a stable provider event id. Do not use a
+  scheduled turn for immediate assignment delivery.
+- Prove that the local response is visible in the OpenClaw transcript while the
+  channel still has no GitHub outbound adapter.
+- Use plugin-owned worktree metadata plus explicit cwd on later Agent System
+  tool calls because native cwd fields reject ordinary channel sessions. Use
+  logical retirement if native archive is unavailable.
+
+The pinned SDK currently exposes trusted `sessions.patch`,
+`sessions.pluginPatch`, and `sessions.abort` Gateway methods plus the public
+channel inbound runtime. The assembled inbound contract carries
+`disableTools: true` and an empty per-turn `toolsAllow`, while the synthetic
+channel has no outbound adapter and the session uses `sendPolicy: deny`.
+`sessions.send` is not suitable for this automated briefing because it cannot
+carry the required per-turn tool restriction. Treat the supported shapes as
+evidence for the spike, not proof of installed behavior until the owning Leia
+scenario exercises them.
+
+#### Phase 2B: Expose Trusted Worktree Preparation
+
+- Factor one narrow internal worktree-preparation service out of the existing
+  Git capability assembly and share the same `GitWorktreeService`, layout,
+  runner, identity, SSH resource, and cleanup implementation as the native tool.
+- Keep the service owned by `tools/git/`, and inject it into a root `lib/`
+  assignment orchestrator because that workflow coordinates a channel and a
+  tool capability.
+- Do not invoke `agent_system_git_worktree`, synthesize a model tool call, shell
+  through the CLI surface, or expose a generic policy bypass.
+- Treat the admitted assignment as authority only for the ordinary
+  `git.worktree.prepare` write operation. Apply Git authorization before
+  resolving environment values or acquiring SSH material.
+- Accept only the internally derived `github-<repository-database-id>`, a work
+  id persisted on first admission, the provider-verified clone URL, and
+  `origin/<default-branch>`. Never accept a model- or event-supplied local path,
+  repository id, clone URL, or base ref.
+- Return the existing service's canonical branch and path and dispose every
+  invocation-scoped Git or SSH resource on success, failure, or cancellation.
+
+#### Phase 2C: Add a Recoverable Assignment State Machine
+
+- Extend the private monitor state with a versioned, value-free delivery record
+  containing the stable work id, assignment event id, workflow stage, worktree
+  branch and path, routed session key and id when available, briefing
+  idempotency key, and stable failure code. Do not persist GitHub bodies, prompts,
+  transcript content, command output, environment values, or credentials.
+- Migrate valid Phase 1 state explicitly or establish a diagnosed safe baseline;
+  never reinterpret an older record silently.
+- Have the pure poller return typed admitted and retirement transitions instead
+  of only aggregate counts. Keep remote discovery and trust admission separate
+  from side-effect execution.
+- Serialize one work item transition at a time per agent and persist a checkpoint
+  before and after every external side effect: admitted, worktree-ready,
+  session-ready, briefing-running, active, and retired.
+- On restart, reconcile the deterministic worktree, OpenClaw session, plugin
+  metadata, and briefing idempotency key before deciding whether to resume.
+  Never infer completion from a stale local stage alone.
+
+#### Phase 2D: Deliver the Bounded Briefing
+
+- After admission, fetch a separate bounded canonical briefing projection with
+  the title, URL, body excerpt, labels, and milestone summary. Keep all textual
+  GitHub content explicitly marked as untrusted and do not persist it in monitor
+  state.
+- Build the deterministic conversation id from the repository node id and item
+  number, then create or adopt that exact routed session.
+- Patch the session label and plugin-owned issue, repository, assignment,
+  branch, and path metadata before dispatch. Include the canonical worktree path
+  in the bounded briefing and pass it explicitly as cwd to later Agent System
+  tools; do not attempt the host's subagent-only cwd fields.
+- Claim the assignment event durably before running it through
+  `runGitHubNotificationAssignment` as an assembled inbound turn. Carry the
+  stable provider event id into the channel context and reconcile the claimed
+  session on restart before any retry.
+- Enforce a no-tools automated briefing turn at the runtime boundary with both
+  `disableTools: true` and an empty per-turn `toolsAllow`. Do not rely on prompt
+  wording or a session-level restriction that the host normalizes away.
+- Keep session outbound delivery denied. The briefing response stays local and
+  Phase 2 performs no GitHub mutation.
+- Mark the item active only after the claimed turn is adopted and its session
+  metadata is durable. A timeout or ambiguous response must reconcile the
+  provider event id and session transcript before retrying, never create another
+  briefing speculatively.
+
+#### Phase 2E: Retirement and Failure Recovery
+
+- Recheck assignment, repository, permission, and route authority immediately
+  before each side effect, not only at the beginning of the polling cycle.
+- If authority is revoked before worktree creation, retire without creating
+  local work. If revoked later, cancel or abort the in-flight briefing, retire
+  routing, and preserve the worktree and transcript.
+- Archive the session only through the proven host seam; otherwise record
+  logical retirement. Never delete the session or automatically remove the
+  worktree.
+- Recover deterministically from failures before worktree creation, after
+  worktree creation, after session creation, during briefing adoption, and after
+  briefing settlement. Reuse proven side effects and report stable value-free
+  diagnostic codes.
+
+#### Phase 2F: Proof and Documentation
+
+- Add focused unit tests for the trusted worktree adapter, transition planner,
+  orchestrator, session adapter, bounded briefing builder, tool restriction,
+  cancellation, migration, and every partial-failure restart boundary.
+- Prove that rejected, duplicate, mismatched-route, disallowed-owner,
+  insufficient-permission, and revoked assignments create neither a worktree nor
+  a session.
+- Extend the existing GitHub Actions-only notifications scenario to prove one
+  approved assignment creates one managed worktree and one local transcript,
+  restart creates no duplicate, unassignment retires without deletion, and no
+  GitHub comment or other outbound write occurs.
+- Update channel and Git worktree documentation only for behavior that is
+  implemented, and record the delivered phase in the changelog at release time.
 
 Exit criteria: a new approved assignment creates exactly one worktree and one
 briefing session; retries and restarts create no duplicates; an unauthorized
@@ -577,10 +824,14 @@ Phases 0 through 3 are the complete assignment-driven MVP.
 
 Goal: let authorized collaborators continue the active discussion from GitHub.
 
-- Poll comments only for active configured work items.
+- Poll issue and pull-request conversation comments only for active configured
+  work items, plus review comments on an already correlated pull request.
 - Require an exact approved actor node id and reject bot/app actors by default.
-- Start with an explicit addressing rule, such as a comment beginning with an
-  agent mention. Do not make every collaborator comment an instruction.
+- Require an exact standalone `@<verified-github-login>` mention in the current
+  canonical comment body. The verified login is the configured
+  `github.username` after `/user` identity verification; the rule never matches
+  a literal generic `@agent` token. Ignore mentions found only in quoted text,
+  code, or hidden markup. Do not make every collaborator comment an instruction.
 - Deduplicate by comment node id and track edits as revisions rather than
   replaying the original instruction.
 - Route the accepted comment to the existing issue session with structured
@@ -588,31 +839,77 @@ Goal: let authorized collaborators continue the active discussion from GitHub.
 - Ignore comments authored by the agent or previously written by Agent System.
 - Continue to apply normal tool policy and remote token permissions.
 
-Exit criteria: an approved addressed comment reaches exactly one active
-session; unapproved, unaddressed, edited-duplicate, retired-item, and self
-comments produce no agent turn.
+Exit criteria: an approved comment that directly mentions the verified GitHub
+user reaches exactly one active session; unapproved, unmentioned,
+quoted-mention-only, edited-duplicate, retired-item, and self comments produce
+no agent turn.
 
-### Phase 5: Explicit Replies Back to GitHub
+### Phase 5: Conversational Replies Back to GitHub
 
-Goal: support a durable GitHub discussion without leaking the entire local
-conversation.
+Goal: carry the useful part of the discussion back to GitHub without mirroring
+the local conversation.
 
-- Add an explicit semantic publish action scoped to the active work item.
+- For a turn created by an admitted GitHub comment, construct at most one
+  separate GitHub-facing response from an explicit bounded publishable payload.
+- Expose a scoped comment-write service to the trusted workflow orchestrator;
+  do not shell through or impersonate the model-facing GitHub tool, and preserve
+  the same policy, approval, and credential-timing boundaries.
+- Keep the GitHub response conversational and useful, but omit private context,
+  tool traces, local paths, hidden instructions, raw failures, credentials, and
+  unrelated transcript history. Do not treat after-the-fact redaction of the
+  full transcript as the security boundary.
+- Pass the separately constructed response through the mandatory GitHub-facing
+  secret-safety pipeline before preview and again on the exact bytes immediately
+  before send. Any secret hit, uncertain provenance, or post-approval change
+  blocks publication and exposes only a value-free local diagnostic.
+- Add an explicit semantic publish action for operator-originated local updates;
+  no other local turn is automatically eligible for publication.
 - Show the exact bounded comment content and target before any required
-  approval and resolve credentials only after approval.
-- Write the comment, store its node id, and render the same published text in
-  the local session.
+  approval, apply normal GitHub write policy, and resolve credentials only
+  after approval.
+- Post a new issue or pull-request comment rather than mutating local history,
+  store its node id, and render the exact published text and URL in the local
+  session.
 - Mark outbound comments for loop suppression using stored provider ids; a
-  hidden marker may aid diagnosis but must never be the trust boundary.
-- Consider an opt-in automatic mirror only after the explicit path proves safe.
+  hidden operation marker may support ambiguous-write recovery but must never
+  be the trust boundary or visible source of authority.
+- When an outbound write has an ambiguous result, reconcile by the local
+  operation id before retrying so recovery cannot post duplicates.
 
-Exit criteria: only explicitly published assistant text appears on GitHub, it
-also remains in the local transcript, and its resulting notification is not
-ingested again.
+Exit criteria: each admitted GitHub comment can yield at most one policy-checked
+GitHub-facing response; selected local updates require explicit publication;
+the exact remote text remains visible locally; retries do not duplicate it; and
+its resulting notification is never ingested as a new turn.
 
-### Phase 6: Webhooks and Broader Workflows
+### Phase 6: Operational Completion and Recovery
 
-Only after the polling MVP is stable:
+Goal: close the operational gaps required for a feature-complete channel.
+
+- Add value-free status and diagnostics for assignment, comment, session,
+  worktree, outbound publication, retry, and retirement state.
+- Add explicit bounded replay for missed assignments or comments without
+  changing the safe first-run baseline.
+- Add explicit, policy-checked cleanup for retired routing state and worktrees,
+  refusing dirty worktrees by default; archive sessions through a supported
+  seam when available and otherwise preserve their transcripts.
+- Reconcile uncertain worktree, session, and outbound-comment side effects
+  before retrying.
+- Bound comment pagination and revision history, detect truncation, and recover
+  without silently skipping addressed comments.
+- Complete documentation, migration notes, and installed GitHub Actions-only
+  coverage for the assignment, comment, reply, restart, retirement, replay, and
+  cleanup lifecycle.
+
+Exit criteria: an operator can diagnose, replay, retire, and explicitly clean
+up the channel; crash recovery is idempotent across every side effect; and the
+complete assignment-to-conversation lifecycle passes unit, package, and
+installed-runtime validation.
+
+Phases 0 through 6 are the feature-complete GitHub notifications channel.
+
+## Post-feature Expansions
+
+Consider only after the polling channel is stable:
 
 - signed GitHub webhooks or a GitHub App for lower latency and higher scale;
 - review-request events as a distinct pull-request-review workflow;
@@ -620,7 +917,6 @@ Only after the polling MVP is stable:
 - approved GitHub teams as a narrower scalable actor policy than trusting every
   member of an organization;
 - repository-specific actor sets;
-- explicit replay and cleanup commands;
 - richer issue hierarchy, project, dependency, and milestone context;
 - additional providers after extracting a proven common notification core.
 
@@ -644,7 +940,16 @@ Only after the polling MVP is stable:
 - bounded prompt construction and trusted/untrusted provenance separation;
 - deterministic work ids without reimplementing worktree naming;
 - partial failures around worktree and session creation;
-- local-only channel delivery and outbound loop suppression;
+- approved-author and exact verified-login mention admission for issue,
+  pull-request conversation, and linked review comments;
+- mentions in quotes, code, hidden markup, stale revisions, retired items, and
+  self-authored comments produce no turn;
+- bounded local-only briefing delivery, separate GitHub-facing response
+  construction, explicit local-update publication, and outbound loop
+  suppression;
+- synthetic secret canaries and sensitive-provenance fixtures never reach the
+  provider adapter, approval metadata, logs, diagnostics, or durable state;
+- ambiguous comment-write recovery cannot create duplicate remote comments;
 - no token, issue body, comment body, or raw command in logs and diagnostics.
 
 Fake GitHub, OpenClaw, Git, clock, filesystem, and transport boundaries in the
@@ -667,7 +972,12 @@ repository. Prove:
 - issue content cannot trigger a mutating automated turn;
 - unassignment retires the route while preserving the worktree;
 - restart does not duplicate the workflow;
-- later comment and outbound phases preserve actor and loop gates.
+- an approved actor's direct mention of the verified GitHub user reaches the
+  existing session exactly once, while all other comments are ignored;
+- the resulting bounded GitHub-facing response passes policy and approval,
+  appears exactly once on the canonical item, remains visible locally, and does
+  not loop back into the session;
+- replay and explicit cleanup preserve ownership and non-destructive defaults.
 
 Leia remains GitHub Actions-only. Update the matrix credential ownership rules
 explicitly when this scenario is introduced rather than silently borrowing
@@ -679,9 +989,10 @@ credentials from another entry.
   full-runtime service through `lib/` orchestration.
 - `utils/manifest-types.ts` and `utils/parse-agent-manifest.ts`: add the strict
   external and internal notification projection.
-- `tools/github/`: own GitHub notification schema, typed provider access,
-  assigned-item discovery, repository permission/owner admission, event
-  normalization, and user documentation.
+- `channels/github/`: own the static channel schema and runtime, typed provider
+  access, assigned-item and comment discovery, repository permission/owner and
+  actor/mention admission, event normalization, provider write adapter, and
+  channel documentation.
 - `tools/git/`: expose the existing worktree service to trusted internal
   orchestration without duplicating it.
 - `lib/`: own global channel/binding lifecycle reconciliation, polling,
@@ -691,8 +1002,8 @@ credentials from another entry.
   crosses the Gateway and session boundary.
 - `openclaw.plugin.json`: declare the channel and its static cold-path schema
   when the Phase 0 contract is proven.
-- `ADVANCED.md` and `tools/github/README.md`: document implemented manifest and
-  GitHub behavior; keep `README.md` to a short common-path link.
+- `ADVANCED.md` and `channels/github/README.md`: document implemented manifest
+  and GitHub behavior; keep `README.md` to a short common-path link.
 - `CHANGELOG.md`: record only implemented phases, not this proposal.
 
 Do not add a generic `src/` directory or load schemas, transports, or modules

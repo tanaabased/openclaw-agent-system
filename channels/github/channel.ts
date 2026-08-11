@@ -1,6 +1,7 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import {
   runChannelInboundEvent,
+  type AssembledInboundReply,
   type InboundReplyDispatchResult,
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
@@ -100,6 +101,9 @@ export interface GitHubNotificationAssignmentEvent {
   title: string;
 }
 
+export type GitHubNotificationInboundTurn<TDispatchResult = never> =
+  AssembledInboundReply | PreparedInboundReply<TDispatchResult>;
+
 export function githubNotificationConversationId(
   event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'repositoryId'>,
 ): string {
@@ -117,7 +121,7 @@ export interface GitHubNotificationInboundDependencies<TDispatchResult> {
   prepareTurn(
     event: GitHubNotificationAssignmentEvent,
     route: ResolvedNotificationRoute,
-  ): PreparedInboundReply<TDispatchResult>;
+  ): GitHubNotificationInboundTurn<TDispatchResult>;
 }
 
 /** Run one authorized synthetic assignment through OpenClaw's channel inbound kernel. */
