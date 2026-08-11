@@ -48,6 +48,11 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /use
 ## Testing
 
 ```bash
+# should grant the native git tool to the installed git agent
+openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_git") != null'
+```
+
+```bash
 # should identify the agent system git command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
 

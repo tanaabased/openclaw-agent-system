@@ -1,6 +1,6 @@
 # Install Example
 
-This scenario installs the prepared Agent System package on a fresh GitHub Actions runner and verifies explicit lifecycle installation, human output, JSON output, and idempotency.
+This scenario installs the prepared Agent System package on a fresh GitHub Actions runner and verifies explicit lifecycle installation, human output, JSON output, idempotency, and manifest-derived native tool access reconciliation.
 
 ## Setup
 
@@ -24,6 +24,10 @@ openclaw onboard --non-interactive --accept-risk \
 # should install and enable the packed plugin through openclaw's managed npm package path
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
+
+# should prepare an isolated install workspace
+mkdir -p "$TMPDIR/install-data"
+cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
 ```
 
 ## Testing
@@ -38,12 +42,65 @@ openclaw agent-system --help | grep -F 'validate'
 openclaw as --help | grep -F 'validate'
 
 # should install the scenario agent with the default human lifecycle table
-cd "$GITHUB_WORKSPACE/examples/install/data"
+cd "$TMPDIR/install-data"
 openclaw agent-system install | grep -F 'created' | grep -F 'agent' | grep -F 'OpenClaw agent install-data'
 
 # should report every foundational component as unchanged in json on repeated install
-cd "$GITHUB_WORKSPACE/examples/install/data"
-openclaw agent-system install --json | grep -F '"component": "agent"'
-openclaw agent-system install --json | grep -F '"component": "path"'
-openclaw agent-system install --json | grep -F '"status": "unchanged"'
+cd "$TMPDIR/install-data"
+output=$(openclaw agent-system install --json)
+printf '%s\n' "$output" | grep -F '"component": "agent"'
+printf '%s\n' "$output" | grep -F '"component": "path"'
+printf '%s\n' "$output" | grep -F '"status": "unchanged"'
+```
+
+```bash
+# should reconcile additive native tool grants while preserving unrelated access
+openclaw config set 'agents.list[0].tools.alsoAllow' '["message"]' --strict-json
+cp "$GITHUB_WORKSPACE/examples/install/with-tools/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cd "$TMPDIR/install-data"
+if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
+openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e 'sort == ["agent_system_git","agent_system_git_worktree","agent_system_github","message"]'
+```
+
+```bash
+# should move owned grants to an exact allowlist and clean the additive allowlist
+openclaw config set 'agents.list[0].tools.allow' '["read"]' --strict-json
+cd "$TMPDIR/install-data"
+if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
+openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw config get 'agents.list[0].tools.allow' --json | jq -e 'sort == ["agent_system_git","agent_system_git_worktree","agent_system_github","read"]'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e '. == ["message"]'
+```
+
+```bash
+# should leave converged native tool access unchanged
+cd "$TMPDIR/install-data"
+openclaw agent-system install --json | grep -F '"code": "agent-tool-access-unchanged"'
+openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
+```
+
+```bash
+# should block a selected native tool denied by operator policy
+openclaw config set 'agents.list[0].tools.deny' '["agent_system_github"]' --strict-json
+cd "$TMPDIR/install-data"
+if output=$(openclaw agent-system doctor --json 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F '"code": "agent-tool-access-denied"'
+printf '%s\n' "$output" | grep -F '"status": "blocked"'
+if output=$(openclaw agent-system install --json 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
+```
+
+```bash
+# should remove stale owned grants when capabilities disappear
+openclaw config set 'agents.list[0].tools.deny' '[]' --strict-json
+cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/agent.yaml"
+cd "$TMPDIR/install-data"
+if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
+openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw config get 'agents.list[0].tools.allow' --json | jq -e '. == ["read"]'
+openclaw config get 'agents.list[0].tools.alsoAllow' --json | jq -e '. == ["message"]'
 ```
