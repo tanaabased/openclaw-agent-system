@@ -246,7 +246,7 @@ openclaw agent-system tool worktree [--agent <id>] -- remove <repository-id> <wo
 # inspect git from the current repository directory.
 openclaw agent-system tool git -- status --short
 
-# select an installed agent from any directory.
+# select an installed agent from a declared local repository.
 openclaw as tool git --agent tanaabot -- status --short
 
 # prepare a deterministic worktree from the latest remote branch.
@@ -263,8 +263,10 @@ openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-re
 ### Behavior
 
 Arguments after `--` pass through unchanged with the child's streams and exit
-code. `cwd` must remain inside the agent workspace or a configured worktree;
-external roots require trusted agent context or an explicit `--agent`.
+code. Native tools remain contained to the agent workspace and configured
+worktree root. Trusted operator commands using `--agent` may also run inside an
+existing local repository declared under `git.worktrees.repositories.local`;
+undeclared paths remain unavailable.
 
 `prepare` is idempotent, `list` is read-only, and `remove` uses non-forced Git
 removal. Dirty worktrees, branches, and refs remain intact.

@@ -99,7 +99,7 @@ export default async function executeAgentSystemCliTool<
         (await options.definition.runner.admittedWorkingDirectories?.(
           options.input,
           resolvedConfiguration,
-          { workspaceDir },
+          { source: options.scope.source, workspaceDir },
         )) ?? [];
       childWorkingDirectory = await resolveToolWorkingDirectory(
         workspaceDir,
