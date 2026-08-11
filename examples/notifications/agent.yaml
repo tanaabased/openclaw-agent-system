@@ -4,10 +4,13 @@ agent:
   id: notification-data
   name: Notification Data
 
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+
 github:
   host: github.com
-  username: notification-data
-  token: GH_TOKEN_NOTIFICATION_DATA
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
   notifications:
     interval-minutes: 5
     approved-actors:

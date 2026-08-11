@@ -46,7 +46,7 @@ function resolveAccount(
   return { accountId: normalizedAccountId, enabled };
 }
 
-/** Inert local-only channel registered now for the later GitHub assignment monitor. */
+/** Local-only channel registered for the observe-only monitor and later inbound delivery. */
 export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChannelAccount> = {
   id: githubNotificationChannelId,
   meta: {
@@ -55,7 +55,7 @@ export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChanne
     selectionLabel: 'Agent System GitHub Notifications',
     docsPath:
       'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
-    blurb: 'Routes authorized GitHub work assignments into agent-scoped local sessions.',
+    blurb: 'Observes authorized GitHub work assignments for agent-scoped local routing.',
     exposure: { configured: true, docs: true, setup: false },
     forceAccountBinding: true,
   },

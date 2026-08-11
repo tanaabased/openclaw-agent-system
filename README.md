@@ -113,9 +113,10 @@ can add compatible wrappers through the same runtime.
 ## Channels
 
 Agent System includes a local-only
-[GitHub notifications channel](./channels/github/README.md). The current release
-installs and verifies its exact agent route; polling, worktree preparation, and
-automated briefing remain future behavior.
+[GitHub notifications channel](./channels/github/README.md). Its Gateway service
+observes and classifies assigned GitHub issues and pull requests after verifying
+the exact agent route, account identity, repository policy, and assigning actor.
+Worktree preparation and automated briefing are not yet enabled.
 
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.

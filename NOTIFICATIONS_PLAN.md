@@ -1,18 +1,19 @@
 # GitHub Notifications Plan
 
-Status: Phase 0 routing foundation implemented; installed inbound delivery and
-later phases proposed
+Status: Phase 1 read-only monitor implemented; installed observe-only proof
+awaiting pull-request CI; Phase 2 and later behavior proposed
 
-Phase 0 now ships the strict manifest schema, static local-only channel,
+Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
-inspection/reconciliation, and an injected inbound-kernel route-selection test.
-It deliberately does not register production assignment delivery, poll GitHub,
-resolve a token, create a worktree, or start a real agent briefing.
+inspection/reconciliation, typed read-only GitHub monitor, trust admission,
+private durable state, and deterministic unit coverage. The monitor deliberately
+does not register production assignment delivery, create a worktree, or start a
+real agent briefing.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
-Phase 0 configuration and routing foundation described below are implemented;
-installed inbound delivery, remote event discovery, and work execution remain
-planned behavior.
+Phase 0 routing foundation and Phase 1 read-only discovery described below are
+implemented; installed inbound delivery and work execution remain planned
+behavior.
 
 ## Recommendation
 
@@ -500,7 +501,7 @@ and archive behavior. Those installed-runtime seams remain Phase 2 entry work.
 The Leia scenario is the operational configuration-reload proof and remains
 GitHub Actions-only.
 
-### Phase 1: Read-only Monitor and Trust Core
+### Phase 1: Read-only Monitor and Trust Core (implemented; CI proof pending)
 
 Goal: discover and classify events without creating sessions or worktrees.
 

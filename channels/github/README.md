@@ -4,27 +4,34 @@
   <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub notifications" width="180" />
 </p>
 
-The GitHub notifications channel routes authorized GitHub work assignments into
-agent-scoped local OpenClaw sessions. It owns the static
-`agent-system-github` channel, its exact per-agent route, and the
-`github.notifications` manifest contract.
+The GitHub notifications channel observes authorized GitHub work assignments
+for agent-scoped local OpenClaw routing. It owns the static
+`agent-system-github` channel, its exact per-agent route, the read-only Gateway
+monitor, and the `github.notifications` manifest contract.
 
 [Agent System](../../README.md) · [GitHub CLI tool](../../tools/github/README.md)
 
 ## Current Behavior
 
-The current release provides the channel and routing foundation:
+The current release provides the channel, routing, and observe-only trust core:
 
 - strict `github.notifications` manifest validation
 - one activation-only channel account whose id is the Agent System agent id
 - one exact account-scoped binding back to that agent and workspace
 - private receipt-backed ownership, repair, and cleanup
+- a long-lived, abortable Gateway service with per-agent polling and backoff
+- account identity verification on every poll
+- account-wide assigned issue and pull-request discovery with a first-run baseline
+- bounded pagination, overlap, replay deduplication, and truncation diagnostics
+- canonical repository, owner, effective permission, item, and assignment-event checks
+- immutable actor admission, self-event suppression, and active-item revocation checks
+- private atomic control state containing no token or issue/comment content
 - deterministic work-item conversation ids for inbound assignment delivery
 - local-only behavior with no outbound GitHub adapter
 
-The channel does not yet poll GitHub, ingest production assignment events,
-prepare worktrees, or run an automated briefing. Those capabilities will build
-on this routing contract.
+The monitor classifies assignment control events but does not dispatch them into
+the inbound channel yet. It does not fetch issue bodies or comments, prepare
+worktrees, create sessions, run an agent, or write to GitHub.
 
 ## Requirements
 
@@ -33,8 +40,9 @@ on this routing contract.
 - an explicit `github.username`
 - an environment-bound `github.token`
 
-Installation does not resolve the token or contact GitHub while only the routing
-foundation is active.
+`install` does not resolve the token or contact GitHub. The Gateway monitor
+resolves the declared credential only after the installed channel account,
+binding, agent id, and workspace agree exactly.
 
 ## Configuration
 
@@ -103,6 +111,29 @@ Unrelated channel accounts and bindings are preserved. Gateway reload planning
 remains host-owned; when `gateway.reload.mode` is `off`, installation reports
 that a manual Gateway restart is required.
 
+## Runtime Monitoring
+
+The Gateway establishes a baseline from the account's currently assigned items
+on first activation. Existing assignments are not admitted retroactively. Later
+polls use an overlapping update window and immutable event-id deduplication,
+then recheck each approved item directly so closure, unassignment, repository
+archival or transfer, owner-policy drift, deletion, and permission loss retire
+the observation.
+
+Changing the verified GitHub account establishes a fresh baseline. Removing
+`github.notifications` and running `install` removes the owned monitor state, so
+a later re-enable cannot inherit an earlier activation boundary.
+
+The default interval is five minutes with jitter. Provider retry and rate-limit
+controls can defer the next poll, and transient failures use exponential backoff.
+Polls never overlap for the same agent. Stopping the plugin service aborts its
+timer and any active GitHub CLI child process.
+
+`doctor` reports whether the route is ready and whether the monitor is pending,
+healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
+counts, and diagnostic codes, but not tokens, response bodies, issue content, or
+raw provider errors.
+
 ## Session and Delivery Contract
 
 The channel uses per-account, per-channel, per-peer direct-message scope. A work
@@ -122,10 +153,10 @@ GitHub through this channel.
 
 ## Trust Boundary
 
-GitHub content is untrusted project data. Future assignment delivery must verify
-the authenticated agent identity, immutable actor identity, canonical repository
-identity, effective repository permission, and configured owner policy before
-starting local work.
+GitHub content is untrusted project data. The monitor authorizes transitions
+using only the verified account identity, immutable actor identity, canonical
+repository and owner identities, effective repository permission, item state,
+and assignment event. It does not fetch issue bodies or comments.
 
 The channel configuration contains no token values. Credential resolution must
 remain lazy and occur only in the explicit consumer that contacts GitHub.

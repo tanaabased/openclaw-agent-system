@@ -6,9 +6,12 @@ import {
   type AgentSystemLifecycleContext,
 } from '../../../lib/lifecycle-registry.ts';
 import type NotificationRoutingService from './routing-service.ts';
+import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 
 export interface NotificationLifecycleDependencies {
   routingService: Pick<NotificationRoutingService, 'inspect' | 'reconcile'>;
+  stateStore?: Pick<GitHubNotificationMonitorStateStore, 'read'> &
+    Partial<Pick<GitHubNotificationMonitorStateStore, 'remove'>>;
 }
 
 function desiredState(context: AgentSystemLifecycleContext): NotificationRoutingDesiredState {
@@ -99,7 +102,7 @@ export default function createNotificationLifecycleContribution(
     async inspect(context) {
       const plan = await dependencies.routingService.inspect(desiredState(context));
       if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') return [];
-      return [
+      const routingFinding = [
         {
           code: plan.code,
           message: plan.message,
@@ -115,12 +118,71 @@ export default function createNotificationLifecycleContribution(
                 : ('drift' as const),
         },
       ];
+      if (plan.kind !== 'noop' || plan.code !== 'notification-routing-ready') {
+        return routingFinding;
+      }
+      if (!dependencies.stateStore) return routingFinding;
+      const state = await dependencies.stateStore.read(context.manifest.agent.id);
+      if (!state) {
+        return [
+          ...routingFinding,
+          {
+            code: 'github-notification-monitor-pending',
+            message: 'The GitHub notification monitor has not completed its first observation.',
+            status: 'warning' as const,
+          },
+        ];
+      }
+      if (state.workspaceDir !== context.workspaceDir) {
+        return [
+          ...routingFinding,
+          {
+            code: 'github-notification-state-scope-mismatch',
+            message: 'The GitHub notification monitor state belongs to another workspace.',
+            remediation: 'Correct the private monitor state before restarting the Gateway.',
+            status: 'blocked' as const,
+          },
+        ];
+      }
+      if (state.diagnosticCode) {
+        return [
+          ...routingFinding,
+          {
+            code: state.diagnosticCode,
+            message: 'The GitHub notification monitor is waiting after a value-free diagnostic.',
+            remediation: 'Review Gateway logs and the GitHub notification manifest declaration.',
+            status: 'warning' as const,
+          },
+        ];
+      }
+      return [
+        ...routingFinding,
+        {
+          code: 'github-notification-monitor-healthy',
+          message: 'The GitHub notification monitor has a successful read-only observation.',
+          status: 'healthy' as const,
+        },
+      ];
     },
     async reconcile(context) {
       try {
         const result = await dependencies.routingService.reconcile(desiredState(context));
+        const monitorStateRemoved =
+          !context.manifest.github?.notifications &&
+          dependencies.stateStore?.remove !== undefined &&
+          (await dependencies.stateStore.remove(context.manifest.agent.id));
         if (result.plan.kind === 'noop' && result.plan.code === 'notification-routing-disabled') {
-          return { outcomes: [] };
+          return {
+            outcomes: monitorStateRemoved
+              ? [
+                  {
+                    code: 'github-notification-monitor-state-removed',
+                    message: 'private GitHub notification monitor state',
+                    status: 'removed' as const,
+                  },
+                ]
+              : [],
+          };
         }
         const status =
           result.plan.kind === 'remove' || result.plan.kind === 'forget'
@@ -141,6 +203,15 @@ export default function createNotificationLifecycleContribution(
                 : result.plan.message,
               status,
             },
+            ...(monitorStateRemoved
+              ? [
+                  {
+                    code: 'github-notification-monitor-state-removed',
+                    message: 'private GitHub notification monitor state',
+                    status: 'removed' as const,
+                  },
+                ]
+              : []),
           ],
         };
       } catch (error) {

@@ -8,6 +8,8 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { githubNotificationChannel } from '../channels/github/channel.ts';
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
+import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
+import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
@@ -126,6 +128,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     readConfig,
     receiptStore: new NotificationRoutingReceiptStore(privateStateRoot),
   });
+  const notificationMonitorStateStore = new GitHubNotificationMonitorStateStore({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+  });
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -139,7 +145,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
-    createNotificationLifecycleContribution({ routingService: notificationRoutingService }),
+    createNotificationLifecycleContribution({
+      routingService: notificationRoutingService,
+      stateStore: notificationMonitorStateStore,
+    }),
   ]);
   const manifestService = new AgentManifestService({
     getConfig: () => api.runtime.config.current(),
@@ -179,8 +188,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     credentialManager,
     lifecycleRegistry,
   });
+  const notificationMonitorService = new GitHubNotificationMonitorService({
+    accountClient: githubCapability.accountClient,
+    logger,
+    manifestService,
+    readConfig,
+    routingService: notificationRoutingService,
+    stateStore: notificationMonitorStateStore,
+  });
 
   api.registerChannel({ plugin: githubNotificationChannel });
+  if (api.registrationMode === undefined || api.registrationMode === 'full') {
+    api.registerService(notificationMonitorService.pluginService());
+  }
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService, toolApprovals);
   registerAgentCommandSecurity(api, {

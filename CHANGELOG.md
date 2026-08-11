@@ -1,6 +1,6 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
-- Added the local-only `agent-system-github` channel and receipt-backed manifest routing foundation for future GitHub assignments.
+- Added the local-only `agent-system-github` channel, receipt-backed routing, and an observe-only assignment monitor with identity, repository, permission, actor, deduplication, backoff, and private-state checks.
 
 ## v0.2.1 - [August 11, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.1)
 

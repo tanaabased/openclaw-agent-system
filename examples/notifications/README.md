@@ -1,6 +1,6 @@
 # GitHub Notification Routing Example
 
-This scenario runs the prepared Agent System package in the default Gateway and verifies the Day Zero notification channel contract: manifest validation, exact account-scoped routing installation, idempotency, live Gateway config convergence, and owned cleanup. It does not contact GitHub or run an agent turn.
+This scenario runs the prepared Agent System package in the default Gateway and verifies the notification channel contract: manifest validation, exact account-scoped routing installation, idempotency, one authenticated observe-only GitHub baseline, live Gateway config convergence, and owned cleanup. It does not run an agent turn or write to GitHub.
 
 ## Setup
 
@@ -38,6 +38,7 @@ echo "$!" > "$TMPDIR/gateway.pid"
 
 # should install the agent and exact notification route through agent system
 cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system credentials set op --from-env
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 ```
@@ -52,9 +53,21 @@ openclaw channels status --json | grep -F 'agent-system-github' | grep -F 'notif
 openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled' | grep -F 'true'
 openclaw agents bindings --json | grep -F 'agent-system-github' | grep -F 'notification-data'
 
-# should report healthy routing and keep repeated installation unchanged
+# should complete one authenticated observe-only baseline without a local agent turn
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "github-notifications" and .status == "healthy")'
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
+  if openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "github-notifications" and .code == "github-notification-monitor-healthy")'; then
+    break
+  fi
+  if test "$attempt" = 18; then
+    tail -n 100 "$TMPDIR/gateway.log"
+    exit 1
+  fi
+  sleep 5
+done
+
+# should keep repeated notification installation unchanged
+cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "unchanged")'
 
 # should remove only the owned route when notifications leave the manifest
