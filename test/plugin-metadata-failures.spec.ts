@@ -64,6 +64,31 @@ const manifest: PluginManifest = {
     { name: 'agent-system', cliCommand: 'agent-system' },
     { name: 'as', cliCommand: 'as' },
   ],
+  channels: ['agent-system-github'],
+  channelConfigs: {
+    'agent-system-github': {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          accounts: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+              },
+              required: ['enabled'],
+            },
+          },
+        },
+        required: ['accounts'],
+      },
+    },
+  },
   contracts: {
     tools: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
     trustedToolPolicies: ['agent-system.git', 'agent-system.git-worktree', 'agent-system.github'],
@@ -107,6 +132,8 @@ describe('utils/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
+        'channel-contract',
+        'channel-config-contract',
         'tool-contract',
         'tool-policy-contract',
         'skill-contract',
@@ -145,6 +172,33 @@ describe('utils/plugin-metadata-failures', () => {
         {
           code: 'supported-os',
           message: 'npm package must support exactly macOS and Linux',
+        },
+      ],
+    );
+  });
+
+  it('should report channel declaration and configuration drift', () => {
+    assert.deepEqual(
+      pluginMetadataFailures(packageMetadata, {
+        ...manifest,
+        channels: ['other-channel'],
+        channelConfigs: {
+          'agent-system-github': {
+            schema: {
+              type: 'object',
+              additionalProperties: true,
+            },
+          },
+        },
+      }),
+      [
+        {
+          code: 'channel-contract',
+          message: 'plugin must declare exactly the registered Agent System channels',
+        },
+        {
+          code: 'channel-config-contract',
+          message: 'plugin must declare the exact Agent System channel configuration schema',
         },
       ],
     );

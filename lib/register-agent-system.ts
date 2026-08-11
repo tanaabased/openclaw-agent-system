@@ -126,7 +126,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return api.runtime.config.mutateConfigFile(params);
     },
     readConfig,
-    receiptStore: new NotificationRoutingReceiptStore(privateStateRoot),
+    receiptStore: new NotificationRoutingReceiptStore({
+      ...(currentUid === undefined ? {} : { currentUid }),
+      ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+    }),
   });
   const notificationMonitorStateStore = new GitHubNotificationMonitorStateStore({
     ...(currentUid === undefined ? {} : { currentUid }),
