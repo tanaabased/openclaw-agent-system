@@ -178,6 +178,7 @@ export interface AgentSystemCliToolDefinition<
       input: Static<TParameters>,
       configuration: TResolvedConfiguration,
       scope: {
+        source: AgentSystemToolScope['source'];
         workspaceDir: string;
       },
     ): Promise<readonly string[]> | readonly string[];

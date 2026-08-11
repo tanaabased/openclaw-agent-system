@@ -291,9 +291,11 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
       },
       timeoutMs: 30_000,
       admittedWorkingDirectories(_input, configuration, scope) {
-        return configuration.worktrees
-          ? [resolveGitWorktreeLayout(scope.workspaceDir, configuration.worktrees).worktreeRoot]
-          : [];
+        if (!configuration.worktrees) return [];
+        const layout = resolveGitWorktreeLayout(scope.workspaceDir, configuration.worktrees);
+        return scope.source === 'command'
+          ? [layout.worktreeRoot, ...Object.values(layout.localRepositories)]
+          : [layout.worktreeRoot];
       },
       workingDirectory(input, _configuration, scope) {
         return scope.source === 'tool' ? (input.cwd ?? '.') : scope.commandWorkingDirectory;

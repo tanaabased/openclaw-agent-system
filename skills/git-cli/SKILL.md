@@ -52,7 +52,7 @@ Use `agent_system_git` for working-tree and repository operations when the activ
 
 ## Inputs
 
-Pass ordinary noninteractive `git` arguments in `argv`. Native tool calls may provide a `cwd` inside the agent workspace or configured worktree root; direct shim calls preserve an admitted caller directory. Use `stdin` only for ordinary command input below 64 KiB.
+Pass ordinary noninteractive `git` arguments in `argv`. Native tool calls may provide a `cwd` inside the agent workspace or configured worktree root. Trusted operator commands may also preserve a caller directory inside a local repository declared in `git.worktrees.repositories.local`. Use `stdin` only for ordinary command input below 64 KiB.
 
 ```json
 { "argv": ["status", "--short"], "cwd": "project" }
@@ -96,4 +96,4 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 - Confirm the tool used the active agent rather than a model-supplied identity.
 - Confirm the effective author and committer match the manifest when creating a commit.
 - When signing is configured, confirm created commits and tags are signed and use local trust claims only when an allowed-signers file verifies them.
-- Confirm the selected working directory stays inside the bound agent workspace or configured worktree root.
+- Confirm native-tool working directories stay inside the bound agent workspace or configured worktree root. Operator commands may additionally use declared local repositories.
