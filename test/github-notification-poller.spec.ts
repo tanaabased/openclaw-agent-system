@@ -9,10 +9,13 @@ import {
   type default as GitHubWorkEventClient,
 } from '../channels/github/lib/work-event-client.ts';
 import type { GitHubRepositoryPermission } from '../channels/github/utils/work-item.ts';
+import {
+  notificationAccount as account,
+  notificationActor as actor,
+  notificationRepository as repository,
+} from './github-notification-fixtures.ts';
 
 const baselineAt = Date.parse('2026-08-11T12:00:00.000Z');
-const account = { login: 'tanaabot', nodeId: 'U_agent', type: 'User' };
-const actor = { login: 'pirog', nodeId: 'U_actor', type: 'User' };
 const candidate = {
   databaseId: 7,
   itemType: 'issue' as const,
@@ -20,16 +23,6 @@ const candidate = {
   number: 12,
   repositoryPath: '/repos/tanaabased/example',
   updatedAt: '2026-08-11T12:05:00.000Z',
-};
-const repository = {
-  archived: false,
-  cloneUrl: 'https://github.com/tanaabased/example.git',
-  databaseId: 3,
-  defaultBranch: 'main',
-  disabled: false,
-  name: 'example',
-  nodeId: 'R_repo',
-  owner: { login: 'tanaabased', nodeId: 'O_owner', type: 'Organization' },
 };
 const item = {
   assignees: [account],

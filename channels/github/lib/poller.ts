@@ -47,7 +47,6 @@ export interface GitHubNotificationPollResult {
 }
 
 export interface GitHubNotificationTransition {
-  item: GitHubNotificationItemState;
   itemKey: string;
   kind: 'admitted' | 'retired';
 }
@@ -234,7 +233,6 @@ export async function pollGitHubNotifications(
             reasonCode: reason,
           };
           transitions.push({
-            item: structuredClone(state.items[key]),
             itemKey: key,
             kind: 'retired',
           });
@@ -257,7 +255,6 @@ export async function pollGitHubNotifications(
             reasonCode: 'github-notification-resource-missing',
           };
           transitions.push({
-            item: structuredClone(state.items[key]),
             itemKey: key,
             kind: 'retired',
           });
@@ -338,7 +335,7 @@ export async function pollGitHubNotifications(
       );
       state.items[key] = nextItem;
       if (admission.disposition === 'approved') {
-        transitions.push({ item: structuredClone(nextItem), itemKey: key, kind: 'admitted' });
+        transitions.push({ itemKey: key, kind: 'admitted' });
       }
       counts[admission.disposition] += 1;
     }

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../lib/github-notification-assignment-orchestrator.ts';
-import type {
-  GitHubNotificationItemState,
-  GitHubNotificationMonitorState,
-} from '../channels/github/utils/monitor-state.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
+import {
+  notificationItemKey as itemKey,
+  notificationMonitorState as monitorState,
+} from './github-notification-fixtures.ts';
 
-const itemKey = 'github:R_repo:12';
 const worktree = { branch: 'issue-7-branch', path: '/workspace/worktrees/issue-7' };
 const readySession = { key: 'agent:tanaabot:github:item', status: 'ready' as const };
 const activeSession = {
@@ -16,48 +16,6 @@ const activeSession = {
   key: readySession.key,
   status: 'active' as const,
 };
-
-function item(): GitHubNotificationItemState {
-  return {
-    assignmentActorNodeId: 'U_actor',
-    assignmentEventNodeId: 'EV_assignment',
-    delivery: {
-      assignmentEventId: 'EV_assignment',
-      briefingIdempotencyKey: 'EV_assignment',
-      schemaVersion: 1,
-      stage: 'admitted',
-      workId: 'issue-7',
-    },
-    disposition: 'approved',
-    itemDatabaseId: 7,
-    itemNodeId: 'I_item',
-    itemType: 'issue',
-    lastObservedAt: 1,
-    number: 12,
-    reasonCode: 'assignment-approved',
-    repositoryCloneUrl: 'https://github.com/tanaabased/example.git',
-    repositoryDatabaseId: 3,
-    repositoryDefaultBranch: 'main',
-    repositoryName: 'example',
-    repositoryNodeId: 'R_repo',
-    repositoryOwner: 'tanaabased',
-    repositoryOwnerNodeId: 'O_owner',
-    repositoryPermission: 'write',
-  };
-}
-
-function monitorState(): GitHubNotificationMonitorState {
-  return {
-    agentId: 'tanaabot',
-    baselineAt: 1,
-    baselineItemNodeIds: [],
-    failureCount: 0,
-    items: { [itemKey]: item() },
-    processedEventNodeIds: ['EV_assignment'],
-    schemaVersion: 2,
-    workspaceDir: '/workspace',
-  };
-}
 
 function memoryStore(initial = monitorState()) {
   let state = structuredClone(initial);

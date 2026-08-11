@@ -127,4 +127,18 @@ describe('channels/github/lib/routing-receipt-store', () => {
       /receipt exceeds its size limit/u,
     );
   });
+
+  it('should reject invalid utf-8 receipt state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-notification-store-'));
+    const agentDir = join(root, 'data');
+    await mkdir(agentDir, { mode: 0o700 });
+    await writeFile(join(agentDir, 'notification-routing.json'), Buffer.from([0xc3, 0x28]), {
+      mode: 0o600,
+    });
+
+    await assert.rejects(
+      new NotificationRoutingReceiptStore({ rootDir: root }).read('data'),
+      /receipt is invalid/u,
+    );
+  });
 });

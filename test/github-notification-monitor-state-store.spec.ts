@@ -4,36 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
-import { createGitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-
-function approvedItem() {
-  return {
-    assignmentActorNodeId: 'U_actor',
-    assignmentEventNodeId: 'EV_assignment',
-    delivery: {
-      assignmentEventId: 'EV_assignment',
-      briefingIdempotencyKey: 'EV_assignment',
-      schemaVersion: 1 as const,
-      stage: 'admitted' as const,
-      workId: 'issue-7',
-    },
-    disposition: 'approved' as const,
-    itemDatabaseId: 7,
-    itemNodeId: 'I_item',
-    itemType: 'issue' as const,
-    lastObservedAt: 2,
-    number: 12,
-    reasonCode: 'assignment-approved',
-    repositoryCloneUrl: 'https://github.com/tanaabased/example.git',
-    repositoryDatabaseId: 3,
-    repositoryDefaultBranch: 'main',
-    repositoryName: 'example',
-    repositoryNodeId: 'R_repo',
-    repositoryOwner: 'tanaabased',
-    repositoryOwnerNodeId: 'O_owner',
-    repositoryPermission: 'write' as const,
-  };
-}
+import {
+  approvedNotificationItem,
+  legacyNotificationMonitorState,
+  notificationItemKey,
+  notificationMonitorState,
+} from './github-notification-fixtures.ts';
 
 describe('channels/github/lib/monitor-state-store', () => {
   it('should atomically persist private value-free state', async () => {
@@ -44,11 +20,7 @@ describe('channels/github/lib/monitor-state-store', () => {
         currentUid: process.getuid?.(),
         rootDir,
       });
-      const state = createGitHubNotificationMonitorState('tanaabot', '/workspace');
-      state.accountLogin = 'tanaabot';
-      state.accountNodeId = 'U_tanaabot';
-      state.baselineAt = 1;
-      state.items['github:R_repo:12'] = approvedItem();
+      const state = notificationMonitorState();
       await store.write(state);
 
       assert.deepEqual(await store.read('tanaabot'), state);
@@ -66,9 +38,9 @@ describe('channels/github/lib/monitor-state-store', () => {
           ...state,
           items: {
             ...state.items,
-            'github:R_repo:12': {
-              ...approvedItem(),
-              delivery: { ...approvedItem().delivery, workId: 'issue-8' },
+            [notificationItemKey]: {
+              ...approvedNotificationItem(),
+              delivery: { ...approvedNotificationItem().delivery!, workId: 'issue-8' },
             },
           },
         }),
@@ -87,7 +59,7 @@ describe('channels/github/lib/monitor-state-store', () => {
     const rootDir = join(temporaryDirectory, 'state');
     try {
       const store = new GitHubNotificationMonitorStateStore({ rootDir });
-      await store.write(createGitHubNotificationMonitorState('tanaabot', '/workspace'));
+      await store.write(notificationMonitorState());
       const statePath = join(rootDir, 'tanaabot/channels/github-notifications.json');
       await rm(statePath);
       await symlink('/etc/passwd', statePath);
@@ -106,35 +78,8 @@ describe('channels/github/lib/monitor-state-store', () => {
       await writeFile(
         join(stateDirectory, 'github-notifications.json'),
         `${JSON.stringify({
-          accountLogin: 'tanaabot',
-          accountNodeId: 'U_tanaabot',
-          agentId: 'tanaabot',
-          baselineAt: 1,
+          ...legacyNotificationMonitorState(),
           baselineItemNodeIds: ['I_baseline'],
-          failureCount: 0,
-          items: {
-            'github:R_repo:12': {
-              assignmentActorNodeId: 'U_actor',
-              assignmentEventNodeId: 'EV_assignment',
-              disposition: 'approved',
-              itemNodeId: 'I_item',
-              itemType: 'issue',
-              lastObservedAt: 2,
-              number: 12,
-              reasonCode: 'assignment-approved',
-              repositoryCloneUrl: 'https://github.com/tanaabased/example.git',
-              repositoryDatabaseId: 3,
-              repositoryDefaultBranch: 'main',
-              repositoryName: 'example',
-              repositoryNodeId: 'R_repo',
-              repositoryOwner: 'tanaabased',
-              repositoryOwnerNodeId: 'O_owner',
-              repositoryPermission: 'write',
-            },
-          },
-          processedEventNodeIds: ['EV_assignment'],
-          schemaVersion: 1,
-          workspaceDir: '/workspace',
         })}\n`,
         { mode: 0o600 },
       );

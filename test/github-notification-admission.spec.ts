@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 
 import { admitGitHubAssignment } from '../channels/github/utils/admit-assignment.ts';
+import {
+  notificationAccount as account,
+  notificationActor as actor,
+  notificationOwner as owner,
+  notificationRepository,
+} from './github-notification-fixtures.ts';
 
-const account = { login: 'tanaabot', nodeId: 'U_agent', type: 'User' };
-const actor = { login: 'pirog', nodeId: 'U_actor', type: 'User' };
-const owner = { login: 'tanaabased', nodeId: 'O_owner', type: 'Organization' };
 const event = {
   actor,
   assignee: account,
@@ -37,14 +40,8 @@ const base = {
   permission: 'write' as const,
   processedEventNodeIds: new Set<string>(),
   repository: {
-    archived: false,
-    cloneUrl: 'https://github.com/tanaabased/example.git',
+    ...notificationRepository,
     databaseId: 4,
-    defaultBranch: 'main',
-    disabled: false,
-    name: 'example',
-    nodeId: 'R_repo',
-    owner,
   },
 };
 
