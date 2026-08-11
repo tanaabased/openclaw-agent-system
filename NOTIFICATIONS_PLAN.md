@@ -9,10 +9,10 @@ describes intended behavior, not configuration accepted by the current release.
 
 Build this as three cooperating pieces rather than one privileged poller:
 
-1. a GitHub assignment monitor discovers repository events and verifies their
-   authority;
-2. the existing Git worktree capability prepares the declared repository work
-   area;
+1. a GitHub assignment monitor discovers assigned work and verifies its actor,
+   repository, and agent authority;
+2. the existing Git worktree capability prepares the authorized repository work
+   area from canonical GitHub metadata;
 3. an `agent-system-github` inbound channel routes the accepted event into one
    deterministic OpenClaw session.
 
@@ -32,8 +32,9 @@ local paths, failed attempts, or sensitive output.
 - Do not use GitHub's Notifications REST endpoint as the authoritative event
   stream. Its notification reason can change and then remain sticky, and the
   endpoint does not support fine-grained personal access tokens or GitHub App
-  tokens. Use repository-scoped issue assignment events and canonical issue or
-  pull request state instead. The product may still be called notifications.
+  tokens. Use authenticated account-wide assignment search for discovery, then
+  targeted assignment events and canonical issue or pull request state for
+  admission. The product may still be called notifications.
 - Treat pull requests as issue-shaped only for assignment state. GitHub's Issues
   API returns pull requests too, but pull-request review requests are a distinct
   workflow and should be added separately.
@@ -55,16 +56,19 @@ local paths, failed attempts, or sensitive output.
 
 For each configured agent, the Gateway will:
 
-- poll only explicitly declared GitHub repositories, with five minutes as the
-  default interval;
+- poll GitHub for work assigned to the authenticated agent, with five minutes
+  as the default interval;
 - verify the token's GitHub identity on every polling cycle before consuming
   repository data;
 - establish a baseline on first activation without starting work for every
   existing assignment;
 - detect a new issue or pull request assignment to the authenticated agent;
 - prove that the assignment event came from an approved immutable GitHub actor;
-- prepare one deterministic managed worktree from a declared repository and
-  base ref;
+- require the agent to have at least write permission on the canonical
+  repository and optionally constrain repository owners by immutable id;
+- derive the worktree repository id, clone URL, and base ref from canonical
+  GitHub metadata rather than a per-repository manifest entry;
+- prepare one deterministic managed worktree;
 - create or reuse one deterministic issue-scoped OpenClaw session;
 - run one bounded, read-only briefing turn that summarizes the work item and
   identifies initial questions or risks;
@@ -81,7 +85,8 @@ under normal Agent System tool policy and approval rules.
 ## Non-goals for the First MVP
 
 - GitHub webhooks or GitHub App installation management
-- organization-wide or undeclared-repository discovery
+- per-repository manifest enumeration
+- treating organization membership alone as repository authorization
 - automatic ingestion of arbitrary issue bodies or comments as instructions
 - review-request, mention, team, project, discussion, or workflow notifications
 - automatic issue, branch, commit, push, or pull request creation
@@ -117,11 +122,11 @@ github:
     approved-actors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
-    repositories:
-      tanaabased/openclaw-agent-system:
-        repository-id: agent-system
-        clone-url: https://github.com/tanaabased/openclaw-agent-system.git
-        base-ref: origin/main
+    repository-policy:
+      minimum-permission: write
+      allowed-owners:
+        - login: tanaabased
+          node-id: O_kgDOB7x6Qw
 ```
 
 Configuration rules:
@@ -129,14 +134,32 @@ Configuration rules:
 - The presence of `github.notifications` enables the monitor for that agent.
 - `interval-minutes` defaults to `5`, has a minimum of `1`, and is still subject
   to provider rate-limit and backoff instructions.
-- At least one `approved-actors` entry and one repository are required.
+- At least one `approved-actors` entry is required.
 - Actor authorization uses the opaque `node-id`; `login` is required for human
   review and drift diagnostics but is not the authorization key.
-- Repository keys are normalized case-insensitively but preserved for display.
-- Each remote repository maps to an existing Agent System worktree
-  `repository-id`, an explicit supported clone URL, and a remote base ref.
-- The event may select only a repository already present in this mapping. It
-  cannot supply a clone URL, base ref, local path, executable, or agent id.
+- `repository-policy.minimum-permission` defaults to `write`. The MVP does not
+  permit `read` or `triage`, because the expected workflow must be able to push
+  a branch and open a pull request. GitHub's legacy `write` result includes the
+  `maintain` role; `admin` also satisfies the gate.
+- `allowed-owners` is optional. When present, the repository owner's opaque
+  user or organization node id must match. When absent, any repository is
+  eligible if the verified agent has write permission and the assignment actor
+  is approved.
+- `allowed-owners` restricts repository ownership; it does not authorize every
+  member of an allowed organization to instruct the agent. Assignment and
+  comment authority remains the exact `approved-actors` user-id set. If that
+  list later becomes burdensome, add approved GitHub teams with explicit member
+  lookup rather than trusting an entire organization by default.
+- Agent organization membership is not an admission shortcut. Membership does
+  not imply access to every organization repository, excludes valid outside
+  collaborators, and can require additional organization-member scopes. The
+  effective repository permission is both more direct and easier to revoke.
+- The provider response, never the event or model, supplies the canonical
+  repository node/database id, owner identity, supported clone URL, and default
+  branch. Agent System derives a stable internal repository id such as
+  `github-<database-id>` and an `origin/<default-branch>` base ref.
+- The event and model cannot supply a clone URL, base ref, local path,
+  executable, repository id, or agent id.
 - The authenticated agent's GitHub node id is resolved from `/user` at poll
   time. Assignment targets must match that verified identity, not only a login
   string from the event.
@@ -145,6 +168,80 @@ Configuration rules:
 
 No cleanup options are proposed initially. The safe behavior is fixed:
 retire the session association and retain the worktree.
+
+## Manifest-to-OpenClaw Reconciliation
+
+The workspace manifest remains the source of desired per-agent behavior, but a
+channel cannot be entirely workspace-local. OpenClaw routes inbound messages
+through global channel accounts and `bindings`, so Agent System must project a
+small, non-secret routing record into the active OpenClaw configuration.
+
+For an agent named `tanaabot`, the intended global projection is semantically:
+
+```json5
+{
+  channels: {
+    'agent-system-github': {
+      accounts: {
+        tanaabot: { enabled: true },
+      },
+    },
+  },
+  bindings: [
+    {
+      agentId: 'tanaabot',
+      match: {
+        channel: 'agent-system-github',
+        accountId: 'tanaabot',
+      },
+    },
+  ],
+}
+```
+
+The channel account id equals the normalized Agent System agent id. Each work
+item is a distinct channel conversation beneath that account. The account-level
+binding therefore selects the correct agent and workspace, while the work-item
+conversation id selects the deterministic session.
+
+This global projection contains only activation and routing facts. Keep the
+GitHub token binding, poll interval, approved actors, repository-owner policy,
+work state, and GitHub content in the owning workspace manifest or private
+Agent System state. Never duplicate those values under `channels.*`.
+
+Lifecycle ownership:
+
+- `validate` checks the manifest projection without reading or mutating global
+  OpenClaw state.
+- `doctor` reads the manifest, global channel account, routing bindings, and an
+  Agent System ownership receipt. It reports missing, duplicate, conflicting,
+  or stale projections without repairing them.
+- `install` is the only Agent System command that creates or repairs the channel
+  account and exact account-scoped binding. It runs after agent registration,
+  re-reads the config, and verifies that OpenClaw resolves this channel account
+  to the same agent and workspace.
+- Removing `github.notifications` makes the desired state disabled. A later
+  `install` removes only the exact channel account and binding recorded in the
+  private ownership receipt. If either target was changed or is now owned by
+  another agent, installation stops with a conflict instead of replacing it.
+- The runtime monitor stays stopped unless the loaded manifest, channel account,
+  account-scoped binding, agent id, and workspace all agree. OpenClaw's fallback
+  to the default agent must never activate this channel.
+
+Prefer supported OpenClaw writers over editing `openclaw.json` directly. Phase
+0 should use the credentialless channel setup path for the account if the pinned
+SDK supports it, and `openclaw agents bind --agent <agent-id> --bind
+agent-system-github:<agent-id>` for routing. If a setup hook cannot create an
+activation-only account, use `config.get` plus a hash-guarded `config.patch` for
+that exact channel-account path; continue to use `agents bind` and `unbind` for
+the shared bindings array so unrelated routes are preserved.
+
+OpenClaw hot-applies `bindings` and restarts only the affected channel for
+`channels.*` changes under the default hybrid reload mode, so routine install
+does not need to restart the whole Gateway. If reload watching is disabled,
+installation should report that a manual Gateway restart is still required.
+The exact JSON shape and public writer sequence remain Phase 0 SDK proof, but
+the ownership, fail-closed routing, and no-secret-duplication rules are fixed.
 
 ## Trust and Prompt-Injection Model
 
@@ -155,7 +252,9 @@ of a GitHub object a trusted instruction.
 
 - configured agent id and workspace
 - verified GitHub account node id and login
-- configured repository mapping
+- verified global channel account and account-scoped agent binding
+- canonical repository and owner ids, effective agent permission, supported
+  clone URL, and default branch returned by GitHub
 - assignment or unassignment event id, actor node id, assignee node id, and
   timestamp returned by GitHub
 - worktree result returned by the existing Agent System service
@@ -182,14 +281,18 @@ repository permissions remain the final remote authorization boundary.
 
 An assignment is accepted only when all of these are true:
 
-1. the monitor is bound to a loaded manifest whose agent id matches OpenClaw;
+1. the monitor has an exact account-scoped OpenClaw binding from
+   `agent-system-github:<agent-id>` to the loaded manifest's agent and workspace;
 2. the GitHub token resolves and `/user` matches `github.username`;
-3. the repository is an exact configured repository;
-4. the item is currently assigned to the verified GitHub agent identity;
-5. a new `assigned` event targets that identity;
-6. the assigner's opaque node id matches `approved-actors`;
-7. the event is newer than the initial baseline and has not been processed;
-8. the work item is not already active through an issue-to-pull-request
+3. GitHub's canonical repository response is active and its owner satisfies any
+   configured `allowed-owners` constraint;
+4. GitHub reports that the verified agent has at least the configured repository
+   permission, defaulting to `write`;
+5. the item is currently assigned to the verified GitHub agent identity;
+6. a new `assigned` event targets that identity;
+7. the assigner's opaque node id matches `approved-actors`;
+8. the event is newer than the initial baseline and has not been processed;
+9. the work item is not already active through an issue-to-pull-request
    correlation.
 
 An unassignment is acted on when the canonical item state no longer contains
@@ -201,16 +304,27 @@ Agent System are ignored to prevent feedback loops.
 
 ## Polling and State
 
-Use repository-scoped issue events plus targeted issue or pull request reads.
-Do not pass arbitrary URLs or GraphQL documents from the manifest or model.
-Keep the provider client typed and transport-neutral; an initial implementation
-may reuse the existing fixed `gh api` child environment, while allowing a later
-direct HTTP transport without changing the workflow contract.
+Use an authenticated account-wide issue and pull-request search for discovery,
+with a bounded overlap on `updated` time and `assignee:<verified-login>`. Search
+results are candidates, not authority. For each new candidate, fetch the
+canonical repository, effective agent permission, item state, and targeted
+assignment events before admission. Recheck every active work item directly so
+an unassignment is detected even though the item disappears from the assignee
+search result.
+
+The GitHub Notifications REST endpoint may be an optional discovery accelerator
+for compatible credentials, but it is never required and never authorizes a
+transition. Detect and diagnose search-result truncation rather than silently
+skipping work. Do not pass arbitrary URLs, search strings, or GraphQL documents
+from the manifest or model. Keep the provider client typed and
+transport-neutral; an initial implementation may reuse the existing fixed `gh
+api` child environment, while allowing a later direct HTTP transport without
+changing the workflow contract.
 
 Each agent gets private durable state beneath the plugin state directory. Store
 only non-secret facts:
 
-- repository identity and poll cursor or high-water mark
+- repository identity, verified permission, and poll high-water mark
 - conditional-request metadata when supported
 - processed event node ids
 - active and retired work-item records
@@ -223,8 +337,9 @@ output in the monitor state.
 Polling behavior:
 
 - no overlapping poll for the same agent;
-- bounded concurrency across repositories;
-- a small overlap window plus event-id deduplication to avoid cursor gaps;
+- bounded concurrency across discovered and active work items;
+- a small search overlap window plus event-id deduplication to avoid cursor
+  gaps;
 - jitter around the configured interval;
 - exponential backoff for transient failures;
 - honor GitHub rate-limit and retry headers;
@@ -232,9 +347,9 @@ Polling behavior:
 - make every transition idempotent so restart and retry cannot duplicate a
   worktree, session, briefing, or GitHub write.
 
-On first enablement, record the current event boundary and assignment snapshot
-without creating sessions. A future explicit replay command may opt into older
-assignments, but replay is not implicit.
+On first enablement, record the current assigned-item snapshot and search
+boundary without creating sessions. A future explicit replay command may opt
+into older assignments, but replay is not implicit.
 
 ## Work-item Identity and Lifecycle
 
@@ -254,8 +369,10 @@ gh-<owner>-<repo>-<number>-<title-slug>
 ```
 
 Pass that work id to the existing worktree service and use the returned branch
-and path as authoritative. Do not predict the worktree service's digest or
-reimplement its naming rules.
+and path as authoritative. Pass the internally derived
+`github-<repository-database-id>`, provider-selected canonical clone URL, and
+`origin/<default-branch>` rather than requiring a manifest repository entry. Do
+not predict the worktree service's digest or reimplement its naming rules.
 
 ```mermaid
 stateDiagram-v2
@@ -282,7 +399,9 @@ turning the whole package into a channel-only entrypoint.
 
 Map one GitHub work item to one stable channel conversation id. The channel
 inbound pipeline should create or reuse the corresponding agent session and
-record origin metadata. The initial inbound event contains:
+record origin metadata. The inbound route uses the manifest agent id as its
+channel account id; delivery fails closed if the exact global account binding is
+missing or selects another agent. The initial inbound event contains:
 
 - repository, item type, number, title, URL, labels, and milestone summary;
 - assigner identity and assignment time;
@@ -344,15 +463,23 @@ polling.
   cwd. Record the fallback contract if it does not.
 - Determine the supported retirement/archive seam. Keep logical retirement if
   native archive is unavailable.
-- Prove that Agent System can own per-agent channel configuration without
-  duplicating secrets or repository lists under global `channels.*`. If the
-  platform requires a global channel entry, keep it to a non-secret activation
-  stub or pursue an upstream SDK contract instead of duplicating agent state.
+- Finalize an activation-only multi-account channel schema whose account id is
+  the Agent System agent id.
+- Add a notifications lifecycle contribution that always participates so
+  `validate`, `doctor`, and `install` can detect both enabled state and removal.
+- Prove supported creation and removal of the global channel account plus exact
+  account-scoped binding without duplicating secrets or notification policy
+  under `channels.*`.
+- Record a private ownership receipt, reject a binding owned by another agent,
+  preserve unrelated accounts and bindings, and verify the post-install route.
+- Prove channel and binding hot reload under the default Gateway mode and report
+  the manual-restart case when reload is disabled.
 - Finalize the strict `github.notifications` schema and static plugin manifest
   channel metadata.
 
 Exit criteria: a direct unit or injected-runtime test proves channel
-registration, one synthetic session route, local-only delivery, and cleanup.
+registration, install/doctor reconciliation, one synthetic session route,
+local-only delivery, fail-closed binding mismatch, and owned cleanup.
 
 ### Phase 1: Read-only Monitor and Trust Core
 
@@ -361,8 +488,12 @@ Goal: discover and classify events without creating sessions or worktrees.
 - Add manifest parsing and normalization for `github.notifications`.
 - Add a typed GitHub work-event client with fixed endpoints and bounded output.
 - Verify the authenticated agent's login and node id per polling cycle.
-- Add repository event reconciliation, baseline, overlap, cursor, dedupe,
-  backoff, and rate-limit handling.
+- Add account-wide assigned-item discovery, baseline, overlap, pagination-limit
+  diagnostics, dedupe, backoff, and rate-limit handling.
+- Fetch canonical repository identity, owner, clone/default-branch metadata, and
+  effective agent permission before fetching untrusted issue content.
+- Recheck active items directly for unassignment, permission loss, archival,
+  transfer, or deletion.
 - Add immutable actor admission and self-event suppression.
 - Add a private atomic state store with symlink and permission checks.
 - Register one long-lived Gateway plugin service with clean abort/stop behavior.
@@ -371,8 +502,9 @@ Goal: discover and classify events without creating sessions or worktrees.
 - Run in observe-only mode in the owning Leia scenario.
 
 Exit criteria: approved, rejected, duplicate, assignment, unassignment, first
-baseline, restart, pagination, and transient-failure cases are deterministic
-under fake GitHub responses and no local work is created.
+baseline, repository-permission, owner-policy, search truncation, restart,
+pagination, and transient-failure cases are deterministic under fake GitHub
+responses and no local work is created.
 
 ### Phase 2: Assignment to Worktree and Briefing Session
 
@@ -382,7 +514,9 @@ Goal: complete the core MVP user experience.
   do not shell through the model-facing tool or impersonate a tool call.
 - Treat an admitted assignment as authority only for deterministic worktree
   preparation and one read-only briefing turn.
-- Prepare the declared repository and base ref with the deterministic work id.
+- Derive the internal repository id from the immutable GitHub repository id and
+  prepare the provider-authorized clone URL and default branch with the
+  deterministic work id.
 - Persist the returned branch and path.
 - Dispatch the sanitized assignment through the channel into its deterministic
   session.
@@ -463,6 +597,8 @@ Only after the polling MVP is stable:
 - signed GitHub webhooks or a GitHub App for lower latency and higher scale;
 - review-request events as a distinct pull-request-review workflow;
 - approved GitHub App actors;
+- approved GitHub teams as a narrower scalable actor policy than trusting every
+  member of an organization;
 - repository-specific actor sets;
 - explicit replay and cleanup commands;
 - richer issue hierarchy, project, dependency, and milestone context;
@@ -474,10 +610,13 @@ Only after the polling MVP is stable:
 
 - strict manifest schema, kebab-case keys, normalization, and unknown-key
   rejection;
-- token identity, agent assignee identity, repository, and actor gates;
+- global account and binding planning, conflict detection, ownership receipts,
+  idempotent install/removal, and post-install route verification;
+- token identity, agent assignee identity, repository permission, owner policy,
+  and actor gates;
 - issue versus pull request classification;
-- baseline, overlapping windows, pagination, event ordering, dedupe, and
-  restart recovery;
+- account-wide search baseline, overlapping windows, truncation, pagination,
+  event ordering, dedupe, and restart recovery;
 - assignment, reassignment, unassignment, closure, merge, and self-event state
   transitions;
 - private state permissions, atomic replacement, malformed state, and symlink
@@ -499,8 +638,12 @@ Use named approved, unapproved, and agent personas and a disposable fixture
 repository. Prove:
 
 - correct agent and workspace binding;
+- manifest install creates only the non-secret channel account and exact
+  account-scoped binding, and manifest removal removes only owned state;
 - approved assignment creates one worktree and session;
 - unauthorized assignment fails closed;
+- a repository with insufficient agent permission or a disallowed owner creates
+  neither a worktree nor a session;
 - issue content cannot trigger a mutating automated turn;
 - unassignment retires the route while preserving the worktree;
 - restart does not duplicate the workflow;
@@ -517,11 +660,12 @@ credentials from another entry.
 - `utils/manifest-types.ts` and `utils/parse-agent-manifest.ts`: add the strict
   external and internal notification projection.
 - `tools/github/`: own GitHub notification schema, typed provider access,
-  event normalization, and user documentation.
+  assigned-item discovery, repository permission/owner admission, event
+  normalization, and user documentation.
 - `tools/git/`: expose the existing worktree service to trusted internal
   orchestration without duplicating it.
-- `lib/`: own polling lifecycle, work-item orchestration, session routing,
-  state coordination, and diagnostics.
+- `lib/`: own global channel/binding lifecycle reconciliation, polling,
+  work-item orchestration, session routing, state coordination, and diagnostics.
 - `test/`: add flat behavior-focused Mocha specs.
 - `examples/`: add the installed assignment lifecycle only when implementation
   crosses the Gateway and session boundary.
@@ -554,9 +698,14 @@ scenario only in GitHub Actions.
 
 - [OpenClaw channel plugin guide](https://docs.openclaw.ai/plugins/sdk-channel-plugins)
 - [OpenClaw channel inbound API](https://docs.openclaw.ai/plugins/sdk-channel-inbound)
+- [OpenClaw channel routing and bindings](https://docs.openclaw.ai/channels/channel-routing)
+- [OpenClaw agent binding commands](https://docs.openclaw.ai/cli/agents)
+- [OpenClaw configuration and hot reload](https://docs.openclaw.ai/gateway/configuration)
 - [OpenClaw plugin entry points](https://docs.openclaw.ai/plugins/sdk-entrypoints)
 - [OpenClaw plugin manifest](https://docs.openclaw.ai/plugins/manifest)
 - [GitHub notification API limitations](https://docs.github.com/en/rest/activity/notifications)
+- [GitHub issue and pull request search](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/filtering-and-searching-issues-and-pull-requests)
+- [GitHub repository permission lookup](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
 - [GitHub issue event types](https://docs.github.com/en/rest/using-the-rest-api/issue-event-types)
 - [GitHub issue and pull request assignment behavior](https://docs.github.com/en/rest/issues/assignees)
 - [GitHub pull request and issue linking](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
@@ -567,13 +716,14 @@ scenario only in GitHub Actions.
    returned worktree branch without private APIs.
 2. Whether current OpenClaw supports binding the session cwd to the worktree;
    otherwise Agent System tools must receive the stored worktree path explicitly.
-3. Whether a local-only inbound channel can remain entirely per-agent-configured
-   or needs a minimal global activation stub.
+3. Whether the pinned SDK's credentialless setup hook can create the
+   activation-only channel account or whether install needs a hash-guarded
+   `config.patch` for that exact account path.
 4. Whether logical retirement is sufficient until OpenClaw exposes a supported
    plugin archive action.
 5. Whether fixed `gh api` calls are efficient enough for the first monitor or a
    direct HTTP transport is justified immediately.
 
-None of these questions should weaken the actor, repository, agent-identity,
-credential-timing, prompt-provenance, idempotency, or non-destructive cleanup
-boundaries above.
+None of these questions should weaken the actor, repository-permission,
+owner-policy, global-binding, agent-identity, credential-timing,
+prompt-provenance, idempotency, or non-destructive cleanup boundaries above.
