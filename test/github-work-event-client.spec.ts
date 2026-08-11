@@ -79,4 +79,29 @@ describe('channels/github/lib/work-event-client', () => {
       requests.every((argv) => argv.some((value) => value.startsWith('q=assignee:tanaabot'))),
     );
   });
+
+  it('should retain the canonical work-item database identity', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response({
+          assignees: [{ login: 'tanaabot', nodeId: 'U_agent', type: 'User' }],
+          databaseId: 42,
+          isPullRequest: false,
+          nodeId: 'I_item',
+          number: 7,
+          state: 'open',
+          updatedAt: '2026-08-11T12:00:00Z',
+        });
+      },
+    });
+
+    const item = await client.getItem('tanaabased', 'example', 7);
+
+    assert.equal(item.databaseId, 42);
+    assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
+    assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
+  });
 });

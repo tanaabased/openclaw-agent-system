@@ -33,6 +33,7 @@ const repository = {
 };
 const item = {
   assignees: [account],
+  databaseId: candidate.databaseId,
   itemType: 'issue' as const,
   nodeId: candidate.nodeId,
   number: candidate.number,
@@ -143,8 +144,20 @@ describe('channels/github/lib/poller', () => {
     });
 
     assert.equal(approved.approved, 1);
+    assert.deepEqual(
+      approved.transitions.map(({ itemKey, kind }) => ({ itemKey, kind })),
+      [{ itemKey: 'github:R_repo:12', kind: 'admitted' }],
+    );
+    assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
+      assignmentEventId: assignment.nodeId,
+      briefingIdempotencyKey: assignment.nodeId,
+      schemaVersion: 1,
+      stage: 'admitted',
+      workId: `issue-${candidate.databaseId}`,
+    });
     assert.equal(restarted.approved, 0);
     assert.equal(restarted.duplicates, 1);
+    assert.deepEqual(restarted.transitions, []);
     assert.deepEqual(restarted.state.processedEventNodeIds, [assignment.nodeId]);
     assert.equal(Object.values(restarted.state.items)[0]?.disposition, 'approved');
   });
@@ -175,8 +188,13 @@ describe('channels/github/lib/poller', () => {
     });
 
     assert.equal(retired.retired, 1);
+    assert.deepEqual(
+      retired.transitions.map(({ kind }) => kind),
+      ['retired'],
+    );
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
+    assert.equal(Object.values(retired.state.items)[0]?.delivery?.stage, 'retired');
   });
 
   it('should fail closed when discovery is truncated', async () => {
@@ -191,6 +209,30 @@ describe('channels/github/lib/poller', () => {
       (error: unknown) =>
         error instanceof GitHubNotificationPollError &&
         error.code === 'github-notification-search-truncated',
+    );
+  });
+
+  it('should reject conflicting canonical database identity', async () => {
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+
+    await assert.rejects(
+      pollGitHubNotifications({
+        agentId: 'tanaabot',
+        client: client({ candidates: [{ ...candidate, databaseId: candidate.databaseId + 1 }] }),
+        configuration,
+        now: baselineAt + 300_000,
+        state: baseline.state,
+        workspaceDir: '/workspace',
+      }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPollError &&
+        error.code === 'github-notification-item-identity-mismatch',
     );
   });
 

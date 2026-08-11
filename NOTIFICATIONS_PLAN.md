@@ -1,8 +1,7 @@
 # GitHub Notifications Plan
 
-Status: Phase 1 read-only monitor implemented; installed observe-only proof
-passed on pull-request CI; Phase 2A implementation in progress; Phases 2 through
-6 define feature completion
+Status: Phases 0 and 1 implemented; Phase 2A repository seams plus Phases 2B
+and 2C implemented; Phase 2A installed proof and Phases 2D through 6 remain
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
@@ -673,7 +672,7 @@ responses and no local work is created.
 
 Goal: complete the core MVP user experience.
 
-#### Phase 2A: Prove the Installed Session Contract
+#### Phase 2A: Prove the Installed Session Contract (repository seams implemented; installed proof pending)
 
 - Add a narrow session adapter around supported public OpenClaw surfaces rather
   than reading or rewriting session files directly.
@@ -700,7 +699,7 @@ carry the required per-turn tool restriction. Treat the supported shapes as
 evidence for the spike, not proof of installed behavior until the owning Leia
 scenario exercises them.
 
-#### Phase 2B: Expose Trusted Worktree Preparation
+#### Phase 2B: Expose Trusted Worktree Preparation (implemented)
 
 - Factor one narrow internal worktree-preparation service out of the existing
   Git capability assembly and share the same `GitWorktreeService`, layout,
@@ -720,7 +719,7 @@ scenario exercises them.
 - Return the existing service's canonical branch and path and dispose every
   invocation-scoped Git or SSH resource on success, failure, or cancellation.
 
-#### Phase 2C: Add a Recoverable Assignment State Machine
+#### Phase 2C: Add a Recoverable Assignment State Machine (implemented; production delivery disabled)
 
 - Extend the private monitor state with a versioned, value-free delivery record
   containing the stable work id, assignment event id, workflow stage, worktree

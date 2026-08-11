@@ -27,7 +27,8 @@ export interface GitHubNotificationMonitorServiceDependencies {
   random?: () => number;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   routingService: Pick<NotificationRoutingService, 'inspect'>;
-  stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
+  stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'> &
+    Partial<Pick<GitHubNotificationMonitorStateStore, 'load'>>;
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -115,7 +116,20 @@ export default class GitHubNotificationMonitorService {
       if (loaded.status !== 'loaded' || !loaded.manifest.github?.notifications) return;
       workspaceDir = loaded.scope.workspaceDir;
       const now = (this.#dependencies.clock ?? Date.now)();
-      const current = await this.#dependencies.stateStore.read(agentId);
+      const loadedState = this.#dependencies.stateStore.load
+        ? await this.#dependencies.stateStore.load(agentId)
+        : await this.#dependencies.stateStore
+            .read(agentId)
+            .then((state) =>
+              state ? ({ state, status: 'ready' } as const) : ({ status: 'missing' } as const),
+            );
+      const current = loadedState.status === 'missing' ? undefined : loadedState.state;
+      if (loadedState.status === 'migrated-v1') {
+        await this.#dependencies.stateStore.write(loadedState.state);
+        this.#dependencies.logger.info(
+          `github-notifications: monitor state migrated agent=${agentId} code=github-notification-state-migrated-v1`,
+        );
+      }
       if (current?.nextPollAt !== undefined && current.nextPollAt > now) return;
 
       const route = await this.#dependencies.routingService.inspect({

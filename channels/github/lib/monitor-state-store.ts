@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
-import type {
-  GitHubNotificationItemState,
-  GitHubNotificationMonitorState,
+import {
+  migrateGitHubNotificationMonitorStateV1,
+  type GitHubNotificationDeliveryState,
+  type GitHubNotificationItemState,
+  type GitHubNotificationItemStateV1,
+  type GitHubNotificationMonitorState,
+  type GitHubNotificationMonitorStateV1,
 } from '../utils/monitor-state.ts';
 
 const maximumStateBytes = 1024 * 1024;
@@ -14,6 +18,10 @@ export interface GitHubNotificationMonitorStateStoreDependencies {
   currentUid?: number;
   rootDir?: string;
 }
+
+export type GitHubNotificationMonitorStateLoadResult =
+  | { state: GitHubNotificationMonitorState; status: 'migrated-v1' | 'ready' }
+  | { status: 'missing' };
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
@@ -44,29 +52,11 @@ function hasControlCharacter(value: string): boolean {
   });
 }
 
-function validItem(value: unknown): value is GitHubNotificationItemState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const item = value as Partial<GitHubNotificationItemState>;
-  const allowedKeys = new Set([
-    'assignmentActorNodeId',
-    'assignmentEventNodeId',
-    'disposition',
-    'itemNodeId',
-    'itemType',
-    'lastObservedAt',
-    'number',
-    'reasonCode',
-    'repositoryCloneUrl',
-    'repositoryDatabaseId',
-    'repositoryDefaultBranch',
-    'repositoryName',
-    'repositoryNodeId',
-    'repositoryOwner',
-    'repositoryOwnerNodeId',
-    'repositoryPermission',
-  ]);
+function validItemFields(
+  value: Record<string, unknown>,
+  item: Partial<GitHubNotificationItemStateV1>,
+): boolean {
   return (
-    Object.keys(value).every((key) => allowedKeys.has(key)) &&
     ['approved', 'baseline', 'rejected', 'retired'].includes(item.disposition ?? '') &&
     validNodeId(item.itemNodeId) &&
     (item.itemType === 'issue' || item.itemType === 'pull-request') &&
@@ -96,33 +86,156 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
       item.repositoryPermission ?? '',
     ) &&
     (item.assignmentActorNodeId === undefined || validNodeId(item.assignmentActorNodeId)) &&
-    (item.assignmentEventNodeId === undefined || validNodeId(item.assignmentEventNodeId))
+    (item.assignmentEventNodeId === undefined || validNodeId(item.assignmentEventNodeId)) &&
+    Object.getPrototypeOf(value) === Object.prototype
   );
 }
 
-function validState(value: unknown): value is GitHubNotificationMonitorState {
+function optionalBoundedString(value: unknown, maximumLength: number): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= maximumLength &&
+      !hasControlCharacter(value))
+  );
+}
+
+function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const state = value as Partial<GitHubNotificationMonitorState>;
+  const delivery = value as Partial<GitHubNotificationDeliveryState>;
   const allowedKeys = new Set([
-    'accountLogin',
-    'accountNodeId',
-    'agentId',
-    'baselineAt',
-    'baselineItemNodeIds',
-    'diagnosticCode',
-    'failureCount',
-    'items',
-    'lastPollAt',
-    'lastSuccessfulPollAt',
-    'nextPollAt',
-    'processedEventNodeIds',
+    'assignmentEventId',
+    'briefingIdempotencyKey',
+    'failureCode',
     'schemaVersion',
-    'searchBoundary',
-    'workspaceDir',
+    'sessionId',
+    'sessionKey',
+    'stage',
+    'workId',
+    'worktreeBranch',
+    'worktreePath',
+  ]);
+  const validBase =
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
+    delivery.schemaVersion === 1 &&
+    validNodeId(delivery.assignmentEventId) &&
+    validNodeId(delivery.briefingIdempotencyKey) &&
+    [
+      'active',
+      'admitted',
+      'briefing-running',
+      'retired',
+      'session-ready',
+      'worktree-ready',
+    ].includes(delivery.stage ?? '') &&
+    optionalBoundedString(delivery.failureCode, 255) &&
+    (delivery.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(delivery.failureCode)) &&
+    optionalBoundedString(delivery.sessionId, 255) &&
+    optionalBoundedString(delivery.sessionKey, 1_024) &&
+    optionalBoundedString(delivery.workId, 256) &&
+    optionalBoundedString(delivery.worktreeBranch, 255) &&
+    optionalBoundedString(delivery.worktreePath, 4_096) &&
+    typeof delivery.workId === 'string' &&
+    !delivery.workId.startsWith('-');
+  if (!validBase) return false;
+  const hasWorktree =
+    typeof delivery.worktreeBranch === 'string' &&
+    typeof delivery.worktreePath === 'string' &&
+    isAbsolute(delivery.worktreePath);
+  const hasSession = typeof delivery.sessionKey === 'string';
+  if (delivery.stage === 'admitted') {
+    return (
+      delivery.worktreeBranch === undefined &&
+      delivery.worktreePath === undefined &&
+      !hasSession &&
+      delivery.sessionId === undefined
+    );
+  }
+  if (delivery.stage === 'worktree-ready') {
+    return hasWorktree && !hasSession && delivery.sessionId === undefined;
+  }
+  if (['active', 'briefing-running', 'session-ready'].includes(delivery.stage ?? '')) {
+    return hasWorktree && hasSession;
+  }
+  return (
+    (delivery.worktreeBranch === undefined) === (delivery.worktreePath === undefined) &&
+    (delivery.worktreePath === undefined || isAbsolute(delivery.worktreePath)) &&
+    (delivery.sessionId === undefined || hasSession)
+  );
+}
+
+function validLegacyItem(value: unknown): value is GitHubNotificationItemStateV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Partial<GitHubNotificationItemStateV1>;
+  const allowedKeys = new Set([
+    'assignmentActorNodeId',
+    'assignmentEventNodeId',
+    'disposition',
+    'itemNodeId',
+    'itemType',
+    'lastObservedAt',
+    'number',
+    'reasonCode',
+    'repositoryCloneUrl',
+    'repositoryDatabaseId',
+    'repositoryDefaultBranch',
+    'repositoryName',
+    'repositoryNodeId',
+    'repositoryOwner',
+    'repositoryOwnerNodeId',
+    'repositoryPermission',
   ]);
   return (
     Object.keys(value).every((key) => allowedKeys.has(key)) &&
-    state.schemaVersion === 1 &&
+    validItemFields(value as Record<string, unknown>, item)
+  );
+}
+
+function validItem(value: unknown): value is GitHubNotificationItemState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Partial<GitHubNotificationItemState>;
+  const allowedKeys = new Set([
+    'assignmentActorNodeId',
+    'assignmentEventNodeId',
+    'delivery',
+    'disposition',
+    'itemDatabaseId',
+    'itemNodeId',
+    'itemType',
+    'lastObservedAt',
+    'number',
+    'reasonCode',
+    'repositoryCloneUrl',
+    'repositoryDatabaseId',
+    'repositoryDefaultBranch',
+    'repositoryName',
+    'repositoryNodeId',
+    'repositoryOwner',
+    'repositoryOwnerNodeId',
+    'repositoryPermission',
+  ]);
+  return (
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
+    validItemFields(value as Record<string, unknown>, item) &&
+    Number.isSafeInteger(item.itemDatabaseId) &&
+    Number(item.itemDatabaseId) > 0 &&
+    (item.delivery === undefined || validDelivery(item.delivery)) &&
+    (item.disposition === 'approved'
+      ? item.delivery !== undefined && item.delivery.stage !== 'retired'
+      : item.disposition === 'retired'
+        ? item.delivery === undefined || item.delivery.stage === 'retired'
+        : item.delivery === undefined) &&
+    (item.delivery === undefined ||
+      (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
+        item.delivery.briefingIdempotencyKey === item.delivery.assignmentEventId &&
+        item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`))
+  );
+}
+
+function validStateFields(value: object): boolean {
+  const state = value as Partial<GitHubNotificationMonitorState>;
+  return (
     ((state.accountLogin === undefined && state.accountNodeId === undefined) ||
       (typeof state.accountLogin === 'string' &&
         /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(state.accountLogin) &&
@@ -148,9 +261,71 @@ function validState(value: unknown): value is GitHubNotificationMonitorState {
     state.processedEventNodeIds.every(validNodeId) &&
     new Set(state.processedEventNodeIds).size === state.processedEventNodeIds.length &&
     state.items !== undefined &&
-    !Array.isArray(state.items) &&
-    Object.entries(state.items).every(
+    !Array.isArray(state.items)
+  );
+}
+
+function validState(value: unknown): value is GitHubNotificationMonitorState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const state = value as Partial<GitHubNotificationMonitorState>;
+  const items = state.items;
+  const allowedKeys = new Set([
+    'accountLogin',
+    'accountNodeId',
+    'agentId',
+    'baselineAt',
+    'baselineItemNodeIds',
+    'diagnosticCode',
+    'failureCount',
+    'items',
+    'lastPollAt',
+    'lastSuccessfulPollAt',
+    'nextPollAt',
+    'processedEventNodeIds',
+    'schemaVersion',
+    'searchBoundary',
+    'workspaceDir',
+  ]);
+  return (
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
+    state.schemaVersion === 2 &&
+    validStateFields(value) &&
+    items !== undefined &&
+    Object.entries(items).every(
       ([key, item]) => validItem(item) && key === `github:${item.repositoryNodeId}:${item.number}`,
+    )
+  );
+}
+
+function validLegacyState(value: unknown): value is GitHubNotificationMonitorStateV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const state = value as Partial<GitHubNotificationMonitorStateV1>;
+  const items = state.items;
+  const allowedKeys = new Set([
+    'accountLogin',
+    'accountNodeId',
+    'agentId',
+    'baselineAt',
+    'baselineItemNodeIds',
+    'diagnosticCode',
+    'failureCount',
+    'items',
+    'lastPollAt',
+    'lastSuccessfulPollAt',
+    'nextPollAt',
+    'processedEventNodeIds',
+    'schemaVersion',
+    'searchBoundary',
+    'workspaceDir',
+  ]);
+  return (
+    Object.keys(value).every((key) => allowedKeys.has(key)) &&
+    state.schemaVersion === 1 &&
+    validStateFields(value) &&
+    items !== undefined &&
+    Object.entries(items).every(
+      ([key, item]) =>
+        validLegacyItem(item) && key === `github:${item.repositoryNodeId}:${item.number}`,
     )
   );
 }
@@ -166,16 +341,21 @@ export default class GitHubNotificationMonitorStateStore {
   }
 
   async read(agentId: string): Promise<GitHubNotificationMonitorState | undefined> {
+    const result = await this.load(agentId);
+    return result.status === 'missing' ? undefined : result.state;
+  }
+
+  async load(agentId: string): Promise<GitHubNotificationMonitorStateLoadResult> {
     const paths = this.#paths(agentId);
-    if (!paths) return undefined;
+    if (!paths) return { status: 'missing' };
     for (const directory of paths.directories) {
-      if ((await this.#inspectDirectory(directory)) === 'missing') return undefined;
+      if ((await this.#inspectDirectory(directory)) === 'missing') return { status: 'missing' };
     }
     let handle;
     try {
       handle = await open(paths.statePath, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return undefined;
+      if (errorCode(error) === 'ENOENT') return { status: 'missing' };
       if (errorCode(error) === 'ELOOP') {
         throw new Error('The GitHub notification monitor state may not be a symbolic link.', {
           cause: error,
@@ -198,10 +378,13 @@ export default class GitHubNotificationMonitorStateStore {
         throw new Error('The GitHub notification monitor state exceeds its size limit.');
       }
       const value = JSON.parse(await handle.readFile('utf8')) as unknown;
-      if (!validState(value) || value.agentId !== agentId) {
-        throw new Error('The GitHub notification monitor state is invalid.');
+      if (validState(value) && value.agentId === agentId) {
+        return { state: value, status: 'ready' };
       }
-      return value;
+      if (validLegacyState(value) && value.agentId === agentId) {
+        return { state: migrateGitHubNotificationMonitorStateV1(value), status: 'migrated-v1' };
+      }
+      throw new Error('The GitHub notification monitor state is invalid.');
     } finally {
       await handle.close().catch(() => undefined);
     }

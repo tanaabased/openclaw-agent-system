@@ -26,6 +26,7 @@ export interface GitHubRepositoryIdentity {
 
 export interface GitHubCanonicalWorkItem {
   assignees: GitHubIdentity[];
+  databaseId: number;
   itemType: 'issue' | 'pull-request';
   nodeId: string;
   number: number;

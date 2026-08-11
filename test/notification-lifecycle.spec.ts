@@ -108,7 +108,7 @@ describe('channels/github/lib/lifecycle', () => {
       failureCount: 0,
       items: {},
       processedEventNodeIds: [],
-      schemaVersion: 1,
+      schemaVersion: 2,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [

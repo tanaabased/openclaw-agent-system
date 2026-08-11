@@ -245,7 +245,7 @@ export default class GitHubWorkEventClient {
       [
         endpoint,
         '--jq',
-        '{nodeId:.node_id,number,state,updatedAt:.updated_at,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}',
+        '{databaseId:.id,nodeId:.node_id,number,state,updatedAt:.updated_at,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}',
       ],
       'work item',
     );
@@ -257,6 +257,7 @@ export default class GitHubWorkEventClient {
     if (!Array.isArray(value.assignees)) throw new Error('GitHub returned invalid assignees.');
     return {
       assignees: value.assignees.map((item) => identity(item, 'assignee')),
+      databaseId: positiveInteger(value.databaseId, 'work-item database id'),
       itemType: boolean(value.isPullRequest, 'work-item type') ? 'pull-request' : 'issue',
       nodeId: nodeId(value.nodeId, 'work-item node id'),
       number: positiveInteger(value.number, 'work-item number'),

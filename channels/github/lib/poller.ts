@@ -43,6 +43,13 @@ export interface GitHubNotificationPollResult {
   rejected: number;
   retired: number;
   state: GitHubNotificationMonitorState;
+  transitions: GitHubNotificationTransition[];
+}
+
+export interface GitHubNotificationTransition {
+  item: GitHubNotificationItemState;
+  itemKey: string;
+  kind: 'admitted' | 'retired';
 }
 
 function pollError(error: unknown, now: number): GitHubNotificationPollError {
@@ -131,6 +138,18 @@ function itemState(
         }
       : {}),
     disposition,
+    ...(disposition === 'approved' && assignment
+      ? {
+          delivery: {
+            assignmentEventId: assignment.nodeId,
+            briefingIdempotencyKey: assignment.nodeId,
+            schemaVersion: 1 as const,
+            stage: 'admitted' as const,
+            workId: `${item.itemType}-${item.databaseId}`,
+          },
+        }
+      : {}),
+    itemDatabaseId: item.databaseId,
     itemNodeId: item.nodeId,
     itemType: item.itemType,
     lastObservedAt: now,
@@ -153,6 +172,7 @@ export async function pollGitHubNotifications(
 ): Promise<GitHubNotificationPollResult> {
   const state = cloneState(input);
   const counts = { approved: 0, baseline: 0, duplicates: 0, rejected: 0, retired: 0 };
+  const transitions: GitHubNotificationTransition[] = [];
 
   try {
     if (state.baselineAt === undefined) {
@@ -167,7 +187,7 @@ export async function pollGitHubNotifications(
       state.baselineItemNodeIds = [...new Set(discovery.candidates.map(({ nodeId }) => nodeId))];
       state.searchBoundary = new Date(input.now).toISOString();
       counts.baseline = state.baselineItemNodeIds.length;
-      return { ...counts, state };
+      return { ...counts, state, transitions };
     }
 
     for (const [key, current] of Object.entries(state.items)) {
@@ -189,9 +209,11 @@ export async function pollGitHubNotifications(
         );
         const repositoryReason = repositoryAllowed(input.configuration, repository, permission);
         const identityChanged =
+          repository.databaseId !== current.repositoryDatabaseId ||
           repository.nodeId !== current.repositoryNodeId ||
           repository.owner.login !== current.repositoryOwner ||
           repository.name !== current.repositoryName ||
+          item.databaseId !== current.itemDatabaseId ||
           item.nodeId !== current.itemNodeId;
         const reason = identityChanged
           ? 'github-notification-resource-changed'
@@ -204,10 +226,18 @@ export async function pollGitHubNotifications(
         if (reason) {
           state.items[key] = {
             ...current,
+            ...(current.delivery
+              ? { delivery: { ...current.delivery, stage: 'retired' as const } }
+              : {}),
             disposition: 'retired',
             lastObservedAt: input.now,
             reasonCode: reason,
           };
+          transitions.push({
+            item: structuredClone(state.items[key]),
+            itemKey: key,
+            kind: 'retired',
+          });
           counts.retired += 1;
         } else {
           state.items[key] = { ...current, lastObservedAt: input.now };
@@ -219,10 +249,18 @@ export async function pollGitHubNotifications(
         ) {
           state.items[key] = {
             ...current,
+            ...(current.delivery
+              ? { delivery: { ...current.delivery, stage: 'retired' as const } }
+              : {}),
             disposition: 'retired',
             lastObservedAt: input.now,
             reasonCode: 'github-notification-resource-missing',
           };
+          transitions.push({
+            item: structuredClone(state.items[key]),
+            itemKey: key,
+            kind: 'retired',
+          });
           counts.retired += 1;
           continue;
         }
@@ -248,6 +286,7 @@ export async function pollGitHubNotifications(
       const permission = await input.client.getPermission(owner, name, input.client.identity.login);
       const item = await input.client.getItem(owner, name, candidate.number);
       if (
+        item.databaseId !== candidate.databaseId ||
         item.nodeId !== candidate.nodeId ||
         item.number !== candidate.number ||
         item.itemType !== candidate.itemType
@@ -288,7 +327,7 @@ export async function pollGitHubNotifications(
         counts.duplicates += 1;
         continue;
       }
-      state.items[key] = itemState(
+      const nextItem = itemState(
         admission.disposition,
         admission.code,
         input.now,
@@ -297,10 +336,14 @@ export async function pollGitHubNotifications(
         permission,
         assignment,
       );
+      state.items[key] = nextItem;
+      if (admission.disposition === 'approved') {
+        transitions.push({ item: structuredClone(nextItem), itemKey: key, kind: 'admitted' });
+      }
       counts[admission.disposition] += 1;
     }
     state.searchBoundary = new Date(input.now).toISOString();
-    return { ...counts, state };
+    return { ...counts, state, transitions };
   } catch (error) {
     throw pollError(error, input.now);
   }

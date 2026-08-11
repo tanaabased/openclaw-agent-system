@@ -2,10 +2,28 @@ import type { GitHubRepositoryPermission } from './work-item.ts';
 
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
+export type GitHubNotificationDeliveryStage =
+  'active' | 'admitted' | 'briefing-running' | 'retired' | 'session-ready' | 'worktree-ready';
+
+export interface GitHubNotificationDeliveryState {
+  assignmentEventId: string;
+  briefingIdempotencyKey: string;
+  failureCode?: string;
+  schemaVersion: 1;
+  sessionId?: string;
+  sessionKey?: string;
+  stage: GitHubNotificationDeliveryStage;
+  workId: string;
+  worktreeBranch?: string;
+  worktreePath?: string;
+}
+
 export interface GitHubNotificationItemState {
   assignmentActorNodeId?: string;
   assignmentEventNodeId?: string;
+  delivery?: GitHubNotificationDeliveryState;
   disposition: GitHubNotificationItemDisposition;
+  itemDatabaseId: number;
   itemNodeId: string;
   itemType: 'issue' | 'pull-request';
   lastObservedAt: number;
@@ -34,10 +52,23 @@ export interface GitHubNotificationMonitorState {
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
   processedEventNodeIds: string[];
-  schemaVersion: 1;
+  schemaVersion: 2;
   searchBoundary?: string;
   workspaceDir: string;
 }
+
+export type GitHubNotificationItemStateV1 = Omit<
+  GitHubNotificationItemState,
+  'delivery' | 'itemDatabaseId'
+>;
+
+export type GitHubNotificationMonitorStateV1 = Omit<
+  GitHubNotificationMonitorState,
+  'items' | 'schemaVersion'
+> & {
+  items: Record<string, GitHubNotificationItemStateV1>;
+  schemaVersion: 1;
+};
 
 export function createGitHubNotificationMonitorState(
   agentId: string,
@@ -49,8 +80,25 @@ export function createGitHubNotificationMonitorState(
     failureCount: 0,
     items: {},
     processedEventNodeIds: [],
-    schemaVersion: 1,
+    schemaVersion: 2,
     workspaceDir,
+  };
+}
+
+/** Establish a safe baseline instead of retroactively delivering Phase 1 admissions. */
+export function migrateGitHubNotificationMonitorStateV1(
+  state: GitHubNotificationMonitorStateV1,
+): GitHubNotificationMonitorState {
+  const baselineItemNodeIds = [
+    ...state.baselineItemNodeIds,
+    ...Object.values(state.items).map(({ itemNodeId }) => itemNodeId),
+  ];
+  return {
+    ...state,
+    baselineItemNodeIds: [...new Set(baselineItemNodeIds)].slice(-2_000),
+    diagnosticCode: 'github-notification-state-migrated-v1',
+    items: {},
+    schemaVersion: 2,
   };
 }
 

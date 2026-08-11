@@ -27,6 +27,7 @@ const base = {
   events: [event],
   item: {
     assignees: [account],
+    databaseId: 7,
     itemType: 'issue' as const,
     nodeId: 'I_item',
     number: 7,
