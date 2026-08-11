@@ -1,6 +1,6 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent. It verifies agent onboarding, manifest loading at `session_start`, and value-free lifecycle logging.
+This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging.
 
 ## Setup
 
@@ -53,12 +53,15 @@ openclaw agent \
   --message-file "$GITHUB_WORKSPACE/examples/agent/ready.md" \
   --timeout 120
 
-# should load the data manifest when the agent session starts
+# should load the data manifest through a passive gateway lifecycle
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  if grep -Fq '[agent-system] manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"; then
+  if grep -Eq \
+    '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
+    "$TMPDIR/gateway.log"; then
     break
   fi
   if [ "$attempt" -eq 10 ]; then
+    grep -F '[agent-system]' "$TMPDIR/gateway.log" || true
     tail -n 100 "$TMPDIR/gateway.log"
     exit 1
   fi
