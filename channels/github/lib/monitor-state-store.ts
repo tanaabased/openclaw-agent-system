@@ -48,8 +48,6 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Partial<GitHubNotificationItemState>;
   const allowedKeys = new Set([
-    'accountLogin',
-    'accountNodeId',
     'assignmentActorNodeId',
     'assignmentEventNodeId',
     'disposition',
@@ -106,6 +104,8 @@ function validState(value: unknown): value is GitHubNotificationMonitorState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const state = value as Partial<GitHubNotificationMonitorState>;
   const allowedKeys = new Set([
+    'accountLogin',
+    'accountNodeId',
     'agentId',
     'baselineAt',
     'baselineItemNodeIds',

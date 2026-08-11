@@ -54,7 +54,16 @@ openclaw agent \
   --timeout 120
 
 # should load the data manifest when the agent session starts
-grep -F '[agent-system] manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if grep -Fq '[agent-system] manifest_loaded trigger="session_start" agentId="data"' "$TMPDIR/gateway.log"; then
+    break
+  fi
+  if [ "$attempt" -eq 10 ]; then
+    tail -n 100 "$TMPDIR/gateway.log"
+    exit 1
+  fi
+  sleep 1
+done
 
 # should keep manifest values out of gateway lifecycle logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi

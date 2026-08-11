@@ -16,6 +16,8 @@ describe('channels/github/lib/monitor-state-store', () => {
         rootDir,
       });
       const state = createGitHubNotificationMonitorState('tanaabot', '/workspace');
+      state.accountLogin = 'tanaabot';
+      state.accountNodeId = 'U_tanaabot';
       state.baselineAt = 1;
       await store.write(state);
 
