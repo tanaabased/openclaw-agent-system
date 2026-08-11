@@ -70,6 +70,12 @@ echo "$!" > "$TMPDIR/gateway.pid"
 ## Testing
 
 ```bash
+# should grant the native github tool to each installed github agent
+openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_github") != null'
+openclaw config get agents.list --json | jq -e '.[] | select(.id == "emori") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_github") != null'
+```
+
+```bash
 # should reject agent-only approval policy through the direct tool command
 cd "$GITHUB_WORKSPACE/examples/github/emori"
 if output="$(openclaw agent-system tool gh -- repo delete emoriwan/agent-system-policy-proof --yes 2>&1)"; then

@@ -31,6 +31,22 @@ export default class AgentSystemToolRegistry {
     }
   }
 
+  /** Return the native model-facing tool names owned by every registered definition. */
+  allToolNames(): string[] {
+    return [...new Set([...this.#tools.values()].flatMap(({ toolNames }) => toolNames))];
+  }
+
+  /** Return the native model-facing tool names enabled by one agent manifest. */
+  configuredToolNames(manifest: AgentManifest): string[] {
+    return [
+      ...new Set(
+        [...this.#tools.values()].flatMap((tool) =>
+          tool.isConfigured(manifest) ? tool.toolNames : [],
+        ),
+      ),
+    ];
+  }
+
   guidance(manifest: AgentManifest): string[] {
     return [...this.#tools.values()].flatMap((tool) =>
       tool.isConfigured(manifest) && tool.guidance ? [tool.guidance.prompt] : [],
