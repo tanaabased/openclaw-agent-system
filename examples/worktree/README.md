@@ -39,6 +39,11 @@ openclaw agent-system install
 ## Testing
 
 ```bash
+# should grant the native managed worktree tool to the installed worktree agent
+openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_git_worktree") != null'
+```
+
+```bash
 # should prepare a managed network repository worktree
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-worktree.json" | grep -F '"status": "created"'

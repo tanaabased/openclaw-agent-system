@@ -5,3 +5,8 @@ agent:
   name: Install Data
   email: install-data@example.com
   description: Agent System lifecycle installation scenario
+
+git:
+  worktrees: {}
+
+github: {}
