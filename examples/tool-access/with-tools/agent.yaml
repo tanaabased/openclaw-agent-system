@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: tool-access-data
+  name: Tool Access Data
+  email: tool-access-data@example.com
+
+git:
+  worktrees: {}
+
+github: {}

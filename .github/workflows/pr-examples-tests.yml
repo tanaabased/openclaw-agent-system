@@ -21,6 +21,7 @@ jobs:
           - ubuntu-24.04
         example:
           - install
+          - tool-access
           - validate
           - doctor
           - agent

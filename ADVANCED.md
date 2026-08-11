@@ -239,7 +239,10 @@ Installation validates first and, when an OP Environment or direct secret is
 declared, requires a working persistent credential before applying changes. It
 creates or updates only owned state, verifies the result, and reports unchanged
 state on repeated runs. An existing agent id bound to another workspace fails
-instead of being repointed.
+instead of being repointed. It also grants the native Git, managed-worktree, and
+GitHub tools selected by the manifest. Agent System preserves unrelated entries,
+uses an existing exact `tools.allow` list when present and `tools.alsoAllow`
+otherwise, and removes its own stale grants when capabilities disappear.
 
 ### `openclaw agent-system doctor`
 
@@ -252,7 +255,9 @@ openclaw agent-system doctor [--agent <id>] [--json]
 
 Doctor reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
-responsibility. It also warns when configured tools coexist with command paths
+responsibility. Tool-access findings compare the installed per-agent grants with
+the Git, managed-worktree, and GitHub capabilities declared by the manifest. It
+also warns when configured tools coexist with command paths
 that can reach operator interfaces. Tool-specific lifecycle checks are
 documented in each tool guide. This check covers exec host routing, sandbox mode
 and scope, and elevated execution; it does not certify custom mounts or sandbox
