@@ -1,4 +1,7 @@
+import { agentSystemPluginIdentity } from './plugin-identity.ts';
+
 export interface PackageMetadata {
+  description?: string;
   devDependencies?: {
     openclaw?: string;
   };
@@ -44,6 +47,7 @@ export interface PluginManifest {
     properties?: Record<string, unknown>;
     type?: string;
   };
+  description?: string;
   id?: string;
   name?: string;
   skills?: string[];
@@ -55,6 +59,7 @@ export type PluginMetadataFailureCode =
   | 'supported-os'
   | 'plugin-id'
   | 'plugin-name'
+  | 'plugin-description'
   | 'version-mismatch'
   | 'source-entry'
   | 'runtime-entry'
@@ -142,8 +147,18 @@ export default function pluginMetadataFailures(
     'supported-os',
     'npm package must support exactly macOS and Linux',
   );
-  check(manifest.id === 'agent-system', 'plugin-id', 'unexpected OpenClaw plugin id');
-  check(manifest.name === 'Agent System', 'plugin-name', 'unexpected OpenClaw plugin name');
+  check(manifest.id === agentSystemPluginIdentity.id, 'plugin-id', 'unexpected OpenClaw plugin id');
+  check(
+    manifest.name === agentSystemPluginIdentity.name,
+    'plugin-name',
+    'unexpected OpenClaw plugin name',
+  );
+  check(
+    packageMetadata.description === agentSystemPluginIdentity.description &&
+      manifest.description === agentSystemPluginIdentity.description,
+    'plugin-description',
+    'package, manifest, and runtime descriptions must match',
+  );
   check(
     typeof packageMetadata.version === 'string' &&
       packageMetadata.version.length > 0 &&

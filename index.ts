@@ -1,12 +1,10 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 
 import registerAgentSystem from './lib/register-agent-system.ts';
+import { agentSystemPluginIdentity } from './utils/plugin-identity.ts';
 
 export default definePluginEntry({
-  id: 'agent-system',
-  name: 'Agent System',
-  description:
-    'Define reproducible identity, environment, and installation for OpenClaw agent workspaces.',
+  ...agentSystemPluginIdentity,
   register(api) {
     registerAgentSystem(api, import.meta.url);
   },
