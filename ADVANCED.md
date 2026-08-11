@@ -155,6 +155,20 @@ Human output uses standard output and honors `NO_COLOR` and `FORCE_COLOR=0`.
 Warnings and failures use the OpenClaw plugin logger on standard error. A failed
 operation sets a nonzero exit code.
 
+### Trust Boundary
+
+Model-facing `agent_system_*` tools bind the manifest and credentials to trusted
+OpenClaw agent context. They are the supported execution path for agents.
+
+The `tool` and `credentials` commands are trusted operator interfaces. Their
+`--agent` option intentionally selects any installed agent, and workspace
+discovery can do the same from that agent's directory. Packaged shims delegate
+to `tool` and inherit this boundary. Do not expose these commands through
+unrestricted Gateway-host execution when agents must not assume one another's
+identity. See OpenClaw's [security model](https://docs.openclaw.ai/gateway/security)
+and [sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the
+host boundary beneath Agent System.
+
 ### `openclaw agent-system validate`
 
 Discovers and validates a manifest without resolving credentials, inspecting
@@ -238,23 +252,30 @@ openclaw agent-system doctor [--agent <id>] [--json]
 
 Doctor reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
-responsibility. Tool-specific lifecycle checks are documented in each tool guide.
+responsibility. It also warns when configured tools coexist with command paths
+that can reach operator interfaces. Tool-specific lifecycle checks are
+documented in each tool guide. This check covers exec host routing, sandbox mode
+and scope, and elevated execution; it does not certify custom mounts or sandbox
+backend isolation.
 
 ### `openclaw agent-system tool`
 
-Runs a registered command through its Agent System tool. The current release
-uses a closed registry, not an arbitrary executable or raw-secret interface. A
-public tool integration contract is planned in [Tool API](./API.md).
+Runs a registered command through its Agent System tool as an explicitly
+selected operator identity. This command is intended for administration,
+testing, and debugging; agents should use the corresponding native
+`agent_system_*` tool. The current release uses a closed registry, not an
+arbitrary executable or raw-secret interface. A public tool integration contract
+is planned in [Tool API](./API.md).
 
 ```text
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 ```
 
-| Tool           | Command    | CLI                                              | Shim                                           |
-| -------------- | ---------- | ------------------------------------------------ | ---------------------------------------------- |
-| `git`          | `git`      | [Usage](./tools/git/README.md#cli)               | [Packaged shim](./tools/git/README.md#shim)    |
-| `git-worktree` | `worktree` | [Usage](./tools/git/README.md#managed-worktrees) | none                                           |
-| `gh`           | `gh`       | [Usage](./tools/github/README.md#cli)            | [Packaged shim](./tools/github/README.md#shim) |
+| Tool           | Command    | CLI                                   | Shim                                           |
+| -------------- | ---------- | ------------------------------------- | ---------------------------------------------- |
+| `git`          | `git`      | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
+| `git-worktree` | `worktree` | [Usage](./tools/git/README.md#cli)    | none                                           |
+| `gh`           | `gh`       | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
 
 Registered tools preserve the child command's standard streams and exit code.
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.

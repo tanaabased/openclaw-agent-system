@@ -24,16 +24,6 @@ describe('tools/git/policy', () => {
     });
   });
 
-  it('should deny raw worktree mutation independently of unknown policy', async () => {
-    const decision = await authorizeGitOperation(
-      classifyGitOperation({ argv: ['worktree', 'add', '../outside', 'main'] }),
-      { ...configuration, git: { policy: { unknown: 'allow' } } },
-    );
-
-    assert.equal(decision.status, 'denied');
-    assert.match(decision.reason, /raw git worktree mutation/iu);
-  });
-
   it('should require every applicable git hazard policy to allow the operation', async () => {
     const forcePush = classifyGitOperation({ argv: ['push', '--force', 'origin', 'main'] });
     assert.equal(

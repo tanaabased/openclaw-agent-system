@@ -29,8 +29,10 @@ jobs:
           - env
           - credentials
           - git
+          - worktree
           - github
           - tool
+          - security
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

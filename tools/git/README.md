@@ -13,18 +13,20 @@ System workspace declares `git`.
 
 ## Overview
 
-The capability provides two model-facing tools:
+One shared runtime provides five Git interfaces:
 
-| Tool                        | Purpose                               |
-| --------------------------- | ------------------------------------- |
-| `agent_system_git`          | Ordinary Git operations               |
-| `agent_system_git_worktree` | Managed-worktree lifecycle operations |
+| Interface                             | Purpose                                                      |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `agent_system_git`                    | Model-facing ordinary Git tool                               |
+| `agent_system_git_worktree`           | Model-facing managed-worktree tool                           |
+| `openclaw agent-system tool git`      | Explicit operator Git command                                |
+| `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
+| `git`                                 | Packaged compatibility shim on supported agent command paths |
 
-Operators can use the equivalent `openclaw agent-system tool git` and
-`openclaw agent-system tool worktree` commands. Installation also projects a
-packaged `git` shim onto supported agent command paths. Every route binds the
-request to one trusted agent workspace, applies policy, resolves the effective
-identity, and launches the real `git` executable without a shell.
+The model-facing tools bind requests to trusted OpenClaw agent context. The CLI
+and shim are operator interfaces that select an agent by option or workspace.
+Every interface applies policy, resolves the selected identity, and launches the
+real `git` without a shell.
 
 ## Requirements
 
@@ -47,6 +49,12 @@ agent:
   name: Tanaabot
   email:
     from-environment: AGENT_EMAIL
+
+environment:
+  required:
+    - AGENT_EMAIL
+    - GIT_SIGNING_KEY
+    - GIT_SSH_PRIVATE_KEY
 
 git:
   worktrees: {}
@@ -121,8 +129,9 @@ can supply the key. Secret acquisition belongs to the shared
 [environment contract](../../ADVANCED.md#environment), so the Git schema does
 not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
 isolates the declared keys from ambient SSH identities and presents them only
-when Git uses SSH transport. Run `openclaw agent-system doctor` to check
-installed-host OpenSSH readiness.
+when Git uses SSH transport. Each invocation loads them into an isolated
+`ssh-agent`, exposes no generic SSH socket to Git, and removes its resources
+before returning. Run `openclaw agent-system doctor` to check OpenSSH readiness.
 
 ### `git.signing`
 
@@ -137,10 +146,10 @@ material itself and does not accept a literal value, path, array, or nested
 `from-environment` object. Any declared environment source may populate the
 binding.
 
-Agent System isolates the signing key from ambient SSH state. Signing-control
-arguments are rejected so a tool call cannot disable signing or select another
-key. Authentication and signing remain separate even when they use the same
-underlying key.
+Signing uses a separate invocation-scoped agent and fixed helpers. Git receives
+no generic SSH socket, and signing-control arguments cannot disable signing or
+select another key. Authentication and signing remain separate even when they
+use the same key.
 
 The optional allowed-signers file is public trust policy. It must be a regular,
 non-symlinked file inside the agent workspace and use the OpenSSH allowed
@@ -219,55 +228,50 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 ## CLI
 
-### Ordinary Git
+These are trusted operator interfaces for administration, testing, and
+debugging. Agents should use `agent_system_git` and
+`agent_system_git_worktree`; an agent with unrestricted host command access
+could otherwise select another installed agent.
+
+### Usage
 
 ```text
 openclaw agent-system tool git [--agent <id>] -- <git-arguments...>
-```
-
-```sh
-# preserve a nested repository directory and inspect the working tree.
-openclaw agent-system tool git -- status --short
-
-# select one installed agent outside its workspace; execution starts at its root.
-openclaw as tool git --agent tanaabot -- status --short
-```
-
-Arguments after `--` pass to `git` unchanged. Standard streams and the child
-exit code are preserved. Native tool calls may provide a `cwd` inside the agent
-workspace or configured worktree root; parent and symlink traversal outside
-those roots is rejected. External worktree roots require trusted native agent
-context or an explicit operator `--agent` selection.
-
-### Managed Worktrees
-
-Operator worktree lifecycle uses the registered `worktree` tool command rather
-than a special CLI hierarchy or raw Git mutation:
-
-```text
-openclaw agent-system tool worktree [--agent <id>] -- prepare <repository-id> <work-id> <base-ref> [--clone-url <url>] [--branch <branch>]
+openclaw agent-system tool worktree [--agent <id>] -- prepare <repository-id> <work-id> <base-ref> [--clone-url <url>]
 openclaw agent-system tool worktree [--agent <id>] -- list [repository-id]
 openclaw agent-system tool worktree [--agent <id>] -- remove <repository-id> <work-id>
 ```
 
 ```sh
-# clone or fetch a managed repository and prepare one deterministic worktree.
-openclaw agent-system tool worktree -- prepare agent-system task-123 origin/main \
+# inspect git from the current repository directory.
+openclaw agent-system tool git -- status --short
+
+# select an installed agent from any directory.
+openclaw as tool git --agent tanaabot -- status --short
+
+# prepare a deterministic worktree from the latest remote branch.
+openclaw agent-system tool worktree -- prepare agent-system 123-fix-agent-path-resolution origin/main \
   --clone-url https://github.com/tanaabased/openclaw-agent-system.git
 
 # list current agent-owned worktrees from git.
 openclaw agent-system tool worktree -- list agent-system
 
-# ask git to remove the deterministic worktree without force.
-openclaw agent-system tool worktree -- remove agent-system task-123
+# request removal; direct cli requires git.policy.delete: allow.
+openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-resolution
 ```
 
-`prepare` is an ordinary write, `list` is a read, and `remove` selects
-`git.policy.delete`; direct CLI use cannot complete an `ask` decision.
-Preparation is idempotent and returns the canonical path to pass as `cwd` on
-later `agent_system_git` calls. Removal uses non-forced `git worktree remove`,
-so Git refuses dirty or otherwise unsafe removal. Agent System does not delete
-the branch or refs, prune state, or maintain conversation attachment state.
+### Behavior
+
+Arguments after `--` pass through unchanged with the child's streams and exit
+code. `cwd` must remain inside the agent workspace or a configured worktree;
+external roots require trusted agent context or an explicit `--agent`.
+
+`prepare` is idempotent, `list` is read-only, and `remove` uses non-forced Git
+removal. Dirty worktrees, branches, and refs remain intact.
+
+Agent System names both the branch and directory `<work-id-slug>-<digest>`.
+Prefer `<task-id>-<brief-kebab-case-description>` for the work id when a
+description is available; otherwise use `<task-id>`.
 
 ## Shim
 
@@ -282,17 +286,20 @@ git --agent-system
 git status --short
 ```
 
-The shim delegates to `openclaw agent-system tool git`, preserves the caller's
-directory, and excludes Agent System-managed command paths when resolving the
-real executable to prevent wrapper recursion.
+The shim delegates through the packaged `agent-system-tool` launcher, which
+passes arguments to `openclaw agent-system tool git`, exports its canonical
+directory, and preserves the caller's directory. The runtime excludes managed
+command paths when resolving the real `git` to prevent wrapper recursion.
 
-The shim is routing convenience, not universal interception. Absolute binaries,
-replaced `PATH` values, and unrelated host processes can bypass it.
+The shim is an operator-compatible routing convenience, not an agent security
+boundary. Absolute binaries, replaced `PATH` values, and unrelated host
+processes can bypass it.
 
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
+- [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 - [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance
 

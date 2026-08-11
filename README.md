@@ -110,6 +110,13 @@ environment and credential resolution, operation policy, execution, redaction,
 and auditing. A public [Tool API](./API.md) is planned so other OpenClaw plugins
 can add compatible wrappers through the same runtime.
 
+> [!IMPORTANT]
+> Model-facing `agent_system_*` tools are the agent-bound execution surface.
+> `openclaw agent-system tool`, `credentials`, and the packaged command shims are
+> trusted operator interfaces: a process with unrestricted host command access
+> can select another installed agent or workspace. Run `doctor` to inspect this
+> exposure, and use native tools for agent work.
+
 ## Development
 
 See [Development](./DEVELOPMENT.md) for source installation, the recommended DevGuard workflow, validation, and coding standards.

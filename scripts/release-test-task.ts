@@ -156,12 +156,7 @@ try {
     }
   });
   await check('exclude repository-only files', () => {
-    for (const path of [
-      'SPEC.md',
-      'AGENTS.md',
-      'examples/install/README.md',
-      'test/encode.spec.ts',
-    ]) {
+    for (const path of ['AGENTS.md', 'examples/install/README.md', 'test/encode.spec.ts']) {
       assert.equal(packedPaths.has(path), false, `packed plugin must exclude ${path}`);
     }
   });

@@ -8,6 +8,7 @@ import pluginMetadataFailures, {
 
 const openclawVersion = '2026.7.1-2';
 const packageMetadata: PackageMetadata = {
+  description: 'Better per-agent management for OpenClaw.',
   name: '@tanaab/openclaw-agent-system',
   os: ['darwin', 'linux'],
   version: 'test-version',
@@ -50,6 +51,7 @@ const packageMetadata: PackageMetadata = {
 };
 
 const manifest: PluginManifest = {
+  description: 'Better per-agent management for OpenClaw.',
   id: 'agent-system',
   name: 'Agent System',
   version: 'test-version',
@@ -95,6 +97,7 @@ describe('utils/plugin-metadata-failures', () => {
         'supported-os',
         'plugin-id',
         'plugin-name',
+        'plugin-description',
         'version-mismatch',
         'source-entry',
         'runtime-entry',
@@ -116,6 +119,21 @@ describe('utils/plugin-metadata-failures', () => {
         'build-openclaw-version',
         'build-sdk-version',
       ]),
+    );
+  });
+
+  it('should report package and manifest description drift', () => {
+    assert.deepEqual(
+      pluginMetadataFailures(
+        { ...packageMetadata, description: 'Package description.' },
+        { ...manifest, description: 'Manifest description.' },
+      ),
+      [
+        {
+          code: 'plugin-description',
+          message: 'package, manifest, and runtime descriptions must match',
+        },
+      ],
     );
   });
 

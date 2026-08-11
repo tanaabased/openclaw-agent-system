@@ -1,0 +1,14 @@
+schema-version: 1
+
+agent:
+  id: rootsbot
+  name: Rootsbot
+  email: rootsbot@tanaab.dev
+
+git:
+  worktrees:
+    root: .agent-system/custom/worktrees
+    repositories:
+      root: .agent-system/custom/repositories
+  policy:
+    delete: allow

@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: tanaabot
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+
+git:
+  worktrees: {}
+  policy:
+    delete: allow

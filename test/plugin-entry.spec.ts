@@ -9,6 +9,7 @@ describe('index', () => {
   it('should expose the agent system plugin contract', () => {
     assert.equal(plugin.id, 'agent-system');
     assert.equal(plugin.name, 'Agent System');
+    assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
@@ -75,7 +76,7 @@ describe('index', () => {
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
+    assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

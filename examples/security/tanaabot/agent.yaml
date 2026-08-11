@@ -1,0 +1,8 @@
+schema-version: 1
+
+agent:
+  id: tanaabot
+  name: Tanaabot Security Source
+  email: tanaabot-security@example.invalid
+
+git: {}

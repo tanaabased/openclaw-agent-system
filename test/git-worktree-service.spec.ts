@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import GitWorktreeService, { type GitWorktreeGitRunner } from '../tools/git/worktree-service.ts';
 
@@ -121,12 +121,13 @@ describe('tools/git/worktree-service', () => {
         baseRef: 'origin/main',
         cloneUrl: 'https://example.com/owner/repository.git',
         repositoryId: 'owner/repository',
-        workId: 'issue-123',
+        workId: '123-fix-agent-path-resolution',
       };
 
       const prepared = await service.prepare(context, input);
       assert.equal(prepared.status, 'created');
-      assert.match(prepared.branch, /^agent-system\/issue-123-/u);
+      assert.equal(prepared.branch, basename(prepared.path));
+      assert.match(prepared.branch, /^123-fix-agent-path-resolution-[a-f0-9]{10}$/u);
       assert.equal((await service.prepare(context, input)).status, 'existing');
       assert.deepEqual(await service.list(context, input.repositoryId), [
         {
@@ -142,16 +143,36 @@ describe('tools/git/worktree-service', () => {
       );
       assert.deepEqual(await service.list(context, input.repositoryId), []);
       assert.equal(git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
-      assert.equal(
-        git.calls.some(
-          ({ argv }) => argv[0] === 'fetch' && argv.includes('+refs/heads/*:refs/remotes/origin/*'),
-        ),
-        true,
-      );
+      assert.equal(git.calls.filter(({ argv }) => argv[0] === 'fetch').length, 0);
       assert.equal(
         git.calls.some(({ argv }) => argv[0] === 'worktree' && argv.includes('--force')),
         false,
       );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should refresh an existing managed repository only before creating another worktree', async () => {
+    const { context, git, service, workspaceDir } = await fixture();
+    try {
+      const input = {
+        baseRef: 'origin/main',
+        cloneUrl: 'https://example.com/owner/repository.git',
+        repositoryId: 'owner/repository',
+      };
+
+      await service.prepare(context, { ...input, workId: 'first' });
+      git.calls.length = 0;
+      await service.prepare(context, { ...input, workId: 'second' });
+
+      const fetches = git.calls.filter(({ argv }) => argv[0] === 'fetch');
+      assert.equal(fetches.length, 1);
+      assert.deepEqual(fetches[0]?.argv, [
+        'fetch',
+        'origin',
+        '+refs/heads/*:refs/remotes/origin/*',
+      ]);
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });
     }
@@ -198,6 +219,10 @@ describe('tools/git/worktree-service', () => {
       assert.equal(result.status, 'created');
       assert.equal(
         git.calls.some(({ argv }) => argv[0] === 'clone'),
+        false,
+      );
+      assert.equal(
+        git.calls.some(({ argv }) => argv[0] === 'fetch'),
         false,
       );
       assert.equal(

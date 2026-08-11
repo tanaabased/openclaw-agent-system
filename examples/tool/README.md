@@ -45,6 +45,10 @@ openclaw as tool gh -- repo view tanaabased/openclaw-agent-system --json name --
 cd "$TMPDIR"
 openclaw as tool gh --agent tanaabot -- api user --jq .login | grep -Fx 'tanaabot'
 
+# should report that host commands may reach trusted operator surfaces
+cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
+openclaw agent-system doctor --json | grep -F '"code": "agent-operator-boundary-exposed"'
+
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'

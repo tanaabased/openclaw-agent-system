@@ -248,12 +248,10 @@ describe('lib/register-cli', () => {
       '--',
       'prepare',
       'repo',
-      'task-123',
+      '123-fix-agent-path-resolution',
       'origin/main',
       '--clone-url',
       'git@github.com:example/repo.git',
-      '--branch',
-      'agent/task-123',
     ]);
 
     assert.deepEqual(calls.tool, [
@@ -261,12 +259,10 @@ describe('lib/register-cli', () => {
         argv: [
           'prepare',
           'repo',
-          'task-123',
+          '123-fix-agent-path-resolution',
           'origin/main',
           '--clone-url',
           'git@github.com:example/repo.git',
-          '--branch',
-          'agent/task-123',
         ],
         command: 'worktree',
         scope: { agentId: 'data', source: 'command', workspaceDir: '/current' },

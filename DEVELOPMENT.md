@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
+This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface and use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references.
 
 ## Requirements
 
@@ -177,10 +177,10 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
 
-### Tool Providers
+### Tool Integrations
 
 First-party tool implementations live in `tools/<capability>/` and use Agent
-System's internal tool contract. The planned public provider boundary is
+System's internal tool contract. The planned public Tool API boundary is
 documented in [Tool API](./API.md); it is not available to third-party OpenClaw
 plugins until a supported typed cross-plugin capability and package export are
 implemented.

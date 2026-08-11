@@ -5,11 +5,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
-import {
-  gitWorktreeDefaultBranch,
-  gitWorktreeDirectoryName,
-  gitWorktreeRepositoryDirectoryName,
-} from './worktree-names.ts';
+import { gitWorktreeDirectoryName, gitWorktreeRepositoryDirectoryName } from './worktree-names.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 
 export interface GitWorktreeGitResult {
@@ -31,7 +27,6 @@ export interface GitWorktreeServiceContext {
 
 export interface GitWorktreePrepareInput {
   baseRef: string;
-  branch?: string;
   cloneUrl?: string;
   repositoryId: string;
   workId: string;
@@ -47,6 +42,7 @@ export interface GitWorktreeResult {
 
 interface ResolvedRepository {
   path: string;
+  refreshBeforeCreate: boolean;
   repositoryId: string;
 }
 
@@ -134,10 +130,9 @@ export default class GitWorktreeService {
       layout,
       input.repositoryId,
       input.cloneUrl,
-      true,
     );
-    const path = this.#worktreePath(layout, input.repositoryId, input.workId);
-    const branch = input.branch ?? gitWorktreeDefaultBranch(input.repositoryId, input.workId);
+    const branch = gitWorktreeDirectoryName(input.repositoryId, input.workId);
+    const path = this.#worktreePath(layout, input.repositoryId, branch);
     const registered = await this.#registeredWorktrees(context, repository);
     const existing = registered.find((worktree) => worktree.path === path);
     if (existing) {
@@ -148,6 +143,16 @@ export default class GitWorktreeService {
     }
     if ((await pathKind(path)) !== 'absent') {
       throw new Error('The deterministic Git worktree path is already occupied.');
+    }
+    if (repository.refreshBeforeCreate) {
+      requireGitSuccess(
+        'fetch',
+        await this.#run(context, repository.path, [
+          'fetch',
+          'origin',
+          '+refs/heads/*:refs/remotes/origin/*',
+        ]),
+      );
     }
 
     requireGitSuccess(
@@ -226,7 +231,11 @@ export default class GitWorktreeService {
     validateIdentifier(workId, 'work id');
     const layout = await this.#readyLayout(context);
     const repository = await this.#resolveRepository(context, layout, repositoryId);
-    const path = this.#worktreePath(layout, repositoryId, workId);
+    const path = this.#worktreePath(
+      layout,
+      repositoryId,
+      gitWorktreeDirectoryName(repositoryId, workId),
+    );
     const existing = (await this.#registeredWorktrees(context, repository)).find(
       (worktree) => worktree.path === path,
     );
@@ -257,15 +266,14 @@ export default class GitWorktreeService {
     validateIdentifier(input.repositoryId, 'repository id');
     validateIdentifier(input.workId, 'work id');
     validateIdentifier(input.baseRef, 'base ref');
-    if (input.branch !== undefined) validateIdentifier(input.branch, 'branch');
     if (input.cloneUrl !== undefined) normalizeGitWorktreeRemote(input.cloneUrl);
   }
 
-  #worktreePath(layout: GitWorktreeLayout, repositoryId: string, workId: string): string {
+  #worktreePath(layout: GitWorktreeLayout, repositoryId: string, name: string): string {
     return join(
       layout.worktreeRoot,
       gitWorktreeRepositoryDirectoryName(repositoryId).replace(/\.git$/u, ''),
-      gitWorktreeDirectoryName(repositoryId, workId),
+      name,
     );
   }
 
@@ -295,6 +303,7 @@ export default class GitWorktreeService {
     }
     const local = Object.entries(layout.localRepositories).map(([repositoryId, path]) => ({
       path,
+      refreshBeforeCreate: false,
       repositoryId,
     }));
     const managed = await Promise.all(
@@ -308,7 +317,7 @@ export default class GitWorktreeService {
             'agent-system.repository-id',
           ]);
           const repositoryId = id.exitCode === 0 ? id.stdout.trim() : '';
-          return repositoryId ? { path, repositoryId } : undefined;
+          return repositoryId ? { path, refreshBeforeCreate: true, repositoryId } : undefined;
         }),
     );
     return [...local, ...managed.filter((value): value is ResolvedRepository => Boolean(value))];
@@ -319,10 +328,9 @@ export default class GitWorktreeService {
     layout: GitWorktreeLayout,
     repositoryId: string,
     cloneUrl?: string,
-    fetch = false,
   ): Promise<ResolvedRepository> {
     const localPath = getOwn(layout.localRepositories, repositoryId);
-    if (localPath) return { path: localPath, repositoryId };
+    if (localPath) return { path: localPath, refreshBeforeCreate: false, repositoryId };
 
     const source = cloneUrl === undefined ? undefined : normalizeGitWorktreeRemote(cloneUrl);
     const path = join(layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId));
@@ -345,17 +353,7 @@ export default class GitWorktreeService {
           throw new Error('The managed Git repository uses another origin.');
         }
       }
-      if (fetch) {
-        requireGitSuccess(
-          'fetch',
-          await this.#run(context, path, [
-            'fetch',
-            'origin',
-            '+refs/heads/*:refs/remotes/origin/*',
-          ]),
-        );
-      }
-      return { path, repositoryId };
+      return { path, refreshBeforeCreate: true, repositoryId };
     }
     if (!source) throw new Error('A clone URL is required to create this managed repository.');
 
@@ -382,7 +380,7 @@ export default class GitWorktreeService {
         ]),
       );
       await rename(temporaryPath, path);
-      return { path, repositoryId };
+      return { path, refreshBeforeCreate: false, repositoryId };
     } catch (error) {
       await rm(temporaryPath, { force: true, recursive: true }).catch(() => undefined);
       throw error;

@@ -3,11 +3,7 @@ import type {
   AgentSystemOperation,
 } from '../../lib/tool-types.ts';
 import { resolveGitPolicyConfiguration, type GitToolConfiguration } from './config-schema.ts';
-import {
-  gitOperationHazards,
-  isRawGitWorktreeMutationOperation,
-  type GitPolicyHazard,
-} from './operation-classifier.ts';
+import { gitOperationHazards, type GitPolicyHazard } from './operation-classifier.ts';
 
 export interface GitAuthorizationDependencies {
   extensionAvailable?(name: string): Promise<boolean> | boolean;
@@ -27,13 +23,6 @@ export async function authorizeGitOperation(
   configuration: GitToolConfiguration,
   dependencies: GitAuthorizationDependencies = {},
 ): Promise<AgentSystemAuthorizationDecision> {
-  if (isRawGitWorktreeMutationOperation(operation)) {
-    return {
-      status: 'denied',
-      reason:
-        'Raw Git worktree mutation is unavailable; use agent_system_git_worktree for managed lifecycle changes.',
-    };
-  }
   if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };
   const extension = operation.attributes?.['git.extension'];
   if (

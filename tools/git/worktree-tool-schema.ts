@@ -18,7 +18,6 @@ export const gitWorktreeToolSchema = Type.Union([
     {
       action: Type.Literal('prepare'),
       baseRef: boundedIdentifier,
-      branch: Type.Optional(boundedIdentifier),
       repository,
       workId: boundedIdentifier,
     },

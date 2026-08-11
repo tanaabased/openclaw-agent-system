@@ -6,7 +6,6 @@
 - Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Never load schema files or tool modules from manifest values, and do not create empty tool folders before their implementation exists.
 - Keep `examples/` as matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put agent-facing guidance in `skills/` and user-facing tool documentation beside `tools/<capability>/`.
-- Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
 
 ## Product boundary
 
@@ -14,6 +13,9 @@
 - Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
 - Apply tool policy and approval before resolving credentials. Remote-service token permissions remain the final authorization boundary.
+- Treat model-facing `agent_system_*` tools as the agent-bound execution surface. Treat `tool`, `credentials`, and packaged shims as trusted operator interfaces; never claim their agent selection or PATH routing enforces cross-agent isolation.
+- Treat preventing obvious cross-agent impersonation as a core product goal. Managed agents share an OS user, so provide practical agent-context and workspace guardrails without claiming complete isolation.
+- Keep the central native-tool instruction in `before_prompt_build` and the high-confidence operator-command gate in `before_tool_call`. Block with an actionable native retry instead of claiming transparent cross-tool rewriting, and never log the inspected raw command.
 
 ## Documentation
 
@@ -22,7 +24,7 @@
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
 - Keep explanatory comments inside documentation code blocks fully lowercase. Preserve required casing only in commands, identifiers, environment-variable names, and expected values.
-- Treat `SPEC.md` as product intent and `CHANGELOG.md` as the record of implemented changes.
+- Treat `CHANGELOG.md` as the record of implemented changes.
 
 ## Identity and configuration
 
@@ -50,8 +52,10 @@
 
 ## Accepted optimization decisions
 
+- Keep `API.md` as the public planning surface for the future cross-plugin Tool API, include it in the published package, and keep current-behavior docs explicit that the API is not yet available. Do not recommend removing or internalizing it unless the user changes that product decision or the document contradicts implemented behavior.
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
-- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, and `github` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
+- Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
+- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, `github`, and `security` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 - Keep the synthetic Leia SSH-key preparation shared across the `pr-examples-tests.yml` matrix. It creates an isolated per-job fixture rather than exposing a shared credential, and preserving one uniform workflow path is preferred over conditionally gating it to the Git scenario. Do not recommend narrowing this setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
 
 ## Validation
