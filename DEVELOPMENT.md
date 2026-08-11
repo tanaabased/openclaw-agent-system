@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface, use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references, and treat [SPEC.md](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md) as product intent rather than implementation evidence.
+This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface and use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references.
 
 ## Requirements
 

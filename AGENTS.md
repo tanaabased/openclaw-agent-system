@@ -6,7 +6,6 @@
 - Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Never load schema files or tool modules from manifest values, and do not create empty tool folders before their implementation exists.
 - Keep `examples/` as matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put agent-facing guidance in `skills/` and user-facing tool documentation beside `tools/<capability>/`.
-- Treat `SPEC.md` as product intent, not evidence that a feature has been implemented.
 
 ## Product boundary
 
@@ -15,6 +14,7 @@
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
 - Apply tool policy and approval before resolving credentials. Remote-service token permissions remain the final authorization boundary.
 - Treat model-facing `agent_system_*` tools as the agent-bound execution surface. Treat `tool`, `credentials`, and packaged shims as trusted operator interfaces; never claim their agent selection or PATH routing enforces cross-agent isolation.
+- Treat preventing obvious cross-agent impersonation as a core product goal. Managed agents share an OS user, so provide practical agent-context and workspace guardrails without claiming complete isolation.
 - Keep the central native-tool instruction in `before_prompt_build` and the high-confidence operator-command gate in `before_tool_call`. Block with an actionable native retry instead of claiming transparent cross-tool rewriting, and never log the inspected raw command.
 
 ## Documentation
@@ -24,7 +24,7 @@
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
 - Keep explanatory comments inside documentation code blocks fully lowercase. Preserve required casing only in commands, identifiers, environment-variable names, and expected values.
-- Treat `SPEC.md` as product intent and `CHANGELOG.md` as the record of implemented changes.
+- Treat `CHANGELOG.md` as the record of implemented changes.
 
 ## Identity and configuration
 

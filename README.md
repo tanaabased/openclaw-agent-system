@@ -113,10 +113,9 @@ can add compatible wrappers through the same runtime.
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.
 > `openclaw agent-system tool`, `credentials`, and the packaged command shims are
-> trusted operator interfaces. Agent System guides agents to native tools and
-> blocks recognized operator-command, credential, and cross-workspace attempts,
-> but indirect scripts and unrestricted same-user host access remain outside
-> that boundary. Run `doctor` to inspect the underlying command posture.
+> trusted operator interfaces: a process with unrestricted host command access
+> can select another installed agent or workspace. Run `doctor` to inspect this
+> exposure, and use native tools for agent work.
 
 ## Development
 

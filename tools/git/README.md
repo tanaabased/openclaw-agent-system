@@ -230,9 +230,8 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 These are trusted operator interfaces for administration, testing, and
 debugging. Agents should use `agent_system_git` and
-`agent_system_git_worktree`. Agent System blocks recognized model-originated
-operator routes, but indirect unrestricted host commands remain outside that
-gate.
+`agent_system_git_worktree`; an agent with unrestricted host command access
+could otherwise select another installed agent.
 
 ### Usage
 
@@ -301,7 +300,6 @@ processes can bypass it.
 - [Agent System README](../../README.md): installation and the common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
 - [Development](../../DEVELOPMENT.md#logging): runtime logging during development
-- [Git tool specification](./SPEC.md): detailed identity, policy, SSH, signing, and worktree design
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 - [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance
 

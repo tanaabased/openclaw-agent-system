@@ -77,6 +77,3 @@ The current [`git`](./tools/git/README.md) and
 [`gh`](./tools/github/README.md) wrappers exercise the internal contract. Their
 guides document tool-specific configuration, policy, invocation, lifecycle, and
 security behavior without defining the future public registration API.
-
-See the product [Tool Contract specification](https://github.com/tanaabased/openclaw-agent-system/blob/main/SPEC.md#agent-system-tool-contract)
-for the intended architecture and delivery sequence.
