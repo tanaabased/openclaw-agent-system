@@ -75,7 +75,7 @@ describe('index', () => {
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['session_start', 'before_prompt_build']);
+    assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

@@ -783,9 +783,27 @@ Native model-facing tools are the agent-bound execution surface. The
 `openclaw agent-system tool` and `credentials` command trees are trusted
 operator interfaces: `--agent` intentionally selects an installed agent, and
 workspace discovery can select the same identity from its directory. Packaged
-shims delegate to the operator command path. Agent System must document this
-boundary and `doctor` must warn when configured tools coexist with generic
-command execution that may reach those operator interfaces.
+shims delegate to the operator command path. Direct operator CLI use remains
+available outside model tool hooks.
+
+Managed-agent prompt context must direct Agent System work to native tools and
+forbid other-agent identity, workspace, environment, and credential access. A
+`before_tool_call` gate must inspect supported direct command envelopes. It
+blocks a current-agent operator route with an actionable native-tool retry and
+hard-blocks credential commands, unverified or different agent selectors,
+explicit managed shim paths without verified context, and commands that start
+inside another manifest-owned workspace. Security diagnostics include stable
+codes and non-secret agent, session, run, tool-call, and tool identifiers, but
+never the raw command.
+
+The current hook result can rewrite parameters but cannot replace the selected
+tool or synthesize its result, and Codex-native tool arguments cannot be
+rewritten. Agent System therefore does not silently transform an operator
+command into a native tool call. The gate must not claim to evaluate nested
+interpreters, dynamically assembled commands, descendant processes, direct
+HTTP or SDK traffic, MCP tools, browsers, or arbitrary binaries. `doctor` warns
+when configured tools coexist with generic command execution that may reach or
+bypass those operator interfaces.
 
 Native Agent System tools execute in the Gateway plugin process. A sandboxed
 originating session adds an OpenClaw tool-policy gate but does not automatically
@@ -896,10 +914,10 @@ API manual into every prompt. Guidance may include:
 - instructions to request the wrapped CLI's `--help` through the owned tool
   when syntax is unfamiliar.
 
-This is tool guidance or context injection, not hostile prompt injection. It is
-advisory. An optional enforcement mode may block high-confidence bypasses, but
-must not claim to recognize every shell, absolute path, SDK, MCP, browser, or
-third-party plugin route.
+This is tool guidance or context injection, not hostile prompt injection. The
+guidance is advisory; the command gate separately blocks high-confidence
+operator and cross-agent routes. Neither layer recognizes every shell,
+absolute path, SDK, MCP, browser, or third-party plugin route.
 
 ### Packaged command launchers
 

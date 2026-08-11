@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
 describe('lib/register-hooks', () => {
@@ -31,7 +32,7 @@ describe('lib/register-hooks', () => {
     ]);
   });
 
-  it('should append guidance only for tools configured by the active manifest', async () => {
+  it('should append central and configured tool guidance for the active manifest', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(
       {
@@ -60,6 +61,8 @@ describe('lib/register-hooks', () => {
       { agentId: 'data', sessionId: 'one' },
     );
 
-    assert.deepEqual(result, { appendSystemContext: 'Prefer the configured Agent System tool.' });
+    assert.deepEqual(result, {
+      appendSystemContext: `${agentCommandSecurityGuidance}\nPrefer the configured Agent System tool.`,
+    });
   });
 });

@@ -230,8 +230,9 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 These are trusted operator interfaces for administration, testing, and
 debugging. Agents should use `agent_system_git` and
-`agent_system_git_worktree`; an agent with unrestricted host command access
-could otherwise select another installed agent.
+`agent_system_git_worktree`. Agent System blocks recognized model-originated
+operator routes, but indirect unrestricted host commands remain outside that
+gate.
 
 ### Usage
 

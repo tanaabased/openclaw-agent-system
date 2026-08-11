@@ -1,6 +1,7 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type AgentManifestService from './agent-manifest-service.ts';
+import { agentCommandSecurityGuidance } from './agent-command-security.ts';
 import type AgentSystemToolRegistry from './tool-registry.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'>;
@@ -19,7 +20,7 @@ export default function registerAgentSystemHooks(
     const result = await manifestService.loadForRuntimeContext(context, 'before_prompt_build');
     if (result.status !== 'loaded') return;
 
-    const guidance = toolRegistry.guidance(result.manifest);
-    if (guidance.length > 0) return { appendSystemContext: guidance.join('\n') };
+    const guidance = [agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest)];
+    return { appendSystemContext: guidance.join('\n') };
   });
 }

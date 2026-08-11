@@ -163,7 +163,21 @@ OpenClaw agent context. They are the supported execution path for agents.
 The `tool` and `credentials` commands are trusted operator interfaces. Their
 `--agent` option intentionally selects any installed agent, and workspace
 discovery can do the same from that agent's directory. Packaged shims delegate
-to `tool` and inherit this boundary. Do not expose these commands through
+to `tool` and inherit this boundary. Direct operator CLI use does not pass
+through model tool hooks.
+
+For managed agents, Agent System injects concise `before_prompt_build` guidance
+and inspects direct `exec` and `exec_command` shell segments in
+`before_tool_call`. A current-agent operator route is blocked with the native
+tool to retry. Credential commands, dynamic or different `--agent` selectors,
+explicit managed shim paths without verified agent context, and commands that
+start in another manifest-owned workspace are blocked and logged without the
+raw command. Workspace `AGENTS.md` may repeat this operational rule; `USER.md`
+and `SOUL.md` are not enforcement surfaces.
+
+The hook cannot replace one tool call with another, fully parse arbitrary shell
+programs, inspect descendant processes, or contain direct HTTP, SDK, MCP, or
+absolute-binary alternatives. Do not expose operator commands through
 unrestricted Gateway-host execution when agents must not assume one another's
 identity. See OpenClaw's [security model](https://docs.openclaw.ai/gateway/security)
 and [sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the

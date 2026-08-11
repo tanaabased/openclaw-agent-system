@@ -161,8 +161,9 @@ configuration, and report drift.
 ## CLI
 
 This is a trusted operator interface for administration, testing, and debugging.
-Agents should use `agent_system_github`; an agent with unrestricted host command
-access could otherwise select another installed agent.
+Agents should use `agent_system_github`. Agent System blocks recognized
+model-originated operator routes, but indirect unrestricted host commands
+remain outside that gate.
 
 ### Usage
 

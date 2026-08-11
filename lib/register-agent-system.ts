@@ -8,6 +8,7 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
+import registerAgentCommandSecurity from './agent-command-security.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
 import AgentEnvironmentService from './agent-environment-service.ts';
 import AgentInstallService from './agent-install-service.ts';
@@ -169,6 +170,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
 
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService, toolApprovals);
+  registerAgentCommandSecurity(api, {
+    logger,
+    managedExecutableDirectories: excludedToolExecutableDirectories,
+    manifestService,
+  });
   registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(
     ({ logger: cliLogger, program }) => {
