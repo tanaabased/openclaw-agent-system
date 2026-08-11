@@ -1,6 +1,6 @@
 import type { EnvironmentSetValue, ResolvableString } from './manifest-value-types.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
-import type { GitHubManifestConfiguration } from '../tools/github/config-schema.ts';
+import type { GitHubManifestConfiguration } from './github-section-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;

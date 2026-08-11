@@ -1,12 +1,5 @@
 import { Type, type Static } from 'typebox';
 
-import {
-  decodeResolvableString,
-  externalEnvironmentBindingSchema,
-  externalResolvableStringSchema,
-} from '../../utils/manifest-value-schemas.ts';
-import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
-
 const externalGitHubKeyValueSchema = Type.String({
   minLength: 1,
   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
@@ -42,115 +35,53 @@ const externalGitHubPolicyDecisionSchema = Type.Union([
   Type.Literal('ask'),
   Type.Literal('deny'),
 ]);
-const externalGitHubIdentitySchema = Type.Object(
-  {
-    login: Type.String({
-      maxLength: 100,
-      minLength: 1,
-      pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$',
-    }),
-    'node-id': Type.String({
-      maxLength: 255,
-      minLength: 1,
-      pattern: '^[^\\u0000\\r\\n\\s]+$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
-export const externalGitHubSectionSchema = Type.Object(
-  {
-    config: Type.Optional(
-      Type.Object(
-        {
-          'accessible-colors': Type.Optional(
-            Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
-          ),
-          'color-labels': Type.Optional(
-            Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
-          ),
-          'git-protocol': Type.Optional(Type.Union([Type.Literal('https'), Type.Literal('ssh')])),
-          spinner: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
-          telemetry: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
-        },
-        { additionalProperties: false },
-      ),
+export const externalGitHubToolSectionProperties = {
+  config: Type.Optional(
+    Type.Object(
+      {
+        'accessible-colors': Type.Optional(
+          Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
+        ),
+        'color-labels': Type.Optional(
+          Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
+        ),
+        'git-protocol': Type.Optional(Type.Union([Type.Literal('https'), Type.Literal('ssh')])),
+        spinner: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
+        telemetry: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
+      },
+      { additionalProperties: false },
     ),
-    host: Type.Optional(Type.Literal('github.com')),
-    notifications: Type.Optional(
-      Type.Object(
-        {
-          'approved-actors': Type.Array(externalGitHubIdentitySchema, {
-            minItems: 1,
-            uniqueItems: true,
-          }),
-          'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
-          'repository-policy': Type.Optional(
-            Type.Object(
-              {
-                'allowed-owners': Type.Optional(
-                  Type.Array(externalGitHubIdentitySchema, {
-                    minItems: 1,
-                    uniqueItems: true,
-                  }),
-                ),
-                'minimum-permission': Type.Optional(Type.Literal('write')),
-              },
-              { additionalProperties: false },
-            ),
-          ),
-        },
-        { additionalProperties: false },
-      ),
+  ),
+  policy: Type.Optional(
+    Type.Object(
+      {
+        admin: Type.Optional(externalGitHubPolicyDecisionSchema),
+        destructive: Type.Optional(externalGitHubPolicyDecisionSchema),
+        unknown: Type.Optional(externalGitHubPolicyDecisionSchema),
+      },
+      { additionalProperties: false },
     ),
-    policy: Type.Optional(
-      Type.Object(
-        {
-          admin: Type.Optional(externalGitHubPolicyDecisionSchema),
-          destructive: Type.Optional(externalGitHubPolicyDecisionSchema),
-          unknown: Type.Optional(externalGitHubPolicyDecisionSchema),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
-    'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
-    username: Type.Optional(externalResolvableStringSchema),
-    token: Type.Optional(externalEnvironmentBindingSchema),
-  },
-  { additionalProperties: false },
-);
+  ),
+  'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
+  'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
+} as const;
 
-type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
+export const externalGitHubToolSectionSchema = Type.Object(externalGitHubToolSectionProperties, {
+  additionalProperties: false,
+});
+type ExternalGitHubToolSection = Static<typeof externalGitHubToolSectionSchema>;
 
 export type GitHubPublicKeySource =
   | { source: string; type: 'auto'; title?: string }
   | { source: string; type: 'key'; title?: string }
   | { source: string; type: 'path'; title?: string };
 
-export interface GitHubManifestConfiguration {
+export interface GitHubToolManifestConfiguration {
   config?: Partial<GitHubCliConfiguration>;
-  host?: 'github.com';
-  notifications?: GitHubNotificationsConfiguration;
   policy?: Partial<GitHubPolicyConfiguration>;
   sshKeys?: GitHubPublicKeySource[];
   sshSigningKeys?: GitHubPublicKeySource[];
-  token?: EnvironmentBinding;
-  username?: ResolvableString;
-}
-
-export interface GitHubIdentityPin {
-  login: string;
-  nodeId: string;
-}
-
-export interface GitHubNotificationsConfiguration {
-  approvedActors: GitHubIdentityPin[];
-  intervalMinutes: number;
-  repositoryPolicy: {
-    allowedOwners?: GitHubIdentityPin[];
-    minimumPermission: 'write';
-  };
 }
 
 export interface GitHubCliConfiguration {
@@ -184,27 +115,23 @@ export const defaultGitHubPolicyConfiguration: GitHubPolicyConfiguration = {
 };
 
 export function resolveGitHubCliConfiguration(
-  configuration: GitHubManifestConfiguration,
+  configuration: GitHubToolManifestConfiguration,
 ): GitHubCliConfiguration {
   return { ...defaultGitHubCliConfiguration, ...configuration.config };
 }
 
 export function resolveGitHubPolicyConfiguration(
-  configuration: GitHubManifestConfiguration,
+  configuration: GitHubToolManifestConfiguration,
 ): GitHubPolicyConfiguration {
   return { ...defaultGitHubPolicyConfiguration, ...configuration.policy };
 }
 
-/** Decode schema-owned GitHub keys without transforming environment-variable names. */
-export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifestConfiguration {
-  const decodeIdentity = (
-    identity: Static<typeof externalGitHubIdentitySchema>,
-  ): GitHubIdentityPin => ({
-    login: identity.login,
-    nodeId: identity['node-id'],
-  });
+/** Decode schema-owned GitHub tool keys without transforming user-defined values. */
+export function decodeGitHubToolConfiguration(
+  value: ExternalGitHubToolSection,
+): GitHubToolManifestConfiguration {
   const decodeKeySources = (
-    sources: NonNullable<ExternalGitHubSection['ssh-keys']>,
+    sources: NonNullable<ExternalGitHubToolSection['ssh-keys']>,
   ): GitHubPublicKeySource[] =>
     (Array.isArray(sources) ? sources : [sources]).map((source) =>
       typeof source === 'string'
@@ -236,33 +163,10 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
           },
         }
       : {}),
-    ...(value.host ? { host: value.host } : {}),
-    ...(value.notifications
-      ? {
-          notifications: {
-            approvedActors: value.notifications['approved-actors'].map(decodeIdentity),
-            intervalMinutes: value.notifications['interval-minutes'] ?? 5,
-            repositoryPolicy: {
-              minimumPermission:
-                value.notifications['repository-policy']?.['minimum-permission'] ?? 'write',
-              ...(value.notifications['repository-policy']?.['allowed-owners'] === undefined
-                ? {}
-                : {
-                    allowedOwners:
-                      value.notifications['repository-policy']['allowed-owners'].map(
-                        decodeIdentity,
-                      ),
-                  }),
-            },
-          },
-        }
-      : {}),
     ...(value.policy ? { policy: { ...value.policy } } : {}),
     ...(value['ssh-keys'] ? { sshKeys: decodeKeySources(value['ssh-keys']) } : {}),
     ...(value['ssh-signing-keys']
       ? { sshSigningKeys: decodeKeySources(value['ssh-signing-keys']) }
       : {}),
-    ...(value.token ? { token: value.token } : {}),
-    ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };
 }

@@ -3,10 +3,8 @@ import type {
   AgentSystemOperation,
   AgentSystemRisk,
 } from '../../lib/tool-types.ts';
-import {
-  resolveGitHubPolicyConfiguration,
-  type GitHubManifestConfiguration,
-} from './config-schema.ts';
+import type { GitHubManifestConfiguration } from '../../utils/github-section-schema.ts';
+import { resolveGitHubPolicyConfiguration } from './config-schema.ts';
 import type { GitHubToolInput } from './tool-schema.ts';
 
 const globalOptionsWithValues = new Set(['--hostname', '--repo', '-R']);

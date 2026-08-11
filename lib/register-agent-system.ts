@@ -6,9 +6,12 @@ import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plug
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
+import { githubNotificationChannel } from '../channels/github/channel.ts';
+import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
+import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
+import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
-import { githubNotificationChannel } from '../tools/github/notification-channel.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
 import AgentEnvironmentService from './agent-environment-service.ts';
@@ -27,9 +30,6 @@ import OpCredentialService from './op-credential-service.ts';
 import OpEnvironmentService from './op-environment-service.ts';
 import createPathLifecycleContribution from './path-lifecycle.ts';
 import PathProjectionStore from './path-projection-store.ts';
-import createNotificationLifecycleContribution from './notification-lifecycle.ts';
-import NotificationRoutingReceiptStore from './notification-routing-receipt-store.ts';
-import NotificationRoutingService from './notification-routing-service.ts';
 import registerAgentSystemCli from './register-cli.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';

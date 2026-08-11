@@ -8,8 +8,8 @@ import {
   type NotificationRoutingDesiredState,
   type NotificationRoutingPlan,
   type NotificationRoutingReceipt,
-} from '../utils/notification-routing.ts';
-import type NotificationRoutingReceiptStore from './notification-routing-receipt-store.ts';
+} from '../utils/routing.ts';
+import type NotificationRoutingReceiptStore from './routing-receipt-store.ts';
 
 export interface NotificationRoutingServiceDependencies {
   mutateConfigFile(params: {
@@ -25,6 +25,7 @@ export interface NotificationRoutingReconcileResult {
   configChanged: boolean;
   plan: NotificationRoutingPlan;
   receiptAction: 'created' | 'none' | 'removed';
+  requiresManualRestart: boolean;
 }
 
 function assertSafePlan(plan: NotificationRoutingPlan): void {
@@ -51,11 +52,8 @@ export default class NotificationRoutingService {
     desired: NotificationRoutingDesiredState,
   ): Promise<NotificationRoutingReconcileResult> {
     const receipt = await this.#dependencies.receiptStore.read(desired.agentId);
-    const initialPlan = planNotificationRouting(
-      await this.#dependencies.readConfig(),
-      desired,
-      receipt,
-    );
+    const initialConfig = await this.#dependencies.readConfig();
+    const initialPlan = planNotificationRouting(initialConfig, desired, receipt);
     assertSafePlan(initialPlan);
 
     let configChanged = false;
@@ -105,7 +103,12 @@ export default class NotificationRoutingService {
       }
     }
 
-    return { configChanged, plan: initialPlan, receiptAction };
+    return {
+      configChanged,
+      plan: initialPlan,
+      receiptAction,
+      requiresManualRestart: configChanged && initialConfig.gateway?.reload?.mode === 'off',
+    };
   }
 }
 

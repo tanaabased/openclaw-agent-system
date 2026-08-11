@@ -110,6 +110,13 @@ environment and credential resolution, operation policy, execution, redaction,
 and auditing. A public [Tool API](./API.md) is planned so other OpenClaw plugins
 can add compatible wrappers through the same runtime.
 
+## Channels
+
+Agent System includes a local-only
+[GitHub notifications channel](./channels/github/README.md). The current release
+installs and verifies its exact agent route; polling, worktree preparation, and
+automated briefing remain future behavior.
+
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.
 > `openclaw agent-system tool`, `credentials`, and the packaged command shims are

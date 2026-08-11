@@ -3,10 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import {
-  githubNotificationChannelId,
-  type NotificationRoutingReceipt,
-} from '../utils/notification-routing.ts';
+import { githubNotificationChannelId, type NotificationRoutingReceipt } from '../utils/routing.ts';
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;

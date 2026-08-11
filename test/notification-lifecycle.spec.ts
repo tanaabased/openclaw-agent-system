@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import createNotificationLifecycleContribution from '../lib/notification-lifecycle.ts';
+import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
@@ -19,7 +19,7 @@ const manifest: AgentManifest = {
 };
 const context = { manifest, workspaceDir: '/workspace/data' };
 
-describe('lib/notification-lifecycle', () => {
+describe('channels/github/lib/lifecycle', () => {
   it('should always participate so removed manifest state can be cleaned up', () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {
@@ -111,12 +111,37 @@ describe('lib/notification-lifecycle', () => {
             configChanged: true,
             plan: { code: 'notification-route-installed', kind: 'upsert', message: 'installed' },
             receiptAction: 'created' as const,
+            requiresManualRestart: false,
           };
         },
       },
     });
     assert.deepEqual((await contribution.reconcile?.(context))?.outcomes, [
       { code: 'notification-route-installed', message: 'installed', status: 'updated' },
+    ]);
+
+    const restartRequired = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          return {
+            configChanged: true,
+            plan: { code: 'notification-route-installed', kind: 'upsert', message: 'installed' },
+            receiptAction: 'created' as const,
+            requiresManualRestart: true,
+          };
+        },
+      },
+    });
+    assert.deepEqual((await restartRequired.reconcile?.(context))?.outcomes, [
+      {
+        code: 'notification-route-installed',
+        message:
+          'installed Restart the OpenClaw Gateway to apply this change because gateway.reload.mode is off.',
+        status: 'updated',
+      },
     ]);
 
     const failing = createNotificationLifecycleContribution({

@@ -5,10 +5,11 @@ configuration, CLI, environment, and path behavior. Start with the
 [README](./README.md) for installation and the common workflow; use
 [DEVELOPMENT.md](./DEVELOPMENT.md) when changing Agent System itself.
 
-Tool-specific configuration, CLI, and routing documentation:
+Capability-specific configuration, CLI, and routing documentation:
 
 - [`git`](./tools/git/README.md)
 - [`gh`](./tools/github/README.md)
+- [GitHub notifications channel](./channels/github/README.md)
 
 ## Manifest
 
@@ -46,9 +47,10 @@ tool-provided sections.
 
 Agent System currently owns no global plugin settings. Its public configuration
 is the per-workspace manifest plus any configured tool sections. When
-`github.notifications` is present, `install` projects only a non-secret channel
-account and exact agent binding into global OpenClaw configuration; notification
-policy and credentials remain workspace-owned.
+[`github.notifications`](./channels/github/README.md#configuration) is present,
+`install` projects only a non-secret channel account and exact agent binding into
+global OpenClaw configuration; notification policy and credentials remain
+workspace-owned.
 
 A complete core configuration can contain:
 

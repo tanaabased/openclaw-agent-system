@@ -1,7 +1,7 @@
 # Agent System Git Tools
 
 <p align="center">
-  <img src="../../skills/git-cli/agents/assets/icon-large.svg" alt="Agent System Git" width="180" />
+  <img src="../../assets/git-icon-large.svg" alt="Agent System Git" width="180" />
 </p>
 
 The Git capability runs ordinary noninteractive `git` commands and manages

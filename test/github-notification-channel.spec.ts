@@ -7,7 +7,7 @@ import {
   githubNotificationConversationId,
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
-} from '../tools/github/notification-channel.ts';
+} from '../channels/github/channel.ts';
 
 const event: GitHubNotificationAssignmentEvent = {
   id: 'assignment-event-1',
@@ -40,7 +40,7 @@ function configuredRoute(agentId = 'data'): OpenClawConfig {
   };
 }
 
-describe('tools/github/notification-channel', () => {
+describe('channels/github/channel', () => {
   it('should expose an inert local-only multi-account channel', () => {
     const config = configuredRoute();
 

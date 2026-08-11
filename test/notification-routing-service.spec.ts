@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import NotificationRoutingService from '../lib/notification-routing-service.ts';
+import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import type {
   NotificationRoutingDesiredState,
   NotificationRoutingReceipt,
-} from '../utils/notification-routing.ts';
+} from '../channels/github/utils/routing.ts';
 
 const desired: NotificationRoutingDesiredState = {
   agentId: 'data',
@@ -14,12 +14,13 @@ const desired: NotificationRoutingDesiredState = {
   workspaceDir: '/workspace/data',
 };
 
-describe('lib/notification-routing-service', () => {
+describe('channels/github/lib/routing-service', () => {
   it('should reconcile idempotently and remove only owned state', async () => {
     const config: OpenClawConfig = {
       agents: { list: [{ id: 'data', workspace: '/workspace/data' }] },
       bindings: [{ type: 'route', agentId: 'data', match: { channel: 'slack' } }],
       channels: { slack: { enabled: true } },
+      gateway: { reload: { mode: 'off' } },
     };
     let receipt: NotificationRoutingReceipt | undefined;
     let mutations = 0;
@@ -50,14 +51,17 @@ describe('lib/notification-routing-service', () => {
     assert.equal(first.plan.kind, 'upsert');
     assert.equal(first.configChanged, true);
     assert.equal(first.receiptAction, 'created');
+    assert.equal(first.requiresManualRestart, true);
     assert.equal(second.plan.kind, 'noop');
     assert.equal(second.configChanged, false);
     assert.equal(second.receiptAction, 'none');
+    assert.equal(second.requiresManualRestart, false);
     assert.equal(mutations, 1);
 
     const removed = await service.reconcile({ ...desired, enabled: false });
     assert.equal(removed.plan.kind, 'remove');
     assert.equal(removed.receiptAction, 'removed');
+    assert.equal(removed.requiresManualRestart, true);
     assert.equal(receipt, undefined);
     assert.deepEqual(config.channels, { slack: { enabled: true } });
     assert.deepEqual(config.bindings, [

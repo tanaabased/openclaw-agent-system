@@ -1,11 +1,11 @@
-import type { AgentManifest, ManifestDiagnostic } from '../utils/manifest-types.ts';
-import type { NotificationRoutingDesiredState } from '../utils/notification-routing.ts';
+import type { AgentManifest, ManifestDiagnostic } from '../../../utils/manifest-types.ts';
+import type { NotificationRoutingDesiredState } from '../utils/routing.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleContext,
-} from './lifecycle-registry.ts';
-import type NotificationRoutingService from './notification-routing-service.ts';
+} from '../../../lib/lifecycle-registry.ts';
+import type NotificationRoutingService from './routing-service.ts';
 
 export interface NotificationLifecycleDependencies {
   routingService: Pick<NotificationRoutingService, 'inspect' | 'reconcile'>;
@@ -136,7 +136,9 @@ export default function createNotificationLifecycleContribution(
           outcomes: [
             {
               code: result.plan.code,
-              message: result.plan.message,
+              message: result.requiresManualRestart
+                ? `${result.plan.message} Restart the OpenClaw Gateway to apply this change because gateway.reload.mode is off.`
+                : result.plan.message,
               status,
             },
           ],

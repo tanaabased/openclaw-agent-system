@@ -10,7 +10,7 @@ import {
   resolveNotificationRoute,
   type NotificationRoutingDesiredState,
   type ResolvedNotificationRoute,
-} from '../../utils/notification-routing.ts';
+} from './utils/routing.ts';
 
 interface ResolvedNotificationChannelAccount {
   accountId: string;
@@ -54,7 +54,7 @@ export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChanne
     label: 'Agent System GitHub Notifications',
     selectionLabel: 'Agent System GitHub Notifications',
     docsPath:
-      'https://github.com/tanaabased/openclaw-agent-system/blob/main/tools/github/README.md',
+      'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
     blurb: 'Routes authorized GitHub work assignments into agent-scoped local sessions.',
     exposure: { configured: true, docs: true, setup: false },
     forceAccountBinding: true,

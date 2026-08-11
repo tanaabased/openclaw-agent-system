@@ -1,13 +1,10 @@
 import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
+import type { GitHubManifestConfiguration } from '../../utils/github-section-schema.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import type GitHubConfigStore from './config-store.ts';
-import {
-  resolveGitHubCliConfiguration,
-  type GitHubCliConfiguration,
-  type GitHubManifestConfiguration,
-} from './config-schema.ts';
+import { resolveGitHubCliConfiguration, type GitHubCliConfiguration } from './config-schema.ts';
 import {
   authorizeGitHubOperation,
   classifyGitHubOperation,

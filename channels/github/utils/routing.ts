@@ -116,7 +116,7 @@ function conflict(code: string, message: string): NotificationRoutingPlan {
   return { code, kind: 'conflict', message };
 }
 
-/** Compare one manifest-owned notification route with global OpenClaw state. */
+/** Compare one manifest-owned GitHub notification route with global OpenClaw state. */
 export function planNotificationRouting(
   config: OpenClawConfig,
   desired: NotificationRoutingDesiredState,

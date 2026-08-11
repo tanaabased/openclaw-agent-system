@@ -3,9 +3,9 @@
 ## Scope
 
 - Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
-- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
-- Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Never load schema files or tool modules from manifest values, and do not create empty tool folders before their implementation exists.
-- Keep `examples/` as matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put agent-facing guidance in `skills/` and user-facing tool documentation beside `tools/<capability>/`.
+- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, first-party channel capabilities in `channels/<provider>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Keep every channel's static schema and runtime entry in its owning channel folder. Never load schema files, tools, or channels from manifest values, and do not create empty capability folders before their implementation exists.
+- Keep `examples/` as matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put agent-facing guidance in `skills/` and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
 
 ## Product boundary
 
@@ -22,6 +22,7 @@
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
+- Put each first-party channel's complete configuration, routing, lifecycle, and security guide in `channels/<provider>/README.md`.
 - Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
 - Keep explanatory comments inside documentation code blocks fully lowercase. Preserve required casing only in commands, identifiers, environment-variable names, and expected values.
 - Treat `CHANGELOG.md` as the record of implemented changes.

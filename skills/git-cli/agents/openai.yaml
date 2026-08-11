@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System Git'
   short_description: 'Agent-scoped Git operations'
-  icon_small: './agents/assets/icon-small.svg'
-  icon_large: './agents/assets/icon-large.svg'
+  icon_small: '../../assets/git-icon-small.svg'
+  icon_large: '../../assets/git-icon-large.svg'
   brand_color: '#00c88a'
   default_prompt: 'Use $agent-system-git-cli and the agent_system_git tool for Git work with the active Agent System agent identity.'
