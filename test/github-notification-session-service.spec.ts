@@ -8,6 +8,10 @@ import GitHubNotificationSessionService, {
 } from '../channels/github/lib/session-service.ts';
 import { resolveNotificationRoute } from '../channels/github/utils/routing.ts';
 
+type InboundSessionRecord = Parameters<
+  GitHubNotificationSessionServiceDependencies['recordInboundSession']
+>[0];
+
 const config: OpenClawConfig = {
   agents: { list: [{ id: 'data', workspace: '/workspace/data' }] },
   channels: {
@@ -75,14 +79,14 @@ const assignmentInput = {
 function createService(
   overrides: {
     config?: OpenClawConfig;
-    record?: () => void | Promise<void>;
+    record?: (params: InboundSessionRecord) => void | Promise<void>;
     recordTask?: Promise<void>;
   } = {},
 ): GitHubNotificationSessionService {
   const recordInboundSession: GitHubNotificationSessionServiceDependencies['recordInboundSession'] =
     async (params) => {
       const recordTask = (overrides.recordTask ?? Promise.resolve())
-        .then(() => overrides.record?.())
+        .then(() => overrides.record?.(params))
         .catch(params.onRecordError);
       params.trackSessionMetaTask?.(recordTask);
     };
@@ -99,9 +103,11 @@ describe('channels/github/lib/session-service', () => {
       completeRecord = resolveRecord;
     });
     let records = 0;
+    let recordedContext: InboundSessionRecord['ctx'] | undefined;
     const service = createService({
-      record: () => {
+      record: ({ ctx }) => {
         records += 1;
+        recordedContext = ctx;
       },
       recordTask,
     });
@@ -118,6 +124,10 @@ describe('channels/github/lib/session-service', () => {
     const observed = await pending;
 
     assert.equal(records, 1);
+    assert.equal(
+      recordedContext?.ConversationLabel,
+      'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
+    );
     assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
@@ -146,9 +156,13 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.accountId, 'data');
     assert.equal(turn.routeSessionKey, route.sessionKey);
     assert.equal(turn.ctxPayload.SessionKey, route.sessionKey);
+    assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
     assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
     const context = turn.ctxPayload as unknown as Record<string, unknown>;
+    assert.equal(context.githubItemNumber, event.itemNumber);
+    assert.equal(context.githubItemType, event.itemType);
+    assert.equal(context.githubRepositoryId, event.repositoryId);
     assert.equal(context.githubWorktreeBranch, assignmentInput.worktree.branch);
     assert.equal(context.githubWorktreePath, assignmentInput.worktree.path);
     assert.equal(turn.record?.createIfMissing, true);
