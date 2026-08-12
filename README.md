@@ -117,9 +117,9 @@ OpenClaw plugins can add compatible wrappers through the same runtime.
 
 Agent System includes a local-only
 [GitHub notifications channel](./channels/github/README.md). Its Gateway service
-observes and classifies assigned GitHub issues and pull requests after verifying
+observes newly assigned GitHub issues after verifying
 the exact agent route, account identity, repository policy, and assigning actor.
-New approved assignments create one managed worktree and one deterministic,
+New approved issue assignments create one managed worktree and one deterministic,
 local-only no-tools briefing session. The channel has no outbound GitHub adapter.
 
 > [!IMPORTANT]

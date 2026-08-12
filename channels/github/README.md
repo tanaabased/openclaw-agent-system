@@ -11,9 +11,9 @@ monitor, and the `github.notifications` manifest contract.
 
 [Agent System](../../README.md) · [GitHub CLI tool](../../tools/github/README.md)
 
-## Current Behavior
+## MVP 1 Contract
 
-The current release provides the channel, routing, trust core, and local assignment delivery:
+The upcoming release provides the channel, routing, trust core, and local issue-assignment delivery:
 
 - strict `github.notifications` manifest validation
 - one activation-only channel account whose id is the Agent System agent id
@@ -22,10 +22,10 @@ The current release provides the channel, routing, trust core, and local assignm
 - a long-lived, stoppable Gateway service with per-agent polling and backoff
 - an explicit `notifications refresh` command over the same monitor and cross-process lease
 - account identity verification on every poll
-- account-wide assigned issue and pull-request discovery with a first-run baseline
+- account-wide assigned issue discovery with a first-run baseline
 - bounded pagination, overlap, replay deduplication, and truncation diagnostics
 - canonical repository, owner, effective permission, item, and assignment-event checks
-- immutable actor admission, self-event suppression, and active-item revocation checks
+- immutable actor admission and self-event suppression
 - private atomic control state containing no token or issue/comment content
 - deterministic work-item conversation ids for inbound assignment delivery
 - policy-authorized managed worktree preparation through the Git capability
@@ -33,13 +33,19 @@ The current release provides the channel, routing, trust core, and local assignm
 - a separate bounded title, URL, body-excerpt, label, and milestone projection
 - one deterministic local session created by OpenClaw's channel inbound lifecycle
 - a no-tools automated briefing turn whose GitHub content is explicitly untrusted
-- logical retirement that preserves the OpenClaw transcript and managed worktree
 - local-only behavior with no outbound GitHub adapter
 
 After a new assignment is admitted, the monitor prepares or adopts one managed
 worktree and one deterministic OpenClaw session, then starts one local briefing
 turn. It does not fetch comments, publish the response, or otherwise write to
 GitHub.
+
+## Implemented Ahead of MVP 1
+
+The branch also classifies issue-shaped pull requests, detects authority
+revocation, and records logical retirement without deleting sessions or
+worktrees. Those paths remain unsupported until Notifications 2 adds their
+installed acceptance coverage, recovery contract, and operator controls.
 
 ## Requirements
 
@@ -138,18 +144,14 @@ that a manual Gateway restart is required.
 ## Runtime Monitoring
 
 The Gateway establishes a baseline from the account's currently open assigned
-items on first activation. Closed historical work is excluded, and existing
+issues on first activation. Closed historical work is excluded, and existing
 assignments are not admitted retroactively. Later
 polls use an overlapping update window and immutable event-id deduplication,
-then recheck each approved item directly so closure, unassignment, repository
-archival or transfer, owner-allowlist drift, deletion, and permission loss retire
-the observation.
+then recheck each candidate directly before issue-assignment intake.
 
 Changing the verified GitHub account establishes a fresh baseline. Removing
-`github.notifications` and running `install` removes the owned route immediately
-but retains monitor state while the Gateway retires any local sessions. The
-state is removed after retirement converges, so a later re-enable cannot inherit
-an earlier activation boundary.
+`github.notifications` and running `install` removes the owned route and stops
+new intake. Existing monitor correlation remains private and non-destructive.
 
 The default interval is five minutes with jitter. Provider retry and rate-limit
 controls can defer the next poll, and transient failures use exponential backoff.
@@ -177,10 +179,10 @@ turns. If the process loses the dispatch result, the item receives the stable
 `github-notification-briefing-ambiguous` diagnostic and requires operator
 inspection rather than a speculative retry.
 
-When assignment or repository authority is revoked, the monitor records logical
-retirement and stops creating new turns. It does not abort or archive the host
-session and does not delete the transcript, managed repository, branch, or
-worktree. Native retirement, reassignment, and cleanup are Notifications 2 work.
+The implemented-ahead authority-revocation path records logical retirement and
+stops creating new turns. It does not abort or archive the host session and does
+not delete the transcript, managed repository, branch, or worktree. Native
+retirement, reassignment, and cleanup are Notifications 2 work.
 
 `doctor` reports whether the route is ready and whether the monitor is pending,
 healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
@@ -189,9 +191,9 @@ raw provider errors.
 
 ## Session and Delivery Contract
 
-The channel uses per-account, per-channel, per-peer direct-message scope. A work
-item conversation is derived from the immutable repository node id and issue or
-pull-request number:
+The channel uses per-account, per-channel, per-peer direct-message scope. An
+issue conversation is derived from the immutable repository node id and issue
+number:
 
 ```text
 github:<repository-node-id>:<issue-number>

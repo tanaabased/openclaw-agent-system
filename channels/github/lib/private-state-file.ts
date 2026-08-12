@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
-import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
+import { lstat, open, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+
+import ensurePrivateStateDirectories from '../utils/ensure-private-state-directories.ts';
 
 export interface PrivateStateFileOptions {
   currentUid?: number;
@@ -67,9 +69,11 @@ export default class PrivateStateFile {
 
   async write(contents: string): Promise<void> {
     if (Buffer.byteLength(contents) > this.#maximumBytes) this.#sizeError();
-    for (const [index, directory] of this.#directories.entries()) {
-      await this.#ensureDirectory(directory, index === 0);
-    }
+    await ensurePrivateStateDirectories({
+      currentUid: this.#currentUid,
+      directories: this.#directories,
+      label: `${this.#label.charAt(0).toUpperCase()}${this.#label.slice(1)}`,
+    });
     try {
       this.#assertPrivateFile(await lstat(this.#path));
     } catch (error) {
@@ -118,17 +122,6 @@ export default class PrivateStateFile {
     }
     if (this.#currentUid !== undefined && stats.uid !== this.#currentUid) {
       throw new Error(`The ${this.#label} must be owned by the current user.`);
-    }
-  }
-
-  async #ensureDirectory(path: string, recursive: boolean): Promise<void> {
-    try {
-      await mkdir(path, { mode: 0o700, recursive });
-    } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
-    }
-    if ((await this.#inspectDirectory(path)) !== 'ready') {
-      throw new Error(`A ${this.#label} directory is unavailable.`);
     }
   }
 

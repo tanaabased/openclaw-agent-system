@@ -3,66 +3,86 @@ import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { FILE_LOCK_TIMEOUT_ERROR_CODE } from 'openclaw/plugin-sdk/file-lock';
+
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
 
+function lockTimeout(): Error {
+  return Object.assign(new Error('busy'), { code: FILE_LOCK_TIMEOUT_ERROR_CODE });
+}
+
 describe('channels/github/lib/monitor-cycle-lease', () => {
-  it('should serialize separate notification monitor processes per agent', async () => {
+  it('should acquire the host file lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-lease-'));
     const rootDir = join(temporaryDirectory, 'state');
     try {
-      const firstStore = new GitHubNotificationMonitorCycleLeaseStore({
-        currentUid: process.getuid?.(),
-        rootDir,
-      });
-      const secondStore = new GitHubNotificationMonitorCycleLeaseStore({
+      const store = new GitHubNotificationMonitorCycleLeaseStore({
         currentUid: process.getuid?.(),
         rootDir,
       });
 
-      const first = await firstStore.acquire('tanaabot');
-      const busy = await secondStore.acquire('tanaabot');
+      const result = await store.acquire('tanaabot');
 
-      assert.equal(first.status, 'acquired');
-      assert.equal(busy.status, 'busy');
+      assert.equal(result.status, 'acquired');
+      assert.equal((await lstat(rootDir)).mode & 0o077, 0);
+      assert.equal((await lstat(join(rootDir, 'tanaabot/channels'))).mode & 0o077, 0);
       assert.equal(
-        (await lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock'))).mode & 0o077,
-        0,
+        (await lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock'))).isFile(),
+        true,
       );
-      if (first.status !== 'acquired') assert.fail('expected acquired lease');
-      await first.lease.release();
-      const second = await secondStore.acquire('tanaabot');
-      assert.equal(second.status, 'acquired');
-      if (second.status !== 'acquired') assert.fail('expected acquired lease');
-      await second.lease.release();
+      if (result.status !== 'acquired') assert.fail('expected acquired lease');
+      await result.lease.release();
+      await assert.rejects(
+        lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock')),
+        /ENOENT/u,
+      );
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }
   });
 
-  it('should recover a lease whose owning process is no longer alive', async () => {
-    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-stale-'));
+  it('should retry host lock timeouts through the bounded notification wait', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-retry-'));
     const rootDir = join(temporaryDirectory, 'state');
+    let attempts = 0;
     try {
-      const firstStore = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
-      const first = await firstStore.acquire('tanaabot');
-      assert.equal(first.status, 'acquired');
-      const recoveringStore = new GitHubNotificationMonitorCycleLeaseStore({
-        isProcessAlive: () => false,
+      const store = new GitHubNotificationMonitorCycleLeaseStore({
+        async acquireFileLock(targetPath, options) {
+          attempts += 1;
+          assert.equal(targetPath, join(rootDir, 'tanaabot/channels/github-notifications'));
+          assert.equal(options.retries.retries, 0);
+          if (attempts === 1) throw lockTimeout();
+          return {
+            lockPath: `${targetPath}.lock`,
+            async release() {},
+          };
+        },
+        retryMs: 1,
         rootDir,
       });
 
-      const recovered = await recoveringStore.acquire('tanaabot');
+      const result = await store.acquire('tanaabot', { waitMs: 100 });
 
-      assert.equal(recovered.status, 'acquired');
-      if (first.status !== 'acquired' || recovered.status !== 'acquired') {
-        assert.fail('expected acquired leases');
-      }
-      await first.lease.release();
-      assert.equal(
-        (await lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock'))).isFile(),
-        true,
-      );
-      await recovered.lease.release();
+      assert.equal(result.status, 'acquired');
+      assert.equal(attempts, 2);
+      if (result.status !== 'acquired') assert.fail('expected acquired lease');
+      await result.lease.release();
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('should return busy when the host lock is held and no wait was requested', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-busy-'));
+    try {
+      const store = new GitHubNotificationMonitorCycleLeaseStore({
+        async acquireFileLock() {
+          throw lockTimeout();
+        },
+        rootDir: join(temporaryDirectory, 'state'),
+      });
+
+      assert.equal((await store.acquire('tanaabot')).status, 'busy');
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }
@@ -70,18 +90,19 @@ describe('channels/github/lib/monitor-cycle-lease', () => {
 
   it('should stop a bounded wait when notification processing is aborted', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-abort-'));
-    const rootDir = join(temporaryDirectory, 'state');
     try {
-      const store = new GitHubNotificationMonitorCycleLeaseStore({ retryMs: 5, rootDir });
-      const first = await store.acquire('tanaabot');
-      assert.equal(first.status, 'acquired');
+      const store = new GitHubNotificationMonitorCycleLeaseStore({
+        async acquireFileLock() {
+          throw lockTimeout();
+        },
+        retryMs: 5,
+        rootDir: join(temporaryDirectory, 'state'),
+      });
       const controller = new AbortController();
       const waiting = store.acquire('tanaabot', { signal: controller.signal, waitMs: 10_000 });
       controller.abort();
 
       assert.equal((await waiting).status, 'aborted');
-      if (first.status !== 'acquired') assert.fail('expected acquired lease');
-      await first.lease.release();
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }
