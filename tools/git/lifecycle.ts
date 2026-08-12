@@ -215,15 +215,6 @@ export default function createGitLifecycleContribution(
           severity: 'error' as const,
         });
       }
-      if (manifest.git?.policy?.unknown === 'allow') {
-        diagnostics.push({
-          code: 'git-policy-unknown-allowed',
-          fieldPath: '/git/policy/unknown',
-          message:
-            'Unknown Git operations are allowed; new or unclassified git syntax may execute.',
-          severity: 'warning' as const,
-        });
-      }
       return {
         code: 'git-config-valid',
         ...(diagnostics.length === 0 ? {} : { diagnostics }),

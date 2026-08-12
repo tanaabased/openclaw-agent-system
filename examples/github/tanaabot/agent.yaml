@@ -9,8 +9,6 @@ environment:
 
 github:
   host: github.com
-  policy:
-    destructive: allow
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   ssh-keys:

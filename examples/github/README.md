@@ -76,13 +76,13 @@ openclaw config get agents.list --json | jq -e '.[] | select(.id == "emori") | (
 ```
 
 ```bash
-# should explain the operator-owned policy change for a denied command
+# should explain the operator-owned policy change for a denied release mutation
 cd "$GITHUB_WORKSPACE/examples/github/emori"
-if output="$(openclaw agent-system tool gh -- repo delete emoriwan/agent-system-policy-proof --yes 2>&1)"; then
+if output="$(openclaw agent-system tool gh -- release delete agent-system-policy-proof --yes 2>&1)"; then
   exit 1
 fi
-printf '%s\n' "$output" | grep -F 'denied by github.policy.destructive'
-printf '%s\n' "$output" | grep -F 'operator must set github.policy.destructive to allow'
+printf '%s\n' "$output" | grep -F 'denied by github.policy.releases'
+printf '%s\n' "$output" | grep -F 'operator must set github.policy.releases to allow'
 
 # should validate the tanaabot github lifecycle declaration without remote permission preflights
 cd "$TMPDIR/agent-system-github-tanaabot"

@@ -65,7 +65,7 @@ cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git push origin +main:main 2>&1)"; then
   exit 1
 fi
-printf '%s\n' "$output" | grep -F 'git.policy.force'
+printf '%s\n' "$output" | grep -F 'git.policy.force-push'
 
 # should validate the inherited git identity from a nested directory
 mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/validate"

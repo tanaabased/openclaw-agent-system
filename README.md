@@ -108,8 +108,10 @@ Agent System currently ships wrappers for:
 
 Each wrapper uses the shared Agent System runtime for trusted agent binding,
 environment and credential resolution, operation policy, execution, redaction,
-and auditing. A public [Tool API](./API.md) is planned so other OpenClaw plugins
-can add compatible wrappers through the same runtime.
+and auditing. Provider permissions and server-side protections remain
+authoritative; Agent System policy adds only the narrow configurable controls
+documented in each tool guide. A public [Tool API](./API.md) is planned so other
+OpenClaw plugins can add compatible wrappers through the same runtime.
 
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.

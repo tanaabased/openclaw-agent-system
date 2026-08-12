@@ -64,9 +64,7 @@ export const externalGitHubSectionSchema = Type.Object(
     policy: Type.Optional(
       Type.Object(
         {
-          admin: Type.Optional(externalGitHubPolicyDecisionSchema),
-          destructive: Type.Optional(externalGitHubPolicyDecisionSchema),
-          unknown: Type.Optional(externalGitHubPolicyDecisionSchema),
+          releases: Type.Optional(externalGitHubPolicyDecisionSchema),
         },
         { additionalProperties: false },
       ),
@@ -107,9 +105,7 @@ export interface GitHubCliConfiguration {
 export type GitHubPolicyDecision = 'allow' | 'deny';
 
 export interface GitHubPolicyConfiguration {
-  admin: GitHubPolicyDecision;
-  destructive: GitHubPolicyDecision;
-  unknown: GitHubPolicyDecision;
+  releases: GitHubPolicyDecision;
 }
 
 export const defaultGitHubCliConfiguration: GitHubCliConfiguration = {
@@ -121,9 +117,7 @@ export const defaultGitHubCliConfiguration: GitHubCliConfiguration = {
 };
 
 export const defaultGitHubPolicyConfiguration: GitHubPolicyConfiguration = {
-  admin: 'deny',
-  destructive: 'deny',
-  unknown: 'deny',
+  releases: 'deny',
 };
 
 export function resolveGitHubCliConfiguration(

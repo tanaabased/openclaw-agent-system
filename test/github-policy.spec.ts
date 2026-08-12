@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../tools/github/policy.ts';
 
+function selectsReleasesPolicy(argv: string[]): boolean {
+  return classifyGitHubOperation({ argv }).attributes?.['github.policy.releases'] === true;
+}
+
 describe('tools/github/policy', () => {
-  it('should classify common read and write command shapes without a command catalog', () => {
+  it('should retain read and write risk metadata without using it for authorization', () => {
     for (const argv of [
       ['repo', 'view', 'tanaabased/openclaw-agent-system'],
       ['issue', 'list'],
@@ -15,96 +19,94 @@ describe('tools/github/policy', () => {
     for (const argv of [
       ['issue', 'create', '--title', 'Example'],
       ['pr', 'merge', '12'],
-      ['project', 'item-add', '1'],
-      ['workflow', 'run', 'ci.yml'],
+      ['repo', 'edit', 'owner/repository', '--visibility', 'private'],
+      ['repo', 'vaporize', 'owner/repository'],
     ]) {
       assert.equal(classifyGitHubOperation({ argv }).risk, 'write');
+      assert.equal(
+        authorizeGitHubOperation(classifyGitHubOperation({ argv }), {}).status,
+        'allowed',
+      );
     }
+
+    const deletion = classifyGitHubOperation({
+      argv: ['repo', 'delete', 'owner/repository', '--yes'],
+    });
+    assert.equal(deletion.risk, 'destructive');
+    assert.equal(authorizeGitHubOperation(deletion, {}).status, 'allowed');
   });
 
-  it('should classify destructive operations before unknown policy can apply', () => {
-    for (const input of [
-      { argv: ['repo', 'delete', 'owner/repository', '--yes'] },
-      { argv: ['release', 'delete-asset', 'v1.0.0', 'artifact.zip'] },
-      { argv: ['pr', 'merge', '12', '--delete-branch'] },
-      { argv: ['api', '--method', 'DELETE', '/user/keys/123'] },
-      {
-        argv: ['api', 'graphql', '--input', '-'],
-        stdin: '{"query":"mutation DeleteThing { deleteIssue(input: {}) { clientMutationId } }"}',
-      },
-    ]) {
-      assert.equal(classifyGitHubOperation(input).risk, 'destructive');
-    }
-  });
-
-  it('should classify privilege and repository-control operations as admin', () => {
+  it('should allow release reads and select release mutations', () => {
     for (const argv of [
-      ['repo', 'edit', 'owner/repository', '--visibility', 'private'],
-      ['pr', 'merge', '12', '--admin'],
-      ['secret', 'set', 'DEPLOY_TOKEN'],
-      ['workflow', 'disable', 'ci.yml'],
-      ['api', '--method', 'PUT', '/repos/owner/repository/collaborators/user'],
+      ['release', 'list'],
+      ['release', 'ls'],
+      ['release', 'view', 'v1.0.0'],
+      ['release', 'download', 'v1.0.0'],
+      ['release', 'create', '--help'],
+      ['release', '--repo', 'owner/repository', 'list'],
     ]) {
-      assert.equal(classifyGitHubOperation({ argv }).risk, 'admin');
+      assert.equal(classifyGitHubOperation({ argv }).risk, 'read');
+      assert.equal(selectsReleasesPolicy(argv), false);
+    }
+    for (const argv of [
+      ['release', 'create', 'v1.0.0'],
+      ['release', 'edit', 'v1.0.0'],
+      ['release', 'delete', 'v1.0.0'],
+      ['release', 'upload', 'v1.0.0', 'artifact.zip'],
+      ['release', 'delete-asset', 'v1.0.0', 'artifact.zip'],
+      ['release', 'future-mutation', 'v1.0.0'],
+      ['release', 'create', 'v1.0.0', '--notes', '-h'],
+      ['release', '-R', 'owner/repository', 'create', 'v1.0.0'],
+    ]) {
+      assert.equal(selectsReleasesPolicy(argv), true);
     }
   });
 
-  it('should keep graphql reads readable and unfamiliar mutations unknown', () => {
-    assert.equal(
-      classifyGitHubOperation({
-        argv: ['api', 'graphql', '--input', '-'],
-        stdin: '{"query":"query Viewer { viewer { login } }"}',
-      }).risk,
-      'read',
-    );
-    assert.equal(
-      classifyGitHubOperation({
-        argv: [
-          'api',
-          'graphql',
-          '-f',
-          'owner=tanaabased',
-          '-f',
-          'query=query Viewer { viewer { login } }',
-        ],
-      }).risk,
-      'read',
-    );
-    assert.equal(
-      classifyGitHubOperation({ argv: ['repo', 'vaporize', 'owner/repository'] }).risk,
-      'unknown',
-    );
-    assert.equal(
-      classifyGitHubOperation({
-        argv: ['api', '--method', 'POST', '/repos/owner/repository/issues'],
-      }).risk,
-      'unknown',
-    );
+  it('should select mutating release api routes while allowing reads and generated notes', () => {
+    for (const argv of [
+      ['api', '--method', 'POST', '/repos/{owner}/{repo}/releases'],
+      ['api', '-XPATCH', 'repos/owner/repository/releases/123'],
+      ['api', 'https://api.github.com/repos/owner/repository/releases/123', '-X', 'DELETE'],
+      ['api', '-F', 'name=artifact.zip', '/repos/owner/repository/releases/assets/456'],
+      ['api', '--input', '-', '/repos/owner/repository/releases/123/assets'],
+      ['api', '--header', '-h', '--method', 'POST', '/repos/owner/repository/releases'],
+      ['api', '--preview', 'corsair', '--method', 'POST', '/repos/owner/repository/releases'],
+      [
+        'api',
+        '--future-option',
+        'future-value',
+        '--method',
+        'POST',
+        '/repos/owner/repository/releases',
+      ],
+    ]) {
+      assert.equal(selectsReleasesPolicy(argv), true);
+    }
+    for (const argv of [
+      ['api', '/repos/owner/repository/releases'],
+      ['api', '--method=GET', '/repos/owner/repository/releases/123'],
+      ['api', '--method', 'POST', '/repos/owner/repository/releases/generate-notes'],
+      ['api', '--method', 'DELETE', '/repos/owner/repository/issues/comments/123'],
+      ['api', '--method', 'PATCH', '/repos/owner/repository/git/refs/tags/v1.0.0'],
+    ]) {
+      assert.equal(selectsReleasesPolicy(argv), false);
+      assert.equal(
+        authorizeGitHubOperation(classifyGitHubOperation({ argv }), {}).status,
+        'allowed',
+      );
+    }
   });
 
-  it('should default hazards and unknown operations to deny with explicit overrides', () => {
-    const destructive = classifyGitHubOperation({ argv: ['repo', 'delete', 'owner/repository'] });
-    const admin = classifyGitHubOperation({ argv: ['repo', 'edit', 'owner/repository'] });
-    const unknown = classifyGitHubOperation({ argv: ['repo', 'vaporize', 'owner/repository'] });
+  it('should deny release mutations by default with one explicit override', () => {
+    const release = classifyGitHubOperation({ argv: ['release', 'create', 'v1.0.0'] });
 
-    const denied = authorizeGitHubOperation(destructive, {});
+    const denied = authorizeGitHubOperation(release, {});
     assert.equal(denied.status, 'denied');
-    assert.match(denied.reason, /denied by github\.policy\.destructive/u);
-    assert.match(denied.reason, /operator must set github\.policy\.destructive to allow/u);
-    assert.equal(authorizeGitHubOperation(admin, {}).status, 'denied');
-    assert.equal(authorizeGitHubOperation(unknown, {}).status, 'denied');
+    assert.match(denied.reason, /denied by github\.policy\.releases/u);
+    assert.match(denied.reason, /operator must set github\.policy\.releases to allow/u);
     assert.equal(
-      authorizeGitHubOperation(destructive, { policy: { destructive: 'allow' } }).status,
+      authorizeGitHubOperation(release, { policy: { releases: 'allow' } }).status,
       'allowed',
-    );
-    assert.equal(authorizeGitHubOperation(admin, { policy: { admin: 'allow' } }).status, 'allowed');
-    assert.equal(
-      authorizeGitHubOperation(unknown, { policy: { unknown: 'allow' } }).status,
-      'allowed',
-    );
-    assert.equal(
-      authorizeGitHubOperation(destructive, { policy: { unknown: 'allow' } }).status,
-      'denied',
     );
   });
 });

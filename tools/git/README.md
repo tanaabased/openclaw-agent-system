@@ -36,6 +36,11 @@ real `git` without a shell.
 - An effective Git name and email declared by `git` or `agent`
 - OpenSSH when keys are configured: `ssh` for authentication, `ssh-agent` and `ssh-add` for authentication or signing, and `ssh-keygen` for signing
 
+> [!IMPORTANT]
+> Remote-server authorization and ref protections are authoritative wherever
+> they exist. Agent System adds only the narrow, provider-portable controls
+> documented under `git.policy`.
+
 ## Configuration Reference
 
 Add `git` to `.agent-system/agent.yaml` or the root `agent.yaml`. The schema is
@@ -67,12 +72,6 @@ git:
   signing:
     key: GIT_SIGNING_KEY
     allowed-signers-file: .agent-system/allowed_signers
-  policy:
-    delete: deny
-    discard: deny
-    force: deny
-    rewrite: deny
-    unknown: deny
 ```
 
 ### `git.name`
@@ -101,9 +100,9 @@ effective value fails the operation.
 
 Assigns `allow` or `deny` to exact external helpers such as `git-town`.
 The helper must be executable on `PATH`; aliases do not satisfy the declaration,
-and built-in hazard classification takes precedence. An allowed extension is
-trusted for its private argument surface. Undeclared and unsupported commands
-follow `git.policy.unknown`; a declared helper that is missing is denied.
+and built-in protection classification takes precedence. An allowed extension
+is trusted for its private argument surface. Undeclared and unsupported
+commands are denied; a declared helper that is missing is also denied.
 
 ### `git.ssh.private-keys`
 
@@ -200,24 +199,42 @@ while `doctor` checks the configured roots, ignore state, and local overrides.
 
 ### `git.policy`
 
-| Field     | Values          | Default | Covers                                                 |
-| --------- | --------------- | ------- | ------------------------------------------------------ |
-| `force`   | `allow`, `deny` | `deny`  | Explicit safety overrides and forced ref replacement   |
-| `rewrite` | `allow`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
-| `discard` | `allow`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
-| `delete`  | `allow`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
-| `unknown` | `allow`, `deny` | `deny`  | Aliases, undeclared helpers, or unsupported syntax     |
+| Field               | Values          | Default | Covers                                                        |
+| ------------------- | --------------- | ------- | ------------------------------------------------------------- |
+| `force-push`        | `allow`, `deny` | `deny`  | `--force`, `-f`, `--force-with-lease`, and positive refspecs  |
+| `delete-remote-ref` | `allow`, `deny` | `deny`  | `--delete`, `-d`, `--prune`, deletion refspecs, and mirroring |
 
-Supported public reads and ordinary writes are allowed. Hazard selectors take
-precedence and one invocation may select several policies; every selected
-policy must allow the operation. For example, a force push selects `force` and
-`rewrite`, while `reset --hard` selects `rewrite` and `discard`.
+The defaults need no manifest entry. Add only a field that this agent should be
+able to exercise; omitted fields remain denied:
 
-Prefer `switch` for branches and `restore` for paths because ambiguous `checkout`
-forms select `discard`. `unknown: allow` permits aliases and undeclared external
-helpers, so prefer exact `git.extensions` declarations. A denial identifies every
-controlling policy field and explains that an operator must set each one to
-`allow` before retrying.
+```yaml
+git:
+  policy:
+    force-push: allow
+```
+
+Supported public reads and recognized ordinary writes are allowed. This includes
+local branch and tag deletion, cleanup, discard, rebase, amend, and reset
+operations. These actions can still lose local work; Git's own state and the
+repository's review workflow remain responsible for recovery and coordination.
+
+Protected remote effects take precedence. `git push --mirror` selects both
+fields, so both must be `allow`. Abbreviated protected long options and bundled
+protected short options select the same fields. A denial identifies every
+controlling policy field and explains that an operator must change each one
+before retrying.
+
+These fields provide the same narrow safeguards across Git providers because
+equivalent server-side controls are not consistently available. Where the
+provider supports ref protection, configure it as the authoritative boundary.
+For GitHub remotes, use
+[branch and tag rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+to restrict updates, deletions, and force pushes on important refs. A local
+`allow` cannot override a remote denial.
+
+Undeclared external helpers and unsupported command families remain denied
+independently of `git.policy`; use exact `git.extensions` declarations for
+trusted helpers.
 
 Agent System disables operator-global and system Git configuration, prompts,
 hooks, pagers, and editors and rejects configuration, executable, credential,
