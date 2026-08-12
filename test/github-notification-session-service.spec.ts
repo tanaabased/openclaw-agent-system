@@ -157,6 +157,30 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.afterRecord, undefined);
   });
 
+  it('should release openclaw one-shot resources after a manual briefing', () => {
+    const service = createService();
+    const turn = service.prepareTurn({
+      briefing: 'Review GitHub issue #42 and summarize the requested work.',
+      config,
+      event,
+      label: 'tanaabased/openclaw-agent-system#42',
+      oneShotCliRun: true,
+      route,
+      worktreeBranch: assignmentInput.worktree.branch,
+      worktreePath: assignmentInput.worktree.path,
+    });
+
+    assert.deepEqual(turn.replyOptions, {
+      cleanupBundleMcpOnRunEnd: true,
+      disableTools: true,
+      oneShotCliRun: true,
+      sourceReplyDeliveryMode: 'automatic',
+      suppressDefaultToolProgressMessages: true,
+      suppressTyping: true,
+      toolsAllow: [],
+    });
+  });
+
   it('should fail closed when the configured binding resolves another agent', async () => {
     const service = createService({
       config: {

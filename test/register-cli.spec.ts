@@ -53,6 +53,7 @@ function createProgram() {
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
+      oneShotCliRun?: boolean;
       waitForLeaseMs?: number;
     }>,
     tool: [] as Array<{
@@ -366,7 +367,12 @@ describe('lib/register-cli', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(calls.notificationRefresh, [
-      { agentId: 'tanaabot', bypassInterval: true, waitForLeaseMs: 120_000 },
+      {
+        agentId: 'tanaabot',
+        bypassInterval: true,
+        oneShotCliRun: true,
+        waitForLeaseMs: 120_000,
+      },
     ]);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
   });

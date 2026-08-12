@@ -69,7 +69,7 @@ describe('channels/github/lib/monitor-service', () => {
 
   it('should reconcile persisted delivery backlog before the next remote poll', async () => {
     let connected = 0;
-    const reconciled: string[] = [];
+    const reconciled: Array<{ itemKey: string; oneShotCliRun?: boolean }> = [];
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
@@ -82,8 +82,8 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       assignmentOrchestrator: {
-        async reconcile(_agentId, itemKey) {
-          reconciled.push(itemKey);
+        async reconcile(_agentId, itemKey, _signal, oneShotCliRun) {
+          reconciled.push({ itemKey, oneShotCliRun });
         },
       },
       clock: () => 1_000,
@@ -104,10 +104,10 @@ describe('channels/github/lib/monitor-service', () => {
       },
     });
 
-    await service.runOnce();
+    await service.runOnce({ oneShotCliRun: true });
 
     assert.equal(connected, 0);
-    assert.deepEqual(reconciled, [notificationItemKey]);
+    assert.deepEqual(reconciled, [{ itemKey: notificationItemKey, oneShotCliRun: true }]);
   });
 
   it('should surface the exact assignment boundary failure from a monitor cycle', async () => {

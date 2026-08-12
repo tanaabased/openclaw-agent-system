@@ -37,6 +37,7 @@ export interface GitHubNotificationAssignmentWorktrees {
 }
 
 export interface GitHubNotificationAssignmentSessionInput extends GitHubNotificationAssignmentBoundaryInput {
+  oneShotCliRun?: boolean;
   worktree: GitHubNotificationObservedWorktree;
 }
 
@@ -82,13 +83,25 @@ export default class GitHubNotificationAssignmentOrchestrator {
     this.#dependencies = dependencies;
   }
 
-  async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
-    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
+  async reconcile(
+    agentId: string,
+    itemKey: string,
+    signal?: AbortSignal,
+    oneShotCliRun = false,
+  ): Promise<void> {
+    return this.#queue.enqueue(agentId, () =>
+      this.#reconcile(agentId, itemKey, signal, oneShotCliRun),
+    );
   }
 
-  async #reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
+  async #reconcile(
+    agentId: string,
+    itemKey: string,
+    signal: AbortSignal | undefined,
+    oneShotCliRun: boolean,
+  ): Promise<void> {
     try {
-      await this.#run(agentId, itemKey, signal);
+      await this.#run(agentId, itemKey, signal, oneShotCliRun);
     } catch (error) {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
@@ -105,7 +118,12 @@ export default class GitHubNotificationAssignmentOrchestrator {
     }
   }
 
-  async #run(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
+  async #run(
+    agentId: string,
+    itemKey: string,
+    signal: AbortSignal | undefined,
+    oneShotCliRun: boolean,
+  ): Promise<void> {
     for (let step = 0; step < 12; step += 1) {
       if (signal?.aborted) {
         throw new GitHubNotificationAssignmentOrchestratorError(
@@ -199,6 +217,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
           this.#dependencies.sessions.dispatchBriefing({
             agentId,
             ...checkpoint,
+            ...(oneShotCliRun ? { oneShotCliRun: true } : {}),
             signal,
             worktree,
             workspaceDir: state.workspaceDir,

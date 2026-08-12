@@ -43,6 +43,7 @@ export interface GitHubNotificationSessionTurnInput {
   config: OpenClawConfig;
   event: GitHubNotificationAssignmentEvent;
   label: string;
+  oneShotCliRun?: boolean;
   route: ResolvedNotificationRoute;
   worktreeBranch: string;
   worktreePath: string;
@@ -99,6 +100,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
           config: assignment.config,
           event,
           label: assignment.label,
+          ...(input.oneShotCliRun ? { oneShotCliRun: true } : {}),
           route,
           worktreeBranch: input.worktree.branch,
           worktreePath: input.worktree.path,
@@ -196,6 +198,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       record: { createIfMissing: true },
       recordInboundSession: this.#dependencies.recordInboundSession,
       replyOptions: {
+        ...(input.oneShotCliRun ? { cleanupBundleMcpOnRunEnd: true, oneShotCliRun: true } : {}),
         disableTools: true,
         sourceReplyDeliveryMode: 'automatic',
         suppressDefaultToolProgressMessages: true,

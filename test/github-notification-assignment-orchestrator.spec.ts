@@ -70,6 +70,26 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     );
   });
 
+  it('should pass one-shot cli cleanup only to the briefing session boundary', async () => {
+    const store = memoryStore();
+    let oneShotCliRun: boolean | undefined;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async dispatchBriefing(input) {
+          oneShotCliRun = input.oneShotCliRun;
+          return activeSession;
+        },
+      },
+      stateStore: store,
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey, undefined, true);
+
+    assert.equal(oneShotCliRun, true);
+  });
+
   it('should not redispatch after an ambiguous channel dispatch failure', async () => {
     const state = monitorState();
     state.items[itemKey]!.delivery = {

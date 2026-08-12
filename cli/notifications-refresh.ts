@@ -38,6 +38,7 @@ export default async function refreshNotificationsAgentSystem(
   const [result] = await options.monitorService.runOnce({
     agentId: manifest.manifest.agent.id,
     bypassInterval: true,
+    oneShotCliRun: true,
     waitForLeaseMs: notificationRefreshLeaseWaitMs,
   });
   if (!result) {
