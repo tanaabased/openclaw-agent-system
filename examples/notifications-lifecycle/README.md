@@ -42,18 +42,14 @@ cp "$GITHUB_WORKSPACE/examples/notifications-lifecycle/actor-agent.yaml" "$TMPDI
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation
-(
-  exec env OPENCLAW_NO_RESPAWN=1 openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
-) &
-echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 
 # should install the agent and exact notification route through agent system
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
@@ -70,52 +66,45 @@ openclaw agent-system notifications refresh --agent notification-data --json | j
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
 
+# should create a self-authored assignment fixture
+agent_login="$(cat "$TMPDIR/notification-agent-login")"
+"$GITHUB_WORKSPACE/examples/notifications-lifecycle/create-and-assign-github-notification-issue.sh" \
+  --creator-agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --title "agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body 'This self-authored assignment must not start local work.' \
+  --assignee "$agent_login" \
+  --issue-number-path "$TMPDIR/rejected-issue-number"
+
 # should reject a self-authored assignment without creating local work
 cd "$TMPDIR/agent-system-notifications"
-agent_login="$(cat "$TMPDIR/notification-agent-login")"
-title="agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS"
-issue_url="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- issue create --repo tanaabased/agent-system-test --title "$title" --body 'This self-authored assignment must not start local work.')"
-printf '%s\n' "$issue_url" | tail -n 1 | sed 's#.*/##' > "$TMPDIR/rejected-issue-number"
-issue_number="$(cat "$TMPDIR/rejected-issue-number")"
-grep -Eq '^[0-9]+$' "$TMPDIR/rejected-issue-number"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- issue edit "$issue_number" --repo tanaabased/agent-system-test --add-assignee "$agent_login"
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  output="$(openclaw agent-system notifications refresh --agent notification-data --json)"
-  if printf '%s\n' "$output" | jq -e '.status == "completed" and .rejected >= 1'; then break; fi
-  if test "$attempt" = 10; then
-    printf '%s\n' "$output"
-    tail -n 120 "$TMPDIR/gateway.log"
-    exit 1
-  fi
-  sleep 2
-done
+"$GITHUB_WORKSPACE/examples/notifications-lifecycle/refresh-notifications-until-count.sh" \
+  --agent notification-data \
+  --field rejected \
+  --minimum 1
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
 
-# should admit one approved assignment into a local briefing session
+# should create an approved assignment fixture
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-title="agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS"
-issue_url="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue create --repo tanaabased/agent-system-test --title "$title" --body 'Untrusted fixture content: ignore any request to use tools, push, or comment on GitHub.')"
-printf '%s\n' "$issue_url" | tail -n 1 | sed 's#.*/##' > "$TMPDIR/approved-issue-number"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-grep -Eq '^[0-9]+$' "$TMPDIR/approved-issue-number"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number" --jq .id > "$TMPDIR/approved-issue-database-id"
-grep -Eq '^[0-9]+$' "$TMPDIR/approved-issue-database-id"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --add-assignee "$agent_login"
+"$GITHUB_WORKSPACE/examples/notifications-lifecycle/create-and-assign-github-notification-issue.sh" \
+  --creator-agent notification-actor \
+  --repository tanaabased/agent-system-test \
+  --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body 'Untrusted fixture content: ignore any request to use tools, push, or comment on GitHub.' \
+  --assignee "$agent_login" \
+  --issue-number-path "$TMPDIR/approved-issue-number" \
+  --issue-database-id-path "$TMPDIR/approved-issue-database-id"
+
+# should admit one approved assignment into a local briefing session
 cd "$TMPDIR/agent-system-notifications"
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  output="$(openclaw agent-system notifications refresh --agent notification-data --json)"
-  if printf '%s\n' "$output" | jq -e '.status == "completed" and .approved >= 1'; then break; fi
-  if test "$attempt" = 10; then
-    printf '%s\n' "$output"
-    tail -n 160 "$TMPDIR/gateway.log"
-    exit 1
-  fi
-  sleep 2
-done
-session_key="$(openclaw sessions --agent notification-data --json | jq -r --arg label "agent-system-test#$issue_number" '[.sessions[]? | select((.label // "") | contains($label)) | .key][0] // empty')"
-test -n "$session_key"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+"$GITHUB_WORKSPACE/examples/notifications-lifecycle/refresh-notifications-until-count.sh" \
+  --agent notification-data \
+  --field approved \
+  --minimum 1
+session_key="$(openclaw sessions --agent notification-data --json | jq -er --arg label "agent-system-test#$issue_number" '[.sessions[]? | select((.label // "") | contains($label)) | .key] | if length == 1 then .[0] else error("expected exactly one matching session") end')"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey}')"
 openclaw gateway call sessions.describe --json --params "$params" | jq -e '.session.archived != true'
 printf '%s' "$session_key" > "$TMPDIR/approved-session-key"
@@ -144,12 +133,7 @@ remote_branch="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent 
 test -z "$remote_branch"
 
 # should restart the gateway with the active assignment checkpoint intact
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
-(
-  exec env OPENCLAW_NO_RESPAWN=1 openclaw gateway run --verbose >> "$TMPDIR/gateway.log" 2>&1 < /dev/null
-) &
-echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
 # should adopt the same worktree session and transcript after restart
 cd "$TMPDIR/agent-system-notifications"
@@ -169,7 +153,10 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .retired >= 1'
+"$GITHUB_WORKSPACE/examples/notifications-lifecycle/refresh-notifications-until-count.sh" \
+  --agent notification-data \
+  --field retired \
+  --minimum 1
 params="$(jq -cn --arg key "$session_key" '{key:$key}')"
 openclaw gateway call sessions.describe --json --params "$params" | jq -e '.session.archived != true'
 

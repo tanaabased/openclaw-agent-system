@@ -32,6 +32,5 @@ openclaw plugins enable agent-system
 # should install an agent with its display name resolved from the agent environment
 cd "$GITHUB_WORKSPACE/examples/identity/data"
 openclaw agent-system install
-openclaw agents list --json | grep -F '"id": "identity-data"'
-openclaw agents list --json | grep -F '"identityName": "Data from environment"'
+openclaw agents list --json | jq -e '[.[] | select(.id == "identity-data" and .identityName == "Data from environment")] | length == 1'
 ```

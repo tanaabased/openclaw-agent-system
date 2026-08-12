@@ -44,11 +44,7 @@ openclaw config set 'agents.list[0].models' "{\"openai/$OPENAI_MODEL\":{\"agentR
 openclaw exec-policy preset yolo
 
 # should start the default gateway as a supervised background process
-(
-  exec env OPENCLAW_LOG_LEVEL=debug openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
-) &
-echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+OPENCLAW_LOG_LEVEL=debug "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 ```
 
 ## Testing

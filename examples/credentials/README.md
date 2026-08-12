@@ -51,8 +51,7 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op -
 
 # should resolve stored op environment values without the process token
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system env --json | grep -F '"name": "VIBES"'
-env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system env --json | grep -F '"source": "environment.op[0]"'
+env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system env --json | jq -e '.variables | any(.name == "VIBES" and .source == "environment.op[0]")'
 
 # should install after validating the stored credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"

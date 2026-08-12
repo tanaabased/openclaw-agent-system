@@ -21,11 +21,7 @@ openclaw agent-system validate | grep -F 'valid' | grep -F 'path'
 
 # should expose foundational validation checks as structured json
 cd "$GITHUB_WORKSPACE/examples/validate/valid"
-openclaw agent-system validate --json | grep -F '"component": "agent"'
-openclaw agent-system validate --json | grep -F '"component": "path"'
-openclaw agent-system validate --json | grep -F '"code": "manifest-valid"'
-openclaw agent-system validate --json | grep -F '"code": "agent-declaration-valid"'
-openclaw agent-system validate --json | grep -F '"status": "valid"'
+openclaw agent-system validate --json | jq -e '.status == "valid" and (.checks | (any(.component == "agent" and .code == "agent-declaration-valid") and any(.component == "path") and any(.code == "manifest-valid")))'
 
 # should prefer the hidden manifest and report the ignored shorthand
 cd "$GITHUB_WORKSPACE/examples/validate/preferred"

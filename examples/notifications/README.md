@@ -33,29 +33,25 @@ mkdir "$TMPDIR/agent-system-notifications"
 cp "$GITHUB_WORKSPACE/examples/notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 
 # should start the default gateway before routing installation
-(
-  exec env OPENCLAW_NO_RESPAWN=1 openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
-) &
-echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 
 # should install the agent and exact notification route through agent system
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 ```
 
 ## Testing
 
 ```bash
 # should expose the configured notification account through the running gateway
-openclaw channels status --json | grep -F 'agent-system-github' | grep -F 'notification-data'
+openclaw channels status --channel agent-system-github --json | jq -e '(.channelAccounts["agent-system-github"] // []) | any(.accountId == "notification-data" and .configured == true and .enabled == true)'
 
 # should persist one enabled channel account and exact account binding
 openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled' | grep -F 'true'
-openclaw agents bindings --json | grep -F 'agent-system-github' | grep -F 'notification-data'
+openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification-data" and .match.channel == "agent-system-github" and .match.accountId == "notification-data")] | length == 1'
 ```
 
 ```bash
@@ -77,9 +73,9 @@ cp "$GITHUB_WORKSPACE/examples/notifications/disabled-agent.yaml" "$TMPDIR/agent
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "removed")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-monitor-state-removed")'
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" absent notification-data
 if openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled'; then exit 1; fi
-if openclaw agents bindings --json | grep -Fq 'agent-system-github'; then exit 1; fi
+openclaw agents bindings --json | jq -e '[.[] | select(.match.channel == "agent-system-github" and .match.accountId == "notification-data")] | length == 0'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 ```
 

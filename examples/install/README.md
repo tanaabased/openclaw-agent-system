@@ -34,8 +34,7 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 
 ```bash
 # should load the packed runtime from dist
-openclaw plugins inspect agent-system --runtime --json | grep -F '"id": "agent-system"'
-openclaw plugins inspect agent-system --runtime --json | grep -F 'dist/index.js'
+openclaw plugins inspect agent-system --runtime --json | jq -e '.plugin.id == "agent-system" and (.plugin.source | endswith("/dist/index.js"))'
 
 # should expose the canonical command tree and its alias
 openclaw agent-system --help | grep -F 'validate'
@@ -48,9 +47,7 @@ openclaw agent-system install | grep -F 'created' | grep -F 'agent' | grep -F 'O
 # should report every foundational component as unchanged in json on repeated install
 cd "$TMPDIR/install-data"
 output=$(openclaw agent-system install --json)
-printf '%s\n' "$output" | grep -F '"component": "agent"'
-printf '%s\n' "$output" | grep -F '"component": "path"'
-printf '%s\n' "$output" | grep -F '"status": "unchanged"'
+printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged"))'
 ```
 
 ```bash
@@ -61,9 +58,9 @@ cp "$GITHUB_WORKSPACE/examples/install/with-tools/agent.yaml" "$TMPDIR/install-d
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
 openclaw config get "agents.list[$agent_index].tools.alsoAllow" --json | jq -e 'index("message") != null'
-openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
+openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
 ```
 
 ```bash
@@ -74,16 +71,16 @@ openclaw config set "agents.list[$agent_index].tools.allow" '["read"]' --strict-
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
 openclaw config get "agents.list[$agent_index].tools.allow" --json | jq -e 'index("read") != null'
-openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
+openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
 ```
 
 ```bash
 # should leave converged native tool access unchanged
 cd "$TMPDIR/install-data"
-openclaw agent-system install --json | grep -F '"code": "agent-tool-access-unchanged"'
-openclaw agent-system doctor --json | grep -F '"code": "agent-tool-access-ready"'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "agent-tool-access-unchanged")'
+openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
 ```
 
 ```bash
@@ -105,6 +102,6 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | grep -F '"code": "set-agent-tool-access"'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
 openclaw config get "agents.list[$agent_index].tools" --json | jq -e '.allow == ["read"] and (has("alsoAllow") | not)'
 ```
