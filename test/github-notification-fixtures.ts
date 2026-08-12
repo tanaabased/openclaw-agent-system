@@ -28,7 +28,6 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
     assignmentEventNodeId: 'EV_assignment',
     delivery: {
       assignmentEventId: 'EV_assignment',
-      briefingIdempotencyKey: 'EV_assignment',
       schemaVersion: 1,
       stage: 'admitted',
       workId: 'issue-7',

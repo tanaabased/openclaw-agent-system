@@ -1,7 +1,6 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import {
   runChannelInboundEvent,
-  type AssembledInboundReply,
   type InboundReplyDispatchResult,
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
@@ -47,7 +46,7 @@ function resolveAccount(
   return { accountId: normalizedAccountId, enabled };
 }
 
-/** Local-only channel for admitted assignment briefings and later inbound conversation. */
+/** Local-only channel for admitted assignment sessions and later inbound conversation. */
 export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChannelAccount> = {
   id: githubNotificationChannelId,
   meta: {
@@ -83,13 +82,6 @@ export const githubNotificationChannel: ChannelPlugin<ResolvedNotificationChanne
       enabled: account.enabled,
     }),
   },
-  // No send adapter is registered: automated briefing replies remain local.
-  message: {
-    receive: {
-      defaultAckPolicy: 'after_agent_dispatch',
-      supportedAckPolicies: ['after_agent_dispatch'],
-    },
-  },
 };
 
 export interface GitHubNotificationAssignmentEvent {
@@ -102,7 +94,7 @@ export interface GitHubNotificationAssignmentEvent {
 }
 
 export type GitHubNotificationInboundTurn<TDispatchResult = never> =
-  AssembledInboundReply | PreparedInboundReply<TDispatchResult>;
+  PreparedInboundReply<TDispatchResult>;
 
 export function githubNotificationConversationId(
   event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'repositoryId'>,
@@ -124,7 +116,7 @@ export interface GitHubNotificationInboundDependencies<TDispatchResult> {
   ): GitHubNotificationInboundTurn<TDispatchResult>;
 }
 
-/** Run one authorized synthetic assignment through OpenClaw's channel inbound kernel. */
+/** Record one authorized assignment through OpenClaw's channel inbound kernel. */
 export async function runGitHubNotificationAssignment<TDispatchResult>(
   event: GitHubNotificationAssignmentEvent,
   dependencies: GitHubNotificationInboundDependencies<TDispatchResult>,
@@ -145,7 +137,7 @@ export async function runGitHubNotificationAssignment<TDispatchResult>(
         };
       },
       classify: () => ({ kind: 'message', canStartAgentTurn: true }),
-      preflight: () => ({ kind: 'dispatch', reason: 'authorized-github-assignment' }),
+      preflight: () => ({ kind: 'observeOnly', reason: 'authorized-github-assignment' }),
       resolveTurn() {
         const route = resolveNotificationRoute(
           dependencies.config,

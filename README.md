@@ -120,7 +120,7 @@ Agent System includes a local-only
 observes newly assigned GitHub issues after verifying
 the exact agent route, account identity, repository policy, and assigning actor.
 New approved issue assignments create one managed worktree and one deterministic,
-local-only no-tools briefing session. The channel has no outbound GitHub adapter.
+local session without invoking a model. The channel has no outbound GitHub adapter.
 
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.

@@ -55,7 +55,6 @@ const itemKeys = new Set([...legacyItemKeys, 'delivery', 'itemDatabaseId']);
 
 const deliveryKeys = new Set([
   'assignmentEventId',
-  'briefingIdempotencyKey',
   'failureCode',
   'schemaVersion',
   'sessionId',
@@ -147,15 +146,9 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     hasOnlyKeys(value, deliveryKeys) &&
     delivery.schemaVersion === 1 &&
     validNodeId(delivery.assignmentEventId) &&
-    validNodeId(delivery.briefingIdempotencyKey) &&
-    [
-      'active',
-      'admitted',
-      'briefing-running',
-      'retired',
-      'session-ready',
-      'worktree-ready',
-    ].includes(delivery.stage ?? '') &&
+    ['active', 'admitted', 'retired', 'session-recording', 'worktree-ready'].includes(
+      delivery.stage ?? '',
+    ) &&
     optionalBoundedString(delivery.failureCode, 255) &&
     (delivery.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(delivery.failureCode)) &&
     optionalBoundedString(delivery.sessionId, 255) &&
@@ -179,10 +172,10 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
-  if (['briefing-running', 'worktree-ready'].includes(delivery.stage ?? '')) {
+  if (['session-recording', 'worktree-ready'].includes(delivery.stage ?? '')) {
     return hasWorktree && !hasSession && delivery.sessionId === undefined;
   }
-  if (['active', 'session-ready'].includes(delivery.stage ?? '')) {
+  if (delivery.stage === 'active') {
     return hasWorktree && hasSession;
   }
   return (
@@ -216,7 +209,6 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
         : item.delivery === undefined) &&
     (item.delivery === undefined ||
       (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
-        item.delivery.briefingIdempotencyKey === item.delivery.assignmentEventId &&
         item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`))
   );
 }

@@ -234,9 +234,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     readConfig: readRuntimeConfig,
   });
   const notificationSessionService = new GitHubNotificationSessionService({
-    dispatchReplyWithBufferedBlockDispatcher:
-      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    loadBriefing: (input) => notificationAssignmentProvider.briefing(input),
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });

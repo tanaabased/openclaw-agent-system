@@ -32,16 +32,16 @@ function memoryStore(initial = monitorState()) {
 }
 
 describe('channels/github/lib/assignment-orchestrator', () => {
-  it('should serialize duplicate reconciliation around one channel-owned session dispatch', async () => {
+  it('should serialize duplicate reconciliation around one channel-owned session record', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
     let worktreePreparations = 0;
-    let briefingDispatches = 0;
+    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       sessions: {
-        async dispatchBriefing() {
-          briefingDispatches += 1;
+        async recordSession() {
+          sessionRecords += 1;
           return activeSession;
         },
       },
@@ -62,35 +62,15 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     ]);
 
     assert.equal(worktreePreparations, 1);
-    assert.equal(briefingDispatches, 1);
+    assert.equal(sessionRecords, 1);
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
-      ['admitted', 'worktree-ready', 'briefing-running', 'active'],
+      ['admitted', 'worktree-ready', 'session-recording', 'active'],
     );
   });
 
-  it('should pass one-shot cli cleanup only to the briefing session boundary', async () => {
-    const store = memoryStore();
-    let oneShotCliRun: boolean | undefined;
-    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async dispatchBriefing(input) {
-          oneShotCliRun = input.oneShotCliRun;
-          return activeSession;
-        },
-      },
-      stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
-    });
-
-    await orchestrator.reconcile('tanaabot', itemKey, undefined, true);
-
-    assert.equal(oneShotCliRun, true);
-  });
-
-  it('should not redispatch after an ambiguous channel dispatch failure', async () => {
+  it('should retry an idempotent session record after an interrupted attempt', async () => {
     const state = monitorState();
     state.items[itemKey]!.delivery = {
       ...state.items[itemKey]!.delivery!,
@@ -99,13 +79,14 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       worktreePath: worktree.path,
     };
     const store = memoryStore(state);
-    let briefingDispatches = 0;
+    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       sessions: {
-        async dispatchBriefing() {
-          briefingDispatches += 1;
-          throw new Error('ambiguous provider response');
+        async recordSession() {
+          sessionRecords += 1;
+          if (sessionRecords === 1) throw new Error('interrupted session record');
+          return activeSession;
         },
       },
       stateStore: store,
@@ -116,21 +97,13 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       orchestrator.reconcile('tanaabot', itemKey),
       (error: unknown) =>
         error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-briefing-dispatch-failed',
+        error.code === 'github-notification-session-recording-failed',
     );
-    await assert.rejects(
-      orchestrator.reconcile('tanaabot', itemKey),
-      (error: unknown) =>
-        error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-briefing-ambiguous',
-    );
+    await orchestrator.reconcile('tanaabot', itemKey);
 
-    assert.equal(briefingDispatches, 1);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'briefing-running');
-    assert.equal(
-      store.state().items[itemKey]?.delivery?.failureCode,
-      'github-notification-briefing-ambiguous',
-    );
+    assert.equal(sessionRecords, 2);
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
+    assert.equal(store.state().items[itemKey]?.delivery?.failureCode, undefined);
   });
 
   it('should adopt a prepared worktree after its checkpoint write failed', async () => {
@@ -140,7 +113,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: { dispatchBriefing: async () => activeSession },
+      sessions: { recordSession: async () => activeSession },
       stateStore: {
         read: store.read,
         async write(next) {
@@ -170,14 +143,14 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
   it('should retire locally without trying to manage the openclaw session', async () => {
     const store = memoryStore();
-    let briefingDispatches = 0;
+    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
       sessions: {
-        async dispatchBriefing() {
-          briefingDispatches += 1;
+        async recordSession() {
+          sessionRecords += 1;
           return activeSession;
         },
       },
@@ -187,13 +160,13 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
     await orchestrator.reconcile('tanaabot', itemKey);
 
-    assert.equal(briefingDispatches, 0);
+    assert.equal(sessionRecords, 0);
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
   });
 
-  it('should recheck authority immediately before dispatch', async () => {
+  it('should recheck authority immediately before recording the session', async () => {
     const state = monitorState();
     state.items[itemKey]!.delivery = {
       ...state.items[itemKey]!.delivery!,
@@ -203,7 +176,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     };
     const store = memoryStore(state);
     let inspections = 0;
-    let briefingDispatches = 0;
+    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
         inspect: async () => {
@@ -214,8 +187,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         },
       },
       sessions: {
-        async dispatchBriefing() {
-          briefingDispatches += 1;
+        async recordSession() {
+          sessionRecords += 1;
           return activeSession;
         },
       },
@@ -225,12 +198,12 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
     await orchestrator.reconcile('tanaabot', itemKey);
 
-    assert.equal(briefingDispatches, 0);
+    assert.equal(sessionRecords, 0);
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'actor-access-revoked');
   });
 
-  it('should retain a value-free dispatch diagnostic', async () => {
+  it('should retain a value-free session-recording diagnostic', async () => {
     const state = monitorState();
     state.items[itemKey]!.delivery = {
       ...state.items[itemKey]!.delivery!,
@@ -242,7 +215,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       sessions: {
-        async dispatchBriefing() {
+        async recordSession() {
           throw new Error('restricted host detail');
         },
       },
@@ -254,16 +227,16 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       orchestrator.reconcile('tanaabot', itemKey),
       (error: unknown) =>
         error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-briefing-dispatch-failed' &&
-        error.message === 'The notification briefing could not be dispatched.',
+        error.code === 'github-notification-session-recording-failed' &&
+        error.message === 'The notification session could not be recorded.',
     );
     assert.equal(
       store.state().items[itemKey]?.delivery?.failureCode,
-      'github-notification-briefing-dispatch-failed',
+      'github-notification-session-recording-failed',
     );
   });
 
-  it('should classify value-free pre-dispatch boundary failures', async () => {
+  it('should classify value-free pre-record boundary failures', async () => {
     const scenarios = [
       {
         code: 'github-notification-authority-inspection-failed',
@@ -274,7 +247,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
                 throw new Error('restricted authority detail');
               },
             },
-            sessions: { dispatchBriefing: async () => activeSession },
+            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: { inspect: async () => worktree, prepare: async () => worktree },
           });
@@ -286,7 +259,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { dispatchBriefing: async () => activeSession },
+            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: {
               inspect: async () => {
@@ -303,7 +276,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { dispatchBriefing: async () => activeSession },
+            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: {
               inspect: async () => undefined,
@@ -320,7 +293,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { dispatchBriefing: async () => activeSession },
+            sessions: { recordSession: async () => activeSession },
             stateStore: {
               read: store.read,
               write: async () => {
@@ -337,7 +310,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { dispatchBriefing: async () => activeSession },
+            sessions: { recordSession: async () => activeSession },
             stateStore: {
               read: async () => {
                 throw new Error('restricted state detail');

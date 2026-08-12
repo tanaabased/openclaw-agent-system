@@ -139,7 +139,6 @@ function itemState(
       ? {
           delivery: {
             assignmentEventId: assignment.nodeId,
-            briefingIdempotencyKey: assignment.nodeId,
             schemaVersion: 1 as const,
             stage: 'admitted' as const,
             workId: `${item.itemType}-${item.databaseId}`,

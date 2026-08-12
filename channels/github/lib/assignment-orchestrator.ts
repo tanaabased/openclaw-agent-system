@@ -37,12 +37,11 @@ export interface GitHubNotificationAssignmentWorktrees {
 }
 
 export interface GitHubNotificationAssignmentSessionInput extends GitHubNotificationAssignmentBoundaryInput {
-  oneShotCliRun?: boolean;
   worktree: GitHubNotificationObservedWorktree;
 }
 
 export interface GitHubNotificationAssignmentSessions {
-  dispatchBriefing(
+  recordSession(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession>;
 }
@@ -83,25 +82,17 @@ export default class GitHubNotificationAssignmentOrchestrator {
     this.#dependencies = dependencies;
   }
 
-  async reconcile(
-    agentId: string,
-    itemKey: string,
-    signal?: AbortSignal,
-    oneShotCliRun = false,
-  ): Promise<void> {
-    return this.#queue.enqueue(agentId, () =>
-      this.#reconcile(agentId, itemKey, signal, oneShotCliRun),
-    );
+  async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
+    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
   }
 
   async #reconcile(
     agentId: string,
     itemKey: string,
     signal: AbortSignal | undefined,
-    oneShotCliRun: boolean,
   ): Promise<void> {
     try {
-      await this.#run(agentId, itemKey, signal, oneShotCliRun);
+      await this.#run(agentId, itemKey, signal);
     } catch (error) {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
@@ -118,12 +109,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     }
   }
 
-  async #run(
-    agentId: string,
-    itemKey: string,
-    signal: AbortSignal | undefined,
-    oneShotCliRun: boolean,
-  ): Promise<void> {
+  async #run(agentId: string, itemKey: string, signal: AbortSignal | undefined): Promise<void> {
     for (let step = 0; step < 12; step += 1) {
       if (signal?.aborted) {
         throw new GitHubNotificationAssignmentOrchestratorError(
@@ -138,12 +124,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);
       if (action.kind === 'none') return;
-      if (action.kind === 'fail') {
-        throw new GitHubNotificationAssignmentOrchestratorError(
-          action.reasonCode,
-          'The GitHub notification briefing did not complete and will not be dispatched again.',
-        );
-      }
       if (action.kind === 'retire') {
         await this.#retire(state, itemKey, action.reasonCode);
         return;
@@ -155,7 +135,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
       if (action.kind === 'prepare-worktree') {
         await this.#checkpointDelivery(state, itemKey, {
           assignmentEventId: delivery.assignmentEventId,
-          briefingIdempotencyKey: delivery.briefingIdempotencyKey,
           schemaVersion: 1,
           stage: 'admitted',
           workId: delivery.workId,
@@ -195,7 +174,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
           'The GitHub notification worktree could not be reconciled.',
         );
       }
-      await this.#checkpointDelivery(state, itemKey, { ...delivery, stage: 'briefing-running' });
+      await this.#checkpointDelivery(state, itemKey, { ...delivery, stage: 'session-recording' });
       const checkpoint = this.#boundary(state, itemKey);
       if (!checkpoint) return;
       if (
@@ -211,13 +190,12 @@ export default class GitHubNotificationAssignmentOrchestrator {
       )
         continue;
       const session = await this.#diagnosticBoundary(
-        'github-notification-briefing-dispatch-failed',
-        'The notification briefing could not be dispatched.',
+        'github-notification-session-recording-failed',
+        'The notification session could not be recorded.',
         () =>
-          this.#dependencies.sessions.dispatchBriefing({
+          this.#dependencies.sessions.recordSession({
             agentId,
             ...checkpoint,
-            ...(oneShotCliRun ? { oneShotCliRun: true } : {}),
             signal,
             worktree,
             workspaceDir: state.workspaceDir,

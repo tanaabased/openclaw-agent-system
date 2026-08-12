@@ -140,7 +140,6 @@ describe('channels/github/lib/poller', () => {
     );
     assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
       assignmentEventId: assignment.nodeId,
-      briefingIdempotencyKey: assignment.nodeId,
       schemaVersion: 1,
       stage: 'admitted',
       workId: `issue-${candidate.databaseId}`,

@@ -3,11 +3,10 @@ import type { GitHubRepositoryPermission } from './work-item.ts';
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
 export type GitHubNotificationDeliveryStage =
-  'active' | 'admitted' | 'briefing-running' | 'retired' | 'session-ready' | 'worktree-ready';
+  'active' | 'admitted' | 'retired' | 'session-recording' | 'worktree-ready';
 
 export interface GitHubNotificationDeliveryState {
   assignmentEventId: string;
-  briefingIdempotencyKey: string;
   failureCode?: string;
   schemaVersion: 1;
   sessionId?: string;

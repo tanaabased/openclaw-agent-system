@@ -31,14 +31,13 @@ const event: GitHubNotificationAssignmentEvent = {
   itemType: 'issue',
   repositoryId: 'R_kgDOExample',
   timestamp: 1_786_400_000_000,
-  title: 'Implement the notification session',
+  title: 'GitHub issue #42 assignment',
 };
 const route = resolveNotificationRoute(config, desired, 'github:R_kgDOExample:42');
 const assignmentInput = {
   agentId: 'data',
   delivery: {
     assignmentEventId: event.id,
-    briefingIdempotencyKey: event.id,
     schemaVersion: 1 as const,
     stage: 'worktree-ready' as const,
     workId: 'issue-42',
@@ -72,58 +71,32 @@ const assignmentInput = {
 };
 
 function createService(
-  overrides: {
-    config?: OpenClawConfig;
-    dispatch?: () => void;
-    record?: () => void;
-  } = {},
+  overrides: { config?: OpenClawConfig; record?: () => void } = {},
 ): GitHubNotificationSessionService {
   return new GitHubNotificationSessionService({
-    dispatchReplyWithBufferedBlockDispatcher: (async () => {
-      overrides.dispatch?.();
-      return {};
-    }) as never,
-    loadBriefing: async () => ({
-      assignmentActor: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
-      assignmentAt: '2026-08-11T12:00:00Z',
-      projection: {
-        bodyExcerpt: 'Implement the notification session.',
-        bodyTruncated: false,
-        labels: ['feature'],
-        labelsTruncated: false,
-        title: event.title,
-        url: 'https://github.com/tanaabased/openclaw-agent-system/issues/42',
-      },
-    }),
     readConfig: () => overrides.config ?? config,
     recordInboundSession: (async () => overrides.record?.()) as never,
   });
 }
 
 describe('channels/github/lib/session-service', () => {
-  it('should let the channel inbound lifecycle record and dispatch the routed session', async () => {
-    let dispatches = 0;
+  it('should record the routed session without dispatching an agent turn', async () => {
     let records = 0;
     const service = createService({
-      dispatch: () => {
-        dispatches += 1;
-      },
       record: () => {
         records += 1;
       },
     });
 
-    const observed = await service.dispatchBriefing(assignmentInput);
+    const observed = await service.recordSession(assignmentInput);
 
     assert.equal(records, 1);
-    assert.equal(dispatches, 1);
     assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
-  it('should prepare a local-only no-tools turn in the managed worktree', () => {
+  it('should prepare a deterministic observe-only session record', async () => {
     const service = createService();
     const turn = service.prepareTurn({
-      briefing: 'Review GitHub issue #42 and summarize the requested work.',
       config,
       event,
       label: 'tanaabased/openclaw-agent-system#42',
@@ -134,51 +107,15 @@ describe('channels/github/lib/session-service', () => {
 
     assert.equal(turn.channel, 'agent-system-github');
     assert.equal(turn.accountId, 'data');
-    assert.equal(turn.agentId, 'data');
     assert.equal(turn.routeSessionKey, route.sessionKey);
     assert.equal(turn.ctxPayload.SessionKey, route.sessionKey);
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
-    assert.equal(
-      turn.ctxPayload.BodyForAgent,
-      'Review GitHub issue #42 and summarize the requested work.',
-    );
+    assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
     const context = turn.ctxPayload as unknown as Record<string, unknown>;
     assert.equal(context.githubWorktreeBranch, assignmentInput.worktree.branch);
     assert.equal(context.githubWorktreePath, assignmentInput.worktree.path);
-    assert.deepEqual(turn.toolsAllow, []);
-    assert.deepEqual(turn.replyOptions, {
-      disableTools: true,
-      sourceReplyDeliveryMode: 'automatic',
-      suppressDefaultToolProgressMessages: true,
-      suppressTyping: true,
-      toolsAllow: [],
-    });
     assert.deepEqual(turn.record, { createIfMissing: true });
-    assert.equal(turn.afterRecord, undefined);
-  });
-
-  it('should release openclaw one-shot resources after a manual briefing', () => {
-    const service = createService();
-    const turn = service.prepareTurn({
-      briefing: 'Review GitHub issue #42 and summarize the requested work.',
-      config,
-      event,
-      label: 'tanaabased/openclaw-agent-system#42',
-      oneShotCliRun: true,
-      route,
-      worktreeBranch: assignmentInput.worktree.branch,
-      worktreePath: assignmentInput.worktree.path,
-    });
-
-    assert.deepEqual(turn.replyOptions, {
-      cleanupBundleMcpOnRunEnd: true,
-      disableTools: true,
-      oneShotCliRun: true,
-      sourceReplyDeliveryMode: 'automatic',
-      suppressDefaultToolProgressMessages: true,
-      suppressTyping: true,
-      toolsAllow: [],
-    });
+    await assert.rejects(turn.runDispatch(), /must not dispatch an agent turn/u);
   });
 
   it('should fail closed when the configured binding resolves another agent', async () => {
@@ -196,31 +133,22 @@ describe('channels/github/lib/session-service', () => {
     });
 
     await assert.rejects(
-      service.dispatchBriefing(assignmentInput),
+      service.recordSession(assignmentInput),
       /does not select the expected agent/u,
     );
   });
 
-  it('should reject unbounded briefings and relative worktree paths', () => {
+  it('should reject relative worktree paths', () => {
     const service = createService();
-    const common = {
-      config,
-      event,
-      label: 'repository#42',
-      route,
-      worktreeBranch: assignmentInput.worktree.branch,
-      worktreePath: assignmentInput.worktree.path,
-    };
 
-    assert.throws(
-      () => service.prepareTurn({ ...common, briefing: 'x'.repeat(16_385) }),
-      /must not exceed 16384 characters/u,
-    );
     assert.throws(
       () =>
         service.prepareTurn({
-          ...common,
-          briefing: 'Review the assigned issue.',
+          config,
+          event,
+          label: 'repository#42',
+          route,
+          worktreeBranch: assignmentInput.worktree.branch,
           worktreePath: '.agent-system/worktrees/github-42',
         }),
       /worktree paths must be an absolute path/u,

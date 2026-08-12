@@ -20,10 +20,9 @@ export interface GitHubNotificationDeliveryObservation {
 
 export type GitHubNotificationDeliveryAction =
   | { kind: 'checkpoint-worktree'; worktree: GitHubNotificationObservedWorktree }
-  | { kind: 'dispatch-briefing' }
-  | { kind: 'fail'; reasonCode: string }
   | { kind: 'none' }
   | { kind: 'prepare-worktree' }
+  | { kind: 'record-session' }
   | { kind: 'retire'; reasonCode: string };
 
 /** Plan one delivery step from freshly observed side effects instead of trusting its saved stage. */
@@ -47,8 +46,5 @@ export function planGitHubNotificationDelivery(
   ) {
     return { kind: 'checkpoint-worktree', worktree: observation.worktree };
   }
-  if (delivery.stage === 'briefing-running') {
-    return { kind: 'fail', reasonCode: 'github-notification-briefing-ambiguous' };
-  }
-  return { kind: 'dispatch-briefing' };
+  return { kind: 'record-session' };
 }

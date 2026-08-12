@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from 'node:path';
 
 import {
   buildChannelInboundEventContext,
-  type AssembledInboundReply,
+  type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
@@ -16,11 +16,6 @@ import {
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channel.ts';
-import {
-  buildGitHubNotificationBriefing,
-  maximumGitHubNotificationBriefingLength,
-  type GitHubNotificationBriefingData,
-} from '../utils/briefing.ts';
 import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
 import {
   githubNotificationChannelId,
@@ -30,20 +25,14 @@ import {
 } from '../utils/routing.ts';
 
 export interface GitHubNotificationSessionServiceDependencies {
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
-  loadBriefing(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationBriefingData>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
-  recordInboundSession: AssembledInboundReply['recordInboundSession'];
+  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
 
 export interface GitHubNotificationSessionTurnInput {
-  briefing: string;
   config: OpenClawConfig;
   event: GitHubNotificationAssignmentEvent;
   label: string;
-  oneShotCliRun?: boolean;
   route: ResolvedNotificationRoute;
   worktreeBranch: string;
   worktreePath: string;
@@ -72,7 +61,7 @@ function absolutePath(value: string, label: string): string {
   return normalized;
 }
 
-/** Dispatch one assignment through OpenClaw's channel-owned session lifecycle. */
+/** Record one assignment through OpenClaw's channel-owned session lifecycle. */
 export default class GitHubNotificationSessionService implements GitHubNotificationAssignmentSessions {
   readonly #dependencies: GitHubNotificationSessionServiceDependencies;
 
@@ -80,44 +69,34 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     this.#dependencies = dependencies;
   }
 
-  public async dispatchBriefing(
+  public async recordSession(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession> {
     const assignment = await this.#resolveAssignment(input);
-    const data = await this.#dependencies.loadBriefing(input);
-    const briefing = buildGitHubNotificationBriefing({
-      ...data,
-      item: input.item,
-      worktree: input.worktree,
-    });
-    const event = { ...assignment.event, timestamp: Date.parse(data.assignmentAt) };
-    const result = await runGitHubNotificationAssignment(event, {
+    const result = await runGitHubNotificationAssignment(assignment.event, {
       config: assignment.config,
       desired: assignment.desired,
       prepareTurn: (event, route) =>
         this.prepareTurn({
-          briefing,
           config: assignment.config,
           event,
           label: assignment.label,
-          ...(input.oneShotCliRun ? { oneShotCliRun: true } : {}),
           route,
           worktreeBranch: input.worktree.branch,
           worktreePath: input.worktree.path,
         }),
     });
-    if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
-      throw new Error('OpenClaw did not dispatch the expected notification session.');
+    if (
+      !result.dispatched ||
+      result.admission.kind !== 'observeOnly' ||
+      result.routeSessionKey !== assignment.route.sessionKey
+    ) {
+      throw new Error('OpenClaw did not record the expected notification session.');
     }
     return { key: result.routeSessionKey, status: 'active' };
   }
 
-  public prepareTurn(input: GitHubNotificationSessionTurnInput): AssembledInboundReply {
-    const briefing = requiredText(
-      input.briefing,
-      'GitHub notification briefings',
-      maximumGitHubNotificationBriefingLength,
-    );
+  public prepareTurn(input: GitHubNotificationSessionTurnInput): PreparedInboundReply<void> {
     const eventId = requiredText(input.event.id, 'GitHub notification event ids', 256);
     const label = requiredText(input.label, 'GitHub notification session labels', 120);
     const repositoryId = requiredText(
@@ -139,6 +118,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     );
     const worktreePath = absolutePath(input.worktreePath, 'GitHub notification worktree paths');
     const conversationId = input.route.conversationId;
+    const notification = `GitHub ${input.event.itemType} #${input.event.itemNumber} was assigned to this agent.`;
     const ctxPayload = buildChannelInboundEventContext({
       accountId: input.route.accountId,
       channel: githubNotificationChannelId,
@@ -157,11 +137,11 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       },
       from: `github:${repositoryId}`,
       message: {
-        body: briefing,
-        bodyForAgent: briefing,
+        body: notification,
+        bodyForAgent: notification,
         commandBody: '',
         inboundEventKind: 'user_request',
-        rawBody: briefing,
+        rawBody: notification,
       },
       messageId: eventId,
       provider: 'github',
@@ -187,29 +167,19 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
 
     return {
       accountId: input.route.accountId,
-      agentId: input.route.agentId,
-      cfg: input.config,
       channel: githubNotificationChannelId,
       ctxPayload,
-      delivery: { deliver: async () => undefined },
-      dispatchReplyWithBufferedBlockDispatcher:
-        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
       messageId: eventId,
+      observeOnlyDispatchResult: undefined,
       record: { createIfMissing: true },
       recordInboundSession: this.#dependencies.recordInboundSession,
-      replyOptions: {
-        ...(input.oneShotCliRun ? { cleanupBundleMcpOnRunEnd: true, oneShotCliRun: true } : {}),
-        disableTools: true,
-        sourceReplyDeliveryMode: 'automatic',
-        suppressDefaultToolProgressMessages: true,
-        suppressTyping: true,
-        toolsAllow: [],
-      },
       routeSessionKey: input.route.sessionKey,
+      runDispatch: async () => {
+        throw new Error('Observe-only notification intake must not dispatch an agent turn.');
+      },
       storePath: resolveStorePath(input.config.session?.store, {
         agentId: input.route.agentId,
       }),
-      toolsAllow: [],
     };
   }
 

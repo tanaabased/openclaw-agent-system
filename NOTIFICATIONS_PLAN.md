@@ -24,10 +24,11 @@ MVP 1 supports one assignment-intake path:
    repository is eligible, and the agent has effective write permission.
 6. One admitted issue creates or reuses exactly one managed worktree and one
    issue-scoped local OpenClaw session.
-7. OpenClaw's channel inbound lifecycle records the bounded assignment briefing
-   and starts one no-tools local turn.
+7. OpenClaw's channel inbound lifecycle records the issue-scoped session in
+   observe-only mode without starting an agent turn.
 8. The background scheduler and `notifications refresh` command share the same
-   provider, baseline, state, admission, delivery, and cross-process lock path.
+   deterministic, model-free provider, baseline, state, admission, delivery,
+   and cross-process lock path.
 
 MVP 1 ends with a durable issue, repository, worktree, and session correlation.
 It does not autonomously edit code, write to GitHub, open a pull request, ingest
@@ -47,7 +48,7 @@ comments, retire sessions, or clean up worktrees.
 - deterministic managed-worktree preparation through the Git capability;
 - deterministic issue conversation routing through OpenClaw's public channel
   inbound lifecycle;
-- value-free delivery checkpoints and bounded untrusted briefing projection;
+- value-free delivery checkpoints and observe-only session recording;
 - one-shot manual refresh through the background monitor path;
 - host-owned cross-process file locking with a notification-specific bounded
   wait and busy result; and
@@ -80,7 +81,7 @@ The branch contains tested implementation that is deliberately outside the MVP
 - logical retirement that preserves sessions and worktrees;
 - reassignment and multi-stage delivery state;
 - optional immutable repository-owner restrictions; and
-- recovery diagnostics for ambiguous briefing delivery.
+- safely retryable deterministic session recording.
 
 Keep these paths unless they destabilize MVP 1, but describe them as
 implemented ahead until Notifications 2 supplies installed acceptance coverage,
@@ -195,7 +196,7 @@ Each cycle:
 3. establishes or advances a safe overlap-window baseline;
 4. loads the canonical repository, owner, issue, permission, and assignment
    event for each candidate;
-5. admits control facts before fetching bounded issue text;
+5. admits only canonical control facts and does not fetch issue prose;
 6. suppresses self-events, duplicates, and assignments older than the baseline;
 7. prepares the worktree and routed conversation for an admitted issue; and
 8. persists only value-free control and correlation state.
@@ -219,10 +220,10 @@ Titles, bodies, labels, milestone text, URLs, comments, and provider error bodie
 are untrusted project data. They cannot choose an agent, credential, repository,
 clone URL, base ref, local path, executable, tool, or policy outcome.
 
-Only after admission does the monitor fetch a separate bounded briefing
-projection. The automated turn receives explicit untrusted-content framing,
-`disableTools: true`, and an empty tool allowlist. GitHub content is not stored
-in private control state or routine logs.
+MVP 1 does not fetch issue prose or start an automated turn. GitHub content is
+not stored in private control state or routine logs. Any future briefing must
+remain downstream of admission, bounded, explicitly framed as untrusted project
+data, and independent from deterministic intake completion.
 
 ## Worktree and Session Delivery
 
@@ -234,7 +235,7 @@ APIs:
    repository and worktree;
 3. the GitHub channel builds the inbound route and context; and
 4. OpenClaw's `runChannelInboundEvent` records or lazily creates the local
-   session before dispatching the turn.
+   session under an observe-only admission without dispatching an agent turn.
 
 The conversation id is deterministic:
 
@@ -257,17 +258,16 @@ Private state contains assignment ids, canonical repository/item ids, baseline
 cursors, delivery checkpoints, worktree/session correlation, retry timing, and
 stable diagnostic codes. It does not contain credentials or GitHub prose.
 
-Delivery is at most once from Agent System's perspective:
+Delivery is deterministic and idempotent from Agent System's perspective:
 
 - checkpoint before worktree preparation;
 - record the deterministic worktree result;
-- checkpoint `briefing-running` before channel dispatch; and
-- record completion only after the inbound lifecycle returns successfully.
+- checkpoint `session-recording` before the public inbound lifecycle; and
+- record completion only after the host records the deterministic session.
 
-If briefing dispatch becomes ambiguous, MVP 1 does not retry automatically.
-The public third-party API cannot safely inspect session history or active-run
-state. The stable diagnostic requires operator inspection instead of risking a
-duplicate turn.
+Session recording may be retried after interruption because the route and
+session key are deterministic and the host record uses `createIfMissing: true`.
+No model turn or transcript entry exists to duplicate.
 
 Logical retirement, native archival, reassignment recovery, and explicit state
 or worktree cleanup are Notifications 2 contracts. No revocation path deletes a
@@ -300,7 +300,21 @@ local session.
 
 Notifications 2 owns everything after initial issue intake.
 
-### Phase 1: Assignment Lifecycle and Pull-request Correlation
+### Phase 1: Session Activation and Briefing
+
+- Keep polling, admission, worktree preparation, and session recording model-free.
+- Treat briefing as a separate activation concern with its own checkpoint,
+  retry, cancellation, and model-authorization diagnostics.
+- Prefer lazy prompt-context injection on the first real interaction when an
+  immediate autonomous assistant message is not required.
+- If an automatic opening message is required, enqueue a separate asynchronous
+  channel turn after intake commits; never make refresh wait for model completion.
+- Fetch only a bounded canonical issue projection after activation is claimed,
+  isolate it as untrusted project data, and reuse the public channel inbound and
+  message-delivery lifecycles.
+- Do not call protected Gateway session APIs or write directly to session storage.
+
+### Phase 2: Assignment Lifecycle and Pull-request Correlation
 
 - Promote pull-request assignments only after installed proof defines their
   distinct semantics.
@@ -312,7 +326,7 @@ Notifications 2 owns everything after initial issue intake.
   retirement logical.
 - Preserve sessions and worktrees on unassignment or authority revocation.
 
-### Phase 2: Approved GitHub Comments Inbound
+### Phase 3: Approved GitHub Comments Inbound
 
 - Poll only active canonical issues and correlated pull-request conversations.
 - Admit only canonical human comments from approved immutable actor ids.
@@ -323,7 +337,7 @@ Notifications 2 owns everything after initial issue intake.
 - Route admitted comments to the existing local conversation with bounded
   provenance and untrusted-content framing.
 
-### Phase 3: Bounded Replies to GitHub
+### Phase 4: Bounded Replies to GitHub
 
 - Produce a separate GitHub-facing response from an explicitly publishable
   payload, never by mirroring or redacting the local transcript.
@@ -334,7 +348,7 @@ Notifications 2 owns everything after initial issue intake.
   arbitrary local turns.
 - Add an explicit operator action for selected local progress updates.
 
-### Phase 4: Operations and Cleanup
+### Phase 5: Operations and Cleanup
 
 - Add status and replay controls with stable value-free diagnostics.
 - Add explicit, non-destructive cleanup through the owning session and Git
@@ -400,11 +414,11 @@ implementation modules.
    lazy creation.
 6. Let the Git capability own managed-worktree preparation.
 7. Preserve transcripts and worktrees by default; later cleanup is explicit.
-8. Keep the first briefing local-only and tool-free.
+8. Keep MVP 1 notification refresh and session creation deterministic and model-free.
 9. Use fixed, bounded `gh api` calls until measured cost or scale justifies a
    direct transport.
-10. Fail closed on ambiguous dispatch rather than retry without a public scoped
-    session-inspection capability.
+10. Defer briefing and agent-turn dispatch to a separately recoverable
+    Notifications 2 activation path.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,

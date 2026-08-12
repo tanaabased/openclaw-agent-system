@@ -5,7 +5,6 @@ import type { GitHubNotificationDeliveryState } from '../channels/github/utils/m
 
 const admitted: GitHubNotificationDeliveryState = {
   assignmentEventId: 'EV_assignment',
-  briefingIdempotencyKey: 'EV_assignment',
   schemaVersion: 1,
   stage: 'admitted',
   workId: 'issue-7',
@@ -23,7 +22,7 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should reconcile the worktree before dispatching through the channel', () => {
+  it('should reconcile the worktree before recording the channel session', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }), {
       kind: 'prepare-worktree',
     });
@@ -38,7 +37,7 @@ describe('channels/github/utils/delivery-plan', () => {
       worktreePath: worktree.path,
     };
     assert.deepEqual(planGitHubNotificationDelivery(worktreeReady, { authority, worktree }), {
-      kind: 'dispatch-briefing',
+      kind: 'record-session',
     });
   });
 
@@ -49,18 +48,18 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should never automatically retry a claimed ambiguous briefing', () => {
+  it('should retry a deterministic session record', () => {
     assert.deepEqual(
       planGitHubNotificationDelivery(
         {
           ...admitted,
-          stage: 'briefing-running',
+          stage: 'session-recording',
           worktreeBranch: worktree.branch,
           worktreePath: worktree.path,
         },
         { authority, worktree },
       ),
-      { kind: 'fail', reasonCode: 'github-notification-briefing-ambiguous' },
+      { kind: 'record-session' },
     );
   });
 

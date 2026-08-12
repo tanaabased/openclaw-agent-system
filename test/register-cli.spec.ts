@@ -53,7 +53,6 @@ function createProgram() {
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
-      oneShotCliRun?: boolean;
       waitForLeaseMs?: number;
     }>,
     tool: [] as Array<{
@@ -370,7 +369,6 @@ describe('lib/register-cli', () => {
       {
         agentId: 'tanaabot',
         bypassInterval: true,
-        oneShotCliRun: true,
         waitForLeaseMs: 120_000,
       },
     ]);

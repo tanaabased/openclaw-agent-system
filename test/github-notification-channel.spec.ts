@@ -51,14 +51,10 @@ describe('channels/github/channel', () => {
       configPrefixes: ['channels.agent-system-github'],
     });
     assert.equal(githubNotificationChannel.outbound, undefined);
-    assert.equal(githubNotificationChannel.message?.send, undefined);
-    assert.deepEqual(githubNotificationChannel.message?.receive, {
-      defaultAckPolicy: 'after_agent_dispatch',
-      supportedAckPolicies: ['after_agent_dispatch'],
-    });
+    assert.equal(githubNotificationChannel.message, undefined);
   });
 
-  it('should dispatch a synthetic assignment through the inbound kernel', async () => {
+  it('should record an observe-only assignment through the inbound kernel', async () => {
     let records = 0;
     let dispatches = 0;
     let routedSessionKey: string | undefined;
@@ -77,6 +73,7 @@ describe('channels/github/channel', () => {
           async recordInboundSession() {
             records += 1;
           },
+          observeOnlyDispatchResult: { localReply: 'skipped' },
           async runDispatch() {
             dispatches += 1;
             return { localReply: 'ready' };
@@ -88,8 +85,9 @@ describe('channels/github/channel', () => {
     assert.equal(result.dispatched, true);
     assert.equal(result.routeSessionKey, routedSessionKey);
     assert.equal(records, 1);
-    assert.equal(dispatches, 1);
-    if (result.dispatched) assert.deepEqual(result.dispatchResult, { localReply: 'ready' });
+    assert.equal(dispatches, 0);
+    assert.equal(result.admission.kind, 'observeOnly');
+    if (result.dispatched) assert.deepEqual(result.dispatchResult, { localReply: 'skipped' });
   });
 
   it('should derive stable work-item conversations from repository and issue number', () => {

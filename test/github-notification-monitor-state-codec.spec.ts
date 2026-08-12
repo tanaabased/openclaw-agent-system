@@ -28,12 +28,12 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
-  it('should accept a briefing checkpoint before session dispatch', () => {
+  it('should accept a session-recording checkpoint', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
     item.delivery = {
       ...item.delivery!,
-      stage: 'briefing-running',
+      stage: 'session-recording',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };

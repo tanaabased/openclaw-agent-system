@@ -29,16 +29,15 @@ The upcoming release provides the channel, routing, trust core, and local issue-
 - private atomic control state containing no token or issue/comment content
 - deterministic work-item conversation ids for inbound assignment delivery
 - policy-authorized managed worktree preparation through the Git capability
-- value-free, at-most-once delivery checkpoints around worktree and briefing creation
-- a separate bounded title, URL, body-excerpt, label, and milestone projection
+- value-free delivery checkpoints around worktree and session creation
 - one deterministic local session created by OpenClaw's channel inbound lifecycle
-- a no-tools automated briefing turn whose GitHub content is explicitly untrusted
+- deterministic scheduled and manual intake without a model invocation
 - local-only behavior with no outbound GitHub adapter
 
 After a new assignment is admitted, the monitor prepares or adopts one managed
-worktree and one deterministic OpenClaw session, then starts one local briefing
-turn. It does not fetch comments, publish the response, or otherwise write to
-GitHub.
+worktree and records one deterministic OpenClaw session in observe-only mode. It
+does not fetch issue prose or comments, start an agent turn, publish a response,
+or otherwise write to GitHub.
 
 ## Implemented Ahead of MVP 1
 
@@ -168,16 +167,15 @@ code so CI can distinguish it from a completed refresh. It does not enable the
 background scheduler and is not a read-only fetch: an admitted assignment can
 create its managed worktree and local session.
 
-Delivery state is checkpointed before and after worktree preparation and before
-the channel turn is dispatched. The channel passes `createIfMissing: true` to
-OpenClaw's inbound kernel; the host records or creates the routed session before
-starting the turn. Agent System does not call protected Gateway session RPCs or
-edit host session storage.
+Delivery state is checkpointed before and after worktree preparation and while
+the session is being recorded. The channel passes `createIfMissing: true` and an
+observe-only admission to OpenClaw's inbound kernel; the host records or creates
+the routed session without dispatching an agent turn. Agent System does not call
+protected Gateway session RPCs or edit host session storage.
 
-The pre-dispatch `briefing-running` checkpoint prevents automatic duplicate
-turns. If the process loses the dispatch result, the item receives the stable
-`github-notification-briefing-ambiguous` diagnostic and requires operator
-inspection rather than a speculative retry.
+Session recording is safely retryable because the route and session key are
+deterministic. A process interruption cannot create a second issue-scoped
+session, and no model turn exists to duplicate.
 
 The implemented-ahead authority-revocation path records logical retirement and
 stops creating new turns. It does not abort or archive the host session and does
@@ -202,25 +200,21 @@ github:<repository-node-id>:<issue-number>
 The exact channel account binding must select the same agent that owns the
 manifest. Missing, default, or cross-agent routing is rejected.
 
-The channel intentionally registers no outbound adapter. Automated briefing
-responses remain in the local OpenClaw transcript and cannot be published to
-GitHub through this channel.
+The channel intentionally registers no outbound adapter. MVP intake records the
+session and stops; it produces no response that could be published to GitHub.
 
-The automated briefing turn sets `disableTools: true` and an empty per-turn
-tool allowlist. The worktree path is included in the bounded briefing and inbound
-context for later operator- or agent-led work; the briefing turn itself cannot
-invoke it. Agent System keeps correlation in its private monitor state instead
-of patching OpenClaw session extensions.
+The worktree path is included in the bounded inbound context for later operator-
+or agent-led work. Agent System keeps correlation in its private monitor state
+instead of patching OpenClaw session extensions.
 
 ## Trust Boundary
 
 GitHub content is untrusted project data. The monitor authorizes transitions
 using only the verified account identity, immutable actor identity, canonical
 repository and owner identities, effective repository permission, item state,
-and assignment event. Only after those checks pass does it fetch a separate,
-bounded briefing projection. GitHub text is marked as untrusted project data,
-is never interpreted as notification control state, and is not persisted in the
-private monitor record. Comments are not fetched in this phase.
+and assignment event. MVP intake does not fetch issue titles, bodies, labels,
+milestones, or comments. GitHub text is never interpreted as notification
+control state or persisted in the private monitor record.
 
 For assignment events, the trusted actor is GitHub's immutable `assigner` field.
 The event's `actor` and `assignee` fields are not treated as assignment authority.

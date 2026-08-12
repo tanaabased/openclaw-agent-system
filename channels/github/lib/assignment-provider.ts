@@ -10,7 +10,6 @@ import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
-import type { GitHubNotificationBriefingData } from '../utils/briefing.ts';
 import { resolveNotificationRoute } from '../utils/routing.ts';
 import GitHubWorkEventClient, { GitHubWorkEventClientError } from './work-event-client.ts';
 
@@ -20,7 +19,7 @@ export interface GitHubNotificationAssignmentProviderDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
 
-/** Read current GitHub authority and transient briefing data for assignment delivery. */
+/** Read current GitHub authority for assignment delivery. */
 export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
   readonly #dependencies: GitHubNotificationAssignmentProviderDependencies;
 
@@ -122,42 +121,6 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
       }
       throw error;
     }
-  }
-
-  async briefing(
-    input: GitHubNotificationAssignmentBoundaryInput,
-  ): Promise<GitHubNotificationBriefingData> {
-    const context = await this.#connect(input);
-    if (!context) throw new Error('GitHub notification configuration is no longer available.');
-    const [projection, eventPage] = await Promise.all([
-      context.client.getBriefing(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-      ),
-      context.client.listAssignmentEvents(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-      ),
-    ]);
-    if (eventPage.truncated) {
-      throw new Error('GitHub assignment history exceeded its briefing boundary.');
-    }
-    const assignment = eventPage.events.find(
-      (event) =>
-        event.event === 'assigned' &&
-        event.nodeId === input.delivery.assignmentEventId &&
-        event.actor.nodeId === input.item.assignmentActorNodeId &&
-        event.assignee.nodeId === context.client.identity.nodeId,
-    );
-    if (!assignment)
-      throw new Error('The admitted GitHub assignment event is no longer available.');
-    return {
-      assignmentActor: assignment.actor,
-      assignmentAt: assignment.createdAt,
-      projection,
-    };
   }
 
   async #connect(input: GitHubNotificationAssignmentBoundaryInput): Promise<

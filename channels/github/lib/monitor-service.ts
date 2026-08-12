@@ -25,12 +25,7 @@ const maximumFailureBackoffMs = 60 * 60 * 1000;
 export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: {
-    reconcile(
-      agentId: string,
-      itemKey: string,
-      signal?: AbortSignal,
-      oneShotCliRun?: boolean,
-    ): Promise<void>;
+    reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
   };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
@@ -46,7 +41,6 @@ export interface GitHubNotificationMonitorServiceDependencies {
 export interface GitHubNotificationMonitorRunOptions {
   agentId?: string;
   bypassInterval?: boolean;
-  oneShotCliRun?: boolean;
   signal?: AbortSignal;
   waitForLeaseMs?: number;
 }
@@ -226,7 +220,7 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
   ): Promise<GitHubNotificationMonitorRunResult> {
-    const { bypassInterval = false, oneShotCliRun = false, signal } = options;
+    const { bypassInterval = false, signal } = options;
     let workspaceDir: string | undefined;
     try {
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
@@ -255,7 +249,7 @@ export default class GitHubNotificationMonitorService {
       }
       const notifications = loaded.manifest.github?.notifications;
       if (!notifications) {
-        await this.#retireDisabledAssignments(agentId, current, now, signal, oneShotCliRun);
+        await this.#retireDisabledAssignments(agentId, current, now, signal);
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
       const pendingItemKeys = pendingDeliveryItemKeys(current);
@@ -283,7 +277,6 @@ export default class GitHubNotificationMonitorService {
           agentId,
           githubNotificationRetirementItemKeys(current),
           signal,
-          oneShotCliRun,
         );
         await this.#saveFailure(
           agentId,
@@ -296,7 +289,7 @@ export default class GitHubNotificationMonitorService {
       }
 
       if (pollDeferred) {
-        await this.#reconcileAssignments(agentId, pendingItemKeys, signal, oneShotCliRun);
+        await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
         return {
           agentId,
           code: 'github-notification-pending-reconciled',
@@ -327,12 +320,7 @@ export default class GitHubNotificationMonitorService {
       result.state.lastSuccessfulPollAt = now;
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
       await this.#dependencies.stateStore.write(result.state);
-      await this.#reconcileAssignments(
-        agentId,
-        pendingDeliveryItemKeys(result.state),
-        signal,
-        oneShotCliRun,
-      );
+      await this.#reconcileAssignments(agentId, pendingDeliveryItemKeys(result.state), signal);
       this.#dependencies.logger.info(
         `github-notifications: poll complete agent=${agentId} code=github-notification-poll-complete baseline=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
       );
@@ -382,16 +370,10 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     itemKeys: readonly string[],
     signal?: AbortSignal,
-    oneShotCliRun = false,
   ): Promise<void> {
     for (const itemKey of itemKeys) {
       if (signal?.aborted) return;
-      await this.#dependencies.assignmentOrchestrator.reconcile(
-        agentId,
-        itemKey,
-        signal,
-        oneShotCliRun,
-      );
+      await this.#dependencies.assignmentOrchestrator.reconcile(agentId, itemKey, signal);
     }
   }
 
@@ -400,7 +382,6 @@ export default class GitHubNotificationMonitorService {
     current: GitHubNotificationMonitorState | undefined,
     now: number,
     signal?: AbortSignal,
-    oneShotCliRun = false,
   ): Promise<void> {
     const itemKeys = githubNotificationRetirementItemKeys(current);
     if (itemKeys.length === 0) {
@@ -413,7 +394,7 @@ export default class GitHubNotificationMonitorService {
       itemKeys.some((itemKey) => current.items[itemKey]?.delivery?.failureCode !== undefined);
     if (retryDeferred) return;
 
-    await this.#reconcileAssignments(agentId, itemKeys, signal, oneShotCliRun);
+    await this.#reconcileAssignments(agentId, itemKeys, signal);
     const reconciled = await this.#dependencies.stateStore.read(agentId);
     if (githubNotificationRetirementItemKeys(reconciled).length === 0) {
       await this.#dependencies.stateStore.remove?.(agentId);
