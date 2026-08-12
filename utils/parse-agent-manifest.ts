@@ -81,6 +81,57 @@ const externalAgentManifestSchema = Type.Object(
 
 type ExternalAgentManifest = Static<typeof externalAgentManifestSchema>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function pointerSegment(value: string): string {
+  return value.replace(/~/gu, '~0').replace(/\//gu, '~1');
+}
+
+function legacyPolicyDiagnostics(value: unknown): ManifestDiagnostic[] {
+  if (!isRecord(value)) return [];
+  const fields: string[] = [];
+  const gitPolicyFields = new Set(['delete', 'discard', 'force', 'rewrite', 'unknown']);
+  const githubPolicyFields = new Set(['admin', 'destructive', 'unknown']);
+  const git = value['git'];
+  if (isRecord(git)) {
+    const extensions = git['extensions'];
+    if (isRecord(extensions)) {
+      for (const [name, decision] of Object.entries(extensions)) {
+        if (/^[a-z0-9][a-z0-9-]*$/u.test(name) && decision === 'ask') {
+          fields.push(`/git/extensions/${pointerSegment(name)}`);
+        }
+      }
+    }
+    const policy = git['policy'];
+    if (isRecord(policy)) {
+      for (const [name, decision] of Object.entries(policy)) {
+        if (gitPolicyFields.has(name) && decision === 'ask') {
+          fields.push(`/git/policy/${pointerSegment(name)}`);
+        }
+      }
+    }
+  }
+  const github = value['github'];
+  if (isRecord(github)) {
+    const policy = github['policy'];
+    if (isRecord(policy)) {
+      for (const [name, decision] of Object.entries(policy)) {
+        if (githubPolicyFields.has(name) && decision === 'ask') {
+          fields.push(`/github/policy/${pointerSegment(name)}`);
+        }
+      }
+    }
+  }
+  return fields.map((fieldPath) => ({
+    code: 'manifest-policy-ask-unsupported',
+    fieldPath,
+    message: `Policy decision ask at ${fieldPath} is no longer supported. An operator must choose deny or allow.`,
+    severity: 'error',
+  }));
+}
+
 function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): ManifestDiagnostic[] {
   if (error.keyword === 'additionalProperties') {
     return error.params.additionalProperties.map((property) => ({
@@ -232,10 +283,17 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     };
   }
 
-  if (!Value.Check(externalAgentManifestSchema, value)) {
+  const migrationDiagnostics = legacyPolicyDiagnostics(value);
+  if (migrationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
+    const migrationPaths = new Set(
+      migrationDiagnostics.flatMap(({ fieldPath }) => (fieldPath === undefined ? [] : [fieldPath])),
+    );
+    const schemaDiagnostics = Value.Errors(externalAgentManifestSchema, value)
+      .flatMap(schemaDiagnostic)
+      .filter(({ fieldPath }) => fieldPath === undefined || !migrationPaths.has(fieldPath));
     return {
       status: 'invalid',
-      diagnostics: Value.Errors(externalAgentManifestSchema, value).flatMap(schemaDiagnostic),
+      diagnostics: [...migrationDiagnostics, ...schemaDiagnostics],
     };
   }
 

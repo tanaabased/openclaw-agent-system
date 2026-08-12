@@ -38,7 +38,8 @@ transcripts. Only a canonical comment from an approved immutable actor that
 directly mentions the verified agent is eligible to create an inbound turn.
 For a turn that originated from such a comment, the agent produces a separate,
 bounded GitHub-facing response draft derived from the local response. That
-response passes normal GitHub write policy and approval before publication.
+response is published only when normal GitHub policy allows the write and the
+mandatory secret-safety gate succeeds.
 Local-only turns remain local unless an operator explicitly publishes an
 update. Tool traces, hidden context, local paths, failed attempts, and the full
 OpenClaw transcript are never synchronization inputs.
@@ -106,7 +107,7 @@ For each configured agent, the Gateway will:
 The automated briefing is the end of autonomous MVP behavior. It may inspect
 bounded issue metadata, but it must not edit code, comment on GitHub, push, or
 open a pull request. The operator continues the work in the created session
-under normal Agent System tool policy and approval rules.
+under normal Agent System tool policy.
 
 ## Non-goals for the First MVP
 
@@ -139,7 +140,7 @@ event or integration GitHub can provide. After Phases 0 through 6, it will:
   provenance and bounded untrusted content;
 - produce at most one bounded, conversational GitHub-facing response for that
   GitHub-originated turn, subject to mandatory secret-safety checks, normal
-  write policy, and approval;
+  write policy, and the mandatory secret-safety gate;
 - support an explicit publish action for selected local updates without making
   the whole local transcript remotely visible;
 - suppress self-events and duplicate delivery across retries, edits, restarts,
@@ -526,10 +527,10 @@ conversational update, decision, question, or next step. It must not derive that
 response from tool traces or the wider transcript, and redaction alone is not a
 sufficient publication boundary.
 
-The GitHub-facing response is published only after normal tool policy and any
-required approval. If publication is denied or fails, the local response and a
-recoverable unpublished status remain in the session. A local operator turn is
-never published automatically; it requires the explicit publish action. Every
+The GitHub-facing response is published only when normal tool policy allows the
+write. If publication is denied or fails, the local response and a recoverable
+unpublished status remain in the session. A local operator turn is never
+published automatically; it requires the explicit publish action. Every
 successful write records the exact published text and provider comment id in
 the local session and records the provider id in private state for loop
 suppression.
@@ -548,23 +549,24 @@ prompt instruction.
   references paired with values, signed URLs, cookies, and tool output marked
   sensitive.
 - Run deterministic secret detection and sanitization before showing the exact
-  preview for policy or approval. Cover common token, key, credential, and
+  preview for policy evaluation or an explicit publish action. Cover common
+  token, key, credential, and
   high-entropy secret forms, and replace detected material with a stable safe
   placeholder.
-- Resolve the GitHub credential only after policy and approval. Immediately
+- Resolve the GitHub credential only after policy allows the write. Immediately
   before the provider write, check the exact UTF-8 bytes again, including against
   sensitive values already held by that explicit consumer. Never resolve
   unrelated secrets merely to expand the scan.
 - If the final check detects secret material, sensitive provenance is unclear,
-  the content changed after approval, or the sanitizer cannot complete, abort
+  the content changed after authorization, or the sanitizer cannot complete, abort
   publication. Regenerate and preview a safe response rather than silently
   sending altered text.
-- Never log, diagnose, persist in monitor state, or include in approval metadata
+- Never log, diagnose, persist in monitor state, or include in authorization metadata
   the detected secret, its source value, or the rejected unsanitized payload.
 
 Tests use synthetic canary secrets to prove that known token and key forms,
 values already held by the writer, and secret-derived content cannot reach the
-provider adapter, logs, diagnostics, approval records, or durable control state.
+provider adapter, logs, diagnostics, authorization records, or durable control state.
 
 The pinned SDK exposes channel inbound routing, long-lived plugin services, and
 trusted Gateway methods for creating and patching sessions, including label,
@@ -599,7 +601,7 @@ Session guidance should require:
   eligible, rather than merely assigning the pull request to them;
 - the linked pull request id persisted on the existing work item so the agent's
   own pull request does not create a duplicate session;
-- normal GitHub write policy and approvals for every mutation;
+- normal GitHub write policy for every mutation;
 - no claim that a closed-but-unmerged pull request closes the issue.
 
 ## Phased Implementation
@@ -865,20 +867,20 @@ the local conversation.
   separate GitHub-facing response from an explicit bounded publishable payload.
 - Expose a scoped comment-write service to the trusted workflow orchestrator;
   do not shell through or impersonate the model-facing GitHub tool, and preserve
-  the same policy, approval, and credential-timing boundaries.
+  the same policy, authorization, and credential-timing boundaries.
 - Keep the GitHub response conversational and useful, but omit private context,
   tool traces, local paths, hidden instructions, raw failures, credentials, and
   unrelated transcript history. Do not treat after-the-fact redaction of the
   full transcript as the security boundary.
 - Pass the separately constructed response through the mandatory GitHub-facing
   secret-safety pipeline before preview and again on the exact bytes immediately
-  before send. Any secret hit, uncertain provenance, or post-approval change
+  before send. Any secret hit, uncertain provenance, or post-authorization change
   blocks publication and exposes only a value-free local diagnostic.
 - Add an explicit semantic publish action for operator-originated local updates;
   no other local turn is automatically eligible for publication.
-- Show the exact bounded comment content and target before any required
-  approval, apply normal GitHub write policy, and resolve credentials only
-  after approval.
+- Show the exact bounded comment content and target before an explicit publish
+  action, apply normal GitHub write policy, and resolve credentials only after
+  authorization.
 - Post a new issue or pull-request comment rather than mutating local history,
   store its node id, and render the exact published text and URL in the local
   session.
@@ -960,7 +962,7 @@ Consider only after the polling channel is stable:
   construction, explicit local-update publication, and outbound loop
   suppression;
 - synthetic secret canaries and sensitive-provenance fixtures never reach the
-  provider adapter, approval metadata, logs, diagnostics, or durable state;
+  provider adapter, authorization metadata, logs, diagnostics, or durable state;
 - ambiguous comment-write recovery cannot create duplicate remote comments;
 - no token, issue body, comment body, or raw command in logs and diagnostics.
 
@@ -986,7 +988,7 @@ repository. Prove:
 - restart does not duplicate the workflow;
 - an approved actor's direct mention of the verified GitHub user reaches the
   existing session exactly once, while all other comments are ignored;
-- the resulting bounded GitHub-facing response passes policy and approval,
+- the resulting bounded GitHub-facing response passes policy and secret-safety checks,
   appears exactly once on the canonical item, remains visible locally, and does
   not loop back into the session;
 - replay and explicit cleanup preserve ownership and non-destructive defaults.

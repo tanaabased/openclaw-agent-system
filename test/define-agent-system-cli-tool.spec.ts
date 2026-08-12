@@ -7,7 +7,6 @@ import type {
 
 import defineAgentSystemCliTool from '../lib/define-agent-system-cli-tool.ts';
 import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { AgentSystemAuthorizationDecision } from '../lib/tool-types.ts';
 import {
   createToolTestDefinition,
   loadedToolTestManifest,
@@ -104,7 +103,6 @@ describe('lib/define-agent-system-cli-tool', () => {
           return loadedToolTestManifest();
         },
       },
-      { record() {} },
     );
     assert.ok(policy);
 
@@ -125,15 +123,16 @@ describe('lib/define-agent-system-cli-tool', () => {
     assert.equal(authorizationCalls, 0);
   });
 
-  it('should issue and record only an exact allow-once approval receipt', async () => {
-    let decision: AgentSystemAuthorizationDecision = {
-      status: 'denied',
-      reason: 'Test policy denied this operation.',
-    };
-    const receipts: unknown[] = [];
+  it('should preserve allowed and denied decisions through trusted policy', async () => {
+    let allowed = false;
     let policy: PluginTrustedToolPolicyRegistration | undefined;
     defineAgentSystemCliTool(
-      createToolTestDefinition({ authorize: () => decision }),
+      createToolTestDefinition({
+        authorize: () =>
+          allowed
+            ? { status: 'allowed' }
+            : { status: 'denied', reason: 'Test policy denied this operation.' },
+      }),
     ).registerTrustedPolicy?.(
       {
         registerTrustedToolPolicy(registration) {
@@ -145,7 +144,6 @@ describe('lib/define-agent-system-cli-tool', () => {
           return loadedToolTestManifest();
         },
       },
-      { record: (receipt) => receipts.push(receipt) },
     );
     assert.ok(policy);
     const event = {
@@ -163,26 +161,7 @@ describe('lib/define-agent-system-cli-tool', () => {
       allow: false,
       reason: 'Test policy denied this operation.',
     });
-    decision = {
-      status: 'approval_required',
-      reason: 'Test policy requires approval.',
-      request: { description: 'Delete test data.', severity: 'critical', title: 'Delete data' },
-    };
-    const result = await policy.evaluate(event, context);
-    assert.ok(result && 'requireApproval' in result && result.requireApproval);
-    assert.deepEqual(result.requireApproval.allowedDecisions, ['allow-once', 'deny']);
-
-    await result.requireApproval.onResolution?.('deny');
-    await result.requireApproval.onResolution?.('allow-always');
-    assert.deepEqual(receipts, []);
-    await result.requireApproval.onResolution?.('allow-once');
-    assert.deepEqual(receipts, [
-      {
-        agentId: 'data',
-        input: { argument: 'delete' },
-        toolCallId: 'approved-call',
-        toolId: 'test-tool',
-      },
-    ]);
+    allowed = true;
+    assert.equal(await policy.evaluate(event, context), undefined);
   });
 });

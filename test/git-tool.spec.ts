@@ -279,7 +279,13 @@ describe('tools/git/tool', () => {
         source: 'command',
         workspaceDir: repositoryDir,
       }),
-      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.code === 'approval_denied' &&
+        error.message.includes('denied by git.policy.rewrite and git.policy.discard') &&
+        error.message.includes(
+          'operator must set each of git.policy.rewrite and git.policy.discard to allow',
+        ),
     );
     assert.deepEqual(environmentCalls, []);
   });

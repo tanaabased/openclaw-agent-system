@@ -60,7 +60,7 @@ git:
   worktrees: {}
   extensions:
     lfs: allow
-    town: ask
+    town: deny
   ssh:
     private-keys:
       from-environment: GIT_SSH_PRIVATE_KEY
@@ -68,10 +68,10 @@ git:
     key: GIT_SIGNING_KEY
     allowed-signers-file: .agent-system/allowed_signers
   policy:
-    delete: ask
-    discard: ask
+    delete: deny
+    discard: deny
     force: deny
-    rewrite: ask
+    rewrite: deny
     unknown: deny
 ```
 
@@ -99,7 +99,7 @@ effective value fails the operation.
 | ---------------------------------------- | -------- | ------- |
 | exact command-to-policy-decision mapping | no       | none    |
 
-Assigns `allow`, `ask`, or `deny` to exact external helpers such as `git-town`.
+Assigns `allow` or `deny` to exact external helpers such as `git-town`.
 The helper must be executable on `PATH`; aliases do not satisfy the declaration,
 and built-in hazard classification takes precedence. An allowed extension is
 trusted for its private argument surface. Undeclared and unsupported commands
@@ -207,13 +207,13 @@ while `doctor` checks the configured roots, ignore state, and local overrides.
 
 ### `git.policy`
 
-| Field     | Values                 | Default | Covers                                                 |
-| --------- | ---------------------- | ------- | ------------------------------------------------------ |
-| `force`   | `allow`, `ask`, `deny` | `deny`  | Explicit safety overrides and forced ref replacement   |
-| `rewrite` | `allow`, `ask`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
-| `discard` | `allow`, `ask`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
-| `delete`  | `allow`, `ask`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
-| `unknown` | `allow`, `ask`, `deny` | `deny`  | Aliases, undeclared helpers, or unsupported syntax     |
+| Field     | Values          | Default | Covers                                                 |
+| --------- | --------------- | ------- | ------------------------------------------------------ |
+| `force`   | `allow`, `deny` | `deny`  | Explicit safety overrides and forced ref replacement   |
+| `rewrite` | `allow`, `deny` | `deny`  | History replacement through rebase, amend, or reset    |
+| `discard` | `allow`, `deny` | `deny`  | Loss of working-tree, index, untracked, or stash state |
+| `delete`  | `allow`, `deny` | `deny`  | Ref, worktree, reflog, or unreachable-object deletion  |
+| `unknown` | `allow`, `deny` | `deny`  | Aliases, undeclared helpers, or unsupported syntax     |
 
 Supported public reads and ordinary writes are allowed. Hazard selectors take
 precedence and one invocation may select several policies; every selected
@@ -222,9 +222,9 @@ policy must allow the operation. For example, a force push selects `force` and
 
 Prefer `switch` for branches and `restore` for paths because ambiguous `checkout`
 forms select `discard`. `unknown: allow` permits aliases and undeclared external
-helpers, so prefer exact `git.extensions` declarations. `ask` works only through
-the model-facing tools during an OpenClaw agent turn; direct CLI and shim routes
-reject operations requiring approval.
+helpers, so prefer exact `git.extensions` declarations. A denial identifies every
+controlling policy field and explains that an operator must set each one to
+`allow` before retrying.
 
 Agent System disables operator-global and system Git configuration, prompts,
 hooks, pagers, and editors and rejects configuration, executable, credential,
@@ -263,7 +263,7 @@ openclaw agent-system tool worktree -- prepare agent-system 123-fix-agent-path-r
 # list current agent-owned worktrees from git.
 openclaw agent-system tool worktree -- list agent-system
 
-# request removal; direct cli requires git.policy.delete: allow.
+# remove one clean managed checkout without changing delete policy.
 openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-resolution
 ```
 

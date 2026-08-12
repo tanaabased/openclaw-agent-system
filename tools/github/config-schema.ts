@@ -32,7 +32,6 @@ const externalGitHubKeySourcesSchema = Type.Union([
 ]);
 const externalGitHubPolicyDecisionSchema = Type.Union([
   Type.Literal('allow'),
-  Type.Literal('ask'),
   Type.Literal('deny'),
 ]);
 
@@ -92,7 +91,7 @@ export interface GitHubCliConfiguration {
   telemetry: 'enabled' | 'disabled';
 }
 
-export type GitHubPolicyDecision = 'allow' | 'ask' | 'deny';
+export type GitHubPolicyDecision = 'allow' | 'deny';
 
 export interface GitHubPolicyConfiguration {
   admin: GitHubPolicyDecision;

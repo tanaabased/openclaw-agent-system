@@ -251,19 +251,9 @@ export function authorizeGitHubOperation(
   if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };
   const policy = resolveGitHubPolicyConfiguration(configuration);
   if (policy[operation.risk] === 'allow') return { status: 'allowed' };
-  if (policy[operation.risk] === 'ask') {
-    return {
-      status: 'approval_required',
-      reason: `GitHub ${operation.risk} operations require approval in an OpenClaw agent conversation; direct tool commands cannot request approval.`,
-      request: {
-        description: `Allow the active agent to ${operation.summary.toLowerCase()}?`,
-        severity: operation.risk === 'unknown' ? 'warning' : 'critical',
-        title: `Approve ${operation.risk} GitHub operation`,
-      },
-    };
-  }
+  const reference = `github.policy.${operation.risk}`;
   return {
     status: 'denied',
-    reason: `GitHub ${operation.risk} operations are denied by github.policy.${operation.risk}.`,
+    reason: `GitHub ${operation.risk} operations are denied by ${reference}. To permit this operation, an operator must set ${reference} to allow in agent.yaml and retry.`,
   };
 }

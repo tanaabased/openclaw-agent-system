@@ -60,11 +60,11 @@ git:
     from-environment: GIT_EMAIL
   extensions:
     lfs: allow
-    town: ask
+    town: deny
   policy:
-    delete: ask
+    delete: deny
     discard: deny
-    force: ask
+    force: allow
     rewrite: allow
     unknown: deny
 `);
@@ -76,12 +76,12 @@ git:
       email: { fromEnvironment: 'GIT_EMAIL' },
       extensions: {
         lfs: 'allow',
-        town: 'ask',
+        town: 'deny',
       },
       policy: {
-        delete: 'ask',
+        delete: 'deny',
         discard: 'deny',
-        force: 'ask',
+        force: 'allow',
         rewrite: 'allow',
         unknown: 'deny',
       },
@@ -128,6 +128,45 @@ git:
     town: prompt
 `).has('manifest-schema'),
       true,
+    );
+  });
+
+  it('should reject legacy git ask decisions with exact migration guidance', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  extensions:
+    town: ask
+  policy:
+    delete: ask
+    force: ask
+`);
+
+    assert.equal(result.status, 'invalid');
+    assert.deepEqual(
+      result.diagnostics.map(({ code, fieldPath, message }) => ({ code, fieldPath, message })),
+      [
+        {
+          code: 'manifest-policy-ask-unsupported',
+          fieldPath: '/git/extensions/town',
+          message:
+            'Policy decision ask at /git/extensions/town is no longer supported. An operator must choose deny or allow.',
+        },
+        {
+          code: 'manifest-policy-ask-unsupported',
+          fieldPath: '/git/policy/delete',
+          message:
+            'Policy decision ask at /git/policy/delete is no longer supported. An operator must choose deny or allow.',
+        },
+        {
+          code: 'manifest-policy-ask-unsupported',
+          fieldPath: '/git/policy/force',
+          message:
+            'Policy decision ask at /git/policy/force is no longer supported. An operator must choose deny or allow.',
+        },
+      ],
     );
   });
 

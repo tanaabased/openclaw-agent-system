@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolApprovalReceiptStore from '../lib/tool-approval-receipt-store.ts';
 import AgentSystemToolError from '../lib/tool-error.ts';
 import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
@@ -12,7 +11,6 @@ import {
 } from './tool-test-fixture.ts';
 
 function createRuntime(options: {
-  approvals?: AgentSystemToolApprovalReceiptStore;
   auditEvents?: AgentSystemAuditEvent[];
   environmentCalls?: string[];
   events?: string[];
@@ -30,7 +28,6 @@ function createRuntime(options: {
   const events = options.events ?? [];
   const logs = options.logs ?? [];
   return new AgentSystemToolRuntime({
-    ...(options.approvals ? { approvals: options.approvals } : {}),
     audit: {
       record(event) {
         auditEvents.push(event);
@@ -582,32 +579,5 @@ describe('lib/tool-runtime', () => {
     );
     assert.equal(logs.join('\n').includes('private-token'), false);
     assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:failed']);
-  });
-
-  it('should consume one exact approval receipt before resolving credentials', async () => {
-    const approvals = new AgentSystemToolApprovalReceiptStore();
-    const environmentCalls: string[] = [];
-    const input = { argument: 'delete' };
-    approvals.record({ agentId: 'data', input, toolCallId: 'approved-call', toolId: 'test-tool' });
-    const runtime = createRuntime({ approvals, environmentCalls });
-    const definition = createToolTestDefinition({
-      authorize: () => ({
-        status: 'approval_required',
-        reason: 'Test policy requires approval.',
-        request: { description: 'Delete test data.', severity: 'critical', title: 'Delete data' },
-      }),
-    });
-    const scope = {
-      source: 'tool' as const,
-      toolCallId: 'approved-call',
-      toolContext: { agentId: 'data', workspaceDir: toolTestWorkspaceDir } as never,
-    };
-
-    await runtime.executeCli(definition, input, scope);
-    await assert.rejects(
-      runtime.executeCli(definition, input, scope),
-      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
-    );
-    assert.deepEqual(environmentCalls, ['data']);
   });
 });

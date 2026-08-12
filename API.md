@@ -18,7 +18,7 @@ diagnostics.
 Agent System will own:
 
 - trusted binding between a tool call and an installed agent workspace
-- operation-policy and approval sequencing
+- operation-policy sequencing
 - scoped environment and credential resolution
 - safe execution, redaction, auditing, and common diagnostics
 
@@ -35,8 +35,8 @@ A compatible request will follow one shared sequence:
 
 1. bind the request to a trusted agent workspace
 2. validate and classify the requested operation
-3. apply the configured `allow`, `ask`, or `deny` policy and any required approval
-4. resolve only the credentials and resources needed for the approved operation
+3. apply the configured `allow` or `deny` policy
+4. resolve only the credentials and resources needed for the authorized operation
 5. execute, redact, audit, and dispose of temporary material
 
 Compatible tools will not receive a general raw-secret interface. Tool schemas
@@ -47,14 +47,14 @@ never loaded from a workspace manifest.
 
 The eventual versioned contract is expected to cover:
 
-| Surface                  | Purpose                                                   |
-| ------------------------ | --------------------------------------------------------- |
-| API version              | Declare compatibility with the Agent System Tool API.     |
-| Tool id                  | Give the tool a stable diagnostic and ownership key.      |
-| Tool definitions         | Supply static model schemas and operation behavior.       |
-| Configuration projection | Validate and resolve the tool's manifest section.         |
-| Lifecycle contributions  | Add optional validation, doctor, and install behavior.    |
-| Runtime handle           | Request approved execution and narrowly scoped resources. |
+| Surface                  | Purpose                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| API version              | Declare compatibility with the Agent System Tool API.       |
+| Tool id                  | Give the tool a stable diagnostic and ownership key.        |
+| Tool definitions         | Supply static model schemas and operation behavior.         |
+| Configuration projection | Validate and resolve the tool's manifest section.           |
+| Lifecycle contributions  | Add optional validation, doctor, and install behavior.      |
+| Runtime handle           | Request authorized execution and narrowly scoped resources. |
 
 The concrete TypeScript imports and registration call are intentionally not
 documented yet: no supported public package export or OpenClaw cross-plugin
@@ -65,7 +65,7 @@ boundaries are real would create an API that Agent System cannot support.
 
 A public tool integration must preserve these boundaries:
 
-- policy and approval happen before credential resolution
+- policy enforcement happens before credential resolution
 - tool input cannot select executable code, schemas, or modules
 - secrets never enter model input, provenance, logs, diagnostics, or errors
 - temporary credentials have the smallest practical action scope and lifetime

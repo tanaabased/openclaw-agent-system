@@ -7,5 +7,3 @@ agent:
 
 git:
   worktrees: {}
-  policy:
-    delete: allow
