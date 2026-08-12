@@ -30,6 +30,7 @@ openclaw onboard --non-interactive --accept-risk \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
 openclaw config set agents.defaults.heartbeat.every "0m"
+openclaw config set agents.defaults.thinkingDefault minimal
 
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force

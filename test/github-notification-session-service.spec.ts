@@ -148,7 +148,6 @@ describe('channels/github/lib/session-service', () => {
     assert.deepEqual(turn.toolsAllow, []);
     assert.deepEqual(turn.replyOptions, {
       disableTools: true,
-      sourceReplyDeliveryMode: 'message_tool_only',
       suppressDefaultToolProgressMessages: true,
       suppressTyping: true,
       toolsAllow: [],

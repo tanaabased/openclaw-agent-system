@@ -85,6 +85,7 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 
 # should start the gateway without the removed notification route
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
+cd "$TMPDIR/agent-system-notifications"
 "$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" absent notification-data
 if openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled'; then exit 1; fi
 openclaw agents bindings --json | jq -e '[.[] | select(.match.channel == "agent-system-github" and .match.accountId == "notification-data")] | length == 0'
