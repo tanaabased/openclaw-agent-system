@@ -179,10 +179,10 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
-  if (delivery.stage === 'worktree-ready') {
+  if (['briefing-running', 'worktree-ready'].includes(delivery.stage ?? '')) {
     return hasWorktree && !hasSession && delivery.sessionId === undefined;
   }
-  if (['active', 'briefing-running', 'session-ready'].includes(delivery.stage ?? '')) {
+  if (['active', 'session-ready'].includes(delivery.stage ?? '')) {
     return hasWorktree && hasSession;
   }
   return (

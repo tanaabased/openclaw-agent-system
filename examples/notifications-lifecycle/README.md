@@ -29,6 +29,7 @@ openclaw onboard --non-interactive --accept-risk \
   --skip-ui \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
+openclaw config set agents.defaults.heartbeat.every "0m"
 
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force

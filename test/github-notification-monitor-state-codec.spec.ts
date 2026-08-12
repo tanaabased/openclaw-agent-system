@@ -28,6 +28,19 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
+  it('should accept a briefing checkpoint before session dispatch', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      stage: 'briefing-running',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+  });
+
   it('should explicitly migrate valid phase one state to a safe baseline', () => {
     const decoded = decodeGitHubNotificationMonitorState(
       legacyNotificationMonitorState(),
