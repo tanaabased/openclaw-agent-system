@@ -2,8 +2,12 @@
 
 ### New Features
 
-- Added default-deny `github.policy.releases` protection for GitHub CLI and REST release mutations.
-- Narrowed Git operation policy to force pushes and remote-ref deletion.
+- Added default-deny `github.policy.releases` protection for GitHub CLI and REST release mutations. [#13](https://github.com/tanaabased/openclaw-agent-system/pull/13)
+- Narrowed Git policy to deny force pushes and remote-ref deletion by default while allowing other recognized operations. [#13](https://github.com/tanaabased/openclaw-agent-system/pull/13)
+
+### Notes
+
+- Removed broad Git and GitHub risk categories in favor of controls for specific provider-authorization gaps. [#13](https://github.com/tanaabased/openclaw-agent-system/pull/13)
 
 ## v0.2.2 - [August 12, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.2)
 
