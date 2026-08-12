@@ -22,21 +22,13 @@ export const externalGitHubNotificationsSchema = Type.Object(
       minItems: 1,
       uniqueItems: true,
     }),
-    'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
-    'repository-policy': Type.Optional(
-      Type.Object(
-        {
-          'allowed-owners': Type.Optional(
-            Type.Array(externalGitHubIdentitySchema, {
-              minItems: 1,
-              uniqueItems: true,
-            }),
-          ),
-          'minimum-permission': Type.Optional(Type.Literal('write')),
-        },
-        { additionalProperties: false },
-      ),
+    'allowed-repository-owners': Type.Optional(
+      Type.Array(externalGitHubIdentitySchema, {
+        minItems: 1,
+        uniqueItems: true,
+      }),
     ),
+    'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
   },
   { additionalProperties: false },
 );
@@ -50,11 +42,8 @@ export interface GitHubIdentityPin {
 
 export interface GitHubNotificationsConfiguration {
   approvedActors: GitHubIdentityPin[];
+  allowedRepositoryOwners?: GitHubIdentityPin[];
   intervalMinutes: number;
-  repositoryPolicy: {
-    allowedOwners?: GitHubIdentityPin[];
-    minimumPermission: 'write';
-  };
 }
 
 /** Decode the channel-owned github.notifications manifest fragment. */
@@ -70,14 +59,11 @@ export function decodeGitHubNotifications(
 
   return {
     approvedActors: value['approved-actors'].map(decodeIdentity),
+    ...(value['allowed-repository-owners'] === undefined
+      ? {}
+      : {
+          allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
+        }),
     intervalMinutes: value['interval-minutes'] ?? 5,
-    repositoryPolicy: {
-      minimumPermission: value['repository-policy']?.['minimum-permission'] ?? 'write',
-      ...(value['repository-policy']?.['allowed-owners'] === undefined
-        ? {}
-        : {
-            allowedOwners: value['repository-policy']['allowed-owners'].map(decodeIdentity),
-          }),
-    },
   };
 }

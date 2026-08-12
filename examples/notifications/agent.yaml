@@ -20,8 +20,6 @@ github:
     approved-actors:
       - login: emoriwan
         node-id: U_kgDOEUqvpg
-    repository-policy:
-      minimum-permission: write
-      allowed-owners:
-        - login: tanaabased
-          node-id: O_kgDODNGy1g
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g

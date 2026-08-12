@@ -108,10 +108,8 @@ function repositoryAllowed(
 ): string | undefined {
   if (repository.archived || repository.disabled) return 'repository-inactive';
   if (
-    configuration.repositoryPolicy.allowedOwners &&
-    !configuration.repositoryPolicy.allowedOwners.some(
-      ({ nodeId }) => nodeId === repository.owner.nodeId,
-    )
+    configuration.allowedRepositoryOwners &&
+    !configuration.allowedRepositoryOwners.some(({ nodeId }) => nodeId === repository.owner.nodeId)
   ) {
     return 'repository-owner-disallowed';
   }

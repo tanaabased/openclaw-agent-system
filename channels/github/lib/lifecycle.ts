@@ -25,14 +25,14 @@ function desiredState(context: AgentSystemLifecycleContext): NotificationRouting
 
 function duplicateIdentityDiagnostics(
   manifest: AgentManifest,
-  field: 'approvedActors' | 'allowedOwners',
+  field: 'approvedActors' | 'allowedRepositoryOwners',
   fieldPath: string,
 ): ManifestDiagnostic[] {
   const notifications = manifest.github?.notifications;
   const identities =
     field === 'approvedActors'
       ? notifications?.approvedActors
-      : notifications?.repositoryPolicy.allowedOwners;
+      : notifications?.allowedRepositoryOwners;
   if (!identities) return [];
   const seen = new Set<string>();
   const diagnostics: ManifestDiagnostic[] = [];
@@ -93,8 +93,8 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
     ),
     ...duplicateIdentityDiagnostics(
       manifest,
-      'allowedOwners',
-      '/github/notifications/repository-policy/allowed-owners',
+      'allowedRepositoryOwners',
+      '/github/notifications/allowed-repository-owners',
     ),
   );
   return diagnostics;

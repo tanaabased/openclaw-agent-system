@@ -7,8 +7,8 @@ are implemented. The remaining MVP gate is packed third-party installation proof
 in the GitHub Actions-only lifecycle scenario. Notifications 2 is reserved for
 the future `pirog-notifications-2` branch.
 
-At the current branch snapshot, `bun run lint`, `bun run typecheck`,
-`bun run test` (539 passing), `bun run build`, `bun run plugin:check`, and
+At the current working-tree snapshot, `bun run lint`, `bun run typecheck`,
+`bun run test` (537 passing), `bun run build`, `bun run plugin:check`, and
 `bun run test:release` (16 passing) are green. Leia scenarios remain GitHub
 Actions-only and have not yet validated the redesigned installed lifecycle.
 
@@ -113,8 +113,9 @@ transcripts. Only a canonical comment from an approved immutable actor that
 directly mentions the verified agent is eligible to create an inbound turn.
 For a turn that originated from such a comment, the agent produces a separate,
 bounded GitHub-facing response draft derived from the local response. That
-response is published only when normal GitHub policy allows the write and the
-mandatory secret-safety gate succeeds. Local-only turns remain local unless an
+response is published only when provider authorization and any applicable
+narrow GitHub tool policy allow the write and the mandatory secret-safety gate
+succeeds. Local-only turns remain local unless an
 operator explicitly publishes an update. Tool traces, hidden context, local
 paths, failed attempts, and the full OpenClaw transcript are never
 synchronization inputs.
@@ -134,8 +135,8 @@ synchronization inputs.
   events, and preserve the transcript. OpenClaw or an operator can archive it
   when a supported archive seam is available.
 - Do not remove a worktree automatically on unassignment. It may contain useful
-  or dirty work. Retain it and make cleanup an explicit, policy-checked operator
-  action.
+  or dirty work. Retain it and make cleanup an explicit operator action through
+  the owning Git capability.
 - Require an approved actor to start work or send instructions, but honor any
   canonical unassignment of the agent as a revocation. Continuing after the
   assignee was removed is less safe than accepting the possibility of a
@@ -180,6 +181,32 @@ Repository guidance requires every optimization pass to inventory OpenClaw SDK
 imports and injected runtime calls against the pinned SDK and current official
 guidance. `test/openclaw-api-policy.spec.ts` enforces that runtime code does not
 call `runtime.gateway.request` or import private OpenClaw implementation modules.
+
+## Policy Alignment After v0.2.3
+
+The v0.2.3 Git and GitHub policy redesign applies narrow manifest controls only
+to specific provider-authorization gaps. Notifications follows that model but
+keeps its separate admission boundary:
+
+- `approved-actors` and effective repository write access authorize an external
+  assignment to create local agent work. They are non-configurable product
+  invariants, not tool policy decisions.
+- `allowed-repository-owners` is an optional admission allowlist. It narrows
+  repository eligibility without authorizing an owner or organization member
+  to instruct the agent.
+- `github.policy.releases` remains owned by the GitHub tool and is unrelated to
+  MVP polling, which performs fixed reads and no GitHub mutation.
+- Managed-worktree preparation continues through the Git capability's ordinary
+  recognized worktree operation. Notification code does not duplicate Git
+  authorization or bypass the owning tool service.
+- Future GitHub writes must use the owning scoped capability, honor provider
+  token and repository authorization, and apply only any narrow tool policy
+  that explicitly selects the requested effect. Risk labels alone do not grant
+  or deny the operation.
+
+The pre-v0.2.3 `repository-policy.minimum-permission` field was removed because
+it only accepted `write` and incorrectly presented an invariant as configurable
+policy. Its optional owner list moved to `allowed-repository-owners`.
 
 ## Notifications MVP 1 Outcome
 
@@ -247,8 +274,8 @@ event or integration GitHub can provide. After Phases 0 through 6, it will:
 - route each admitted comment to the existing local session with immutable
   provenance and bounded untrusted content;
 - produce at most one bounded, conversational GitHub-facing response for that
-  GitHub-originated turn, subject to mandatory secret-safety checks, normal
-  write policy, and the mandatory secret-safety gate;
+  GitHub-originated turn, subject to provider authorization, any applicable
+  narrow tool policy, and the mandatory secret-safety gate;
 - support an explicit publish action for selected local updates without making
   the whole local transcript remotely visible;
 - suppress self-events and duplicate delivery across retries, edits, restarts,
@@ -291,11 +318,9 @@ github:
     approved-actors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
-    repository-policy:
-      minimum-permission: write
-      allowed-owners:
-        - login: tanaabased
-          node-id: O_kgDOB7x6Qw
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDOB7x6Qw
 ```
 
 Configuration rules:
@@ -306,16 +331,15 @@ Configuration rules:
 - At least one `approved-actors` entry is required.
 - Actor authorization uses the opaque `node-id`; `login` is required for human
   review and drift diagnostics but is not the authorization key.
-- `repository-policy.minimum-permission` defaults to `write`. MVP 1 does not
-  permit `read` or `triage`, because assignment intake should create local work
-  only for a repository where the agent can later complete the ordinary branch
-  and pull-request workflow. GitHub's legacy `write` result includes the
-  `maintain` role; `admin` also satisfies the gate.
-- `allowed-owners` is optional. When present, the repository owner's opaque
+- Effective `write`, `maintain`, or `admin` access is required. This is an
+  admission invariant because assignment intake creates local work and should
+  only start for a repository where the agent can complete the ordinary branch
+  and pull-request workflow.
+- `allowed-repository-owners` is optional. When present, the repository owner's opaque
   user or organization node id must match. When absent, any repository is
   eligible if the verified agent has write permission and the assignment actor
   is approved.
-- `allowed-owners` restricts repository ownership; it does not authorize every
+- `allowed-repository-owners` restricts repository ownership; it does not authorize every
   member of an allowed organization to instruct the agent. Assignment and
   comment authority remains the exact `approved-actors` user-id set. If that
   list later becomes burdensome, add approved GitHub teams with explicit member
@@ -410,7 +434,7 @@ binding therefore selects the correct agent and workspace, while the work-item
 conversation id selects the deterministic session.
 
 This global projection contains only activation and routing facts. Keep the
-GitHub token binding, poll interval, approved actors, repository-owner policy,
+GitHub token binding, poll interval, approved actors, repository-owner allowlist,
 work state, and GitHub content in the owning workspace manifest or private
 Agent System state. Never duplicate those values under `channels.*`.
 
@@ -495,8 +519,10 @@ Mention detection is a routing condition over untrusted content, not an
 authorization boundary. Mentions inside quoted text, code blocks, inline code,
 or hidden markup do not address the agent.
 
-Subsequent interactive turns use normal Agent System policy. The GitHub token's
-repository permissions remain the final remote authorization boundary.
+Subsequent interactive turns use the owning Agent System tools. Their narrow
+policies apply only when an operation selects a protected effect, while the
+GitHub token's repository permissions remain the final remote authorization
+boundary.
 
 ## Event Admission
 
@@ -506,9 +532,9 @@ An assignment is accepted only when all of these are true:
    `agent-system-github:<agent-id>` to the loaded manifest's agent and workspace;
 2. the GitHub token resolves and `/user` matches `github.username`;
 3. GitHub's canonical repository response is active and its owner satisfies any
-   configured `allowed-owners` constraint;
-4. GitHub reports that the verified agent has at least the configured repository
-   permission, defaulting to `write`;
+   configured `allowed-repository-owners` constraint;
+4. GitHub reports that the verified agent has effective `write`, `maintain`, or
+   `admin` repository access;
 5. the item is currently assigned to the verified GitHub agent identity;
 6. a new `assigned` event targets that identity;
 7. the assigner's opaque node id matches `approved-actors`;
@@ -671,8 +697,9 @@ conversational update, decision, question, or next step. It must not derive that
 response from tool traces or the wider transcript, and redaction alone is not a
 sufficient publication boundary.
 
-The GitHub-facing response is published only when normal tool policy allows the
-write. If publication is denied or fails, the local response and a recoverable
+The GitHub-facing response is published only when provider authorization and any
+applicable narrow tool policy allow the write. If publication is denied or
+fails, the local response and a recoverable
 unpublished status remain in the session. A local operator turn is never
 published automatically; it requires the explicit publish action. Every
 successful write records the exact published text and provider comment id in
@@ -693,11 +720,11 @@ prompt instruction.
   references paired with values, signed URLs, cookies, and tool output marked
   sensitive.
 - Run deterministic secret detection and sanitization before showing the exact
-  preview for policy evaluation or an explicit publish action. Cover common
+  preview for authorization or an explicit publish action. Cover common
   token, key, credential, and
   high-entropy secret forms, and replace detected material with a stable safe
   placeholder.
-- Resolve the GitHub credential only after policy allows the write. Immediately
+- Resolve the GitHub credential only after provider and Agent System authorization allow the write. Immediately
   before the provider write, check the exact UTF-8 bytes again, including against
   sensitive values already held by that explicit consumer. Never resolve
   unrelated secrets merely to expand the scan.
@@ -745,7 +772,7 @@ Session guidance should require:
   eligible, rather than merely assigning the pull request to them;
 - the linked pull request id persisted on the existing work item so the agent's
   own pull request does not create a duplicate session;
-- normal GitHub write policy for every mutation;
+- provider authorization and any applicable narrow GitHub tool policy for every mutation;
 - no claim that a closed-but-unmerged pull request closes the issue.
 
 ## Phased Implementation by Delivery Track
@@ -812,7 +839,7 @@ Goal: discover and classify events without creating sessions or worktrees.
 - Run in observe-only mode in the owning Leia scenario.
 
 MVP 1 exit criteria: approved, rejected, duplicate, first-baseline,
-repository-permission, owner-policy, search-truncation, pagination,
+repository-permission, owner-allowlist, search-truncation, pagination,
 manual/background parity, and transient-failure cases are deterministic under
 fake GitHub responses and no local work is created during this observe-only
 phase. Existing unassignment and restart-recovery coverage is retained for
@@ -968,8 +995,8 @@ Goal: keep one work item coherent through normal agent-led implementation.
   work item rather than opening a second session.
 - Ensure generated pull request guidance uses a closing keyword only for the
   default-branch completion path.
-- Request review from the original assigner when eligible and authorized by
-  normal GitHub policy.
+- Request review from the original assigner when eligible and authorized by the
+  provider and any applicable narrow GitHub tool policy.
 - Retire completed work on merge or issue closure while retaining transcript
   and worktree until explicit cleanup.
 
@@ -995,7 +1022,7 @@ Goal: let authorized collaborators continue the active discussion from GitHub.
 - Route the accepted comment to the existing issue session with structured
   provenance and bounded content.
 - Ignore comments authored by the agent or previously written by Agent System.
-- Continue to apply normal tool policy and remote token permissions.
+- Continue to apply provider authorization and applicable narrow tool policy.
 
 Exit criteria: an approved comment that directly mentions the verified GitHub
 user reaches exactly one active session; unapproved, unmentioned,
@@ -1011,7 +1038,7 @@ the local conversation.
   separate GitHub-facing response from an explicit bounded publishable payload.
 - Expose a scoped comment-write service to the trusted workflow orchestrator;
   do not shell through or impersonate the model-facing GitHub tool, and preserve
-  the same policy, authorization, and credential-timing boundaries.
+  provider authorization, applicable narrow policy, and credential timing.
 - Keep the GitHub response conversational and useful, but omit private context,
   tool traces, local paths, hidden instructions, raw failures, credentials, and
   unrelated transcript history. Do not treat after-the-fact redaction of the
@@ -1023,8 +1050,8 @@ the local conversation.
 - Add an explicit semantic publish action for operator-originated local updates;
   no other local turn is automatically eligible for publication.
 - Show the exact bounded comment content and target before an explicit publish
-  action, apply normal GitHub write policy, and resolve credentials only after
-  authorization.
+  action, apply provider authorization and any applicable narrow GitHub tool
+  policy, and resolve credentials only afterward.
 - Post a new issue or pull-request comment rather than mutating local history,
   store its node id, and render the exact published text and URL in the local
   session.
@@ -1034,7 +1061,7 @@ the local conversation.
 - When an outbound write has an ambiguous result, reconcile by the local
   operation id before retrying so recovery cannot post duplicates.
 
-Exit criteria: each admitted GitHub comment can yield at most one policy-checked
+Exit criteria: each admitted GitHub comment can yield at most one authorization-checked
 GitHub-facing response; selected local updates require explicit publication;
 the exact remote text remains visible locally; retries do not duplicate it; and
 its resulting notification is never ingested as a new turn.
@@ -1047,7 +1074,7 @@ Goal: close the operational gaps required for a feature-complete channel.
   worktree, outbound publication, retry, and retirement state.
 - Add explicit bounded replay for missed assignments or comments without
   changing the safe first-run baseline.
-- Add explicit, policy-checked cleanup for retired routing state and worktrees,
+- Add explicit cleanup for retired routing state and worktrees through the owning capabilities,
   refusing dirty worktrees by default; archive sessions through a supported
   seam when available and otherwise preserve their transcripts.
 - Reconcile uncertain worktree, session, and outbound-comment side effects
@@ -1232,6 +1259,6 @@ scenario only in GitHub Actions.
    Safe session-history reconciliation, abort, archival, and reassignment are
    Notifications 2 concerns pending a suitable public host capability.
 
-Future changes must not weaken the actor, repository-permission, owner-policy,
+Future changes must not weaken the actor, repository-permission, owner-allowlist,
 global-binding, agent-identity, credential-timing, prompt-provenance,
 idempotency, or non-destructive cleanup boundaries above.

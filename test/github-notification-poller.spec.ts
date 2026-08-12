@@ -43,11 +43,8 @@ const assignment = {
 };
 const configuration = {
   approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
+  allowedRepositoryOwners: [{ login: repository.owner.login, nodeId: repository.owner.nodeId }],
   intervalMinutes: 5,
-  repositoryPolicy: {
-    allowedOwners: [{ login: repository.owner.login, nodeId: repository.owner.nodeId }],
-    minimumPermission: 'write' as const,
-  },
 };
 
 function client(

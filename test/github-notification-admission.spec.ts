@@ -21,11 +21,8 @@ const base = {
   baselineAt: Date.parse('2026-08-11T12:00:00.000Z'),
   configuration: {
     approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
+    allowedRepositoryOwners: [{ login: owner.login, nodeId: owner.nodeId }],
     intervalMinutes: 5,
-    repositoryPolicy: {
-      allowedOwners: [{ login: owner.login, nodeId: owner.nodeId }],
-      minimumPermission: 'write' as const,
-    },
   },
   events: [event],
   item: {

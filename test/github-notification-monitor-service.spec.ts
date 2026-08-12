@@ -14,7 +14,6 @@ const manifest: AgentManifest = {
     notifications: {
       approvedActors: [{ login: 'pirog', nodeId: 'U_actor' }],
       intervalMinutes: 5,
-      repositoryPolicy: { minimumPermission: 'write' },
     },
     token: 'GH_TOKEN_TANAABOT',
     username: 'tanaabot',

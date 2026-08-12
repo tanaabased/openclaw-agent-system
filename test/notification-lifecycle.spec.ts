@@ -16,7 +16,6 @@ const manifest: AgentManifest = {
     notifications: {
       approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
       intervalMinutes: 5,
-      repositoryPolicy: { minimumPermission: 'write' },
     },
   },
 };
@@ -67,7 +66,6 @@ describe('channels/github/lib/lifecycle', () => {
             { login: 'renamed', nodeId: 'U_1' },
           ],
           intervalMinutes: 5,
-          repositoryPolicy: { minimumPermission: 'write' },
         },
       },
     };

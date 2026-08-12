@@ -54,7 +54,7 @@ export function admitGitHubAssignment(
   input: GitHubAssignmentAdmissionInput,
 ): GitHubAssignmentAdmission {
   if (input.repository.archived || input.repository.disabled) return rejects('repository-inactive');
-  const allowedOwners = input.configuration.repositoryPolicy.allowedOwners;
+  const allowedOwners = input.configuration.allowedRepositoryOwners;
   if (
     allowedOwners &&
     !allowedOwners.some(({ nodeId }) => nodeId === input.repository.owner.nodeId)

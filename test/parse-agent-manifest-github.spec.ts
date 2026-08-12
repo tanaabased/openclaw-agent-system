@@ -85,21 +85,17 @@ github:
     approved-actors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
-    repository-policy:
-      allowed-owners:
-        - login: tanaabased
-          node-id: O_kgDOB7x6Qw
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDOB7x6Qw
 `);
 
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
     assert.deepEqual(result.manifest.github?.notifications, {
       approvedActors: [{ login: 'pirog', nodeId: 'U_kgDOB9x7Qw' }],
+      allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
       intervalMinutes: 5,
-      repositoryPolicy: {
-        allowedOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
-        minimumPermission: 'write',
-      },
     });
   });
 
@@ -122,13 +118,13 @@ agent:
   id: tanaabot
 github:
   notifications:
-    interval-minutes: 0
+    interval-minutes: 1
     approved-actors:
       - login: pirog
         node-id: U_1
     repository-policy:
-      minimum-permission: read
-`).has('manifest-schema'),
+      minimum-permission: write
+`).has('manifest-unknown-key'),
       true,
     );
   });

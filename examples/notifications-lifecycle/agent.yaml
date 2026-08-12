@@ -20,8 +20,6 @@ github:
     approved-actors:
       - login: tanaabot
         node-id: U_kgDODUXqww
-    repository-policy:
-      minimum-permission: write
-      allowed-owners:
-        - login: tanaabased
-          node-id: O_kgDODNGy1g
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g

@@ -34,7 +34,6 @@ const manifest: AgentManifest = {
     notifications: {
       approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
       intervalMinutes: 5,
-      repositoryPolicy: { minimumPermission: 'write' },
     },
     token: 'GH_TOKEN_TANAABOT',
     username: notificationAccount.login,

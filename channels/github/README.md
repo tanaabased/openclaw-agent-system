@@ -83,23 +83,26 @@ github:
     approved-actors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
-    repository-policy:
-      minimum-permission: write
-      allowed-owners:
-        - login: tanaabased
-          node-id: O_kgDOB7x6Qw
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDOB7x6Qw
 ```
 
-| Field                                  | Required | Default |
-| -------------------------------------- | -------- | ------- |
-| `interval-minutes`                     | no       | `5`     |
-| `approved-actors`                      | yes      | none    |
-| `repository-policy.minimum-permission` | no       | `write` |
-| `repository-policy.allowed-owners`     | no       | any     |
+| Field                       | Required | Default |
+| --------------------------- | -------- | ------- |
+| `interval-minutes`          | no       | `5`     |
+| `approved-actors`           | yes      | none    |
+| `allowed-repository-owners` | no       | any     |
 
 The interval must be from `1` through `1440`. Each approved actor and allowed
 owner uses a human-readable GitHub login plus an immutable GitHub node id. Node
 ids must be unique within each list.
+
+Every assignment requires the verified agent account to have effective
+`write`, `maintain`, or `admin` access to the repository. That requirement is a
+non-configurable notification admission invariant, not `github.policy`; the
+optional owner list narrows eligible repositories without authorizing their
+members to assign work.
 
 `github.username` and `github.token` are shared GitHub identity and credential
 declarations. The token field names a variable in the completed Agent System
@@ -138,7 +141,7 @@ The Gateway establishes a baseline from the account's currently assigned items
 on first activation. Existing assignments are not admitted retroactively. Later
 polls use an overlapping update window and immutable event-id deduplication,
 then recheck each approved item directly so closure, unassignment, repository
-archival or transfer, owner-policy drift, deletion, and permission loss retire
+archival or transfer, owner-allowlist drift, deletion, and permission loss retire
 the observation.
 
 Changing the verified GitHub account establishes a fresh baseline. Removing
