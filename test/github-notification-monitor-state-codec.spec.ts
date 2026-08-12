@@ -20,6 +20,14 @@ describe('channels/github/utils/monitor-state-codec', () => {
     );
   });
 
+  it('should accept retirement while its prior delivery stage is still being reconciled', () => {
+    const state = notificationMonitorState();
+    state.items[Object.keys(state.items)[0]!]!.disposition = 'retired';
+    state.items[Object.keys(state.items)[0]!]!.reasonCode = 'item-unassigned';
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+  });
+
   it('should explicitly migrate valid phase one state to a safe baseline', () => {
     const decoded = decodeGitHubNotificationMonitorState(
       legacyNotificationMonitorState(),

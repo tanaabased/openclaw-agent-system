@@ -193,6 +193,13 @@ clone URLs. A repository id retains its first source; a declared local override
 is authoritative and fails closed when unavailable or unsafe. Use a remote base
 such as `origin/main` to start from the latest fetched branch.
 
+The GitHub notifications channel uses this same managed-worktree service.
+Without `git.ssh`, canonical HTTPS supports public repositories. When `git.ssh`
+is configured, the channel derives the equivalent
+`git@github.com:<owner>/<repository>.git` remote and uses the isolated SSH
+resource. Configure `git.ssh` before enabling automatic notification delivery
+for private repositories.
+
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
 roots fail installation. Worktrees use deterministic paths and Git's own state,

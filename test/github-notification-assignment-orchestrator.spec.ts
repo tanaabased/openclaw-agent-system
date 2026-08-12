@@ -55,6 +55,7 @@ describe('lib/github-notification-assignment-orchestrator', () => {
           observedSession = readySession;
           return readySession;
         },
+        retire: async () => ({ ...activeSession, status: 'retired' }),
       },
       stateStore: store,
       worktrees: {
@@ -103,6 +104,7 @@ describe('lib/github-notification-assignment-orchestrator', () => {
         },
         inspect: async () => observedSession,
         prepare: async () => readySession,
+        retire: async () => ({ ...activeSession, status: 'retired' }),
       },
       stateStore: store,
       worktrees: { inspect: async () => worktree, prepare: async () => worktree },
@@ -138,6 +140,7 @@ describe('lib/github-notification-assignment-orchestrator', () => {
         dispatchBriefing: async () => activeSession,
         inspect: async () => activeSession,
         prepare: async () => readySession,
+        retire: async () => ({ ...activeSession, status: 'retired' }),
       },
       stateStore: {
         read: store.read,
@@ -166,29 +169,119 @@ describe('lib/github-notification-assignment-orchestrator', () => {
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
   });
 
-  it('should retire without local side effects when fresh authority is revoked', async () => {
+  it('should adopt a prepared session after its checkpoint write failed', async () => {
     const store = memoryStore();
-    let sideEffects = 0;
+    let failSessionCheckpoint = true;
+    let observedSession: typeof readySession | typeof activeSession | undefined;
+    let sessionPreparations = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async dispatchBriefing() {
+          observedSession = activeSession;
+          return activeSession;
+        },
+        inspect: async () => observedSession,
+        async prepare() {
+          sessionPreparations += 1;
+          observedSession = readySession;
+          return readySession;
+        },
+        retire: async () => ({ ...activeSession, status: 'retired' }),
+      },
+      stateStore: {
+        read: store.read,
+        async write(next) {
+          if (failSessionCheckpoint && next.items[itemKey]?.delivery?.stage === 'session-ready') {
+            failSessionCheckpoint = false;
+            throw new Error('state write failed');
+          }
+          await store.write(next);
+        },
+      },
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await assert.rejects(orchestrator.reconcile('tanaabot', itemKey));
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    assert.equal(sessionPreparations, 1);
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
+  });
+
+  it('should diagnose an incomplete claimed briefing without dispatching it again', async () => {
+    const initial = monitorState();
+    const delivery = initial.items[itemKey]?.delivery;
+    assert.ok(delivery);
+    initial.items[itemKey]!.delivery = {
+      ...delivery,
+      sessionKey: readySession.key,
+      stage: 'briefing-running',
+      worktreeBranch: worktree.branch,
+      worktreePath: worktree.path,
+    };
+    const store = memoryStore(initial);
+    let dispatches = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async dispatchBriefing() {
+          dispatches += 1;
+          return activeSession;
+        },
+        inspect: async () => ({ key: readySession.key, status: 'incomplete' }),
+        prepare: async () => readySession,
+        retire: async () => ({ ...activeSession, status: 'retired' }),
+      },
+      stateStore: store,
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-briefing-incomplete',
+    );
+
+    assert.equal(dispatches, 0);
+    assert.equal(
+      store.state().items[itemKey]?.delivery?.failureCode,
+      'github-notification-briefing-incomplete',
+    );
+  });
+
+  it('should abort and archive an existing session before completing retirement', async () => {
+    const store = memoryStore();
+    let observedSession: typeof activeSession | { id: string; key: string; status: 'retired' } =
+      activeSession;
+    let sessionRetirements = 0;
+    let forbiddenSideEffects = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
       sessions: {
         async dispatchBriefing() {
-          sideEffects += 1;
+          forbiddenSideEffects += 1;
           return activeSession;
         },
-        inspect: async () => undefined,
+        inspect: async () => observedSession,
         async prepare() {
-          sideEffects += 1;
+          forbiddenSideEffects += 1;
           return readySession;
+        },
+        async retire() {
+          sessionRetirements += 1;
+          observedSession = { ...activeSession, status: 'retired' };
+          return observedSession;
         },
       },
       stateStore: store,
       worktrees: {
-        inspect: async () => undefined,
+        inspect: async () => worktree,
         async prepare() {
-          sideEffects += 1;
+          forbiddenSideEffects += 1;
           return worktree;
         },
       },
@@ -196,8 +289,48 @@ describe('lib/github-notification-assignment-orchestrator', () => {
 
     await orchestrator.reconcile('tanaabot', itemKey);
 
-    assert.equal(sideEffects, 0);
+    assert.equal(forbiddenSideEffects, 0);
+    assert.equal(sessionRetirements, 1);
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
+  });
+
+  it('should resume retirement after the session archive boundary fails', async () => {
+    const store = memoryStore();
+    let observedSession:
+      typeof activeSession | { id: string; key: string; status: 'retired' | 'retiring' } =
+      activeSession;
+    let retirementAttempts = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: {
+        inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
+      },
+      sessions: {
+        dispatchBriefing: async () => activeSession,
+        inspect: async () => observedSession,
+        prepare: async () => readySession,
+        async retire() {
+          retirementAttempts += 1;
+          if (retirementAttempts === 1) {
+            observedSession = { ...activeSession, status: 'retiring' };
+            throw new Error('session archive interrupted');
+          }
+          observedSession = { ...activeSession, status: 'retired' };
+          return observedSession;
+        },
+      },
+      stateStore: store,
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await assert.rejects(orchestrator.reconcile('tanaabot', itemKey));
+    assert.equal(store.state().items[itemKey]?.disposition, 'retired');
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'admitted');
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    assert.equal(retirementAttempts, 2);
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
   });
 });

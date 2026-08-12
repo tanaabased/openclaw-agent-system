@@ -23,6 +23,45 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
+  it('should retire an observed session before completing local retirement', () => {
+    const session = { key: 'agent:tanaabot:github:item', status: 'active' as const };
+    assert.deepEqual(
+      planGitHubNotificationDelivery(admitted, {
+        authority: { authorized: false, reasonCode: 'item-unassigned' },
+        session,
+        worktree,
+      }),
+      { kind: 'retire-session', reasonCode: 'item-unassigned' },
+    );
+    assert.deepEqual(
+      planGitHubNotificationDelivery(admitted, {
+        authority,
+        retirementReasonCode: 'item-unassigned',
+        retirementRequested: true,
+        session: { ...session, status: 'retired' },
+        worktree,
+      }),
+      { kind: 'retire', reasonCode: 'item-unassigned' },
+    );
+  });
+
+  it('should fail closed when a claimed briefing has no active run or response', () => {
+    const session = { key: 'agent:tanaabot:github:item', status: 'incomplete' as const };
+    assert.deepEqual(
+      planGitHubNotificationDelivery(
+        {
+          ...admitted,
+          sessionKey: session.key,
+          stage: 'briefing-running',
+          worktreeBranch: worktree.branch,
+          worktreePath: worktree.path,
+        },
+        { authority, session, worktree },
+      ),
+      { kind: 'fail', reasonCode: 'github-notification-briefing-incomplete' },
+    );
+  });
+
   it('should reconcile observed worktree and session facts before dispatch', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority, worktree }), {
       kind: 'checkpoint-worktree',

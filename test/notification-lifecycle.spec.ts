@@ -7,7 +7,8 @@ import type { AgentManifest } from '../utils/manifest-types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
-  agent: { id: 'data', name: 'Data' },
+  agent: { email: 'data@example.com', id: 'data', name: 'Data' },
+  git: { worktrees: {} },
   github: {
     username: 'data',
     token: 'GH_TOKEN_DATA',
@@ -56,6 +57,8 @@ describe('channels/github/lib/lifecycle', () => {
     });
     const invalid: AgentManifest = {
       ...manifest,
+      agent: { id: 'data' },
+      git: undefined,
       github: {
         notifications: {
           approvedActors: [
@@ -77,6 +80,8 @@ describe('channels/github/lib/lifecycle', () => {
     assert.deepEqual(codes, [
       'github-notification-username-required',
       'github-notification-token-required',
+      'github-notification-worktrees-required',
+      'github-notification-email-required',
       'github-notification-identity-duplicate',
     ]);
   });

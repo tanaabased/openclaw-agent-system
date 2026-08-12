@@ -212,7 +212,7 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
     (item.disposition === 'approved'
       ? item.delivery !== undefined && item.delivery.stage !== 'retired'
       : item.disposition === 'retired'
-        ? item.delivery === undefined || item.delivery.stage === 'retired'
+        ? true
         : item.delivery === undefined) &&
     (item.delivery === undefined ||
       (item.assignmentEventNodeId === item.delivery.assignmentEventId &&

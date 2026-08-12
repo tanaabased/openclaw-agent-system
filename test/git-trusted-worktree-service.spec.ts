@@ -11,7 +11,7 @@ const manifest: AgentManifest = {
   schemaVersion: 1,
 };
 
-function fixture(options: { deny?: boolean; listed?: boolean } = {}) {
+function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = {}) {
   const events: string[] = [];
   const prepared: Array<{
     baseRef: string;
@@ -19,6 +19,18 @@ function fixture(options: { deny?: boolean; listed?: boolean } = {}) {
     repositoryId: string;
     workId: string;
   }> = [];
+  const configuredManifest: AgentManifest = options.ssh
+    ? {
+        ...manifest,
+        git: {
+          ssh: { privateKeys: [{ fromEnvironment: 'GIT_SSH_PRIVATE_KEY' }] },
+          worktrees: {},
+        },
+      }
+    : manifest;
+  const environmentValues: Record<string, string> = options.ssh
+    ? { GIT_SSH_PRIVATE_KEY: 'private-key' }
+    : {};
   const baseDefinition = createGitWorktreeToolDefinition({
     runnerFactory: {
       async acquire(configuration, scope, acquireOptions) {
@@ -90,8 +102,11 @@ function fixture(options: { deny?: boolean; listed?: boolean } = {}) {
         return {
           diagnostics: [],
           digest: 'digest',
-          environment: { values: {}, variables: [] },
-          manifest,
+          environment: {
+            values: environmentValues,
+            variables: [],
+          },
+          manifest: configuredManifest,
           path: '/workspace/data/agent.yaml',
           scope: { agentId: 'data', workspaceDir: '/workspace/data' },
           status: 'loaded' as const,
@@ -107,7 +122,7 @@ function fixture(options: { deny?: boolean; listed?: boolean } = {}) {
         return {
           diagnostics: [],
           digest: 'digest',
-          manifest,
+          manifest: configuredManifest,
           path: '/workspace/data/agent.yaml',
           scope: { agentId: 'data', workspaceDir: '/workspace/data' },
           status: 'loaded' as const,
@@ -167,6 +182,21 @@ describe('tools/git/trusted-worktree-service', () => {
       /denied for test/u,
     );
     assert.deepEqual(events, ['manifest', 'authorize']);
+  });
+
+  it('should reuse configured git ssh for provider-derived github worktrees', async () => {
+    const { prepared, service } = fixture({ ssh: true });
+
+    await service.prepareGitHub({
+      agentId: 'data',
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemType: 'issue',
+      repositoryDatabaseId: 7,
+    });
+
+    assert.equal(prepared[0]?.cloneUrl, 'git@github.com:tanaabased/openclaw-agent-system.git');
   });
 
   it('should inspect the deterministic worktree through the read-only definition', async () => {

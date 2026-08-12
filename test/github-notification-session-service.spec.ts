@@ -173,6 +173,60 @@ describe('channels/github/lib/session-service', () => {
     assert.equal((calls[2]?.params?.value as { status?: string } | undefined)?.status, 'active');
   });
 
+  it('should distinguish an in-flight briefing from an incomplete claimed briefing', async () => {
+    for (const [hasActiveRun, status] of [
+      [true, 'briefing-running'],
+      [false, 'incomplete'],
+    ] as const) {
+      const service = new GitHubNotificationSessionService({
+        ...sessionDependencies,
+        dispatchReplyWithBufferedBlockDispatcher: (() => undefined) as never,
+        async gatewayRequest(method) {
+          if (method === 'sessions.describe') {
+            return {
+              session: {
+                archived: false,
+                key: route.sessionKey,
+                pluginExtensions: [
+                  {
+                    namespace: 'work-item',
+                    pluginId: 'agent-system',
+                    value: {
+                      assignmentEventId: event.id,
+                      itemNumber: 42,
+                      itemType: 'issue',
+                      repositoryId: event.repositoryId,
+                      schemaVersion: 1,
+                      status: 'briefing',
+                      worktreeBranch: assignmentInput.worktree.branch,
+                      worktreePath: assignmentInput.worktree.path,
+                    },
+                  },
+                ],
+                sessionId: 'session-1',
+              },
+            };
+          }
+          if (method === 'chat.history') {
+            return { messages: [{ messageId: event.id, role: 'user' }] };
+          }
+          if (method === 'sessions.list') {
+            return { sessions: [{ hasActiveRun, key: route.sessionKey }] };
+          }
+          throw new Error(`unexpected gateway method ${method}`);
+        },
+        pluginId: 'agent-system',
+        recordInboundSession: (async () => undefined) as never,
+      });
+
+      assert.deepEqual(await service.inspect(assignmentInput), {
+        id: 'session-1',
+        key: route.sessionKey,
+        status,
+      });
+    }
+  });
+
   it('should dispatch one bounded local no-tools briefing and mark it active', async () => {
     const metadataStatuses: string[] = [];
     const sessionPatches: Array<Record<string, unknown> | undefined> = [];
@@ -398,7 +452,7 @@ describe('channels/github/lib/session-service', () => {
     );
   });
 
-  it('should abort before archiving a retired session without deleting it', async () => {
+  it('should mark, abort, and archive a retired session without deleting it', async () => {
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     const service = new GitHubNotificationSessionService({
       ...sessionDependencies,
@@ -411,19 +465,45 @@ describe('channels/github/lib/session-service', () => {
         return { key: route.sessionKey, ok: true };
       },
       pluginId: 'agent-system',
+      readConfig: () => ({ ...config, bindings: [] }),
       recordInboundSession: (async () => undefined) as never,
     });
 
-    const result = await service.retireSession({
-      agentId: 'data',
-      sessionKey: route.sessionKey,
+    const result = await service.retire({
+      ...assignmentInput,
+      delivery: {
+        ...assignmentInput.delivery,
+        sessionId: 'session-1',
+        sessionKey: route.sessionKey,
+        stage: 'active',
+        worktreeBranch: assignmentInput.worktree.branch,
+        worktreePath: assignmentInput.worktree.path,
+      },
     });
 
-    assert.equal(result, 'aborted');
+    assert.deepEqual(result, { id: 'session-1', key: route.sessionKey, status: 'retired' });
     assert.deepEqual(calls, [
       {
         method: 'sessions.abort',
         params: { agentId: 'data', key: route.sessionKey },
+      },
+      {
+        method: 'sessions.pluginPatch',
+        params: {
+          key: route.sessionKey,
+          namespace: 'work-item',
+          pluginId: 'agent-system',
+          value: {
+            assignmentEventId: event.id,
+            itemNumber: 42,
+            itemType: 'issue',
+            repositoryId: event.repositoryId,
+            schemaVersion: 1,
+            status: 'retired',
+            worktreeBranch: assignmentInput.worktree.branch,
+            worktreePath: assignmentInput.worktree.path,
+          },
+        },
       },
       {
         method: 'sessions.patch',

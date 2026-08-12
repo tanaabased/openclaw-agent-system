@@ -7,6 +7,7 @@ import resolveManifestValue from '../../utils/resolve-manifest-value.ts';
 import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
 import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
 import { gitWorktreeDirectoryName } from './worktree-names.ts';
+import { githubSshWorktreeRemote } from './worktree-remote.ts';
 import type { GitWorktreeResult } from './worktree-service.ts';
 
 export interface TrustedGitHubWorktreeInput {
@@ -148,15 +149,25 @@ export default class TrustedGitWorktreeService {
     }
     const declared = this.#dependencies.definition.configuration.read(loaded.manifest);
     if (!declared) throw unavailable(agentId, 'Git worktrees are not configured');
+    const executionInput =
+      toolInput.action === 'prepare' && declared.git.ssh && toolInput.repository.cloneUrl
+        ? {
+            ...toolInput,
+            repository: {
+              ...toolInput.repository,
+              cloneUrl: githubSshWorktreeRemote(toolInput.repository.cloneUrl),
+            },
+          }
+        : toolInput;
     try {
-      this.#dependencies.definition.tool.validate?.(toolInput, declared);
+      this.#dependencies.definition.tool.validate?.(executionInput, declared);
     } catch {
       throw new AgentSystemToolError(
         'invalid_arguments',
         'The provider-derived Git worktree request is invalid.',
       );
     }
-    const operation = this.#dependencies.definition.tool.classify(toolInput, declared);
+    const operation = this.#dependencies.definition.tool.classify(executionInput, declared);
     const authorization = await this.#dependencies.definition.authorization?.authorize?.(
       operation,
       declared,
@@ -191,7 +202,7 @@ export default class TrustedGitWorktreeService {
         return resolution.value;
       },
     });
-    return this.#dependencies.definition.execute(toolInput, configuration, {
+    return this.#dependencies.definition.execute(executionInput, configuration, {
       agentId,
       resolveEnvironment(name) {
         return values[name];

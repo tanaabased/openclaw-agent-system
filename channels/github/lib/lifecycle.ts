@@ -68,6 +68,22 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
       severity: 'error',
     });
   }
+  if (manifest.git?.worktrees === undefined) {
+    diagnostics.push({
+      code: 'github-notification-worktrees-required',
+      fieldPath: '/git/worktrees',
+      message: 'GitHub notifications require deterministic Git worktrees.',
+      severity: 'error',
+    });
+  }
+  if (manifest.agent.email === undefined && manifest.git?.email === undefined) {
+    diagnostics.push({
+      code: 'github-notification-email-required',
+      fieldPath: '/agent/email',
+      message: 'GitHub notifications require an agent or Git author email.',
+      severity: 'error',
+    });
+  }
   diagnostics.push(
     ...duplicateIdentityDiagnostics(
       manifest,

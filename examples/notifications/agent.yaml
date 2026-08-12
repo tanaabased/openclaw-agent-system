@@ -3,9 +3,13 @@ schema-version: 1
 agent:
   id: notification-data
   name: Notification Data
+  email: notification-data@tanaab.dev
 
 environment:
   op: jglytdfegfggijqkalco2cxexa
+
+git:
+  worktrees: {}
 
 github:
   host: github.com

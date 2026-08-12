@@ -229,6 +229,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationAssignmentProvider = new GitHubNotificationAssignmentProvider({
     accountClient: githubCapability.accountClient,
     manifestService,
+    readConfig,
   });
   const notificationSessionService = new GitHubNotificationSessionService({
     dispatchReplyWithBufferedBlockDispatcher:

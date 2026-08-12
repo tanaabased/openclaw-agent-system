@@ -70,6 +70,25 @@ interface ResolvedAssignmentSession {
   route: ResolvedNotificationRoute;
 }
 
+function deterministicRouteConfig(input: GitHubNotificationAssignmentSessionInput): OpenClawConfig {
+  return {
+    agents: { list: [{ id: input.agentId, workspace: input.workspaceDir }] },
+    bindings: [
+      {
+        agentId: input.agentId,
+        match: { accountId: input.agentId, channel: githubNotificationChannelId },
+        session: { dmScope: 'per-account-channel-peer' },
+        type: 'route',
+      },
+    ],
+    channels: {
+      [githubNotificationChannelId]: {
+        accounts: { [input.agentId]: { enabled: true } },
+      },
+    },
+  };
+}
+
 function requiredText(value: string, label: string, maximumLength?: number): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} must not be empty.`);
@@ -159,6 +178,20 @@ function sessionDescription(value: unknown): Record<string, unknown> | undefined
   const session = record(result.session);
   if (!session) throw new Error('OpenClaw returned an invalid notification session row.');
   return session;
+}
+
+function sessionHasActiveRun(value: unknown, expectedSessionKey: string): boolean {
+  const result = record(value);
+  if (!result || !Array.isArray(result.sessions)) {
+    throw new Error('OpenClaw returned an invalid notification session list.');
+  }
+  const session = result.sessions
+    .map((value) => record(value))
+    .find((value) => value?.key === expectedSessionKey);
+  if (!session || typeof session.hasActiveRun !== 'boolean') {
+    throw new Error('OpenClaw omitted the notification session active-run state.');
+  }
+  return session.hasActiveRun;
 }
 
 function sessionMetadataValue(session: Record<string, unknown>, pluginId: string): unknown {
@@ -272,7 +305,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
   public async inspect(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession | undefined> {
-    const assignment = await this.#resolveAssignment(input);
+    const assignment = await this.#resolveAssignment(input, false);
     const session = sessionDescription(
       await this.#dependencies.gatewayRequest('sessions.describe', {
         key: assignment.route.sessionKey,
@@ -299,7 +332,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     if (observedMetadata && !metadataMatches(observedMetadata, expectedMetadata)) {
       throw new Error('The notification session belongs to another assignment.');
     }
-    if (observedMetadata?.status === 'retired') return { ...reference, status: 'retired' };
+    if (observedMetadata?.status === 'retired') return { ...reference, status: 'retiring' };
     if (observedMetadata?.status === 'active') return { ...reference, status: 'active' };
     const history = historyObservation(
       await this.#dependencies.gatewayRequest('chat.history', {
@@ -315,7 +348,15 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       return { ...reference, status: 'active' };
     }
     if (history === 'briefing-running' || observedMetadata?.status === 'briefing') {
-      return { ...reference, status: 'briefing-running' };
+      const hasActiveRun = sessionHasActiveRun(
+        await this.#dependencies.gatewayRequest('sessions.list', {
+          agentId: input.agentId,
+          limit: 20,
+          search: assignment.route.sessionKey,
+        }),
+        assignment.route.sessionKey,
+      );
+      return { ...reference, status: hasActiveRun ? 'briefing-running' : 'incomplete' };
     }
     return { ...reference, status: 'ready' };
   }
@@ -480,6 +521,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
 
   async #resolveAssignment(
     input: GitHubNotificationAssignmentSessionInput,
+    verifyCurrentRoute = true,
   ): Promise<ResolvedAssignmentSession> {
     const config = await this.#dependencies.readConfig();
     const desired = {
@@ -495,7 +537,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       title: `GitHub ${input.item.itemType} #${input.item.number} assignment`,
     };
     const route = resolveNotificationRoute(
-      config,
+      verifyCurrentRoute ? config : deterministicRouteConfig(input),
       desired,
       githubNotificationConversationId(event),
     );
@@ -523,7 +565,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
   }
 
   /** Abort any active automated turn without deleting the session or transcript. */
-  public async abortBriefing(
+  async #abortBriefing(
     reference: GitHubNotificationSessionReference,
   ): Promise<'aborted' | 'no-active-run'> {
     const result = await this.#dependencies.gatewayRequest('sessions.abort', {
@@ -533,19 +575,25 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     return assertSessionAbortResult(result);
   }
 
-  /** Abort active work and archive the session while preserving its transcript. */
-  public async retireSession(
-    reference: GitHubNotificationSessionReference,
-  ): Promise<'aborted' | 'no-active-run'> {
-    const agentId = requiredText(reference.agentId, 'GitHub notification agent ids');
-    const sessionKey = requiredText(reference.sessionKey, 'GitHub notification session keys');
-    const abortStatus = await this.abortBriefing({ agentId, sessionKey });
+  /** Mark, abort, and archive one exact assignment session while preserving its transcript. */
+  public async retire(
+    input: GitHubNotificationAssignmentSessionInput,
+  ): Promise<GitHubNotificationObservedSession> {
+    const assignment = await this.#resolveAssignment(input, false);
+    const agentId = requiredText(input.agentId, 'GitHub notification agent ids');
+    const sessionKey = assignment.route.sessionKey;
+    await this.#abortBriefing({ agentId, sessionKey });
+    await this.#patchMetadata(input, sessionKey, 'retired');
     const result = await this.#dependencies.gatewayRequest('sessions.patch', {
       agentId,
       archived: true,
       key: sessionKey,
     });
     assertSessionPatchResult(result, sessionKey);
-    return abortStatus;
+    return {
+      ...(input.delivery.sessionId === undefined ? {} : { id: input.delivery.sessionId }),
+      key: sessionKey,
+      status: 'retired',
+    };
   }
 }

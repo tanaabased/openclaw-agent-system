@@ -48,6 +48,9 @@ export interface GitHubNotificationAssignmentSessions {
   prepare(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession>;
+  retire(
+    input: GitHubNotificationAssignmentSessionInput,
+  ): Promise<GitHubNotificationObservedSession>;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
@@ -81,7 +84,11 @@ function sessionStage(
   session: GitHubNotificationObservedSession,
 ): GitHubNotificationDeliveryState['stage'] {
   if (session.status === 'ready') return 'session-ready';
-  return session.status;
+  if (session.status === 'active' || session.status === 'briefing-running') return session.status;
+  throw new GitHubNotificationAssignmentOrchestratorError(
+    'github-notification-session-checkpoint-invalid',
+    'The observed notification session cannot be checkpointed.',
+  );
 }
 
 /** Reconcile one agent's assignments serially through durable, value-free checkpoints. */
@@ -128,14 +135,16 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
-      if (item.disposition === 'retired' && delivery.stage !== 'retired') {
-        await this.#retire(state, itemKey, item.reasonCode);
-        return;
-      }
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);
       if (action.kind === 'none') return;
+      if (action.kind === 'fail') {
+        throw new GitHubNotificationAssignmentOrchestratorError(
+          action.reasonCode,
+          'The GitHub notification briefing did not complete and will not be dispatched again.',
+        );
+      }
       if (action.kind === 'retire') {
         await this.#retire(state, itemKey, action.reasonCode);
         return;
@@ -146,6 +155,25 @@ export default class GitHubNotificationAssignmentOrchestrator {
       }
       if (action.kind === 'checkpoint-session') {
         await this.#checkpointSession(state, itemKey, action.session);
+        continue;
+      }
+      if (action.kind === 'retire-session') {
+        if (!observation.worktree) {
+          throw new GitHubNotificationAssignmentOrchestratorError(
+            'github-notification-retirement-worktree-missing',
+            'The notification session could not be retired without its deterministic worktree.',
+          );
+        }
+        await this.#requestRetirement(state, itemKey, action.reasonCode);
+        const checkpoint = this.#boundary(state, itemKey);
+        if (!checkpoint) return;
+        await this.#dependencies.sessions.retire({
+          agentId,
+          ...checkpoint,
+          signal,
+          worktree: observation.worktree,
+          workspaceDir: state.workspaceDir,
+        });
         continue;
       }
       if (action.kind === 'prepare-worktree') {
@@ -168,9 +196,8 @@ export default class GitHubNotificationAssignmentOrchestrator {
             state,
             itemKey,
           ))
-        ) {
-          return;
-        }
+        )
+          continue;
         const worktree = await this.#dependencies.worktrees.prepare({
           agentId,
           ...checkpoint,
@@ -201,9 +228,8 @@ export default class GitHubNotificationAssignmentOrchestrator {
             state,
             itemKey,
           ))
-        ) {
-          return;
-        }
+        )
+          continue;
         const session = await this.#dependencies.sessions.prepare({
           agentId,
           ...checkpoint,
@@ -227,9 +253,8 @@ export default class GitHubNotificationAssignmentOrchestrator {
           state,
           itemKey,
         ))
-      ) {
-        return;
-      }
+      )
+        continue;
       const session = await this.#dependencies.sessions.dispatchBriefing({
         agentId,
         ...checkpoint,
@@ -259,15 +284,28 @@ export default class GitHubNotificationAssignmentOrchestrator {
       signal,
       workspaceDir,
     });
-    if (!authority.authorized) return { authority };
-    const worktree = await this.#dependencies.worktrees.inspect({
+    const inspectedWorktree = await this.#dependencies.worktrees.inspect({
       agentId,
       delivery,
       item,
       signal,
       workspaceDir,
     });
-    if (!worktree) return { authority };
+    const worktree =
+      inspectedWorktree ??
+      ((!authority.authorized || item.disposition === 'retired') &&
+      delivery.worktreeBranch &&
+      delivery.worktreePath
+        ? { branch: delivery.worktreeBranch, path: delivery.worktreePath }
+        : undefined);
+    if (!worktree) {
+      return {
+        authority,
+        ...(item.disposition === 'retired'
+          ? { retirementReasonCode: item.reasonCode, retirementRequested: true }
+          : {}),
+      };
+    }
     const session = await this.#dependencies.sessions.inspect({
       agentId,
       delivery,
@@ -276,7 +314,14 @@ export default class GitHubNotificationAssignmentOrchestrator {
       worktree,
       workspaceDir,
     });
-    return { authority, ...(session ? { session } : {}), worktree };
+    return {
+      authority,
+      ...(item.disposition === 'retired'
+        ? { retirementReasonCode: item.reasonCode, retirementRequested: true }
+        : {}),
+      ...(session ? { session } : {}),
+      worktree,
+    };
   }
 
   async #authorize(
@@ -296,12 +341,24 @@ export default class GitHubNotificationAssignmentOrchestrator {
       workspaceDir,
     });
     if (authority.authorized) return true;
-    await this.#retire(
+    await this.#requestRetirement(
       state,
       itemKey,
       authority.reasonCode ?? 'github-notification-authority-revoked',
     );
     return false;
+  }
+
+  async #requestRetirement(
+    state: GitHubNotificationMonitorState,
+    itemKey: string,
+    reasonCode: string,
+  ): Promise<void> {
+    const item = state.items[itemKey];
+    if (!item?.delivery) return;
+    if (item.disposition === 'retired' && item.reasonCode === reasonCode) return;
+    state.items[itemKey] = { ...item, disposition: 'retired', reasonCode };
+    await this.#dependencies.stateStore.write(state);
   }
 
   async #loadItem(

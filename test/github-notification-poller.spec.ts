@@ -187,7 +187,7 @@ describe('channels/github/lib/poller', () => {
     );
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
-    assert.equal(Object.values(retired.state.items)[0]?.delivery?.stage, 'retired');
+    assert.equal(Object.values(retired.state.items)[0]?.delivery?.stage, 'admitted');
   });
 
   it('should fail closed when discovery is truncated', async () => {

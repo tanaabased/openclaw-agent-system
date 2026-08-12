@@ -70,10 +70,11 @@ function pendingDeliveryItemKeys(state: GitHubNotificationMonitorState | undefin
   return Object.entries(state.items)
     .filter(
       ([, item]) =>
-        item.disposition === 'approved' &&
         item.delivery !== undefined &&
-        item.delivery.stage !== 'active' &&
-        item.delivery.stage !== 'retired',
+        ((item.disposition === 'approved' &&
+          item.delivery.stage !== 'active' &&
+          item.delivery.stage !== 'retired') ||
+          (item.disposition === 'retired' && item.delivery.stage !== 'retired')),
     )
     .map(([itemKey]) => itemKey)
     .sort();

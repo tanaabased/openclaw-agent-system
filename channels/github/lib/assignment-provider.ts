@@ -1,19 +1,23 @@
 import { resolve } from 'node:path';
 
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 import type {
   GitHubNotificationAssignmentAuthority,
   GitHubNotificationAssignmentBoundaryInput,
 } from '../../../lib/github-notification-assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
+import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
 import type { GitHubNotificationBriefingData } from '../utils/briefing.ts';
+import { resolveNotificationRoute } from '../utils/routing.ts';
 import GitHubWorkEventClient, { GitHubWorkEventClientError } from './work-event-client.ts';
 
 export interface GitHubNotificationAssignmentProviderDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
+  readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
 
 /** Read current GitHub authority and transient briefing data for assignment delivery. */
@@ -32,6 +36,18 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
       input.delivery.workId !== `${input.item.itemType}-${input.item.itemDatabaseId}`
     ) {
       return { authorized: false, reasonCode: 'github-notification-delivery-state-invalid' };
+    }
+    try {
+      resolveNotificationRoute(
+        await this.#dependencies.readConfig(),
+        { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
+        githubNotificationConversationId({
+          itemNumber: input.item.number,
+          repositoryId: input.item.repositoryNodeId,
+        }),
+      );
+    } catch {
+      return { authorized: false, reasonCode: 'github-notification-route-revoked' };
     }
     const context = await this.#connect(input);
     if (!context) {

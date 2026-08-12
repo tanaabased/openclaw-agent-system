@@ -1,6 +1,6 @@
 # GitHub Notification Routing Example
 
-This scenario runs the prepared Agent System package in the default Gateway and verifies the notification channel contract: manifest validation, exact account-scoped routing installation, idempotency, one authenticated observe-only GitHub baseline, live Gateway config convergence, and owned cleanup. It does not run an agent turn or write to GitHub.
+This scenario runs the prepared Agent System package in the default Gateway and verifies the notification channel foundation: manifest prerequisites, exact account-scoped routing installation, managed-worktree lifecycle installation, idempotency, one authenticated observe-only GitHub baseline, live Gateway config convergence, and owned cleanup. It does not run an agent turn or write to GitHub.
 
 ## Setup
 
@@ -40,6 +40,7 @@ echo "$!" > "$TMPDIR/gateway.pid"
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
 ```
 

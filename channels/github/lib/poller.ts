@@ -225,9 +225,6 @@ export async function pollGitHubNotifications(
         if (reason) {
           state.items[key] = {
             ...current,
-            ...(current.delivery
-              ? { delivery: { ...current.delivery, stage: 'retired' as const } }
-              : {}),
             disposition: 'retired',
             lastObservedAt: input.now,
             reasonCode: reason,
@@ -247,9 +244,6 @@ export async function pollGitHubNotifications(
         ) {
           state.items[key] = {
             ...current,
-            ...(current.delivery
-              ? { delivery: { ...current.delivery, stage: 'retired' as const } }
-              : {}),
             disposition: 'retired',
             lastObservedAt: input.now,
             reasonCode: 'github-notification-resource-missing',

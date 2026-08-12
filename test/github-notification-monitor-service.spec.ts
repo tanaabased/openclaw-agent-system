@@ -76,6 +76,46 @@ describe('channels/github/lib/monitor-service', () => {
     assert.deepEqual(reconciled, [notificationItemKey]);
   });
 
+  it('should reconcile transitional retirement before the next remote poll', async () => {
+    const reconciled: string[] = [];
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    state.items[notificationItemKey] = {
+      ...state.items[notificationItemKey]!,
+      disposition: 'retired',
+      reasonCode: 'item-unassigned',
+    };
+    const service = new GitHubNotificationMonitorService({
+      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          reconciled.push(itemKey);
+        },
+      },
+      clock: () => 1_000,
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => undefined,
+      },
+    });
+
+    await service.runOnce();
+
+    assert.deepEqual(reconciled, [notificationItemKey]);
+  });
+
   it('should verify exact routing before resolving a credential', async () => {
     let connected = 0;
     let state: GitHubNotificationMonitorState | undefined;

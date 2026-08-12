@@ -1,7 +1,7 @@
 # GitHub Notifications Plan
 
-Status: Phases 0 and 1 and Phase 2A through 2D repository behavior implemented;
-Phase 2 installed proof and Phases 2E through 6 remain
+Status: Phases 0 and 1 and Phase 2A through 2E repository behavior implemented;
+Phase 2 installed assignment proof and Phases 3 through 6 remain
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
@@ -10,10 +10,10 @@ state, recoverable assignment delivery, trusted managed-worktree preparation,
 and a bounded local-only briefing session with deterministic unit coverage.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
-Phase 0 routing foundation, Phase 1 read-only discovery, and Phase 2A through 2D
-assignment delivery described below are implemented; installed proof, retirement
-and failure recovery, work execution, and the approved-mention conversation
-bridge remain planned behavior.
+Phase 0 routing foundation, Phase 1 read-only discovery, and Phase 2A through 2E
+assignment delivery and retirement described below are implemented; installed
+assignment proof, work execution, and the approved-mention conversation bridge
+remain planned behavior.
 
 ## Recommendation
 
@@ -773,7 +773,7 @@ exact routed session through the trusted Gateway runtime, and sends one bounded
 local-only no-tools briefing. The owning GitHub Actions-only installed proof
 remains Phase 2F work.
 
-#### Phase 2E: Retirement and Failure Recovery
+#### Phase 2E: Retirement and Failure Recovery (implemented)
 
 - Recheck assignment, repository, permission, and route authority immediately
   before each side effect, not only at the beginning of the polling cycle.
@@ -788,7 +788,10 @@ remains Phase 2F work.
   briefing settlement. Reuse proven side effects and report stable value-free
   diagnostic codes.
 
-#### Phase 2F: Proof and Documentation
+#### Phase 2F: Proof and Documentation (partially implemented)
+
+Unit coverage and documentation are implemented; installed assignment proof is
+pending.
 
 - Add focused unit tests for the trusted worktree adapter, transition planner,
   orchestrator, session adapter, bounded briefing builder, tool restriction,

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
@@ -12,6 +14,20 @@ import {
 } from './github-notification-fixtures.ts';
 
 const workspaceDir = '/workspace';
+const config: OpenClawConfig = {
+  agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] },
+  bindings: [
+    {
+      agentId: 'tanaabot',
+      match: { accountId: 'tanaabot', channel: 'agent-system-github' },
+      session: { dmScope: 'per-account-channel-peer' },
+      type: 'route',
+    },
+  ],
+  channels: {
+    'agent-system-github': { accounts: { tanaabot: { enabled: true } } },
+  },
+};
 const manifest: AgentManifest = {
   agent: { id: 'tanaabot' },
   github: {
@@ -36,10 +52,11 @@ function response(body: unknown): AgentSystemCliResult {
   };
 }
 
-function provider(assigned = true) {
+function provider(assigned = true, routeReady = true, onConnect = () => undefined) {
   return new GitHubNotificationAssignmentProvider({
     accountClient: {
       async connect() {
+        onConnect();
         return {
           identity: notificationAccount,
           async execute(argv: string[]) {
@@ -105,6 +122,7 @@ function provider(assigned = true) {
         };
       },
     },
+    readConfig: () => (routeReady ? config : { ...config, bindings: [] }),
   });
 }
 
@@ -128,6 +146,20 @@ describe('channels/github/lib/assignment-provider', () => {
       authorized: false,
       reasonCode: 'item-unassigned',
     });
+  });
+
+  it('should revoke delivery before remote access when the exact route drifts', async () => {
+    let connections = 0;
+    assert.deepEqual(
+      await provider(true, false, () => {
+        connections += 1;
+      }).inspect(input()),
+      {
+        authorized: false,
+        reasonCode: 'github-notification-route-revoked',
+      },
+    );
+    assert.equal(connections, 0);
   });
 
   it('should load transient briefing data with exact assignment provenance', async () => {

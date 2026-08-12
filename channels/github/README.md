@@ -32,6 +32,8 @@ The current release provides the channel, routing, trust core, and local assignm
 - a separate bounded title, URL, body-excerpt, label, and milestone projection
 - one deterministic local session with plugin-owned work-item and worktree metadata
 - a no-tools automated briefing turn whose GitHub content is explicitly untrusted
+- deterministic retirement that aborts active briefing work and archives the session
+- preservation of retired transcripts and managed worktrees for later inspection
 - local-only behavior with no outbound GitHub adapter
 
 After a new assignment is admitted, the monitor prepares or adopts one managed
@@ -45,6 +47,8 @@ GitHub.
 - an Agent System workspace manifest with `github.notifications`
 - an explicit `github.username`
 - an environment-bound `github.token`
+- `git.worktrees` enabled
+- a Git author email from `agent.email` or `git.email`
 
 `install` does not resolve the token or contact GitHub. The Gateway monitor
 resolves the declared credential only after the installed channel account,
@@ -61,10 +65,14 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email: tanaabot@example.com
 
 environment:
   required:
     - GH_TOKEN_TANAABOT
+
+git:
+  worktrees: {}
 
 github:
   host: github.com
@@ -96,6 +104,12 @@ ids must be unique within each list.
 `github.username` and `github.token` are shared GitHub identity and credential
 declarations. The token field names a variable in the completed Agent System
 environment and never accepts a literal token.
+
+Public repositories can use their canonical HTTPS clone URL. For private
+repositories, configure [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys);
+notification worktree preparation then derives the canonical GitHub SSH remote
+and uses only the Git capability's isolated SSH resource. The GitHub token is
+never embedded in a clone URL or credential helper.
 
 ## Installation and Inspection
 
@@ -140,6 +154,19 @@ creation, and briefing dispatch. On restart, the monitor inspects the canonical
 worktree, exact routed session, plugin metadata, and assignment event before it
 resumes. It never treats a stale local stage as proof that an external side
 effect completed.
+
+If a briefing event is present without an assistant response, the channel checks
+the Gateway's active-run projection. An active run remains in progress; an event
+with no active run receives the stable
+`github-notification-briefing-incomplete` diagnostic and is never dispatched a
+second time speculatively.
+
+When assignment or repository authority is revoked, the monitor retains the
+last delivery checkpoint until local retirement converges. It aborts any active
+automated run, marks the exact session retired, and archives it before recording
+the delivery as retired. It does not delete the session, transcript, managed
+repository, branch, or worktree. Repeated retirement safely adopts partial prior
+progress.
 
 `doctor` reports whether the route is ready and whether the monitor is pending,
 healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
