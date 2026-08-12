@@ -209,5 +209,8 @@ bounded briefing projection. GitHub text is marked as untrusted project data,
 is never interpreted as notification control state, and is not persisted in the
 private monitor record. Comments are not fetched in this phase.
 
+For assignment events, the trusted actor is GitHub's immutable `assigner` field.
+The event's `actor` and `assignee` fields are not treated as assignment authority.
+
 The channel configuration contains no token values. Credential resolution must
 remain lazy and occur only in the explicit consumer that contacts GitHub.

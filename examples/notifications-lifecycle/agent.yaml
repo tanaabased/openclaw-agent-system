@@ -13,13 +13,13 @@ git:
 
 github:
   host: github.com
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
+  username: emoriwan
+  token: GH_TOKEN_EMORI
   notifications:
     interval-minutes: 1
     approved-actors:
-      - login: emoriwan
-        node-id: U_kgDOEUqvpg
+      - login: tanaabot
+        node-id: U_kgDODUXqww
     repository-policy:
       minimum-permission: write
       allowed-owners:

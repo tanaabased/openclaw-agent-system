@@ -9,5 +9,5 @@ environment:
 
 github:
   host: github.com
-  username: actor-login-placeholder
-  token: ACTOR_TOKEN_BINDING
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT

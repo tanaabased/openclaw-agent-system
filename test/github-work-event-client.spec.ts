@@ -105,6 +105,37 @@ describe('channels/github/lib/work-event-client', () => {
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
   });
 
+  it('should map assignment authority from the github assigner', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response([
+          {
+            actor: { login: 'pirog', nodeId: 'U_assigner', type: 'User' },
+            assignee: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+            createdAt: '2026-08-11T12:05:00Z',
+            databaseId: 8,
+            event: 'assigned',
+            nodeId: 'EV_assign',
+          },
+        ]);
+      },
+    });
+
+    const page = await client.listAssignmentEvents('tanaabased', 'example', 7);
+
+    assert.deepEqual(page.events[0]?.actor, {
+      login: 'pirog',
+      nodeId: 'U_assigner',
+      type: 'User',
+    });
+    const projection = requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
+    assert.match(projection, /actor:\{login:\.assigner\.login/u);
+    assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
+  });
+
   it('should fetch a separate bounded canonical briefing projection', async () => {
     const requests: string[][] = [];
     const client = new GitHubWorkEventClient({

@@ -379,7 +379,7 @@ export default class GitHubWorkEventClient {
           '-F',
           `page=${page}`,
           '--jq',
-          '[.[]|select(.event=="assigned" or .event=="unassigned")|{databaseId:.id,nodeId:.node_id,event,createdAt:.created_at,actor:{login:.actor.login,nodeId:.actor.node_id,type:.actor.type},assignee:{login:.assignee.login,nodeId:.assignee.node_id,type:.assignee.type}}]',
+          '[.[]|select(.event=="assigned" or .event=="unassigned")|{databaseId:.id,nodeId:.node_id,event,createdAt:.created_at,actor:{login:.assigner.login,nodeId:.assigner.node_id,type:.assigner.type},assignee:{login:.assignee.login,nodeId:.assignee.node_id,type:.assignee.type}}]',
         ],
         'assignment events',
       );
