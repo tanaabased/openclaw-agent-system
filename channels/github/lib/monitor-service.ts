@@ -1,4 +1,5 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
+import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 import type { OpenClawConfig, OpenClawPluginService } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
@@ -53,21 +54,6 @@ export interface GitHubNotificationMonitorRunResult {
   rejected?: number;
   retired?: number;
   status: 'completed' | 'failed' | 'skipped';
-}
-
-function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timeout = setTimeout(resolve, milliseconds);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
-  });
 }
 
 function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
@@ -157,7 +143,11 @@ export default class GitHubNotificationMonitorService {
           'github-notifications: monitor cycle failed code=github-notification-monitor-cycle-failed',
         );
       }
-      await delay(schedulerIntervalMs, signal);
+      try {
+        await sleepWithAbort(schedulerIntervalMs, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
     }
   }
 

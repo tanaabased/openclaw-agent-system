@@ -51,6 +51,7 @@
 
 - Use stable `openclaw/plugin-sdk/*` exports and inspect the installed SDK contract before adding new plugin surfaces.
 - Treat `api.runtime.gateway.request` as a protected bundled-plugin surface, not a third-party plugin API. Never call it from Agent System runtime code or replace it with direct session-store edits, private OpenClaw imports, or spawned Gateway CLI commands.
+- Treat `api.runtime.state.openKeyedStore`, `openSyncKeyedStore`, and `openChannelIngressQueue` as bundled- or trusted-official-plugin surfaces. Keep Agent System's third-party-compatible state ownership unless OpenClaw exposes an equivalent public external-plugin contract.
 - Let OpenClaw's channel inbound lifecycle own routed session recording and lazy creation. Do not build parallel session create, inspect, history, patch, abort, or archive adapters when the channel kernel already owns the required turn lifecycle.
 - Use Bun pinned in `.bun-version` for installs, scripts, and builds and Node.js pinned in `.node-version` for tests and OpenClaw. Never run the Gateway under Bun.
 - Keep TypeScript runtime boundaries aligned: root source uses Node.js types, scripts use Bun and Node.js types, and tests use Mocha and Node.js types.
@@ -65,7 +66,6 @@
 
 ## Accepted optimization decisions
 
-- During every optimization pass, inventory OpenClaw SDK imports and injected runtime calls, compare them with the pinned installed SDK and current official OpenClaw guidance, and prefer the narrow host-owned capability over repository-owned duplication. Record intentional custom ownership when OpenClaw does not provide the product-specific behavior.
 - Keep `API.md` as the public planning surface for the future cross-plugin Tool API, include it in the published package, and keep current-behavior docs explicit that the API is not yet available. Do not recommend removing or internalizing it unless the user changes that product decision or the document contradicts implemented behavior.
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
 - Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.

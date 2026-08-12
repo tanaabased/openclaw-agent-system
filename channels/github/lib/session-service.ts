@@ -10,7 +10,7 @@ import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 import type {
   GitHubNotificationAssignmentSessions,
   GitHubNotificationAssignmentSessionInput,
-} from '../../../lib/github-notification-assignment-orchestrator.ts';
+} from './assignment-orchestrator.ts';
 import {
   githubNotificationConversationId,
   runGitHubNotificationAssignment,

@@ -1,15 +1,17 @@
-import type GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
+import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
+
+import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import {
   planGitHubNotificationDelivery,
   type GitHubNotificationDeliveryObservation,
   type GitHubNotificationObservedSession,
   type GitHubNotificationObservedWorktree,
-} from '../channels/github/utils/delivery-plan.ts';
+} from '../utils/delivery-plan.ts';
 import type {
   GitHubNotificationDeliveryState,
   GitHubNotificationItemState,
   GitHubNotificationMonitorState,
-} from '../channels/github/utils/monitor-state.ts';
+} from '../utils/monitor-state.ts';
 
 export interface GitHubNotificationAssignmentBoundaryInput {
   agentId: string;
@@ -74,18 +76,19 @@ function withoutFailure(
 /** Reconcile one agent's assignments serially through durable, value-free checkpoints. */
 export default class GitHubNotificationAssignmentOrchestrator {
   readonly #dependencies: GitHubNotificationAssignmentOrchestratorDependencies;
-  readonly #queues = new Map<string, Promise<void>>();
+  readonly #queue = new KeyedAsyncQueue();
 
   constructor(dependencies: GitHubNotificationAssignmentOrchestratorDependencies) {
     this.#dependencies = dependencies;
   }
 
   async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
-    const previous = this.#queues.get(agentId) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(() => this.#run(agentId, itemKey, signal));
-    this.#queues.set(agentId, current);
+    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
+  }
+
+  async #reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
     try {
-      await current;
+      await this.#run(agentId, itemKey, signal);
     } catch (error) {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
@@ -99,8 +102,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
             'The GitHub notification assignment could not be reconciled.',
             { cause: error },
           );
-    } finally {
-      if (this.#queues.get(agentId) === current) this.#queues.delete(agentId);
     }
   }
 

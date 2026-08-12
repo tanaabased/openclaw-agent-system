@@ -365,8 +365,10 @@ clock, filesystem, and transport boundaries in the default Mocha suite.
 
 Every optimization pass must inventory OpenClaw imports and injected runtime
 calls against the pinned SDK. Prefer public `openclaw/plugin-sdk/*` surfaces and
-host-owned lifecycle primitives. Do not call `runtime.gateway.request` from this
-third-party plugin or import private OpenClaw implementation modules.
+host-owned lifecycle primitives. Do not call `runtime.gateway.request` or the
+bundled- or trusted-official-only `runtime.state` store and ingress-queue
+constructors from this third-party plugin, or import private OpenClaw
+implementation modules.
 `test/openclaw-api-policy.spec.ts` enforces those prohibited paths.
 
 ## Primary References

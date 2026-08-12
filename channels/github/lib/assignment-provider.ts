@@ -5,7 +5,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type {
   GitHubNotificationAssignmentAuthority,
   GitHubNotificationAssignmentBoundaryInput,
-} from '../../../lib/github-notification-assignment-orchestrator.ts';
+} from './assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';

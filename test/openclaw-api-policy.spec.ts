@@ -3,6 +3,12 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const sourceRoots = ['channels', 'cli', 'lib', 'scripts', 'tools', 'utils'];
+const protectedRuntimeMembers = [
+  'runtime.gateway.request',
+  'runtime.state.openChannelIngressQueue',
+  'runtime.state.openKeyedStore',
+  'runtime.state.openSyncKeyedStore',
+] as const;
 
 async function typescriptFiles(path: string): Promise<string[]> {
   const entries = await readdir(path, { withFileTypes: true });
@@ -25,11 +31,13 @@ describe('openclaw api policy', () => {
 
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      assert.equal(
-        source.includes('runtime.gateway.request'),
-        false,
-        `${file} must not call the protected gateway request surface`,
-      );
+      for (const member of protectedRuntimeMembers) {
+        assert.equal(
+          source.includes(member),
+          false,
+          `${file} must not call the protected ${member} surface`,
+        );
+      }
       assert.equal(
         /from ['"]openclaw\/(?:dist|src)\//u.test(source),
         false,

@@ -7,6 +7,9 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { githubNotificationChannel } from '../channels/github/channel.ts';
+import GitHubNotificationAssignmentOrchestrator, {
+  type GitHubNotificationAssignmentBoundaryInput,
+} from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
@@ -42,9 +45,6 @@ import AgentSystemToolRuntime from './tool-runtime.ts';
 import createToolAccessLifecycleContribution from './tool-access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from './tool-security-lifecycle.ts';
 import WorkspaceGitignoreService from './workspace-gitignore-service.ts';
-import GitHubNotificationAssignmentOrchestrator, {
-  type GitHubNotificationAssignmentBoundaryInput,
-} from './github-notification-assignment-orchestrator.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {

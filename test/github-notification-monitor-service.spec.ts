@@ -41,6 +41,31 @@ function availableCycleLeaseStore(release = async () => undefined) {
 }
 
 describe('channels/github/lib/monitor-service', () => {
+  it('should stop the scheduler without surfacing the host abort', async () => {
+    const service = new GitHubNotificationMonitorService({
+      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+      assignmentOrchestrator: { reconcile: async () => undefined },
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => undefined,
+        write: async () => undefined,
+      },
+    });
+
+    service.start();
+    await assert.doesNotReject(service.stop());
+  });
+
   it('should reconcile persisted delivery backlog before the next remote poll', async () => {
     let connected = 0;
     const reconciled: string[] = [];

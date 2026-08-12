@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
-} from '../lib/github-notification-assignment-orchestrator.ts';
+} from '../channels/github/lib/assignment-orchestrator.ts';
 import {
   notificationItemKey as itemKey,
   notificationMonitorState as monitorState,
@@ -31,7 +31,7 @@ function memoryStore(initial = monitorState()) {
   };
 }
 
-describe('lib/github-notification-assignment-orchestrator', () => {
+describe('channels/github/lib/assignment-orchestrator', () => {
   it('should serialize duplicate reconciliation around one channel-owned session dispatch', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
