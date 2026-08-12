@@ -242,4 +242,108 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       'github-notification-briefing-dispatch-failed',
     );
   });
+
+  it('should classify value-free pre-dispatch boundary failures', async () => {
+    const scenarios = [
+      {
+        code: 'github-notification-authority-inspection-failed',
+        create(store: ReturnType<typeof memoryStore>) {
+          return new GitHubNotificationAssignmentOrchestrator({
+            authority: {
+              inspect: async () => {
+                throw new Error('restricted authority detail');
+              },
+            },
+            sessions: { dispatchBriefing: async () => activeSession },
+            stateStore: store,
+            worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+          });
+        },
+        persisted: true,
+      },
+      {
+        code: 'github-notification-worktree-inspection-failed',
+        create(store: ReturnType<typeof memoryStore>) {
+          return new GitHubNotificationAssignmentOrchestrator({
+            authority: { inspect: async () => ({ authorized: true }) },
+            sessions: { dispatchBriefing: async () => activeSession },
+            stateStore: store,
+            worktrees: {
+              inspect: async () => {
+                throw new Error('restricted inspection detail');
+              },
+              prepare: async () => worktree,
+            },
+          });
+        },
+        persisted: true,
+      },
+      {
+        code: 'github-notification-worktree-preparation-failed',
+        create(store: ReturnType<typeof memoryStore>) {
+          return new GitHubNotificationAssignmentOrchestrator({
+            authority: { inspect: async () => ({ authorized: true }) },
+            sessions: { dispatchBriefing: async () => activeSession },
+            stateStore: store,
+            worktrees: {
+              inspect: async () => undefined,
+              prepare: async () => {
+                throw new Error('restricted preparation detail');
+              },
+            },
+          });
+        },
+        persisted: true,
+      },
+      {
+        code: 'github-notification-state-checkpoint-failed',
+        create(store: ReturnType<typeof memoryStore>) {
+          return new GitHubNotificationAssignmentOrchestrator({
+            authority: { inspect: async () => ({ authorized: true }) },
+            sessions: { dispatchBriefing: async () => activeSession },
+            stateStore: {
+              read: store.read,
+              write: async () => {
+                throw new Error('restricted checkpoint detail');
+              },
+            },
+            worktrees: { inspect: async () => undefined, prepare: async () => worktree },
+          });
+        },
+        persisted: false,
+      },
+      {
+        code: 'github-notification-state-read-failed',
+        create(store: ReturnType<typeof memoryStore>) {
+          return new GitHubNotificationAssignmentOrchestrator({
+            authority: { inspect: async () => ({ authorized: true }) },
+            sessions: { dispatchBriefing: async () => activeSession },
+            stateStore: {
+              read: async () => {
+                throw new Error('restricted state detail');
+              },
+              write: store.write,
+            },
+            worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+          });
+        },
+        persisted: false,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const store = memoryStore();
+      await assert.rejects(
+        scenario.create(store).reconcile('tanaabot', itemKey),
+        (error: unknown) =>
+          error instanceof GitHubNotificationAssignmentOrchestratorError &&
+          error.code === scenario.code &&
+          !error.message.includes('restricted'),
+      );
+      assert.equal(
+        store.state().items[itemKey]?.delivery?.failureCode,
+        scenario.persisted ? scenario.code : undefined,
+      );
+    }
+  });
 });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { GitHubNotificationAssignmentOrchestratorError } from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import { GitHubAccountClientError } from '../lib/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
@@ -107,6 +108,52 @@ describe('channels/github/lib/monitor-service', () => {
 
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
+  });
+
+  it('should surface the exact assignment boundary failure from a monitor cycle', async () => {
+    let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const service = new GitHubNotificationMonitorService({
+      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+      assignmentOrchestrator: {
+        async reconcile() {
+          throw new GitHubNotificationAssignmentOrchestratorError(
+            'github-notification-worktree-preparation-failed',
+            'The notification worktree could not be prepared.',
+          );
+        },
+      },
+      clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      random: () => 0.5,
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async (next) => {
+          state = structuredClone(next);
+        },
+      },
+    });
+
+    const [result] = await service.runOnce({ agentId: 'tanaabot' });
+
+    assert.deepEqual(result, {
+      agentId: 'tanaabot',
+      code: 'github-notification-worktree-preparation-failed',
+      status: 'failed',
+    });
+    assert.equal(state?.diagnosticCode, 'github-notification-worktree-preparation-failed');
   });
 
   it('should reconcile transitional retirement before the next remote poll', async () => {

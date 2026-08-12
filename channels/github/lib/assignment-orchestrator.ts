@@ -156,12 +156,17 @@ export default class GitHubNotificationAssignmentOrchestrator {
           ))
         )
           continue;
-        const worktree = await this.#dependencies.worktrees.prepare({
-          agentId,
-          ...checkpoint,
-          signal,
-          workspaceDir: state.workspaceDir,
-        });
+        const worktree = await this.#diagnosticBoundary(
+          'github-notification-worktree-preparation-failed',
+          'The notification worktree could not be prepared.',
+          () =>
+            this.#dependencies.worktrees.prepare({
+              agentId,
+              ...checkpoint,
+              signal,
+              workspaceDir: state.workspaceDir,
+            }),
+        );
         await this.#checkpointWorktree(state, itemKey, worktree);
         continue;
       }
@@ -187,7 +192,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         ))
       )
         continue;
-      const session = await this.#sessionBoundary(
+      const session = await this.#diagnosticBoundary(
         'github-notification-briefing-dispatch-failed',
         'The notification briefing could not be dispatched.',
         () =>
@@ -214,13 +219,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
     delivery: GitHubNotificationDeliveryState,
     signal?: AbortSignal,
   ): Promise<GitHubNotificationDeliveryObservation> {
-    const authority = await this.#dependencies.authority.inspect({
-      agentId,
-      delivery,
-      item,
-      signal,
-      workspaceDir,
-    });
+    const authority = await this.#diagnosticBoundary(
+      'github-notification-authority-inspection-failed',
+      'The notification assignment authority could not be inspected.',
+      () =>
+        this.#dependencies.authority.inspect({
+          agentId,
+          delivery,
+          item,
+          signal,
+          workspaceDir,
+        }),
+    );
     if (authority.authorized && item.disposition !== 'retired' && delivery.stage === 'active') {
       return { authority };
     }
@@ -231,13 +241,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const worktree =
       !authority.authorized || item.disposition === 'retired'
         ? checkpointedWorktree
-        : await this.#dependencies.worktrees.inspect({
-            agentId,
-            delivery,
-            item,
-            signal,
-            workspaceDir,
-          });
+        : await this.#diagnosticBoundary(
+            'github-notification-worktree-inspection-failed',
+            'The notification worktree could not be inspected.',
+            () =>
+              this.#dependencies.worktrees.inspect({
+                agentId,
+                delivery,
+                item,
+                signal,
+                workspaceDir,
+              }),
+          );
     if (!worktree) {
       return {
         authority,
@@ -264,13 +279,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
     state: GitHubNotificationMonitorState,
     itemKey: string,
   ): Promise<boolean> {
-    const authority = await this.#dependencies.authority.inspect({
-      agentId,
-      delivery,
-      item,
-      signal,
-      workspaceDir,
-    });
+    const authority = await this.#diagnosticBoundary(
+      'github-notification-authority-inspection-failed',
+      'The notification assignment authority could not be inspected.',
+      () =>
+        this.#dependencies.authority.inspect({
+          agentId,
+          delivery,
+          item,
+          signal,
+          workspaceDir,
+        }),
+    );
     if (authority.authorized) return true;
     await this.#requestRetirement(
       state,
@@ -280,7 +300,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     return false;
   }
 
-  async #sessionBoundary<T>(
+  async #diagnosticBoundary<T>(
     code: string,
     message: string,
     operation: () => Promise<T>,
@@ -302,7 +322,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     if (!item?.delivery) return;
     if (item.disposition === 'retired' && item.reasonCode === reasonCode) return;
     state.items[itemKey] = { ...item, disposition: 'retired', reasonCode };
-    await this.#dependencies.stateStore.write(state);
+    await this.#writeState(state);
   }
 
   async #loadItem(
@@ -316,7 +336,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
       }
     | undefined
   > {
-    const current = await this.#dependencies.stateStore.read(agentId);
+    const current = await this.#diagnosticBoundary(
+      'github-notification-state-read-failed',
+      'The notification assignment state could not be read.',
+      () => this.#dependencies.stateStore.read(agentId),
+    );
     if (!current) return undefined;
     const state = structuredClone(current);
     const item = state.items[itemKey];
@@ -374,7 +398,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const item = state.items[itemKey];
     if (!item) return;
     state.items[itemKey] = { ...item, delivery: withoutFailure(delivery) };
-    await this.#dependencies.stateStore.write(state);
+    await this.#writeState(state);
   }
 
   async #retire(
@@ -390,7 +414,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       disposition: 'retired',
       reasonCode,
     };
-    await this.#dependencies.stateStore.write(state);
+    await this.#writeState(state);
   }
 
   async #recordFailure(agentId: string, itemKey: string, code: string): Promise<void> {
@@ -401,5 +425,13 @@ export default class GitHubNotificationAssignmentOrchestrator {
       delivery: { ...loaded.delivery, failureCode: code },
     };
     await this.#dependencies.stateStore.write(loaded.state);
+  }
+
+  async #writeState(state: GitHubNotificationMonitorState): Promise<void> {
+    await this.#diagnosticBoundary(
+      'github-notification-state-checkpoint-failed',
+      'The notification assignment state could not be checkpointed.',
+      () => this.#dependencies.stateStore.write(state),
+    );
   }
 }
