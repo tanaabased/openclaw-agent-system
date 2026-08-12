@@ -4,7 +4,6 @@ import { Value } from 'typebox/value';
 
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
-import type AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
 import type AgentSystemToolRuntime from './tool-runtime.ts';
 import type {
   AgentSystemAuthorizationDecision,
@@ -92,7 +91,6 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
       ? (
           api: Parameters<NonNullable<RegisteredAgentSystemTool['registerTrustedPolicy']>>[0],
           manifestService: Pick<AgentManifestService, 'loadForAgentId'>,
-          approvals: Pick<AgentSystemToolApprovalReceiptStore, 'record'>,
         ) => {
           api.registerTrustedToolPolicy({
             id: definition.authorization?.policyId ?? definition.id,
@@ -132,28 +130,7 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
                 configuration,
               );
               if (!decision || decision.status === 'allowed') return undefined;
-              if (decision.status === 'denied') {
-                return { allow: false, reason: decision.reason };
-              }
-              const toolCallId = context.toolCallId?.trim();
-              if (!toolCallId) {
-                return {
-                  allow: false,
-                  reason: 'OpenClaw did not provide a tool-call id for Agent System approval.',
-                };
-              }
-              return {
-                requireApproval: {
-                  ...decision.request,
-                  allowedDecisions: ['allow-once', 'deny'],
-                  onResolution(resolution) {
-                    if (resolution !== 'allow-once') return;
-                    approvals.record({ agentId, input, toolCallId, toolId: definition.id });
-                  },
-                  timeoutBehavior: 'deny',
-                  timeoutReason: decision.reason,
-                },
-              };
+              return { allow: false, reason: decision.reason };
             },
           });
         }

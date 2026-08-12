@@ -28,7 +28,6 @@ import createPathLifecycleContribution from './path-lifecycle.ts';
 import PathProjectionStore from './path-projection-store.ts';
 import registerAgentSystemCli from './register-cli.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
-import AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
 import AgentSystemToolRegistry from './tool-registry.ts';
 import AgentSystemToolRuntime from './tool-runtime.ts';
 import createToolAccessLifecycleContribution from './tool-access-lifecycle.ts';
@@ -167,9 +166,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   environmentServiceRef.current = environmentService;
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
-  const toolApprovals = new AgentSystemToolApprovalReceiptStore();
   const toolRuntime = new AgentSystemToolRuntime({
-    approvals: toolApprovals,
     baseEnvironment: process.env,
     environmentService,
     excludedExecutableDirectories: excludedToolExecutableDirectories,
@@ -182,7 +179,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
 
   toolRegistry.registerTools(api, toolRuntime);
-  toolRegistry.registerTrustedPolicies(api, manifestService, toolApprovals);
+  toolRegistry.registerTrustedPolicies(api, manifestService);
   registerAgentCommandSecurity(api, {
     logger,
     managedExecutableDirectories: excludedToolExecutableDirectories,

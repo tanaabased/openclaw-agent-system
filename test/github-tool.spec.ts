@@ -6,7 +6,6 @@ import type {
 } from 'openclaw/plugin-sdk/plugin-entry';
 
 import AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import AgentSystemToolApprovalReceiptStore from '../lib/tool-approval-receipt-store.ts';
 import AgentSystemToolError from '../lib/tool-error.ts';
 import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
@@ -74,7 +73,6 @@ function createRuntime(
     inputManifest?: AgentManifest;
     logs?: string[];
     excludedExecutableDirectories?: string[];
-    approvals?: AgentSystemToolApprovalReceiptStore;
     runCli?: (request: AgentSystemCliRunRequest) => Promise<AgentSystemCliResult>;
   } = {},
 ) {
@@ -82,7 +80,6 @@ function createRuntime(
   const logs = options.logs ?? [];
   const environmentCalls = options.environmentCalls ?? [];
   return new AgentSystemToolRuntime({
-    ...(options.approvals ? { approvals: options.approvals } : {}),
     baseEnvironment: {
       HOME: '/home/runner',
       NO_COLOR: '1',
@@ -344,7 +341,8 @@ describe('tools/github/tool', () => {
       (error: unknown) =>
         error instanceof AgentSystemToolError &&
         error.code === 'approval_denied' &&
-        error.message.includes('github.policy.destructive'),
+        error.message.includes('denied by github.policy.destructive') &&
+        error.message.includes('operator must set github.policy.destructive to allow'),
     );
     assert.deepEqual(environmentCalls, []);
   });
@@ -384,34 +382,7 @@ describe('tools/github/tool', () => {
     );
   });
 
-  it('should reject ask policy through the direct noninteractive command path', async () => {
-    const policyManifest: AgentManifest = {
-      ...manifest,
-      github: { ...manifest.github, policy: { destructive: 'ask' } },
-    };
-    const environmentCalls: string[] = [];
-
-    await assert.rejects(
-      new AgentSystemToolRegistry([createTool()]).invoke(
-        'gh',
-        createRuntime({ environmentCalls, inputManifest: policyManifest }),
-        ['repo', 'delete', 'owner/repository', '--yes'],
-        { source: 'command', workspaceDir },
-      ),
-      (error: unknown) =>
-        error instanceof AgentSystemToolError &&
-        error.code === 'approval_denied' &&
-        error.message.includes('require approval in an OpenClaw agent conversation'),
-    );
-    assert.deepEqual(environmentCalls, []);
-  });
-
-  it('should bridge github ask policy into an approved native tool call', async () => {
-    const policyManifest: AgentManifest = {
-      ...manifest,
-      github: { ...manifest.github, policy: { destructive: 'ask' } },
-    };
-    const approvals = new AgentSystemToolApprovalReceiptStore();
+  it('should return actionable hard denial through trusted native policy', async () => {
     const registry = new AgentSystemToolRegistry([createTool()]);
     let policy: PluginTrustedToolPolicyRegistration | undefined;
     registry.registerTrustedPolicies(
@@ -422,10 +393,9 @@ describe('tools/github/tool', () => {
       },
       {
         async loadForAgentId() {
-          return loadedManifest(policyManifest);
+          return loadedManifest();
         },
       },
-      approvals,
     );
     assert.ok(policy);
     const input = { argv: ['repo', 'delete', 'owner/repository', '--yes'] };
@@ -437,45 +407,9 @@ describe('tools/github/tool', () => {
         toolName: 'agent_system_github',
       },
     );
-    assert.ok(decision && 'requireApproval' in decision && decision.requireApproval);
-    await decision.requireApproval.onResolution?.('allow-once');
-
-    const requests: AgentSystemCliRunRequest[] = [];
-    const runtime = createRuntime({
-      approvals,
-      inputManifest: policyManifest,
-      runCli: async (request) => {
-        requests.push(request);
-        return {
-          exitCode: 0,
-          stderr: '',
-          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
-          timedOut: false,
-          truncated: false,
-        };
-      },
-    });
-    let factory: OpenClawPluginToolFactory | undefined;
-    registry.registerTools(
-      {
-        registerTool(tool: unknown) {
-          factory = tool as OpenClawPluginToolFactory;
-        },
-      } as never,
-      runtime,
-    );
-    const produced = factory?.({ agentId: 'data', workspaceDir } as never);
-    const tool = Array.isArray(produced) ? produced[0] : produced;
-    assert.ok(tool);
-
-    await tool.execute('approved-call', input, undefined, undefined);
-    assert.deepEqual(
-      requests.map(({ argv }) => argv),
-      [
-        ['api', 'user', '--jq', '.login'],
-        ['repo', 'delete', 'owner/repository', '--yes'],
-      ],
-    );
+    assert.ok(decision && 'allow' in decision && decision.allow === false && decision.reason);
+    assert.match(decision.reason, /denied by github\.policy\.destructive/u);
+    assert.match(decision.reason, /operator must set github\.policy\.destructive to allow/u);
   });
 
   it('should reject an authenticated user that does not match the configured username', async () => {

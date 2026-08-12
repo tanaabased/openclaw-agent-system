@@ -57,7 +57,7 @@ github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   policy:
-    destructive: ask
+    destructive: deny
     admin: deny
     unknown: deny
   ssh-keys: ~/.ssh/id_ed25519.pub
@@ -102,20 +102,19 @@ username because installation may mutate the configured GitHub account.
 
 ### `github.policy`
 
-| Field         | Values                 | Default | Covers                                             |
-| ------------- | ---------------------- | ------- | -------------------------------------------------- |
-| `destructive` | `allow`, `ask`, `deny` | `deny`  | Deletes and other irrecoverable operations         |
-| `admin`       | `allow`, `ask`, `deny` | `deny`  | Privilege, access, repository, and account control |
-| `unknown`     | `allow`, `ask`, `deny` | `deny`  | Syntax Agent System cannot classify confidently    |
+| Field         | Values          | Default | Covers                                             |
+| ------------- | --------------- | ------- | -------------------------------------------------- |
+| `destructive` | `allow`, `deny` | `deny`  | Deletes and other irrecoverable operations         |
+| `admin`       | `allow`, `deny` | `deny`  | Privilege, access, repository, and account control |
+| `unknown`     | `allow`, `deny` | `deny`  | Syntax Agent System cannot classify confidently    |
 
 Read and ordinary write operations are allowed. Known destructive and admin
 operations take precedence over `unknown`; setting `unknown: allow` cannot permit
 a recognized hazard.
 
-`ask` works only through `agent_system_github` during an OpenClaw agent turn.
-Direct CLI and shim invocations reject operations that require approval because
-they have no originating approval conversation. Approval occurs before Agent
-System resolves the environment or token and is bound to the exact request.
+Denied operations identify the controlling policy field and explain that an
+operator must set it to `allow` before retrying. Policy enforcement occurs
+before Agent System resolves the environment or token.
 
 ### `github.config`
 

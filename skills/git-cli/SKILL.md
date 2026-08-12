@@ -74,7 +74,7 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 
 - Treat a nonzero `exitCode` and returned `stderr` as the underlying `git` failure.
 - Report missing tool, unresolved identity, manifest binding, and working-directory containment errors directly.
-- When OpenClaw requests approval, wait for the operator's decision and do not reshape the command to avoid policy.
+- Treat an Agent System denial as final for the current manifest: report the policy reason and required manifest change instead of waiting for an interactive decision.
 - Do not work around denied or unknown operations with `exec`, direct `git`, alternate working-directory flags, or configuration overrides.
 - Let Agent System apply configured signing automatically; do not pass signing-control flags or select another key.
 - Repository-owned configuration remains a code-execution surface; do not run Git in an untrusted checkout solely because Agent System supplies the identity.

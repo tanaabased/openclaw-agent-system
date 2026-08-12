@@ -87,7 +87,10 @@ describe('tools/github/policy', () => {
     const admin = classifyGitHubOperation({ argv: ['repo', 'edit', 'owner/repository'] });
     const unknown = classifyGitHubOperation({ argv: ['repo', 'vaporize', 'owner/repository'] });
 
-    assert.equal(authorizeGitHubOperation(destructive, {}).status, 'denied');
+    const denied = authorizeGitHubOperation(destructive, {});
+    assert.equal(denied.status, 'denied');
+    assert.match(denied.reason, /denied by github\.policy\.destructive/u);
+    assert.match(denied.reason, /operator must set github\.policy\.destructive to allow/u);
     assert.equal(authorizeGitHubOperation(admin, {}).status, 'denied');
     assert.equal(authorizeGitHubOperation(unknown, {}).status, 'denied');
     assert.equal(
@@ -102,10 +105,6 @@ describe('tools/github/policy', () => {
     assert.equal(
       authorizeGitHubOperation(destructive, { policy: { unknown: 'allow' } }).status,
       'denied',
-    );
-    assert.equal(
-      authorizeGitHubOperation(destructive, { policy: { destructive: 'ask' } }).status,
-      'approval_required',
     );
   });
 });

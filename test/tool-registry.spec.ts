@@ -112,7 +112,7 @@ describe('lib/tool-registry', () => {
     const registry = new AgentSystemToolRegistry(tools);
 
     registry.registerTools({} as never, {} as AgentSystemToolRuntime);
-    registry.registerTrustedPolicies({} as never, {} as never, { record() {} });
+    registry.registerTrustedPolicies({} as never, {} as never);
 
     assert.deepEqual(calls, ['tool:first', 'tool:second', 'policy:first', 'policy:second']);
   });

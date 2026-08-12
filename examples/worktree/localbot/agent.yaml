@@ -10,5 +10,3 @@ git:
     repositories:
       local:
         agent-system: ../../..
-  policy:
-    delete: allow
