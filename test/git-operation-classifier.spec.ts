@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import {
   classifyGitOperation,
-  gitOperationHazards,
-  type GitPolicyHazard,
+  gitOperationProtections,
+  type GitProtectedOperation,
 } from '../tools/git/operation-classifier.ts';
 
 describe('tools/git/operation-classifier', () => {
@@ -26,72 +26,93 @@ describe('tools/git/operation-classifier', () => {
       ['bisect', 'start'],
       ['bundle', 'create', 'example.bundle', 'main'],
       ['commit', '-m', 'example'],
+      ['commit', '--amend', '--no-edit'],
+      ['branch', '-D', 'old'],
+      ['checkout', '--', 'tracked.txt'],
+      ['clean', '-fd'],
+      ['fetch', '--force', 'origin'],
       ['notes', 'add', '-m', 'example'],
+      ['pull', '--rebase', 'origin', 'main'],
       ['push', 'origin'],
+      ['rebase', 'main'],
+      ['reset', '--hard', 'HEAD~1'],
+      ['restore', 'tracked.txt'],
       ['sparse-checkout', 'set', 'src'],
+      ['tag', '-f', 'release'],
     ]) {
       assert.equal(classifyGitOperation({ argv }).risk, 'write', argv.join(' '));
     }
   });
 
-  it('should classify git-specific hazards before unknown policy applies', () => {
-    const cases: Array<{ argv: string[]; hazards: GitPolicyHazard[] }> = [
-      { argv: ['push', '--force', 'origin', 'main'], hazards: ['force', 'rewrite'] },
-      { argv: ['push', 'origin', '+main:main'], hazards: ['force', 'rewrite'] },
+  it('should select explicit remote protections from every supported push spelling', () => {
+    const cases: Array<{ argv: string[]; protections: GitProtectedOperation[] }> = [
+      { argv: ['push', '--force', 'origin', 'main'], protections: ['forcePush'] },
+      { argv: ['push', '--for', 'origin', 'main'], protections: ['forcePush'] },
+      { argv: ['push', '-f', 'origin', 'main'], protections: ['forcePush'] },
+      { argv: ['push', '-qf', 'origin', 'main'], protections: ['forcePush'] },
+      {
+        argv: ['push', '--force-with-lease=main', 'origin', 'main'],
+        protections: ['forcePush'],
+      },
+      { argv: ['push', '--force-w', 'origin', 'main'], protections: ['forcePush'] },
+      { argv: ['push', 'origin', '+main:main'], protections: ['forcePush'] },
       {
         argv: ['push', '--mirror', 'origin'],
-        hazards: ['force', 'rewrite', 'delete'],
+        protections: ['forcePush', 'deleteRemoteRef'],
       },
-      { argv: ['push', '--delete', 'origin', 'old'], hazards: ['delete'] },
-      { argv: ['fetch', '--force', 'origin'], hazards: ['force', 'rewrite'] },
-      { argv: ['fetch', '--prune-tags', 'origin'], hazards: ['delete'] },
-      { argv: ['pull', '--rebase', 'origin', 'main'], hazards: ['rewrite'] },
-      { argv: ['branch', '-D', 'old'], hazards: ['force', 'delete'] },
-      { argv: ['branch', '-M', 'main'], hazards: ['force', 'rewrite'] },
-      { argv: ['tag', '-f', 'release'], hazards: ['force', 'rewrite'] },
-      { argv: ['checkout', '-B', 'main'], hazards: ['force', 'rewrite'] },
-      { argv: ['switch', '-C', 'main'], hazards: ['force', 'rewrite'] },
-      { argv: ['reset', '--hard', 'HEAD~1'], hazards: ['rewrite', 'discard'] },
-      { argv: ['clean', '-fd'], hazards: ['discard'] },
-      { argv: ['restore', 'tracked.txt'], hazards: ['discard'] },
-      { argv: ['checkout', '--', 'tracked.txt'], hazards: ['discard'] },
-      { argv: ['checkout', 'main'], hazards: ['discard'] },
-      { argv: ['rebase', 'main'], hazards: ['rewrite'] },
-      { argv: ['commit', '--amend', '--no-edit'], hazards: ['rewrite'] },
-      { argv: ['stash', 'clear'], hazards: ['delete'] },
-      { argv: ['notes', 'remove', 'HEAD'], hazards: ['delete'] },
-      { argv: ['notes', '--ref', 'review', 'remove', 'HEAD'], hazards: ['delete'] },
-      { argv: ['rerere', 'gc'], hazards: ['delete'] },
-      { argv: ['reflog', 'expire', '--all'], hazards: ['delete'] },
-      { argv: ['gc'], hazards: ['delete'] },
-      { argv: ['maintenance', 'run'], hazards: ['delete'] },
-      { argv: ['prune'], hazards: ['delete'] },
-      { argv: ['repack', '-d'], hazards: ['delete'] },
-      { argv: ['rm', '--force', 'tracked.txt'], hazards: ['force', 'discard'] },
-      { argv: ['filter-branch', '--', '--all'], hazards: ['rewrite'] },
+      { argv: ['push', '--delete', 'origin', 'old'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', '--del', 'origin', 'old'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', '-d', 'origin', 'old'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', '-qd', 'origin', 'old'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', '--prune', 'origin'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', '--pru', 'origin'], protections: ['deleteRemoteRef'] },
+      { argv: ['push', 'origin', ':old'], protections: ['deleteRemoteRef'] },
+      {
+        argv: ['push', 'origin', '+:old'],
+        protections: ['forcePush', 'deleteRemoteRef'],
+      },
+      {
+        argv: ['push', '--mi', 'origin'],
+        protections: ['forcePush', 'deleteRemoteRef'],
+      },
     ];
 
-    for (const { argv, hazards } of cases) {
+    for (const { argv, protections } of cases) {
       const operation = classifyGitOperation({ argv });
       assert.equal(operation.risk, 'destructive', argv.join(' '));
-      assert.deepEqual(gitOperationHazards(operation), hazards, argv.join(' '));
+      assert.deepEqual(gitOperationProtections(operation), protections, argv.join(' '));
     }
   });
 
-  it('should preserve explicit non-destructive alternatives', () => {
+  it('should leave local mutation and non-protected remote operations as ordinary writes', () => {
     for (const argv of [
       ['push', 'origin', 'main'],
       ['fetch', 'origin', 'main'],
+      ['fetch', '--prune-tags', 'origin'],
       ['pull', 'origin', 'main'],
       ['pull', '--rebase=false', 'origin', 'main'],
+      ['push', '-oforce-check', 'origin', 'main'],
+      ['push', '-qoforce-check', 'origin', 'main'],
       ['branch', '-m', 'renamed'],
+      ['branch', '-D', 'old'],
       ['tag', 'release'],
+      ['tag', '-f', 'release'],
       ['checkout', '-b', 'feature'],
+      ['checkout', 'main'],
+      ['checkout', '--', 'tracked.txt'],
       ['switch', 'main'],
       ['switch', '-c', 'feature'],
       ['reset', '--', 'tracked.txt'],
+      ['reset', '--hard', 'HEAD~1'],
+      ['restore', 'tracked.txt'],
       ['restore', '--staged', 'tracked.txt'],
+      ['rebase', 'main'],
       ['rebase', '--abort'],
+      ['commit', '--amend', '--no-edit'],
+      ['clean', '-fd'],
+      ['stash', 'clear'],
+      ['reflog', 'expire', '--all'],
+      ['gc'],
       ['rm', 'tracked.txt'],
     ]) {
       assert.equal(classifyGitOperation({ argv }).risk, 'write', argv.join(' '));

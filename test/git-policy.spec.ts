@@ -24,29 +24,39 @@ describe('tools/git/policy', () => {
     });
   });
 
-  it('should require every applicable git hazard policy to allow the operation', async () => {
+  it('should require every selected git protection to allow the operation', async () => {
     const forcePush = classifyGitOperation({ argv: ['push', '--force', 'origin', 'main'] });
     const denied = await authorizeGitOperation(forcePush, {
       ...configuration,
-      git: { policy: { force: 'deny', rewrite: 'allow' } },
+      git: { policy: { forcePush: 'deny' } },
     });
     assert.equal(denied.status, 'denied');
-    assert.match(denied.reason, /denied by git\.policy\.force/u);
-    assert.match(denied.reason, /operator must set git\.policy\.force to allow/u);
+    assert.match(denied.reason, /denied by git\.policy\.force-push/u);
+    assert.match(denied.reason, /operator must set git\.policy\.force-push to allow/u);
     assert.equal(
       (
         await authorizeGitOperation(forcePush, {
           ...configuration,
-          git: { policy: { force: 'allow', rewrite: 'deny' } },
+          git: { policy: { forcePush: 'allow' } },
+        })
+      ).status,
+      'allowed',
+    );
+    const mirror = classifyGitOperation({ argv: ['push', '--mirror', 'origin'] });
+    assert.equal(
+      (
+        await authorizeGitOperation(mirror, {
+          ...configuration,
+          git: { policy: { forcePush: 'allow', deleteRemoteRef: 'deny' } },
         })
       ).status,
       'denied',
     );
     assert.equal(
       (
-        await authorizeGitOperation(classifyGitOperation({ argv: ['branch', '-d', 'old'] }), {
+        await authorizeGitOperation(mirror, {
           ...configuration,
-          git: { policy: { delete: 'allow' } },
+          git: { policy: { forcePush: 'allow', deleteRemoteRef: 'allow' } },
         })
       ).status,
       'allowed',
@@ -72,7 +82,7 @@ describe('tools/git/policy', () => {
       extension,
       {
         ...configuration,
-        git: { extensions: { town: 'deny' }, policy: { unknown: 'allow' } },
+        git: { extensions: { town: 'deny' } },
       },
       { extensionAvailable: () => true },
     );
@@ -89,7 +99,7 @@ describe('tools/git/policy', () => {
     assert.match(unavailable.reason, /operator must install that executable/u);
   });
 
-  it('should keep built-in hazards ahead of matching extension declarations', async () => {
+  it('should keep built-in protections ahead of matching extension declarations', async () => {
     const forcePush = classifyGitOperation({ argv: ['push', '--force', 'origin', 'main'] });
     assert.equal(
       (
@@ -97,7 +107,7 @@ describe('tools/git/policy', () => {
           forcePush,
           {
             ...configuration,
-            git: { extensions: { push: 'allow' }, policy: { force: 'deny', rewrite: 'allow' } },
+            git: { extensions: { push: 'allow' }, policy: { forcePush: 'deny' } },
           },
           { extensionAvailable: () => true },
         )

@@ -2,9 +2,13 @@ import type { AgentSystemOperation, AgentSystemRisk } from '../../lib/tool-types
 import type { GitPolicyConfiguration } from './config-schema.ts';
 import type { GitToolInput } from './tool-schema.ts';
 
-export type GitPolicyHazard = Exclude<keyof GitPolicyConfiguration, 'unknown'>;
+export type GitProtectedOperation = keyof GitPolicyConfiguration;
 
-const hazardOrder: readonly GitPolicyHazard[] = ['force', 'rewrite', 'discard', 'delete'];
+const protectionOrder: readonly GitProtectedOperation[] = ['forcePush', 'deleteRemoteRef'];
+const protectionFields: Record<GitProtectedOperation, string> = {
+  deleteRemoteRef: 'delete-remote-ref',
+  forcePush: 'force-push',
+};
 const readCommands = new Set([
   'annotate',
   'archive',
@@ -61,13 +65,18 @@ const writeCommands = new Set([
   'clone',
   'commit',
   'diagnose',
+  'fast-import',
   'fetch',
+  'filter-branch',
   'format-patch',
+  'gc',
   'init',
+  'maintenance',
   'merge',
   'mergetool',
   'mv',
   'pack-refs',
+  'prune',
   'pull',
   'push',
   'rebase',
@@ -108,31 +117,38 @@ function hasFlag(argv: readonly string[], flags: readonly string[]): boolean {
   );
 }
 
-function hasForceRefspec(argv: readonly string[]): boolean {
-  return argv.some((argument) => argument.startsWith('+') && argument.length > 1);
-}
-
-function pullRebases(argv: readonly string[]): boolean {
+function hasProtectedLongOption(argv: readonly string[], options: readonly string[]): boolean {
   return argv.some((argument) => {
-    if (argument === '--rebase' || argument === '-r') return true;
-    if (!argument.startsWith('--rebase=')) return false;
-    return argument.slice('--rebase='.length).toLowerCase() !== 'false';
+    if (!argument.startsWith('--')) return false;
+    const option = argument.split('=', 1)[0] ?? '';
+    return option.length > 2 && options.some((candidate) => candidate.startsWith(option));
   });
 }
 
-function uniqueHazards(hazards: readonly GitPolicyHazard[]): GitPolicyHazard[] {
-  return hazardOrder.filter((hazard) => hazards.includes(hazard));
+function hasProtectedShortOption(argv: readonly string[], option: string): boolean {
+  return argv.some((argument) => {
+    if (!argument.startsWith('-') || argument.startsWith('--')) return false;
+    for (const candidate of argument.slice(1)) {
+      if (candidate === 'o') return false;
+      if (candidate === option) return true;
+    }
+    return false;
+  });
 }
 
 function operation(
   risk: AgentSystemRisk,
   command: string,
-  hazards: readonly GitPolicyHazard[] = [],
+  protections: readonly GitProtectedOperation[] = [],
   attributes: Record<string, string | number | boolean> = {},
 ): AgentSystemOperation {
-  const selectedHazards = uniqueHazards(hazards);
+  const selectedProtections = protectionOrder.filter((protection) =>
+    protections.includes(protection),
+  );
   const operationAttributes = {
-    ...Object.fromEntries(selectedHazards.map((hazard) => [`git.policy.${hazard}`, true])),
+    ...Object.fromEntries(
+      selectedProtections.map((protection) => [`git.policy.${protectionFields[protection]}`, true]),
+    ),
     ...attributes,
   };
   return {
@@ -144,146 +160,70 @@ function operation(
   };
 }
 
-function hazardous(command: string, hazards: readonly GitPolicyHazard[]): AgentSystemOperation {
-  return operation('destructive', command, hazards);
+function protectedOperation(
+  command: string,
+  protections: readonly GitProtectedOperation[],
+): AgentSystemOperation {
+  return operation('destructive', command, protections);
 }
 
-export function gitOperationHazards(operation: AgentSystemOperation): GitPolicyHazard[] {
-  return hazardOrder.filter((hazard) => operation.attributes?.[`git.policy.${hazard}`] === true);
-}
-
-function classifyBranch(argv: readonly string[], command: string): AgentSystemOperation {
-  if (hasFlag(argv, ['-D'])) return hazardous(command, ['force', 'delete']);
-  if (hasFlag(argv, ['--delete', '-d'])) return hazardous(command, ['delete']);
-  if (hasFlag(argv, ['--force', '-f', '-M', '-C'])) {
-    return hazardous(command, ['force', 'rewrite']);
-  }
-  if (argv.length === 0 || hasFlag(argv, ['--list', '--show-current', '-l'])) {
-    return operation('read', command);
-  }
-  return operation('write', command);
-}
-
-function classifyTag(argv: readonly string[], command: string): AgentSystemOperation {
-  if (hasFlag(argv, ['--delete', '-d'])) return hazardous(command, ['delete']);
-  if (hasFlag(argv, ['--force', '-f'])) return hazardous(command, ['force', 'rewrite']);
-  if (argv.length === 0 || hasFlag(argv, ['--list', '-l'])) return operation('read', command);
-  return operation('write', command);
-}
-
-function classifyFetch(argv: readonly string[], command: string): AgentSystemOperation {
-  const hazards: GitPolicyHazard[] = [];
-  if (hasForceRefspec(argv) || hasFlag(argv, ['--force', '-f'])) {
-    hazards.push('force', 'rewrite');
-  }
-  if (hasFlag(argv, ['--prune', '--prune-tags', '-p', '-P'])) hazards.push('delete');
-  return hazards.length === 0 ? operation('write', command) : hazardous(command, hazards);
-}
-
-function classifyPull(argv: readonly string[], command: string): AgentSystemOperation {
-  const operation = classifyFetch(argv, command);
-  if (!pullRebases(argv)) return operation;
-  return hazardous(command, [...gitOperationHazards(operation), 'rewrite']);
+export function gitOperationProtections(operation: AgentSystemOperation): GitProtectedOperation[] {
+  return protectionOrder.filter(
+    (protection) => operation.attributes?.[`git.policy.${protectionFields[protection]}`] === true,
+  );
 }
 
 function classifyPush(argv: readonly string[], command: string): AgentSystemOperation {
-  const hazards: GitPolicyHazard[] = [];
-  const mirrors = hasFlag(argv, ['--mirror']);
-  if (mirrors || hasForceRefspec(argv) || hasFlag(argv, ['--force', '--force-with-lease', '-f'])) {
-    hazards.push('force', 'rewrite');
+  const protections: GitProtectedOperation[] = [];
+  const mirrors = hasProtectedLongOption(argv, ['--mirror']);
+  if (
+    mirrors ||
+    argv.some((argument) => argument.startsWith('+') && argument.length > 1) ||
+    hasProtectedLongOption(argv, ['--force', '--force-with-lease']) ||
+    hasProtectedShortOption(argv, 'f')
+  ) {
+    protections.push('forcePush');
   }
   if (
     mirrors ||
-    argv.some((value) => value.startsWith(':')) ||
-    hasFlag(argv, ['--delete', '--prune', '-d'])
+    argv.some((argument) => {
+      const refspec = argument.startsWith('+') ? argument.slice(1) : argument;
+      return refspec.startsWith(':') && refspec.length > 1;
+    }) ||
+    hasProtectedLongOption(argv, ['--delete', '--prune']) ||
+    hasProtectedShortOption(argv, 'd')
   ) {
-    hazards.push('delete');
+    protections.push('deleteRemoteRef');
   }
-  return hazards.length === 0 ? operation('write', command) : hazardous(command, hazards);
+  return protections.length === 0
+    ? operation('write', command)
+    : protectedOperation(command, protections);
 }
 
-function classifyReset(argv: readonly string[], command: string): AgentSystemOperation {
-  if (hasFlag(argv, ['--hard', '--keep', '--merge'])) {
-    return hazardous(command, ['rewrite', 'discard']);
-  }
-  if (
-    argv.includes('--') ||
-    hasFlag(argv, ['--patch', '--pathspec-from-file', '-p']) ||
-    argv.length === 0
-  ) {
-    return operation('write', command);
-  }
-  return hazardous(command, ['rewrite']);
-}
-
-function classifyCheckout(argv: readonly string[], command: string): AgentSystemOperation {
-  if (hasFlag(argv, ['-B'])) return hazardous(command, ['force', 'rewrite']);
-  if (hasFlag(argv, ['--discard-changes', '--force', '-f'])) {
-    return hazardous(command, ['force', 'discard']);
-  }
-  if (hasFlag(argv, ['--detach', '--orphan', '-b']) || argv.length === 0) {
-    return operation('write', command);
-  }
-  // Checkout is ambiguous between branch switching and path restoration. Prefer
-  // switch or restore so policy can classify the requested effect explicitly.
-  return hazardous(command, ['discard']);
-}
-
-function classifySwitch(argv: readonly string[], command: string): AgentSystemOperation {
-  if (hasFlag(argv, ['-C'])) return hazardous(command, ['force', 'rewrite']);
-  if (hasFlag(argv, ['--discard-changes', '--force', '-f'])) {
-    return hazardous(command, ['force', 'discard']);
-  }
-  return operation('write', command);
-}
-
-function classifyBisect(argv: readonly string[], command: string): AgentSystemOperation {
-  const subcommand = argv[0]?.toLowerCase();
-  return ['log', 'visualize', 'view'].includes(subcommand ?? '')
+function classifyBranch(argv: readonly string[], command: string): AgentSystemOperation {
+  return argv.length === 0 || hasFlag(argv, ['--list', '--show-current', '-l'])
     ? operation('read', command)
     : operation('write', command);
 }
 
-function classifyBundle(argv: readonly string[], command: string): AgentSystemOperation {
-  const subcommand = argv[0]?.toLowerCase();
-  return ['list-heads', 'verify'].includes(subcommand ?? '')
+function classifyTag(argv: readonly string[], command: string): AgentSystemOperation {
+  return argv.length === 0 || hasFlag(argv, ['--list', '-l'])
     ? operation('read', command)
     : operation('write', command);
 }
 
-function classifyNotes(argv: readonly string[], command: string): AgentSystemOperation {
-  let subcommand: string | undefined;
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index]?.toLowerCase();
-    if (value === '--ref') {
-      index += 1;
-      continue;
-    }
-    if (value?.startsWith('--ref=')) continue;
-    if (value && !value.startsWith('-')) {
-      subcommand = value;
-      break;
-    }
-  }
-  if (!subcommand || ['get-ref', 'list', 'show'].includes(subcommand)) {
-    return operation('read', command);
-  }
-  return ['prune', 'remove'].includes(subcommand)
-    ? hazardous(command, ['delete'])
-    : operation('write', command);
-}
-
-function classifyRerere(argv: readonly string[], command: string): AgentSystemOperation {
+function classifySubcommand(
+  argv: readonly string[],
+  command: string,
+  readSubcommands: readonly string[],
+): AgentSystemOperation {
   const subcommand = argv[0]?.toLowerCase();
-  if (['diff', 'remaining', 'status'].includes(subcommand ?? '')) {
-    return operation('read', command);
-  }
-  return ['clear', 'forget', 'gc'].includes(subcommand ?? '')
-    ? hazardous(command, ['delete'])
+  return readSubcommands.includes(subcommand ?? '')
+    ? operation('read', command)
     : operation('write', command);
 }
 
-/** Classify stable Git command shapes before the executable can resolve git-* helpers. */
+/** Classify stable Git commands and select only explicit protected remote effects. */
 export function classifyGitOperation(input: GitToolInput): AgentSystemOperation {
   const position = gitCommandPosition(input.argv);
   const command = position < 0 ? 'command' : (input.argv[position]?.toLowerCase() ?? 'command');
@@ -292,63 +232,46 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
   if (input.argv.some((value) => value === '--help' || value === '-h' || value === '--version')) {
     return operation('read', command);
   }
-  if (command === 'config') return operation('read', command);
+  if (command === 'config' || command === 'remote') return operation('read', command);
   if (command === 'branch') return classifyBranch(argv, command);
   if (command === 'tag') return classifyTag(argv, command);
-  if (command === 'bisect') return classifyBisect(argv, command);
-  if (command === 'bundle') return classifyBundle(argv, command);
-  if (command === 'notes') return classifyNotes(argv, command);
-  if (command === 'rerere') return classifyRerere(argv, command);
-  if (command === 'sparse-checkout') {
-    return argv[0]?.toLowerCase() === 'list'
-      ? operation('read', command)
-      : operation('write', command);
-  }
-  if (command === 'remote') return operation('read', command);
+  if (command === 'bisect') return classifySubcommand(argv, command, ['log', 'visualize', 'view']);
+  if (command === 'bundle') return classifySubcommand(argv, command, ['list-heads', 'verify']);
+  if (command === 'notes') return classifySubcommand(argv, command, ['get-ref', 'list', 'show']);
+  if (command === 'rerere')
+    return classifySubcommand(argv, command, ['diff', 'remaining', 'status']);
+  if (command === 'sparse-checkout') return classifySubcommand(argv, command, ['list']);
   if (command === 'clean') {
     return hasFlag(argv, ['--dry-run', '-n'])
       ? operation('read', command)
-      : hazardous(command, ['discard']);
-  }
-  if (command === 'reset') return classifyReset(argv, command);
-  if (command === 'restore') {
-    return hasFlag(argv, ['--staged']) && !hasFlag(argv, ['--worktree'])
-      ? operation('write', command)
-      : hazardous(command, ['discard']);
-  }
-  if (command === 'checkout') return classifyCheckout(argv, command);
-  if (command === 'switch') return classifySwitch(argv, command);
-  if (command === 'push') return classifyPush(argv, command);
-  if (command === 'fetch') return classifyFetch(argv, command);
-  if (command === 'pull') return classifyPull(argv, command);
-  if (command === 'commit') {
-    return hasFlag(argv, ['--amend'])
-      ? hazardous(command, ['rewrite'])
       : operation('write', command);
   }
-  if (command === 'rebase') {
-    if (hasFlag(argv, ['--show-current-patch'])) return operation('read', command);
-    if (hasFlag(argv, ['--abort', '--quit'])) return operation('write', command);
-    return hazardous(command, ['rewrite']);
-  }
   if (command === 'reflog') {
-    const subcommand = argv[0]?.toLowerCase();
-    if (
-      ['delete', 'drop', 'expire'].includes(subcommand ?? '') &&
+    return ['delete', 'drop', 'expire'].includes(argv[0]?.toLowerCase() ?? '') &&
       !hasFlag(argv, ['--dry-run', '-n'])
-    ) {
-      return hazardous(command, ['delete']);
-    }
-    return operation('read', command);
+      ? operation('write', command)
+      : operation('read', command);
   }
   if (command === 'stash') {
     const subcommand = argv[0]?.toLowerCase();
-    if (['branch', 'clear', 'drop', 'pop'].includes(subcommand ?? '')) {
-      return hazardous(command, ['delete']);
-    }
-    if (!subcommand || subcommand === 'list' || subcommand === 'show') {
-      return operation('read', command);
-    }
+    return !subcommand || subcommand === 'list' || subcommand === 'show'
+      ? operation('read', command)
+      : operation('write', command);
+  }
+  if (command === 'replace') {
+    return argv.length === 0 || hasFlag(argv, ['--list', '-l'])
+      ? operation('read', command)
+      : operation('write', command);
+  }
+  if (command === 'rebase' && hasFlag(argv, ['--show-current-patch'])) {
+    return operation('read', command);
+  }
+  if (
+    command === 'restore' ||
+    command === 'checkout' ||
+    command === 'switch' ||
+    command === 'reset'
+  ) {
     return operation('write', command);
   }
   if (command === 'worktree') {
@@ -356,26 +279,7 @@ export function classifyGitOperation(input: GitToolInput): AgentSystemOperation 
       ? operation('unknown', command)
       : operation('read', command);
   }
-  if (command === 'replace') {
-    if (argv.length === 0 || hasFlag(argv, ['--list', '-l'])) return operation('read', command);
-    return hasFlag(argv, ['--delete', '-d'])
-      ? hazardous(command, ['delete'])
-      : hazardous(command, ['rewrite']);
-  }
-  if (command === 'rm') {
-    return hasFlag(argv, ['--force', '-f'])
-      ? hazardous(command, ['force', 'discard'])
-      : operation('write', command);
-  }
-  if (command === 'fast-import' || command === 'filter-branch') {
-    return hazardous(command, ['rewrite']);
-  }
-  if (command === 'gc' || command === 'maintenance' || command === 'prune') {
-    return hazardous(command, ['delete']);
-  }
-  if (command === 'repack' && hasFlag(argv, ['--delete-redundant', '-A', '-d'])) {
-    return hazardous(command, ['delete']);
-  }
+  if (command === 'push') return classifyPush(argv, command);
   if (readCommands.has(command)) return operation('read', command);
   if (writeCommands.has(command)) return operation('write', command);
   return operation('unknown', command, [], { 'git.extension': command });

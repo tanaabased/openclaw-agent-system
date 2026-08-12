@@ -239,7 +239,7 @@ describe('tools/git/tool', () => {
     assert.deepEqual(requests, []);
   });
 
-  it('should reject escape options, raw worktrees, and destructive defaults before loading environment', async () => {
+  it('should reject escape options, raw worktrees, and protected pushes before loading environment', async () => {
     const environmentCalls: string[] = [];
     const registry = new AgentSystemToolRegistry([createGitTool()]);
     const runtime = createRuntime([], environmentCalls);
@@ -252,7 +252,6 @@ describe('tools/git/tool', () => {
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'invalid_arguments',
     );
-    manifest.git = { policy: { unknown: 'allow' } };
     for (const argv of [
       ['worktree'],
       ['worktree', 'add', '../outside', 'main'],
@@ -275,17 +274,15 @@ describe('tools/git/tool', () => {
       );
     }
     await assert.rejects(
-      registry.invoke('git', runtime, ['reset', '--hard', 'HEAD'], {
+      registry.invoke('git', runtime, ['push', '--force', 'origin', 'main'], {
         source: 'command',
         workspaceDir: repositoryDir,
       }),
       (error: unknown) =>
         error instanceof AgentSystemToolError &&
         error.code === 'approval_denied' &&
-        error.message.includes('denied by git.policy.rewrite and git.policy.discard') &&
-        error.message.includes(
-          'operator must set each of git.policy.rewrite and git.policy.discard to allow',
-        ),
+        error.message.includes('denied by git.policy.force-push') &&
+        error.message.includes('operator must set git.policy.force-push to allow'),
     );
     assert.deepEqual(environmentCalls, []);
   });

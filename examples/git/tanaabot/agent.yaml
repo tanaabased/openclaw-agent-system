@@ -26,6 +26,3 @@ git:
 github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
-  policy:
-    admin: allow
-    destructive: allow

@@ -76,7 +76,7 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 - Report missing tool, missing credential, manifest binding, or configured-username mismatch errors directly.
 - Treat an Agent System denial as final for the current manifest: report the policy reason and required manifest change instead of waiting for an interactive decision.
 - Do not work around containment failures with `exec`, direct HTTP, another integration, or a different GitHub identity.
-- Agent System applies the configured destructive, admin, and unknown policy before credentials load. GitHub token permissions remain the underlying provider boundary, so use least-privilege credentials.
+- Agent System applies `github.policy.releases` before credentials load. GitHub token permissions, repository roles, organization policy, and rulesets remain authoritative for remote operations, so use least-privilege credentials.
 
 ## Workflow
 

@@ -3,18 +3,23 @@ import type {
   AgentSystemOperation,
 } from '../../lib/tool-types.ts';
 import { resolveGitPolicyConfiguration, type GitToolConfiguration } from './config-schema.ts';
-import { gitOperationHazards, type GitPolicyHazard } from './operation-classifier.ts';
+import { gitOperationProtections, type GitProtectedOperation } from './operation-classifier.ts';
 
 export interface GitAuthorizationDependencies {
   extensionAvailable?(name: string): Promise<boolean> | boolean;
 }
 
-function policyReferences(hazards: readonly (GitPolicyHazard | 'unknown')[]): string {
-  return hazards.map((hazard) => `git.policy.${hazard}`).join(' and ');
+const policyFields: Record<GitProtectedOperation, string> = {
+  deleteRemoteRef: 'delete-remote-ref',
+  forcePush: 'force-push',
+};
+
+function policyReference(protection: GitProtectedOperation): string {
+  return `git.policy.${policyFields[protection]}`;
 }
 
-function hazardLabel(hazards: readonly (GitPolicyHazard | 'unknown')[]): string {
-  return hazards.join(' and ');
+function protectionLabel(protections: readonly GitProtectedOperation[]): string {
+  return protections.map((protection) => policyFields[protection]).join(' and ');
 }
 
 function policyRemediation(references: readonly string[]): string {
@@ -22,7 +27,7 @@ function policyRemediation(references: readonly string[]): string {
   return `To permit this operation, an operator must set ${fields} to allow in agent.yaml and retry.`;
 }
 
-/** Apply the manifest's Git-specific hazard policy after classification. */
+/** Apply explicit Git protections after semantic operation classification. */
 export async function authorizeGitOperation(
   operation: AgentSystemOperation,
   configuration: GitToolConfiguration,
@@ -51,16 +56,32 @@ export async function authorizeGitOperation(
     }
     return { status: 'allowed' };
   }
-  const policy = resolveGitPolicyConfiguration(configuration.git);
-  const hazards: Array<GitPolicyHazard | 'unknown'> =
-    operation.risk === 'destructive' ? gitOperationHazards(operation) : ['unknown'];
-  if (hazards.length === 0) hazards.push('unknown');
-  const denied = hazards.filter((hazard) => policy[hazard] === 'deny');
-  if (denied.length > 0) {
-    const references = denied.map((hazard) => `git.policy.${hazard}`);
+  if (operation.risk === 'unknown') {
     return {
       status: 'denied',
-      reason: `Git ${hazardLabel(denied)} operations are denied by ${policyReferences(denied)}. ${policyRemediation(references)}`,
+      reason:
+        typeof extension === 'string'
+          ? `Git command ${extension} is not a supported built-in command or declared external helper. An operator must declare git.extensions.${extension} as allow before retrying.`
+          : 'The Git operation is not recognized and cannot be authorized.',
+    };
+  }
+  if (operation.risk !== 'destructive') {
+    return { status: 'denied', reason: 'The Git operation cannot be authorized.' };
+  }
+  const protections = gitOperationProtections(operation);
+  if (protections.length === 0) {
+    return {
+      status: 'denied',
+      reason: 'The protected Git operation is missing its required policy selector.',
+    };
+  }
+  const policy = resolveGitPolicyConfiguration(configuration.git);
+  const denied = protections.filter((protection) => policy[protection] === 'deny');
+  if (denied.length > 0) {
+    const references = denied.map(policyReference);
+    return {
+      status: 'denied',
+      reason: `Git ${protectionLabel(denied)} operations are denied by ${references.join(' and ')}. ${policyRemediation(references)}`,
     };
   }
   return { status: 'allowed' };

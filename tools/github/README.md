@@ -10,6 +10,11 @@ preferred GitHub path when an Agent System workspace declares `github`.
 
 [Agent System](../../README.md) · [GitHub notifications channel](../../channels/github/README.md) · [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md)
 
+> [!IMPORTANT]
+> GitHub authorization and server-side protections are authoritative. Agent
+> System adds only the narrow release control documented under
+> [`github.policy`](#githubpolicy).
+
 ## Overview
 
 One shared runtime provides three GitHub interfaces:
@@ -32,8 +37,7 @@ launch the real `gh` executable without a shell.
 - An Agent System workspace manifest with `github` configured
 - A GitHub token in the completed Agent System environment
 
-GitHub token permissions remain the provider authorization boundary. Give each
-agent the least privilege it needs.
+Give each agent the least-privilege token and repository role it needs.
 
 ## Configuration Reference
 
@@ -56,10 +60,6 @@ github:
   host: github.com
   username: tanaabot
   token: GH_TOKEN_TANAABOT
-  policy:
-    destructive: deny
-    admin: deny
-    unknown: deny
   ssh-keys: ~/.ssh/id_ed25519.pub
   ssh-signing-keys:
     path: .agent-system/keys/signing.pub
@@ -102,19 +102,45 @@ username because installation may mutate the configured GitHub account.
 
 ### `github.policy`
 
-| Field         | Values          | Default | Covers                                             |
-| ------------- | --------------- | ------- | -------------------------------------------------- |
-| `destructive` | `allow`, `deny` | `deny`  | Deletes and other irrecoverable operations         |
-| `admin`       | `allow`, `deny` | `deny`  | Privilege, access, repository, and account control |
-| `unknown`     | `allow`, `deny` | `deny`  | Syntax Agent System cannot classify confidently    |
+| Field      | Values          | Default | Covers                                             |
+| ---------- | --------------- | ------- | -------------------------------------------------- |
+| `releases` | `allow`, `deny` | `deny`  | Creating, editing, deleting, or uploading releases |
 
-Read and ordinary write operations are allowed. Known destructive and admin
-operations take precedence over `unknown`; setting `unknown: allow` cannot permit
-a recognized hazard.
+The default needs no manifest entry. Add the field only when this agent should
+be able to mutate releases:
 
-Denied operations identify the controlling policy field and explain that an
-operator must set it to `allow` before retrying. Policy enforcement occurs
-before Agent System resolves the environment or token.
+```yaml
+github:
+  policy:
+    releases: allow
+```
+
+`deny` blocks `gh release create`, `edit`, `delete`, `upload`, and
+`delete-asset`, plus unrecognized future `gh release` subcommands. It also blocks
+non-read requests to GitHub REST release and release-asset routes. Release reads
+through `gh release list` (including its `ls` alias), `gh release view`, and
+`gh release download` remain available. REST `GET` and `HEAD` requests and `POST`
+requests to `.../releases/generate-notes` also remain available.
+
+All other valid `gh` operations pass to GitHub, including repository and issue
+deletion, repository settings, branch and tag mutation, and pull-request merges.
+GitHub groups release mutation with broader repository permissions, so the
+`releases` field fills that narrower authorization gap. Control other operations
+through the agent's GitHub token, repository role, organization policy, and
+rulesets. Omit the GitHub `Administration` permission when an agent must not
+change repository settings or delete repositories. Use required reviews and
+branch or tag
+[rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+to govern merges and ref mutation. Enable
+[immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
+when published release tags and assets must remain fixed. See GitHub's
+[fine-grained token permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
+for the current provider contract. A local `allow` cannot override a provider
+denial.
+
+A release denial identifies `github.policy.releases` and tells the operator how
+to opt in. Enforcement occurs before Agent System resolves the environment or
+token. Risk labels remain audit metadata and do not authorize operations.
 
 ### `github.config`
 
@@ -184,8 +210,8 @@ openclaw as tool gh --agent tanaabot -- api user --jq .login
 Arguments after `--` pass to `gh` unchanged. Child standard output and error pass
 through directly, and the child exit code is preserved. The runtime blocks token
 display, authentication or generated-config mutation, aliases, extensions, and
-browser or editor launch paths. These containment rules complement GitHub token
-permissions; they do not replace them.
+browser or editor launch paths. These are non-configurable Agent System
+invariants, not operation policy.
 
 ## Shim
 
