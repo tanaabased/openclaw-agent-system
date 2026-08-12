@@ -158,7 +158,8 @@ export default class GitHubNotificationAssignmentOrchestrator {
         continue;
       }
       if (action.kind === 'retire-session') {
-        if (!observation.worktree) {
+        const worktree = observation.worktree;
+        if (!worktree) {
           throw new GitHubNotificationAssignmentOrchestratorError(
             'github-notification-retirement-worktree-missing',
             'The notification session could not be retired without its deterministic worktree.',
@@ -167,13 +168,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
         await this.#requestRetirement(state, itemKey, action.reasonCode);
         const checkpoint = this.#boundary(state, itemKey);
         if (!checkpoint) return;
-        await this.#dependencies.sessions.retire({
-          agentId,
-          ...checkpoint,
-          signal,
-          worktree: observation.worktree,
-          workspaceDir: state.workspaceDir,
-        });
+        await this.#sessionBoundary(
+          'github-notification-session-retirement-failed',
+          'The notification session could not be retired.',
+          () =>
+            this.#dependencies.sessions.retire({
+              agentId,
+              ...checkpoint,
+              signal,
+              worktree,
+              workspaceDir: state.workspaceDir,
+            }),
+        );
         continue;
       }
       if (action.kind === 'prepare-worktree') {
@@ -230,13 +236,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
           ))
         )
           continue;
-        const session = await this.#dependencies.sessions.prepare({
-          agentId,
-          ...checkpoint,
-          signal,
-          worktree,
-          workspaceDir: state.workspaceDir,
-        });
+        const session = await this.#sessionBoundary(
+          'github-notification-session-prepare-failed',
+          'The notification session could not be prepared.',
+          () =>
+            this.#dependencies.sessions.prepare({
+              agentId,
+              ...checkpoint,
+              signal,
+              worktree,
+              workspaceDir: state.workspaceDir,
+            }),
+        );
         await this.#checkpointSession(state, itemKey, session);
         continue;
       }
@@ -255,13 +266,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
         ))
       )
         continue;
-      const session = await this.#dependencies.sessions.dispatchBriefing({
-        agentId,
-        ...checkpoint,
-        signal,
-        worktree,
-        workspaceDir: state.workspaceDir,
-      });
+      const session = await this.#sessionBoundary(
+        'github-notification-briefing-dispatch-failed',
+        'The notification briefing could not be dispatched.',
+        () =>
+          this.#dependencies.sessions.dispatchBriefing({
+            agentId,
+            ...checkpoint,
+            signal,
+            worktree,
+            workspaceDir: state.workspaceDir,
+          }),
+      );
       await this.#checkpointSession(state, itemKey, session);
     }
     throw new GitHubNotificationAssignmentOrchestratorError(
@@ -306,14 +322,19 @@ export default class GitHubNotificationAssignmentOrchestrator {
           : {}),
       };
     }
-    const session = await this.#dependencies.sessions.inspect({
-      agentId,
-      delivery,
-      item,
-      signal,
-      worktree,
-      workspaceDir,
-    });
+    const session = await this.#sessionBoundary(
+      'github-notification-session-inspection-failed',
+      'The notification session could not be inspected.',
+      () =>
+        this.#dependencies.sessions.inspect({
+          agentId,
+          delivery,
+          item,
+          signal,
+          worktree,
+          workspaceDir,
+        }),
+    );
     return {
       authority,
       ...(item.disposition === 'retired'
@@ -347,6 +368,19 @@ export default class GitHubNotificationAssignmentOrchestrator {
       authority.reasonCode ?? 'github-notification-authority-revoked',
     );
     return false;
+  }
+
+  async #sessionBoundary<T>(
+    code: string,
+    message: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof GitHubNotificationAssignmentOrchestratorError) throw error;
+      throw new GitHubNotificationAssignmentOrchestratorError(code, message, { cause: error });
+    }
   }
 
   async #requestRetirement(

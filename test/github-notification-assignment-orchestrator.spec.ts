@@ -129,12 +129,12 @@ describe('lib/github-notification-assignment-orchestrator', () => {
       orchestrator.reconcile('tanaabot', itemKey),
       (error: unknown) =>
         error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-delivery-failed',
+        error.code === 'github-notification-briefing-dispatch-failed',
     );
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'briefing-running');
     assert.equal(
       store.state().items[itemKey]?.delivery?.failureCode,
-      'github-notification-delivery-failed',
+      'github-notification-briefing-dispatch-failed',
     );
 
     await orchestrator.reconcile('tanaabot', itemKey);
@@ -142,6 +142,64 @@ describe('lib/github-notification-assignment-orchestrator', () => {
     assert.equal(briefingDispatches, 1);
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
     assert.equal(store.state().items[itemKey]?.delivery?.failureCode, undefined);
+  });
+
+  it('should retain a value-free session preparation diagnostic', async () => {
+    const store = memoryStore();
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        dispatchBriefing: async () => activeSession,
+        inspect: async () => undefined,
+        async prepare() {
+          throw new Error('host detail that must not become the diagnostic code');
+        },
+        retire: async () => ({ ...activeSession, status: 'retired' }),
+      },
+      stateStore: store,
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-session-prepare-failed' &&
+        error.message === 'The notification session could not be prepared.',
+    );
+    assert.equal(
+      store.state().items[itemKey]?.delivery?.failureCode,
+      'github-notification-session-prepare-failed',
+    );
+  });
+
+  it('should retain a value-free session inspection diagnostic', async () => {
+    const store = memoryStore();
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        dispatchBriefing: async () => activeSession,
+        async inspect() {
+          throw new Error('restricted gateway detail that must not become the diagnostic code');
+        },
+        prepare: async () => readySession,
+        retire: async () => ({ ...activeSession, status: 'retired' }),
+      },
+      stateStore: store,
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-session-inspection-failed' &&
+        error.message === 'The notification session could not be inspected.',
+    );
+    assert.equal(
+      store.state().items[itemKey]?.delivery?.failureCode,
+      'github-notification-session-inspection-failed',
+    );
   });
 
   it('should adopt a prepared worktree after its checkpoint write failed', async () => {
@@ -376,7 +434,12 @@ describe('lib/github-notification-assignment-orchestrator', () => {
       worktrees: { inspect: async () => worktree, prepare: async () => worktree },
     });
 
-    await assert.rejects(orchestrator.reconcile('tanaabot', itemKey));
+    await assert.rejects(
+      orchestrator.reconcile('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-session-retirement-failed',
+    );
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
 

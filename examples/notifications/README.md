@@ -81,6 +81,7 @@ cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "unchanged")'
 
 # should remove the owned route and converged private monitor state
+cd "$TMPDIR/agent-system-notifications"
 cp "$GITHUB_WORKSPACE/examples/notifications/disabled-agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "removed")'

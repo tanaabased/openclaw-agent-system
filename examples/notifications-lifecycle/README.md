@@ -123,6 +123,16 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25
       break
     fi
   fi
+  if ! doctor_output="$(cd "$TMPDIR/agent-system-notifications" && openclaw agent-system doctor --json)"; then
+    printf '%s\n' "$doctor_output"
+    tail -n 160 "$TMPDIR/gateway.log"
+    exit 1
+  fi
+  if printf '%s\n' "$doctor_output" | jq -e '.findings[] | select(.component == "github-notifications" and (.code | endswith("-failed")))' > /dev/null; then
+    printf '%s\n' "$doctor_output"
+    tail -n 160 "$TMPDIR/gateway.log"
+    exit 1
+  fi
   if test "$attempt" = 72; then
     openclaw sessions --agent notification-data --json
     tail -n 160 "$TMPDIR/gateway.log"

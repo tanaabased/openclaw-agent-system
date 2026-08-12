@@ -1,20 +1,24 @@
 # GitHub Notifications Plan
 
-Status: Phases 0 and 1, Phase 2A through 2E repository behavior, and the Phase 2
-installed scenario are implemented; Phase 2 GitHub Actions proof and Phases 3
-through 6 remain
+Status: Phases 0 and 1 are implemented. Phase 2B and 2C are implemented, while
+Phase 2A, 2D, and 2E have repository logic but cannot complete their installed
+session behavior until OpenClaw exposes a public plugin-scoped session mutation
+API. Phase 2 proof and Phases 3 through 6 remain.
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
 inspection/reconciliation, typed GitHub monitor, trust admission, private durable
 state, recoverable assignment delivery, trusted managed-worktree preparation,
-and a bounded local-only briefing session with deterministic unit coverage.
+and deterministic unit coverage for a bounded local-only briefing session. The
+installed third-party plugin cannot currently create, patch, inspect, abort, or
+archive that session through a supported public OpenClaw API.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
-Phase 0 routing foundation, Phase 1 read-only discovery, and Phase 2A through 2E
-assignment delivery and retirement described below are implemented; installed
-assignment proof is awaiting GitHub Actions, while work execution and the
-approved-mention conversation bridge remain planned behavior.
+Phase 0 routing foundation, Phase 1 read-only discovery, and the repository-owned
+parts of Phase 2 assignment delivery and retirement described below are
+implemented. The 2026-08-12 installed scenario exposed an OpenClaw host boundary
+that blocks installed assignment delivery before session creation. Work
+execution and the approved-mention conversation bridge remain planned behavior.
 
 ## Recommendation
 
@@ -78,6 +82,36 @@ OpenClaw transcript are never synchronization inputs.
   GitHub-facing response. The published response is intentionally less detailed
   than the local transcript and must be rendered from an explicit bounded
   publishable payload rather than by copying or redacting the transcript.
+
+## Installed Runtime Correction (2026-08-12)
+
+The packed third-party plugin scenario disproved the original Phase 2 session
+assumption. OpenClaw exposes `api.runtime.gateway.request` to bundled or trusted
+official plugins only. Agent System is installed as a third-party package, so
+its calls to `sessions.create`, `sessions.patch`, `sessions.pluginPatch`,
+`sessions.abort`, `sessions.describe`, `sessions.list`, and `chat.history` are
+rejected before the deterministic notification session can be created. The
+presence of those Gateway methods in runtime types does not make them a public
+third-party plugin contract, and unit tests with an injected Gateway fake cannot
+prove installed access.
+
+The current released SDK and current upstream OpenClaw plugin API let a plugin
+register its own session-extension namespace, but they do not expose a public
+way for that plugin to patch extension values on a session. Phase 2 therefore
+requires an upstream, plugin-scoped API before installed delivery can be called
+complete. At minimum, the API must let the current plugin patch only its own
+registered namespace. Any session create/adopt, inspect, abort, or archive
+operations used here must likewise be public and scoped so the caller cannot
+impersonate another plugin or mutate arbitrary session state.
+
+Do not work around this boundary by editing session storage or
+`pluginExtensions` directly, importing private OpenClaw modules, spawning the
+Gateway CLI, presenting Agent System as an official plugin, or weakening the
+installed scenario. When the supported seam exists, replace the notification
+session adapter's generic Gateway requests with that public surface, retain the
+channel-kernel inbound turn and no-tools boundary, and prove the result from a
+packed third-party installation. Until a supported archive or abort surface is
+available, retirement remains logical and preserves the transcript.
 
 ## MVP Outcome
 
@@ -568,12 +602,13 @@ Tests use synthetic canary secrets to prove that known token and key forms,
 values already held by the writer, and secret-derived content cannot reach the
 provider adapter, logs, diagnostics, authorization records, or durable control state.
 
-The pinned SDK exposes channel inbound routing, long-lived plugin services, and
-trusted Gateway methods for creating and patching sessions, including label,
-plugin metadata, abort, and archive fields. Its `spawnedCwd` and
-`spawnedWorkspaceDir` patches are restricted to `subagent:*` and `acp:*`
-lineage, so they cannot bind this ordinary routed channel session to a cwd. The
-session adapter must use the supported fallback:
+The pinned SDK exposes channel inbound routing and long-lived plugin services,
+but it does not expose the plugin-scoped session mutation needed by this
+third-party plugin. The broader Gateway request helper is restricted to bundled
+or trusted official plugins. Native `spawnedCwd` and `spawnedWorkspaceDir`
+fields are also restricted to `subagent:*` and `acp:*` lineage, so they cannot
+bind this ordinary routed channel session to a cwd. Once the missing public
+session seam exists, the session adapter must use this fallback:
 
 - project worktree and issue metadata through a plugin session extension and
   pass the projected path explicitly as cwd to later Agent System tool calls;
@@ -675,13 +710,13 @@ responses and no local work is created.
 
 Goal: complete the core MVP user experience.
 
-#### Phase 2A: Prove the Installed Session Contract (repository seams and installed scenario implemented; GitHub Actions proof pending)
+#### Phase 2A: Prove the Installed Session Contract (blocked on OpenClaw API)
 
 - Add a narrow session adapter around supported public OpenClaw surfaces rather
   than reading or rewriting session files directly.
 - Prove that the channel kernel can create or adopt the exact deterministic
-  routed session and that the trusted plugin Gateway runtime can set its label,
-  patch a plugin-owned metadata namespace, abort an active briefing, and archive
+  routed session and that a public plugin-scoped API can set its label, patch the
+  caller's registered metadata namespace, abort an active briefing, and archive
   a retired session without deleting its transcript.
 - Prove that the channel inbound kernel can record the GitHub provenance and
   start one immediate local turn with a stable provider event id. Do not use a
@@ -692,15 +727,14 @@ Goal: complete the core MVP user experience.
   tool calls because native cwd fields reject ordinary channel sessions. Use
   logical retirement if native archive is unavailable.
 
-The pinned SDK currently exposes trusted `sessions.patch`,
-`sessions.pluginPatch`, and `sessions.abort` Gateway methods plus the public
-channel inbound runtime. The assembled inbound contract carries
-`disableTools: true` and an empty per-turn `toolsAllow`, while the synthetic
-channel has no outbound adapter and the session uses `sendPolicy: deny`.
-`sessions.send` is not suitable for this automated briefing because it cannot
-carry the required per-turn tool restriction. The owning Leia scenario now
-exercises these installed shapes; its GitHub Actions result is the remaining
-proof.
+The repository adapter and its injected unit-test boundary exist, but installed
+proof showed that the Gateway request helper used by that adapter rejects this
+third-party plugin. Phase 2A resumes only after the adapter has no dependency on
+generic `runtime.gateway.request` for notification session lifecycle. The
+assembled inbound contract must continue to carry `disableTools: true` and an
+empty per-turn `toolsAllow`; the synthetic channel must have no outbound
+adapter, and the session must use `sendPolicy: deny`. A packed installed scenario
+must prove those constraints through the eventual public API.
 
 #### Phase 2B: Expose Trusted Worktree Preparation (implemented)
 
@@ -741,7 +775,7 @@ proof.
   metadata, and briefing idempotency key before deciding whether to resume.
   Never infer completion from a stale local stage alone.
 
-#### Phase 2D: Deliver the Bounded Briefing (repository behavior and installed scenario implemented; GitHub Actions proof pending)
+#### Phase 2D: Deliver the Bounded Briefing (repository behavior implemented; installed delivery blocked)
 
 - After admission, fetch a separate bounded canonical briefing projection with
   the title, URL, body excerpt, labels, and milestone summary. Keep all textual
@@ -767,16 +801,17 @@ proof.
   provider event id and session transcript before retrying, never create another
   briefing speculatively.
 
-Implemented delivery reuses the Phase 2C orchestrator and optimized private
-state codec. The monitor reconciles persisted nonterminal assignments before a
-normal poll is due, while honoring failure backoff, and introduces no second
-delivery queue or state store. The production adapter rechecks canonical GitHub
-authority, uses only the trusted managed-worktree service, creates or adopts the
-exact routed session through the trusted Gateway runtime, and sends one bounded
-local-only no-tools briefing. The owning installed scenario is implemented, and
-its GitHub Actions result remains Phase 2F work.
+Implemented repository behavior reuses the Phase 2C orchestrator and optimized
+private state codec. The monitor reconciles persisted nonterminal assignments
+before a normal poll is due, while honoring failure backoff, and introduces no
+second delivery queue or state store. It rechecks canonical GitHub authority and
+uses only the trusted managed-worktree service, but its production session
+adapter stops at the unsupported Gateway boundary before it can create or adopt
+the routed session. Do not describe the briefing as delivered until that adapter
+uses a public plugin-scoped API and the packed installed scenario records exactly
+one local-only no-tools briefing.
 
-#### Phase 2E: Retirement and Failure Recovery (implemented)
+#### Phase 2E: Retirement and Failure Recovery (repository behavior implemented; installed session retirement blocked)
 
 - Recheck assignment, repository, permission, and route authority immediately
   before each side effect, not only at the beginning of the polling cycle.
@@ -794,7 +829,10 @@ its GitHub Actions result remains Phase 2F work.
 #### Phase 2F: Proof and Documentation (partially implemented)
 
 Unit coverage, documentation, and the installed assignment scenario are
-implemented; GitHub Actions proof is pending.
+implemented. The scenario now proves the unsupported third-party Gateway
+boundary, so the installed exit criteria are not met. It should fail quickly
+with a stable, value-free stage diagnostic until the public session seam and
+adapter migration are complete.
 
 - Add focused unit tests for the trusted worktree adapter, transition planner,
   orchestrator, session adapter, bounded briefing builder, tool restriction,
