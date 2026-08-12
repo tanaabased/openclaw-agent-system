@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added `openclaw agent-system notifications poll` over the background monitor's state and per-agent lock. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
+- Added `openclaw agent-system notifications refresh` over the background monitor's state and cross-process per-agent lease. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
 - Added approved assignment delivery into one managed worktree and one host-routed local no-tools session. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
 - Added the local-only `agent-system-github` channel, receipt-backed routing, and trust-gated assignment polling. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
 

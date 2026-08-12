@@ -9,5 +9,5 @@ environment:
 
 github:
   host: github.com
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
+  username: emoriwan
+  token: GH_TOKEN_EMORI

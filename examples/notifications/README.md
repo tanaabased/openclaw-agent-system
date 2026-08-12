@@ -61,16 +61,7 @@ openclaw agents bindings --json | grep -F 'agent-system-github' | grep -F 'notif
 ```bash
 # should complete one authenticated empty baseline without creating local work
 cd "$TMPDIR/agent-system-notifications"
-for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
-  if openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "github-notifications" and .code == "github-notification-monitor-healthy")'; then
-    break
-  fi
-  if test "$attempt" = 18; then
-    tail -n 120 "$TMPDIR/gateway.log"
-    exit 1
-  fi
-  sleep 5
-done
+openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
 ```

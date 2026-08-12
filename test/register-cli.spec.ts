@@ -50,7 +50,11 @@ function createProgram() {
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
-    notificationPoll: [] as Array<{ agentId?: string; forceInterval?: boolean }>,
+    notificationRefresh: [] as Array<{
+      agentId?: string;
+      bypassInterval?: boolean;
+      waitForLeaseMs?: number;
+    }>,
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -147,11 +151,11 @@ function createProgram() {
     },
     notificationMonitorService: {
       async runOnce(options = {}) {
-        const pollOptions = 'aborted' in options ? {} : options;
-        calls.notificationPoll.push(pollOptions);
+        const refreshOptions = 'aborted' in options ? {} : options;
+        calls.notificationRefresh.push(refreshOptions);
         return [
           {
-            agentId: pollOptions.agentId ?? 'tanaabot',
+            agentId: refreshOptions.agentId ?? 'tanaabot',
             approved: 1,
             baseline: 0,
             code: 'github-notification-poll-complete',
@@ -201,6 +205,12 @@ describe('lib/register-cli', () => {
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
       ['validate', 'env', 'doctor', 'notifications', 'tool', 'credentials', 'install'],
+    );
+    assert.deepEqual(
+      command?.commands
+        .find((subcommand) => subcommand.name() === 'notifications')
+        ?.commands.map((subcommand) => subcommand.name()),
+      ['refresh'],
     );
   });
 
@@ -342,7 +352,7 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.workspace, ['/current']);
   });
 
-  it('should manually poll notifications for the current workspace agent', async () => {
+  it('should manually refresh notifications for the current workspace agent', async () => {
     const { calls, output, program } = createProgram();
 
     await program.parseAsync([
@@ -350,12 +360,14 @@ describe('lib/register-cli', () => {
       'openclaw',
       'agent-system',
       'notifications',
-      'poll',
+      'refresh',
       '--json',
     ]);
 
     assert.deepEqual(calls.workspace, ['/current']);
-    assert.deepEqual(calls.notificationPoll, [{ agentId: 'tanaabot', forceInterval: true }]);
+    assert.deepEqual(calls.notificationRefresh, [
+      { agentId: 'tanaabot', bypassInterval: true, waitForLeaseMs: 120_000 },
+    ]);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
   });
 

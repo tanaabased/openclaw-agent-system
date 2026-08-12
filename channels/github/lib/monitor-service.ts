@@ -13,6 +13,7 @@ import {
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
 import type NotificationRoutingService from './routing-service.ts';
+import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
 import GitHubWorkEventClient from './work-event-client.ts';
@@ -26,6 +27,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
   };
   clock?: () => number;
+  cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   random?: () => number;
@@ -37,8 +39,9 @@ export interface GitHubNotificationMonitorServiceDependencies {
 
 export interface GitHubNotificationMonitorRunOptions {
   agentId?: string;
-  forceInterval?: boolean;
+  bypassInterval?: boolean;
   signal?: AbortSignal;
+  waitForLeaseMs?: number;
 }
 
 export interface GitHubNotificationMonitorRunResult {
@@ -164,18 +167,70 @@ export default class GitHubNotificationMonitorService {
   ): Promise<GitHubNotificationMonitorRunResult> {
     const existing = this.#inFlight.get(agentId);
     if (existing) return existing;
-    const current = this.#executeAgent(agentId, options).finally(() => {
+    const current = this.#runAgentWithLease(agentId, options).finally(() => {
       if (this.#inFlight.get(agentId) === current) this.#inFlight.delete(agentId);
     });
     this.#inFlight.set(agentId, current);
     return current;
   }
 
+  async #runAgentWithLease(
+    agentId: string,
+    options: GitHubNotificationMonitorRunOptions,
+  ): Promise<GitHubNotificationMonitorRunResult> {
+    let acquisition;
+    try {
+      acquisition = await this.#dependencies.cycleLeaseStore.acquire(agentId, {
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.waitForLeaseMs === undefined ? {} : { waitMs: options.waitForLeaseMs }),
+      });
+    } catch {
+      this.#dependencies.logger.warn(
+        `github-notifications: cycle lease failed agent=${agentId} code=github-notification-cycle-lease-failed`,
+      );
+      return {
+        agentId,
+        code: 'github-notification-cycle-lease-failed',
+        status: 'failed',
+      };
+    }
+    if (acquisition.status !== 'acquired') {
+      return {
+        agentId,
+        code:
+          acquisition.status === 'aborted'
+            ? 'github-notification-cycle-aborted'
+            : 'github-notification-cycle-busy',
+        status: 'skipped',
+      };
+    }
+    let result: GitHubNotificationMonitorRunResult;
+    try {
+      result = await this.#executeAgent(agentId, options);
+    } catch (error) {
+      await acquisition.lease.release().catch(() => undefined);
+      throw error;
+    }
+    try {
+      await acquisition.lease.release();
+    } catch {
+      this.#dependencies.logger.warn(
+        `github-notifications: cycle lease release failed agent=${agentId} code=github-notification-cycle-lease-release-failed`,
+      );
+      return {
+        agentId,
+        code: 'github-notification-cycle-lease-release-failed',
+        status: 'failed',
+      };
+    }
+    return result;
+  }
+
   async #executeAgent(
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
   ): Promise<GitHubNotificationMonitorRunResult> {
-    const { forceInterval = false, signal } = options;
+    const { bypassInterval = false, signal } = options;
     let workspaceDir: string | undefined;
     try {
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
@@ -209,7 +264,8 @@ export default class GitHubNotificationMonitorService {
       }
       const pendingItemKeys = pendingDeliveryItemKeys(current);
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
-      const pollDeferred = intervalDeferred && (!forceInterval || (current?.failureCount ?? 0) > 0);
+      const pollDeferred =
+        intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
       if (pollDeferred && (pendingItemKeys.length === 0 || (current?.failureCount ?? 0) > 0)) {
         return {
           agentId,

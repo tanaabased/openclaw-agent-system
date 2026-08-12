@@ -8,7 +8,9 @@ import {
 } from '../lib/cli-output.ts';
 import { type Logger, reportManifestFailure } from '../lib/logger.ts';
 
-export interface PollNotificationsAgentSystemOptions {
+const notificationRefreshLeaseWaitMs = 120_000;
+
+export interface RefreshNotificationsAgentSystemOptions {
   agentId?: string;
   json: boolean;
   logger: Logger;
@@ -20,9 +22,9 @@ export interface PollNotificationsAgentSystemOptions {
   workspaceDir: string;
 }
 
-/** Run the installed notification monitor once while retaining active failure backoff. */
-export default async function pollNotificationsAgentSystem(
-  options: PollNotificationsAgentSystemOptions,
+/** Run one notification intake cycle while retaining active failure backoff. */
+export default async function refreshNotificationsAgentSystem(
+  options: RefreshNotificationsAgentSystemOptions,
 ): Promise<void> {
   const manifest = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
@@ -35,10 +37,11 @@ export default async function pollNotificationsAgentSystem(
 
   const [result] = await options.monitorService.runOnce({
     agentId: manifest.manifest.agent.id,
-    forceInterval: true,
+    bypassInterval: true,
+    waitForLeaseMs: notificationRefreshLeaseWaitMs,
   });
   if (!result) {
-    options.logger.error('github-notifications: manual poll returned no result');
+    options.logger.error('github-notifications: manual refresh returned no result');
     options.setExitCode(1);
     return;
   }

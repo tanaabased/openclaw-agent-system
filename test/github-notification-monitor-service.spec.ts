@@ -32,6 +32,14 @@ function loadedManifest(loaded: AgentManifest = manifest) {
   };
 }
 
+function availableCycleLeaseStore(release = async () => undefined) {
+  return {
+    async acquire() {
+      return { lease: { release }, status: 'acquired' as const };
+    },
+  };
+}
+
 describe('channels/github/lib/monitor-service', () => {
   it('should reconcile persisted delivery backlog before the next remote poll', async () => {
     let connected = 0;
@@ -53,6 +61,7 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
@@ -94,6 +103,7 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
@@ -149,6 +159,7 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
@@ -216,6 +227,7 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest(disabledManifest) },
       readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
@@ -258,6 +270,7 @@ describe('channels/github/lib/monitor-service', () => {
       },
       assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 10_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
@@ -285,7 +298,7 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(warnings.every((message) => !message.includes('private provider detail')));
   });
 
-  it('should let a manual poll bypass only the ordinary interval deadline', async () => {
+  it('should let a manual refresh bypass only the ordinary interval deadline', async () => {
     let connected = 0;
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
@@ -301,6 +314,7 @@ describe('channels/github/lib/monitor-service', () => {
       },
       assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
@@ -317,14 +331,14 @@ describe('channels/github/lib/monitor-service', () => {
       },
     });
 
-    const [result] = await service.runOnce({ agentId: 'tanaabot', forceInterval: true });
+    const [result] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
 
     assert.equal(connected, 1);
     assert.equal(result?.status, 'failed');
     assert.equal(result?.code, 'github-account-identity-failed');
   });
 
-  it('should preserve active failure backoff for a manual poll', async () => {
+  it('should preserve active failure backoff for a manual refresh', async () => {
     let connected = 0;
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
@@ -341,6 +355,7 @@ describe('channels/github/lib/monitor-service', () => {
       },
       assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
@@ -357,12 +372,49 @@ describe('channels/github/lib/monitor-service', () => {
       },
     });
 
-    const [result] = await service.runOnce({ agentId: 'tanaabot', forceInterval: true });
+    const [result] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
 
     assert.equal(connected, 0);
     assert.deepEqual(result, {
       agentId: 'tanaabot',
       code: 'github-notification-backoff-active',
+      status: 'skipped',
+    });
+  });
+
+  it('should skip a cycle held by another process before reading agent state', async () => {
+    let manifests = 0;
+    const service = new GitHubNotificationMonitorService({
+      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+      assignmentOrchestrator: { reconcile: async () => undefined },
+      cycleLeaseStore: { acquire: async () => ({ status: 'busy' }) },
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: {
+        async loadForAgentId() {
+          manifests += 1;
+          return loadedManifest();
+        },
+      },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => undefined,
+        write: async () => undefined,
+      },
+    });
+
+    const [result] = await service.runOnce({ agentId: 'tanaabot' });
+
+    assert.equal(manifests, 0);
+    assert.deepEqual(result, {
+      agentId: 'tanaabot',
+      code: 'github-notification-cycle-busy',
       status: 'skipped',
     });
   });

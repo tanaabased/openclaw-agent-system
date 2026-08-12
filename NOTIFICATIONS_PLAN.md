@@ -2,13 +2,13 @@
 
 Status: Notifications MVP 1 is the scope of the current `pirog-notifications`
 branch. Its manifest, installation, routing, polling, baseline, trust-admission,
-state, worktree, channel-owned session delivery, and one-shot manual poll command
+state, worktree, channel-owned session delivery, and one-shot manual refresh command
 are implemented. The remaining MVP gate is packed third-party installation proof
 in the GitHub Actions-only lifecycle scenario. Notifications 2 is reserved for
 the future `pirog-notifications-2` branch.
 
 At the current working-tree snapshot, `bun run lint`, `bun run typecheck`,
-`bun run test` (537 passing), `bun run build`, `bun run plugin:check`, and
+`bun run test` (541 passing), `bun run build`, `bun run plugin:check`, and
 `bun run test:release` (16 passing) are green. Leia scenarios remain GitHub
 Actions-only and have not yet validated the redesigned installed lifecycle.
 
@@ -16,7 +16,7 @@ Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
 inspection/reconciliation, typed GitHub monitor, trust admission, private durable
 state, at-most-once assignment delivery, trusted managed-worktree preparation,
-manual polling, and deterministic unit coverage for a bounded local-only
+manual refresh, and deterministic unit coverage for a bounded local-only
 briefing session. Session recording and lazy creation use OpenClaw's supported
 channel inbound lifecycle; Agent System does not call protected Gateway RPCs.
 
@@ -38,16 +38,16 @@ The current branch owns only this required product path:
    to five minutes.
 2. `openclaw agent-system install` reconciles the owned local-only channel
    account and exact agent binding, then the Gateway starts the agent's monitor.
-3. The first successful poll records a safe baseline without creating local
-   work for assignments that already existed.
+3. The first successful poll records a safe baseline of currently open assigned
+   work without creating local work for assignments that already existed.
 4. Later polls discover a new GitHub issue assignment to the authenticated
    agent and admit it only when the assignment actor is approved, the canonical
    repository is eligible, and the agent has effective write permission.
 5. One admitted assignment creates or reuses exactly one managed worktree and
    one issue-scoped local OpenClaw session. The session receives a bounded
    assignment intake message and remains local-only.
-6. The background interval and the explicit one-shot poll command use the same
-   lock, provider client, baseline, state, admission, and delivery path.
+6. The background interval and the explicit one-shot refresh command use the same
+   cross-process lease, provider client, baseline, state, admission, and delivery path.
 
 MVP 1 ends when the new assignment has a durable worktree/session correlation.
 It does not require later issue or pull-request conversation, completion,
@@ -87,7 +87,7 @@ supported, even when their unit tests already pass in this branch.
 
 ### Remaining Work for MVP 1
 
-Prove background and manual polling from a packed third-party installation:
+Prove background polling and manual refresh from a packed third-party installation:
 baseline, approved assignment, unauthorized assignment, one worktree, one
 session, and no GitHub write.
 
@@ -216,8 +216,8 @@ For each configured agent, the Gateway will:
   channel account and exact agent binding;
 - poll GitHub for work assigned to the authenticated agent, with five minutes
   as the default interval;
-- let an operator run one immediate poll through
-  `openclaw agent-system notifications poll` without creating a second polling
+- let an operator run one immediate intake cycle through
+  `openclaw agent-system notifications refresh` without creating a second polling
   or delivery implementation;
 - verify the token's GitHub identity on every polling cycle before consuming
   repository data;
@@ -364,13 +364,13 @@ MVP 1 has no cleanup options. Existing logical-retirement behavior is retained
 as implemented-ahead code, but its product contract and cleanup controls belong
 to Notifications 2.
 
-## Manual Poll Command (Notifications MVP 1)
+## Manual Refresh Command (Notifications MVP 1)
 
 Add one explicit command for CI, diagnosis, and operators who do not want to
 wait for the next configured interval:
 
 ```text
-openclaw agent-system notifications poll [--agent <id>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--json]
 ```
 
 The command contract is:
@@ -382,8 +382,8 @@ The command contract is:
 - use the same provider client, baseline, state store, trust admission,
   worktree/session delivery coordinator, and per-agent lock as the background
   monitor;
-- if a poll is already running, await that bounded cycle and report its result
-  rather than starting an overlapping request;
+- if another process owns the agent's cycle, wait up to two minutes for the
+  private lease before returning a stable busy result rather than overlapping it;
 - bypass only the normal interval deadline, while continuing to honor provider
   rate-limit instructions, active backoff, cancellation, and every trust gate;
 - establish the ordinary safe baseline on first use and never treat a manual
@@ -832,7 +832,7 @@ Goal: discover and classify events without creating sessions or worktrees.
 - Add immutable actor admission and self-event suppression.
 - Add a private atomic state store with symlink and permission checks.
 - Register one long-lived Gateway plugin service with clean abort/stop behavior.
-- Add the MVP 1 `notifications poll` command as a one-shot trigger over that
+- Add the MVP 1 `notifications refresh` command as a one-shot trigger over that
   same monitor cycle, state, and per-agent serialization boundary.
 - Report value-free status through logs and `doctor`; add a read-only
   `notifications status` CLI only if it materially improves diagnosis.
@@ -961,7 +961,7 @@ scenario to record exactly one local-only no-tools briefing.
 
 #### Phase 2F: MVP 1 Proof and Documentation (repository work implemented; remote proof pending)
 
-Repository unit coverage, the manual poll command, and the installed assignment
+Repository unit coverage, the manual refresh command, and the installed assignment
 scenario are implemented. The scenario has been updated for the channel-owned
 session contract and must pass in GitHub Actions before the installed exit
 criteria are met.
@@ -974,7 +974,7 @@ criteria are met.
   a session.
 - Extend the existing GitHub Actions-only notifications scenario to prove one
   approved issue assignment creates one managed worktree and one local session,
-  the manual poll uses the same path as the background monitor, an unauthorized
+  the manual refresh uses the same path as the background monitor, an unauthorized
   assignment creates neither resource, and no GitHub write occurs.
 - Update channel and Git worktree documentation only for behavior that is
   implemented, and record the delivered phase in the changelog at release time.
@@ -1151,7 +1151,7 @@ repository. Prove:
 - manifest install creates only the non-secret channel account and exact
   account-scoped binding, and manifest removal removes only owned state;
 - an approved issue assignment creates one worktree and session;
-- an explicit `notifications poll` reaches the same result without waiting for
+- an explicit `notifications refresh` reaches the same result without waiting for
   the background interval and cannot overlap an active monitor cycle;
 - unauthorized assignment fails closed;
 - a repository with insufficient agent permission or a disallowed owner creates
@@ -1192,7 +1192,7 @@ credentials from another entry.
   orchestration without duplicating it.
 - `lib/`: own global channel/binding lifecycle reconciliation, polling,
   work-item orchestration, session routing, state coordination, and diagnostics.
-- `cli/`: own the `notifications poll` command while delegating its cycle to the
+- `cli/`: own the `notifications refresh` command while delegating its cycle to the
   same monitor service used by the Gateway.
 - `test/`: add flat behavior-focused Mocha specs.
 - `examples/`: add the installed assignment lifecycle only when implementation

@@ -161,7 +161,7 @@ export default class GitHubWorkEventClient {
           'GET',
           '/search/issues',
           '-f',
-          `q=assignee:${this.identity.login} updated:>=${updatedSince}`,
+          `q=assignee:${this.identity.login} state:open updated:>=${updatedSince}`,
           '-F',
           `per_page=${pageSize}`,
           '-F',

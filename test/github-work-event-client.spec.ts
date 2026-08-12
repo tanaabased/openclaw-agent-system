@@ -76,7 +76,9 @@ describe('channels/github/lib/work-event-client', () => {
     assert.equal(requests.length, 2);
     assert.ok(requests.every((argv) => argv.slice(0, 3).join(' ') === 'api --include --method'));
     assert.ok(
-      requests.every((argv) => argv.some((value) => value.startsWith('q=assignee:tanaabot'))),
+      requests.every((argv) =>
+        argv.includes('q=assignee:tanaabot state:open updated:>=2026-08-11T11:55:00.000Z'),
+      ),
     );
   });
 

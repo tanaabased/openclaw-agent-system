@@ -16,7 +16,7 @@ github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   notifications:
-    interval-minutes: 1
+    interval-minutes: 60
     approved-actors:
       - login: emoriwan
         node-id: U_kgDOEUqvpg

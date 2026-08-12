@@ -20,7 +20,7 @@ The current release provides the channel, routing, trust core, and local assignm
 - one exact account-scoped binding back to that agent and workspace
 - private receipt-backed ownership, repair, and cleanup
 - a long-lived, stoppable Gateway service with per-agent polling and backoff
-- an explicit `notifications poll` command over the same monitor and per-agent lock
+- an explicit `notifications refresh` command over the same monitor and cross-process lease
 - account identity verification on every poll
 - account-wide assigned issue and pull-request discovery with a first-run baseline
 - bounded pagination, overlap, replay deduplication, and truncation diagnostics
@@ -122,7 +122,7 @@ From the agent workspace:
 openclaw agent-system validate
 openclaw agent-system install
 openclaw agent-system doctor
-openclaw agent-system notifications poll --json
+openclaw agent-system notifications refresh --json
 ```
 
 `install` adds or repairs only the non-secret `agent-system-github` account and
@@ -137,8 +137,9 @@ that a manual Gateway restart is required.
 
 ## Runtime Monitoring
 
-The Gateway establishes a baseline from the account's currently assigned items
-on first activation. Existing assignments are not admitted retroactively. Later
+The Gateway establishes a baseline from the account's currently open assigned
+items on first activation. Closed historical work is excluded, and existing
+assignments are not admitted retroactively. Later
 polls use an overlapping update window and immutable event-id deduplication,
 then recheck each approved item directly so closure, unassignment, repository
 archival or transfer, owner-allowlist drift, deletion, and permission loss retire
@@ -155,11 +156,15 @@ controls can defer the next poll, and transient failures use exponential backoff
 Polls never overlap for the same agent. Stopping the plugin service aborts its
 timer and any active GitHub CLI child process.
 
-`openclaw agent-system notifications poll [--agent <id>] [--json]` joins the same
-per-agent monitor cycle. It bypasses only the configured interval; active
+`openclaw agent-system notifications refresh [--agent <id>] [--json]` runs one
+complete intake cycle through the same monitor and private cross-process
+per-agent lease. It waits up to two minutes for an active cycle rather than
+overlapping it. The command bypasses only the configured interval; active
 failure and provider backoff still apply, and first use still establishes the
 ordinary safe baseline. A deferred or failed manual cycle returns a nonzero exit
-code so CI can distinguish it from a completed poll.
+code so CI can distinguish it from a completed refresh. It does not enable the
+background scheduler and is not a read-only fetch: an admitted assignment can
+create its managed worktree and local session.
 
 Delivery state is checkpointed before and after worktree preparation and before
 the channel turn is dispatched. The channel passes `createIfMissing: true` to

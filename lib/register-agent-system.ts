@@ -10,6 +10,7 @@ import { githubNotificationChannel } from '../channels/github/channel.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
+import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
@@ -160,6 +161,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(currentUid === undefined ? {} : { currentUid }),
     ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
   });
+  const notificationMonitorCycleLeaseStore = new GitHubNotificationMonitorCycleLeaseStore({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+  });
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -258,6 +263,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationMonitorService = new GitHubNotificationMonitorService({
     accountClient: githubCapability.accountClient,
     assignmentOrchestrator: notificationAssignmentOrchestrator,
+    cycleLeaseStore: notificationMonitorCycleLeaseStore,
     logger,
     manifestService,
     readConfig: readRuntimeConfig,

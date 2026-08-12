@@ -151,10 +151,10 @@ alias. Bare `agent-system` or `as` prints help.
 
 ### Common Behavior
 
-| Option         | Commands                                                                 | Behavior                                                                 |
-| -------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications poll` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
-| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications poll`             | Writes undecorated structured output.                                    |
+| Option         | Commands                                                                    | Behavior                                                                 |
+| -------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
+| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`             | Writes undecorated structured output.                                    |
 
 Human output uses standard output and honors `NO_COLOR` and `FORCE_COLOR=0`.
 Warnings and failures use the OpenClaw plugin logger on standard error. A failed
@@ -273,19 +273,21 @@ documented in each tool guide. This check covers exec host routing, sandbox mode
 and scope, and elevated execution; it does not certify custom mounts or sandbox
 backend isolation.
 
-### `openclaw agent-system notifications poll`
+### `openclaw agent-system notifications refresh`
 
 Runs one GitHub notification monitor cycle for the current workspace agent or
 an explicitly selected installed agent.
 
 ```text
-openclaw agent-system notifications poll [--agent <id>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--json]
 ```
 
 The command uses the background service's provider client, baseline, private
-state, trust gates, assignment delivery path, and per-agent lock. It bypasses
-the ordinary interval deadline but preserves active failure and provider
-backoff. Deferred and failed cycles return a nonzero exit code. See the
+state, trust gates, assignment delivery path, and cross-process per-agent lease.
+It runs one complete intake cycle, not a read-only fetch or a request to enable
+the scheduler. It waits up to two minutes for an active cycle, bypasses the
+ordinary interval deadline, and preserves active failure and provider backoff.
+Deferred and failed cycles return a nonzero exit code. See the
 [GitHub notifications channel](./channels/github/README.md) for
 configuration, security, lifecycle, and result semantics.
 

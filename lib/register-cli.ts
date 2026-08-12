@@ -5,7 +5,7 @@ import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
-import pollNotificationsAgentSystem from '../cli/notifications-poll.ts';
+import refreshNotificationsAgentSystem from '../cli/notifications-refresh.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
@@ -128,15 +128,15 @@ export default function registerAgentSystemCli(
     .command('notifications')
     .description('Manage GitHub notification intake.')
     .action(() => writeHelp(notifications, output));
-  const notificationsPoll = notifications
-    .command('poll')
-    .description('Run one GitHub notification poll now.')
-    .option('--agent <id>', 'Poll notifications for an OpenClaw agent.')
+  const notificationsRefresh = notifications
+    .command('refresh')
+    .description('Run one GitHub notification intake cycle now.')
+    .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
-      const commandOptions = notificationsPoll.opts();
+      const commandOptions = notificationsRefresh.opts();
       const agentId = commandOptions.agent;
-      await pollNotificationsAgentSystem({
+      await refreshNotificationsAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
         json: commandOptions.json === true,
         logger: options.logger,
