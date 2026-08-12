@@ -2,7 +2,6 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
-import type AgentSystemToolApprovalReceiptStore from './tool-approval-receipt-store.ts';
 import AgentSystemToolError from './tool-error.ts';
 import type AgentSystemToolRuntime from './tool-runtime.ts';
 import type {
@@ -79,10 +78,9 @@ export default class AgentSystemToolRegistry {
   registerTrustedPolicies(
     api: Pick<OpenClawPluginApi, 'registerTrustedToolPolicy'>,
     manifestService: Pick<AgentManifestService, 'loadForAgentId'>,
-    approvals: Pick<AgentSystemToolApprovalReceiptStore, 'record'>,
   ): void {
     for (const tool of this.#tools.values()) {
-      tool.registerTrustedPolicy?.(api, manifestService, approvals);
+      tool.registerTrustedPolicy?.(api, manifestService);
     }
   }
 }

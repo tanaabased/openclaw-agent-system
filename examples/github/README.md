@@ -76,12 +76,13 @@ openclaw config get agents.list --json | jq -e '.[] | select(.id == "emori") | (
 ```
 
 ```bash
-# should reject agent-only approval policy through the direct tool command
+# should explain the operator-owned policy change for a denied command
 cd "$GITHUB_WORKSPACE/examples/github/emori"
 if output="$(openclaw agent-system tool gh -- repo delete emoriwan/agent-system-policy-proof --yes 2>&1)"; then
   exit 1
 fi
-printf '%s\n' "$output" | grep -F 'require approval in an OpenClaw agent conversation'
+printf '%s\n' "$output" | grep -F 'denied by github.policy.destructive'
+printf '%s\n' "$output" | grep -F 'operator must set github.policy.destructive to allow'
 
 # should validate the tanaabot github lifecycle declaration without remote permission preflights
 cd "$TMPDIR/agent-system-github-tanaabot"

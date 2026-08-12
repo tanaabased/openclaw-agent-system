@@ -62,8 +62,7 @@ function classify(input: GitWorktreeToolInput): AgentSystemOperation {
   if (input.action === 'remove') {
     return {
       action: 'git.worktree.remove',
-      attributes: { 'git.policy.delete': true },
-      risk: 'destructive',
+      risk: 'write',
       resources: [
         { type: 'git-repository', id: input.repositoryId },
         { type: 'git-worktree', id: input.workId },

@@ -10,6 +10,6 @@ environment:
 github:
   host: github.com
   policy:
-    destructive: ask
+    destructive: deny
   username: emoriwan
   token: GH_TOKEN_EMORI

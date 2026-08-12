@@ -40,7 +40,7 @@ function definitionFixture(options: { cleanupFails?: boolean } = {}) {
   });
   const declared = definition.configuration.read({
     agent: { email: 'data@example.com', id: 'data', name: 'Data' },
-    git: { policy: { delete: 'allow' }, worktrees: {} },
+    git: { worktrees: {} },
     schemaVersion: 1,
   });
   assert.ok(declared);
@@ -98,12 +98,11 @@ describe('tools/git/worktree-tool', () => {
       ),
       {
         action: 'git.worktree.remove',
-        attributes: { 'git.policy.delete': true },
         resources: [
           { id: 'repo', type: 'git-repository' },
           { id: 'task-1', type: 'git-worktree' },
         ],
-        risk: 'destructive',
+        risk: 'write',
         summary: 'Remove a Git worktree',
       },
     );
@@ -155,6 +154,17 @@ describe('tools/git/worktree-tool', () => {
           baseRef: 'origin/main',
           branch: 'agent/task-1',
           repository: { id: 'repo' },
+          workId: 'task-1',
+        } as never,
+        declared,
+      ),
+    );
+    assert.throws(() =>
+      definition.tool.validate?.(
+        {
+          action: 'remove',
+          force: true,
+          repositoryId: 'repo',
           workId: 'task-1',
         } as never,
         declared,

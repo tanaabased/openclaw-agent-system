@@ -18,7 +18,7 @@ diagnostics.
 Agent System will own:
 
 - trusted binding between a tool call and an installed agent workspace
-- operation-policy and approval sequencing
+- operation-policy sequencing
 - scoped environment and credential resolution
 - safe execution, redaction, auditing, and common diagnostics
 
@@ -35,7 +35,7 @@ A compatible request will follow one shared sequence:
 
 1. bind the request to a trusted agent workspace
 2. validate and classify the requested operation
-3. apply the configured `allow`, `ask`, or `deny` policy and any required approval
+3. apply the configured `allow` or `deny` policy
 4. resolve only the credentials and resources needed for the approved operation
 5. execute, redact, audit, and dispose of temporary material
 
@@ -65,7 +65,7 @@ boundaries are real would create an API that Agent System cannot support.
 
 A public tool integration must preserve these boundaries:
 
-- policy and approval happen before credential resolution
+- policy enforcement happens before credential resolution
 - tool input cannot select executable code, schemas, or modules
 - secrets never enter model input, provenance, logs, diagnostics, or errors
 - temporary credentials have the smallest practical action scope and lifetime

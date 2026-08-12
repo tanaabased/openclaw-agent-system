@@ -64,7 +64,7 @@ agent:
 github:
   policy:
     destructive: allow
-    admin: ask
+    admin: deny
     unknown: allow
 `);
 
@@ -72,9 +72,31 @@ github:
     if (result.status !== 'valid') return;
     assert.deepEqual(result.manifest.github?.policy, {
       destructive: 'allow',
-      admin: 'ask',
+      admin: 'deny',
       unknown: 'allow',
     });
+  });
+
+  it('should reject legacy github ask decisions with exact migration guidance', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  policy:
+    destructive: ask
+`);
+
+    assert.equal(result.status, 'invalid');
+    assert.deepEqual(result.diagnostics, [
+      {
+        code: 'manifest-policy-ask-unsupported',
+        fieldPath: '/github/policy/destructive',
+        message:
+          'Policy decision ask at /github/policy/destructive is no longer supported. An operator must choose deny or allow.',
+        severity: 'error',
+      },
+    ]);
   });
 
   it('should reject unsupported github policy decisions and policy keys', () => {

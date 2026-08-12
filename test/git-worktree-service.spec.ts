@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
 import GitWorktreeService, { type GitWorktreeGitRunner } from '../tools/git/worktree-service.ts';
+import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
 
 interface FakeWorktree {
   branch: string;
@@ -11,6 +12,7 @@ interface FakeWorktree {
 }
 
 class FakeGitRunner implements GitWorktreeGitRunner {
+  readonly branches = new Set<string>();
   readonly calls: Array<{ argv: string[]; cwd: string }> = [];
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
@@ -54,6 +56,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
       const branch = createsBranch ? (argv[2] ?? '') : (argv.at(-1) ?? '');
       const path = createsBranch ? (argv[3] ?? '') : (argv[1] ?? '');
       await mkdir(path, { recursive: true });
+      this.branches.add(branch);
       this.worktrees.set(path, { branch, repository: input.cwd });
     }
     if (command === 'worktree' && argv[0] === 'remove') {
@@ -108,6 +111,7 @@ async function fixture(localRepositories: Record<string, string> = {}) {
   return {
     context: { configuration: {}, git, workspaceDir },
     git,
+    repositoryRoot,
     service,
     workspaceDir,
   };
@@ -115,7 +119,7 @@ async function fixture(localRepositories: Record<string, string> = {}) {
 
 describe('tools/git/worktree-service', () => {
   it('should prepare, reuse, list, and remove a deterministic managed worktree', async () => {
-    const { context, git, service, workspaceDir } = await fixture();
+    const { context, git, repositoryRoot, service, workspaceDir } = await fixture();
     try {
       const input = {
         baseRef: 'origin/main',
@@ -142,10 +146,25 @@ describe('tools/git/worktree-service', () => {
         'removed',
       );
       assert.deepEqual(await service.list(context, input.repositoryId), []);
+      assert.equal(git.branches.has(prepared.branch), true);
+      assert.equal(
+        (
+          await lstat(join(repositoryRoot, gitWorktreeRepositoryDirectoryName(input.repositoryId)))
+        ).isDirectory(),
+        true,
+      );
       assert.equal(git.calls.filter(({ argv }) => argv[0] === 'clone').length, 1);
       assert.equal(git.calls.filter(({ argv }) => argv[0] === 'fetch').length, 0);
       assert.equal(
         git.calls.some(({ argv }) => argv[0] === 'worktree' && argv.includes('--force')),
+        false,
+      );
+      assert.deepEqual(
+        git.calls.filter(({ argv }) => argv[0] === 'worktree' && argv[1] === 'remove').at(-1)?.argv,
+        ['worktree', 'remove', prepared.path],
+      );
+      assert.equal(
+        git.calls.some(({ argv }) => ['branch', 'reflog', 'update-ref'].includes(argv[0] ?? '')),
         false,
       );
     } finally {
@@ -199,6 +218,12 @@ describe('tools/git/worktree-service', () => {
 
       git.removeFails = true;
       await assert.rejects(service.remove(context, 'repository', 'one'), /removal failed/u);
+      assert.equal(git.branches.size, 1);
+      assert.equal(git.worktrees.size, 1);
+      await assert.rejects(
+        service.remove(context, 'repository', 'missing'),
+        /worktree is unavailable/u,
+      );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });
     }

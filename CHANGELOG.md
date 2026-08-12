@@ -1,9 +1,18 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Allowed clean managed-worktree removal without enabling destructive Git deletion policy.
+
 ### Bug Fixes
 
-- Fixed manifest-derived tool access across both per-agent allowlists and blocked installs on explicit deny conflicts. [#9](https://github.com/tanaabased/openclaw-agent-system/pull/9)
 - Allowed trusted operator Git commands to run in manifest-declared local repositories while preserving native-tool containment.
+- Fixed manifest-derived tool access across both per-agent allowlists and blocked installs on explicit deny conflicts. [#9](https://github.com/tanaabased/openclaw-agent-system/pull/9)
+- Updated policy denials to identify the controlling field and required operator change.
+
+### Notes
+
+- Removed transport-dependent `ask` policy decisions in favor of explicit `allow` and `deny` settings with migration diagnostics.
 
 ## v0.2.1 - [August 11, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.1)
 

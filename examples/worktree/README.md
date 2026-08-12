@@ -85,8 +85,14 @@ test ! -e "$TMPDIR/agent-system-raw-worktree"
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
 openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git managed repository and worktree roots are ignored'
 
-# should remove the clean managed worktree through delete policy
+# should remove the clean managed worktree without enabling delete policy
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
 openclaw agent-system tool worktree -- remove agent-system 123-verify-worktree-flow | grep -F '"status": "removed"'
 openclaw agent-system tool worktree -- list agent-system | grep -Fx '[]'
+
+# should remove clean custom-root and local-repository worktrees through the same write policy
+cd "$GITHUB_WORKSPACE/examples/worktree/rootsbot"
+openclaw agent-system tool worktree -- remove agent-system 456-verify-custom-roots | grep -F '"status": "removed"'
+cd "$GITHUB_WORKSPACE/examples/worktree/localbot"
+openclaw agent-system tool worktree -- remove agent-system 789-verify-local-override | grep -F '"status": "removed"'
 ```

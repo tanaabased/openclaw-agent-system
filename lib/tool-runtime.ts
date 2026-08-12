@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
@@ -10,10 +10,6 @@ import type AgentManifestService from './agent-manifest-service.ts';
 import AgentSystemToolError from './tool-error.ts';
 import executeAgentSystemCliTool from './tool-cli-execution.ts';
 import loadBoundToolManifest from './tool-manifest-binding.ts';
-import {
-  hashAgentSystemToolInput,
-  type default as AgentSystemToolApprovalReceiptStore,
-} from './tool-approval-receipt-store.ts';
 import runToolCli from './tool-cli-runner.ts';
 import type {
   AgentSystemAuditEvent,
@@ -36,7 +32,6 @@ interface ToolLogger {
 }
 
 export interface AgentSystemToolRuntimeDependencies {
-  approvals?: Pick<AgentSystemToolApprovalReceiptStore, 'consume'>;
   audit?: { record(event: AgentSystemAuditEvent): Promise<void> | void };
   authorize?(request: AgentSystemAuthorizationRequest): Promise<AgentSystemAuthorizationDecision>;
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
@@ -85,6 +80,10 @@ interface RuntimeExecutionContext<TResolvedConfiguration> {
 
 function quote(value: string | number): string {
   return JSON.stringify(value);
+}
+
+function hashToolInput(input: unknown): string {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex').slice(0, 16);
 }
 
 function defaultAuthorize(
@@ -205,21 +204,6 @@ export default class AgentSystemToolRuntime {
     const authorization = definition.authorization?.authorize
       ? await definition.authorization.authorize(operation, declaredConfiguration)
       : await (this.#dependencies.authorize ?? defaultAuthorize)(request);
-    if (authorization.status === 'approval_required') {
-      const toolCallId = scope.toolCallId?.trim();
-      const approved =
-        scope.source === 'tool' &&
-        Boolean(toolCallId) &&
-        Boolean(
-          this.#dependencies.approvals?.consume({
-            agentId,
-            input,
-            toolCallId: toolCallId ?? '',
-            toolId: definition.id,
-          }),
-        );
-      if (!approved) throw new AgentSystemToolError('approval_denied', authorization.reason);
-    }
     if (authorization.status === 'denied') {
       throw new AgentSystemToolError(
         operation.risk === 'unknown' ? 'operation_unclassified' : 'approval_denied',
@@ -239,7 +223,7 @@ export default class AgentSystemToolRuntime {
       action: operation.action,
       agentId,
       auditId,
-      inputHash: hashAgentSystemToolInput(input),
+      inputHash: hashToolInput(input),
       toolId: definition.id,
       risk: operation.risk,
       source: scope.source,

@@ -17,6 +17,11 @@ function hazardLabel(hazards: readonly (GitPolicyHazard | 'unknown')[]): string 
   return hazards.join(' and ');
 }
 
+function policyRemediation(references: readonly string[]): string {
+  const fields = references.length === 1 ? references[0] : `each of ${references.join(' and ')}`;
+  return `To permit this operation, an operator must set ${fields} to allow in agent.yaml and retry.`;
+}
+
 /** Apply the manifest's Git-specific hazard policy after classification. */
 export async function authorizeGitOperation(
   operation: AgentSystemOperation,
@@ -32,26 +37,16 @@ export async function authorizeGitOperation(
   ) {
     const decision = configuration.git.extensions?.[extension] ?? 'deny';
     if (decision === 'deny') {
+      const reference = `git.extensions.${extension}`;
       return {
         status: 'denied',
-        reason: `Git extension ${extension} is denied by git.extensions.${extension}.`,
+        reason: `Git extension ${extension} is denied by ${reference}. ${policyRemediation([reference])}`,
       };
     }
     if (!(await dependencies.extensionAvailable?.(extension))) {
       return {
         status: 'denied',
-        reason: `Git extension ${extension} is unavailable as an external git-${extension} executable.`,
-      };
-    }
-    if (decision === 'ask') {
-      return {
-        status: 'approval_required',
-        reason: `Git extension ${extension} requires approval in an OpenClaw agent conversation; direct tool commands cannot request approval.`,
-        request: {
-          description: `Allow the active agent to ${operation.summary.toLowerCase()}?`,
-          severity: 'warning',
-          title: `Approve Git extension ${extension}`,
-        },
+        reason: `Git extension ${extension} is unavailable as an external git-${extension} executable. An operator must install that executable on the trusted tool PATH before retrying.`,
       };
     }
     return { status: 'allowed' };
@@ -62,21 +57,10 @@ export async function authorizeGitOperation(
   if (hazards.length === 0) hazards.push('unknown');
   const denied = hazards.filter((hazard) => policy[hazard] === 'deny');
   if (denied.length > 0) {
+    const references = denied.map((hazard) => `git.policy.${hazard}`);
     return {
       status: 'denied',
-      reason: `Git ${hazardLabel(denied)} operations are denied by ${policyReferences(denied)}.`,
-    };
-  }
-  const approvals = hazards.filter((hazard) => policy[hazard] === 'ask');
-  if (approvals.length > 0) {
-    return {
-      status: 'approval_required',
-      reason: `Git ${hazardLabel(approvals)} operations require approval in an OpenClaw agent conversation; direct tool commands cannot request approval.`,
-      request: {
-        description: `Allow the active agent to ${operation.summary.toLowerCase()}?`,
-        severity: approvals.includes('unknown') ? 'warning' : 'critical',
-        title: `Approve ${hazardLabel(approvals)} Git operation`,
-      },
+      reason: `Git ${hazardLabel(denied)} operations are denied by ${policyReferences(denied)}. ${policyRemediation(references)}`,
     };
   }
   return { status: 'allowed' };

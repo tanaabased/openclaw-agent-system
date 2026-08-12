@@ -10,5 +10,3 @@ git:
     root: .agent-system/custom/worktrees
     repositories:
       root: .agent-system/custom/repositories
-  policy:
-    delete: allow

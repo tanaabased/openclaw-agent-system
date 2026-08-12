@@ -8,11 +8,7 @@ import {
 } from '../../utils/manifest-value-schemas.ts';
 import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
 
-const externalGitPolicyDecisionSchema = Type.Union([
-  Type.Literal('allow'),
-  Type.Literal('ask'),
-  Type.Literal('deny'),
-]);
+const externalGitPolicyDecisionSchema = Type.Union([Type.Literal('allow'), Type.Literal('deny')]);
 
 const externalGitPrivateKeySourceSchema = Type.Union([
   Type.Object(
@@ -122,7 +118,7 @@ export const externalGitSectionSchema = Type.Object(
 
 type ExternalGitSection = Static<typeof externalGitSectionSchema>;
 
-export type GitPolicyDecision = 'allow' | 'ask' | 'deny';
+export type GitPolicyDecision = 'allow' | 'deny';
 
 export interface GitPolicyConfiguration {
   delete: GitPolicyDecision;

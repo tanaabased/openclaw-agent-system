@@ -26,15 +26,13 @@ describe('tools/git/policy', () => {
 
   it('should require every applicable git hazard policy to allow the operation', async () => {
     const forcePush = classifyGitOperation({ argv: ['push', '--force', 'origin', 'main'] });
-    assert.equal(
-      (
-        await authorizeGitOperation(forcePush, {
-          ...configuration,
-          git: { policy: { force: 'ask', rewrite: 'allow' } },
-        })
-      ).status,
-      'approval_required',
-    );
+    const denied = await authorizeGitOperation(forcePush, {
+      ...configuration,
+      git: { policy: { force: 'deny', rewrite: 'allow' } },
+    });
+    assert.equal(denied.status, 'denied');
+    assert.match(denied.reason, /denied by git\.policy\.force/u);
+    assert.match(denied.reason, /operator must set git\.policy\.force to allow/u);
     assert.equal(
       (
         await authorizeGitOperation(forcePush, {
@@ -70,29 +68,17 @@ describe('tools/git/policy', () => {
       ).status,
       'allowed',
     );
-    assert.equal(
-      (
-        await authorizeGitOperation(
-          extension,
-          { ...configuration, git: { extensions: { town: 'ask' } } },
-          { extensionAvailable: () => true },
-        )
-      ).status,
-      'approval_required',
+    const denied = await authorizeGitOperation(
+      extension,
+      {
+        ...configuration,
+        git: { extensions: { town: 'deny' }, policy: { unknown: 'allow' } },
+      },
+      { extensionAvailable: () => true },
     );
-    assert.equal(
-      (
-        await authorizeGitOperation(
-          extension,
-          {
-            ...configuration,
-            git: { extensions: { town: 'deny' }, policy: { unknown: 'allow' } },
-          },
-          { extensionAvailable: () => true },
-        )
-      ).status,
-      'denied',
-    );
+    assert.equal(denied.status, 'denied');
+    assert.match(denied.reason, /denied by git\.extensions\.town/u);
+    assert.match(denied.reason, /operator must set git\.extensions\.town to allow/u);
     const unavailable = await authorizeGitOperation(
       extension,
       { ...configuration, git: { extensions: { town: 'allow' } } },
@@ -100,6 +86,7 @@ describe('tools/git/policy', () => {
     );
     assert.equal(unavailable.status, 'denied');
     assert.match(unavailable.reason, /external git-town executable/u);
+    assert.match(unavailable.reason, /operator must install that executable/u);
   });
 
   it('should keep built-in hazards ahead of matching extension declarations', async () => {
