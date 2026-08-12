@@ -55,10 +55,16 @@ openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification
 ```
 
 ```bash
-# should complete one authenticated empty baseline without creating local work
+# should complete one authenticated empty baseline
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
+"$GITHUB_WORKSPACE/scripts/assert-agent-system-notification-refresh-completed.sh" --agent notification-data
+
+# should keep the empty baseline free of managed worktrees
+cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
+
+# should keep the empty baseline free of local sessions
+cd "$TMPDIR/agent-system-notifications"
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
 ```
 
