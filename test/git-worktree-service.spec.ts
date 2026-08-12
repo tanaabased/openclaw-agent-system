@@ -172,6 +172,16 @@ describe('tools/git/worktree-service', () => {
     }
   });
 
+  it('should return an empty list for a managed repository that does not exist yet', async () => {
+    const { context, git, service, workspaceDir } = await fixture();
+    try {
+      assert.deepEqual(await service.list(context, 'missing'), []);
+      assert.deepEqual(git.calls, []);
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
   it('should refresh an existing managed repository only before creating another worktree', async () => {
     const { context, git, service, workspaceDir } = await fixture();
     try {

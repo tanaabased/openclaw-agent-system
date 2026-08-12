@@ -299,6 +299,15 @@ export default class GitWorktreeService {
     selectedId?: string,
   ): Promise<ResolvedRepository[]> {
     if (selectedId !== undefined) {
+      const localPath = getOwn(layout.localRepositories, selectedId);
+      if (localPath) {
+        return [{ path: localPath, refreshBeforeCreate: false, repositoryId: selectedId }];
+      }
+      const managedPath = join(
+        layout.repositoryRoot,
+        gitWorktreeRepositoryDirectoryName(selectedId),
+      );
+      if ((await pathKind(managedPath)) === 'absent') return [];
       return [await this.#resolveRepository(context, layout, selectedId)];
     }
     const local = Object.entries(layout.localRepositories).map(([repositoryId, path]) => ({
