@@ -11,7 +11,7 @@ export interface GitHubNotificationSessionMetadata {
   itemType: 'issue' | 'pull-request';
   repositoryId: string;
   schemaVersion: 1;
-  status: 'active' | 'briefing' | 'retired';
+  status: 'active' | 'briefing' | 'ready' | 'retired';
   worktreeBranch: string;
   worktreePath: string;
 }
@@ -55,7 +55,12 @@ export function parseGitHubNotificationSessionMetadata(
   }
   if (value.itemType !== 'issue' && value.itemType !== 'pull-request') return undefined;
   if (!isBoundedString(value.repositoryId, 256)) return undefined;
-  if (value.status !== 'active' && value.status !== 'briefing' && value.status !== 'retired') {
+  if (
+    value.status !== 'active' &&
+    value.status !== 'briefing' &&
+    value.status !== 'ready' &&
+    value.status !== 'retired'
+  ) {
     return undefined;
   }
   if (!isBoundedString(value.worktreeBranch, 255)) return undefined;
@@ -80,7 +85,7 @@ export const githubNotificationSessionExtension: SessionExtensionRegistration = 
       itemType: { enum: ['issue', 'pull-request'], type: 'string' },
       repositoryId: { minLength: 1, type: 'string' },
       schemaVersion: { const: 1, type: 'integer' },
-      status: { enum: ['active', 'briefing', 'retired'], type: 'string' },
+      status: { enum: ['active', 'briefing', 'ready', 'retired'], type: 'string' },
       worktreeBranch: { minLength: 1, type: 'string' },
       worktreePath: { minLength: 1, type: 'string' },
     },

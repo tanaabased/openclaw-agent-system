@@ -1,5 +1,6 @@
 import type { AgentManifest, ManifestDiagnostic } from '../../../utils/manifest-types.ts';
 import type { NotificationRoutingDesiredState } from '../utils/routing.ts';
+import { githubNotificationRetirementItemKeys } from '../utils/monitor-state.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
@@ -117,7 +118,19 @@ export default function createNotificationLifecycleContribution(
     },
     async inspect(context) {
       const plan = await dependencies.routingService.inspect(desiredState(context));
-      if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') return [];
+      if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') {
+        const state = await dependencies.stateStore?.read(context.manifest.agent.id);
+        return githubNotificationRetirementItemKeys(state).length > 0
+          ? [
+              {
+                code: 'github-notification-retirement-pending',
+                message: 'GitHub notification sessions are still retiring locally.',
+                remediation: 'Keep the OpenClaw Gateway running until retirement completes.',
+                status: 'warning' as const,
+              },
+            ]
+          : [];
+      }
       const routingFinding = [
         {
           code: plan.code,
@@ -183,10 +196,25 @@ export default function createNotificationLifecycleContribution(
     async reconcile(context) {
       try {
         const result = await dependencies.routingService.reconcile(desiredState(context));
+        const disabled = !context.manifest.github?.notifications;
+        const state = disabled
+          ? await dependencies.stateStore?.read(context.manifest.agent.id)
+          : undefined;
+        const retirementPending = githubNotificationRetirementItemKeys(state).length > 0;
         const monitorStateRemoved =
-          !context.manifest.github?.notifications &&
+          disabled &&
+          !retirementPending &&
           dependencies.stateStore?.remove !== undefined &&
           (await dependencies.stateStore.remove(context.manifest.agent.id));
+        const warnings = retirementPending
+          ? [
+              {
+                code: 'github-notification-retirement-pending',
+                message:
+                  'GitHub notification state was retained until the Gateway retires its sessions.',
+              },
+            ]
+          : [];
         if (result.plan.kind === 'noop' && result.plan.code === 'notification-routing-disabled') {
           return {
             outcomes: monitorStateRemoved
@@ -198,6 +226,7 @@ export default function createNotificationLifecycleContribution(
                   },
                 ]
               : [],
+            warnings,
           };
         }
         const status =
@@ -229,6 +258,7 @@ export default function createNotificationLifecycleContribution(
                 ]
               : []),
           ],
+          warnings,
         };
       } catch (error) {
         throw new AgentSystemLifecycleError(

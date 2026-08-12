@@ -33,6 +33,21 @@ function memoryStore(initial = monitorState()) {
   };
 }
 
+function activeDeliveryMonitorState(): GitHubNotificationMonitorState {
+  const state = monitorState();
+  const delivery = state.items[itemKey]?.delivery;
+  assert.ok(delivery);
+  state.items[itemKey]!.delivery = {
+    ...delivery,
+    sessionId: activeSession.id,
+    sessionKey: activeSession.key,
+    stage: 'active',
+    worktreeBranch: worktree.branch,
+    worktreePath: worktree.path,
+  };
+  return state;
+}
+
 describe('lib/github-notification-assignment-orchestrator', () => {
   it('should serialize duplicate reconciliation and checkpoint every mutation boundary', async () => {
     const store = memoryStore();
@@ -252,11 +267,12 @@ describe('lib/github-notification-assignment-orchestrator', () => {
   });
 
   it('should abort and archive an existing session before completing retirement', async () => {
-    const store = memoryStore();
+    const store = memoryStore(activeDeliveryMonitorState());
     let observedSession: typeof activeSession | { id: string; key: string; status: 'retired' } =
       activeSession;
     let sessionRetirements = 0;
     let forbiddenSideEffects = 0;
+    let worktreeInspections = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
@@ -279,7 +295,10 @@ describe('lib/github-notification-assignment-orchestrator', () => {
       },
       stateStore: store,
       worktrees: {
-        inspect: async () => worktree,
+        async inspect() {
+          worktreeInspections += 1;
+          return worktree;
+        },
         async prepare() {
           forbiddenSideEffects += 1;
           return worktree;
@@ -290,14 +309,47 @@ describe('lib/github-notification-assignment-orchestrator', () => {
     await orchestrator.reconcile('tanaabot', itemKey);
 
     assert.equal(forbiddenSideEffects, 0);
+    assert.equal(worktreeInspections, 0);
     assert.equal(sessionRetirements, 1);
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
   });
 
-  it('should resume retirement after the session archive boundary fails', async () => {
+  it('should retire an early checkpoint without inspecting git or session state', async () => {
     const store = memoryStore();
+    let forbiddenInspections = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: {
+        inspect: async () => ({ authorized: false, reasonCode: 'notifications-disabled' }),
+      },
+      sessions: {
+        dispatchBriefing: async () => activeSession,
+        async inspect() {
+          forbiddenInspections += 1;
+          return activeSession;
+        },
+        prepare: async () => readySession,
+        retire: async () => ({ ...activeSession, status: 'retired' }),
+      },
+      stateStore: store,
+      worktrees: {
+        async inspect() {
+          forbiddenInspections += 1;
+          return worktree;
+        },
+        prepare: async () => worktree,
+      },
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    assert.equal(forbiddenInspections, 0);
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
+  });
+
+  it('should resume retirement after the session archive boundary fails', async () => {
+    const store = memoryStore(activeDeliveryMonitorState());
     let observedSession:
       typeof activeSession | { id: string; key: string; status: 'retired' | 'retiring' } =
       activeSession;
@@ -326,7 +378,7 @@ describe('lib/github-notification-assignment-orchestrator', () => {
 
     await assert.rejects(orchestrator.reconcile('tanaabot', itemKey));
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'admitted');
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
 
     await orchestrator.reconcile('tanaabot', itemKey);
 

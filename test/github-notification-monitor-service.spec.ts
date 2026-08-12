@@ -21,13 +21,13 @@ const manifest: AgentManifest = {
   },
 };
 
-function loadedManifest() {
+function loadedManifest(loaded: AgentManifest = manifest) {
   return {
     status: 'loaded' as const,
     scope: { agentId: 'tanaabot', workspaceDir },
     path: `${workspaceDir}/agent.yaml`,
     digest: 'digest',
-    manifest,
+    manifest: loaded,
     diagnostics: [],
     validationChecks: [],
   };
@@ -118,7 +118,20 @@ describe('channels/github/lib/monitor-service', () => {
 
   it('should verify exact routing before resolving a credential', async () => {
     let connected = 0;
-    let state: GitHubNotificationMonitorState | undefined;
+    const reconciled: string[] = [];
+    let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    const delivery = state.items[notificationItemKey]?.delivery;
+    assert.ok(delivery);
+    state.items[notificationItemKey]!.delivery = {
+      ...delivery,
+      sessionId: 'session-1',
+      sessionKey: 'agent:tanaabot:github:item',
+      stage: 'active',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
     const service = new GitHubNotificationMonitorService({
       accountClient: {
         async connect() {
@@ -126,7 +139,16 @@ describe('channels/github/lib/monitor-service', () => {
           throw new Error('should not connect');
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          reconciled.push(itemKey);
+          const item = state?.items[itemKey];
+          if (item?.delivery) {
+            item.disposition = 'retired';
+            item.delivery.stage = 'retired';
+          }
+        },
+      },
       clock: () => 1_000,
       logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
@@ -150,8 +172,77 @@ describe('channels/github/lib/monitor-service', () => {
     await service.runOnce();
 
     assert.equal(connected, 0);
+    assert.deepEqual(reconciled, [notificationItemKey]);
+    assert.equal(state?.items[notificationItemKey]?.delivery?.stage, 'retired');
     assert.equal(state?.diagnosticCode, 'notification-routing-repair-required');
     assert.equal(state?.failureCount, 1);
+  });
+
+  it('should retire disabled notification state without connecting to github', async () => {
+    let connected = 0;
+    let removals = 0;
+    const reconciled: string[] = [];
+    let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    const delivery = state.items[notificationItemKey]?.delivery;
+    assert.ok(delivery);
+    state.items[notificationItemKey]!.delivery = {
+      ...delivery,
+      sessionId: 'session-1',
+      sessionKey: 'agent:tanaabot:github:item',
+      stage: 'active',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const disabledManifest: AgentManifest = {
+      ...manifest,
+      github: { token: 'GH_TOKEN_TANAABOT', username: 'tanaabot' },
+    };
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new Error('should not connect');
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          reconciled.push(itemKey);
+          const item = state?.items[itemKey];
+          if (item?.delivery) {
+            item.disposition = 'retired';
+            item.delivery.stage = 'retired';
+          }
+        },
+      },
+      clock: () => 1_000,
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest(disabledManifest) },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () =>
+          Promise.reject(new Error('disabled retirement should not inspect routing')),
+      },
+      stateStore: {
+        read: async () => (state ? structuredClone(state) : undefined),
+        async remove() {
+          removals += 1;
+          state = undefined;
+          return true;
+        },
+        write: async (next) => {
+          state = structuredClone(next);
+        },
+      },
+    });
+
+    await service.runOnce();
+
+    assert.equal(connected, 0);
+    assert.deepEqual(reconciled, [notificationItemKey]);
+    assert.equal(removals, 1);
+    assert.equal(state, undefined);
   });
 
   it('should persist value-free exponential backoff after a transient account failure', async () => {

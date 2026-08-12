@@ -85,6 +85,17 @@ export function createGitHubNotificationMonitorState(
   };
 }
 
+/** List delivery records that still require local retirement. */
+export function githubNotificationRetirementItemKeys(
+  state: GitHubNotificationMonitorState | undefined,
+): string[] {
+  if (!state) return [];
+  return Object.entries(state.items)
+    .filter(([, item]) => item.delivery !== undefined && item.delivery.stage !== 'retired')
+    .map(([itemKey]) => itemKey)
+    .sort();
+}
+
 /** Establish a safe baseline instead of retroactively delivering Phase 1 admissions. */
 export function migrateGitHubNotificationMonitorStateV1(
   state: GitHubNotificationMonitorStateV1,

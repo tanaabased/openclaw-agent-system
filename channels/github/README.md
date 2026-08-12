@@ -141,8 +141,10 @@ archival or transfer, owner-policy drift, deletion, and permission loss retire
 the observation.
 
 Changing the verified GitHub account establishes a fresh baseline. Removing
-`github.notifications` and running `install` removes the owned monitor state, so
-a later re-enable cannot inherit an earlier activation boundary.
+`github.notifications` and running `install` removes the owned route immediately
+but retains monitor state while the Gateway retires any local sessions. The
+state is removed after retirement converges, so a later re-enable cannot inherit
+an earlier activation boundary.
 
 The default interval is five minutes with jitter. Provider retry and rate-limit
 controls can defer the next poll, and transient failures use exponential backoff.
@@ -166,7 +168,9 @@ last delivery checkpoint until local retirement converges. It aborts any active
 automated run, marks the exact session retired, and archives it before recording
 the delivery as retired. It does not delete the session, transcript, managed
 repository, branch, or worktree. Repeated retirement safely adopts partial prior
-progress.
+progress. A later approved reassignment reopens the same deterministic session
+and worktree, preserves the earlier transcript, and starts one briefing for the
+new assignment event.
 
 `doctor` reports whether the route is ready and whether the monitor is pending,
 healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,

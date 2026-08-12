@@ -9,6 +9,7 @@ import {
 import type { Logger } from '../../../lib/logger.ts';
 import {
   createGitHubNotificationMonitorState,
+  githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
 import type NotificationRoutingService from './routing-service.ts';
@@ -31,7 +32,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   routingService: Pick<NotificationRoutingService, 'inspect'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'> &
-    Partial<Pick<GitHubNotificationMonitorStateStore, 'load'>>;
+    Partial<Pick<GitHubNotificationMonitorStateStore, 'load' | 'remove'>>;
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -139,7 +140,7 @@ export default class GitHubNotificationMonitorService {
     let workspaceDir: string | undefined;
     try {
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
-      if (loaded.status !== 'loaded' || !loaded.manifest.github?.notifications) return;
+      if (loaded.status !== 'loaded') return;
       workspaceDir = loaded.scope.workspaceDir;
       const now = (this.#dependencies.clock ?? Date.now)();
       const loadedState = this.#dependencies.stateStore.load
@@ -156,6 +157,11 @@ export default class GitHubNotificationMonitorService {
           `github-notifications: monitor state migrated agent=${agentId} code=github-notification-state-migrated-v1`,
         );
       }
+      const notifications = loaded.manifest.github?.notifications;
+      if (!notifications) {
+        await this.#retireDisabledAssignments(agentId, current, now, signal);
+        return;
+      }
       const pendingItemKeys = pendingDeliveryItemKeys(current);
       const pollDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       if (pollDeferred && (pendingItemKeys.length === 0 || (current?.failureCount ?? 0) > 0)) {
@@ -168,7 +174,18 @@ export default class GitHubNotificationMonitorService {
         workspaceDir,
       });
       if (route.kind !== 'noop' || route.code !== 'notification-routing-ready') {
-        await this.#saveFailure(agentId, workspaceDir, current, now, route.code);
+        await this.#reconcileAssignments(
+          agentId,
+          githubNotificationRetirementItemKeys(current),
+          signal,
+        );
+        await this.#saveFailure(
+          agentId,
+          workspaceDir,
+          await this.#dependencies.stateStore.read(agentId),
+          now,
+          route.code,
+        );
         return;
       }
 
@@ -186,12 +203,12 @@ export default class GitHubNotificationMonitorService {
       const result = await pollGitHubNotifications({
         agentId,
         client,
-        configuration: loaded.manifest.github.notifications,
+        configuration: notifications,
         now,
         ...(current === undefined ? {} : { state: current }),
         workspaceDir,
       });
-      const intervalMs = loaded.manifest.github.notifications.intervalMinutes * 60 * 1000;
+      const intervalMs = notifications.intervalMinutes * 60 * 1000;
       const jitter = 0.9 + (this.#dependencies.random ?? Math.random)() * 0.2;
       const rateReset = client.rateLimit.remaining === 0 ? (client.rateLimit.resetAt ?? 0) : 0;
       result.state.diagnosticCode = undefined;
@@ -241,6 +258,30 @@ export default class GitHubNotificationMonitorService {
     for (const itemKey of itemKeys) {
       if (signal?.aborted) return;
       await this.#dependencies.assignmentOrchestrator.reconcile(agentId, itemKey, signal);
+    }
+  }
+
+  async #retireDisabledAssignments(
+    agentId: string,
+    current: GitHubNotificationMonitorState | undefined,
+    now: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const itemKeys = githubNotificationRetirementItemKeys(current);
+    if (itemKeys.length === 0) {
+      await this.#dependencies.stateStore.remove?.(agentId);
+      return;
+    }
+    const retryDeferred =
+      current?.nextPollAt !== undefined &&
+      current.nextPollAt > now &&
+      itemKeys.some((itemKey) => current.items[itemKey]?.delivery?.failureCode !== undefined);
+    if (retryDeferred) return;
+
+    await this.#reconcileAssignments(agentId, itemKeys, signal);
+    const reconciled = await this.#dependencies.stateStore.read(agentId);
+    if (githubNotificationRetirementItemKeys(reconciled).length === 0) {
+      await this.#dependencies.stateStore.remove?.(agentId);
     }
   }
 

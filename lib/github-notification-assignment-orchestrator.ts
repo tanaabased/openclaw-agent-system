@@ -284,20 +284,20 @@ export default class GitHubNotificationAssignmentOrchestrator {
       signal,
       workspaceDir,
     });
-    const inspectedWorktree = await this.#dependencies.worktrees.inspect({
-      agentId,
-      delivery,
-      item,
-      signal,
-      workspaceDir,
-    });
-    const worktree =
-      inspectedWorktree ??
-      ((!authority.authorized || item.disposition === 'retired') &&
-      delivery.worktreeBranch &&
-      delivery.worktreePath
+    const checkpointedWorktree =
+      delivery.worktreeBranch && delivery.worktreePath
         ? { branch: delivery.worktreeBranch, path: delivery.worktreePath }
-        : undefined);
+        : undefined;
+    const worktree =
+      !authority.authorized || item.disposition === 'retired'
+        ? checkpointedWorktree
+        : await this.#dependencies.worktrees.inspect({
+            agentId,
+            delivery,
+            item,
+            signal,
+            workspaceDir,
+          });
     if (!worktree) {
       return {
         authority,

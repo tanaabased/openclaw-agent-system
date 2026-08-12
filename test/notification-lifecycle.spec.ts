@@ -4,6 +4,7 @@ import createNotificationLifecycleContribution from '../channels/github/lib/life
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -256,5 +257,73 @@ describe('channels/github/lib/lifecycle', () => {
       },
     ]);
     assert.equal(removals, 1);
+  });
+
+  it('should retain disabled monitor state while local session retirement is pending', async () => {
+    let removals = 0;
+    const state = notificationMonitorState();
+    const delivery = state.items[notificationItemKey]?.delivery;
+    assert.ok(delivery);
+    state.items[notificationItemKey]!.delivery = {
+      ...delivery,
+      sessionId: 'session-1',
+      sessionKey: 'agent:data:github:item',
+      stage: 'active',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-disabled',
+            kind: 'noop' as const,
+            message: 'disabled',
+          };
+        },
+        async reconcile() {
+          return {
+            configChanged: false,
+            plan: {
+              code: 'notification-routing-disabled',
+              kind: 'noop' as const,
+              message: 'disabled',
+            },
+            receiptAction: 'none' as const,
+            requiresManualRestart: false,
+          };
+        },
+      },
+      stateStore: {
+        read: async () => state,
+        remove: async () => {
+          removals += 1;
+          return true;
+        },
+      },
+    });
+    const disabledContext = {
+      manifest: { schemaVersion: 1 as const, agent: { id: 'data' } },
+      workspaceDir: context.workspaceDir,
+    };
+
+    assert.deepEqual(await contribution.inspect?.(disabledContext), [
+      {
+        code: 'github-notification-retirement-pending',
+        message: 'GitHub notification sessions are still retiring locally.',
+        remediation: 'Keep the OpenClaw Gateway running until retirement completes.',
+        status: 'warning',
+      },
+    ]);
+    assert.deepEqual(await contribution.reconcile?.(disabledContext), {
+      outcomes: [],
+      warnings: [
+        {
+          code: 'github-notification-retirement-pending',
+          message: 'GitHub notification state was retained until the Gateway retires its sessions.',
+        },
+      ],
+    });
+    assert.equal(removals, 0);
   });
 });

@@ -6,6 +6,7 @@ import type { GitHubNotificationAssignmentEvent } from '../channels/github/chann
 import {
   githubNotificationSessionExtension,
   parseGitHubNotificationSessionMetadata,
+  type GitHubNotificationSessionMetadata,
 } from '../channels/github/lib/session-extension.ts';
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
 import { resolveNotificationRoute } from '../channels/github/utils/routing.ts';
@@ -109,10 +110,11 @@ describe('channels/github/lib/session-service', () => {
     assert.deepEqual(prepared, { id: 'session-1', key: route.sessionKey, status: 'ready' });
     assert.deepEqual(
       calls.map(({ method }) => method),
-      ['sessions.create', 'sessions.patch'],
+      ['sessions.create', 'sessions.patch', 'sessions.pluginPatch'],
     );
     assert.equal(calls[0]?.params?.key, route.sessionKey);
     assert.equal(calls[1]?.params?.sendPolicy, 'deny');
+    assert.equal((calls[2]?.params?.value as { status?: string } | undefined)?.status, 'ready');
   });
 
   it('should adopt a completed claimed briefing from session history', async () => {
@@ -516,6 +518,148 @@ describe('channels/github/lib/session-service', () => {
     );
   });
 
+  it('should reopen the same retired session for a later assignment event', async () => {
+    const reassignedEventId = 'assignment-event-2';
+    const reassignedInput = {
+      ...assignmentInput,
+      delivery: {
+        ...assignmentInput.delivery,
+        assignmentEventId: reassignedEventId,
+        briefingIdempotencyKey: reassignedEventId,
+      },
+      item: {
+        ...assignmentInput.item,
+        assignmentEventNodeId: reassignedEventId,
+      },
+    };
+    let archived = true;
+    let interruptMetadataPatch = true;
+    let projectedMetadata: GitHubNotificationSessionMetadata = {
+      assignmentEventId: event.id,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryId: event.repositoryId,
+      schemaVersion: 1 as const,
+      status: 'retired' as const,
+      worktreeBranch: assignmentInput.worktree.branch,
+      worktreePath: assignmentInput.worktree.path,
+    };
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const service = new GitHubNotificationSessionService({
+      ...sessionDependencies,
+      dispatchReplyWithBufferedBlockDispatcher: (() => undefined) as never,
+      async gatewayRequest(method, params) {
+        calls.push({ method, params });
+        if (method === 'sessions.describe') {
+          return {
+            session: {
+              archived,
+              key: route.sessionKey,
+              pluginExtensions: [
+                {
+                  namespace: 'work-item',
+                  pluginId: 'agent-system',
+                  value: projectedMetadata,
+                },
+              ],
+              sessionId: 'session-1',
+            },
+          };
+        }
+        if (method === 'sessions.create') {
+          return { key: route.sessionKey, ok: true, sessionId: 'session-1' };
+        }
+        if (method === 'sessions.patch') {
+          archived = params?.archived === true;
+          return { key: route.sessionKey, ok: true };
+        }
+        if (method === 'sessions.pluginPatch') {
+          if (interruptMetadataPatch) {
+            interruptMetadataPatch = false;
+            throw new Error('metadata patch interrupted');
+          }
+          projectedMetadata = params?.value as typeof projectedMetadata;
+          return { key: route.sessionKey, ok: true };
+        }
+        throw new Error(`unexpected gateway method ${method}`);
+      },
+      pluginId: 'agent-system',
+      recordInboundSession: (async () => undefined) as never,
+    });
+
+    assert.equal(await service.inspect(reassignedInput), undefined);
+    await assert.rejects(service.prepare(reassignedInput), /metadata patch interrupted/u);
+    assert.equal(archived, false);
+    assert.equal(await service.inspect(reassignedInput), undefined);
+    assert.deepEqual(await service.prepare(reassignedInput), {
+      id: 'session-1',
+      key: route.sessionKey,
+      status: 'ready',
+    });
+    assert.deepEqual(await service.inspect(reassignedInput), {
+      id: 'session-1',
+      key: route.sessionKey,
+      status: 'ready',
+    });
+    assert.equal(archived, false);
+    assert.equal(projectedMetadata.assignmentEventId, reassignedEventId);
+    assert.equal(projectedMetadata.status, 'ready');
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      [
+        'sessions.describe',
+        'sessions.create',
+        'sessions.patch',
+        'sessions.pluginPatch',
+        'sessions.describe',
+        'sessions.create',
+        'sessions.patch',
+        'sessions.pluginPatch',
+        'sessions.describe',
+      ],
+    );
+  });
+
+  it('should reject conflicting ownership metadata on an archived session', async () => {
+    const service = new GitHubNotificationSessionService({
+      ...sessionDependencies,
+      dispatchReplyWithBufferedBlockDispatcher: (() => undefined) as never,
+      async gatewayRequest(method) {
+        if (method !== 'sessions.describe') throw new Error(`unexpected gateway method ${method}`);
+        return {
+          session: {
+            archived: true,
+            key: route.sessionKey,
+            pluginExtensions: [
+              {
+                namespace: 'work-item',
+                pluginId: 'agent-system',
+                value: {
+                  assignmentEventId: event.id,
+                  itemNumber: 42,
+                  itemType: 'issue',
+                  repositoryId: 'R_other',
+                  schemaVersion: 1,
+                  status: 'retired',
+                  worktreeBranch: assignmentInput.worktree.branch,
+                  worktreePath: assignmentInput.worktree.path,
+                },
+              },
+            ],
+            sessionId: 'session-1',
+          },
+        };
+      },
+      pluginId: 'agent-system',
+      recordInboundSession: (async () => undefined) as never,
+    });
+
+    await assert.rejects(
+      service.inspect(assignmentInput),
+      /notification session belongs to another assignment/u,
+    );
+  });
+
   it('should project only exact value-free session metadata', () => {
     const metadata = {
       assignmentEventId: 'assignment-event-1',
@@ -529,6 +673,10 @@ describe('channels/github/lib/session-service', () => {
     };
 
     assert.deepEqual(parseGitHubNotificationSessionMetadata(metadata), metadata);
+    assert.deepEqual(parseGitHubNotificationSessionMetadata({ ...metadata, status: 'ready' }), {
+      ...metadata,
+      status: 'ready',
+    });
     assert.equal(
       parseGitHubNotificationSessionMetadata({ ...metadata, body: 'untrusted issue body' }),
       undefined,

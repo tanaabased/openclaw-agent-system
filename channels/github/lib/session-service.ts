@@ -255,12 +255,11 @@ function metadata(
   };
 }
 
-function metadataMatches(
+function metadataIdentityMatches(
   value: GitHubNotificationSessionMetadata,
   expected: GitHubNotificationSessionMetadata,
 ): boolean {
   return (
-    value.assignmentEventId === expected.assignmentEventId &&
     value.itemNumber === expected.itemNumber &&
     value.itemType === expected.itemType &&
     value.repositoryId === expected.repositoryId &&
@@ -299,6 +298,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       }),
       assignment.route.sessionKey,
     );
+    await this.#patchMetadata(input, assignment.route.sessionKey, 'ready');
     return { ...created, status: 'ready' };
   }
 
@@ -322,16 +322,33 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       ...(session.sessionId === undefined ? {} : { id: session.sessionId }),
       key: assignment.route.sessionKey,
     };
-    if (session.archived === true) return { ...reference, status: 'retired' };
     const rawMetadata = sessionMetadataValue(session, this.#dependencies.pluginId);
     const observedMetadata = parseGitHubNotificationSessionMetadata(rawMetadata);
     if (rawMetadata !== undefined && !observedMetadata) {
       throw new Error('OpenClaw returned invalid notification session metadata.');
     }
-    const expectedMetadata = metadata(input, 'briefing');
-    if (observedMetadata && !metadataMatches(observedMetadata, expectedMetadata)) {
+    const expectedMetadata = metadata(input, 'ready');
+    if (observedMetadata && !metadataIdentityMatches(observedMetadata, expectedMetadata)) {
       throw new Error('The notification session belongs to another assignment.');
     }
+    if (
+      observedMetadata &&
+      observedMetadata.assignmentEventId !== expectedMetadata.assignmentEventId
+    ) {
+      if (observedMetadata.status === 'retired') return undefined;
+      throw new Error('The notification session belongs to another assignment.');
+    }
+    if (session.archived === true) {
+      if (!observedMetadata) {
+        throw new Error('The archived notification session has no ownership metadata.');
+      }
+      if (observedMetadata.status === 'ready') return undefined;
+      if (observedMetadata.status !== 'retired') {
+        throw new Error('The archived notification session has an invalid lifecycle state.');
+      }
+      return { ...reference, status: 'retired' };
+    }
+    if (observedMetadata?.status === 'ready') return { ...reference, status: 'ready' };
     if (observedMetadata?.status === 'retired') return { ...reference, status: 'retiring' };
     if (observedMetadata?.status === 'active') return { ...reference, status: 'active' };
     const history = historyObservation(
