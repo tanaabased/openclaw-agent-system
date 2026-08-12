@@ -197,6 +197,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       recordInboundSession: this.#dependencies.recordInboundSession,
       replyOptions: {
         disableTools: true,
+        sourceReplyDeliveryMode: 'automatic',
         suppressDefaultToolProgressMessages: true,
         suppressTyping: true,
         toolsAllow: [],
