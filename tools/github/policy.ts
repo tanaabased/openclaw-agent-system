@@ -9,6 +9,7 @@ import {
 } from './config-schema.ts';
 import type { GitHubToolInput } from './tool-schema.ts';
 
+const releasesPolicyAttribute = 'github.policy.releases';
 const globalOptionsWithValues = new Set(['--hostname', '--repo', '-R']);
 const apiOptionsWithValues = new Set([
   '--cache',
@@ -18,10 +19,12 @@ const apiOptionsWithValues = new Set([
   '--input',
   '--jq',
   '--method',
+  '--preview',
   '--raw-field',
   '--template',
   '-F',
   '-H',
+  '-p',
   '-X',
   '-f',
   '-q',
@@ -37,42 +40,14 @@ const readWords = new Set([
   'logs',
   'show',
   'status',
-  'trusted-root',
   'verify',
   'view',
   'watch',
 ]);
-const writeWords = new Set([
-  'add',
-  'checkout',
-  'clone',
-  'close',
-  'comment',
-  'copy',
-  'create',
-  'develop',
-  'edit',
-  'fork',
-  'lock',
-  'merge',
-  'pin',
-  'ready',
-  'reopen',
-  'rerun',
-  'review',
-  'run',
-  'set',
-  'sync',
-  'unlock',
-  'unpin',
-  'update',
-  'upload',
-]);
 const destructiveWords = new Set(['archive', 'cancel', 'delete', 'destroy', 'purge', 'remove']);
 const destructiveFlags = new Set(['--cleanup-tag', '--delete-branch', '--delete-last']);
 const rootReadCommands = new Set(['completion', 'help', 'search', 'status', 'version']);
-const adminApiRoute =
-  /\/(?:actions\/permissions|collaborators|deployments?|environments?|hooks?|installations?|keys|memberships?|members|outside_collaborators|rulesets?|secrets|teams|variables)(?:\/|$)|\/branches\/[^/]+\/protection(?:\/|$)/i;
+const releaseReadSubcommands = new Set(['download', 'list', 'ls', 'view']);
 
 export function githubCommandPosition(argv: readonly string[]): number {
   for (let index = 0; index < argv.length; index += 1) {
@@ -91,9 +66,11 @@ function operation(
   risk: AgentSystemRisk,
   command: string,
   subcommand?: string,
+  releases = false,
 ): AgentSystemOperation {
   return {
     action: 'github.cli.invoke',
+    ...(releases ? { attributes: { [releasesPolicyAttribute]: true } } : {}),
     risk,
     summary: `Run gh ${command}${subcommand ? ` ${subcommand}` : ''}`,
     resources: [{ type: 'host', id: 'github.com' }],
@@ -148,114 +125,99 @@ function apiEndpoint(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
-function graphqlDocument(input: GitHubToolInput, argv: readonly string[]): string | undefined {
-  for (const option of ['--field', '--raw-field', '-F', '-f']) {
-    const value = apiArgumentValues(argv, option).find((candidate) =>
-      candidate.startsWith('query='),
-    );
-    if (value) return value.slice('query='.length);
-  }
-  if (!input.stdin) return undefined;
-  try {
-    const parsed = JSON.parse(input.stdin) as { query?: unknown };
-    return typeof parsed.query === 'string' ? parsed.query : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function classifyApi(input: GitHubToolInput, argv: readonly string[]): AgentSystemRisk {
-  const endpoint = apiEndpoint(argv);
-  if (!endpoint) return 'unknown';
-
-  if (endpoint === 'graphql') {
-    const document = graphqlDocument(input, argv)?.trim();
-    if (!document) return 'unknown';
-    if (/^(?:query|subscription)\b|^\{/i.test(document)) return 'read';
-    if (!/^mutation\b/i.test(document)) return 'unknown';
-    if (/\b(?:archive|cancel|delete|destroy|purge|remove)[A-Z_a-z0-9]*\b/i.test(document)) {
-      return 'destructive';
-    }
-    if (
-      /\b(?:collaborator|environment|hook|key|member|permission|ruleset|secret|team|variable)[A-Z_a-z0-9]*\b/i.test(
-        document,
-      )
-    ) {
-      return 'admin';
-    }
-    return 'unknown';
-  }
-
-  const method = (
+function apiMethod(argv: readonly string[]): string {
+  return (
     apiArgumentValue(argv, '--method') ??
     apiArgumentValue(argv, '-X') ??
     (['--field', '--input', '--raw-field', '-F', '-f'].some((name) => hasApiArgument(argv, name))
       ? 'POST'
       : 'GET')
   ).toUpperCase();
-  if (method === 'GET' || method === 'HEAD') return 'read';
-  if (method === 'DELETE') return 'destructive';
-  if (adminApiRoute.test(`/${endpoint.replace(/^\/+/, '')}`)) return 'admin';
-  return 'unknown';
 }
 
-function isAdminCommand(
-  command: string,
-  subcommand: string | undefined,
-  nestedCommand: string | undefined,
-  argv: readonly string[],
-): boolean {
-  if (argv.includes('--admin')) return true;
-  if (command === 'repo' && ['edit', 'rename', 'transfer'].includes(subcommand ?? '')) return true;
-  if (command === 'repo' && subcommand === 'deploy-key' && nestedCommand === 'add') return true;
-  if (command === 'workflow' && ['disable', 'enable'].includes(subcommand ?? '')) return true;
-  if (['gpg-key', 'secret', 'ssh-key', 'variable'].includes(command)) {
-    return !includesWord([subcommand], readWords);
+function apiPath(endpoint: string): string {
+  try {
+    return new URL(endpoint).pathname.replace(/\/+$/u, '');
+  } catch {
+    return `/${(endpoint.split(/[?#]/u, 1)[0] ?? '').replace(/^\/+|\/+$/gu, '')}`;
   }
-  return false;
 }
 
-/** Classify a GitHub CLI request without resolving credentials or enumerating every gh command. */
+function isReleaseApiMutation(endpoint: string, method: string): boolean {
+  if (method === 'GET' || method === 'HEAD') return false;
+  const path = apiPath(endpoint);
+  if (/^\/repos\/[^/]+\/[^/]+\/releases\/generate-notes$/iu.test(path)) return false;
+  return /^\/repos\/[^/]+\/[^/]+\/releases(?:\/|$)/iu.test(path);
+}
+
+function classifyApi(argv: readonly string[]): AgentSystemOperation {
+  const endpoint = apiEndpoint(argv);
+  const method = apiMethod(argv);
+  const risk: AgentSystemRisk =
+    method === 'GET' || method === 'HEAD' ? 'read' : method === 'DELETE' ? 'destructive' : 'write';
+  return operation(
+    endpoint ? risk : 'unknown',
+    'api',
+    undefined,
+    argv.some((value) => isReleaseApiMutation(value, method)),
+  );
+}
+
+/** Classify a GitHub CLI request and select only explicit release mutations for policy. */
 export function classifyGitHubOperation(input: GitHubToolInput): AgentSystemOperation {
   const position = githubCommandPosition(input.argv);
   const command = position < 0 ? 'command' : (input.argv[position]?.toLowerCase() ?? 'command');
-  const subcommand = position < 0 ? undefined : input.argv[position + 1]?.toLowerCase();
-  const nestedCommand = position < 0 ? undefined : input.argv[position + 2]?.toLowerCase();
+  const subcommandOffset =
+    position < 0 ? -1 : githubCommandPosition(input.argv.slice(position + 1));
+  const subcommandPosition =
+    position < 0 || subcommandOffset < 0 ? -1 : position + 1 + subcommandOffset;
+  const subcommand =
+    subcommandPosition < 0 ? undefined : input.argv[subcommandPosition]?.toLowerCase();
+  const nestedCommand =
+    subcommandPosition < 0 ? undefined : input.argv[subcommandPosition + 1]?.toLowerCase();
 
+  if (command === 'api') return classifyApi(input.argv.slice(position + 1));
+  if (command === 'release') {
+    if (
+      !subcommand ||
+      subcommand === '--help' ||
+      subcommand === '-h' ||
+      releaseReadSubcommands.has(subcommand) ||
+      nestedCommand === '--help' ||
+      nestedCommand === '-h'
+    ) {
+      return operation('read', command, subcommand);
+    }
+    const risk = includesWord([subcommand], destructiveWords) ? 'destructive' : 'write';
+    return operation(risk, command, subcommand, true);
+  }
   if (input.argv.some((value) => value === '--help' || value === '-h')) {
     return operation('read', command, subcommand);
   }
-  if (command === 'api')
-    return operation(classifyApi(input, input.argv.slice(position + 1)), command);
   if (
     includesWord([subcommand, nestedCommand], destructiveWords) ||
     input.argv.some((value) => destructiveFlags.has(value.split('=')[0] ?? value))
   ) {
     return operation('destructive', command, subcommand);
   }
-  if (isAdminCommand(command, subcommand, nestedCommand, input.argv)) {
-    return operation('admin', command, subcommand);
-  }
   if (rootReadCommands.has(command) || includesWord([subcommand, nestedCommand], readWords)) {
     return operation('read', command, subcommand);
   }
-  if (includesWord([subcommand, nestedCommand], writeWords)) {
-    return operation('write', command, subcommand);
-  }
-  return operation('unknown', command, subcommand);
+  return operation(position < 0 ? 'unknown' : 'write', command, subcommand);
 }
 
-/** Apply the manifest's narrow GitHub hazard policy after classification. */
+/** Apply the manifest's releases policy without authorizing through risk metadata. */
 export function authorizeGitHubOperation(
   operation: AgentSystemOperation,
   configuration: GitHubManifestConfiguration,
 ): AgentSystemAuthorizationDecision {
-  if (operation.risk === 'read' || operation.risk === 'write') return { status: 'allowed' };
-  const policy = resolveGitHubPolicyConfiguration(configuration);
-  if (policy[operation.risk] === 'allow') return { status: 'allowed' };
-  const reference = `github.policy.${operation.risk}`;
+  if (operation.attributes?.[releasesPolicyAttribute] !== true) return { status: 'allowed' };
+  if (resolveGitHubPolicyConfiguration(configuration).releases === 'allow') {
+    return { status: 'allowed' };
+  }
   return {
     status: 'denied',
-    reason: `GitHub ${operation.risk} operations are denied by ${reference}. To permit this operation, an operator must set ${reference} to allow in agent.yaml and retry.`,
+    reason:
+      'GitHub release mutations are denied by github.policy.releases. To permit this operation, an operator must set github.policy.releases to allow in agent.yaml and retry.',
   };
 }

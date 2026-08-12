@@ -25,13 +25,13 @@ describe('tools/git/lifecycle', () => {
     );
   });
 
-  it('should require declared identity and warn when unknown operations are allowed', () => {
+  it('should require declared identity', () => {
     const contribution = createGitLifecycleContribution();
     const result = contribution.validate?.({
       manifest: {
         schemaVersion: 1,
         agent: { id: 'data' },
-        git: { policy: { unknown: 'allow' } },
+        git: {},
       },
       workspaceDir: '/workspace',
     });
@@ -41,7 +41,6 @@ describe('tools/git/lifecycle', () => {
       [
         { code: 'git-name-required', severity: 'error' },
         { code: 'git-email-required', severity: 'error' },
-        { code: 'git-policy-unknown-allowed', severity: 'warning' },
       ],
     );
   });

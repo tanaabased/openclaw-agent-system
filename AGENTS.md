@@ -12,10 +12,20 @@
 - Treat `agent.yaml` as workspace-owned desired state, not global OpenClaw configuration, an agent biography, or a secret store.
 - Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
-- Apply tool policy before resolving credentials. Remote-service token permissions remain the final authorization boundary.
+- Treat trusted agent and workspace binding, working-directory containment, fixed executables and managed configuration, credential and signing control, managed-resource lifecycle, and authorization-before-credentials as non-configurable product invariants rather than manifest policy.
+- Apply configurable tool policy before resolving credentials. Provider credentials, permissions, roles, and server-side protections are authoritative wherever they exist; Agent System policy fills specific, high-consequence capability gaps that relevant provider authorization surfaces do not consistently express.
 - Treat model-facing `agent_system_*` tools as the agent-bound execution surface. Treat `tool`, `credentials`, and packaged shims as trusted operator interfaces; never claim their agent selection or PATH routing enforces cross-agent isolation.
 - Treat preventing obvious cross-agent impersonation as a core product goal. Managed agents share an OS user, so provide practical agent-context and workspace guardrails without claiming complete isolation.
 - Keep the central native-tool instruction in `before_prompt_build` and the high-confidence operator-command gate in `before_tool_call`. Block with an actionable native retry instead of claiming transparent cross-tool rewriting, and never log the inspected raw command.
+
+## Policy design
+
+- Treat policy as manifest-configurable control over what a contained tool may do, not as the implementation of Agent System's non-configurable product invariants.
+- Add a policy field only for a specific, high-consequence capability gap that relevant provider authorization surfaces do not consistently express and that Agent System can detect with high confidence; name it after the provider concept or semantic effect rather than a broad risk category.
+- Permit otherwise valid operations unless they select a documented protection. A local `allow` never overrides a provider denial.
+- Match supported command spellings and API routes for each protected effect, and fail closed only inside that owned boundary rather than on general uncertainty.
+- Keep risk classification available for audit and design work without making it an implicit authorization decision.
+- Redesign and validate policy one tool at a time; do not copy a legacy tool's fields into a new surface.
 
 ## Documentation
 

@@ -59,11 +59,8 @@ export const externalGitSectionSchema = Type.Object(
     policy: Type.Optional(
       Type.Object(
         {
-          delete: Type.Optional(externalGitPolicyDecisionSchema),
-          discard: Type.Optional(externalGitPolicyDecisionSchema),
-          force: Type.Optional(externalGitPolicyDecisionSchema),
-          rewrite: Type.Optional(externalGitPolicyDecisionSchema),
-          unknown: Type.Optional(externalGitPolicyDecisionSchema),
+          'delete-remote-ref': Type.Optional(externalGitPolicyDecisionSchema),
+          'force-push': Type.Optional(externalGitPolicyDecisionSchema),
         },
         { additionalProperties: false },
       ),
@@ -121,11 +118,8 @@ type ExternalGitSection = Static<typeof externalGitSectionSchema>;
 export type GitPolicyDecision = 'allow' | 'deny';
 
 export interface GitPolicyConfiguration {
-  delete: GitPolicyDecision;
-  discard: GitPolicyDecision;
-  force: GitPolicyDecision;
-  rewrite: GitPolicyDecision;
-  unknown: GitPolicyDecision;
+  deleteRemoteRef: GitPolicyDecision;
+  forcePush: GitPolicyDecision;
 }
 
 export type GitPrivateKeySource = { path: string } | { fromEnvironment: string };
@@ -166,11 +160,8 @@ export interface GitToolConfiguration {
 }
 
 export const defaultGitPolicyConfiguration: GitPolicyConfiguration = {
-  delete: 'deny',
-  discard: 'deny',
-  force: 'deny',
-  rewrite: 'deny',
-  unknown: 'deny',
+  deleteRemoteRef: 'deny',
+  forcePush: 'deny',
 };
 
 export function resolveGitPolicyConfiguration(
@@ -192,7 +183,18 @@ export function decodeGitSection(value: ExternalGitSection): GitManifestConfigur
     ...(value.email === undefined ? {} : { email: decodeResolvableString(value.email) }),
     ...(value.extensions === undefined ? {} : { extensions: { ...value.extensions } }),
     ...(value.name === undefined ? {} : { name: decodeResolvableString(value.name) }),
-    ...(value.policy === undefined ? {} : { policy: { ...value.policy } }),
+    ...(value.policy === undefined
+      ? {}
+      : {
+          policy: {
+            ...(value.policy['delete-remote-ref'] === undefined
+              ? {}
+              : { deleteRemoteRef: value.policy['delete-remote-ref'] }),
+            ...(value.policy['force-push'] === undefined
+              ? {}
+              : { forcePush: value.policy['force-push'] }),
+          },
+        }),
     ...(value.signing === undefined
       ? {}
       : {

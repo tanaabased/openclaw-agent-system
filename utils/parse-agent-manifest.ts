@@ -92,8 +92,8 @@ function pointerSegment(value: string): string {
 function legacyPolicyDiagnostics(value: unknown): ManifestDiagnostic[] {
   if (!isRecord(value)) return [];
   const fields: string[] = [];
-  const gitPolicyFields = new Set(['delete', 'discard', 'force', 'rewrite', 'unknown']);
-  const githubPolicyFields = new Set(['admin', 'destructive', 'unknown']);
+  const gitPolicyFields = new Set(['delete-remote-ref', 'force-push']);
+  const githubPolicyFields = new Set(['releases']);
   const git = value['git'];
   if (isRecord(git)) {
     const extensions = git['extensions'];

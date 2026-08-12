@@ -1,5 +1,10 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added default-deny `github.policy.releases` protection for GitHub CLI and REST release mutations.
+- Narrowed Git operation policy to force pushes and remote-ref deletion.
+
 ## v0.2.2 - [August 12, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.2)
 
 ### New Features

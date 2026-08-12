@@ -62,11 +62,8 @@ git:
     lfs: allow
     town: deny
   policy:
-    delete: deny
-    discard: deny
-    force: allow
-    rewrite: allow
-    unknown: deny
+    delete-remote-ref: deny
+    force-push: allow
 `);
 
     assert.equal(result.status, 'valid');
@@ -79,11 +76,8 @@ git:
         town: 'deny',
       },
       policy: {
-        delete: 'deny',
-        discard: 'deny',
-        force: 'allow',
-        rewrite: 'allow',
-        unknown: 'deny',
+        deleteRemoteRef: 'deny',
+        forcePush: 'allow',
       },
     });
     assert.equal(
@@ -129,9 +123,23 @@ git:
 `).has('manifest-schema'),
       true,
     );
+    for (const field of ['delete', 'discard', 'force', 'rewrite', 'unknown']) {
+      assert.equal(
+        diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+git:
+  policy:
+    ${field}: deny
+`).has('manifest-unknown-key'),
+        true,
+        field,
+      );
+    }
   });
 
-  it('should reject legacy git ask decisions with exact migration guidance', () => {
+  it('should reject unsupported git policy decisions with exact guidance', () => {
     const result = parseAgentManifest(`
 schema-version: 1
 agent:
@@ -140,8 +148,8 @@ git:
   extensions:
     town: ask
   policy:
-    delete: ask
-    force: ask
+    delete-remote-ref: ask
+    force-push: ask
 `);
 
     assert.equal(result.status, 'invalid');
@@ -156,15 +164,15 @@ git:
         },
         {
           code: 'manifest-policy-ask-unsupported',
-          fieldPath: '/git/policy/delete',
+          fieldPath: '/git/policy/delete-remote-ref',
           message:
-            'Policy decision ask at /git/policy/delete is no longer supported. An operator must choose deny or allow.',
+            'Policy decision ask at /git/policy/delete-remote-ref is no longer supported. An operator must choose deny or allow.',
         },
         {
           code: 'manifest-policy-ask-unsupported',
-          fieldPath: '/git/policy/force',
+          fieldPath: '/git/policy/force-push',
           message:
-            'Policy decision ask at /git/policy/force is no longer supported. An operator must choose deny or allow.',
+            'Policy decision ask at /git/policy/force-push is no longer supported. An operator must choose deny or allow.',
         },
       ],
     );

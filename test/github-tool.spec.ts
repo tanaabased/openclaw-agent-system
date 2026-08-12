@@ -328,36 +328,31 @@ describe('tools/github/tool', () => {
     assert.deepEqual(environmentCalls, []);
   });
 
-  it('should deny destructive github operations before credentials load', async () => {
+  it('should deny github release mutations before credentials load', async () => {
     const environmentCalls: string[] = [];
 
     await assert.rejects(
       new AgentSystemToolRegistry([createTool()]).invoke(
         'gh',
         createRuntime({ environmentCalls }),
-        ['repo', 'delete', 'owner/repository', '--yes'],
+        ['release', 'create', 'v1.0.0'],
         { source: 'command', workspaceDir },
       ),
       (error: unknown) =>
         error instanceof AgentSystemToolError &&
         error.code === 'approval_denied' &&
-        error.message.includes('denied by github.policy.destructive') &&
-        error.message.includes('operator must set github.policy.destructive to allow'),
+        error.message.includes('denied by github.policy.releases') &&
+        error.message.includes('operator must set github.policy.releases to allow'),
     );
     assert.deepEqual(environmentCalls, []);
   });
 
-  it('should allow explicitly permitted unknown github operations through the shared runtime', async () => {
-    const policyManifest: AgentManifest = {
-      ...manifest,
-      github: { ...manifest.github, policy: { unknown: 'allow' } },
-    };
+  it('should allow non-release github operations through the shared runtime', async () => {
     const requests: AgentSystemCliRunRequest[] = [];
 
     await new AgentSystemToolRegistry([createTool()]).invoke(
       'gh',
       createRuntime({
-        inputManifest: policyManifest,
         runCli: async (request) => {
           requests.push(request);
           return {
@@ -398,7 +393,7 @@ describe('tools/github/tool', () => {
       },
     );
     assert.ok(policy);
-    const input = { argv: ['repo', 'delete', 'owner/repository', '--yes'] };
+    const input = { argv: ['release', 'delete', 'v1.0.0', '--yes'] };
     const decision = await policy.evaluate(
       { params: input, toolName: 'agent_system_github', toolCallId: 'approved-call' },
       {
@@ -408,8 +403,8 @@ describe('tools/github/tool', () => {
       },
     );
     assert.ok(decision && 'allow' in decision && decision.allow === false && decision.reason);
-    assert.match(decision.reason, /denied by github\.policy\.destructive/u);
-    assert.match(decision.reason, /operator must set github\.policy\.destructive to allow/u);
+    assert.match(decision.reason, /denied by github\.policy\.releases/u);
+    assert.match(decision.reason, /operator must set github\.policy\.releases to allow/u);
   });
 
   it('should reject an authenticated user that does not match the configured username', async () => {
