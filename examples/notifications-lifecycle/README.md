@@ -110,7 +110,8 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 "$GITHUB_WORKSPACE/examples/notifications-lifecycle/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field approved \
-  --minimum 1
+  --minimum 1 \
+  --timeout 300
 session_key="$(openclaw sessions --agent notification-data --json | jq -er --arg label "agent-system-test#$issue_number" '[.sessions[]? | select((.label // "") | contains($label)) | .key] | if length == 1 then .[0] else error("expected exactly one matching session") end')"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey}')"
 openclaw gateway call sessions.describe --json --params "$params" | jq -e '.session.archived != true'
