@@ -97,6 +97,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
   }
 
   public prepareTurn(input: GitHubNotificationSessionTurnInput): PreparedInboundReply<void> {
+    let sessionRecordTask: Promise<unknown> | undefined;
     const eventId = requiredText(input.event.id, 'GitHub notification event ids', 256);
     const label = requiredText(input.label, 'GitHub notification session labels', 120);
     const repositoryId = requiredText(
@@ -171,7 +172,21 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       ctxPayload,
       messageId: eventId,
       observeOnlyDispatchResult: undefined,
-      record: { createIfMissing: true },
+      afterRecord: async () => {
+        if (!sessionRecordTask) {
+          throw new Error('OpenClaw did not expose the notification session record task.');
+        }
+        await sessionRecordTask;
+      },
+      record: {
+        createIfMissing: true,
+        onRecordError(error) {
+          throw error;
+        },
+        trackSessionMetaTask(task) {
+          sessionRecordTask = task;
+        },
+      },
       recordInboundSession: this.#dependencies.recordInboundSession,
       routeSessionKey: input.route.sessionKey,
       runDispatch: async () => {

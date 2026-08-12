@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import type { GitHubNotificationAssignmentEvent } from '../channels/github/channel.ts';
-import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
+import GitHubNotificationSessionService, {
+  type GitHubNotificationSessionServiceDependencies,
+} from '../channels/github/lib/session-service.ts';
 import { resolveNotificationRoute } from '../channels/github/utils/routing.ts';
 
 const config: OpenClawConfig = {
@@ -71,27 +73,62 @@ const assignmentInput = {
 };
 
 function createService(
-  overrides: { config?: OpenClawConfig; record?: () => void } = {},
+  overrides: {
+    config?: OpenClawConfig;
+    record?: () => void | Promise<void>;
+    recordTask?: Promise<void>;
+  } = {},
 ): GitHubNotificationSessionService {
+  const recordInboundSession: GitHubNotificationSessionServiceDependencies['recordInboundSession'] =
+    async (params) => {
+      const recordTask = (overrides.recordTask ?? Promise.resolve())
+        .then(() => overrides.record?.())
+        .catch(params.onRecordError);
+      params.trackSessionMetaTask?.(recordTask);
+    };
   return new GitHubNotificationSessionService({
     readConfig: () => overrides.config ?? config,
-    recordInboundSession: (async () => overrides.record?.()) as never,
+    recordInboundSession,
   });
 }
 
 describe('channels/github/lib/session-service', () => {
-  it('should record the routed session without dispatching an agent turn', async () => {
+  it('should await the routed session record without dispatching an agent turn', async () => {
+    let completeRecord: (() => void) | undefined;
+    const recordTask = new Promise<void>((resolveRecord) => {
+      completeRecord = resolveRecord;
+    });
     let records = 0;
     const service = createService({
       record: () => {
         records += 1;
       },
+      recordTask,
     });
 
-    const observed = await service.recordSession(assignmentInput);
+    let settled = false;
+    const pending = service.recordSession(assignmentInput).then((observed) => {
+      settled = true;
+      return observed;
+    });
+    await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
+
+    assert.equal(settled, false);
+    completeRecord?.();
+    const observed = await pending;
 
     assert.equal(records, 1);
     assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
+  });
+
+  it('should propagate notification session record failures', async () => {
+    const service = createService({
+      record: () => {
+        throw new Error('session record failed');
+      },
+    });
+
+    await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
   });
 
   it('should prepare a deterministic observe-only session record', async () => {
@@ -114,7 +151,10 @@ describe('channels/github/lib/session-service', () => {
     const context = turn.ctxPayload as unknown as Record<string, unknown>;
     assert.equal(context.githubWorktreeBranch, assignmentInput.worktree.branch);
     assert.equal(context.githubWorktreePath, assignmentInput.worktree.path);
-    assert.deepEqual(turn.record, { createIfMissing: true });
+    assert.equal(turn.record?.createIfMissing, true);
+    assert.equal(typeof turn.record?.onRecordError, 'function');
+    assert.equal(typeof turn.record?.trackSessionMetaTask, 'function');
+    assert.equal(typeof turn.afterRecord, 'function');
     await assert.rejects(turn.runDispatch(), /must not dispatch an agent turn/u);
   });
 

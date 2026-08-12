@@ -103,12 +103,11 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 
 # should admit one approved assignment into a local session
 cd "$TMPDIR/agent-system-notifications"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
 "$GITHUB_WORKSPACE/examples/notifications-lifecycle/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field approved \
   --minimum 1
-session_key="$(openclaw sessions --agent notification-data --json | jq -er --arg label "agent-system-test#$issue_number" '[.sessions[]? | select((.label // "") | contains($label)) | .key] | if length == 1 then .[0] else error("expected exactly one matching session") end')"
+session_key="$(openclaw sessions --agent notification-data --json | jq -er '(.sessions // []) as $sessions | if ($sessions | length) == 1 then $sessions[0].key else error("expected exactly one notification session, found \($sessions | length)") end')"
 printf '%s' "$session_key" > "$TMPDIR/approved-session-key"
 
 # should expose exactly one worktree and one local session
