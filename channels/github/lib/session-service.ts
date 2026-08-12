@@ -1,10 +1,11 @@
 import { isAbsolute, resolve } from 'node:path';
 
-import { resolveStorePath, type OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 import {
   buildChannelInboundEventContext,
   type AssembledInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type {
   GitHubNotificationAssignmentSessions,
@@ -22,27 +23,17 @@ import {
 } from '../utils/briefing.ts';
 import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
 import {
-  githubNotificationSessionEntrySlot,
-  githubNotificationSessionExtensionNamespace,
-  parseGitHubNotificationSessionMetadata,
-  type GitHubNotificationSessionMetadata,
-} from './session-extension.ts';
-import {
   githubNotificationChannelId,
   resolveNotificationRoute,
   type NotificationRoutingDesiredState,
   type ResolvedNotificationRoute,
 } from '../utils/routing.ts';
 
-type GatewayRequest = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
-
 export interface GitHubNotificationSessionServiceDependencies {
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
-  gatewayRequest: GatewayRequest;
   loadBriefing(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationBriefingData>;
-  pluginId: string;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: AssembledInboundReply['recordInboundSession'];
 }
@@ -57,36 +48,12 @@ export interface GitHubNotificationSessionTurnInput {
   worktreePath: string;
 }
 
-export interface GitHubNotificationSessionReference {
-  agentId: string;
-  sessionKey: string;
-}
-
 interface ResolvedAssignmentSession {
   config: OpenClawConfig;
   desired: NotificationRoutingDesiredState;
   event: GitHubNotificationAssignmentEvent;
   label: string;
   route: ResolvedNotificationRoute;
-}
-
-function deterministicRouteConfig(input: GitHubNotificationAssignmentSessionInput): OpenClawConfig {
-  return {
-    agents: { list: [{ id: input.agentId, workspace: input.workspaceDir }] },
-    bindings: [
-      {
-        agentId: input.agentId,
-        match: { accountId: input.agentId, channel: githubNotificationChannelId },
-        session: { dmScope: 'per-account-channel-peer' },
-        type: 'route',
-      },
-    ],
-    channels: {
-      [githubNotificationChannelId]: {
-        accounts: { [input.agentId]: { enabled: true } },
-      },
-    },
-  };
 }
 
 function requiredText(value: string, label: string, maximumLength?: number): string {
@@ -104,278 +71,12 @@ function absolutePath(value: string, label: string): string {
   return normalized;
 }
 
-function assertSessionPatchResult(value: unknown, expectedSessionKey: string): void {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('OpenClaw returned an invalid notification session patch result.');
-  }
-  const result = value as Record<string, unknown>;
-  if (result.ok !== true || result.key !== expectedSessionKey) {
-    throw new Error('OpenClaw did not patch the expected notification session.');
-  }
-}
-
-function assertSessionPluginPatchResult(value: unknown, expectedSessionKey: string): void {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('OpenClaw returned an invalid notification session metadata result.');
-  }
-  const result = value as Record<string, unknown>;
-  if (result.ok !== true || result.key !== expectedSessionKey) {
-    throw new Error('OpenClaw did not patch metadata for the expected notification session.');
-  }
-}
-
-function assertSessionAbortResult(value: unknown): 'aborted' | 'no-active-run' {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('OpenClaw returned an invalid notification session abort result.');
-  }
-  const result = value as Record<string, unknown>;
-  if (
-    result.ok !== true ||
-    (result.status !== 'aborted' && result.status !== 'no-active-run') ||
-    (result.abortedRunId !== null && typeof result.abortedRunId !== 'string')
-  ) {
-    throw new Error('OpenClaw did not return a valid notification session abort status.');
-  }
-  if (result.status === 'aborted' && !result.abortedRunId) {
-    throw new Error('OpenClaw omitted the aborted notification run id.');
-  }
-  if (result.status === 'no-active-run' && result.abortedRunId !== null) {
-    throw new Error('OpenClaw returned a run id when no notification run was active.');
-  }
-  return result.status;
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function sessionCreateResult(
-  value: unknown,
-  expectedSessionKey: string,
-): { id?: string; key: string } {
-  const result = record(value);
-  if (
-    result?.ok !== true ||
-    result.key !== expectedSessionKey ||
-    (result.sessionId !== undefined && typeof result.sessionId !== 'string')
-  ) {
-    throw new Error('OpenClaw did not create or adopt the expected notification session.');
-  }
-  return {
-    ...(result.sessionId === undefined ? {} : { id: result.sessionId }),
-    key: expectedSessionKey,
-  };
-}
-
-function sessionDescription(value: unknown): Record<string, unknown> | undefined {
-  const result = record(value);
-  if (!result || !Object.hasOwn(result, 'session')) {
-    throw new Error('OpenClaw returned an invalid notification session description.');
-  }
-  if (result.session === null) return undefined;
-  const session = record(result.session);
-  if (!session) throw new Error('OpenClaw returned an invalid notification session row.');
-  return session;
-}
-
-function sessionHasActiveRun(value: unknown, expectedSessionKey: string): boolean {
-  const result = record(value);
-  if (!result || !Array.isArray(result.sessions)) {
-    throw new Error('OpenClaw returned an invalid notification session list.');
-  }
-  const session = result.sessions
-    .map((value) => record(value))
-    .find((value) => value?.key === expectedSessionKey);
-  if (!session || typeof session.hasActiveRun !== 'boolean') {
-    throw new Error('OpenClaw omitted the notification session active-run state.');
-  }
-  return session.hasActiveRun;
-}
-
-function sessionMetadataValue(session: Record<string, unknown>, pluginId: string): unknown {
-  if (session[githubNotificationSessionEntrySlot] !== undefined) {
-    return session[githubNotificationSessionEntrySlot];
-  }
-  if (!Array.isArray(session.pluginExtensions)) return undefined;
-  return session.pluginExtensions
-    .map((value) => record(value))
-    .find(
-      (value) =>
-        value?.pluginId === pluginId &&
-        value.namespace === githubNotificationSessionExtensionNamespace,
-    )?.value;
-}
-
-function messageId(value: unknown): string | undefined {
-  const message = record(value);
-  if (!message) return undefined;
-  for (const candidate of [message.messageId, message.id, record(message.__openclaw)?.id]) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-  return undefined;
-}
-
-function messageRole(value: unknown): string | undefined {
-  const role = record(value)?.role;
-  return typeof role === 'string' ? role.toLowerCase() : undefined;
-}
-
-function historyObservation(
-  value: unknown,
-  eventId: string,
-): 'absent' | 'briefing-running' | 'active' {
-  const result = record(value);
-  if (!result || !Array.isArray(result.messages)) {
-    throw new Error('OpenClaw returned invalid notification session history.');
-  }
-  const eventIndex = result.messages.findIndex((message) => messageId(message) === eventId);
-  if (eventIndex === -1) return 'absent';
-  return result.messages
-    .slice(eventIndex + 1)
-    .some((message) => messageRole(message) === 'assistant')
-    ? 'active'
-    : 'briefing-running';
-}
-
-function metadata(
-  input: GitHubNotificationAssignmentSessionInput,
-  status: GitHubNotificationSessionMetadata['status'],
-): GitHubNotificationSessionMetadata {
-  return {
-    assignmentEventId: input.delivery.assignmentEventId,
-    itemNumber: input.item.number,
-    itemType: input.item.itemType,
-    repositoryId: input.item.repositoryNodeId,
-    schemaVersion: 1,
-    status,
-    worktreeBranch: input.worktree.branch,
-    worktreePath: input.worktree.path,
-  };
-}
-
-function metadataIdentityMatches(
-  value: GitHubNotificationSessionMetadata,
-  expected: GitHubNotificationSessionMetadata,
-): boolean {
-  return (
-    value.itemNumber === expected.itemNumber &&
-    value.itemType === expected.itemType &&
-    value.repositoryId === expected.repositoryId &&
-    value.worktreeBranch === expected.worktreeBranch &&
-    resolve(value.worktreePath) === resolve(expected.worktreePath)
-  );
-}
-
-/** Build a local-only, no-tools assignment turn for one installed notification session. */
+/** Dispatch one assignment through OpenClaw's channel-owned session lifecycle. */
 export default class GitHubNotificationSessionService implements GitHubNotificationAssignmentSessions {
   readonly #dependencies: GitHubNotificationSessionServiceDependencies;
 
   public constructor(dependencies: GitHubNotificationSessionServiceDependencies) {
     this.#dependencies = dependencies;
-  }
-
-  public async prepare(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession> {
-    const assignment = await this.#resolveAssignment(input);
-    const created = sessionCreateResult(
-      await this.#dependencies.gatewayRequest('sessions.create', {
-        agentId: input.agentId,
-        key: assignment.route.sessionKey,
-        label: assignment.label,
-      }),
-      assignment.route.sessionKey,
-    );
-    assertSessionPatchResult(
-      await this.#dependencies.gatewayRequest('sessions.patch', {
-        agentId: input.agentId,
-        archived: false,
-        key: assignment.route.sessionKey,
-        label: assignment.label,
-        sendPolicy: 'deny',
-      }),
-      assignment.route.sessionKey,
-    );
-    await this.#patchMetadata(input, assignment.route.sessionKey, 'ready');
-    return { ...created, status: 'ready' };
-  }
-
-  public async inspect(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession | undefined> {
-    const assignment = await this.#resolveAssignment(input, false);
-    const session = sessionDescription(
-      await this.#dependencies.gatewayRequest('sessions.describe', {
-        key: assignment.route.sessionKey,
-      }),
-    );
-    if (!session) return undefined;
-    if (session.key !== assignment.route.sessionKey) {
-      throw new Error('OpenClaw described another notification session.');
-    }
-    if (session.sessionId !== undefined && typeof session.sessionId !== 'string') {
-      throw new Error('OpenClaw returned an invalid notification session id.');
-    }
-    const reference = {
-      ...(session.sessionId === undefined ? {} : { id: session.sessionId }),
-      key: assignment.route.sessionKey,
-    };
-    const rawMetadata = sessionMetadataValue(session, this.#dependencies.pluginId);
-    const observedMetadata = parseGitHubNotificationSessionMetadata(rawMetadata);
-    if (rawMetadata !== undefined && !observedMetadata) {
-      throw new Error('OpenClaw returned invalid notification session metadata.');
-    }
-    const expectedMetadata = metadata(input, 'ready');
-    if (observedMetadata && !metadataIdentityMatches(observedMetadata, expectedMetadata)) {
-      throw new Error('The notification session belongs to another assignment.');
-    }
-    if (
-      observedMetadata &&
-      observedMetadata.assignmentEventId !== expectedMetadata.assignmentEventId
-    ) {
-      if (observedMetadata.status === 'retired') return undefined;
-      throw new Error('The notification session belongs to another assignment.');
-    }
-    if (session.archived === true) {
-      if (!observedMetadata) {
-        throw new Error('The archived notification session has no ownership metadata.');
-      }
-      if (observedMetadata.status === 'ready') return undefined;
-      if (observedMetadata.status !== 'retired') {
-        throw new Error('The archived notification session has an invalid lifecycle state.');
-      }
-      return { ...reference, status: 'retired' };
-    }
-    if (observedMetadata?.status === 'ready') return { ...reference, status: 'ready' };
-    if (observedMetadata?.status === 'retired') return { ...reference, status: 'retiring' };
-    if (observedMetadata?.status === 'active') return { ...reference, status: 'active' };
-    const history = historyObservation(
-      await this.#dependencies.gatewayRequest('chat.history', {
-        agentId: input.agentId,
-        limit: 50,
-        maxChars: maximumGitHubNotificationBriefingLength,
-        sessionKey: assignment.route.sessionKey,
-      }),
-      input.delivery.assignmentEventId,
-    );
-    if (history === 'active') {
-      await this.#patchMetadata(input, assignment.route.sessionKey, 'active');
-      return { ...reference, status: 'active' };
-    }
-    if (history === 'briefing-running' || observedMetadata?.status === 'briefing') {
-      const hasActiveRun = sessionHasActiveRun(
-        await this.#dependencies.gatewayRequest('sessions.list', {
-          agentId: input.agentId,
-          limit: 20,
-          search: assignment.route.sessionKey,
-        }),
-        assignment.route.sessionKey,
-      );
-      return { ...reference, status: hasActiveRun ? 'briefing-running' : 'incomplete' };
-    }
-    return { ...reference, status: 'ready' };
   }
 
   public async dispatchBriefing(
@@ -389,7 +90,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       worktree: input.worktree,
     });
     const event = { ...assignment.event, timestamp: Date.parse(data.assignmentAt) };
-    await runGitHubNotificationAssignment(event, {
+    const result = await runGitHubNotificationAssignment(event, {
       config: assignment.config,
       desired: assignment.desired,
       prepareTurn: (event, route) =>
@@ -403,12 +104,10 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
           worktreePath: input.worktree.path,
         }),
     });
-    await this.#patchMetadata(input, assignment.route.sessionKey, 'active');
-    return {
-      ...(input.delivery.sessionId === undefined ? {} : { id: input.delivery.sessionId }),
-      key: assignment.route.sessionKey,
-      status: 'active',
-    };
+    if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
+      throw new Error('OpenClaw did not dispatch the expected notification session.');
+    }
+    return { key: result.routeSessionKey, status: 'active' };
   }
 
   public prepareTurn(input: GitHubNotificationSessionTurnInput): AssembledInboundReply {
@@ -451,6 +150,8 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         githubItemNumber: input.event.itemNumber,
         githubItemType: input.event.itemType,
         githubRepositoryId: repositoryId,
+        githubWorktreeBranch: worktreeBranch,
+        githubWorktreePath: worktreePath,
       },
       from: `github:${repositoryId}`,
       message: {
@@ -481,43 +182,14 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       surface: githubNotificationChannelId,
       timestamp: input.event.timestamp,
     });
-    const metadata: GitHubNotificationSessionMetadata = {
-      assignmentEventId: eventId,
-      itemNumber: input.event.itemNumber,
-      itemType: input.event.itemType,
-      repositoryId,
-      schemaVersion: 1,
-      status: 'briefing',
-      worktreeBranch,
-      worktreePath,
-    };
 
     return {
       accountId: input.route.accountId,
-      afterRecord: async () => {
-        const result = await this.#dependencies.gatewayRequest('sessions.patch', {
-          agentId: input.route.agentId,
-          archived: false,
-          key: input.route.sessionKey,
-          label,
-          sendPolicy: 'deny',
-        });
-        assertSessionPatchResult(result, input.route.sessionKey);
-        const metadataResult = await this.#dependencies.gatewayRequest('sessions.pluginPatch', {
-          key: input.route.sessionKey,
-          namespace: githubNotificationSessionExtensionNamespace,
-          pluginId: this.#dependencies.pluginId,
-          value: metadata,
-        });
-        assertSessionPluginPatchResult(metadataResult, input.route.sessionKey);
-      },
       agentId: input.route.agentId,
       cfg: input.config,
       channel: githubNotificationChannelId,
       ctxPayload,
-      delivery: {
-        deliver: async () => undefined,
-      },
+      delivery: { deliver: async () => undefined },
       dispatchReplyWithBufferedBlockDispatcher:
         this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
       messageId: eventId,
@@ -531,14 +203,15 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         toolsAllow: [],
       },
       routeSessionKey: input.route.sessionKey,
-      storePath: resolveStorePath(undefined, { agentId: input.route.agentId }),
+      storePath: resolveStorePath(input.config.session?.store, {
+        agentId: input.route.agentId,
+      }),
       toolsAllow: [],
     };
   }
 
   async #resolveAssignment(
     input: GitHubNotificationAssignmentSessionInput,
-    verifyCurrentRoute = true,
   ): Promise<ResolvedAssignmentSession> {
     const config = await this.#dependencies.readConfig();
     const desired = {
@@ -554,7 +227,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       title: `GitHub ${input.item.itemType} #${input.item.number} assignment`,
     };
     const route = resolveNotificationRoute(
-      verifyCurrentRoute ? config : deterministicRouteConfig(input),
+      config,
       desired,
       githubNotificationConversationId(event),
     );
@@ -563,54 +236,5 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         .slice(0, 120)
         .trim();
     return { config, desired, event, label, route };
-  }
-
-  async #patchMetadata(
-    input: GitHubNotificationAssignmentSessionInput,
-    sessionKey: string,
-    status: GitHubNotificationSessionMetadata['status'],
-  ): Promise<void> {
-    assertSessionPluginPatchResult(
-      await this.#dependencies.gatewayRequest('sessions.pluginPatch', {
-        key: sessionKey,
-        namespace: githubNotificationSessionExtensionNamespace,
-        pluginId: this.#dependencies.pluginId,
-        value: metadata(input, status),
-      }),
-      sessionKey,
-    );
-  }
-
-  /** Abort any active automated turn without deleting the session or transcript. */
-  async #abortBriefing(
-    reference: GitHubNotificationSessionReference,
-  ): Promise<'aborted' | 'no-active-run'> {
-    const result = await this.#dependencies.gatewayRequest('sessions.abort', {
-      agentId: requiredText(reference.agentId, 'GitHub notification agent ids'),
-      key: requiredText(reference.sessionKey, 'GitHub notification session keys'),
-    });
-    return assertSessionAbortResult(result);
-  }
-
-  /** Mark, abort, and archive one exact assignment session while preserving its transcript. */
-  public async retire(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession> {
-    const assignment = await this.#resolveAssignment(input, false);
-    const agentId = requiredText(input.agentId, 'GitHub notification agent ids');
-    const sessionKey = assignment.route.sessionKey;
-    await this.#abortBriefing({ agentId, sessionKey });
-    await this.#patchMetadata(input, sessionKey, 'retired');
-    const result = await this.#dependencies.gatewayRequest('sessions.patch', {
-      agentId,
-      archived: true,
-      key: sessionKey,
-    });
-    assertSessionPatchResult(result, sessionKey);
-    return {
-      ...(input.delivery.sessionId === undefined ? {} : { id: input.delivery.sessionId }),
-      key: sessionKey,
-      status: 'retired',
-    };
   }
 }

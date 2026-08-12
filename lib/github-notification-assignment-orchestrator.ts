@@ -42,15 +42,6 @@ export interface GitHubNotificationAssignmentSessions {
   dispatchBriefing(
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession>;
-  inspect(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession | undefined>;
-  prepare(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession>;
-  retire(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession>;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
@@ -78,17 +69,6 @@ function withoutFailure(
   const next = { ...delivery };
   Reflect.deleteProperty(next, 'failureCode');
   return next;
-}
-
-function sessionStage(
-  session: GitHubNotificationObservedSession,
-): GitHubNotificationDeliveryState['stage'] {
-  if (session.status === 'ready') return 'session-ready';
-  if (session.status === 'active' || session.status === 'briefing-running') return session.status;
-  throw new GitHubNotificationAssignmentOrchestratorError(
-    'github-notification-session-checkpoint-invalid',
-    'The observed notification session cannot be checkpointed.',
-  );
 }
 
 /** Reconcile one agent's assignments serially through durable, value-free checkpoints. */
@@ -153,35 +133,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
         await this.#checkpointWorktree(state, itemKey, action.worktree);
         continue;
       }
-      if (action.kind === 'checkpoint-session') {
-        await this.#checkpointSession(state, itemKey, action.session);
-        continue;
-      }
-      if (action.kind === 'retire-session') {
-        const worktree = observation.worktree;
-        if (!worktree) {
-          throw new GitHubNotificationAssignmentOrchestratorError(
-            'github-notification-retirement-worktree-missing',
-            'The notification session could not be retired without its deterministic worktree.',
-          );
-        }
-        await this.#requestRetirement(state, itemKey, action.reasonCode);
-        const checkpoint = this.#boundary(state, itemKey);
-        if (!checkpoint) return;
-        await this.#sessionBoundary(
-          'github-notification-session-retirement-failed',
-          'The notification session could not be retired.',
-          () =>
-            this.#dependencies.sessions.retire({
-              agentId,
-              ...checkpoint,
-              signal,
-              worktree,
-              workspaceDir: state.workspaceDir,
-            }),
-        );
-        continue;
-      }
       if (action.kind === 'prepare-worktree') {
         await this.#checkpointDelivery(state, itemKey, {
           assignmentEventId: delivery.assignmentEventId,
@@ -219,37 +170,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
           'github-notification-worktree-reconciliation-failed',
           'The GitHub notification worktree could not be reconciled.',
         );
-      }
-      if (action.kind === 'prepare-session') {
-        await this.#checkpointWorktree(state, itemKey, worktree);
-        const checkpoint = this.#boundary(state, itemKey);
-        if (!checkpoint) return;
-        if (
-          !(await this.#authorize(
-            agentId,
-            state.workspaceDir,
-            checkpoint.item,
-            checkpoint.delivery,
-            signal,
-            state,
-            itemKey,
-          ))
-        )
-          continue;
-        const session = await this.#sessionBoundary(
-          'github-notification-session-prepare-failed',
-          'The notification session could not be prepared.',
-          () =>
-            this.#dependencies.sessions.prepare({
-              agentId,
-              ...checkpoint,
-              signal,
-              worktree,
-              workspaceDir: state.workspaceDir,
-            }),
-        );
-        await this.#checkpointSession(state, itemKey, session);
-        continue;
       }
       await this.#checkpointDelivery(state, itemKey, { ...delivery, stage: 'briefing-running' });
       const checkpoint = this.#boundary(state, itemKey);
@@ -300,6 +220,9 @@ export default class GitHubNotificationAssignmentOrchestrator {
       signal,
       workspaceDir,
     });
+    if (authority.authorized && item.disposition !== 'retired' && delivery.stage === 'active') {
+      return { authority };
+    }
     const checkpointedWorktree =
       delivery.worktreeBranch && delivery.worktreePath
         ? { branch: delivery.worktreeBranch, path: delivery.worktreePath }
@@ -322,25 +245,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
           : {}),
       };
     }
-    const session = await this.#sessionBoundary(
-      'github-notification-session-inspection-failed',
-      'The notification session could not be inspected.',
-      () =>
-        this.#dependencies.sessions.inspect({
-          agentId,
-          delivery,
-          item,
-          signal,
-          worktree,
-          workspaceDir,
-        }),
-    );
     return {
       authority,
       ...(item.disposition === 'retired'
         ? { retirementReasonCode: item.reasonCode, retirementRequested: true }
         : {}),
-      ...(session ? { session } : {}),
       worktree,
     };
   }
@@ -448,15 +357,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
   ): Promise<void> {
     const delivery = state.items[itemKey]?.delivery;
     if (!delivery) return;
-    if (session.status === 'retired') {
-      await this.#retire(state, itemKey, 'github-notification-session-retired');
-      return;
-    }
     await this.#checkpointDelivery(state, itemKey, {
       ...withoutFailure(delivery),
       sessionId: session.id,
       sessionKey: session.key,
-      stage: sessionStage(session),
+      stage: 'active',
     });
   }
 

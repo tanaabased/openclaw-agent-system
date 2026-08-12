@@ -14,7 +14,7 @@ const worktree = { branch: 'issue-7-branch', path: '/workspace/worktrees/issue-7
 const authority = { authorized: true };
 
 describe('channels/github/utils/delivery-plan', () => {
-  it('should retire before planning local work when authority is revoked', () => {
+  it('should retire local delivery state when authority is revoked', () => {
     assert.deepEqual(
       planGitHubNotificationDelivery(admitted, {
         authority: { authorized: false, reasonCode: 'item-unassigned' },
@@ -23,46 +23,10 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should retire an observed session before completing local retirement', () => {
-    const session = { key: 'agent:tanaabot:github:item', status: 'active' as const };
-    assert.deepEqual(
-      planGitHubNotificationDelivery(admitted, {
-        authority: { authorized: false, reasonCode: 'item-unassigned' },
-        session,
-        worktree,
-      }),
-      { kind: 'retire-session', reasonCode: 'item-unassigned' },
-    );
-    assert.deepEqual(
-      planGitHubNotificationDelivery(admitted, {
-        authority,
-        retirementReasonCode: 'item-unassigned',
-        retirementRequested: true,
-        session: { ...session, status: 'retired' },
-        worktree,
-      }),
-      { kind: 'retire', reasonCode: 'item-unassigned' },
-    );
-  });
-
-  it('should fail closed when a claimed briefing has no active run or response', () => {
-    const session = { key: 'agent:tanaabot:github:item', status: 'incomplete' as const };
-    assert.deepEqual(
-      planGitHubNotificationDelivery(
-        {
-          ...admitted,
-          sessionKey: session.key,
-          stage: 'briefing-running',
-          worktreeBranch: worktree.branch,
-          worktreePath: worktree.path,
-        },
-        { authority, session, worktree },
-      ),
-      { kind: 'fail', reasonCode: 'github-notification-briefing-incomplete' },
-    );
-  });
-
-  it('should reconcile observed worktree and session facts before dispatch', () => {
+  it('should reconcile the worktree before dispatching through the channel', () => {
+    assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }), {
+      kind: 'prepare-worktree',
+    });
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority, worktree }), {
       kind: 'checkpoint-worktree',
       worktree,
@@ -74,42 +38,36 @@ describe('channels/github/utils/delivery-plan', () => {
       worktreePath: worktree.path,
     };
     assert.deepEqual(planGitHubNotificationDelivery(worktreeReady, { authority, worktree }), {
-      kind: 'prepare-session',
+      kind: 'dispatch-briefing',
     });
-    const session = { key: 'agent:tanaabot:github:item', status: 'ready' as const };
+  });
+
+  it('should treat active delivery as complete without inspecting a session', () => {
     assert.deepEqual(
-      planGitHubNotificationDelivery(worktreeReady, { authority, session, worktree }),
-      { kind: 'checkpoint-session', session },
-    );
-    assert.deepEqual(
-      planGitHubNotificationDelivery(
-        { ...worktreeReady, sessionKey: session.key, stage: 'session-ready' },
-        { authority, session, worktree },
-      ),
-      { kind: 'dispatch-briefing' },
+      planGitHubNotificationDelivery({ ...admitted, stage: 'active' }, { authority }),
+      { kind: 'none' },
     );
   });
 
-  it('should trust an active stage only when the observed session agrees', () => {
-    const session = {
-      id: 'session-id',
-      key: 'agent:tanaabot:github:item',
-      status: 'active' as const,
-    };
-    const delivery: GitHubNotificationDeliveryState = {
-      ...admitted,
-      sessionId: session.id,
-      sessionKey: session.key,
-      stage: 'active',
-      worktreeBranch: worktree.branch,
-      worktreePath: worktree.path,
-    };
+  it('should never automatically retry a claimed ambiguous briefing', () => {
+    assert.deepEqual(
+      planGitHubNotificationDelivery(
+        {
+          ...admitted,
+          stage: 'briefing-running',
+          worktreeBranch: worktree.branch,
+          worktreePath: worktree.path,
+        },
+        { authority, worktree },
+      ),
+      { kind: 'fail', reasonCode: 'github-notification-briefing-ambiguous' },
+    );
+  });
 
-    assert.deepEqual(planGitHubNotificationDelivery(delivery, { authority, session, worktree }), {
-      kind: 'none',
-    });
-    assert.deepEqual(planGitHubNotificationDelivery(delivery, { authority }), {
-      kind: 'prepare-worktree',
-    });
+  it('should preserve the retired terminal state', () => {
+    assert.deepEqual(
+      planGitHubNotificationDelivery({ ...admitted, stage: 'retired' }, { authority }),
+      { kind: 'none' },
+    );
   });
 });

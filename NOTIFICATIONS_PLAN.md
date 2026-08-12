@@ -1,24 +1,95 @@
 # GitHub Notifications Plan
 
-Status: Phases 0 and 1 are implemented. Phase 2B and 2C are implemented, while
-Phase 2A, 2D, and 2E have repository logic but cannot complete their installed
-session behavior until OpenClaw exposes a public plugin-scoped session mutation
-API. Phase 2 proof and Phases 3 through 6 remain.
+Status: Notifications MVP 1 is the scope of the current `pirog-notifications`
+branch. Its manifest, installation, routing, polling, baseline, trust-admission,
+state, worktree, channel-owned session delivery, and one-shot manual poll command
+are implemented. The remaining MVP gate is packed third-party installation proof
+in the GitHub Actions-only lifecycle scenario. Notifications 2 is reserved for
+the future `pirog-notifications-2` branch.
+
+At the current branch snapshot, `bun run lint`, `bun run typecheck`,
+`bun run test` (539 passing), `bun run build`, `bun run plugin:check`, and
+`bun run test:release` (16 passing) are green. Leia scenarios remain GitHub
+Actions-only and have not yet validated the redesigned installed lifecycle.
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
 inspection/reconciliation, typed GitHub monitor, trust admission, private durable
-state, recoverable assignment delivery, trusted managed-worktree preparation,
-and deterministic unit coverage for a bounded local-only briefing session. The
-installed third-party plugin cannot currently create, patch, inspect, abort, or
-archive that session through a supported public OpenClaw API.
+state, at-most-once assignment delivery, trusted managed-worktree preparation,
+manual polling, and deterministic unit coverage for a bounded local-only
+briefing session. Session recording and lazy creation use OpenClaw's supported
+channel inbound lifecycle; Agent System does not call protected Gateway RPCs.
 
 This document plans an Agent System-owned GitHub work-notification channel. The
-Phase 0 routing foundation, Phase 1 read-only discovery, and the repository-owned
-parts of Phase 2 assignment delivery and retirement described below are
-implemented. The 2026-08-12 installed scenario exposed an OpenClaw host boundary
-that blocks installed assignment delivery before session creation. Work
-execution and the approved-mention conversation bridge remain planned behavior.
+2026-08-12 installed scenario exposed an OpenClaw host boundary in the original
+privileged session adapter. The redesign removes that adapter and accepts the
+narrower host-owned lifecycle: an approved new issue assignment must still
+create both the managed worktree and the local issue session, but advanced
+inspection, abort, archival, and ambiguous-result reconciliation are deferred.
+
+## Delivery Tracks
+
+### Notifications MVP 1: `pirog-notifications`
+
+The current branch owns only this required product path:
+
+1. A user adds `github.notifications` to an agent manifest. At least one
+   immutable `approved-actors` entry is required; the polling interval defaults
+   to five minutes.
+2. `openclaw agent-system install` reconciles the owned local-only channel
+   account and exact agent binding, then the Gateway starts the agent's monitor.
+3. The first successful poll records a safe baseline without creating local
+   work for assignments that already existed.
+4. Later polls discover a new GitHub issue assignment to the authenticated
+   agent and admit it only when the assignment actor is approved, the canonical
+   repository is eligible, and the agent has effective write permission.
+5. One admitted assignment creates or reuses exactly one managed worktree and
+   one issue-scoped local OpenClaw session. The session receives a bounded
+   assignment intake message and remains local-only.
+6. The background interval and the explicit one-shot poll command use the same
+   lock, provider client, baseline, state, admission, and delivery path.
+
+MVP 1 ends when the new assignment has a durable worktree/session correlation.
+It does not require later issue or pull-request conversation, completion,
+retirement, or cleanup behavior.
+
+### Notifications 2: `pirog-notifications-2`
+
+The follow-up branch owns every lifecycle after initial assignment intake:
+
+- pull-request assignment as a supported product workflow;
+- unassignment, reassignment, cancellation, logical retirement, and archival;
+- restart and ambiguous-delivery recovery beyond the minimum needed to prevent
+  duplicate initial work;
+- pull-request correlation, closing-keyword guidance, review routing, and merge
+  completion;
+- approved GitHub issue and pull-request comments as inbound turns;
+- bounded replies and explicit local-update publication back to GitHub;
+- replay, retention, status, and explicit worktree/session cleanup controls;
+- webhooks, review-request workflows, bots/apps, teams, multiple hosts, and
+  additional notification providers.
+
+### Implemented Ahead of MVP 1
+
+The current branch already contains repository logic beyond the narrowed MVP 1.
+Keep it unless it materially destabilizes the MVP path, but do not present it as
+part of the MVP 1 product contract:
+
+- issue-shaped pull-request assignment discovery and classification;
+- canonical unassignment and authority-revocation transitions;
+- logical retirement that preserves sessions and worktrees;
+- reassignment and multi-stage value-free delivery state;
+- bounded no-tools briefing construction;
+- optional immutable repository-owner pins.
+
+These capabilities need Notifications 2 acceptance tests before they are called
+supported, even when their unit tests already pass in this branch.
+
+### Remaining Work for MVP 1
+
+Prove background and manual polling from a packed third-party installation:
+baseline, approved assignment, unauthorized assignment, one worktree, one
+session, and no GitHub write.
 
 ## Recommendation
 
@@ -37,16 +108,16 @@ identity and token contract, and does not yet justify a provider-neutral
 notification abstraction. If another provider later proves the same lifecycle,
 extract common orchestration then rather than designing it speculatively now.
 
-The channel should form a selective conversational bridge, not mirror two
+Notifications 2 should form a selective conversational bridge, not mirror two
 transcripts. Only a canonical comment from an approved immutable actor that
 directly mentions the verified agent is eligible to create an inbound turn.
 For a turn that originated from such a comment, the agent produces a separate,
 bounded GitHub-facing response draft derived from the local response. That
 response is published only when normal GitHub policy allows the write and the
-mandatory secret-safety gate succeeds.
-Local-only turns remain local unless an operator explicitly publishes an
-update. Tool traces, hidden context, local paths, failed attempts, and the full
-OpenClaw transcript are never synchronization inputs.
+mandatory secret-safety gate succeeds. Local-only turns remain local unless an
+operator explicitly publishes an update. Tool traces, hidden context, local
+paths, failed attempts, and the full OpenClaw transcript are never
+synchronization inputs.
 
 ## Important Corrections to the Initial Idea
 
@@ -85,45 +156,47 @@ OpenClaw transcript are never synchronization inputs.
 
 ## Installed Runtime Correction (2026-08-12)
 
-The packed third-party plugin scenario disproved the original Phase 2 session
-assumption. OpenClaw exposes `api.runtime.gateway.request` to bundled or trusted
-official plugins only. Agent System is installed as a third-party package, so
-its calls to `sessions.create`, `sessions.patch`, `sessions.pluginPatch`,
-`sessions.abort`, `sessions.describe`, `sessions.list`, and `chat.history` are
-rejected before the deterministic notification session can be created. The
-presence of those Gateway methods in runtime types does not make them a public
-third-party plugin contract, and unit tests with an injected Gateway fake cannot
-prove installed access.
+The packed third-party plugin scenario disproved the original privileged
+session-adapter assumption. OpenClaw exposes `api.runtime.gateway.request` to
+bundled or trusted official plugins only. Agent System no longer calls it. The
+notification path now resolves the exact channel route, builds the inbound
+context, and calls `runChannelInboundEvent`; OpenClaw records or lazily creates
+the routed session before dispatching the turn.
 
-The current released SDK and current upstream OpenClaw plugin API let a plugin
-register its own session-extension namespace, but they do not expose a public
-way for that plugin to patch extension values on a session. Phase 2 therefore
-requires an upstream, plugin-scoped API before installed delivery can be called
-complete. At minimum, the API must let the current plugin patch only its own
-registered namespace. Any session create/adopt, inspect, abort, or archive
-operations used here must likewise be public and scoped so the caller cannot
-impersonate another plugin or mutate arbitrary session state.
+This is the supported third-party design for MVP 1. Agent System keeps its
+work-item correlation in private monitor state and no longer registers or
+patches a session extension. The pre-dispatch `briefing-running` checkpoint
+provides at-most-once behavior. If dispatch completion is ambiguous, the monitor
+does not retry automatically because the public third-party API cannot inspect
+history or active-run state safely.
 
-Do not work around this boundary by editing session storage or
-`pluginExtensions` directly, importing private OpenClaw modules, spawning the
-Gateway CLI, presenting Agent System as an official plugin, or weakening the
-installed scenario. When the supported seam exists, replace the notification
-session adapter's generic Gateway requests with that public surface, retain the
-channel-kernel inbound turn and no-tools boundary, and prove the result from a
-packed third-party installation. Until a supported archive or abort surface is
-available, retirement remains logical and preserves the transcript.
+Do not reintroduce protected Gateway requests, direct session-store edits,
+private OpenClaw imports, or spawned Gateway CLI commands. Session inspection,
+abort, archival, rich metadata, and safe automated recovery after an ambiguous
+result remain Notifications 2 requirements and may need a future public scoped
+API. Until then, retirement is logical and preserves the transcript.
 
-## MVP Outcome
+Repository guidance requires every optimization pass to inventory OpenClaw SDK
+imports and injected runtime calls against the pinned SDK and current official
+guidance. `test/openclaw-api-policy.spec.ts` enforces that runtime code does not
+call `runtime.gateway.request` or import private OpenClaw implementation modules.
+
+## Notifications MVP 1 Outcome
 
 For each configured agent, the Gateway will:
 
+- activate the monitor only after `install` has reconciled the manifest-owned
+  channel account and exact agent binding;
 - poll GitHub for work assigned to the authenticated agent, with five minutes
   as the default interval;
+- let an operator run one immediate poll through
+  `openclaw agent-system notifications poll` without creating a second polling
+  or delivery implementation;
 - verify the token's GitHub identity on every polling cycle before consuming
   repository data;
 - establish a baseline on first activation without starting work for every
   existing assignment;
-- detect a new issue or pull request assignment to the authenticated agent;
+- detect a new issue assignment to the authenticated agent;
 - prove that the assignment event came from an approved immutable GitHub actor;
 - require the agent to have at least write permission on the canonical
   repository and optionally constrain repository owners by immutable id;
@@ -131,23 +204,24 @@ For each configured agent, the Gateway will:
   GitHub metadata rather than a per-repository manifest entry;
 - prepare one deterministic managed worktree;
 - create or reuse one deterministic issue-scoped OpenClaw session;
-- run one bounded, read-only briefing turn that summarizes the work item and
-  identifies initial questions or risks;
+- deliver one bounded, local-only assignment intake message so the session is
+  ready for an operator or agent to continue;
 - preserve the work item's repository, issue, assignment, worktree, and session
-  correlation in private durable state;
-- retire the work item when the agent is unassigned, while preserving both the
-  transcript and worktree.
+  correlation in private durable state.
 
-The automated briefing is the end of autonomous MVP behavior. It may inspect
-bounded issue metadata, but it must not edit code, comment on GitHub, push, or
-open a pull request. The operator continues the work in the created session
-under normal Agent System tool policy.
+The assignment intake is the end of autonomous MVP 1 behavior. It may contain
+bounded issue metadata, but it must not edit code, comment on GitHub, push, open
+a pull request, or complete a second agent turn. The operator or agent continues
+the work in the created session under normal Agent System tool policy.
 
-## Non-goals for the First MVP
+## Notifications MVP 1 Non-goals
 
 - GitHub webhooks or GitHub App installation management
 - per-repository manifest enumeration
 - treating organization membership alone as repository authorization
+- pull-request assignments as a supported workflow, even though the current
+  discovery code already classifies them
+- unassignment, reassignment, retirement, archival, and cleanup guarantees
 - automatic ingestion of arbitrary issue bodies or comments as instructions
 - review-request, mention, team, project, discussion, or workflow notifications
 - automatic issue, branch, commit, push, or pull request creation
@@ -156,7 +230,7 @@ under normal Agent System tool policy.
 - multiple GitHub hosts
 - a generic cross-provider notifications framework
 
-## Feature-complete Outcome
+## Notifications 2 Feature-complete Outcome
 
 For this plan, feature complete means the GitHub notifications channel supports
 the full assignment-driven conversation lifecycle on `github.com`, not every
@@ -232,9 +306,10 @@ Configuration rules:
 - At least one `approved-actors` entry is required.
 - Actor authorization uses the opaque `node-id`; `login` is required for human
   review and drift diagnostics but is not the authorization key.
-- `repository-policy.minimum-permission` defaults to `write`. The MVP does not
-  permit `read` or `triage`, because the expected workflow must be able to push
-  a branch and open a pull request. GitHub's legacy `write` result includes the
+- `repository-policy.minimum-permission` defaults to `write`. MVP 1 does not
+  permit `read` or `triage`, because assignment intake should create local work
+  only for a repository where the agent can later complete the ordinary branch
+  and pull-request workflow. GitHub's legacy `write` result includes the
   `maintain` role; `admin` also satisfies the gate.
 - `allowed-owners` is optional. When present, the repository owner's opaque
   user or organization node id must match. When absent, any repository is
@@ -258,11 +333,46 @@ Configuration rules:
 - The authenticated agent's GitHub node id is resolved from `/user` at poll
   time. Assignment targets must match that verified identity, not only a login
   string from the event.
-- GitHub App and bot actors are denied in the MVP. A later schema can add
+- GitHub App and bot actors are denied in MVP 1. A later schema can add
   explicitly pinned app identities if a real use case requires them.
 
-No cleanup options are proposed initially. The safe behavior is fixed:
-retire the session association and retain the worktree.
+MVP 1 has no cleanup options. Existing logical-retirement behavior is retained
+as implemented-ahead code, but its product contract and cleanup controls belong
+to Notifications 2.
+
+## Manual Poll Command (Notifications MVP 1)
+
+Add one explicit command for CI, diagnosis, and operators who do not want to
+wait for the next configured interval:
+
+```text
+openclaw agent-system notifications poll [--agent <id>] [--json]
+```
+
+The command contract is:
+
+- without `--agent`, discover the manifest from the current workspace; with
+  `--agent`, resolve that agent's installed manifest using the normal binding;
+- require enabled `github.notifications` configuration and the exact installed
+  channel account/binding rather than creating or repairing configuration;
+- use the same provider client, baseline, state store, trust admission,
+  worktree/session delivery coordinator, and per-agent lock as the background
+  monitor;
+- if a poll is already running, await that bounded cycle and report its result
+  rather than starting an overlapping request;
+- bypass only the normal interval deadline, while continuing to honor provider
+  rate-limit instructions, active backoff, cancellation, and every trust gate;
+- establish the ordinary safe baseline on first use and never treat a manual
+  poll as implicit replay of assignments that predate that baseline;
+- return success for a completed baseline or a poll with no new work, and return
+  a nonzero exit code for invalid configuration, routing drift, authentication,
+  provider, state, or delivery failure;
+- keep human output concise and make `--json` report value-free stable codes,
+  baseline, approved, rejected, duplicate, and retired counts without tokens or
+  untrusted issue content.
+
+This is a trigger for one normal polling cycle, not a separate message-fetching
+queue and not a raw GitHub API passthrough.
 
 ## Manifest-to-OpenClaw Reconciliation
 
@@ -602,20 +712,19 @@ Tests use synthetic canary secrets to prove that known token and key forms,
 values already held by the writer, and secret-derived content cannot reach the
 provider adapter, logs, diagnostics, authorization records, or durable control state.
 
-The pinned SDK exposes channel inbound routing and long-lived plugin services,
-but it does not expose the plugin-scoped session mutation needed by this
-third-party plugin. The broader Gateway request helper is restricted to bundled
-or trusted official plugins. Native `spawnedCwd` and `spawnedWorkspaceDir`
-fields are also restricted to `subagent:*` and `acp:*` lineage, so they cannot
-bind this ordinary routed channel session to a cwd. Once the missing public
-session seam exists, the session adapter must use this fallback:
+The pinned SDK exposes the channel inbound routing, session-recording, and
+long-lived plugin-service surfaces required by MVP 1. The broader Gateway
+request helper remains restricted to bundled or trusted official plugins and is
+not used. Native `spawnedCwd` and `spawnedWorkspaceDir` fields are restricted to
+`subagent:*` and `acp:*` lineage, so an ordinary routed channel session uses this
+fallback:
 
-- project worktree and issue metadata through a plugin session extension and
-  pass the projected path explicitly as cwd to later Agent System tool calls;
-- a conversation label derived from the returned branch;
-- explicit tool `cwd` values pointing at the managed worktree;
-- logical retirement in Agent System state without deleting the OpenClaw
-  transcript.
+- keep worktree and issue correlation in private Agent System monitor state;
+- include the returned branch and worktree path in bounded inbound context and
+  the assignment briefing;
+- pass explicit tool `cwd` values pointing at the managed worktree on later
+  Agent System tool calls; and
+- record logical retirement without deleting the OpenClaw transcript.
 
 Do not schedule an immediate assignment through `scheduleSessionTurn` or bypass
 the channel kernel with `sessions.send`. The accepted inbound event starts one
@@ -639,7 +748,7 @@ Session guidance should require:
 - normal GitHub write policy for every mutation;
 - no claim that a closed-but-unmerged pull request closes the issue.
 
-## Phased Implementation
+## Phased Implementation by Delivery Track
 
 ### Phase 0: Platform Contract Spike (routing foundation implemented)
 
@@ -673,15 +782,14 @@ polling.
   channel metadata.
 
 Implemented proof includes channel registration, strict schema normalization,
-install/doctor reconciliation, idempotency, unrelated-state preservation, one
-injected inbound-kernel route-selection test, explicit rejection of default or
-mismatched routing, and receipt-backed cleanup. It does not yet prove production
-assignment delivery, real transcript recording, or native session title, cwd,
-and archive behavior. Those installed-runtime seams remain Phase 2 entry work.
-The Leia scenario is the operational configuration-reload proof and remains
-GitHub Actions-only.
+install/doctor reconciliation, idempotency, unrelated-state preservation,
+inbound-kernel route selection and session recording tests, explicit rejection
+of default or mismatched routing, and receipt-backed cleanup. Native session
+title, cwd, abort, and archive behavior are Notifications 2 concerns. The Leia
+scenario is the operational configuration and installed-delivery proof and
+remains GitHub Actions-only.
 
-### Phase 1: Read-only Monitor and Trust Core (implemented; CI proof pending)
+### Phase 1: Monitor, Trust Core, and Manual Trigger (implemented)
 
 Goal: discover and classify events without creating sessions or worktrees.
 
@@ -697,44 +805,44 @@ Goal: discover and classify events without creating sessions or worktrees.
 - Add immutable actor admission and self-event suppression.
 - Add a private atomic state store with symlink and permission checks.
 - Register one long-lived Gateway plugin service with clean abort/stop behavior.
+- Add the MVP 1 `notifications poll` command as a one-shot trigger over that
+  same monitor cycle, state, and per-agent serialization boundary.
 - Report value-free status through logs and `doctor`; add a read-only
   `notifications status` CLI only if it materially improves diagnosis.
 - Run in observe-only mode in the owning Leia scenario.
 
-Exit criteria: approved, rejected, duplicate, assignment, unassignment, first
-baseline, repository-permission, owner-policy, search truncation, restart,
-pagination, and transient-failure cases are deterministic under fake GitHub
-responses and no local work is created.
+MVP 1 exit criteria: approved, rejected, duplicate, first-baseline,
+repository-permission, owner-policy, search-truncation, pagination,
+manual/background parity, and transient-failure cases are deterministic under
+fake GitHub responses and no local work is created during this observe-only
+phase. Existing unassignment and restart-recovery coverage is retained for
+Notifications 2.
 
 ### Phase 2: Assignment to Worktree and Briefing Session
 
 Goal: complete the core MVP user experience.
 
-#### Phase 2A: Prove the Installed Session Contract (blocked on OpenClaw API)
+#### Phase 2A: Prove the Installed Session Contract (redesigned; repository proof implemented)
 
-- Add a narrow session adapter around supported public OpenClaw surfaces rather
-  than reading or rewriting session files directly.
-- Prove that the channel kernel can create or adopt the exact deterministic
-  routed session and that a public plugin-scoped API can set its label, patch the
-  caller's registered metadata namespace, abort an active briefing, and archive
-  a retired session without deleting its transcript.
+- Use the supported channel inbound lifecycle rather than a separate session
+  adapter or direct session-store access.
+- For MVP 1, prove that the channel kernel records or creates the exact
+  deterministic routed session while retaining the channel conversation label.
 - Prove that the channel inbound kernel can record the GitHub provenance and
-  start one immediate local turn with a stable provider event id. Do not use a
-  scheduled turn for immediate assignment delivery.
-- Prove that the local response is visible in the OpenClaw transcript while the
-  channel still has no GitHub outbound adapter.
-- Use plugin-owned worktree metadata plus explicit cwd on later Agent System
-  tool calls because native cwd fields reject ordinary channel sessions. Use
-  logical retirement if native archive is unavailable.
+  deliver one immediate local assignment intake with a stable provider event
+  id. Do not use a scheduled turn for immediate assignment delivery.
+- Prove that the assignment intake is visible in the OpenClaw transcript while
+  the channel still has no GitHub outbound adapter. A completed automated
+  briefing response is implemented-ahead behavior, not an MVP 1 requirement.
+- Keep worktree correlation in private monitor state and include its path in the
+  bounded inbound context and briefing. Use logical retirement because native
+  abort and archive support are Notifications 2 requirements.
 
-The repository adapter and its injected unit-test boundary exist, but installed
-proof showed that the Gateway request helper used by that adapter rejects this
-third-party plugin. Phase 2A resumes only after the adapter has no dependency on
-generic `runtime.gateway.request` for notification session lifecycle. The
-assembled inbound contract must continue to carry `disableTools: true` and an
-empty per-turn `toolsAllow`; the synthetic channel must have no outbound
-adapter, and the session must use `sendPolicy: deny`. A packed installed scenario
-must prove those constraints through the eventual public API.
+The implementation now has no dependency on generic `runtime.gateway.request`.
+The assembled inbound contract carries `createIfMissing: true`,
+`disableTools: true`, and an empty per-turn `toolsAllow`; the synthetic channel
+has no outbound adapter. A packed installed scenario must still prove one
+recorded local session from the third-party package.
 
 #### Phase 2B: Expose Trusted Worktree Preparation (implemented)
 
@@ -756,7 +864,7 @@ must prove those constraints through the eventual public API.
 - Return the existing service's canonical branch and path and dispose every
   invocation-scoped Git or SSH resource on success, failure, or cancellation.
 
-#### Phase 2C: Add a Recoverable Assignment State Machine (implemented; production delivery disabled)
+#### Phase 2C: Add an At-most-once Assignment State Machine (implemented)
 
 - Extend the private monitor state with a versioned, value-free delivery record
   containing the stable work id, assignment event id, workflow stage, worktree
@@ -768,91 +876,89 @@ must prove those constraints through the eventual public API.
 - Have the pure poller return typed admitted and retirement transitions instead
   of only aggregate counts. Keep remote discovery and trust admission separate
   from side-effect execution.
-- Serialize one work item transition at a time per agent and persist a checkpoint
-  before and after every external side effect: admitted, worktree-ready,
-  session-ready, briefing-running, active, and retired.
-- On restart, reconcile the deterministic worktree, OpenClaw session, plugin
-  metadata, and briefing idempotency key before deciding whether to resume.
-  Never infer completion from a stale local stage alone.
+- Serialize one work item transition at a time per agent and persist checkpoints
+  around worktree preparation and briefing dispatch: admitted, worktree-ready,
+  briefing-running, active, and retired. Retain `session-ready` only as a legacy
+  state that advances into channel dispatch.
+- On restart, reconcile the deterministic worktree before dispatch. Treat a
+  persisted `briefing-running` stage as ambiguous and require operator
+  inspection rather than retrying without a public session-history seam.
 
-#### Phase 2D: Deliver the Bounded Briefing (repository behavior implemented; installed delivery blocked)
+#### Phase 2D: Deliver the Bounded Briefing (implemented; installed proof pending)
 
 - After admission, fetch a separate bounded canonical briefing projection with
   the title, URL, body excerpt, labels, and milestone summary. Keep all textual
   GitHub content explicitly marked as untrusted and do not persist it in monitor
   state.
 - Build the deterministic conversation id from the repository node id and item
-  number, then create or adopt that exact routed session.
-- Patch the session label and plugin-owned issue, repository, assignment,
-  branch, and path metadata before dispatch. Include the canonical worktree path
-  in the bounded briefing and pass it explicitly as cwd to later Agent System
-  tools; do not attempt the host's subagent-only cwd fields.
+  number, then let OpenClaw's inbound kernel record or create that routed
+  session.
+- Include the issue, repository, assignment, branch, and canonical worktree path
+  in private monitor state and the bounded inbound context. Pass the path
+  explicitly as cwd to later Agent System tools; do not attempt the host's
+  subagent-only cwd fields.
 - Claim the assignment event durably before running it through
   `runGitHubNotificationAssignment` as an assembled inbound turn. Carry the
-  stable provider event id into the channel context and reconcile the claimed
-  session on restart before any retry.
+  stable provider event id into the channel context and never retry a persisted
+  ambiguous claim automatically.
 - Enforce a no-tools automated briefing turn at the runtime boundary with both
   `disableTools: true` and an empty per-turn `toolsAllow`. Do not rely on prompt
   wording or a session-level restriction that the host normalizes away.
-- Keep session outbound delivery denied. The briefing response stays local and
-  Phase 2 performs no GitHub mutation.
-- Mark the item active only after the claimed turn is adopted and its session
-  metadata is durable. A timeout or ambiguous response must reconcile the
-  provider event id and session transcript before retrying, never create another
-  briefing speculatively.
+- Keep channel outbound delivery unavailable. The briefing response stays local
+  and Phase 2 performs no GitHub mutation.
+- Mark the item active only after the channel kernel reports a dispatch for the
+  expected routed session. A timeout or ambiguous response remains claimed and
+  never creates another briefing speculatively.
 
 Implemented repository behavior reuses the Phase 2C orchestrator and optimized
-private state codec. The monitor reconciles persisted nonterminal assignments
+private state codec. The monitor reconciles persisted worktree transitions
 before a normal poll is due, while honoring failure backoff, and introduces no
-second delivery queue or state store. It rechecks canonical GitHub authority and
-uses only the trusted managed-worktree service, but its production session
-adapter stops at the unsupported Gateway boundary before it can create or adopt
-the routed session. Do not describe the briefing as delivered until that adapter
-uses a public plugin-scoped API and the packed installed scenario records exactly
-one local-only no-tools briefing.
+second delivery queue or state store. It rechecks canonical GitHub authority,
+uses only the trusted managed-worktree service, and dispatches through the
+public channel inbound kernel. Installed proof still requires the packed
+scenario to record exactly one local-only no-tools briefing.
 
-#### Phase 2E: Retirement and Failure Recovery (repository behavior implemented; installed session retirement blocked)
+#### Phase 2E: Retirement and Failure Recovery (Notifications 2; logical retirement implemented)
 
 - Recheck assignment, repository, permission, and route authority immediately
   before each side effect, not only at the beginning of the polling cycle.
 - If authority is revoked before worktree creation, retire without creating
-  local work. If revoked later, cancel or abort the in-flight briefing, retire
-  routing, and preserve the worktree and transcript.
+  local work. If revoked later, record logical retirement, stop new turns, and
+  preserve the worktree and transcript.
 - Archive the session only through the proven host seam; otherwise record
   logical retirement. Never delete the session or automatically remove the
   worktree.
-- Recover deterministically from failures before worktree creation, after
-  worktree creation, after session creation, during briefing adoption, and after
-  briefing settlement. Reuse proven side effects and report stable value-free
-  diagnostic codes.
+- Notifications 2 may add a scoped abort/archive seam and safe session-history
+  reconciliation. Until then, an ambiguous briefing remains claimed and reports
+  a stable value-free diagnostic without automatic retry.
 
-#### Phase 2F: Proof and Documentation (partially implemented)
+#### Phase 2F: MVP 1 Proof and Documentation (repository work implemented; remote proof pending)
 
-Unit coverage, documentation, and the installed assignment scenario are
-implemented. The scenario now proves the unsupported third-party Gateway
-boundary, so the installed exit criteria are not met. It should fail quickly
-with a stable, value-free stage diagnostic until the public session seam and
-adapter migration are complete.
+Repository unit coverage, the manual poll command, and the installed assignment
+scenario are implemented. The scenario has been updated for the channel-owned
+session contract and must pass in GitHub Actions before the installed exit
+criteria are met.
 
 - Add focused unit tests for the trusted worktree adapter, transition planner,
-  orchestrator, session adapter, bounded briefing builder, tool restriction,
+  orchestrator, inbound session service, bounded briefing builder, tool restriction,
   cancellation, migration, and every partial-failure restart boundary.
 - Prove that rejected, duplicate, mismatched-route, disallowed-owner,
   insufficient-permission, and revoked assignments create neither a worktree nor
   a session.
 - Extend the existing GitHub Actions-only notifications scenario to prove one
-  approved assignment creates one managed worktree and one local transcript,
-  restart creates no duplicate, unassignment retires without deletion, and no
-  GitHub comment or other outbound write occurs.
+  approved issue assignment creates one managed worktree and one local session,
+  the manual poll uses the same path as the background monitor, an unauthorized
+  assignment creates neither resource, and no GitHub write occurs.
 - Update channel and Git worktree documentation only for behavior that is
   implemented, and record the delivered phase in the changelog at release time.
 
-Exit criteria: a new approved assignment creates exactly one worktree and one
-briefing session; retries and restarts create no duplicates; an unauthorized
-assignment creates neither; unassignment prevents further automated turns and
-preserves local state.
+Exit criteria: a new approved issue assignment creates exactly one worktree and
+one local session from either polling entrypoint; an unauthorized assignment
+creates neither; first use establishes a baseline; and the installed package
+performs no GitHub mutation. Retirement, reassignment, and broader lifecycle
+recovery are Notifications 2 exit criteria.
 
-### Phase 3: Completion and Pull-request Correlation
+### Phase 3: Completion and Pull-request Correlation (Notifications 2)
 
 Goal: keep one work item coherent through normal agent-led implementation.
 
@@ -870,9 +976,9 @@ Goal: keep one work item coherent through normal agent-led implementation.
 Exit criteria: one issue remains one session across assignment, work, pull
 request, review, and merge, with no self-notification loop.
 
-Phases 0 through 3 are the complete assignment-driven MVP.
+MVP 1 ends at Phase 2F. Phase 3 begins the Notifications 2 product lifecycle.
 
-### Phase 4: Approved GitHub Comments Inbound
+### Phase 4: Approved GitHub Comments Inbound (Notifications 2)
 
 Goal: let authorized collaborators continue the active discussion from GitHub.
 
@@ -896,7 +1002,7 @@ user reaches exactly one active session; unapproved, unmentioned,
 quoted-mention-only, edited-duplicate, retired-item, and self comments produce
 no agent turn.
 
-### Phase 5: Conversational Replies Back to GitHub
+### Phase 5: Conversational Replies Back to GitHub (Notifications 2)
 
 Goal: carry the useful part of the discussion back to GitHub without mirroring
 the local conversation.
@@ -933,7 +1039,7 @@ GitHub-facing response; selected local updates require explicit publication;
 the exact remote text remains visible locally; retries do not duplicate it; and
 its resulting notification is never ingested as a new turn.
 
-### Phase 6: Operational Completion and Recovery
+### Phase 6: Operational Completion and Recovery (Notifications 2)
 
 Goal: close the operational gaps required for a feature-complete channel.
 
@@ -991,7 +1097,7 @@ Consider only after the polling channel is stable:
   rejection;
 - bounded prompt construction and trusted/untrusted provenance separation;
 - deterministic work ids without reimplementing worktree naming;
-- partial failures around worktree and session creation;
+- partial failures around worktree creation and inbound turn dispatch;
 - approved-author and exact verified-login mention admission for issue,
   pull-request conversation, and linked review comments;
 - mentions in quotes, code, hidden markup, stale revisions, retired items, and
@@ -1008,7 +1114,7 @@ Fake GitHub, OpenClaw, Git, clock, filesystem, and transport boundaries in the
 default Mocha suite. Do not rely on live network, timing, or the user's installed
 Gateway.
 
-### Installed behavior
+### Notifications MVP 1 installed behavior
 
 Add an owning GitHub-notifications Leia scenario in the GitHub Actions matrix.
 Use named approved, unapproved, and agent personas and a disposable fixture
@@ -1017,13 +1123,23 @@ repository. Prove:
 - correct agent and workspace binding;
 - manifest install creates only the non-secret channel account and exact
   account-scoped binding, and manifest removal removes only owned state;
-- approved assignment creates one worktree and session;
+- an approved issue assignment creates one worktree and session;
+- an explicit `notifications poll` reaches the same result without waiting for
+  the background interval and cannot overlap an active monitor cycle;
 - unauthorized assignment fails closed;
 - a repository with insufficient agent permission or a disallowed owner creates
   neither a worktree nor a session;
 - issue content cannot trigger a mutating automated turn;
+- first use establishes a baseline without creating historical work;
+- the resulting session is local-only and the workflow performs no GitHub
+  write.
+
+### Notifications 2 installed behavior
+
+Extend the installed scenario in `pirog-notifications-2` to prove:
+
 - unassignment retires the route while preserving the worktree;
-- restart does not duplicate the workflow;
+- reassignment and restart do not duplicate the workflow;
 - an approved actor's direct mention of the verified GitHub user reaches the
   existing session exactly once, while all other comments are ignored;
 - the resulting bounded GitHub-facing response passes policy and secret-safety checks,
@@ -1049,6 +1165,8 @@ credentials from another entry.
   orchestration without duplicating it.
 - `lib/`: own global channel/binding lifecycle reconciliation, polling,
   work-item orchestration, session routing, state coordination, and diagnostics.
+- `cli/`: own the `notifications poll` command while delegating its cycle to the
+  same monitor service used by the Gateway.
 - `test/`: add flat behavior-focused Mocha specs.
 - `examples/`: add the installed assignment lifecycle only when implementation
   crosses the Gateway and session boundary.
@@ -1093,20 +1211,27 @@ scenario only in GitHub Actions.
 - [GitHub issue and pull request assignment behavior](https://docs.github.com/en/rest/issues/assignees)
 - [GitHub pull request and issue linking](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
 
-## Decisions to Revisit After Phase 0
+## Resolved Platform Decisions
 
-1. Whether current OpenClaw supports setting the native session label to the
-   returned worktree branch without private APIs.
-2. Whether current OpenClaw supports binding the session cwd to the worktree;
-   otherwise Agent System tools must receive the stored worktree path explicitly.
-3. Whether the pinned SDK's credentialless setup hook can create the
-   activation-only channel account or whether install needs a hash-guarded
-   `config.patch` for that exact account path.
-4. Whether logical retirement is sufficient until OpenClaw exposes a supported
-   plugin archive action.
-5. Whether fixed `gh api` calls are efficient enough for the first monitor or a
-   direct HTTP transport is justified immediately.
+1. OpenClaw's supported channel inbound lifecycle owns MVP 1 session recording
+   and lazy creation. Agent System does not call protected Gateway RPCs, patch
+   session extensions, or manage host session lifecycle in parallel.
+2. Ordinary routed channel sessions cannot use the host's subagent-only cwd
+   fields. Persist the managed worktree path in private monitor state, include
+   it in bounded inbound context, and pass it explicitly to later Agent System
+   tool calls.
+3. `install` owns the activation-only channel account and exact account binding,
+   records a private receipt, and requests the required Gateway reload. Passive
+   hooks do not reconcile global configuration.
+4. Logical retirement and native archival are Notifications 2 concerns. Until
+   a public archive seam exists, preserve the transcript and worktree.
+5. Fixed, bounded `gh api` calls are sufficient for MVP 1. A direct HTTP
+   transport is justified only by measured cost or scale and must not change the
+   typed provider contract.
+6. A claimed but unconfirmed briefing is not retried automatically in MVP 1.
+   Safe session-history reconciliation, abort, archival, and reassignment are
+   Notifications 2 concerns pending a suitable public host capability.
 
-None of these questions should weaken the actor, repository-permission,
-owner-policy, global-binding, agent-identity, credential-timing,
-prompt-provenance, idempotency, or non-destructive cleanup boundaries above.
+Future changes must not weaken the actor, repository-permission, owner-policy,
+global-binding, agent-identity, credential-timing, prompt-provenance,
+idempotency, or non-destructive cleanup boundaries above.

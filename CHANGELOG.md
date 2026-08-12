@@ -2,7 +2,9 @@
 
 ### New Features
 
-- Added the local-only `agent-system-github` channel, receipt-backed routing, and an observe-only assignment monitor with identity, repository, permission, actor, deduplication, backoff, and private-state checks.
+- Added `openclaw agent-system notifications poll` over the background monitor's state and per-agent lock. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
+- Added approved assignment delivery into one managed worktree and one host-routed local no-tools session. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
+- Added the local-only `agent-system-github` channel, receipt-backed routing, and trust-gated assignment polling. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
 
 ## v0.2.2 - [August 12, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.2)
 

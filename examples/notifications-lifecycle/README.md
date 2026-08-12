@@ -113,12 +113,14 @@ grep -Eq '^[0-9]+$' "$TMPDIR/approved-issue-number"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number" --jq .id > "$TMPDIR/approved-issue-database-id"
 grep -Eq '^[0-9]+$' "$TMPDIR/approved-issue-database-id"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --add-assignee "$agent_login"
+cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system notifications poll --agent notification-data --json | jq -e '.status == "completed"'
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72; do
   session_key="$(openclaw sessions --agent notification-data --json | jq -r --arg label "agent-system-test#$issue_number" '[.sessions[]? | select((.label // "") | contains($label)) | .key][0] // empty')"
   if test -n "$session_key"; then
     params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey}')"
     description="$(openclaw gateway call sessions.describe --json --params "$params")"
-    if printf '%s\n' "$description" | jq -e '.session.archived != true and ([.session.pluginExtensions[]? | select(.pluginId == "agent-system" and .namespace == "work-item" and .value.status == "active")] | length == 1)'; then
+    if printf '%s\n' "$description" | jq -e '.session.archived != true'; then
       printf '%s' "$session_key" > "$TMPDIR/approved-session-key"
       break
     fi
@@ -154,7 +156,7 @@ openclaw sessions --agent notification-data --json | jq -e --arg key "$session_k
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:50,maxChars:20000}')"
 openclaw gateway call chat.history --json --params "$params" | jq -e '([.messages[]? | select(.role == "user")] | length) == 1 and ([.messages[]? | select(.role == "assistant")] | length) == 1'
 params="$(jq -cn --arg key "$session_key" '{key:$key}')"
-openclaw gateway call sessions.describe --json --params "$params" | jq -e --argjson number "$issue_number" '.session.archived != true and ([.session.pluginExtensions[]? | select(.pluginId == "agent-system" and .namespace == "work-item" and .value.itemNumber == $number and .value.status == "active")] | length == 1)'
+openclaw gateway call sessions.describe --json --params "$params" | jq -e '.session.archived != true'
 
 # should keep the automated briefing local to openclaw
 cd "$TMPDIR/agent-system-notification-actor"
@@ -193,25 +195,16 @@ openclaw sessions --agent notification-data --json | jq -e --arg key "$session_k
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:50,maxChars:20000}')"
 openclaw gateway call chat.history --json --params "$params" | jq -e '([.messages[]? | select(.role == "assistant")] | length) == 1'
 
-# should retire an unassigned session while preserving local state
+# should logically retire an unassigned item while preserving local state
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
-for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36; do
-  params="$(jq -cn --arg key "$session_key" '{key:$key}')"
-  description="$(openclaw gateway call sessions.describe --json --params "$params")"
-  if printf '%s\n' "$description" | jq -e '.session.archived == true and ([.session.pluginExtensions[]? | select(.pluginId == "agent-system" and .namespace == "work-item" and .value.status == "retired")] | length == 1)'; then
-    break
-  fi
-  if test "$attempt" = 36; then
-    printf '%s\n' "$description"
-    tail -n 160 "$TMPDIR/gateway.log"
-    exit 1
-  fi
-  sleep 5
-done
+cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system notifications poll --agent notification-data --json | jq -e '.status == "completed" and .retired >= 1'
+params="$(jq -cn --arg key "$session_key" '{key:$key}')"
+openclaw gateway call sessions.describe --json --params "$params" | jq -e '.session.archived != true'
 
 # should retain one transcript and worktree without an outbound github write
 cd "$TMPDIR/agent-system-notifications"

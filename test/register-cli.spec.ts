@@ -50,6 +50,7 @@ function createProgram() {
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
+    notificationPoll: [] as Array<{ agentId?: string; forceInterval?: boolean }>,
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -144,6 +145,24 @@ function createProgram() {
         return validResult;
       },
     },
+    notificationMonitorService: {
+      async runOnce(options = {}) {
+        const pollOptions = 'aborted' in options ? {} : options;
+        calls.notificationPoll.push(pollOptions);
+        return [
+          {
+            agentId: pollOptions.agentId ?? 'tanaabot',
+            approved: 1,
+            baseline: 0,
+            code: 'github-notification-poll-complete',
+            duplicates: 0,
+            rejected: 0,
+            retired: 0,
+            status: 'completed' as const,
+          },
+        ];
+      },
+    },
     output: { writeStdout: (message) => output.push(message) },
     toolRegistry: {
       async invoke(command, _runtime, argv, scope) {
@@ -181,7 +200,7 @@ describe('lib/register-cli', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['validate', 'env', 'doctor', 'tool', 'credentials', 'install'],
+      ['validate', 'env', 'doctor', 'notifications', 'tool', 'credentials', 'install'],
     );
   });
 
@@ -321,6 +340,23 @@ describe('lib/register-cli', () => {
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'validate']);
 
     assert.deepEqual(calls.workspace, ['/current']);
+  });
+
+  it('should manually poll notifications for the current workspace agent', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'poll',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.workspace, ['/current']);
+    assert.deepEqual(calls.notificationPoll, [{ agentId: 'tanaabot', forceInterval: true }]);
+    assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
   });
 
   it('should register structured json validation output', async () => {

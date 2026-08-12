@@ -19,7 +19,8 @@ The current release provides the channel, routing, trust core, and local assignm
 - one activation-only channel account whose id is the Agent System agent id
 - one exact account-scoped binding back to that agent and workspace
 - private receipt-backed ownership, repair, and cleanup
-- a long-lived, abortable Gateway service with per-agent polling and backoff
+- a long-lived, stoppable Gateway service with per-agent polling and backoff
+- an explicit `notifications poll` command over the same monitor and per-agent lock
 - account identity verification on every poll
 - account-wide assigned issue and pull-request discovery with a first-run baseline
 - bounded pagination, overlap, replay deduplication, and truncation diagnostics
@@ -28,12 +29,11 @@ The current release provides the channel, routing, trust core, and local assignm
 - private atomic control state containing no token or issue/comment content
 - deterministic work-item conversation ids for inbound assignment delivery
 - policy-authorized managed worktree preparation through the Git capability
-- restart-safe, value-free delivery checkpoints and side-effect reconciliation
+- value-free, at-most-once delivery checkpoints around worktree and briefing creation
 - a separate bounded title, URL, body-excerpt, label, and milestone projection
-- one deterministic local session with plugin-owned work-item and worktree metadata
+- one deterministic local session created by OpenClaw's channel inbound lifecycle
 - a no-tools automated briefing turn whose GitHub content is explicitly untrusted
-- deterministic retirement that aborts active briefing work and archives the session
-- preservation of retired transcripts and managed worktrees for later inspection
+- logical retirement that preserves the OpenClaw transcript and managed worktree
 - local-only behavior with no outbound GitHub adapter
 
 After a new assignment is admitted, the monitor prepares or adopts one managed
@@ -119,6 +119,7 @@ From the agent workspace:
 openclaw agent-system validate
 openclaw agent-system install
 openclaw agent-system doctor
+openclaw agent-system notifications poll --json
 ```
 
 `install` adds or repairs only the non-secret `agent-system-github` account and
@@ -151,26 +152,27 @@ controls can defer the next poll, and transient failures use exponential backoff
 Polls never overlap for the same agent. Stopping the plugin service aborts its
 timer and any active GitHub CLI child process.
 
-Delivery state is checkpointed before and after worktree preparation, session
-creation, and briefing dispatch. On restart, the monitor inspects the canonical
-worktree, exact routed session, plugin metadata, and assignment event before it
-resumes. It never treats a stale local stage as proof that an external side
-effect completed.
+`openclaw agent-system notifications poll [--agent <id>] [--json]` joins the same
+per-agent monitor cycle. It bypasses only the configured interval; active
+failure and provider backoff still apply, and first use still establishes the
+ordinary safe baseline. A deferred or failed manual cycle returns a nonzero exit
+code so CI can distinguish it from a completed poll.
 
-If a briefing event is present without an assistant response, the channel checks
-the Gateway's active-run projection. An active run remains in progress; an event
-with no active run receives the stable
-`github-notification-briefing-incomplete` diagnostic and is never dispatched a
-second time speculatively.
+Delivery state is checkpointed before and after worktree preparation and before
+the channel turn is dispatched. The channel passes `createIfMissing: true` to
+OpenClaw's inbound kernel; the host records or creates the routed session before
+starting the turn. Agent System does not call protected Gateway session RPCs or
+edit host session storage.
 
-When assignment or repository authority is revoked, the monitor retains the
-last delivery checkpoint until local retirement converges. It aborts any active
-automated run, marks the exact session retired, and archives it before recording
-the delivery as retired. It does not delete the session, transcript, managed
-repository, branch, or worktree. Repeated retirement safely adopts partial prior
-progress. A later approved reassignment reopens the same deterministic session
-and worktree, preserves the earlier transcript, and starts one briefing for the
-new assignment event.
+The pre-dispatch `briefing-running` checkpoint prevents automatic duplicate
+turns. If the process loses the dispatch result, the item receives the stable
+`github-notification-briefing-ambiguous` diagnostic and requires operator
+inspection rather than a speculative retry.
+
+When assignment or repository authority is revoked, the monitor records logical
+retirement and stops creating new turns. It does not abort or archive the host
+session and does not delete the transcript, managed repository, branch, or
+worktree. Native retirement, reassignment, and cleanup are Notifications 2 work.
 
 `doctor` reports whether the route is ready and whether the monitor is pending,
 healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
@@ -195,9 +197,10 @@ responses remain in the local OpenClaw transcript and cannot be published to
 GitHub through this channel.
 
 The automated briefing turn sets `disableTools: true` and an empty per-turn
-tool allowlist. The worktree path is stored as value-free session metadata and
-included in the briefing for later operator- or agent-led work; the briefing
-turn itself cannot invoke it.
+tool allowlist. The worktree path is included in the bounded briefing and inbound
+context for later operator- or agent-led work; the briefing turn itself cannot
+invoke it. Agent System keeps correlation in its private monitor state instead
+of patching OpenClaw session extensions.
 
 ## Trust Boundary
 

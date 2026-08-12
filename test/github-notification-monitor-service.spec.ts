@@ -285,4 +285,86 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(!JSON.stringify(state).includes('private provider detail'));
     assert.ok(warnings.every((message) => !message.includes('private provider detail')));
   });
+
+  it('should let a manual poll bypass only the ordinary interval deadline', async () => {
+    let connected = 0;
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.items = {};
+    state.nextPollAt = 10_000;
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new GitHubAccountClientError('github-account-identity-failed', 'private detail');
+        },
+      },
+      assignmentOrchestrator: { reconcile: async () => undefined },
+      clock: () => 1_000,
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => undefined,
+      },
+    });
+
+    const [result] = await service.runOnce({ agentId: 'tanaabot', forceInterval: true });
+
+    assert.equal(connected, 1);
+    assert.equal(result?.status, 'failed');
+    assert.equal(result?.code, 'github-account-identity-failed');
+  });
+
+  it('should preserve active failure backoff for a manual poll', async () => {
+    let connected = 0;
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.items = {};
+    state.failureCount = 1;
+    state.nextPollAt = 10_000;
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new Error('should remain deferred');
+        },
+      },
+      assignmentOrchestrator: { reconcile: async () => undefined },
+      clock: () => 1_000,
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => undefined,
+      },
+    });
+
+    const [result] = await service.runOnce({ agentId: 'tanaabot', forceInterval: true });
+
+    assert.equal(connected, 0);
+    assert.deepEqual(result, {
+      agentId: 'tanaabot',
+      code: 'github-notification-backoff-active',
+      status: 'skipped',
+    });
+  });
 });

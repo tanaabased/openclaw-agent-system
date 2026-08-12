@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type {
   GitHubNotificationAssignmentAuthority,
   GitHubNotificationAssignmentBoundaryInput,

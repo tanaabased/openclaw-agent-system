@@ -13,7 +13,6 @@ import GitHubNotificationMonitorService from '../channels/github/lib/monitor-ser
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
-import { githubNotificationSessionExtension } from '../channels/github/lib/session-extension.ts';
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
@@ -56,6 +55,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
     return loadConfig({ pin: false });
   };
+  const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
   const toolLauncherDirectory = process.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR?.trim();
@@ -226,17 +226,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationAssignmentProvider = new GitHubNotificationAssignmentProvider({
     accountClient: githubCapability.accountClient,
     manifestService,
-    readConfig,
+    readConfig: readRuntimeConfig,
   });
   const notificationSessionService = new GitHubNotificationSessionService({
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    gatewayRequest(method, params) {
-      return api.runtime.gateway.request(method, params);
-    },
     loadBriefing: (input) => notificationAssignmentProvider.briefing(input),
-    pluginId: api.id,
-    readConfig,
+    readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });
   const trustedWorktreeInput = (input: GitHubNotificationAssignmentBoundaryInput) => ({
@@ -264,13 +260,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     assignmentOrchestrator: notificationAssignmentOrchestrator,
     logger,
     manifestService,
-    readConfig,
+    readConfig: readRuntimeConfig,
     routingService: notificationRoutingService,
     stateStore: notificationMonitorStateStore,
   });
 
   api.registerChannel({ plugin: githubNotificationChannel });
-  api.session.state.registerSessionExtension(githubNotificationSessionExtension);
   if (api.registrationMode === undefined || api.registrationMode === 'full') {
     api.registerService(notificationMonitorService.pluginService());
   }
@@ -292,6 +287,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         installService,
         logger: createAgentSystemLogger(cliLogger, api.id),
         manifestService,
+        notificationMonitorService,
         toolRegistry,
         toolRuntime,
       });
