@@ -8,10 +8,9 @@ title=''
 body=''
 assignee=''
 issue_number_path=''
-issue_database_id_path=''
 
 usage() {
-  echo "Usage: create-and-assign-github-notification-issue.sh --creator-agent <id> --repository <owner/repo> --title <title> --body <body> --assignee <login> --issue-number-path <path> [--issue-database-id-path <path>]" >&2
+  echo "Usage: create-and-assign-github-notification-issue.sh --creator-agent <id> --repository <owner/repo> --title <title> --body <body> --assignee <login> --issue-number-path <path>" >&2
 }
 
 while (($# > 0)); do
@@ -44,10 +43,6 @@ while (($# > 0)); do
       issue_number_path="${2:-}"
       shift 2
       ;;
-    --issue-database-id-path)
-      issue_database_id_path="${2:-}"
-      shift 2
-      ;;
     *)
       usage
       exit 2
@@ -67,14 +62,5 @@ if [[ ! "$issue_number" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 printf '%s\n' "$issue_number" > "$issue_number_path"
-
-if [[ -n "$issue_database_id_path" ]]; then
-  issue_database_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent "$creator_agent" -- api "repos/$repository/issues/$issue_number" --jq .id)"
-  if [[ ! "$issue_database_id" =~ ^[0-9]+$ ]]; then
-    echo "GitHub returned an invalid issue database id: $issue_database_id" >&2
-    exit 1
-  fi
-  printf '%s\n' "$issue_database_id" > "$issue_database_id_path"
-fi
 
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent "$creator_agent" -- issue edit "$issue_number" --repo "$repository" --add-assignee "$assignee"

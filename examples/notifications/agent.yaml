@@ -18,8 +18,8 @@ github:
   notifications:
     interval-minutes: 60
     approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
+      - login: emoriwan
+        node-id: U_kgDOEUqvpg
     allowed-repository-owners:
       - login: tanaabased
         node-id: O_kgDODNGy1g

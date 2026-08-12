@@ -31,13 +31,13 @@ jobs:
           - git
           - worktree
           - github
+          - routing
           - notifications
-          - notifications-lifecycle
           - tool
           - security
         exclude:
           - os: macos-26
-            example: notifications-lifecycle
+            example: notifications
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

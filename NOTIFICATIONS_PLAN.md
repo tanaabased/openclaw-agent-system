@@ -1,9 +1,9 @@
 # GitHub Notifications Plan
 
 Status: Notifications MVP 1 is the scope of `pirog-notifications`. Its repository
-implementation is complete. The remaining release gate is the packed,
-third-party installed proof in the GitHub Actions-only notifications scenario.
-Notifications 2 belongs on the future `pirog-notifications-2` branch.
+implementation and packed third-party installed acceptance proof are complete in
+the GitHub Actions-only notifications scenario. Notifications 2 belongs on the
+future `pirog-notifications-2` branch.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -54,11 +54,11 @@ comments, retire sessions, or clean up worktrees.
   wait and busy result; and
 - deterministic unit, build, plugin, and package validation.
 
-### Remaining MVP 1 Gate
+### Completed MVP 1 Acceptance Proof
 
-The GitHub Actions-only notifications scenario must prove a packed third-party
+The GitHub Actions-only notifications scenario proves a packed third-party
 installation across the actual CLI, Gateway, channel, session, and worktree
-boundaries. It must cover:
+boundaries. It covers:
 
 - safe first-use baseline;
 - approved issue assignment;
