@@ -113,7 +113,10 @@ printf '%s' "$session_key" > "$TMPDIR/approved-session-key"
 cd "$TMPDIR/agent-system-notifications"
 session_key="$(cat "$TMPDIR/approved-session-key")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -er 'if length == 1 and .[0].repositoryId == "github-1329940218" and .[0].status == "active" then .[0].branch else error("expected exactly one active notification worktree") end' > "$TMPDIR/approved-worktree-branch"
-openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+branch="$(cat "$TMPDIR/approved-worktree-branch")"
+session_label="tanaabased/agent-system-test#$issue_number · $branch"
+openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
 # should keep deterministic intake free of github writes
 cd "$TMPDIR/agent-system-notification-actor"
@@ -132,7 +135,9 @@ openclaw agent-system notifications refresh --agent notification-data --json | j
 session_key="$(cat "$TMPDIR/approved-session-key")"
 branch="$(cat "$TMPDIR/approved-worktree-branch")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" 'length == 1 and .[0].repositoryId == "github-1329940218" and .[0].branch == $branch and .[0].status == "active"'
-openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+session_label="tanaabased/agent-system-test#$issue_number · $branch"
+openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
 # should logically retire an unassigned item while preserving local state
 cd "$TMPDIR/agent-system-notification-actor"
