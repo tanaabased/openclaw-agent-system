@@ -74,9 +74,9 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 
 - Treat a nonzero `exitCode` and returned `stderr` as the underlying `gh` failure.
 - Report missing tool, missing credential, manifest binding, or configured-username mismatch errors directly.
-- When OpenClaw requests approval, wait for the operator's decision and do not retry or reshape the command to avoid the classified policy.
+- Treat an Agent System denial as final for the current manifest: report the policy reason and required manifest change instead of waiting for an interactive decision.
 - Do not work around containment failures with `exec`, direct HTTP, another integration, or a different GitHub identity.
-- Agent System policy denies or asks for configured destructive, admin, and unknown operations before credentials load. GitHub token permissions remain the underlying provider boundary, so use least-privilege credentials.
+- Agent System applies the configured destructive, admin, and unknown policy before credentials load. GitHub token permissions remain the underlying provider boundary, so use least-privilege credentials.
 
 ## Workflow
 
