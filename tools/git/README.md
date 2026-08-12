@@ -39,7 +39,7 @@ real `git` without a shell.
 > [!IMPORTANT]
 > Remote-server authorization and ref protections are authoritative wherever
 > they exist. Agent System adds only the narrow, provider-portable controls
-> documented under `git.policy`.
+> documented under [`git.policy`](#gitpolicy).
 
 ## Configuration Reference
 

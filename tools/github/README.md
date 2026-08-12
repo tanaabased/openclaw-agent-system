@@ -12,7 +12,8 @@ preferred GitHub path when an Agent System workspace declares `github`.
 
 > [!IMPORTANT]
 > GitHub authorization and server-side protections are authoritative. Agent
-> System adds only the narrow release control documented under `github.policy`.
+> System adds only the narrow release control documented under
+> [`github.policy`](#githubpolicy).
 
 ## Overview
 
