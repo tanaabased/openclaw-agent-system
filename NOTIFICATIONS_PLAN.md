@@ -1,7 +1,8 @@
 # GitHub Notifications Plan
 
-Status: Phases 0 and 1 and Phase 2A through 2E repository behavior implemented;
-Phase 2 installed assignment proof and Phases 3 through 6 remain
+Status: Phases 0 and 1, Phase 2A through 2E repository behavior, and the Phase 2
+installed scenario are implemented; Phase 2 GitHub Actions proof and Phases 3
+through 6 remain
 
 Phases 0 and 1 now ship the strict manifest schema, static local-only channel,
 account-scoped routing projection, private ownership receipt, lifecycle
@@ -12,8 +13,8 @@ and a bounded local-only briefing session with deterministic unit coverage.
 This document plans an Agent System-owned GitHub work-notification channel. The
 Phase 0 routing foundation, Phase 1 read-only discovery, and Phase 2A through 2E
 assignment delivery and retirement described below are implemented; installed
-assignment proof, work execution, and the approved-mention conversation bridge
-remain planned behavior.
+assignment proof is awaiting GitHub Actions, while work execution and the
+approved-mention conversation bridge remain planned behavior.
 
 ## Recommendation
 
@@ -672,7 +673,7 @@ responses and no local work is created.
 
 Goal: complete the core MVP user experience.
 
-#### Phase 2A: Prove the Installed Session Contract (repository seams implemented; installed proof pending)
+#### Phase 2A: Prove the Installed Session Contract (repository seams and installed scenario implemented; GitHub Actions proof pending)
 
 - Add a narrow session adapter around supported public OpenClaw surfaces rather
   than reading or rewriting session files directly.
@@ -695,9 +696,9 @@ channel inbound runtime. The assembled inbound contract carries
 `disableTools: true` and an empty per-turn `toolsAllow`, while the synthetic
 channel has no outbound adapter and the session uses `sendPolicy: deny`.
 `sessions.send` is not suitable for this automated briefing because it cannot
-carry the required per-turn tool restriction. Treat the supported shapes as
-evidence for the spike, not proof of installed behavior until the owning Leia
-scenario exercises them.
+carry the required per-turn tool restriction. The owning Leia scenario now
+exercises these installed shapes; its GitHub Actions result is the remaining
+proof.
 
 #### Phase 2B: Expose Trusted Worktree Preparation (implemented)
 
@@ -738,7 +739,7 @@ scenario exercises them.
   metadata, and briefing idempotency key before deciding whether to resume.
   Never infer completion from a stale local stage alone.
 
-#### Phase 2D: Deliver the Bounded Briefing (implemented; installed proof pending)
+#### Phase 2D: Deliver the Bounded Briefing (repository behavior and installed scenario implemented; GitHub Actions proof pending)
 
 - After admission, fetch a separate bounded canonical briefing projection with
   the title, URL, body excerpt, labels, and milestone summary. Keep all textual
@@ -770,8 +771,8 @@ normal poll is due, while honoring failure backoff, and introduces no second
 delivery queue or state store. The production adapter rechecks canonical GitHub
 authority, uses only the trusted managed-worktree service, creates or adopts the
 exact routed session through the trusted Gateway runtime, and sends one bounded
-local-only no-tools briefing. The owning GitHub Actions-only installed proof
-remains Phase 2F work.
+local-only no-tools briefing. The owning installed scenario is implemented, and
+its GitHub Actions result remains Phase 2F work.
 
 #### Phase 2E: Retirement and Failure Recovery (implemented)
 
@@ -790,8 +791,8 @@ remains Phase 2F work.
 
 #### Phase 2F: Proof and Documentation (partially implemented)
 
-Unit coverage and documentation are implemented; installed assignment proof is
-pending.
+Unit coverage, documentation, and the installed assignment scenario are
+implemented; GitHub Actions proof is pending.
 
 - Add focused unit tests for the trusted worktree adapter, transition planner,
   orchestrator, session adapter, bounded briefing builder, tool restriction,

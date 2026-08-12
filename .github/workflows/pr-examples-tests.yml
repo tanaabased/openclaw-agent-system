@@ -13,6 +13,12 @@ jobs:
   examples:
     name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    concurrency:
+      group: >-
+        ${{ matrix.example == 'notifications'
+          && format('openclaw-agent-system-notifications-{0}', matrix.os)
+          || format('openclaw-agent-system-examples-{0}-{1}-{2}', github.run_id, matrix.example, matrix.os) }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:

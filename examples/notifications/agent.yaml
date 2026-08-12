@@ -13,15 +13,15 @@ git:
 
 github:
   host: github.com
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
+  username: agent-login-placeholder
+  token: AGENT_TOKEN_BINDING
   notifications:
-    interval-minutes: 5
+    interval-minutes: 1
     approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
+      - login: actor-login-placeholder
+        node-id: ACTOR_NODE_ID_VALUE
     repository-policy:
       minimum-permission: write
       allowed-owners:
         - login: tanaabased
-          node-id: O_kgDOB7x6Qw
+          node-id: O_kgDODNGy1g

@@ -1,0 +1,13 @@
+schema-version: 1
+
+agent:
+  id: notification-actor
+  name: Notification Actor
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+
+github:
+  host: github.com
+  username: actor-login-placeholder
+  token: ACTOR_TOKEN_BINDING
