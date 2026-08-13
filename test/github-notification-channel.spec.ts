@@ -60,23 +60,31 @@ describe('channels/github/channel', () => {
     assert.equal(channel.message, undefined);
   });
 
-  it('should expose scheduler lifecycle and healthy monitor status', async () => {
+  it('should expose scheduler lifecycle and live monitor status', async () => {
     const controller = new AbortController();
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = '/workspace/data';
-    state.lastSuccessfulPollAt = 1_000;
+    let state: ReturnType<typeof notificationMonitorState> | undefined;
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
       clock: () => 2_000,
       monitorService: {
         async runAccount(agentId, signal, onCycle) {
           assert.equal(agentId, 'data');
+          state = notificationMonitorState();
+          state.agentId = 'data';
+          state.workspaceDir = '/workspace/data';
+          state.lastSuccessfulPollAt = 1_000;
           await onCycle?.({
             agentId,
             baselineEstablished: false,
             code: 'github-notification-poll-complete',
             status: 'completed',
+          });
+          state.diagnosticCode = 'github-account-identity-failed';
+          await onCycle?.({
+            agentId,
+            code: state.diagnosticCode,
+            diagnosticCode: state.diagnosticCode,
+            status: 'failed',
           });
           await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
         },
@@ -95,18 +103,51 @@ describe('channels/github/channel', () => {
     });
 
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(
-      statuses.some(({ running }) => running === true),
-      true,
+    assert.deepEqual(
+      statuses.slice(0, 3).map(({ connected, healthState, running }) => ({
+        connected,
+        healthState,
+        running,
+      })),
+      [
+        { connected: false, healthState: 'starting', running: true },
+        { connected: true, healthState: 'healthy', running: true },
+        { connected: false, healthState: 'degraded', running: true },
+      ],
     );
     controller.abort();
     await running;
-    assert.equal(statuses.at(-1)?.running, false);
+    assert.deepEqual(
+      (({ connected, healthState, running }) => ({ connected, healthState, running }))(
+        statuses.at(-1) ?? {},
+      ),
+      { connected: false, healthState: 'stopped', running: false },
+    );
+
+    assert.ok(state);
+    state.diagnosticCode = undefined;
+    const stoppedSnapshot = await runtimeChannel.status?.buildAccountSnapshot?.({
+      account,
+      cfg: configuredRoute(),
+      runtime: {
+        accountId: 'data',
+        connected: false,
+        healthState: 'stopped',
+        running: false,
+      },
+    });
+    assert.equal(stoppedSnapshot?.connected, false);
+    assert.equal(stoppedSnapshot?.healthState, 'stopped');
 
     const snapshot = await runtimeChannel.status?.buildAccountSnapshot?.({
       account,
       cfg: configuredRoute(),
-      runtime: { accountId: 'data', running: true },
+      runtime: {
+        accountId: 'data',
+        connected: true,
+        healthState: 'healthy',
+        running: true,
+      },
     });
     assert.equal(snapshot?.connected, true);
     assert.equal(snapshot?.healthState, 'healthy');

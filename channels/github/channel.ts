@@ -60,18 +60,24 @@ function resolveAccount(
   return { accountId: normalizedAccountId, enabled };
 }
 
-function monitorStatus(state: GitHubNotificationMonitorState | undefined) {
+function monitorObservation(state: GitHubNotificationMonitorState | undefined) {
+  return {
+    lastConnectedAt: state?.lastSuccessfulPollAt ?? null,
+    lastError: state?.diagnosticCode ?? null,
+    lastEventAt: state?.lastSuccessfulPollAt ?? null,
+    mode: 'polling',
+  };
+}
+
+function monitorRuntimeStatus(state: GitHubNotificationMonitorState | undefined) {
   const connected =
     state?.baselineAt !== undefined &&
     state.lastSuccessfulPollAt !== undefined &&
     state.diagnosticCode === undefined;
   return {
+    ...monitorObservation(state),
     connected,
     healthState: state?.diagnosticCode ? 'degraded' : connected ? 'healthy' : 'starting',
-    lastConnectedAt: state?.lastSuccessfulPollAt ?? null,
-    lastError: state?.diagnosticCode ?? null,
-    lastEventAt: state?.lastSuccessfulPollAt ?? null,
-    mode: 'polling',
   };
 }
 
@@ -133,7 +139,7 @@ export function createGitHubNotificationChannel(
           accountId: account.accountId,
           enabled: account.enabled,
           configured: account.enabled,
-          extra: monitorStatus(await dependencies.stateStore.read(account.accountId)),
+          extra: monitorObservation(await dependencies.stateStore.read(account.accountId)),
         };
       },
     }),
@@ -147,7 +153,7 @@ export function createGitHubNotificationChannel(
           status({
             running: true,
             ...(lastStartAt === undefined ? {} : { lastStartAt }),
-            ...monitorStatus(await dependencies.stateStore.read(context.accountId)),
+            ...monitorRuntimeStatus(await dependencies.stateStore.read(context.accountId)),
           });
         };
         await publish(clock());
@@ -158,7 +164,12 @@ export function createGitHubNotificationChannel(
             async () => publish(),
           );
         } finally {
-          status({ connected: false, running: false, lastStopAt: clock() });
+          status({
+            connected: false,
+            healthState: 'stopped',
+            running: false,
+            lastStopAt: clock(),
+          });
         }
       },
     },
