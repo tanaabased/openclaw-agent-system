@@ -3,7 +3,7 @@
 Status: Notifications MVP 1 is the scope of `pirog-notifications`. Its repository
 implementation and packed third-party installed acceptance proof are complete in
 the GitHub Actions-only notifications scenario. Notifications 2 belongs on the
-future `pirog-notifications-2` branch.
+`pirog-notifications-2` branch.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -299,6 +299,10 @@ local session.
 ## Notifications 2 Plan
 
 Notifications 2 owns everything after initial issue intake.
+
+At the first Notifications 2 monitor-state schema revision, remove the unused
+`baselineItemNodeIds` inventory while migrating valid MVP 1 records;
+`baselineAt` remains the historical admission boundary.
 
 ### Phase 1: Session Activation and Briefing
 

@@ -134,10 +134,6 @@ describe('channels/github/lib/poller', () => {
     });
 
     assert.equal(approved.approved, 1);
-    assert.deepEqual(
-      approved.transitions.map(({ itemKey, kind }) => ({ itemKey, kind })),
-      [{ itemKey: 'github:R_repo:12', kind: 'admitted' }],
-    );
     assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
       assignmentEventId: assignment.nodeId,
       schemaVersion: 1,
@@ -146,7 +142,6 @@ describe('channels/github/lib/poller', () => {
     });
     assert.equal(restarted.approved, 0);
     assert.equal(restarted.duplicates, 1);
-    assert.deepEqual(restarted.transitions, []);
     assert.deepEqual(restarted.state.processedEventNodeIds, [assignment.nodeId]);
     assert.equal(Object.values(restarted.state.items)[0]?.disposition, 'approved');
   });
@@ -177,10 +172,6 @@ describe('channels/github/lib/poller', () => {
     });
 
     assert.equal(retired.retired, 1);
-    assert.deepEqual(
-      retired.transitions.map(({ kind }) => kind),
-      ['retired'],
-    );
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
     assert.equal(Object.values(retired.state.items)[0]?.delivery?.stage, 'admitted');

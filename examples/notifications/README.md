@@ -3,10 +3,10 @@
 This Ubuntu-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
-worktree and one local session without invoking a model, adopts both after restart,
-and retires without deleting either. Scenario setup creates and updates uniquely named
-issues in `tanaabased/agent-system-test`; the notification channel itself must never
-comment, push, or perform another outbound GitHub write.
+worktree and one local session without invoking a model, preserves both across a
+restart, and retires without deleting either. Scenario setup creates and updates
+uniquely named issues in `tanaabased/agent-system-test`; the notification channel
+itself must never comment, push, or perform another outbound GitHub write.
 
 ## Setup
 
@@ -129,7 +129,7 @@ test -z "$remote_branch"
 # should restart the gateway with the active assignment checkpoint intact
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
-# should adopt the same worktree and session after restart
+# should preserve the recorded worktree and session after restart
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 session_key="$(cat "$TMPDIR/approved-session-key")"
