@@ -156,6 +156,9 @@ describe('channels/github/lib/session-service', () => {
     let published: Record<string, unknown> | undefined;
     const service = createService({
       async dispatch(input) {
+        assert.equal(input.ctx.Provider, 'agent-system-github');
+        assert.equal(input.ctx.Surface, 'agent-system-github');
+        assert.equal(input.ctx.OriginatingChannel, 'agent-system-github');
         assert.equal(input.replyOptions?.disableTools, true);
         assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
@@ -271,6 +274,9 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
     assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
+    assert.equal(turn.ctxPayload.Provider, 'agent-system-github');
+    assert.equal(turn.ctxPayload.Surface, 'agent-system-github');
+    assert.equal(turn.ctxPayload.OriginatingChannel, 'agent-system-github');
     const context = turn.ctxPayload as unknown as Record<string, unknown>;
     assert.equal(context.githubItemNumber, event.itemNumber);
     assert.equal(context.githubItemType, event.itemType);

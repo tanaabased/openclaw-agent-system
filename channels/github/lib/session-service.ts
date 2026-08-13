@@ -180,7 +180,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         rawBody: notification,
       },
       messageId,
-      provider: 'github',
       reply: {
         sourceReplyDeliveryMode: 'none',
         to: assignment.route.conversationId,
@@ -343,7 +342,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         rawBody: notification,
       },
       messageId: eventId,
-      provider: 'github',
       reply: {
         sourceReplyDeliveryMode: 'none',
         to: conversationId,
