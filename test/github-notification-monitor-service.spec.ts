@@ -69,6 +69,68 @@ describe('channels/github/lib/monitor-service', () => {
     await assert.doesNotReject(service.runAccount('tanaabot', controller.signal));
   });
 
+  it('should skip an in-flight poll abort without changing monitor health', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.lastSuccessfulPollAt = 500;
+    const initialState = structuredClone(state);
+    const cycles: Array<{ code: string; status: string }> = [];
+    const warnings: string[] = [];
+    let writes = 0;
+    let markConnected!: () => void;
+    const connected = new Promise<void>((resolve) => {
+      markConnected = resolve;
+    });
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect(_context, _trigger, signal) {
+          markConnected();
+          return await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(new GitHubAccountClientError('github-account-tool-unavailable', 'aborted')),
+              { once: true },
+            );
+          });
+        },
+      },
+      assignmentOrchestrator: { reconcile: async () => undefined },
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => {
+          writes += 1;
+        },
+      },
+    });
+    const controller = new AbortController();
+
+    const running = service.runAccount('tanaabot', controller.signal, (result) => {
+      cycles.push({ code: result.code, status: result.status });
+    });
+    await connected;
+    controller.abort();
+    await running;
+
+    assert.deepEqual(cycles, [
+      { code: 'github-notification-cycle-aborted', status: 'skipped' },
+    ]);
+    assert.equal(writes, 0);
+    assert.deepEqual(state, initialState);
+    assert.deepEqual(warnings, []);
+  });
+
   it('should reconcile persisted delivery backlog before the next remote poll', async () => {
     let connected = 0;
     const reconciled: string[] = [];

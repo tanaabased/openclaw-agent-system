@@ -384,6 +384,13 @@ export default class GitHubNotificationMonitorService {
         status: 'completed',
       };
     } catch (error) {
+      if (signal?.aborted) {
+        return {
+          agentId,
+          code: 'github-notification-cycle-aborted',
+          status: 'skipped',
+        };
+      }
       const now = (this.#dependencies.clock ?? Date.now)();
       const diagnostic = diagnosticCode(error);
       try {
