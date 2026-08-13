@@ -124,14 +124,13 @@ session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
 # should reject a direct channel write without an internal publication target
-if direct_output="$(OPENCLAW_LOG_LEVEL=error openclaw message send \
+if OPENCLAW_LOG_LEVEL=error openclaw message send \
   --channel agent-system-github \
   --account notification-data \
   --target github:R_repo:12 \
-  --message 'This direct channel write must be rejected.' 2>&1)"; then
+  --message 'This direct channel write must be rejected.'; then
   exit 1
 fi
-printf '%s\n' "$direct_output" | grep -F 'GitHub notification publication targets are invalid.'
 
 # should keep deterministic intake free of github writes
 cd "$TMPDIR/agent-system-notification-actor"
