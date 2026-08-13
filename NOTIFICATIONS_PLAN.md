@@ -300,57 +300,92 @@ local session.
 
 Notifications 2 owns everything after initial issue intake.
 
-At the first Notifications 2 monitor-state schema revision, remove the unused
-`baselineItemNodeIds` inventory while migrating valid MVP 1 records;
-`baselineAt` remains the historical admission boundary.
+| Priority | User outcome                                           | Impact    | Relative effort |
+| -------- | ------------------------------------------------------ | --------- | --------------- |
+| 0        | Accepted assignments receive a visible acknowledgment  | very high | medium          |
+| 1        | Assigned work activates the agent with a safe briefing | very high | medium          |
+| 2        | Approved GitHub mentions reach the local conversation  | high      | medium          |
+| 3        | Safe conversational responses return to GitHub         | high      | high            |
+| 4        | Assignment and pull-request lifecycle stays correlated | medium    | medium          |
+| 5        | Operators can inspect, replay, and clean up state      | medium    | medium          |
 
-### Phase 1: Session Activation and Briefing
+### Phase 0: Acknowledge Accepted Assignments
+
+- Post only after deterministic intake reaches its active checkpoint with the
+  managed worktree prepared and the OpenClaw session recorded.
+- Generate one short acknowledgment through the assigned agent's normal
+  OpenClaw personality and prompt context. Give that turn no tools, issue prose,
+  comments, local paths, or credential values; instruct it only to acknowledge
+  that it accepted the assignment in its own voice.
+- Treat the generated text as untrusted until a fail-closed publication gate
+  accepts one bounded plain-text sentence with no links, mentions, markup,
+  paths, token-shaped values, media, tool output, or unsupported claims. Do not
+  publish a canned fallback when generation or validation fails.
+- Publish through the owning GitHub capability only after provider permission
+  and applicable narrow tool policy allow the write.
+- Reconcile a deterministic hidden marker and persist a value-free receipt so
+  retries, restarts, and ambiguous delivery cannot create duplicate comments.
+- Keep local intake active when acknowledgment fails; record a stable diagnostic
+  and retry the comment independently. Agent generation must not make polling or
+  manual refresh wait for model completion.
+
+### Phase 1: Activate Assigned Work
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
-- Treat briefing as a separate activation concern with its own checkpoint,
-  retry, cancellation, and model-authorization diagnostics.
-- Prefer lazy prompt-context injection on the first real interaction when an
-  immediate autonomous assistant message is not required.
-- If an automatic opening message is required, enqueue a separate asynchronous
-  channel turn after intake commits; never make refresh wait for model completion.
+- After deterministic intake commits, claim a separate activation checkpoint
+  and dispatch one asynchronous opening turn through OpenClaw's public channel
+  inbound lifecycle. Never make refresh wait for model completion.
 - Fetch only a bounded canonical issue projection after activation is claimed,
-  isolate it as untrusted project data, and reuse the public channel inbound and
-  message-delivery lifecycles.
+  frame it as untrusted project data, and include the managed worktree context.
+- Keep the opening response local until the safe GitHub reply phase exists.
+- Make activation retryable and cancellable with stable model-authorization and
+  ambiguous-delivery diagnostics.
+- Use this phase's monitor-state migration to remove the unused
+  `baselineItemNodeIds` inventory while accepting valid MVP 1 state;
+  `baselineAt` remains the historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
 
-### Phase 2: Assignment Lifecycle and Pull-request Correlation
+### Phase 2: Approved GitHub Mentions Inbound
 
-- Promote pull-request assignments only after installed proof defines their
-  distinct semantics.
-- Correlate an agent-created pull request to the existing issue work item.
-- Use `Closes #<issue-number>` only when merge should close the issue.
-- Request review from the original assigner when provider authorization permits.
-- Complete restart and ambiguous-delivery reconciliation.
-- Define native archival if OpenClaw exposes a public scoped API; otherwise keep
-  retirement logical.
-- Preserve sessions and worktrees on unassignment or authority revocation.
-
-### Phase 3: Approved GitHub Comments Inbound
-
-- Poll only active canonical issues and correlated pull-request conversations.
+- Poll only active canonical issue conversations.
+- Establish a safe comment baseline when conversation tracking begins.
 - Admit only canonical human comments from approved immutable actor ids.
-- Require an exact standalone mention of the verified agent login in current
-  author-written prose.
+- Require an exact standalone mention of the verified GitHub account login in
+  current author-written prose, such as `@emoriwan`, never a literal `@agent`.
 - Treat mentions as addressing, never authorization.
 - Deduplicate create, edit, retry, self, quote-only, and stale-revision events.
-- Route admitted comments to the existing local conversation with bounded
-  provenance and untrusted-content framing.
+- Dispatch admitted comments asynchronously to the existing local conversation
+  with bounded provenance and untrusted-content framing.
+- Keep all responses local until Phase 3 publication is available.
 
-### Phase 4: Bounded Replies to GitHub
+### Phase 3: Safe Conversational GitHub Replies
 
-- Produce a separate GitHub-facing response from an explicitly publishable
-  payload, never by mirroring or redacting the local transcript.
-- Publish at most once through the owning GitHub capability.
+- Produce each model-generated GitHub response as a separate concise,
+  conversational, explicitly publishable payload, never by mirroring or
+  redacting the local transcript.
+- Publish only a response to an admitted GitHub comment or an explicit
+  operator-selected progress update.
+- Add the explicit operator action for selecting a local progress update.
+- Publish at most once through the owning GitHub capability and persist a
+  value-free delivery receipt.
 - Apply provider permission, applicable narrow tool policy, and a mandatory
   secret-safety gate before every write.
+- Fail closed when the payload cannot be proven secret-safe.
 - Never publish tool traces, hidden context, local paths, failed attempts, or
   arbitrary local turns.
-- Add an explicit operator action for selected local progress updates.
+
+### Phase 4: Assignment and Pull-request Lifecycle
+
+- Add installed proof for directly assigned pull requests and their distinct
+  lifecycle semantics.
+- Correlate an agent-created pull request to its existing issue conversation.
+- Extend approved-comment intake to correlated pull requests.
+- Use `Closes #<issue-number>` only when merge should close the issue.
+- Request review from the original assigner when provider authorization permits.
+- Complete restart and ambiguous-delivery reconciliation for lifecycle changes.
+- Preserve sessions and worktrees on unassignment or authority revocation.
+- Use native archival only if OpenClaw exposes a public scoped API; otherwise
+  keep retirement logical.
 
 ### Phase 5: Operations and Cleanup
 
@@ -358,12 +393,6 @@ At the first Notifications 2 monitor-state schema revision, remove the unused
 - Add explicit, non-destructive cleanup through the owning session and Git
   capabilities.
 - Define retention for retired routing state and delivery receipts.
-- Add webhooks only if measured latency or scale justifies them; preserve the
-  polling semantic contract.
-
-Later expansions may include review requests, teams, apps, multiple GitHub
-hosts, repository-specific actor sets, and additional providers. They are not
-part of Notifications 2 unless separately scoped.
 
 ## Validation
 
@@ -419,10 +448,12 @@ implementation modules.
 6. Let the Git capability own managed-worktree preparation.
 7. Preserve transcripts and worktrees by default; later cleanup is explicit.
 8. Keep MVP 1 notification refresh and session creation deterministic and model-free.
-9. Use fixed, bounded `gh api` calls until measured cost or scale justifies a
-   direct transport.
-10. Defer briefing and agent-turn dispatch to a separately recoverable
-    Notifications 2 activation path.
+9. Keep polling through fixed, bounded `gh api` calls. Webhook ingestion is not
+   supported.
+10. Acknowledge completed deterministic intake with one short, personality-aware,
+    tool-free, secret-gated, exactly-once GitHub comment.
+11. Keep acknowledgment generation separate from the later issue briefing and
+    work-activation turn; neither path may delay deterministic intake.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,
