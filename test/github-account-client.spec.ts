@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { AgentSystemCliRunRequest } from '../lib/tool-types.ts';
-import GitHubAccountClient from '../tools/github/account-client.ts';
+import GitHubAccountClient from '../lib/github-account-client.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 
 const manifest: AgentManifest = {
@@ -35,9 +35,10 @@ function loadedEnvironment() {
   };
 }
 
-describe('tools/github/account-client', () => {
+describe('lib/github-account-client', () => {
   it('should bind fixed calls to a sanitized child environment and configured identity', async () => {
     const requests: AgentSystemCliRunRequest[] = [];
+    const controller = new AbortController();
     const client = new GitHubAccountClient({
       baseEnvironment: {
         HOME: '/home/runner',
@@ -52,26 +53,34 @@ describe('tools/github/account-client', () => {
         return {
           exitCode: 0,
           stderr: '',
-          stdout: request.argv.includes('user') ? 'tanaabot\n' : '[[]]',
+          stdout: request.argv.includes('user')
+            ? '{"login":"tanaabot","nodeId":"U_agent"}'
+            : '[[]]',
           timedOut: false,
           truncated: false,
         };
       },
     });
 
-    const connected = await client.connect({ manifest, workspaceDir });
+    const connected = await client.connect(
+      { manifest, workspaceDir },
+      'service',
+      controller.signal,
+    );
     await connected.execute(['api', '--paginate', '--slurp', '/user/keys']);
 
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
-        ['api', 'user', '--jq', '.login'],
+        ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
         ['api', '--paginate', '--slurp', '/user/keys'],
       ],
     );
     assert.equal(requests[1]?.environment.GH_TOKEN, 'private-token');
     assert.equal(requests[1]?.environment.GH_CONFIG_DIR, '/private/tanaabot/tools/gh');
     assert.equal(requests[1]?.environment.SHOULD_NOT_INHERIT, undefined);
+    assert.equal(requests[0]?.signal, controller.signal);
+    assert.equal(requests[1]?.signal, controller.signal);
     assert.deepEqual(requests[1]?.excludedExecutableDirectories, [
       `${workspaceDir}/bin`,
       `${workspaceDir}/commands`,
@@ -87,7 +96,7 @@ describe('tools/github/account-client', () => {
       runCli: async () => ({
         exitCode: 0,
         stderr: '',
-        stdout: 'someone-else\n',
+        stdout: '{"login":"someone-else","nodeId":"U_other"}',
         timedOut: false,
         truncated: false,
       }),

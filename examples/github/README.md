@@ -44,8 +44,8 @@ ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-signing -f "$TMPDIR/agent-sy
 cd "$TMPDIR/agent-system-github-tanaabot"
 openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
-printf '%s\n' "$output" | grep -F '"code": "add-github-ssh-keys"'
-printf '%s\n' "$output" | grep -F '"code": "add-github-ssh-signing-keys"'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "add-github-ssh-keys")'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "add-github-ssh-signing-keys")'
 
 # should store access and install the scenario-owned emori agent through agent system
 cd "$GITHUB_WORKSPACE/examples/github/emori"
@@ -60,11 +60,7 @@ openclaw config set 'agents.list[1].model' "openai/$OPENAI_MODEL"
 openclaw exec-policy preset yolo
 
 # should start the default gateway as a supervised background process
-(
-  exec openclaw gateway run --verbose > "$TMPDIR/gateway.log" 2>&1 < /dev/null
-) &
-echo "$!" > "$TMPDIR/gateway.pid"
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" wait
+"$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 ```
 
 ## Testing
@@ -97,8 +93,8 @@ printf '%s\n' "$output" | grep -F 'healthy' | grep -F 'GitHub SSH signing keys'
 # should keep both tanaabot github key collections unchanged on repeated install
 cd "$TMPDIR/agent-system-github-tanaabot"
 output="$(openclaw agent-system install --json)"
-printf '%s\n' "$output" | grep -F '"code": "github-ssh-keys-unchanged"'
-printf '%s\n' "$output" | grep -F '"code": "github-ssh-signing-keys-unchanged"'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "github-ssh-keys-unchanged")'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "github-ssh-signing-keys-unchanged")'
 
 # should identify tanaabot through its configured github tool credential
 openclaw agent \

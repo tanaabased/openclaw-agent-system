@@ -40,8 +40,7 @@ openclaw agent-system doctor | grep -F 'healthy' | grep -F 'path'
 
 # should report the same healthy aggregate state as structured json
 cd "$GITHUB_WORKSPACE/examples/doctor/data"
-openclaw agent-system doctor --json | grep -F '"status": "healthy"'
-openclaw agent-system doctor --json | grep -F '"component": "agent"'
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | any(.component == "agent"))'
 
 # should detect public identity drift with a failing exit code
 cd "$GITHUB_WORKSPACE/examples/doctor/data"
@@ -55,6 +54,6 @@ printf '%s\n' "$output" | grep -F 'drift' | grep -F 'agent'
 
 # should repair identity drift through install and return doctor to healthy state
 cd "$GITHUB_WORKSPACE/examples/doctor/data"
-openclaw agent-system install --json | grep -F '"status": "updated"'
-openclaw agent-system doctor --json | grep -F '"status": "healthy"'
+openclaw agent-system install --json | jq -e '.outcomes | any(.status == "updated")'
+openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 ```

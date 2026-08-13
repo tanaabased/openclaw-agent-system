@@ -5,10 +5,11 @@ configuration, CLI, environment, and path behavior. Start with the
 [README](./README.md) for installation and the common workflow; use
 [DEVELOPMENT.md](./DEVELOPMENT.md) when changing Agent System itself.
 
-Tool-specific configuration, CLI, and routing documentation:
+Capability-specific configuration, CLI, and routing documentation:
 
 - [`git`](./tools/git/README.md)
 - [`gh`](./tools/github/README.md)
+- [GitHub notifications channel](./channels/github/README.md)
 
 ## Manifest
 
@@ -45,7 +46,11 @@ tool-provided sections.
 ## Configuration
 
 Agent System currently owns no global plugin settings. Its public configuration
-is the per-workspace manifest plus any configured tool sections.
+is the per-workspace manifest plus any configured tool sections. When
+[`github.notifications`](./channels/github/README.md#configuration) is present,
+`install` projects only a non-secret channel account and exact agent binding into
+global OpenClaw configuration; notification policy and credentials remain
+workspace-owned.
 
 A complete core configuration can contain:
 
@@ -146,10 +151,10 @@ alias. Bare `agent-system` or `as` prints help.
 
 ### Common Behavior
 
-| Option         | Commands                                           | Behavior                                                                 |
-| -------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
-| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
-| `--json`       | `validate`, `env`, `install`, `doctor`             | Writes undecorated structured output.                                    |
+| Option         | Commands                                                                    | Behavior                                                                 |
+| -------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
+| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`             | Writes undecorated structured output.                                    |
 
 Human output uses standard output and honors `NO_COLOR` and `FORCE_COLOR=0`.
 Warnings and failures use the OpenClaw plugin logger on standard error. A failed
@@ -267,6 +272,24 @@ that can reach operator interfaces. Tool-specific lifecycle checks are
 documented in each tool guide. This check covers exec host routing, sandbox mode
 and scope, and elevated execution; it does not certify custom mounts or sandbox
 backend isolation.
+
+### `openclaw agent-system notifications refresh`
+
+Runs one GitHub notification monitor cycle for the current workspace agent or
+an explicitly selected installed agent.
+
+```text
+openclaw agent-system notifications refresh [--agent <id>] [--json]
+```
+
+The command uses the background service's provider client, baseline, private
+state, trust gates, assignment delivery path, and cross-process per-agent lease.
+It runs one complete intake cycle, not a read-only fetch or a request to enable
+the scheduler. It waits up to two minutes for an active cycle, bypasses the
+ordinary interval deadline, and preserves active failure and provider backoff.
+Deferred and failed cycles return a nonzero exit code. See the
+[GitHub notifications channel](./channels/github/README.md) for
+configuration, security, lifecycle, and result semantics.
 
 ### `openclaw agent-system tool`
 

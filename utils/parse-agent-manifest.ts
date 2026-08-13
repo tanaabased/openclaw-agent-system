@@ -4,7 +4,7 @@ import { isAlias, parseDocument, visit } from 'yaml';
 
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-section-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
-import { decodeGitHubSection, externalGitHubSectionSchema } from '../tools/github/config-schema.ts';
+import { decodeGitHubSection, externalGitHubSectionSchema } from './github-section-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './manifest-types.ts';
 import {
   decodeEnvironmentSetValue,

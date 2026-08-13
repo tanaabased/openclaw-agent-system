@@ -113,6 +113,15 @@ authoritative; Agent System policy adds only the narrow configurable controls
 documented in each tool guide. A public [Tool API](./API.md) is planned so other
 OpenClaw plugins can add compatible wrappers through the same runtime.
 
+## Channels
+
+Agent System includes a local-only
+[GitHub notifications channel](./channels/github/README.md). Its Gateway service
+observes newly assigned GitHub issues after verifying
+the exact agent route, account identity, repository policy, and assigning actor.
+New approved issue assignments create one managed worktree and one deterministic,
+local session without invoking a model. The channel has no outbound GitHub adapter.
+
 > [!IMPORTANT]
 > Model-facing `agent_system_*` tools are the agent-bound execution surface.
 > `openclaw agent-system tool`, `credentials`, and the packaged command shims are

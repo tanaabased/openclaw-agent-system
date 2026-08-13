@@ -73,6 +73,62 @@ github:
     });
   });
 
+  it('should parse github notification trust pins and defaults', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDOB7x6Qw
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github?.notifications, {
+      approvedActors: [{ login: 'pirog', nodeId: 'U_kgDOB9x7Qw' }],
+      allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
+      intervalMinutes: 5,
+    });
+  });
+
+  it('should reject unsafe github notification configuration', () => {
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    approved-actors: []
+`).has('manifest-schema'),
+      true,
+    );
+    assert.equal(
+      diagnosticCodes(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    interval-minutes: 1
+    approved-actors:
+      - login: pirog
+        node-id: U_1
+    repository-policy:
+      minimum-permission: write
+`).has('manifest-unknown-key'),
+      true,
+    );
+  });
+
   it('should reject legacy github ask decisions with exact migration guidance', () => {
     const result = parseAgentManifest(`
 schema-version: 1

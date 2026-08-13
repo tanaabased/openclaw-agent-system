@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System Git Worktree'
   short_description: 'Managed agent Git worktrees'
-  icon_small: './agents/assets/icon-small.svg'
-  icon_large: './agents/assets/icon-large.svg'
+  icon_small: '../../assets/git-icon-small.svg'
+  icon_large: '../../assets/git-icon-large.svg'
   brand_color: '#00c88a'
   default_prompt: 'Use $agent-system-git-worktree to prepare or reuse a managed worktree, pass its path to agent_system_git, and remove it only when requested.'

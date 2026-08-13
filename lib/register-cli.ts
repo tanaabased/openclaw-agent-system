@@ -5,7 +5,9 @@ import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
+import refreshNotificationsAgentSystem from '../cli/notifications-refresh.ts';
 import validateAgentSystem from '../cli/validate.ts';
+import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentDoctorService from './agent-doctor-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
@@ -38,6 +40,7 @@ export interface RegisterAgentSystemCliOptions {
   installService: Pick<AgentInstallService, 'install'>;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
+  notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output?: CliOutput;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
   toolRuntime: AgentSystemToolRuntime;
@@ -115,6 +118,30 @@ export default function registerAgentSystemCli(
         json: commandOptions.json === true,
         logger: options.logger,
         manifestService: options.manifestService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        workspaceDir: cwd(),
+      });
+    });
+  const notifications = agentSystem
+    .command('notifications')
+    .description('Manage GitHub notification intake.')
+    .action(() => writeHelp(notifications, output));
+  const notificationsRefresh = notifications
+    .command('refresh')
+    .description('Run one GitHub notification intake cycle now.')
+    .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
+    .option('--json', 'Write structured JSON output.')
+    .action(async () => {
+      const commandOptions = notificationsRefresh.opts();
+      const agentId = commandOptions.agent;
+      await refreshNotificationsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        json: commandOptions.json === true,
+        logger: options.logger,
+        manifestService: options.manifestService,
+        monitorService: options.notificationMonitorService,
         output,
         setExitCode,
         styles: options.styles,

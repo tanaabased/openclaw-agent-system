@@ -26,7 +26,9 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const channelIds: string[] = [];
     const policyIds: string[] = [];
+    const serviceIds: string[] = [];
     const toolNames: string[] = [];
     const logger = {
       debug() {},
@@ -44,6 +46,14 @@ describe('index', () => {
         agent: {
           resolveAgentWorkspaceDir() {
             return '/workspace';
+          },
+        },
+        channel: {
+          reply: {
+            dispatchReplyWithBufferedBlockDispatcher() {},
+          },
+          session: {
+            async recordInboundSession() {},
           },
         },
         config: {
@@ -65,6 +75,13 @@ describe('index', () => {
         registrar = nextRegistrar;
         options = nextOptions;
       },
+      registerChannel(registration: { plugin?: { id: string }; id?: string }) {
+        const id = registration.plugin?.id ?? registration.id;
+        if (id) channelIds.push(id);
+      },
+      registerService(service: { id: string }) {
+        serviceIds.push(service.id);
+      },
       registerTool(_tool: unknown, toolOptions?: { name?: string }) {
         if (toolOptions?.name) toolNames.push(toolOptions.name);
       },
@@ -77,6 +94,8 @@ describe('index', () => {
 
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
+    assert.deepEqual(channelIds, ['agent-system-github']);
+    assert.deepEqual(serviceIds, ['agent-system-github-notifications']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

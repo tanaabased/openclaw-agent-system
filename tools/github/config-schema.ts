@@ -1,12 +1,5 @@
 import { Type, type Static } from 'typebox';
 
-import {
-  decodeResolvableString,
-  externalEnvironmentBindingSchema,
-  externalResolvableStringSchema,
-} from '../../utils/manifest-value-schemas.ts';
-import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
-
 const externalGitHubKeyValueSchema = Type.String({
   minLength: 1,
   pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
@@ -42,56 +35,50 @@ const externalGitHubPolicyDecisionSchema = Type.Union([
   Type.Literal('deny'),
 ]);
 
-export const externalGitHubSectionSchema = Type.Object(
-  {
-    config: Type.Optional(
-      Type.Object(
-        {
-          'accessible-colors': Type.Optional(
-            Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
-          ),
-          'color-labels': Type.Optional(
-            Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
-          ),
-          'git-protocol': Type.Optional(Type.Union([Type.Literal('https'), Type.Literal('ssh')])),
-          spinner: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
-          telemetry: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
-        },
-        { additionalProperties: false },
-      ),
+export const externalGitHubToolSectionProperties = {
+  config: Type.Optional(
+    Type.Object(
+      {
+        'accessible-colors': Type.Optional(
+          Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
+        ),
+        'color-labels': Type.Optional(
+          Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]),
+        ),
+        'git-protocol': Type.Optional(Type.Union([Type.Literal('https'), Type.Literal('ssh')])),
+        spinner: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
+        telemetry: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled')])),
+      },
+      { additionalProperties: false },
     ),
-    host: Type.Optional(Type.Literal('github.com')),
-    policy: Type.Optional(
-      Type.Object(
-        {
-          releases: Type.Optional(externalGitHubPolicyDecisionSchema),
-        },
-        { additionalProperties: false },
-      ),
+  ),
+  policy: Type.Optional(
+    Type.Object(
+      {
+        releases: Type.Optional(externalGitHubPolicyDecisionSchema),
+      },
+      { additionalProperties: false },
     ),
-    'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
-    'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
-    username: Type.Optional(externalResolvableStringSchema),
-    token: Type.Optional(externalEnvironmentBindingSchema),
-  },
-  { additionalProperties: false },
-);
+  ),
+  'ssh-keys': Type.Optional(externalGitHubKeySourcesSchema),
+  'ssh-signing-keys': Type.Optional(externalGitHubKeySourcesSchema),
+} as const;
 
-type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
+export const externalGitHubToolSectionSchema = Type.Object(externalGitHubToolSectionProperties, {
+  additionalProperties: false,
+});
+type ExternalGitHubToolSection = Static<typeof externalGitHubToolSectionSchema>;
 
 export type GitHubPublicKeySource =
   | { source: string; type: 'auto'; title?: string }
   | { source: string; type: 'key'; title?: string }
   | { source: string; type: 'path'; title?: string };
 
-export interface GitHubManifestConfiguration {
+export interface GitHubToolManifestConfiguration {
   config?: Partial<GitHubCliConfiguration>;
-  host?: 'github.com';
   policy?: Partial<GitHubPolicyConfiguration>;
   sshKeys?: GitHubPublicKeySource[];
   sshSigningKeys?: GitHubPublicKeySource[];
-  token?: EnvironmentBinding;
-  username?: ResolvableString;
 }
 
 export interface GitHubCliConfiguration {
@@ -121,21 +108,23 @@ export const defaultGitHubPolicyConfiguration: GitHubPolicyConfiguration = {
 };
 
 export function resolveGitHubCliConfiguration(
-  configuration: GitHubManifestConfiguration,
+  configuration: GitHubToolManifestConfiguration,
 ): GitHubCliConfiguration {
   return { ...defaultGitHubCliConfiguration, ...configuration.config };
 }
 
 export function resolveGitHubPolicyConfiguration(
-  configuration: GitHubManifestConfiguration,
+  configuration: GitHubToolManifestConfiguration,
 ): GitHubPolicyConfiguration {
   return { ...defaultGitHubPolicyConfiguration, ...configuration.policy };
 }
 
-/** Decode schema-owned GitHub keys without transforming environment-variable names. */
-export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifestConfiguration {
+/** Decode schema-owned GitHub tool keys without transforming user-defined values. */
+export function decodeGitHubToolConfiguration(
+  value: ExternalGitHubToolSection,
+): GitHubToolManifestConfiguration {
   const decodeKeySources = (
-    sources: NonNullable<ExternalGitHubSection['ssh-keys']>,
+    sources: NonNullable<ExternalGitHubToolSection['ssh-keys']>,
   ): GitHubPublicKeySource[] =>
     (Array.isArray(sources) ? sources : [sources]).map((source) =>
       typeof source === 'string'
@@ -167,13 +156,10 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
           },
         }
       : {}),
-    ...(value.host ? { host: value.host } : {}),
     ...(value.policy ? { policy: { ...value.policy } } : {}),
     ...(value['ssh-keys'] ? { sshKeys: decodeKeySources(value['ssh-keys']) } : {}),
     ...(value['ssh-signing-keys']
       ? { sshSigningKeys: decodeKeySources(value['ssh-signing-keys']) }
       : {}),
-    ...(value.token ? { token: value.token } : {}),
-    ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };
 }

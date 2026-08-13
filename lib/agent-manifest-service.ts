@@ -13,7 +13,7 @@ import parseAgentManifest from '../utils/parse-agent-manifest.ts';
 import resolveAgentId, { type AgentRuntimeContext } from '../utils/resolve-agent-id.ts';
 
 export type ManifestLoadTrigger =
-  'before_prompt_build' | 'before_tool_call' | 'cli' | 'session_start';
+  'before_prompt_build' | 'before_tool_call' | 'cli' | 'service' | 'session_start';
 
 export interface AgentManifestValidationCheck {
   code: string;

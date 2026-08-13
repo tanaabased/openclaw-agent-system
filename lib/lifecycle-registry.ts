@@ -70,11 +70,13 @@ export interface AgentSystemLifecycleContribution {
   id: string;
   isConfigured(manifest: AgentManifest): boolean;
   /** Perform deterministic declaration checks without resolving credentials or inspecting state. */
-  validate?(context: AgentSystemLifecycleContext): {
-    code: string;
-    diagnostics?: readonly ContributionDiagnostic[];
-    summary: string;
-  };
+  validate?(context: AgentSystemLifecycleContext):
+    | {
+        code: string;
+        diagnostics?: readonly ContributionDiagnostic[];
+        summary: string;
+      }
+    | undefined;
   /** Inspect owned state without repairing it. */
   inspect?(context: AgentSystemLifecycleContext): Promise<readonly ContributionFinding[]>;
   /** Reconcile owned state only during an explicit install. */

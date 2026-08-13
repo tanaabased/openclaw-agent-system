@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import normalizeGitWorktreeRemote from '../tools/git/worktree-remote.ts';
+import normalizeGitWorktreeRemote, {
+  githubSshWorktreeRemote,
+} from '../tools/git/worktree-remote.ts';
 
 describe('tools/git/worktree-remote', () => {
   it('should accept supported network remotes without a repository allowlist', () => {
@@ -34,6 +36,21 @@ describe('tools/git/worktree-remote', () => {
       'https://example.com/repository.git;touch bad',
     ]) {
       assert.throws(() => normalizeGitWorktreeRemote(remote), /clone source/u, remote);
+    }
+  });
+
+  it('should derive ssh only from canonical github https remotes', () => {
+    assert.equal(
+      githubSshWorktreeRemote('https://github.com/tanaabased/openclaw-agent-system.git'),
+      'git@github.com:tanaabased/openclaw-agent-system.git',
+    );
+    for (const remote of [
+      'http://github.com/tanaabased/openclaw-agent-system.git',
+      'https://example.com/tanaabased/openclaw-agent-system.git',
+      'https://github.com/tanaabased/openclaw-agent-system',
+      'https://github.com/tanaabased/nested/openclaw-agent-system.git',
+    ]) {
+      assert.throws(() => githubSshWorktreeRemote(remote), /canonical HTTPS/u, remote);
     }
   });
 });

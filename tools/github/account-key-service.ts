@@ -3,9 +3,9 @@ import { lstat, open } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
 import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
+import { GitHubAccountClientError } from '../../lib/github-account-client.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import parseSshPublicKey, { type ParsedSshPublicKey } from '../../utils/parse-ssh-public-key.ts';
-import type GitHubAccountClient from './account-client.ts';
 import {
   githubAccountKeyCategories,
   isInlineGitHubAccountKeySource,
@@ -30,7 +30,11 @@ export interface GitHubAccountKeyReconciliation {
 }
 
 export interface GitHubAccountKeyServiceDependencies {
-  client: Pick<GitHubAccountClient, 'connect'>;
+  client: {
+    connect(context: { manifest: AgentManifest; workspaceDir: string }): Promise<{
+      execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult>;
+    }>;
+  };
   homeDirectory?: string;
 }
 
@@ -73,7 +77,7 @@ export default class GitHubAccountKeyService {
     workspaceDir: string;
   }): Promise<GitHubAccountKeyInspection[]> {
     const categories = await this.#resolveCategories(context);
-    const client = await this.#dependencies.client.connect(context);
+    const client = await this.#connect(context);
     const inspections: GitHubAccountKeyInspection[] = [];
     for (const category of categories) {
       const remote = await this.#list(category, client);
@@ -95,7 +99,7 @@ export default class GitHubAccountKeyService {
     workspaceDir: string;
   }): Promise<GitHubAccountKeyReconciliation[]> {
     const categories = await this.#resolveCategories(context);
-    const client = await this.#dependencies.client.connect(context);
+    const client = await this.#connect(context);
     const current = await Promise.all(categories.map((category) => this.#list(category, client)));
     const results: GitHubAccountKeyReconciliation[] = [];
 
@@ -142,6 +146,21 @@ export default class GitHubAccountKeyService {
         keys: await this.#resolveSources(category, context),
       })),
     );
+  }
+
+  async #connect(context: { manifest: AgentManifest; workspaceDir: string }): Promise<{
+    execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult>;
+  }> {
+    try {
+      return await this.#dependencies.client.connect(context);
+    } catch (error) {
+      if (!(error instanceof GitHubAccountClientError)) throw error;
+      throw new GitHubAccountKeyError(
+        error.code.replace(/^github-account-/u, 'github-account-key-'),
+        error.message,
+        { cause: error },
+      );
+    }
   }
 
   async #resolveSources(

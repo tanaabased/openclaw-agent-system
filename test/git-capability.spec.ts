@@ -7,8 +7,18 @@ describe('tools/git/capability', () => {
   it('should assemble the git lifecycle and owned tools', () => {
     const capability = createGitCapability({
       baseEnvironment: { PATH: '/usr/bin' },
+      environmentService: {
+        async loadForAgentId() {
+          return { diagnostics: [], status: 'unresolved' };
+        },
+      },
       excludedExecutableDirectories: ['/package/bin'],
       gitignoreService: new WorkspaceGitignoreService(),
+      manifestService: {
+        async loadForAgentId() {
+          return { diagnostics: [], status: 'unresolved' };
+        },
+      },
       packageDir: '/package',
     });
 

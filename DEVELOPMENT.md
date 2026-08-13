@@ -164,16 +164,17 @@ The executable [Leia](https://github.com/lando/leia) scenarios under [`examples/
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
 
-| Path                  | Responsibility                                               |
-| --------------------- | ------------------------------------------------------------ |
-| `index.ts`            | Static plugin, tool, and lifecycle registration              |
-| `bin/`                | Packaged shims and shared tool or SSH launchers              |
-| `cli/`                | One implementation file per subcommand                       |
-| `lib/`                | CLI registration, lifecycle registry, and orchestration      |
-| `tools/<capability>/` | Tool schemas, execution, and optional lifecycle contribution |
-| `utils/`              | Independently testable functions                             |
-| `scripts/`            | Development and release tasks                                |
-| `test/`               | Flat behavior-focused unit tests                             |
+| Path                   | Responsibility                                                 |
+| ---------------------- | -------------------------------------------------------------- |
+| `index.ts`             | Static plugin, tool, channel, and lifecycle registration       |
+| `bin/`                 | Packaged shims and shared tool or SSH launchers                |
+| `channels/<provider>/` | Channel schema, runtime, lifecycle, state, and provider guide  |
+| `cli/`                 | One implementation file per subcommand                         |
+| `lib/`                 | CLI registration, lifecycle registry, and shared orchestration |
+| `tools/<capability>/`  | Tool schemas, execution, and optional lifecycle contribution   |
+| `utils/`               | Independently testable functions                               |
+| `scripts/`             | Development and release tasks                                  |
+| `test/`                | Flat behavior-focused unit tests                               |
 
 Keep implementation in its nearest owning scope, keep the plugin entrypoint at `index.ts`, and verify visible behavior before documenting a feature as functional.
 
@@ -184,6 +185,12 @@ System's internal tool contract. The planned public Tool API boundary is
 documented in [Tool API](./API.md); it is not available to third-party OpenClaw
 plugins until a supported typed cross-plugin capability and package export are
 implemented.
+
+First-party channels live in `channels/<provider>/`. Keep their runtime entry
+thin, stateful channel behavior in the scoped `lib/`, independently testable
+logic in the scoped `utils/`, and the complete provider guide beside the
+implementation. Shared workflows that coordinate channels with tools or other
+Agent System capabilities remain in the root `lib/`.
 
 Ordinary tool shims in `bin/` delegate to the sibling `agent-system-tool`
 launcher with their fixed registered command name. Keep argument handling,

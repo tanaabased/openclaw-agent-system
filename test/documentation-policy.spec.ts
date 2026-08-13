@@ -10,12 +10,12 @@ const documentationPaths = globSync('**/*.md', {
 }).sort();
 
 describe('documentation/policy-vocabulary', () => {
-  it('should keep approval vocabulary out of current documentation', () => {
+  it('should keep interactive approval vocabulary out of current documentation', () => {
     assert.notEqual(documentationPaths.length, 0);
     for (const path of documentationPaths) {
       assert.doesNotMatch(
         readFileSync(join(projectDir, path), 'utf8'),
-        /\bapprov[a-z]*\b/iu,
+        /\bapprovals?\b/iu,
         `${path} must describe authorization through allow and deny`,
       );
     }

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import { agentSystemPluginIdentity } from './plugin-identity.ts';
 
 export interface PackageMetadata {
@@ -38,6 +40,8 @@ export interface PluginManifest {
     cliCommand?: string;
     name?: string;
   }>;
+  channelConfigs?: Record<string, { schema?: Record<string, unknown> }>;
+  channels?: string[];
   contracts?: {
     tools?: string[];
     trustedToolPolicies?: string[];
@@ -68,6 +72,8 @@ export type PluginMetadataFailureCode =
   | 'alias-command'
   | 'canonical-command-alias'
   | 'short-command-alias'
+  | 'channel-contract'
+  | 'channel-config-contract'
   | 'tool-contract'
   | 'tool-policy-contract'
   | 'skill-contract'
@@ -87,16 +93,42 @@ export interface PluginMetadataFailure {
 }
 
 const supportedOperatingSystems = ['darwin', 'linux'];
+const githubNotificationChannelId = 'agent-system-github';
+const githubNotificationChannelConfigs = {
+  [githubNotificationChannelId]: {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        accounts: {
+          type: 'object',
+          additionalProperties: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              enabled: {
+                type: 'boolean',
+              },
+            },
+            required: ['enabled'],
+          },
+        },
+      },
+      required: ['accounts'],
+    },
+  },
+};
 const requiredPackageFiles = [
   'dist/',
   'index.ts',
   'cli/',
   'bin/',
+  'channels/',
   'lib/',
   'skills/',
   'tools/',
   'utils/',
-  'assets/agent-system.png',
+  'assets/',
   'openclaw.plugin.json',
   'README.md',
   'API.md',
@@ -195,6 +227,16 @@ export default function pluginMetadataFailures(
     declaresCommandAlias(manifest.commandAliases, 'as', 'as'),
     'short-command-alias',
     'short command alias is missing',
+  );
+  check(
+    containsExactly(manifest.channels, [githubNotificationChannelId]),
+    'channel-contract',
+    'plugin must declare exactly the registered Agent System channels',
+  );
+  check(
+    isDeepStrictEqual(manifest.channelConfigs, githubNotificationChannelConfigs),
+    'channel-config-contract',
+    'plugin must declare the exact Agent System channel configuration schema',
   );
   check(
     containsExactly(manifest.contracts?.tools, [

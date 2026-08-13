@@ -1,6 +1,7 @@
 import type { ManifestDiagnostic } from '../../utils/manifest-types.ts';
 import parseSshPublicKey, { looksLikeSshPublicKey } from '../../utils/parse-ssh-public-key.ts';
-import type { GitHubManifestConfiguration, GitHubPublicKeySource } from './config-schema.ts';
+import type { GitHubManifestConfiguration } from '../../utils/github-section-schema.ts';
+import type { GitHubPublicKeySource } from './config-schema.ts';
 
 export type GitHubAccountKeyCategory = 'ssh' | 'ssh-signing';
 

@@ -1,14 +1,14 @@
 # Agent System GitHub CLI Tool
 
 <p align="center">
-  <img src="../../skills/github-cli/agents/assets/icon-large.svg" alt="Agent System GitHub CLI" width="180" />
+  <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub CLI" width="180" />
 </p>
 
 The GitHub CLI tool runs ordinary noninteractive `gh` commands with the active
 agent's credential, isolated configuration, and operation policy. It is the
 preferred GitHub path when an Agent System workspace declares `github`.
 
-[Agent System](../../README.md) · [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md)
+[Agent System](../../README.md) · [GitHub notifications channel](../../channels/github/README.md) · [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md)
 
 > [!IMPORTANT]
 > GitHub authorization and server-side protections are authoritative. Agent
@@ -181,7 +181,9 @@ keys, removes remote keys, rotates keys, or changes existing titles.
 
 The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
 commands validate declarations, reconcile missing keys and private GitHub CLI
-configuration, and report drift.
+configuration, and report drift. See the
+[GitHub notifications channel](../../channels/github/README.md) for its separate
+configuration, routing, lifecycle, and security contract.
 
 ## CLI
 

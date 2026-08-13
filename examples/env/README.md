@@ -35,16 +35,18 @@ openclaw agent-system install
 ```bash
 # should inspect resolved host and dotenv metadata without exposing values
 cd "$GITHUB_WORKSPACE/examples/env/data"
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BARE"'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"name": "AGENT_SYSTEM_LEIA_BRACED"'
+output="$(AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json)"
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_BARE")'
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "AGENT_SYSTEM_LEIA_BRACED")'
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_LAYERED' | grep -F 'source=environment.dotenv[1]' | grep -F 'required=false' | grep -F 'overridden=1'
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_SET_OVERRIDE' | grep -F 'source=environment.set' | grep -F 'required=false' | grep -F 'overridden=1'
 AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env | grep -F 'AGENT_SYSTEM_LEIA_FROM_DOTENV' | grep -F 'source=environment.set' | grep -F 'required=true' | grep -F 'overridden=0'
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -F '"required": true'
-if AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --json | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-'; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.variables | any(.required == true)'
+printf '%s\n' "$output" | jq -e '[.. | objects | has("values")] | all(. == false)'
+if printf '%s\n' "$output" | grep -Fq -e 'leia-agent-system-reference' -e 'leia-agent-system-private-'; then exit 1; fi
 
 # should inspect a registered agent without current workspace discovery
-AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --agent data --json | grep -F '"agentId": "data"'
+AGENT_SYSTEM_LEIA_SOURCE=leia-agent-system-reference openclaw agent-system env --agent data --json | jq -e '.agentId == "data"'
 
 # should fail when a required environment variable is absent
 cd "$GITHUB_WORKSPACE/examples/env/missing-required"
@@ -53,12 +55,11 @@ printf '%s\n' "$output" | grep -F 'code=environment-required-missing'
 
 # should resolve live 1password environments and direct secrets without exposing values or the bootstrap token
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"
-openclaw agent-system env --json | grep -F '"name": "VIBES"'
-openclaw agent-system env --json | grep -F '"source": "environment.op[0]"'
-openclaw agent-system env --json | grep -F '"name": "OP_SSH_KEY"'
-openclaw agent-system env --json | grep -F '"source": "environment.set"'
-openclaw agent-system env --json | grep -F '"required": true'
-if openclaw agent-system env --json | grep -Fq -e '"values":' -e "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; fi
+output="$(openclaw agent-system env --json)"
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "VIBES" and .source == "environment.op[0]")'
+printf '%s\n' "$output" | jq -e '.variables | any(.name == "OP_SSH_KEY" and .source == "environment.set" and .required == true)'
+printf '%s\n' "$output" | jq -e '[.. | objects | has("values")] | all(. == false)'
+if printf '%s\n' "$output" | grep -Fq "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; fi
 
 # should validate access to every declared 1password resource without returning values
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"

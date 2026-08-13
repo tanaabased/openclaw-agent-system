@@ -16,6 +16,7 @@ import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
+import type { GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
 
 export interface ResolvedGitWorktreeToolConfiguration {
@@ -34,7 +35,7 @@ export type GitWorktreeToolDefinition = AgentSystemSemanticToolDefinition<
   typeof gitWorktreeToolSchema,
   GitToolConfiguration,
   ResolvedGitWorktreeToolConfiguration,
-  unknown
+  GitWorktreeResult | GitWorktreeResult[]
 >;
 
 function readConfiguration(manifest: AgentManifest): GitToolConfiguration | undefined {
@@ -178,7 +179,7 @@ export function createGitWorktreeToolDefinition(
         workspaceDir: scope.workspaceDir,
       };
       let operationError: AgentSystemToolError | undefined;
-      let result: unknown;
+      let result: GitWorktreeResult | GitWorktreeResult[] | undefined;
       try {
         if (input.action === 'prepare') {
           result = await dependencies.service.prepare(context, {
@@ -206,6 +207,12 @@ export function createGitWorktreeToolDefinition(
         );
       }
       if (operationError) throw operationError;
+      if (result === undefined) {
+        throw new AgentSystemToolError(
+          'execution_failed',
+          'The Git worktree request returned no result.',
+        );
+      }
       return result;
     },
     guidance: {

@@ -7,6 +7,31 @@
     "onStartup": true,
     "onCommands": ["agent-system", "as"]
   },
+  "channels": ["agent-system-github"],
+  "channelConfigs": {
+    "agent-system-github": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["enabled"]
+            }
+          }
+        },
+        "required": ["accounts"]
+      }
+    }
+  },
   "commandAliases": [
     {
       "name": "agent-system",

@@ -1,0 +1,25 @@
+schema-version: 1
+
+agent:
+  id: notification-data
+  name: Notification Data
+  email: notification-data@tanaab.dev
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+
+git:
+  worktrees: {}
+
+github:
+  host: github.com
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  notifications:
+    interval-minutes: 60
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g

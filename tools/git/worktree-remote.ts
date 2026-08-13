@@ -34,3 +34,31 @@ export default function normalizeGitWorktreeRemote(input: string): string {
   }
   return remote.href;
 }
+
+/** Convert a provider-validated canonical GitHub HTTPS remote to its SSH equivalent. */
+export function githubSshWorktreeRemote(input: string): string {
+  let normalized: string;
+  try {
+    normalized = normalizeGitWorktreeRemote(input);
+  } catch {
+    throw new Error('The GitHub clone source must be canonical HTTPS.');
+  }
+  let remote: URL;
+  try {
+    remote = new URL(normalized);
+  } catch {
+    throw new Error('The GitHub clone source must be canonical HTTPS.');
+  }
+  const match = /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\.git$/u.exec(remote.pathname);
+  if (
+    remote.protocol !== 'https:' ||
+    remote.hostname !== 'github.com' ||
+    remote.port ||
+    remote.username ||
+    remote.password ||
+    !match
+  ) {
+    throw new Error('The GitHub clone source must be canonical HTTPS.');
+  }
+  return `git@github.com:${match[1]}/${match[2]}.git`;
+}
