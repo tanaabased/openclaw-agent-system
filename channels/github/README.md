@@ -4,65 +4,47 @@
   <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub notifications" width="180" />
 </p>
 
-The GitHub notifications channel observes authorized GitHub work assignments
-for agent-scoped local OpenClaw routing. It owns the static
-`agent-system-github` channel, its exact per-agent route, the Gateway
-monitor, and the `github.notifications` manifest contract.
+The GitHub notifications channel is a local
+[OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
+approved GitHub issue assignments into agent-scoped local work. It verifies the
+agent, assigning actor, and repository before creating one managed worktree and
+one local OpenClaw session for the issue.
 
-[Agent System](../../README.md) · [GitHub CLI tool](../../tools/github/README.md)
+> [!IMPORTANT]
+> The channel does not currently fetch issue prose, comments, or mentions,
+> invoke a model, or write to GitHub.
 
-## MVP 1 Contract
+## Overview
 
-The upcoming release provides the channel, routing, trust core, and local issue-assignment delivery:
+- On the first successful cycle, records the agent's currently assigned open
+  issues as a safe baseline without creating local work.
+- On later cycles, discovers new assignments and rechecks the agent account,
+  assigning actor, repository owner, and repository access.
+- For each accepted assignment, creates or reuses one deterministic managed
+  worktree and one local OpenClaw session.
 
-- strict `github.notifications` manifest validation
-- one activation-only channel account whose id is the Agent System agent id
-- one exact account-scoped binding back to that agent and workspace
-- private receipt-backed ownership, repair, and cleanup
-- a long-lived, stoppable Gateway service with per-agent polling and backoff
-- an explicit `notifications refresh` command over the same monitor and cross-process lease
-- account identity verification on every poll
-- account-wide assigned issue discovery with a first-run baseline
-- bounded pagination, overlap, replay deduplication, and truncation diagnostics
-- canonical repository, owner, effective permission, item, and assignment-event checks
-- immutable actor admission and self-event suppression
-- private atomic control state containing no token or issue/comment content
-- deterministic work-item conversation ids for inbound assignment delivery
-- policy-authorized managed worktree preparation through the Git capability
-- value-free delivery checkpoints around worktree and session creation
-- one deterministic local session created by OpenClaw's channel inbound lifecycle
-- deterministic scheduled and manual intake without a model invocation
-- local-only behavior with no outbound GitHub adapter
-
-After a new assignment is admitted, the monitor prepares or adopts one managed
-worktree and records one deterministic OpenClaw session in observe-only mode. It
-does not fetch issue prose or comments, start an agent turn, publish a response,
-or otherwise write to GitHub.
-
-## Implemented Ahead of MVP 1
-
-The branch also classifies issue-shaped pull requests, detects authority
-revocation, and records logical retirement without deleting sessions or
-worktrees. Those paths remain unsupported until Notifications 2 adds their
-installed acceptance coverage, recovery contract, and operator controls.
+The Gateway monitor runs this lifecycle in the background. The manual refresh
+command runs the same intake path immediately. Both stop after local session
+recording without dispatching an agent turn.
 
 ## Requirements
 
 - Agent System installed and enabled
-- an Agent System workspace manifest with `github.notifications`
-- an explicit `github.username`
-- an environment-bound `github.token`
-- `git.worktrees` enabled
-- a Git author email from `agent.email` or `git.email`
+- Git available as `git`
+- GitHub CLI available as `gh`
+- an Agent System workspace manifest with an agent id and Git author email
+- `git.worktrees`, `github.username`, `github.token`, and
+  `github.notifications` configured
+- the named GitHub token available in the completed Agent System environment
 
-`install` does not resolve the token or contact GitHub. The Gateway monitor
-resolves the declared credential only after the installed channel account,
-binding, agent id, and workspace agree exactly.
+The GitHub account must have `write`, `maintain`, or `admin` access to every
+repository from which the channel accepts assignments.
 
-## Configuration
+## Installation and Usage
 
-Add the GitHub notification declaration to `.agent-system/agent.yaml` or the
-root `agent.yaml` shorthand:
+Add the notification channel to `.agent-system/agent.yaml` or the root
+`agent.yaml`. See [Configuration Reference](#configuration-reference) for every
+field.
 
 ```yaml
 schema-version: 1
@@ -70,7 +52,7 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
-  email: tanaabot@example.com
+  email: tanaabot@tanaab.dev
 
 environment:
   required:
@@ -79,6 +61,40 @@ environment:
 git:
   worktrees: {}
 
+github:
+  host: github.com
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+```
+
+From the agent workspace:
+
+```sh
+# check the manifest without changing installed state.
+openclaw agent-system validate
+
+# reconcile the agent and its notification route.
+openclaw agent-system install
+
+# inspect the installed route and monitor readiness.
+openclaw agent-system doctor
+
+# establish the first baseline or process later assignments immediately.
+openclaw agent-system notifications refresh
+```
+
+Only assignments observed after the first successful baseline create local
+work.
+
+## Configuration Reference
+
+Notifications share the surrounding GitHub host, account, and credential:
+
+```yaml
 github:
   host: github.com
   username: tanaabot
@@ -93,131 +109,67 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-| Field                       | Required | Default |
-| --------------------------- | -------- | ------- |
-| `interval-minutes`          | no       | `5`     |
-| `approved-actors`           | yes      | none    |
-| `allowed-repository-owners` | no       | any     |
+| Field                       | Required | Default | Purpose                                  |
+| --------------------------- | -------- | ------- | ---------------------------------------- |
+| `approved-actors`           | yes      | none    | GitHub users allowed to assign work      |
+| `allowed-repository-owners` | no       | any     | Filters assignments by repository owner  |
+| `interval-minutes`          | no       | `5`     | Sets the polling interval from 1 to 1440 |
 
-The interval must be from `1` through `1440`. Each approved actor and allowed
-owner uses a human-readable GitHub login plus an immutable GitHub node id. Node
-ids must be unique within each list.
+Every approved actor and allowed owner requires a GitHub login and immutable
+GitHub node id. Node ids must be unique within each list.
 
-Every assignment requires the verified agent account to have effective
-`write`, `maintain`, or `admin` access to the repository. That requirement is a
-non-configurable notification admission invariant, not `github.policy`; the
-optional owner list narrows eligible repositories without authorizing their
-members to assign work.
+`allowed-repository-owners` is an optional filter. When present, the channel
+rejects assignments from repositories whose owner is not listed. It does not
+grant repository access or approve that owner's members to assign work; the
+agent account still needs sufficient repository access and the assigning actor
+must still appear in `approved-actors`.
 
-`github.username` and `github.token` are shared GitHub identity and credential
-declarations. The token field names a variable in the completed Agent System
-environment and never accepts a literal token.
+`github.token` names an environment variable and never accepts a literal token.
+For private repositories, configure
+[`git.ssh`](../../tools/git/README.md#gitsshprivate-keys) so the Git capability
+can prepare the worktree without embedding a token in its clone URL.
 
-Public repositories can use their canonical HTTPS clone URL. For private
-repositories, configure [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys);
-notification worktree preparation then derives the canonical GitHub SSH remote
-and uses only the Git capability's isolated SSH resource. The GitHub token is
-never embedded in a clone URL or credential helper.
-
-## Installation and Inspection
-
-From the agent workspace:
-
-```sh
-openclaw agent-system validate
-openclaw agent-system install
-openclaw agent-system doctor
-openclaw agent-system notifications refresh --json
-```
-
-`install` adds or repairs only the non-secret `agent-system-github` account and
-its exact binding. Repeated installation is idempotent. Removing
-`github.notifications` and running `install` again removes only state proven by
-the private ownership receipt.
-
-Conflicting, duplicate, partially unowned, or rebound state fails closed.
-Unrelated channel accounts and bindings are preserved. Gateway reload planning
-remains host-owned; when `gateway.reload.mode` is `off`, installation reports
-that a manual Gateway restart is required.
-
-## Runtime Monitoring
-
-The Gateway establishes a baseline from the account's currently open assigned
-issues on first activation. Closed historical work is excluded, and existing
-assignments are not admitted retroactively. Later
-polls use an overlapping update window and immutable event-id deduplication,
-then recheck each candidate directly before issue-assignment intake.
-
-Changing the verified GitHub account establishes a fresh baseline. Removing
-`github.notifications` and running `install` removes the owned route and stops
-new intake. Existing monitor correlation remains private and non-destructive.
-
-The default interval is five minutes with jitter. Provider retry and rate-limit
-controls can defer the next poll, and transient failures use exponential backoff.
-Polls never overlap for the same agent. Stopping the plugin service aborts its
-timer and any active GitHub CLI child process.
-
-`openclaw agent-system notifications refresh [--agent <id>] [--json]` runs one
-complete intake cycle through the same monitor and private cross-process
-per-agent lease. It waits up to two minutes for an active cycle rather than
-overlapping it. The command bypasses only the configured interval; active
-failure and provider backoff still apply, and first use still establishes the
-ordinary safe baseline. A deferred or failed manual cycle returns a nonzero exit
-code so CI can distinguish it from a completed refresh. It does not enable the
-background scheduler and is not a read-only fetch: an admitted assignment can
-create its managed worktree and local session.
-
-Delivery state is checkpointed before and after worktree preparation and while
-the session is being recorded. The channel passes `createIfMissing: true` and an
-observe-only admission to OpenClaw's inbound kernel; the host records or creates
-the routed session without dispatching an agent turn. Agent System does not call
-protected Gateway session RPCs or edit host session storage.
-
-Session recording is safely retryable because the route and session key are
-deterministic. A process interruption cannot create a second issue-scoped
-session, and no model turn exists to duplicate.
-
-The implemented-ahead authority-revocation path records logical retirement and
-stops creating new turns. It does not abort or archive the host session and does
-not delete the transcript, managed repository, branch, or worktree. Native
-retirement, reassignment, and cleanup are Notifications 2 work.
-
-`doctor` reports whether the route is ready and whether the monitor is pending,
-healthy, or deferred by a stable diagnostic code. Gateway logs contain agent ids,
-counts, and diagnostic codes, but not tokens, response bodies, issue content, or
-raw provider errors.
-
-## Session and Delivery Contract
-
-The channel uses per-account, per-channel, per-peer direct-message scope. An
-issue conversation is derived from the immutable repository node id and issue
-number:
+## CLI
 
 ```text
-github:<repository-node-id>:<issue-number>
+openclaw agent-system notifications refresh [--agent <id>] [--json]
 ```
 
-The exact channel account binding must select the same agent that owns the
-manifest. Missing, default, or cross-agent routing is rejected.
+| Option         | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `--agent <id>` | Selects an installed agent instead of workspace discovery |
+| `--json`       | Returns an undecorated machine-readable result            |
 
-The channel intentionally registers no outbound adapter. MVP intake records the
-session and stops; it produces no response that could be published to GitHub.
+The command bypasses only the configured polling interval. It preserves the
+ordinary baseline, provider backoff, failure state, and per-agent execution
+lease. A completed cycle may create a managed worktree and local session;
+deferred and failed cycles return a nonzero exit code.
 
-The worktree path is included in the bounded inbound context for later operator-
-or agent-led work. Agent System keeps correlation in its private monitor state
-instead of patching OpenClaw session extensions.
+See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
+for result and concurrency semantics.
 
-## Trust Boundary
+## Security and Lifecycle
 
-GitHub content is untrusted project data. The monitor authorizes transitions
-using only the verified account identity, immutable actor identity, canonical
-repository and owner identities, effective repository permission, item state,
-and assignment event. MVP intake does not fetch issue titles, bodies, labels,
-milestones, or comments. GitHub text is never interpreted as notification
-control state or persisted in the private monitor record.
+The installed channel account and binding must route to the same agent and
+workspace that own the manifest. Missing, duplicate, conflicting, or cross-agent
+routing fails closed.
 
-For assignment events, the trusted actor is GitHub's immutable `assigner` field.
-The event's `actor` and `assignee` fields are not treated as assignment authority.
+An assignment is accepted only when the authenticated account is still assigned,
+the immutable assigning actor is approved, the repository owner is eligible,
+and the account has sufficient repository access. GitHub issue titles, bodies,
+comments, and mentions are not fetched or treated as instructions.
 
-The channel configuration contains no token values. Credential resolution must
-remain lazy and occur only in the explicit consumer that contacts GitHub.
+Private monitor state contains correlation ids and delivery checkpoints, not
+tokens or GitHub content. Deterministic worktree and session identities make
+delivery retry-safe without duplicating local work.
+
+`install` adds or repairs only the channel account and binding owned by Agent
+System. Removing `github.notifications` and running `install` again removes the
+owned route and stops new intake without deleting existing worktrees or sessions.
+
+## Further Reading
+
+- [Agent System README](../../README.md): installation and the common manifest workflow
+- [Advanced](../../ADVANCED.md): complete manifest and CLI reference
+- [Git tools](../../tools/git/README.md): managed worktree configuration and behavior
+- [GitHub CLI tool](../../tools/github/README.md): shared GitHub identity and credential configuration

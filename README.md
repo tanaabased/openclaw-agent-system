@@ -30,6 +30,19 @@ Today, Agent System:
 - applies each tool's operation-specific `allow` or `deny` policy before resolving credentials or executing the operation
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 
+## Ships With
+
+### Tools
+
+- [`git`](./tools/git/README.md) — Runs ordinary Git commands and manages durable worktrees with the agent's identity, SSH configuration, signing, and operation policy.
+- [`gh`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+
+A public [Tool API](./API.md) is planned for compatible third-party wrappers.
+
+### Channels
+
+- [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and local OpenClaw sessions without invoking a model or writing to GitHub.
+
 ## Installation
 
 Install the current release from npm:
@@ -93,41 +106,6 @@ openclaw agent-system tool gh -- api user --jq .login
 ```
 
 `install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. See [Advanced](./ADVANCED.md) for the complete manifest and CLI references.
-
-## Tools
-
-Agent System currently ships wrappers for:
-
-- [`git`](./tools/git/README.md) for ordinary Git and managed worktrees
-- [`gh`](./tools/github/README.md) for GitHub CLI operations
-
-> [!TIP]
-> For managed agents, disable competing Git and GitHub skills, plugins, and tool
-> wrappers so requests consistently use Agent System's agent-scoped identity and
-> policy boundaries.
-
-Each wrapper uses the shared Agent System runtime for trusted agent binding,
-environment and credential resolution, operation policy, execution, redaction,
-and auditing. Provider permissions and server-side protections remain
-authoritative; Agent System policy adds only the narrow configurable controls
-documented in each tool guide. A public [Tool API](./API.md) is planned so other
-OpenClaw plugins can add compatible wrappers through the same runtime.
-
-## Channels
-
-Agent System includes a local-only
-[GitHub notifications channel](./channels/github/README.md). Its Gateway service
-observes newly assigned GitHub issues after verifying
-the exact agent route, account identity, repository policy, and assigning actor.
-New approved issue assignments create one managed worktree and one deterministic,
-local session without invoking a model. The channel has no outbound GitHub adapter.
-
-> [!IMPORTANT]
-> Model-facing `agent_system_*` tools are the agent-bound execution surface.
-> `openclaw agent-system tool`, `credentials`, and the packaged command shims are
-> trusted operator interfaces: a process with unrestricted host command access
-> can select another installed agent or workspace. Run `doctor` to inspect this
-> exposure, and use native tools for agent work.
 
 ## Development
 
