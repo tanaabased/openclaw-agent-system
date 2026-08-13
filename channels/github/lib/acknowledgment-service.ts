@@ -1,5 +1,6 @@
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import type GitHubAccountClient from '../../../lib/github-account-client.ts';
+import type { Logger } from '../../../lib/logger.ts';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
 import {
   githubAssignmentAcknowledgmentComment,
@@ -29,13 +30,45 @@ interface PendingAcknowledgment {
   worktree: { branch: string; path: string };
 }
 
+type PendingAcknowledgmentItem = GitHubNotificationItemState & {
+  delivery: GitHubNotificationDeliveryState & {
+    sessionKey: string;
+    worktreeBranch: string;
+    worktreePath: string;
+  };
+};
+
+function hasPendingAcknowledgment(
+  item: GitHubNotificationItemState | undefined,
+): item is PendingAcknowledgmentItem {
+  const delivery = item?.delivery;
+  return (
+    item?.disposition === 'approved' &&
+    delivery?.stage === 'active' &&
+    delivery.acknowledgment?.status === 'pending' &&
+    delivery.sessionKey !== undefined &&
+    delivery.worktreeBranch !== undefined &&
+    delivery.worktreePath !== undefined
+  );
+}
+
 export interface GitHubNotificationAcknowledgmentServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   authority: GitHubNotificationAssignmentAuthority;
   leaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
+  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   sessions: Pick<GitHubNotificationSessionService, 'generateAcknowledgment'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
+}
+
+export type GitHubNotificationAcknowledgmentScheduleStatus =
+  'already-scheduled' | 'inactive' | 'scheduled';
+
+export interface GitHubNotificationAcknowledgmentDrainResult {
+  pending: number;
+  scheduled: number;
+  status: 'active' | 'inactive';
 }
 
 class GitHubNotificationAcknowledgmentServiceError extends Error {
@@ -76,21 +109,43 @@ export default class GitHubNotificationAcknowledgmentService {
     if (!current || current.signal.aborted) this.#controllers.set(agentId, new AbortController());
   }
 
-  schedule(agentId: string, itemKey: string): void {
+  async drain(agentId: string): Promise<GitHubNotificationAcknowledgmentDrainResult> {
+    const controller = this.#controllers.get(agentId);
+    if (!controller || controller.signal.aborted) {
+      return { pending: 0, scheduled: 0, status: 'inactive' };
+    }
+    const state = await this.#dependencies.stateStore.read(agentId);
+    const itemKeys = state
+      ? Object.entries(state.items)
+          .filter(([, item]) => hasPendingAcknowledgment(item))
+          .map(([itemKey]) => itemKey)
+          .sort()
+      : [];
+    const scheduled = itemKeys.filter(
+      (itemKey) => this.schedule(agentId, itemKey) === 'scheduled',
+    ).length;
+    return { pending: itemKeys.length, scheduled, status: 'active' };
+  }
+
+  schedule(agentId: string, itemKey: string): GitHubNotificationAcknowledgmentScheduleStatus {
     const key = `${agentId}:${itemKey}`;
     const controller = this.#controllers.get(agentId);
-    if (!controller || controller.signal.aborted || this.#inFlight.has(key)) return;
+    if (!controller || controller.signal.aborted) return 'inactive';
+    if (this.#inFlight.has(key)) return 'already-scheduled';
     const task = this.#run(agentId, itemKey, controller.signal)
       .catch(async (error: unknown) => {
         if (controller.signal.aborted) return;
-        await this.#recordFailure(agentId, itemKey, errorCode(error), controller.signal).catch(
-          () => undefined,
+        const code = errorCode(error);
+        await this.#recordFailure(agentId, itemKey, code, controller.signal).catch(() => undefined);
+        this.#dependencies.logger.warn(
+          `github-notifications: acknowledgment deferred agent=${agentId} code=${code}`,
         );
       })
       .finally(() => {
         if (this.#inFlight.get(key)?.task === task) this.#inFlight.delete(key);
       });
     this.#inFlight.set(key, { agentId, task });
+    return 'scheduled';
   }
 
   async stop(agentId: string): Promise<void> {
@@ -291,19 +346,8 @@ export default class GitHubNotificationAcknowledgmentService {
     if (!current) return undefined;
     const state = structuredClone(current);
     const item = state.items[itemKey];
-    const delivery = item?.delivery;
-    if (
-      !item ||
-      !delivery ||
-      item.disposition !== 'approved' ||
-      delivery.stage !== 'active' ||
-      delivery.acknowledgment?.status !== 'pending' ||
-      !delivery.sessionKey ||
-      !delivery.worktreeBranch ||
-      !delivery.worktreePath
-    ) {
-      return undefined;
-    }
+    if (!hasPendingAcknowledgment(item)) return undefined;
+    const { delivery } = item;
     return {
       delivery,
       item,

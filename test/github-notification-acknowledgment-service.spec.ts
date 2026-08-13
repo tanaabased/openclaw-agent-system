@@ -108,6 +108,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       },
       authority: { inspect: async () => ({ authorized: true }) },
       leaseStore: leaseStore(scopes),
+      logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       sessions: {
         async generateAcknowledgment() {
@@ -160,6 +161,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       },
       authority: { inspect: async () => ({ authorized: true }) },
       leaseStore: leaseStore([]),
+      logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       sessions: {
         async generateAcknowledgment() {
@@ -184,6 +186,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
 
   it('should keep intake active and persist a stable generation failure', async () => {
     const store = memoryStore();
+    const warnings: string[] = [];
     const service = new GitHubNotificationAcknowledgmentService({
       accountClient: {
         async connect() {
@@ -195,6 +198,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       },
       authority: { inspect: async () => ({ authorized: true }) },
       leaseStore: leaseStore([]),
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       sessions: {
         async generateAcknowledgment() {
@@ -218,5 +222,88 @@ describe('channels/github/lib/acknowledgment-service', () => {
       store.state().items[notificationItemKey]?.delivery?.failureCode,
       'github-notification-acknowledgment-secret-safety-rejected',
     );
+    assert.deepEqual(warnings, [
+      'github-notifications: acknowledgment deferred agent=tanaabot code=github-notification-acknowledgment-secret-safety-rejected',
+    ]);
+  });
+
+  it('should drain pending state on gateway start and retry it after restart', async () => {
+    const store = memoryStore();
+    const warnings: string[] = [];
+    let attempts = 0;
+    const service = new GitHubNotificationAcknowledgmentService({
+      accountClient: {
+        async connect() {
+          return {
+            identity: { login: 'tanaabot', nodeId: 'U_agent' },
+            async execute(argv: string[], stdin?: string) {
+              if (argv.includes('POST')) {
+                return response({
+                  body: JSON.parse(stdin ?? '{}').body,
+                  databaseId: 92,
+                  nodeId: 'IC_retried',
+                  user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+                });
+              }
+              return response([]);
+            },
+          };
+        },
+      },
+      authority: { inspect: async () => ({ authorized: true }) },
+      leaseStore: leaseStore([]),
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      sessions: {
+        async generateAcknowledgment() {
+          attempts += 1;
+          if (attempts === 1) {
+            throw Object.assign(new Error('temporary failure'), {
+              code: 'github-notification-acknowledgment-generation-failed',
+            });
+          }
+          return 'I have this one.';
+        },
+      },
+      stateStore: store,
+    });
+
+    assert.equal(service.schedule('tanaabot', notificationItemKey), 'inactive');
+    assert.deepEqual(await service.drain('tanaabot'), {
+      pending: 0,
+      scheduled: 0,
+      status: 'inactive',
+    });
+
+    service.start('tanaabot');
+    assert.deepEqual(await service.drain('tanaabot'), {
+      pending: 1,
+      scheduled: 1,
+      status: 'active',
+    });
+    await service.settle('tanaabot');
+    assert.equal(
+      store.state().items[notificationItemKey]?.delivery?.failureCode,
+      'github-notification-acknowledgment-generation-failed',
+    );
+    await service.stop('tanaabot');
+
+    service.start('tanaabot');
+    assert.deepEqual(await service.drain('tanaabot'), {
+      pending: 1,
+      scheduled: 1,
+      status: 'active',
+    });
+    await service.settle('tanaabot');
+
+    assert.equal(attempts, 2);
+    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
+      commentId: 92,
+      status: 'published',
+    });
+    assert.equal(store.state().items[notificationItemKey]?.delivery?.failureCode, undefined);
+    assert.deepEqual(warnings, [
+      'github-notifications: acknowledgment deferred agent=tanaabot code=github-notification-acknowledgment-generation-failed',
+    ]);
   });
 });

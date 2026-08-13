@@ -261,6 +261,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     accountClient: githubCapability.accountClient,
     authority: notificationAssignmentProvider,
     leaseStore: notificationMonitorCycleLeaseStore,
+    logger,
     manifestService,
     sessions: notificationSessionService,
     stateStore: notificationMonitorStateStore,
@@ -279,6 +280,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const notificationMonitorService = new GitHubNotificationMonitorService({
     accountClient: githubCapability.accountClient,
+    acknowledgments: notificationAcknowledgmentService,
     assignmentOrchestrator: notificationAssignmentOrchestrator,
     cycleLeaseStore: notificationMonitorCycleLeaseStore,
     logger,

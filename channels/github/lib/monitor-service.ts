@@ -13,10 +13,11 @@ import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
-import type NotificationRoutingService from './routing-service.ts';
+import type GitHubNotificationAcknowledgmentService from './acknowledgment-service.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
+import type NotificationRoutingService from './routing-service.ts';
 import GitHubWorkEventClient from './work-event-client.ts';
 
 const schedulerIntervalMs = 30_000;
@@ -24,10 +25,9 @@ const maximumFailureBackoffMs = 60 * 60 * 1000;
 
 export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
+  acknowledgments?: Pick<GitHubNotificationAcknowledgmentService, 'drain' | 'start' | 'stop'>;
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
-    start?(agentId: string): void;
-    stop?(agentId: string): Promise<void>;
   };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
@@ -146,8 +146,9 @@ export default class GitHubNotificationMonitorService {
     signal: AbortSignal,
     onCycle?: GitHubNotificationMonitorCycleListener,
   ): Promise<void> {
-    this.#dependencies.assignmentOrchestrator.start?.(agentId);
+    this.#dependencies.acknowledgments?.start(agentId);
     try {
+      if (!signal.aborted) await this.#drainAcknowledgments(agentId);
       while (!signal.aborted) {
         try {
           const [result] = await this.runOnce({ agentId, signal });
@@ -157,6 +158,7 @@ export default class GitHubNotificationMonitorService {
             `github-notifications: monitor cycle failed agent=${agentId} code=github-notification-monitor-cycle-failed`,
           );
         }
+        if (!signal.aborted) await this.#drainAcknowledgments(agentId);
         try {
           await sleepWithAbort(schedulerIntervalMs, signal);
         } catch (error) {
@@ -164,7 +166,17 @@ export default class GitHubNotificationMonitorService {
         }
       }
     } finally {
-      await this.#dependencies.assignmentOrchestrator.stop?.(agentId);
+      await this.#dependencies.acknowledgments?.stop(agentId);
+    }
+  }
+
+  async #drainAcknowledgments(agentId: string): Promise<void> {
+    try {
+      await this.#dependencies.acknowledgments?.drain(agentId);
+    } catch {
+      this.#dependencies.logger.warn(
+        `github-notifications: acknowledgment drain failed agent=${agentId} code=github-notification-acknowledgment-drain-failed`,
+      );
     }
   }
 

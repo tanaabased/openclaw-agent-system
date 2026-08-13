@@ -47,9 +47,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       acknowledgments: {
         schedule(agentId, scheduledItemKey) {
           scheduled.push(`${agentId}:${scheduledItemKey}`);
+          return 'scheduled';
         },
-        start() {},
-        async stop() {},
       },
       authority: {
         inspect: async () => Promise.reject(new Error('active intake should not be reopened')),

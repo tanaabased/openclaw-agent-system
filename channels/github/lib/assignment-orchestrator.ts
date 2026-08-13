@@ -12,6 +12,7 @@ import type {
   GitHubNotificationItemState,
   GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
+import type { GitHubNotificationAcknowledgmentScheduleStatus } from './acknowledgment-service.ts';
 
 export interface GitHubNotificationAssignmentBoundaryInput {
   agentId: string;
@@ -47,9 +48,7 @@ export interface GitHubNotificationAssignmentSessions {
 }
 
 export interface GitHubNotificationAssignmentAcknowledgments {
-  schedule(agentId: string, itemKey: string): void;
-  start(agentId: string): void;
-  stop(agentId: string): Promise<void>;
+  schedule(agentId: string, itemKey: string): GitHubNotificationAcknowledgmentScheduleStatus;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
@@ -91,14 +90,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
 
   async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
     return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
-  }
-
-  async stop(agentId: string): Promise<void> {
-    await this.#dependencies.acknowledgments?.stop(agentId);
-  }
-
-  start(agentId: string): void {
-    this.#dependencies.acknowledgments?.start(agentId);
   }
 
   async #reconcile(

@@ -152,6 +152,49 @@ describe('channels/github/lib/lifecycle', () => {
     );
   });
 
+  it('should report value-free acknowledgment failures through doctor', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.lastSuccessfulPollAt = 1;
+    state.workspaceDir = context.workspaceDir;
+    state.items[notificationItemKey]!.delivery = {
+      ...state.items[notificationItemKey]!.delivery!,
+      failureCode: 'github-notification-acknowledgment-generation-failed',
+      sessionKey: 'agent:data:github:item',
+      stage: 'active',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/data/.agent-system/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.deepEqual(
+      findings?.map(({ code }) => code),
+      [
+        'notification-routing-ready',
+        'github-notification-acknowledgment-generation-failed',
+        'github-notification-monitor-healthy',
+      ],
+    );
+    assert.equal(findings?.[1]?.status, 'warning');
+    assert.doesNotMatch(findings?.[1]?.message ?? '', /issue-7|workspace\/data/u);
+  });
+
   it('should translate routing reconciliation and preserve attributed failures', async () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {

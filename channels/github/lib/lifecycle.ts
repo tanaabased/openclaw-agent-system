@@ -181,9 +181,27 @@ export default function createNotificationLifecycleContribution(
           },
         ];
       }
+      const acknowledgmentFindings = [
+        ...new Set(
+          Object.values(state.items)
+            .map((item) => item.delivery?.failureCode)
+            .filter(
+              (code): code is string =>
+                code?.startsWith('github-notification-acknowledgment-') === true,
+            ),
+        ),
+      ]
+        .sort()
+        .map((code) => ({
+          code,
+          message: `A GitHub assignment acknowledgment is pending after ${code}.`,
+          remediation: 'Keep the OpenClaw Gateway running, then rerun doctor.',
+          status: 'warning' as const,
+        }));
       if (state.diagnosticCode) {
         return [
           ...routingFinding,
+          ...acknowledgmentFindings,
           {
             code: state.diagnosticCode,
             message: `The GitHub notification monitor is waiting after ${state.diagnosticCode}; next retry is ${isoTime(state.nextPollAt)}.`,
@@ -196,6 +214,7 @@ export default function createNotificationLifecycleContribution(
       if (state.baselineAt === undefined || state.lastSuccessfulPollAt === undefined) {
         return [
           ...routingFinding,
+          ...acknowledgmentFindings,
           {
             code: 'github-notification-monitor-pending',
             message: 'The GitHub notification monitor has not completed its first observation.',
@@ -206,6 +225,7 @@ export default function createNotificationLifecycleContribution(
       }
       return [
         ...routingFinding,
+        ...acknowledgmentFindings,
         {
           code: 'github-notification-monitor-healthy',
           message: `The GitHub notification monitor last completed a successful read-only observation at ${isoTime(state.lastSuccessfulPollAt)}.`,
