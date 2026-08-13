@@ -305,14 +305,14 @@ local session.
 
 Notifications 2 owns everything after initial issue intake.
 
-| Priority | User outcome                                                   | Impact    | Relative effort |
-| -------- | -------------------------------------------------------------- | --------- | --------------- |
-| 0        | Every GitHub write uses one safe channel delivery path         | very high | medium          |
-| 1        | The agent understands the issue, starts work, and acknowledges | very high | high            |
-| 2        | Approved GitHub mentions receive local and GitHub responses    | very high | high            |
-| 3        | Operators can deliberately publish progress from local chat    | high      | medium          |
-| 4        | Assignment and pull-request lifecycle stays correlated         | medium    | medium          |
-| 5        | Operators can inspect, replay, and clean up state              | medium    | medium          |
+| Priority | User outcome                                                       | Impact    | Relative effort |
+| -------- | ------------------------------------------------------------------ | --------- | --------------- |
+| 0        | Every GitHub write uses one safe channel delivery path             | very high | medium          |
+| 1        | The agent understands the issue, proposes a plan, and acknowledges | very high | high            |
+| 2        | Approved GitHub mentions receive local and GitHub responses        | very high | high            |
+| 3        | Operators can deliberately publish progress from local chat        | high      | medium          |
+| 4        | Assignment and pull-request lifecycle stays correlated             | medium    | medium          |
+| 5        | Operators can inspect, replay, and clean up state                  | medium    | medium          |
 
 ### Message Flow
 
@@ -372,48 +372,66 @@ Publication eligibility is origin-aware:
 - Preserve value-free progress diagnostics around scheduling, generation,
   adapter delivery, and receipt commitment.
 
-### Phase 1: Activate Assigned Work and Acknowledge Understanding
+### Phase 1: Plan Assigned Work and Acknowledge Understanding
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
 - After deterministic intake reaches its active checkpoint, claim a durable
-  activation checkpoint and dispatch one asynchronous work-start turn through
+  activation checkpoint and dispatch one asynchronous planning turn through
   OpenClaw's public channel inbound lifecycle. Never make polling or manual
   refresh wait for model completion.
 - After activation is claimed, fetch a bounded canonical projection of the issue
   title, body, labels, and existing comments. Frame all prose as untrusted project
   data; comments provide context but do not authorize instructions or replace the
   approved-mention rules in Phase 2.
-- Add an optional `activation-mode` setting with `auto`, `summarize`, and `work`
-  values; default to `auto`. Deliver the context and managed-worktree identity to
-  the existing issue-scoped session, then apply the selected first-turn behavior:
-  - `summarize` records a concise local assessment and stops before repository
-    mutation;
-  - `work` immediately begins the assigned implementation; and
-  - `auto` begins work when the issue is actionable, otherwise records the
-    missing information or blockers locally.
-- Record the full first-turn response only in the private OpenClaw session.
-- After the first context-assessment turn is adopted and completes, create one
+- Deliver the bounded context and managed-worktree identity to the existing
+  issue-scoped session. The first planning turn runs with tools disabled and
+  produces a concise assessment, blockers, and proposed implementation plan from
+  issue context without inspecting or mutating the repository.
+- Record the complete planning response only in the private OpenClaw session.
+  In plan-only behavior, stop there and wait for a subsequent operator-authored
+  local message in that same session. A GitHub comment never approves work, and
+  this pause is not represented as an OpenClaw command-approval request.
+- After the planning turn is adopted and completes, create one
   `initial-acknowledgment` publication intent from its bounded final response.
-  The GitHub candidate should accurately communicate that the agent reviewed and
-  understood the issue and is beginning work; it must not claim unsupported
-  progress when the local assessment found a blocker.
+  The GitHub candidate must accurately communicate whether the agent reviewed
+  the issue and prepared a plan, found a blocker, or is beginning work. It must
+  not imply that implementation started in plan-only behavior.
 - Compose and publish the acknowledgment asynchronously through Phase 0's single
-  outbound path. A delayed or failed acknowledgment must not prevent accepted
-  work from continuing locally.
-- Give the work-start turn the agent's normal Agent System tool surface under its
-  existing binding, containment, credential, and tool-policy boundaries so it can
-  inspect the repository and perform local implementation and validation. Keep
-  GitHub-facing publication unavailable beyond the initial acknowledgment until
-  Phase 2.
+  outbound path. A delayed or failed acknowledgment must not block the local
+  planning or implementation lifecycle.
 - Make activation retryable and cancellable, and distinguish a turn the host has
   adopted from one that failed before adoption so ambiguous delivery cannot start
-  duplicate opening turns.
+  duplicate planning turns.
 - Persist only value-free activation checkpoints and stable authorization,
   context-fetch, dispatch, cancellation, and ambiguous-delivery diagnostics.
 - Use this phase's monitor-state migration to remove the unused
   `baselineItemNodeIds` inventory while accepting valid MVP 1 state;
   `baselineAt` remains the historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
+
+Implement Phase 1 in three increments:
+
+1. **Plan-only activation:** ship the planning lifecycle above as the only
+   behavior. Do not add a manifest setting while there is only one supported
+   choice.
+2. **Configured work continuation:** add optional `activation-mode` with `plan`
+   and `work` values and a default of `plan`. Both modes complete and checkpoint
+   the same tool-free planning turn. `plan` stops for a local operator response;
+   `work` automatically dispatches a separate implementation turn to the same
+   session only after planning completes. The implementation turn receives the
+   normal Agent System tool surface under existing binding, containment,
+   credential, and tool-policy boundaries.
+3. **Automatic selection:** add `auto` only after both explicit modes have
+   installed acceptance coverage. The planning turn must return a bounded
+   structured continue-or-wait decision under an explicit rubric. Ambiguity,
+   missing acceptance criteria, broad or destructive changes, security-sensitive
+   work, migrations, releases, and other high-consequence work resolve to `plan`;
+   only clearly actionable bounded work may continue automatically.
+
+Planning completion and implementation adoption use separate durable checkpoints.
+Changing configuration after a planning checkpoint must not reinterpret or
+silently continue an existing assignment. Keep GitHub-facing publication
+unavailable beyond the initial acknowledgment until Phase 2.
 
 ### Phase 2: Approved GitHub Mention Conversations
 
@@ -538,6 +556,12 @@ implementation modules.
 14. Apply conversational formatting and personality before the deterministic
     final safety gate; the adapter must not invoke a model or regenerate content
     during retries.
+15. Make assignment activation plan-first. The initial planning turn is
+    tool-free; `work` is a separately checkpointed implementation turn, and
+    `auto` is added only after an explicit bounded decision contract exists.
+16. Treat a later operator-authored message in the private issue session as the
+    continuation mechanism for plan-only work. Do not model that pause as a
+    command approval or let a GitHub comment authorize implementation.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,
