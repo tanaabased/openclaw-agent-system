@@ -157,6 +157,7 @@ describe('channels/github/channel', () => {
   });
 
   it('should record an observe-only assignment through the inbound kernel', async () => {
+    const activities: unknown[] = [];
     let records = 0;
     let dispatches = 0;
     let routedSessionKey: string | undefined;
@@ -164,6 +165,7 @@ describe('channels/github/channel', () => {
     const result = await runGitHubNotificationAssignment(event, {
       config: configuredRoute(),
       desired,
+      recordActivity: (activity) => activities.push(activity),
       prepareTurn(_assignment, route) {
         routedSessionKey = route.sessionKey;
         return {
@@ -189,6 +191,13 @@ describe('channels/github/channel', () => {
     assert.equal(records, 1);
     assert.equal(dispatches, 0);
     assert.equal(result.admission.kind, 'observeOnly');
+    assert.deepEqual(activities, [
+      {
+        accountId: 'data',
+        channel: 'agent-system-github',
+        direction: 'inbound',
+      },
+    ]);
     if (result.dispatched) assert.deepEqual(result.dispatchResult, { localReply: 'skipped' });
   });
 
@@ -208,15 +217,20 @@ describe('channels/github/channel', () => {
   });
 
   it('should fail closed when the exact account binding selects another agent', async () => {
+    let activities = 0;
     await assert.rejects(
       runGitHubNotificationAssignment(event, {
         config: configuredRoute('other'),
         desired,
+        recordActivity: () => {
+          activities += 1;
+        },
         prepareTurn() {
           throw new Error('should not prepare an unauthorized turn');
         },
       }),
       /exact agent-system-github:data binding/u,
     );
+    assert.equal(activities, 0);
   });
 });
