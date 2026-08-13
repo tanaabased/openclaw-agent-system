@@ -1,9 +1,8 @@
 # GitHub Notifications Plan
 
-Status: Notifications MVP 1 is the scope of `pirog-notifications`. Its repository
-implementation and packed third-party installed acceptance proof are complete in
-the GitHub Actions-only notifications scenario. Notifications 2 belongs on the
-`pirog-notifications-2` branch.
+Status: Notifications MVP 1 is shipped. Notifications 2 is active development on
+`pirog-notifications-2`. No Notifications 2 phase is complete until its public
+channel-SDK path and packed third-party installed acceptance proof pass.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -247,9 +246,11 @@ The conversation id is deterministic:
 github:<repository-node-id>:<issue-number>
 ```
 
-The channel registers no outbound adapter. Agent System does not call protected
-Gateway RPCs, edit OpenClaw session storage, patch session extensions, or spawn
-Gateway CLI commands to simulate a public SDK.
+The MVP 1 channel registers no outbound adapter. Notifications 2 Phase 0 replaces
+that limitation through OpenClaw's public message-adapter and durable-delivery
+contracts. Agent System does not call protected Gateway RPCs, edit OpenClaw
+session storage, patch session extensions, or spawn Gateway CLI commands to
+simulate a public SDK.
 
 Ordinary routed sessions cannot use subagent-only cwd fields. The managed
 worktree path stays in private monitor correlation and bounded inbound context;
@@ -304,45 +305,80 @@ local session.
 
 Notifications 2 owns everything after initial issue intake.
 
-| Priority | User outcome                                           | Impact    | Relative effort |
-| -------- | ------------------------------------------------------ | --------- | --------------- |
-| 0        | Accepted assignments receive a visible acknowledgment  | very high | medium          |
-| 1        | The agent reads the issue and begins the assigned work | very high | medium          |
-| 2        | Approved GitHub mentions reach the local conversation  | high      | medium          |
-| 3        | Safe conversational responses return to GitHub         | high      | high            |
-| 4        | Assignment and pull-request lifecycle stays correlated | medium    | medium          |
-| 5        | Operators can inspect, replay, and clean up state      | medium    | medium          |
+| Priority | User outcome                                                   | Impact    | Relative effort |
+| -------- | -------------------------------------------------------------- | --------- | --------------- |
+| 0        | Every GitHub write uses one safe channel delivery path         | very high | medium          |
+| 1        | The agent understands the issue, starts work, and acknowledges | very high | high            |
+| 2        | Approved GitHub mentions receive local and GitHub responses    | very high | high            |
+| 3        | Operators can deliberately publish progress from local chat    | high      | medium          |
+| 4        | Assignment and pull-request lifecycle stays correlated         | medium    | medium          |
+| 5        | Operators can inspect, replay, and clean up state              | medium    | medium          |
 
-### Phase 0: Acknowledge Accepted Assignments
+### Message Flow
 
-- Post only after deterministic intake reaches its active checkpoint with the
-  managed worktree prepared and the OpenClaw session recorded.
-- Generate one short acknowledgment through the assigned agent's normal
-  OpenClaw personality and prompt context. Give that turn no tools, issue prose,
-  comments, local paths, or credential values; instruct it only to acknowledge
-  that it accepted the assignment in its own voice.
-- Treat the generated text as untrusted until a fail-closed publication gate
-  accepts one bounded plain-text sentence with no links, mentions, markup,
-  paths, token-shaped values, media, tool output, or unsupported claims. Do not
-  publish a canned fallback when generation or validation fails.
-- Publish through the owning GitHub capability only after provider permission
-  and applicable narrow tool policy allow the write.
-- Reconcile a deterministic hidden marker and persist a value-free receipt so
+OpenClaw and GitHub intentionally receive different outputs from one agent turn:
+
+1. an admitted GitHub event resolves the deterministic issue conversation;
+2. OpenClaw records the full agent response in the private local session;
+3. a publication composer receives only the bounded final local response and
+   relevant public issue context, never the complete transcript;
+4. the composer produces a separate concise, conversational, personality-aware
+   GitHub candidate;
+5. a deterministic fail-closed gate rejects unsafe or unsupported candidates;
+6. one GitHub message adapter reauthorizes and durably publishes the accepted
+   candidate; and
+7. Agent System persists only value-free checkpoints and delivery receipts.
+
+Formatting, summarization, and personality belong to the publication composer,
+before the final safety gate. The message adapter remains a deterministic
+transport and authorization boundary so retries cannot regenerate different
+content. Sanitization means rejecting a candidate that cannot be proven safe,
+not attempting best-effort redaction.
+
+Publication eligibility is origin-aware:
+
+- the first successful assignment activation may produce one initial
+  acknowledgment;
+- an admitted GitHub mention may produce one GitHub reply;
+- an ordinary OpenClaw chat message remains local; and
+- a local progress update becomes eligible only through an explicit operator
+  publication action, never through an autonomous model decision.
+
+### Phase 0: GitHub Outbound Foundation
+
+- Register one `message` adapter through `defineChannelMessageAdapter(...)` from
+  `openclaw/plugin-sdk/channel-outbound`.
+- Route inbound final-reply delivery through
+  `deliverInboundReplyWithMessageSendContext(...)` and use OpenClaw's durable
+  outbound helpers for queueing, retries, hooks, and normalized receipts.
+- Provide one Agent System publication entry point accepting only explicit
+  `initial-acknowledgment`, `github-reply`, and `operator-progress` intents.
+- Resolve the channel account and conversation target to one admitted canonical
+  issue before any credential resolution or provider mutation.
+- Reauthorize the current assignment or admitted comment, verified GitHub
+  identity, repository permission, and applicable narrow GitHub policy
+  immediately before every write.
+- Apply intent-specific shape rules plus a common secret-safety gate. Reject
+  links, mentions, local paths, credentials, token-shaped values, tool traces,
+  hidden context, unsupported media, or other disallowed content according to
+  the intent contract.
+- Reconcile deterministic provider markers and OpenClaw message receipts so
   retries, restarts, and ambiguous delivery cannot create duplicate comments.
-- Keep local intake active when acknowledgment fails; record a stable diagnostic
-  and retry the comment independently. Agent generation must not make polling or
-  manual refresh wait for model completion.
+- Keep credentials, GitHub prose, local paths, and generated payloads out of
+  private control state and routine diagnostics.
+- Replace the current context-free acknowledgment capture and direct GitHub
+  publication path. Caller-owned delivery may observe local turn completion but
+  must not remain a parallel external transport.
+- Preserve value-free progress diagnostics around scheduling, generation,
+  adapter delivery, and receipt commitment.
 
-### Phase 1: Activate Assigned Work
+### Phase 1: Activate Assigned Work and Acknowledge Understanding
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
 - After deterministic intake reaches its active checkpoint, claim a durable
   activation checkpoint and dispatch one asynchronous work-start turn through
   OpenClaw's public channel inbound lifecycle. Never make polling or manual
   refresh wait for model completion.
-- Treat acknowledgment publication and work activation as independent
-  downstream paths from the same active checkpoint. A delayed or failed GitHub
-  acknowledgment must not prevent the agent from starting accepted work.
 - After activation is claimed, fetch a bounded canonical projection of the issue
   title, body, labels, and existing comments. Frame all prose as untrusted project
   data; comments provide context but do not authorize instructions or replace the
@@ -355,10 +391,20 @@ Notifications 2 owns everything after initial issue intake.
   - `work` immediately begins the assigned implementation; and
   - `auto` begins work when the issue is actionable, otherwise records the
     missing information or blockers locally.
+- Record the full first-turn response only in the private OpenClaw session.
+- After the first context-assessment turn is adopted and completes, create one
+  `initial-acknowledgment` publication intent from its bounded final response.
+  The GitHub candidate should accurately communicate that the agent reviewed and
+  understood the issue and is beginning work; it must not claim unsupported
+  progress when the local assessment found a blocker.
+- Compose and publish the acknowledgment asynchronously through Phase 0's single
+  outbound path. A delayed or failed acknowledgment must not prevent accepted
+  work from continuing locally.
 - Give the work-start turn the agent's normal Agent System tool surface under its
   existing binding, containment, credential, and tool-policy boundaries so it can
   inspect the repository and perform local implementation and validation. Keep
-  GitHub-facing conversational publication unavailable until Phase 3.
+  GitHub-facing publication unavailable beyond the initial acknowledgment until
+  Phase 2.
 - Make activation retryable and cancellable, and distinguish a turn the host has
   adopted from one that failed before adoption so ambiguous delivery cannot start
   duplicate opening turns.
@@ -369,7 +415,7 @@ Notifications 2 owns everything after initial issue intake.
   `baselineAt` remains the historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
 
-### Phase 2: Approved GitHub Mentions Inbound
+### Phase 2: Approved GitHub Mention Conversations
 
 - Poll only active canonical issue conversations.
 - Establish a safe comment baseline when conversation tracking begins.
@@ -380,23 +426,25 @@ Notifications 2 owns everything after initial issue intake.
 - Deduplicate create, edit, retry, self, quote-only, and stale-revision events.
 - Dispatch admitted comments asynchronously to the existing local conversation
   with bounded provenance and untrusted-content framing.
-- Keep all responses local until Phase 3 publication is available.
+- Keep the full response in the private OpenClaw session, then create one
+  `github-reply` intent from the bounded final response because the admitted
+  GitHub origin supplies explicit reply intent.
+- Produce and publish the concise GitHub-facing response through Phase 0's
+  composer, safety gate, message adapter, and durable receipt path. Never mirror,
+  redact, or expose the local transcript.
+- Do not publish responses to rejected, stale, self-authored, quote-only, or
+  unmentioned comments.
 
-### Phase 3: Safe Conversational GitHub Replies
+### Phase 3: Explicit Local Progress Publication
 
-- Produce each model-generated GitHub response as a separate concise,
-  conversational, explicitly publishable payload, never by mirroring or
-  redacting the local transcript.
-- Publish only a response to an admitted GitHub comment or an explicit
-  operator-selected progress update.
-- Add the explicit operator action for selecting a local progress update.
-- Publish at most once through the owning GitHub capability and persist a
-  value-free delivery receipt.
-- Apply provider permission, applicable narrow tool policy, and a mandatory
-  secret-safety gate before every write.
-- Fail closed when the payload cannot be proven secret-safe.
-- Never publish tool traces, hidden context, local paths, failed attempts, or
-  arbitrary local turns.
+- Add an explicit operator action that selects a bounded local progress update
+  for GitHub publication.
+- Create one `operator-progress` intent and use the same composer, authorization,
+  safety, adapter, marker, and receipt pipeline as every other GitHub message.
+- Keep ordinary OpenClaw chat turns local by default. Do not let a model rubric
+  independently decide that local content should leave the private session.
+- Never publish tool traces, hidden context, local paths, failed attempts,
+  arbitrary local turns, or content that cannot be proven secret-safe.
 
 ### Phase 4: Assignment and Pull-request Lifecycle
 
@@ -446,6 +494,7 @@ implementation modules.
 
 - [OpenClaw channel plugin guide](https://docs.openclaw.ai/plugins/sdk-channel-plugins)
 - [OpenClaw channel inbound API](https://docs.openclaw.ai/plugins/sdk-channel-inbound)
+- [OpenClaw channel outbound API](https://docs.openclaw.ai/plugins/sdk-channel-outbound)
 - [OpenClaw channel routing and bindings](https://docs.openclaw.ai/channels/channel-routing)
 - [OpenClaw agent binding commands](https://docs.openclaw.ai/cli/agents)
 - [OpenClaw configuration and hot reload](https://docs.openclaw.ai/gateway/configuration)
@@ -474,11 +523,21 @@ implementation modules.
 8. Keep MVP 1 notification refresh and session creation deterministic and model-free.
 9. Keep polling through fixed, bounded `gh api` calls. Webhook ingestion is not
    supported.
-10. Acknowledge completed deterministic intake with one short, personality-aware,
-    tool-free, secret-gated, exactly-once GitHub comment.
-11. Keep acknowledgment generation separate from the later issue-context
-    work-start turn; neither path may delay deterministic intake or block the
-    other path after intake succeeds.
+10. Use one public-SDK message adapter and one fail-closed publication entry
+    point for every GitHub write; do not retain acknowledgment-specific external
+    transport.
+11. Keep full agent responses in the private OpenClaw session and generate each
+    GitHub comment as a separate bounded publication payload rather than copying
+    or redacting the transcript.
+12. Complete the first issue-context assessment before producing the initial
+    acknowledgment, while keeping deterministic intake and work activation
+    independent from GitHub publication success.
+13. Let an admitted GitHub origin authorize one corresponding reply candidate.
+    Keep ordinary local chat private unless an operator explicitly selects a
+    progress update for publication.
+14. Apply conversational formatting and personality before the deterministic
+    final safety gate; the adapter must not invoke a model or regenerate content
+    during retries.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,
