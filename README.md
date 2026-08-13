@@ -49,12 +49,19 @@ Today, Agent System:
 
 ## Installation
 
-Install the current release from npm:
+Install the current release from ClawHub:
+
+```sh
+openclaw plugins install clawhub:@tanaab/openclaw-agent-system
+```
+
+To select npm explicitly instead:
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system
-openclaw plugins enable agent-system
 ```
+
+Either install command registers and enables the `agent-system` plugin.
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 

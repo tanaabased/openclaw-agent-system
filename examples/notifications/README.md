@@ -46,10 +46,12 @@ printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 
-# should install the agent and exact notification route through agent system
+# should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
-openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+output="$(openclaw agent-system install --json)"
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 "$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
@@ -63,9 +65,9 @@ openclaw agent-system install
 ## Testing
 
 ```bash
-# should complete one authenticated baseline before assignment delivery
+# should retain the install-time baseline before assignment delivery
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/assert-agent-system-notification-refresh-completed.sh" --agent notification-data
+openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
 
 # should keep the initial baseline free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"

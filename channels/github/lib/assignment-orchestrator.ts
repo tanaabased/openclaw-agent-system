@@ -48,8 +48,8 @@ export interface GitHubNotificationAssignmentSessions {
 
 export interface GitHubNotificationAssignmentAcknowledgments {
   schedule(agentId: string, itemKey: string): void;
-  start(): void;
-  stop(): Promise<void>;
+  start(agentId: string): void;
+  stop(agentId: string): Promise<void>;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
@@ -93,12 +93,12 @@ export default class GitHubNotificationAssignmentOrchestrator {
     return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
   }
 
-  async stop(): Promise<void> {
-    await this.#dependencies.acknowledgments?.stop();
+  async stop(agentId: string): Promise<void> {
+    await this.#dependencies.acknowledgments?.stop(agentId);
   }
 
-  start(): void {
-    this.#dependencies.acknowledgments?.start();
+  start(agentId: string): void {
+    this.#dependencies.acknowledgments?.start(agentId);
   }
 
   async #reconcile(

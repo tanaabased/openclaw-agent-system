@@ -16,9 +16,11 @@ MVP 1 supports one assignment-intake path:
 1. A user adds `github.notifications` to an agent manifest with at least one
    immutable approved actor. The polling interval defaults to five minutes.
 2. `openclaw agent-system install` reconciles one activation-only local channel
-   account and one exact account-scoped binding for that agent.
-3. The Gateway starts the agent monitor. Its first successful cycle records the
-   currently open assigned issues as a baseline without creating local work.
+   account and one exact account-scoped binding for that agent, then establishes
+   a baseline before installation succeeds. Zero assigned issues is a valid
+   persisted baseline.
+3. The Gateway starts one poll scheduler owned by that channel account and
+   exposes its running, connected, and health state through channel status.
 4. A later cycle discovers a new issue assignment to the authenticated agent.
 5. Intake is admitted only when the assignment actor is approved, the canonical
    repository is eligible, and the agent has effective write permission.
@@ -40,8 +42,10 @@ comments, retire sessions, or clean up worktrees.
 - local-only `agent-system-github` channel registration;
 - manifest-to-global account and binding reconciliation owned by `install`;
 - receipt-backed ownership, drift inspection, repair, and cleanup;
-- per-agent polling, jitter, provider backoff, and cancellation;
-- account identity verification and safe first-run baseline;
+- per-channel-account polling, jitter, provider backoff, cancellation, and
+  runtime health status;
+- account identity verification and safe install-time baseline, including an
+  empty first observation;
 - bounded GitHub assignment discovery and canonical item/event lookup;
 - immutable actor, repository owner, agent permission, and assignment admission;
 - private value-free monitor and routing state;
@@ -60,7 +64,7 @@ The GitHub Actions-only notifications scenario proves a packed third-party
 installation across the actual CLI, Gateway, channel, session, and worktree
 boundaries. It covers:
 
-- safe first-use baseline;
+- safe empty first-use baseline completed by `install`;
 - approved issue assignment;
 - rejected unauthorized assignment;
 - exactly one managed worktree and local session;

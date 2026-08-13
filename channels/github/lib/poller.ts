@@ -39,6 +39,7 @@ export interface GitHubNotificationPollInput {
 export interface GitHubNotificationPollResult {
   approved: number;
   baseline: number;
+  baselineEstablished: boolean;
   duplicates: number;
   rejected: number;
   retired: number;
@@ -162,7 +163,14 @@ export async function pollGitHubNotifications(
   input: GitHubNotificationPollInput,
 ): Promise<GitHubNotificationPollResult> {
   const state = cloneState(input);
-  const counts = { approved: 0, baseline: 0, duplicates: 0, rejected: 0, retired: 0 };
+  const counts = {
+    approved: 0,
+    baseline: 0,
+    baselineEstablished: false,
+    duplicates: 0,
+    rejected: 0,
+    retired: 0,
+  };
 
   try {
     if (state.baselineAt === undefined) {
@@ -177,6 +185,7 @@ export async function pollGitHubNotifications(
       state.baselineItemNodeIds = [...new Set(discovery.candidates.map(({ nodeId }) => nodeId))];
       state.searchBoundary = new Date(input.now).toISOString();
       counts.baseline = state.baselineItemNodeIds.length;
+      counts.baselineEstablished = true;
       return { ...counts, state };
     }
 

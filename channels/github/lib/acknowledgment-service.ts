@@ -63,45 +63,56 @@ function errorCode(error: unknown): string {
 
 /** Generate and publish assignment acknowledgments outside deterministic intake. */
 export default class GitHubNotificationAcknowledgmentService {
-  #controller = new AbortController();
+  readonly #controllers = new Map<string, AbortController>();
   readonly #dependencies: GitHubNotificationAcknowledgmentServiceDependencies;
-  readonly #inFlight = new Map<string, Promise<void>>();
+  readonly #inFlight = new Map<string, { agentId: string; task: Promise<void> }>();
 
   constructor(dependencies: GitHubNotificationAcknowledgmentServiceDependencies) {
     this.#dependencies = dependencies;
   }
 
-  start(): void {
-    if (this.#controller.signal.aborted) this.#controller = new AbortController();
+  start(agentId: string): void {
+    const current = this.#controllers.get(agentId);
+    if (!current || current.signal.aborted) this.#controllers.set(agentId, new AbortController());
   }
 
   schedule(agentId: string, itemKey: string): void {
     const key = `${agentId}:${itemKey}`;
-    if (this.#controller.signal.aborted || this.#inFlight.has(key)) return;
-    const task = this.#run(agentId, itemKey)
+    const controller = this.#controllers.get(agentId);
+    if (!controller || controller.signal.aborted || this.#inFlight.has(key)) return;
+    const task = this.#run(agentId, itemKey, controller.signal)
       .catch(async (error: unknown) => {
-        if (this.#controller.signal.aborted) return;
-        await this.#recordFailure(agentId, itemKey, errorCode(error)).catch(() => undefined);
+        if (controller.signal.aborted) return;
+        await this.#recordFailure(agentId, itemKey, errorCode(error), controller.signal).catch(
+          () => undefined,
+        );
       })
       .finally(() => {
-        if (this.#inFlight.get(key) === task) this.#inFlight.delete(key);
+        if (this.#inFlight.get(key)?.task === task) this.#inFlight.delete(key);
       });
-    this.#inFlight.set(key, task);
+    this.#inFlight.set(key, { agentId, task });
   }
 
-  async stop(): Promise<void> {
-    this.#controller.abort();
-    await this.settle();
+  async stop(agentId: string): Promise<void> {
+    const controller = this.#controllers.get(agentId);
+    if (!controller) return;
+    controller.abort();
+    await this.settle(agentId);
+    if (this.#controllers.get(agentId) === controller) this.#controllers.delete(agentId);
   }
 
-  async settle(): Promise<void> {
-    await Promise.allSettled(this.#inFlight.values());
+  async settle(agentId?: string): Promise<void> {
+    await Promise.allSettled(
+      [...this.#inFlight.values()]
+        .filter((entry) => agentId === undefined || entry.agentId === agentId)
+        .map(({ task }) => task),
+    );
   }
 
-  async #run(agentId: string, itemKey: string): Promise<void> {
+  async #run(agentId: string, itemKey: string, signal: AbortSignal): Promise<void> {
     const acknowledgmentLease = await this.#dependencies.leaseStore.acquire(agentId, {
       scope: 'acknowledgment',
-      signal: this.#controller.signal,
+      signal,
     });
     if (acknowledgmentLease.status !== 'acquired') return;
     try {
@@ -111,7 +122,7 @@ export default class GitHubNotificationAcknowledgmentService {
       const connected = await this.#dependencies.accountClient.connect(
         { manifest: loaded.manifest, workspaceDir: pending.state.workspaceDir },
         'service',
-        this.#controller.signal,
+        signal,
       );
       const client = new GitHubWorkEventClient(connected);
       const marker = githubAssignmentAcknowledgmentMarker(pending.delivery.assignmentEventId);
@@ -122,25 +133,31 @@ export default class GitHubNotificationAcknowledgmentService {
         marker,
       );
       if (existing) {
-        await this.#checkpointReceipt(agentId, itemKey, existing);
+        await this.#checkpointReceipt(agentId, itemKey, existing, signal);
         return;
       }
       const text = await this.#dependencies.sessions.generateAcknowledgment({
         agentId,
         delivery: pending.delivery,
         item: pending.item,
-        signal: this.#controller.signal,
+        signal,
         workspaceDir: pending.state.workspaceDir,
         worktree: pending.worktree,
       });
-      await this.#publish(agentId, itemKey, text, marker);
+      await this.#publish(agentId, itemKey, text, marker, signal);
     } finally {
       await acknowledgmentLease.lease.release();
     }
   }
 
-  async #publish(agentId: string, itemKey: string, text: string, marker: string): Promise<void> {
-    const cycleLease = await this.#acquireCycleLease(agentId);
+  async #publish(
+    agentId: string,
+    itemKey: string,
+    text: string,
+    marker: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const cycleLease = await this.#acquireCycleLease(agentId, signal);
     if (!cycleLease) return;
     try {
       const pending = await this.#loadPending(agentId, itemKey);
@@ -149,7 +166,7 @@ export default class GitHubNotificationAcknowledgmentService {
         agentId,
         delivery: pending.delivery,
         item: pending.item,
-        signal: this.#controller.signal,
+        signal,
         workspaceDir: pending.state.workspaceDir,
       });
       if (!authority.authorized) {
@@ -174,7 +191,7 @@ export default class GitHubNotificationAcknowledgmentService {
       const connected = await this.#dependencies.accountClient.connect(
         { manifest: loaded.manifest, workspaceDir: pending.state.workspaceDir },
         'service',
-        this.#controller.signal,
+        signal,
       );
       const client = new GitHubWorkEventClient(connected);
       const existing = await client.findOwnIssueComment(
@@ -201,8 +218,9 @@ export default class GitHubNotificationAcknowledgmentService {
     agentId: string,
     itemKey: string,
     receipt: GitHubIssueCommentReceipt,
+    signal: AbortSignal,
   ): Promise<void> {
-    const cycleLease = await this.#acquireCycleLease(agentId);
+    const cycleLease = await this.#acquireCycleLease(agentId, signal);
     if (!cycleLease) return;
     try {
       const pending = await this.#loadPending(agentId, itemKey);
@@ -228,8 +246,13 @@ export default class GitHubNotificationAcknowledgmentService {
     await this.#dependencies.stateStore.write(state);
   }
 
-  async #recordFailure(agentId: string, itemKey: string, code: string): Promise<void> {
-    const cycleLease = await this.#acquireCycleLease(agentId);
+  async #recordFailure(
+    agentId: string,
+    itemKey: string,
+    code: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const cycleLease = await this.#acquireCycleLease(agentId, signal);
     if (!cycleLease) return;
     try {
       const pending = await this.#loadPending(agentId, itemKey);
@@ -244,10 +267,10 @@ export default class GitHubNotificationAcknowledgmentService {
     }
   }
 
-  async #acquireCycleLease(agentId: string) {
+  async #acquireCycleLease(agentId: string, signal: AbortSignal) {
     const acquisition = await this.#dependencies.leaseStore.acquire(agentId, {
       scope: 'cycle',
-      signal: this.#controller.signal,
+      signal,
       waitMs: cycleLeaseWaitMs,
     });
     return acquisition.status === 'acquired' ? acquisition.lease : undefined;

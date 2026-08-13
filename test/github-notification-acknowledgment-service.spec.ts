@@ -118,6 +118,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       stateStore: store,
     });
 
+    service.start('tanaabot');
     service.schedule('tanaabot', notificationItemKey);
     await service.settle();
 
@@ -169,6 +170,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       stateStore: store,
     });
 
+    service.start('tanaabot');
     service.schedule('tanaabot', notificationItemKey);
     await service.settle();
 
@@ -204,6 +206,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       stateStore: store,
     });
 
+    service.start('tanaabot');
     service.schedule('tanaabot', notificationItemKey);
     await service.settle();
 

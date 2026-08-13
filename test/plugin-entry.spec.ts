@@ -95,7 +95,7 @@ describe('index', () => {
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
     assert.deepEqual(channelIds, ['agent-system-github']);
-    assert.deepEqual(serviceIds, ['agent-system-github-notifications']);
+    assert.deepEqual(serviceIds, []);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

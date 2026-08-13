@@ -1,6 +1,6 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
-import type { OpenClawConfig, OpenClawPluginService } from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import {
@@ -26,8 +26,8 @@ export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
-    start?(): void;
-    stop?(): Promise<void>;
+    start?(agentId: string): void;
+    stop?(agentId: string): Promise<void>;
   };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
@@ -51,12 +51,22 @@ export interface GitHubNotificationMonitorRunResult {
   agentId: string;
   approved?: number;
   baseline?: number;
+  baselineAt?: number;
+  baselineEstablished?: boolean;
   code: string;
+  diagnosticCode?: string;
   duplicates?: number;
+  lastSuccessfulPollAt?: number;
+  nextPollAt?: number;
   rejected?: number;
+  retryAt?: number;
   retired?: number;
   status: 'completed' | 'failed' | 'skipped';
 }
+
+export type GitHubNotificationMonitorCycleListener = (
+  result: GitHubNotificationMonitorRunResult,
+) => Promise<void> | void;
 
 function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
   if (error instanceof GitHubNotificationPollError) {
@@ -90,38 +100,29 @@ function pendingDeliveryItemKeys(state: GitHubNotificationMonitorState | undefin
     .sort();
 }
 
+function monitorStateMetadata(state: GitHubNotificationMonitorState | undefined) {
+  if (!state) return {};
+  return {
+    ...(state.baselineAt === undefined ? {} : { baselineAt: state.baselineAt }),
+    ...(state.diagnosticCode === undefined ? {} : { diagnosticCode: state.diagnosticCode }),
+    ...(state.lastSuccessfulPollAt === undefined
+      ? {}
+      : { lastSuccessfulPollAt: state.lastSuccessfulPollAt }),
+    ...(state.nextPollAt === undefined ? {} : { nextPollAt: state.nextPollAt }),
+  };
+}
+
+function isRoutingDiagnostic(code: string | undefined): boolean {
+  return code?.startsWith('notification-routing-') === true;
+}
+
 /** Schedule route-gated GitHub assignment polls and recoverable local delivery. */
 export default class GitHubNotificationMonitorService {
   readonly #dependencies: GitHubNotificationMonitorServiceDependencies;
   readonly #inFlight = new Map<string, Promise<GitHubNotificationMonitorRunResult>>();
-  #controller?: AbortController;
-  #loop?: Promise<void>;
 
   constructor(dependencies: GitHubNotificationMonitorServiceDependencies) {
     this.#dependencies = dependencies;
-  }
-
-  pluginService(): OpenClawPluginService {
-    return {
-      id: 'agent-system-github-notifications',
-      start: () => this.start(),
-      stop: () => this.stop(),
-    };
-  }
-
-  start(): void {
-    if (this.#controller) return;
-    this.#dependencies.assignmentOrchestrator.start?.();
-    this.#controller = new AbortController();
-    this.#loop = this.#runLoop(this.#controller.signal);
-  }
-
-  async stop(): Promise<void> {
-    this.#controller?.abort();
-    await this.#loop;
-    await this.#dependencies.assignmentOrchestrator.stop?.();
-    this.#controller = undefined;
-    this.#loop = undefined;
   }
 
   async runOnce(
@@ -139,20 +140,31 @@ export default class GitHubNotificationMonitorService {
     return results;
   }
 
-  async #runLoop(signal: AbortSignal): Promise<void> {
-    while (!signal.aborted) {
-      try {
-        await this.runOnce({ signal });
-      } catch {
-        this.#dependencies.logger.error(
-          'github-notifications: monitor cycle failed code=github-notification-monitor-cycle-failed',
-        );
+  /** Run one channel account's scheduler until OpenClaw stops its lifecycle. */
+  async runAccount(
+    agentId: string,
+    signal: AbortSignal,
+    onCycle?: GitHubNotificationMonitorCycleListener,
+  ): Promise<void> {
+    this.#dependencies.assignmentOrchestrator.start?.(agentId);
+    try {
+      while (!signal.aborted) {
+        try {
+          const [result] = await this.runOnce({ agentId, signal });
+          if (result) await onCycle?.(result);
+        } catch {
+          this.#dependencies.logger.error(
+            `github-notifications: monitor cycle failed agent=${agentId} code=github-notification-monitor-cycle-failed`,
+          );
+        }
+        try {
+          await sleepWithAbort(schedulerIntervalMs, signal);
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
       }
-      try {
-        await sleepWithAbort(schedulerIntervalMs, signal);
-      } catch (error) {
-        if (!signal.aborted) throw error;
-      }
+    } finally {
+      await this.#dependencies.assignmentOrchestrator.stop?.(agentId);
     }
   }
 
@@ -245,7 +257,7 @@ export default class GitHubNotificationMonitorService {
             .then((state) =>
               state ? ({ state, status: 'ready' } as const) : ({ status: 'missing' } as const),
             );
-      const current = loadedState.status === 'missing' ? undefined : loadedState.state;
+      let current = loadedState.status === 'missing' ? undefined : loadedState.state;
       if (loadedState.status === 'migrated-v1') {
         await this.#dependencies.stateStore.write(loadedState.state);
         this.#dependencies.logger.info(
@@ -261,13 +273,24 @@ export default class GitHubNotificationMonitorService {
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       const pollDeferred =
         intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
-      if (pollDeferred && (pendingItemKeys.length === 0 || (current?.failureCount ?? 0) > 0)) {
+      const routingBackoff =
+        pollDeferred &&
+        (current?.failureCount ?? 0) > 0 &&
+        isRoutingDiagnostic(current?.diagnosticCode);
+      if (pollDeferred && (current?.failureCount ?? 0) > 0 && !routingBackoff) {
         return {
           agentId,
-          code:
-            (current?.failureCount ?? 0) > 0
-              ? 'github-notification-backoff-active'
-              : 'github-notification-interval-active',
+          code: 'github-notification-backoff-active',
+          ...monitorStateMetadata(current),
+          retryAt: current?.nextPollAt,
+          status: 'skipped',
+        };
+      }
+      if (pollDeferred && pendingItemKeys.length === 0 && !routingBackoff) {
+        return {
+          agentId,
+          code: 'github-notification-interval-active',
+          ...monitorStateMetadata(current),
           status: 'skipped',
         };
       }
@@ -278,26 +301,48 @@ export default class GitHubNotificationMonitorService {
         workspaceDir,
       });
       if (route.kind !== 'noop' || route.code !== 'notification-routing-ready') {
+        if (routingBackoff) {
+          return {
+            agentId,
+            code: 'github-notification-backoff-active',
+            ...monitorStateMetadata(current),
+            retryAt: current?.nextPollAt,
+            status: 'skipped',
+          };
+        }
         await this.#reconcileAssignments(
           agentId,
           githubNotificationRetirementItemKeys(current),
           signal,
         );
-        await this.#saveFailure(
+        const failed = await this.#saveFailure(
           agentId,
           workspaceDir,
           await this.#dependencies.stateStore.read(agentId),
           now,
           route.code,
         );
-        return { agentId, code: route.code, status: 'failed' };
+        return {
+          agentId,
+          code: route.code,
+          ...monitorStateMetadata(failed),
+          retryAt: failed.nextPollAt,
+          status: 'failed',
+        };
       }
 
-      if (pollDeferred) {
+      if (routingBackoff && current) {
+        current = structuredClone(current);
+        delete current.diagnosticCode;
+        current.failureCount = 0;
+        current.nextPollAt = now;
+        await this.#dependencies.stateStore.write(current);
+      } else if (pollDeferred) {
         await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
         return {
           agentId,
           code: 'github-notification-pending-reconciled',
+          ...monitorStateMetadata(current),
           status: 'completed',
         };
       }
@@ -326,26 +371,40 @@ export default class GitHubNotificationMonitorService {
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
       await this.#dependencies.stateStore.write(result.state);
       await this.#reconcileAssignments(agentId, pendingDeliveryItemKeys(result.state), signal);
+      const code = result.baselineEstablished
+        ? 'github-notification-baseline-established'
+        : 'github-notification-poll-complete';
       this.#dependencies.logger.info(
-        `github-notifications: poll complete agent=${agentId} code=github-notification-poll-complete baseline=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
+        `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
       );
       return {
         agentId,
         approved: result.approved,
         baseline: result.baseline,
-        code: 'github-notification-poll-complete',
+        baselineAt: result.state.baselineAt,
+        baselineEstablished: result.baselineEstablished,
+        code,
         duplicates: result.duplicates,
+        lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
+        nextPollAt: result.state.nextPollAt,
         rejected: result.rejected,
         retired: result.retired,
         status: 'completed',
       };
     } catch (error) {
+      if (signal?.aborted) {
+        return {
+          agentId,
+          code: 'github-notification-cycle-aborted',
+          status: 'skipped',
+        };
+      }
       const now = (this.#dependencies.clock ?? Date.now)();
       const diagnostic = diagnosticCode(error);
       try {
         if (workspaceDir) {
           const current = await this.#dependencies.stateStore.read(agentId);
-          await this.#saveFailure(
+          const failed = await this.#saveFailure(
             agentId,
             workspaceDir,
             current,
@@ -353,6 +412,16 @@ export default class GitHubNotificationMonitorService {
             diagnostic.code,
             diagnostic.retryAt,
           );
+          this.#dependencies.logger.warn(
+            `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}`,
+          );
+          return {
+            agentId,
+            code: diagnostic.code,
+            ...monitorStateMetadata(failed),
+            retryAt: failed.nextPollAt,
+            status: 'failed',
+          };
         }
       } catch {
         this.#dependencies.logger.error(
@@ -413,7 +482,7 @@ export default class GitHubNotificationMonitorService {
     now: number,
     code: string,
     retryAt = 0,
-  ): Promise<void> {
+  ): Promise<GitHubNotificationMonitorState> {
     const state = current ?? createGitHubNotificationMonitorState(agentId, workspaceDir);
     state.diagnosticCode = code;
     state.failureCount += 1;
@@ -425,5 +494,6 @@ export default class GitHubNotificationMonitorService {
     const jitter = 0.9 + (this.#dependencies.random ?? Math.random)() * 0.2;
     state.nextPollAt = Math.max(now + Math.floor(exponential * jitter), retryAt);
     await this.#dependencies.stateStore.write(state);
+    return state;
   }
 }

@@ -17,8 +17,9 @@ the agent's voice.
 
 ## Overview
 
-- On the first successful cycle, records the agent's currently assigned open
-  issues as a safe baseline without creating local work.
+- During `install`, records the agent's currently assigned open issues as a
+  safe baseline without creating local work. An empty result is a valid,
+  persisted baseline.
 - On later cycles, discovers new assignments and rechecks the agent account,
   assigning actor, repository owner, and repository access.
 - For each accepted assignment, creates or reuses one deterministic managed
@@ -26,9 +27,12 @@ the agent's voice.
 - After local intake completes, asks the agent for one short, tool-free
   acknowledgment and posts it to the issue exactly once.
 
-The Gateway monitor runs this lifecycle in the background. The manual refresh
-command runs the same deterministic intake path immediately and returns without
-waiting for acknowledgment generation.
+Each enabled channel account owns its polling lifecycle while the Gateway is
+running. `openclaw channels status --channel agent-system-github --json`
+reports whether that account is running, connected, and healthy. The manual
+refresh command runs the same deterministic intake path immediately and returns
+after local session recording without waiting for separate acknowledgment
+generation.
 
 ## Requirements
 
@@ -80,18 +84,22 @@ From the agent workspace:
 # check the manifest without changing installed state.
 openclaw agent-system validate
 
-# reconcile the agent and its notification route.
+# reconcile the route and establish the first baseline, including an empty one.
 openclaw agent-system install
 
-# inspect the installed route and monitor readiness.
+# inspect the installed route and the last successful observation.
 openclaw agent-system doctor
 
-# establish the first baseline or process later assignments immediately.
+# process later assignments immediately.
 openclaw agent-system notifications refresh
+
+# inspect the live gateway scheduler and connection health.
+openclaw channels status --channel agent-system-github --json
 ```
 
-Only assignments observed after the first successful baseline create local
-work.
+`install` fails with `github-notification-baseline-failed` if it cannot establish
+the initial baseline. Only assignments observed after a successful installation
+baseline create local work.
 
 ## Configuration Reference
 
@@ -143,9 +151,10 @@ openclaw agent-system notifications refresh [--agent <id>] [--json]
 | `--agent <id>` | Selects an installed agent instead of workspace discovery |
 | `--json`       | Returns an undecorated machine-readable result            |
 
-The command runs the same intake lifecycle immediately. It can establish the
-first baseline or create a managed worktree and local session for an accepted
-assignment. Deferred and failed cycles return a nonzero exit code.
+The command runs the same intake lifecycle immediately. It reports baseline
+readiness, diagnostics, and retry timing, and it can create a managed worktree
+and local session for an accepted assignment. Deferred and failed cycles return
+a nonzero exit code.
 
 See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
 for result and concurrency semantics.
@@ -170,8 +179,11 @@ plain-text safety gate before publication. A hidden deterministic marker and a
 value-free receipt prevent retries or restarts from duplicating the comment.
 
 `install` adds or repairs only the channel account and binding owned by Agent
-System. Removing `github.notifications` and running `install` again removes the
-owned route and stops new intake without deleting existing worktrees or sessions.
+System. Removing `github.notifications` and running `install` again retires
+outstanding local assignments, removes the owned route and converged private
+monitor state, and stops new intake. Existing worktrees and sessions are
+preserved deliberately; use a fresh isolated OpenClaw profile and agent id when
+a post-delivery test must begin without those artifacts.
 
 ## Further Reading
 

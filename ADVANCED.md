@@ -282,12 +282,17 @@ an explicitly selected installed agent.
 openclaw agent-system notifications refresh [--agent <id>] [--json]
 ```
 
-The command uses the background service's provider client, baseline, private
-state, trust gates, assignment delivery path, and cross-process per-agent lease.
+The command uses the channel account scheduler's provider client, baseline,
+private state, trust gates, assignment delivery path, and cross-process
+per-agent lease.
 It runs one complete intake cycle, not a read-only fetch or a request to enable
 the scheduler. It waits up to two minutes for an active cycle, bypasses the
 ordinary interval deadline, and preserves active failure and provider backoff.
-Deferred and failed cycles return a nonzero exit code. See the
+Human output includes baseline readiness, a stable diagnostic, and the next poll
+or retry time when available. JSON exposes `baselineAt`,
+`baselineEstablished`, `diagnosticCode`, `lastSuccessfulPollAt`, `nextPollAt`,
+and `retryAt` when applicable. Deferred and failed cycles return a nonzero exit
+code. See the
 [GitHub notifications channel](./channels/github/README.md) for
 configuration, security, lifecycle, and result semantics.
 

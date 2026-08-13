@@ -35,10 +35,12 @@ cp "$GITHUB_WORKSPACE/examples/routing/agent.yaml" "$TMPDIR/agent-system-notific
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 
-# should install the agent and exact notification route through agent system
+# should install the route and establish an empty baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
-openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+output="$(openclaw agent-system install --json)"
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established" and (.message | contains("with 0 existing assignments")))'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 "$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 ```
@@ -46,8 +48,8 @@ openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == 
 ## Testing
 
 ```bash
-# should expose the configured notification account through the running gateway
-openclaw channels status --channel agent-system-github --json | jq -e '(.channelAccounts["agent-system-github"] // []) | any(.accountId == "notification-data" and .configured == true and .enabled == true)'
+# should expose the running connected notification account through the gateway
+openclaw channels status --channel agent-system-github --json | jq -e '(.channelAccounts["agent-system-github"] // []) | any(.accountId == "notification-data" and .configured == true and .enabled == true and .running == true and .connected == true and .healthState == "healthy")'
 
 # should persist one enabled channel account and exact account binding
 openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled' | grep -F 'true'
@@ -55,9 +57,9 @@ openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification
 ```
 
 ```bash
-# should complete one authenticated empty baseline
+# should retain the install-time empty baseline during manual refresh
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/assert-agent-system-notification-refresh-completed.sh" --agent notification-data
+openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
 
 # should keep the empty baseline free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"

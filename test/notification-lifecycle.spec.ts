@@ -108,9 +108,11 @@ describe('channels/github/lib/lifecycle', () => {
   it('should report pending, successful, and deferred monitor observations', async () => {
     const healthyState: GitHubNotificationMonitorState = {
       agentId: 'data',
+      baselineAt: 1,
       baselineItemNodeIds: [],
       failureCount: 0,
       items: {},
+      lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
       schemaVersion: 2,
       workspaceDir: context.workspaceDir,
@@ -209,6 +211,111 @@ describe('channels/github/lib/lifecycle', () => {
       if (error instanceof AgentSystemLifecycleError) {
         assert.equal(error.component, 'github-notifications');
         assert.equal(error.code, 'github-notifications-reconcile-failed');
+      }
+      return true;
+    });
+  });
+
+  it('should establish the first baseline before enabled installation completes', async () => {
+    const refreshes: Array<{
+      agentId?: string;
+      bypassInterval?: boolean;
+      waitForLeaseMs?: number;
+    }> = [];
+    const contribution = createNotificationLifecycleContribution({
+      monitorService: {
+        async runOnce(options) {
+          refreshes.push(options && 'aborted' in options ? {} : (options ?? {}));
+          return [
+            {
+              agentId: 'data',
+              baseline: 0,
+              baselineAt: 1_000,
+              baselineEstablished: true,
+              code: 'github-notification-baseline-established',
+              status: 'completed' as const,
+            },
+          ];
+        },
+      },
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          return {
+            configChanged: true,
+            plan: {
+              code: 'notification-route-installed',
+              kind: 'upsert' as const,
+              message: 'installed',
+            },
+            receiptAction: 'created' as const,
+            requiresManualRestart: false,
+          };
+        },
+      },
+      stateStore: { read: async () => undefined },
+    });
+
+    assert.deepEqual(await contribution.reconcile?.(context), {
+      outcomes: [
+        { code: 'notification-route-installed', message: 'installed', status: 'updated' },
+        {
+          code: 'github-notification-baseline-established',
+          message: 'GitHub notification baseline established with 0 existing assignments.',
+          status: 'created',
+        },
+      ],
+      warnings: [],
+    });
+    assert.deepEqual(refreshes, [
+      { agentId: 'data', bypassInterval: true, waitForLeaseMs: 120_000 },
+    ]);
+  });
+
+  it('should fail enabled installation when the first baseline cannot be established', async () => {
+    const contribution = createNotificationLifecycleContribution({
+      monitorService: {
+        async runOnce() {
+          return [
+            {
+              agentId: 'data',
+              code: 'github-notification-provider-failed',
+              diagnosticCode: 'github-notification-provider-failed',
+              retryAt: 61_000,
+              status: 'failed' as const,
+            },
+          ];
+        },
+      },
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          return {
+            configChanged: true,
+            plan: {
+              code: 'notification-route-installed',
+              kind: 'upsert' as const,
+              message: 'installed',
+            },
+            receiptAction: 'created' as const,
+            requiresManualRestart: false,
+          };
+        },
+      },
+      stateStore: { read: async () => undefined },
+    });
+
+    await assert.rejects(contribution.reconcile!(context), (error: unknown) => {
+      assert.equal(error instanceof AgentSystemLifecycleError, true);
+      if (error instanceof AgentSystemLifecycleError) {
+        assert.equal(error.component, 'github-notifications');
+        assert.equal(error.code, 'github-notification-baseline-failed');
+        assert.match(error.message, /code=github-notification-provider-failed/);
+        assert.match(error.message, /1970-01-01T00:01:01.000Z/);
       }
       return true;
     });
@@ -322,6 +429,86 @@ describe('channels/github/lib/lifecycle', () => {
         },
       ],
     });
+    assert.equal(removals, 0);
+  });
+
+  it('should retire disabled assignments before removing private monitor state', async () => {
+    const state = notificationMonitorState();
+    const delivery = state.items[notificationItemKey]?.delivery;
+    assert.ok(delivery);
+    state.items[notificationItemKey]!.delivery = {
+      ...delivery,
+      sessionId: 'session-1',
+      sessionKey: 'agent:data:github:item',
+      stage: 'active',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    let current: GitHubNotificationMonitorState | undefined = state;
+    let removals = 0;
+    const refreshes: Array<{
+      agentId?: string;
+      bypassInterval?: boolean;
+      waitForLeaseMs?: number;
+    }> = [];
+    const contribution = createNotificationLifecycleContribution({
+      monitorService: {
+        async runOnce(options) {
+          refreshes.push(options && 'aborted' in options ? {} : (options ?? {}));
+          current = undefined;
+          return [
+            {
+              agentId: 'data',
+              code: 'github-notification-disabled',
+              status: 'skipped' as const,
+            },
+          ];
+        },
+      },
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          return {
+            configChanged: true,
+            plan: {
+              code: 'notification-route-removed',
+              kind: 'remove' as const,
+              message: 'removed',
+            },
+            receiptAction: 'removed' as const,
+            requiresManualRestart: false,
+          };
+        },
+      },
+      stateStore: {
+        read: async () => current,
+        remove: async () => {
+          removals += 1;
+          return true;
+        },
+      },
+    });
+    const disabledContext = {
+      manifest: { schemaVersion: 1 as const, agent: { id: 'data' } },
+      workspaceDir: context.workspaceDir,
+    };
+
+    assert.deepEqual(await contribution.reconcile?.(disabledContext), {
+      outcomes: [
+        { code: 'notification-route-removed', message: 'removed', status: 'removed' },
+        {
+          code: 'github-notification-monitor-state-removed',
+          message: 'private GitHub notification monitor state',
+          status: 'removed',
+        },
+      ],
+      warnings: [],
+    });
+    assert.deepEqual(refreshes, [
+      { agentId: 'data', bypassInterval: true, waitForLeaseMs: 120_000 },
+    ]);
     assert.equal(removals, 0);
   });
 });
