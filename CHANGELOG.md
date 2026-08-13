@@ -2,9 +2,7 @@
 
 ### New Features
 
-- Added approved GitHub issue assignments to one managed worktree and one host-routed local session. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
-- Added local-only `agent-system-github` routing and trust-gated assignment polling. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
-- Added one-shot `openclaw agent-system notifications refresh` through the background monitor path. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
+- Added the `agent-system-github` channel for OpenClaw. [#7](https://github.com/tanaabased/openclaw-agent-system/pull/7)
 
 ## v0.2.3 - [August 12, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.2.3)
 
