@@ -11,6 +11,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
+import type { Logger } from '../../../lib/logger.ts';
 import type {
   GitHubNotificationAssignmentSessions,
   GitHubNotificationAssignmentSessionInput,
@@ -36,6 +37,7 @@ import type GitHubNotificationPublicationService from './publication-service.ts'
 
 export interface GitHubNotificationSessionServiceDependencies {
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
+  logger: Logger;
   publicationService: Pick<GitHubNotificationPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
@@ -231,6 +233,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       recordInboundSession: this.#dependencies.recordInboundSession,
       replyOptions: {
         ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+        commentaryPayloadsEnabled: true,
         disableTools: true,
         sourceReplyDeliveryMode: 'automatic',
         suppressDefaultToolProgressMessages: true,
@@ -246,10 +249,27 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
       throw new Error('OpenClaw did not dispatch the expected notification planning turn.');
     }
-    assertGitHubNotificationPlanningResponse(finalPayloads);
+    const dispatch = result.dispatchResult;
+    this.#dependencies.logger.info(
+      [
+        'github-notifications: planning dispatch complete',
+        `agent=${assignment.route.agentId}`,
+        `payloads=${finalPayloads.length}`,
+        `ordinary=${finalPayloads.filter(({ isCommentary }) => isCommentary !== true).length}`,
+        `commentary=${finalPayloads.filter(({ isCommentary }) => isCommentary === true).length}`,
+        `final=${dispatch.counts.final ?? 0}`,
+        `block=${dispatch.counts.block ?? 0}`,
+        `tool=${dispatch.counts.tool ?? 0}`,
+        `failed-final=${dispatch.failedCounts?.final ?? 0}`,
+        `failed-block=${dispatch.failedCounts?.block ?? 0}`,
+        `failed-tool=${dispatch.failedCounts?.tool ?? 0}`,
+        `queued-final=${dispatch.queuedFinal === true}`,
+      ].join(' '),
+    );
+    const planningPayload = assertGitHubNotificationPlanningResponse(finalPayloads);
     let acknowledgment: string;
     try {
-      acknowledgment = githubNotificationPlanningAcknowledgment(finalPayloads);
+      acknowledgment = githubNotificationPlanningAcknowledgment([planningPayload]);
     } catch (error) {
       return { acknowledgmentFailureCode: errorCode(error) };
     }

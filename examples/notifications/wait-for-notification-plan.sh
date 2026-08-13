@@ -4,6 +4,7 @@ set -euo pipefail
 
 actor_agent=''
 issue_number=''
+notification_agent=''
 repository=''
 session_key=''
 
@@ -15,6 +16,10 @@ while test "$#" -gt 0; do
       ;;
     --issue-number)
       issue_number="$2"
+      shift 2
+      ;;
+    --notification-agent)
+      notification_agent="$2"
       shift 2
       ;;
     --repository)
@@ -32,7 +37,7 @@ while test "$#" -gt 0; do
   esac
 done
 
-if test -z "$actor_agent" || test -z "$issue_number" || test -z "$repository" || test -z "$session_key"; then
+if test -z "$actor_agent" || test -z "$issue_number" || test -z "$notification_agent" || test -z "$repository" || test -z "$session_key"; then
   printf 'all notification plan wait arguments are required\n' >&2
   exit 2
 fi
@@ -40,6 +45,7 @@ fi
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
 timeout_seconds=300
 deadline=$((SECONDS + timeout_seconds))
+history=''
 while ((SECONDS < deadline)); do
   remaining_seconds=$((deadline - SECONDS))
   command_timeout="$remaining_seconds"
@@ -57,5 +63,30 @@ while ((SECONDS < deadline)); do
 done
 
 printf 'notification planning did not complete within %s seconds\n' "$timeout_seconds" >&2
+if test -n "$history"; then
+  printf '%s\n' "$history" | jq -c '
+    [.messages[]? | select(.role == "assistant")] as $assistant
+    | [$assistant[]? | .. | strings] | join("\n") as $text
+    | {
+        assistantMessages: ($assistant | length),
+        hasAssessment: ($text | contains("ASSESSMENT:")),
+        hasBlockers: ($text | contains("BLOCKERS:")),
+        hasPlan: ($text | contains("PLAN:"))
+      }
+  ' >&2 || true
+fi
+doctor="$(OPENCLAW_LOG_LEVEL=error timeout --kill-after=5 10 openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
+if test -n "$doctor"; then
+  printf '%s\n' "$doctor" | jq -c '
+    {
+      status,
+      notificationFindings: [
+        .findings[]?
+        | select(.component == "github-notifications")
+        | {code, status}
+      ]
+    }
+  ' >&2 || true
+fi
 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
 exit 1

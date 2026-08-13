@@ -95,6 +95,7 @@ function createService(
   return new GitHubNotificationSessionService({
     dispatchReplyWithBufferedBlockDispatcher:
       overrides.dispatch ?? (async () => ({ counts: {} }) as never),
+    logger: { error() {}, info() {}, warn() {} },
     publicationService: {
       publish:
         overrides.publish ??
@@ -156,12 +157,14 @@ describe('channels/github/lib/session-service', () => {
     const service = createService({
       async dispatch(input) {
         assert.equal(input.replyOptions?.disableTools, true);
+        assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
         assert.match(String(input.ctx.BodyForAgent), /private, plan-only first pass/u);
         await input.replyOptions?.onTurnAdopted?.();
         await input.dispatcherOptions.deliver(
           {
+            isCommentary: true,
             text: [
               'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
               'ASSESSMENT:',

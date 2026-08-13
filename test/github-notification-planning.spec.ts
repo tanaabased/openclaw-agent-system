@@ -69,6 +69,38 @@ describe('channels/github/utils/planning', () => {
     );
   });
 
+  it('should prefer one complete ordinary final and fall back to commentary', () => {
+    const final = {
+      text: 'ASSESSMENT:\nReady.\nBLOCKERS:\nNone.\nPLAN:\n1. Implement it.',
+    };
+    const commentary = {
+      isCommentary: true,
+      text: 'ASSESSMENT:\nReady.\nBLOCKERS:\nNone.\nPLAN:\n1. Review it.',
+    };
+
+    assert.equal(assertGitHubNotificationPlanningResponse([commentary, final]), final);
+    assert.equal(assertGitHubNotificationPlanningResponse([commentary]), commentary);
+  });
+
+  it('should reject missing or ambiguous complete planning replies', () => {
+    assert.throws(
+      () => assertGitHubNotificationPlanningResponse([]),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPlanningResponseError &&
+        error.code === 'github-notification-planning-response-missing',
+    );
+    assert.throws(
+      () =>
+        assertGitHubNotificationPlanningResponse([
+          { text: 'ASSESSMENT:\nReady.\nBLOCKERS:\nNone.\nPLAN:\n1. Implement it.' },
+          { text: 'ASSESSMENT:\nReady.\nBLOCKERS:\nNone.\nPLAN:\n1. Review it.' },
+        ]),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPlanningResponseError &&
+        error.code === 'github-notification-planning-response-invalid',
+    );
+  });
+
   it('should reject missing, ambiguous, or secret-shaped public candidates', () => {
     assert.throws(
       () => githubNotificationPlanningAcknowledgment([{ text: 'ASSESSMENT:\nReady.' }]),

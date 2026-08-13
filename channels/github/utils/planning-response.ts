@@ -10,16 +10,11 @@ export class GitHubNotificationPlanningResponseError extends Error {
   }
 }
 
-function planningResponseText(payloads: readonly ReplyPayload[]): string {
-  return payloads
-    .map(({ text }) => text?.trim() ?? '')
-    .filter(Boolean)
-    .join('\n');
+function planningResponseText(payload: ReplyPayload): string {
+  return payload.text?.trim() ?? '';
 }
 
-/** Require the private planning sections before treating an adopted turn as complete. */
-export function assertGitHubNotificationPlanningResponse(payloads: readonly ReplyPayload[]): void {
-  const response = planningResponseText(payloads);
+function assertPlanningSections(response: string): void {
   const sections = [...response.matchAll(/^(ASSESSMENT|BLOCKERS|PLAN):[ \t]*$/gmu)];
   if (sections.map((match) => match[1]).join(',') !== 'ASSESSMENT,BLOCKERS,PLAN') {
     throw new GitHubNotificationPlanningResponseError(
@@ -37,11 +32,44 @@ export function assertGitHubNotificationPlanningResponse(payloads: readonly Repl
   }
 }
 
+function hasPlanningSections(payload: ReplyPayload): boolean {
+  try {
+    assertPlanningSections(planningResponseText(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Select one complete private planning reply, preferring an ordinary final over commentary. */
+export function assertGitHubNotificationPlanningResponse(
+  payloads: readonly ReplyPayload[],
+): ReplyPayload {
+  const textPayloads = payloads.filter((payload) => planningResponseText(payload));
+  if (textPayloads.length === 0) {
+    throw new GitHubNotificationPlanningResponseError(
+      'github-notification-planning-response-missing',
+    );
+  }
+  const completePayloads = textPayloads.filter(hasPlanningSections);
+  const ordinaryPayloads = completePayloads.filter(({ isCommentary }) => isCommentary !== true);
+  const candidates =
+    ordinaryPayloads.length > 0
+      ? ordinaryPayloads
+      : completePayloads.filter(({ isCommentary }) => isCommentary === true);
+  if (candidates.length !== 1 || !candidates[0]) {
+    throw new GitHubNotificationPlanningResponseError(
+      'github-notification-planning-response-invalid',
+    );
+  }
+  return candidates[0];
+}
+
 /** Extract only the explicit public candidate from an otherwise private planning response. */
 export default function githubNotificationPlanningAcknowledgment(
   payloads: readonly ReplyPayload[],
 ): string {
-  const response = planningResponseText(payloads);
+  const response = payloads.map(planningResponseText).filter(Boolean).join('\n');
   const matches = [...response.matchAll(/^ACKNOWLEDGMENT:[ \t]*(.+?)[ \t]*$/gmu)];
   if (matches.length !== 1 || !matches[0]?.[1]) {
     throw new GitHubNotificationPlanningResponseError(

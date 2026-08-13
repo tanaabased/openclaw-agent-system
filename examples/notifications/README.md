@@ -142,6 +142,7 @@ session_key="$(cat "$TMPDIR/approved-session-key")"
 "$GITHUB_WORKSPACE/examples/notifications/wait-for-notification-plan.sh" \
   --actor-agent notification-actor \
   --issue-number "$issue_number" \
+  --notification-agent notification-data \
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
