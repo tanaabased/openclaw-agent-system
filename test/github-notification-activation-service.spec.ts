@@ -146,7 +146,7 @@ describe('channels/github/lib/activation-service', () => {
     assert.equal(attempts, 1);
     assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
       failureCode: 'github-notification-activation-failed',
-      status: 'adopted',
+      status: 'failed',
     });
   });
 });

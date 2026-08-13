@@ -10,7 +10,7 @@ export type GitHubNotificationAcknowledgmentState =
 
 export interface GitHubNotificationActivationState {
   failureCode?: string;
-  status: 'adopted' | 'ineligible' | 'pending' | 'planned';
+  status: 'adopted' | 'failed' | 'ineligible' | 'pending' | 'planned';
 }
 
 export interface GitHubNotificationDeliveryState {

@@ -157,7 +157,7 @@ function validActivation(value: unknown): boolean {
   const activation = value as { failureCode?: unknown; status?: unknown };
   return (
     hasOnlyKeys(value, activationKeys) &&
-    ['adopted', 'ineligible', 'pending', 'planned'].includes(String(activation.status)) &&
+    ['adopted', 'failed', 'ineligible', 'pending', 'planned'].includes(String(activation.status)) &&
     optionalBoundedString(activation.failureCode, 255) &&
     (activation.failureCode === undefined ||
       /^[a-z0-9][a-z0-9-]*$/u.test(String(activation.failureCode)))

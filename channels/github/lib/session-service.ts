@@ -232,6 +232,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       replyOptions: {
         ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
         disableTools: true,
+        sourceReplyDeliveryMode: 'automatic',
         suppressDefaultToolProgressMessages: true,
         suppressTyping: true,
         toolsAllow: [],

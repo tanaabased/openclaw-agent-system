@@ -151,6 +151,50 @@ describe('channels/github/lib/lifecycle', () => {
     );
   });
 
+  it('should report terminal activation failures without hiding monitor health', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: {
+        failureCode: 'github-notification-planning-response-invalid',
+        status: 'failed',
+      },
+      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid')
+        ?.status,
+      'warning',
+    );
+    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
+  });
+
   it('should translate routing reconciliation and preserve attributed failures', async () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {

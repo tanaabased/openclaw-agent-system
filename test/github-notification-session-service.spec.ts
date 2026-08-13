@@ -156,6 +156,7 @@ describe('channels/github/lib/session-service', () => {
     const service = createService({
       async dispatch(input) {
         assert.equal(input.replyOptions?.disableTools, true);
+        assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
         assert.match(String(input.ctx.BodyForAgent), /private, plan-only first pass/u);
         await input.replyOptions?.onTurnAdopted?.();

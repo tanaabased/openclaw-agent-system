@@ -180,12 +180,13 @@ export default class GitHubNotificationActivationService {
     } catch (error) {
       if (signal.aborted) return;
       const code = errorCode(error);
+      const status = adopted ? 'failed' : 'pending';
       await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
         ...delivery,
-        activation: { failureCode: code, status: adopted ? 'adopted' : 'pending' },
+        activation: { failureCode: code, status },
       })).catch(() => undefined);
       this.#dependencies.logger.warn(
-        `github-notifications: activation deferred agent=${agentId} code=${code} adopted=${adopted}`,
+        `github-notifications: activation ${status === 'failed' ? 'failed' : 'deferred'} agent=${agentId} code=${code} adopted=${adopted}`,
       );
       throw error;
     }
