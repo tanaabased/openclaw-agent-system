@@ -1,9 +1,10 @@
 # GitHub Notification Routing Example
 
 This scenario runs the prepared Agent System package on macOS and Ubuntu. It
-installs one read-only GitHub notification route, completes an authenticated empty
-baseline without creating GitHub content or a model session, proves that no local
-assignment work exists, and removes only the owned routing state.
+installs one read-only GitHub notification route, records the authenticated
+assignment baseline without creating GitHub content or a model session, proves
+that no baseline assignment starts local work, and removes only the owned routing
+state.
 
 ## Setup
 
@@ -35,20 +36,20 @@ cp "$GITHUB_WORKSPACE/examples/routing/agent.yaml" "$TMPDIR/agent-system-notific
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 
-# should install the route and establish an empty baseline synchronously
+# should install the route and establish the current baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
-printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established" and (.message | contains("with 0 existing assignments")))'
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 ```
 
 ## Testing
 
 ```bash
 # should expose the running connected notification account through the gateway
+"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 openclaw channels status --channel agent-system-github --json | jq -e '(.channelAccounts["agent-system-github"] // []) | any(.accountId == "notification-data" and .configured == true and .enabled == true and .running == true and .connected == true and .healthState == "healthy")'
 
 # should persist one enabled channel account and exact account binding
@@ -57,15 +58,15 @@ openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification
 ```
 
 ```bash
-# should retain the install-time empty baseline during manual refresh
+# should retain the install-time baseline during manual refresh
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
 
-# should keep the empty baseline free of managed worktrees
+# should keep baseline assignments free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
 
-# should keep the empty baseline free of local sessions
+# should keep baseline assignments free of local sessions
 cd "$TMPDIR/agent-system-notifications"
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
 ```

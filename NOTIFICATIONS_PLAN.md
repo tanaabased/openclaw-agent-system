@@ -225,9 +225,9 @@ are untrusted project data. They cannot choose an agent, credential, repository,
 clone URL, base ref, local path, executable, tool, or policy outcome.
 
 MVP 1 does not fetch issue prose or start an automated turn. GitHub content is
-not stored in private control state or routine logs. Any future briefing must
-remain downstream of admission, bounded, explicitly framed as untrusted project
-data, and independent from deterministic intake completion.
+not stored in private control state or routine logs. Any future work-start
+context must remain downstream of admission, bounded, explicitly framed as
+untrusted project data, and independent from deterministic intake completion.
 
 ## Worktree and Session Delivery
 
@@ -307,7 +307,7 @@ Notifications 2 owns everything after initial issue intake.
 | Priority | User outcome                                           | Impact    | Relative effort |
 | -------- | ------------------------------------------------------ | --------- | --------------- |
 | 0        | Accepted assignments receive a visible acknowledgment  | very high | medium          |
-| 1        | Assigned work activates the agent with a safe briefing | very high | medium          |
+| 1        | The agent reads the issue and begins the assigned work | very high | medium          |
 | 2        | Approved GitHub mentions reach the local conversation  | high      | medium          |
 | 3        | Safe conversational responses return to GitHub         | high      | high            |
 | 4        | Assignment and pull-request lifecycle stays correlated | medium    | medium          |
@@ -336,14 +336,34 @@ Notifications 2 owns everything after initial issue intake.
 ### Phase 1: Activate Assigned Work
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
-- After deterministic intake commits, claim a separate activation checkpoint
-  and dispatch one asynchronous opening turn through OpenClaw's public channel
-  inbound lifecycle. Never make refresh wait for model completion.
-- Fetch only a bounded canonical issue projection after activation is claimed,
-  frame it as untrusted project data, and include the managed worktree context.
-- Keep the opening response local until the safe GitHub reply phase exists.
-- Make activation retryable and cancellable with stable model-authorization and
-  ambiguous-delivery diagnostics.
+- After deterministic intake reaches its active checkpoint, claim a durable
+  activation checkpoint and dispatch one asynchronous work-start turn through
+  OpenClaw's public channel inbound lifecycle. Never make polling or manual
+  refresh wait for model completion.
+- Treat acknowledgment publication and work activation as independent
+  downstream paths from the same active checkpoint. A delayed or failed GitHub
+  acknowledgment must not prevent the agent from starting accepted work.
+- After activation is claimed, fetch a bounded canonical projection of the issue
+  title, body, labels, and existing comments. Frame all prose as untrusted project
+  data; comments provide context but do not authorize instructions or replace the
+  approved-mention rules in Phase 2.
+- Add an optional `activation-mode` setting with `auto`, `summarize`, and `work`
+  values; default to `auto`. Deliver the context and managed-worktree identity to
+  the existing issue-scoped session, then apply the selected first-turn behavior:
+  - `summarize` records a concise local assessment and stops before repository
+    mutation;
+  - `work` immediately begins the assigned implementation; and
+  - `auto` begins work when the issue is actionable, otherwise records the
+    missing information or blockers locally.
+- Give the work-start turn the agent's normal Agent System tool surface under its
+  existing binding, containment, credential, and tool-policy boundaries so it can
+  inspect the repository and perform local implementation and validation. Keep
+  GitHub-facing conversational publication unavailable until Phase 3.
+- Make activation retryable and cancellable, and distinguish a turn the host has
+  adopted from one that failed before adoption so ambiguous delivery cannot start
+  duplicate opening turns.
+- Persist only value-free activation checkpoints and stable authorization,
+  context-fetch, dispatch, cancellation, and ambiguous-delivery diagnostics.
 - Use this phase's monitor-state migration to remove the unused
   `baselineItemNodeIds` inventory while accepting valid MVP 1 state;
   `baselineAt` remains the historical admission boundary.
@@ -456,8 +476,9 @@ implementation modules.
    supported.
 10. Acknowledge completed deterministic intake with one short, personality-aware,
     tool-free, secret-gated, exactly-once GitHub comment.
-11. Keep acknowledgment generation separate from the later issue briefing and
-    work-activation turn; neither path may delay deterministic intake.
+11. Keep acknowledgment generation separate from the later issue-context
+    work-start turn; neither path may delay deterministic intake or block the
+    other path after intake succeeds.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,
