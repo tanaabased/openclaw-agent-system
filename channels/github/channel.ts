@@ -1,4 +1,5 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
+import { recordChannelActivity } from 'openclaw/plugin-sdk/channel-activity-runtime';
 import {
   runChannelInboundEvent,
   type InboundReplyDispatchResult,
@@ -202,6 +203,7 @@ export function githubNotificationConversationId(
 export interface GitHubNotificationInboundDependencies<TDispatchResult> {
   config: OpenClawConfig;
   desired: NotificationRoutingDesiredState;
+  recordActivity?: typeof recordChannelActivity;
   prepareTurn(
     event: GitHubNotificationAssignmentEvent,
     route: ResolvedNotificationRoute,
@@ -214,7 +216,7 @@ export async function runGitHubNotificationAssignment<TDispatchResult>(
   dependencies: GitHubNotificationInboundDependencies<TDispatchResult>,
 ): Promise<InboundReplyDispatchResult<TDispatchResult>> {
   const conversationId = githubNotificationConversationId(event);
-  return runChannelInboundEvent({
+  const result = await runChannelInboundEvent({
     channel: githubNotificationChannelId,
     accountId: dependencies.desired.agentId,
     raw: event,
@@ -245,4 +247,12 @@ export async function runGitHubNotificationAssignment<TDispatchResult>(
       },
     },
   });
+  if (result.dispatched && result.admission.kind === 'observeOnly') {
+    (dependencies.recordActivity ?? recordChannelActivity)({
+      accountId: dependencies.desired.agentId,
+      channel: githubNotificationChannelId,
+      direction: 'inbound',
+    });
+  }
+  return result;
 }
