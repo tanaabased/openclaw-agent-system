@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added personality-aware, exactly-once assignment acknowledgments to the `agent-system-github` channel.
+- Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 
 ### Bug Fixes

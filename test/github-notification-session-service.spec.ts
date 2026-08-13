@@ -79,7 +79,6 @@ const assignmentInput = {
 function createService(
   overrides: {
     config?: OpenClawConfig;
-    dispatch?: GitHubNotificationSessionServiceDependencies['dispatchReplyWithBufferedBlockDispatcher'];
     record?: (params: InboundSessionRecord) => void | Promise<void>;
     recordTask?: Promise<void>;
   } = {},
@@ -92,15 +91,6 @@ function createService(
       params.trackSessionMetaTask?.(recordTask);
     };
   return new GitHubNotificationSessionService({
-    dispatchReplyWithBufferedBlockDispatcher:
-      overrides.dispatch ??
-      (async ({ dispatcherOptions }) => {
-        await dispatcherOptions.deliver({ text: 'On it.' }, { kind: 'final' });
-        return {
-          counts: { block: 0, final: 1, tool: 0 },
-          queuedFinal: true,
-        };
-      }),
     readConfig: () => overrides.config ?? config,
     recordInboundSession,
   });
@@ -149,34 +139,6 @@ describe('channels/github/lib/session-service', () => {
     });
 
     await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
-  });
-
-  it('should generate one tool-free acknowledgment in the existing routed session', async () => {
-    let dispatchContext:
-      | Parameters<
-          GitHubNotificationSessionServiceDependencies['dispatchReplyWithBufferedBlockDispatcher']
-        >[0]
-      | undefined;
-    const service = createService({
-      dispatch: async (params) => {
-        dispatchContext = params;
-        await params.dispatcherOptions.deliver(
-          { text: "Gladly — I've picked this one up." },
-          { kind: 'final' },
-        );
-        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: true };
-      },
-    });
-
-    const acknowledgment = await service.generateAcknowledgment(assignmentInput);
-
-    assert.equal(acknowledgment, "Gladly — I've picked this one up.");
-    assert.deepEqual(dispatchContext?.toolsAllow, []);
-    assert.equal(dispatchContext?.replyOptions?.disableTools, true);
-    assert.deepEqual(dispatchContext?.replyOptions?.toolsAllow, []);
-    assert.equal(dispatchContext?.ctx.Body, 'Acknowledge this accepted GitHub assignment.');
-    assert.doesNotMatch(dispatchContext?.ctx.BodyForAgent ?? '', /openclaw-agent-system|#42/u);
-    assert.equal(dispatchContext?.ctx.SessionKey, route.sessionKey);
   });
 
   it('should prepare a deterministic observe-only session record', async () => {

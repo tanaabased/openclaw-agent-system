@@ -2,12 +2,9 @@ import { isAbsolute, resolve } from 'node:path';
 
 import {
   buildChannelInboundEventContext,
-  dispatchChannelInboundReply,
-  type AssembledInboundReply,
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type {
@@ -21,10 +18,6 @@ import {
 } from '../channel.ts';
 import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
 import {
-  githubAssignmentAcknowledgment,
-  githubAssignmentAcknowledgmentPrompt,
-} from '../utils/acknowledgment.ts';
-import {
   githubNotificationChannelId,
   resolveNotificationRoute,
   type NotificationRoutingDesiredState,
@@ -32,7 +25,6 @@ import {
 } from '../utils/routing.ts';
 
 export interface GitHubNotificationSessionServiceDependencies {
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
@@ -102,102 +94,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       throw new Error('OpenClaw did not record the expected notification session.');
     }
     return { key: result.routeSessionKey, status: 'active' };
-  }
-
-  public async generateAcknowledgment(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<string> {
-    const assignment = await this.#resolveAssignment(input);
-    const finalPayloads: ReplyPayload[] = [];
-    let sessionRecordTask: Promise<unknown> | undefined;
-    const eventId = requiredText(assignment.event.id, 'GitHub notification event ids', 256);
-    const notification = 'Acknowledge this accepted GitHub assignment.';
-    const ctxPayload = buildChannelInboundEventContext({
-      accountId: assignment.route.accountId,
-      channel: githubNotificationChannelId,
-      conversation: {
-        id: assignment.route.conversationId,
-        kind: 'direct',
-        label: assignment.label,
-        routePeer: { id: assignment.route.conversationId, kind: 'direct' },
-      },
-      from: `github:${assignment.event.repositoryId}`,
-      message: {
-        body: notification,
-        bodyForAgent: githubAssignmentAcknowledgmentPrompt,
-        commandBody: '',
-        inboundEventKind: 'user_request',
-        rawBody: notification,
-      },
-      messageId: `ack:${eventId}`,
-      provider: 'github',
-      reply: {
-        sourceReplyDeliveryMode: 'none',
-        to: assignment.route.conversationId,
-      },
-      route: {
-        accountId: assignment.route.accountId,
-        agentId: assignment.route.agentId,
-        createIfMissing: false,
-        routeSessionKey: assignment.route.sessionKey,
-      },
-      sender: {
-        displayLabel: 'GitHub Notifications',
-        id: 'github-notifications',
-        isBot: true,
-        name: 'GitHub Notifications',
-      },
-      surface: githubNotificationChannelId,
-    });
-    const result = await dispatchChannelInboundReply({
-      accountId: assignment.route.accountId,
-      agentId: assignment.route.agentId,
-      cfg: assignment.config,
-      channel: githubNotificationChannelId,
-      ctxPayload,
-      delivery: {
-        async deliver(payload, info) {
-          if (info.kind === 'final') finalPayloads.push(payload);
-          return { visibleReplySent: info.kind === 'final' };
-        },
-      },
-      dispatchReplyWithBufferedBlockDispatcher:
-        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
-      messageId: `ack:${eventId}`,
-      record: {
-        createIfMissing: false,
-        onRecordError(error) {
-          throw error;
-        },
-        trackSessionMetaTask(task) {
-          sessionRecordTask = task;
-        },
-      },
-      recordInboundSession: this.#dependencies.recordInboundSession,
-      replyOptions: {
-        ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-        disableTools: true,
-        suppressDefaultToolProgressMessages: true,
-        suppressTyping: true,
-        toolsAllow: [],
-      },
-      replyPipeline: {},
-      routeSessionKey: assignment.route.sessionKey,
-      storePath: resolveStorePath(assignment.config.session?.store, {
-        agentId: assignment.route.agentId,
-      }),
-      toolsAllow: [],
-      afterRecord: async () => {
-        if (!sessionRecordTask) {
-          throw new Error('OpenClaw did not expose the notification session record task.');
-        }
-        await sessionRecordTask;
-      },
-    });
-    if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
-      throw new Error('OpenClaw did not dispatch the expected notification acknowledgment turn.');
-    }
-    return githubAssignmentAcknowledgment(finalPayloads);
   }
 
   public prepareTurn(input: GitHubNotificationSessionTurnInput): PreparedInboundReply<void> {

@@ -133,7 +133,6 @@ function itemState(
     ...(disposition === 'approved' && assignment
       ? {
           delivery: {
-            acknowledgment: { status: 'pending' as const },
             assignmentEventId: assignment.nodeId,
             schemaVersion: 1 as const,
             stage: 'admitted' as const,

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
-import { githubAssignmentAcknowledgmentMarker } from '../channels/github/utils/acknowledgment.ts';
+
+const publicationMarker =
+  '<!-- agent-system-github-publication:initial-acknowledgment:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -140,7 +142,7 @@ describe('channels/github/lib/work-event-client', () => {
   });
 
   it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
-    const marker = githubAssignmentAcknowledgmentMarker('EV_assignment');
+    const marker = publicationMarker;
     const body = `On it.\n\n${marker}`;
     const requests: Array<{ argv: string[]; stdin?: string }> = [];
     const client = new GitHubWorkEventClient({
@@ -170,7 +172,7 @@ describe('channels/github/lib/work-event-client', () => {
   });
 
   it('should adopt only the authenticated account marker receipt', async () => {
-    const marker = githubAssignmentAcknowledgmentMarker('EV_assignment');
+    const marker = publicationMarker;
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_agent' },
       async execute() {

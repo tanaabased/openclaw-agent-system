@@ -8,6 +8,7 @@ import {
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channels/github/channel.ts';
+import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import { notificationMonitorState } from './github-notification-fixtures.ts';
 
 const event: GitHubNotificationAssignmentEvent = {
@@ -41,8 +42,20 @@ function configuredRoute(agentId = 'data'): OpenClawConfig {
   };
 }
 
+function messageAdapter() {
+  return createGitHubNotificationMessageAdapter({
+    accountClient: { connect: async () => Promise.reject(new Error('not used')) },
+    authority: { inspect: async () => ({ authorized: false }) },
+    leaseStore: { acquire: async () => ({ status: 'busy' }) },
+    manifestService: { loadForAgentId: async () => Promise.reject(new Error('not used')) },
+    stateStore: { read: async () => undefined },
+  });
+}
+
 describe('channels/github/channel', () => {
+  const message = messageAdapter();
   const channel = createGitHubNotificationChannel({
+    message,
     monitorService: { runAccount: async () => undefined },
     stateStore: { read: async () => undefined },
   });
@@ -57,7 +70,11 @@ describe('channels/github/channel', () => {
       configPrefixes: ['channels.agent-system-github'],
     });
     assert.equal(channel.outbound, undefined);
-    assert.equal(channel.message, undefined);
+    assert.equal(channel.message, message);
+    assert.deepEqual(channel.message?.durableFinal?.capabilities, {
+      reconcileUnknownSend: true,
+      text: true,
+    });
   });
 
   it('should expose scheduler lifecycle and live monitor status', async () => {
@@ -66,6 +83,7 @@ describe('channels/github/channel', () => {
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
       clock: () => 2_000,
+      message: messageAdapter(),
       monitorService: {
         async runAccount(agentId, signal, onCycle) {
           assert.equal(agentId, 'data');

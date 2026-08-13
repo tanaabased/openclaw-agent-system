@@ -321,8 +321,12 @@ export default class GitHubWorkEventClient {
     number: number,
     marker: string,
   ): Promise<GitHubIssueCommentReceipt | undefined> {
-    if (!/^<!-- agent-system-github-assignment-ack:[a-f0-9]{32} -->$/u.test(marker)) {
-      throw new Error('GitHub assignment acknowledgment markers are invalid.');
+    if (
+      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|operator-progress):[a-f0-9]{32} -->$/u.test(
+        marker,
+      )
+    ) {
+      throw new Error('GitHub notification publication markers are invalid.');
     }
     let hasNextPage = false;
     for (let page = 1; page <= maximumCommentPages; page += 1) {
@@ -357,7 +361,7 @@ export default class GitHubWorkEventClient {
     if (hasNextPage) {
       throw new GitHubWorkEventClientError(
         'github-notification-comments-truncated',
-        'GitHub issue comments exceeded the acknowledgment reconciliation boundary.',
+        'GitHub issue comments exceeded the publication reconciliation boundary.',
         this.rateLimit,
       );
     }
@@ -371,7 +375,7 @@ export default class GitHubWorkEventClient {
     body: string,
   ): Promise<GitHubIssueCommentReceipt> {
     if (!body || body.length > 1_024 || /\0/u.test(body)) {
-      throw new Error('GitHub assignment acknowledgment comments are invalid.');
+      throw new Error('GitHub notification publication comments are invalid.');
     }
     const response = await this.#api(
       [

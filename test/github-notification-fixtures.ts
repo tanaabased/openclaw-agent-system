@@ -27,7 +27,6 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
     assignmentActorNodeId: notificationActor.nodeId,
     assignmentEventNodeId: 'EV_assignment',
     delivery: {
-      acknowledgment: { status: 'pending' },
       assignmentEventId: 'EV_assignment',
       schemaVersion: 1,
       stage: 'admitted',

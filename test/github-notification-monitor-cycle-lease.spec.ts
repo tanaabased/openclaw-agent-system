@@ -88,7 +88,7 @@ describe('channels/github/lib/monitor-cycle-lease', () => {
     }
   });
 
-  it('should isolate acknowledgment publication from the monitor cycle lock', async () => {
+  it('should isolate outbound publication from the monitor cycle lock', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-scopes-'));
     const targets: string[] = [];
     try {
@@ -101,14 +101,14 @@ describe('channels/github/lib/monitor-cycle-lease', () => {
       });
 
       const cycle = await store.acquire('tanaabot');
-      const acknowledgment = await store.acquire('tanaabot', { scope: 'acknowledgment' });
+      const publication = await store.acquire('tanaabot', { scope: 'publication' });
 
       assert.deepEqual(
         targets.map((target) => target.slice(target.lastIndexOf('/') + 1)),
-        ['github-notifications', 'github-notifications-acknowledgment'],
+        ['github-notifications', 'github-notifications-publication'],
       );
       if (cycle.status === 'acquired') await cycle.lease.release();
-      if (acknowledgment.status === 'acquired') await acknowledgment.lease.release();
+      if (publication.status === 'acquired') await publication.lease.release();
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

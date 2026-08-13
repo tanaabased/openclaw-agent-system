@@ -41,19 +41,12 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
-  it('should accept old delivery state without retroactive acknowledgment and new receipts', () => {
-    const previous = notificationMonitorState();
-    const previousItem = previous.items[Object.keys(previous.items)[0]!]!;
-    delete previousItem.delivery!.acknowledgment;
-    assert.equal(decodeGitHubNotificationMonitorState(previous, previous.agentId)?.status, 'ready');
+  it('should retain decode compatibility with pre-foundation acknowledgment receipts', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery!.acknowledgment = { commentId: 91, status: 'published' };
 
-    const published = notificationMonitorState();
-    const publishedItem = published.items[Object.keys(published.items)[0]!]!;
-    publishedItem.delivery!.acknowledgment = { commentId: 91, status: 'published' };
-    assert.equal(
-      decodeGitHubNotificationMonitorState(published, published.agentId)?.status,
-      'ready',
-    );
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
   it('should explicitly migrate valid phase one state to a safe baseline', () => {

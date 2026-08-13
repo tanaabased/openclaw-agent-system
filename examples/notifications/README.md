@@ -3,20 +3,18 @@
 This Ubuntu-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
-worktree and one local session, publishes one short personality-aware
-acknowledgment, preserves everything across a restart without duplicating the
-comment, and retires without deleting local state. Scenario setup creates and
-updates uniquely named issues in `tanaabased/agent-system-test`.
+worktree and one local session without invoking a model, preserves both after
+restart, and retires without deleting either. Scenario setup creates and updates
+uniquely named issues in `tanaabased/agent-system-test`; the notification channel
+itself must never comment, push, or perform another outbound GitHub write.
 
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
+# should configure the default openclaw profile without model authorization
 openclaw onboard --non-interactive --accept-risk \
   --mode local \
-  --auth-choice openai-api-key \
-  --openai-api-key "$OPENAI_API_KEY" \
-  --secret-input-mode plaintext \
+  --auth-choice skip \
   --workspace "$TMPDIR/main" \
   --gateway-bind loopback \
   --skip-daemon \
@@ -28,7 +26,6 @@ openclaw onboard --non-interactive --accept-risk \
   --skip-skills \
   --skip-ui \
   --suppress-gateway-token-output
-openclaw models set "openai/$OPENAI_MODEL"
 openclaw config set agents.defaults.heartbeat.every "0m"
 
 # should install and enable the packed plugin
@@ -39,7 +36,6 @@ openclaw plugins enable agent-system
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
 cp "$GITHUB_WORKSPACE/examples/notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/notifications/SOUL.md" "$TMPDIR/agent-system-notifications/SOUL.md"
 cp "$GITHUB_WORKSPACE/examples/notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
@@ -52,7 +48,6 @@ openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
-openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 "$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
 
@@ -128,16 +123,20 @@ branch="$(cat "$TMPDIR/approved-worktree-branch")"
 session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
-# should publish one short personality-aware assignment acknowledgment
+# should reject a direct channel write without an internal publication target
+if direct_output="$(OPENCLAW_LOG_LEVEL=error openclaw message send \
+  --channel agent-system-github \
+  --account notification-data \
+  --target github:R_repo:12 \
+  --message 'This direct channel write must be rejected.' 2>&1)"; then
+  exit 1
+fi
+printf '%s\n' "$direct_output" | grep -F 'GitHub notification publication targets are invalid.'
+
+# should keep deterministic intake free of github writes
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/notifications/wait-for-github-notification-acknowledgment.sh" \
-  --reader-agent notification-actor \
-  --repository tanaabased/agent-system-test \
-  --issue "$issue_number" \
-  --author "$agent_login" \
-  --diagnostic-agent notification-data
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq length | grep -Fx '0'
 
 # should keep deterministic intake free of repository pushes
 cd "$TMPDIR/agent-system-notification-actor"
@@ -148,7 +147,7 @@ test -z "$remote_branch"
 # should restart the gateway with the active assignment checkpoint intact
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
-# should preserve the recorded worktree and session after restart
+# should preserve the same worktree and session after restart
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 session_key="$(cat "$TMPDIR/approved-session-key")"
@@ -157,16 +156,6 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notificatio
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
-cd "$TMPDIR/agent-system-notification-actor"
-agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/notifications/wait-for-github-notification-acknowledgment.sh" \
-  --reader-agent notification-actor \
-  --repository tanaabased/agent-system-test \
-  --issue "$issue_number" \
-  --author "$agent_login" \
-  --diagnostic-agent notification-data \
-  --timeout 30
-
 # should logically retire an unassigned item while preserving local state
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
@@ -180,7 +169,7 @@ cd "$TMPDIR/agent-system-notifications"
   --minimum 1
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 
-# should retain one session, worktree, and acknowledgment after retirement
+# should retain one session and worktree without an outbound github write
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
@@ -188,14 +177,7 @@ branch="$(cat "$TMPDIR/approved-worktree-branch")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" 'length == 1 and .[0].repositoryId == "github-1329940218" and .[0].branch == $branch and .[0].status == "active"'
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 cd "$TMPDIR/agent-system-notification-actor"
-agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/notifications/wait-for-github-notification-acknowledgment.sh" \
-  --reader-agent notification-actor \
-  --repository tanaabased/agent-system-test \
-  --issue "$issue_number" \
-  --author "$agent_login" \
-  --diagnostic-agent notification-data \
-  --timeout 30
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq length | grep -Fx '0'
 ```
 
 ## Cleanup

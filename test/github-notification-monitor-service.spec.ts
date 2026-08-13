@@ -43,19 +43,8 @@ function availableCycleLeaseStore(release = async () => undefined) {
 
 describe('channels/github/lib/monitor-service', () => {
   it('should stop an account scheduler without surfacing the host abort', async () => {
-    const lifecycle: string[] = [];
     const service = new GitHubNotificationMonitorService({
       accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-      acknowledgments: {
-        async drain(agentId) {
-          lifecycle.push(`drain:${agentId}`);
-          return { pending: 0, scheduled: 0, status: 'active' };
-        },
-        start: (agentId) => lifecycle.push(`start:${agentId}`),
-        async stop(agentId) {
-          lifecycle.push(`stop:${agentId}`);
-        },
-      },
       assignmentOrchestrator: { reconcile: async () => undefined },
       cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
@@ -78,54 +67,6 @@ describe('channels/github/lib/monitor-service', () => {
     controller.abort();
 
     await assert.doesNotReject(service.runAccount('tanaabot', controller.signal));
-    assert.deepEqual(lifecycle, ['start:tanaabot', 'stop:tanaabot']);
-  });
-
-  it('should drain acknowledgments at startup and after a busy monitor cycle', async () => {
-    const controller = new AbortController();
-    const lifecycle: string[] = [];
-    let drains = 0;
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-      acknowledgments: {
-        async drain(agentId) {
-          drains += 1;
-          lifecycle.push(`drain:${agentId}`);
-          if (drains === 2) controller.abort();
-          return { pending: 1, scheduled: drains === 1 ? 1 : 0, status: 'active' };
-        },
-        start: (agentId) => lifecycle.push(`start:${agentId}`),
-        async stop(agentId) {
-          lifecycle.push(`stop:${agentId}`);
-        },
-      },
-      assignmentOrchestrator: { reconcile: async () => undefined },
-      cycleLeaseStore: {
-        async acquire() {
-          return { status: 'busy' as const };
-        },
-      },
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
-      stateStore: { read: async () => undefined, write: async () => undefined },
-    });
-
-    await service.runAccount('tanaabot', controller.signal);
-
-    assert.deepEqual(lifecycle, [
-      'start:tanaabot',
-      'drain:tanaabot',
-      'drain:tanaabot',
-      'stop:tanaabot',
-    ]);
   });
 
   it('should skip an in-flight poll abort without changing monitor health', async () => {
@@ -199,7 +140,7 @@ describe('channels/github/lib/monitor-service', () => {
     state.items[notificationItemKey]!.delivery = {
       ...state.items[notificationItemKey]!.delivery!,
       sessionKey: 'agent:tanaabot:github:item',
-      stage: 'active',
+      stage: 'session-recording',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };

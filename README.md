@@ -39,7 +39,7 @@ Today, Agent System:
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and local sessions, then posts a short acknowledgment in the agent's voice.
+- [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and local OpenClaw sessions without invoking a model or writing to GitHub.
 
 ### Skills
 

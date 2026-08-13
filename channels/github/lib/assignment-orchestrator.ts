@@ -12,7 +12,6 @@ import type {
   GitHubNotificationItemState,
   GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
-import type { GitHubNotificationAcknowledgmentScheduleStatus } from './acknowledgment-service.ts';
 
 export interface GitHubNotificationAssignmentBoundaryInput {
   agentId: string;
@@ -47,12 +46,7 @@ export interface GitHubNotificationAssignmentSessions {
   ): Promise<GitHubNotificationObservedSession>;
 }
 
-export interface GitHubNotificationAssignmentAcknowledgments {
-  schedule(agentId: string, itemKey: string): GitHubNotificationAcknowledgmentScheduleStatus;
-}
-
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
-  acknowledgments?: GitHubNotificationAssignmentAcknowledgments;
   authority: GitHubNotificationAssignmentAuthority;
   sessions: GitHubNotificationAssignmentSessions;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
@@ -126,12 +120,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
-      if (delivery.stage === 'active') {
-        if (delivery.acknowledgment?.status === 'pending') {
-          this.#dependencies.acknowledgments?.schedule(agentId, itemKey);
-        }
-        return;
-      }
+      if (delivery.stage === 'active') return;
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);

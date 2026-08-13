@@ -1,5 +1,6 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import { recordChannelActivity } from 'openclaw/plugin-sdk/channel-activity-runtime';
+import type { ChannelMessageAdapter } from 'openclaw/plugin-sdk/channel-outbound';
 import {
   runChannelInboundEvent,
   type InboundReplyDispatchResult,
@@ -28,6 +29,7 @@ interface ResolvedNotificationChannelAccount {
 
 export interface GitHubNotificationChannelDependencies {
   clock?: () => number;
+  message: ChannelMessageAdapter;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
 }
@@ -100,6 +102,7 @@ export function createGitHubNotificationChannel(
       forceAccountBinding: true,
     },
     capabilities: { chatTypes: ['direct'], blockStreaming: true },
+    message: dependencies.message,
     reload: { configPrefixes: [`channels.${githubNotificationChannelId}`] },
     config: {
       listAccountIds(config) {
