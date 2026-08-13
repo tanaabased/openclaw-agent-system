@@ -6,7 +6,7 @@ import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plug
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
-import { githubNotificationChannel } from '../channels/github/channel.ts';
+import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   type GitHubNotificationAssignmentBoundaryInput,
 } from '../channels/github/lib/assignment-orchestrator.ts';
@@ -165,6 +165,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(currentUid === undefined ? {} : { currentUid }),
     ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
   });
+  const notificationMonitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -191,6 +192,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
     createNotificationLifecycleContribution({
+      monitorService: {
+        runOnce(input) {
+          const service = notificationMonitorServiceRef.current;
+          if (!service) throw new Error('GitHub notification monitor service is unavailable.');
+          return service.runOnce(input);
+        },
+      },
       routingService: notificationRoutingService,
       stateStore: notificationMonitorStateStore,
     }),
@@ -267,11 +275,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     routingService: notificationRoutingService,
     stateStore: notificationMonitorStateStore,
   });
+  notificationMonitorServiceRef.current = notificationMonitorService;
 
-  api.registerChannel({ plugin: githubNotificationChannel });
-  if (api.registrationMode === undefined || api.registrationMode === 'full') {
-    api.registerService(notificationMonitorService.pluginService());
-  }
+  api.registerChannel({
+    plugin: createGitHubNotificationChannel({
+      monitorService: notificationMonitorService,
+      stateStore: notificationMonitorStateStore,
+    }),
+  });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService);
   registerAgentCommandSecurity(api, {

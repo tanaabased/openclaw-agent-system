@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
 import {
-  githubNotificationChannel,
+  createGitHubNotificationChannel,
   githubNotificationConversationId,
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channels/github/channel.ts';
+import { notificationMonitorState } from './github-notification-fixtures.ts';
 
 const event: GitHubNotificationAssignmentEvent = {
   id: 'assignment-event-1',
@@ -41,17 +42,77 @@ function configuredRoute(agentId = 'data'): OpenClawConfig {
 }
 
 describe('channels/github/channel', () => {
-  it('should expose an inert local-only multi-account channel', () => {
+  const channel = createGitHubNotificationChannel({
+    monitorService: { runAccount: async () => undefined },
+    stateStore: { read: async () => undefined },
+  });
+
+  it('should expose a local-only multi-account channel', () => {
     const config = configuredRoute();
 
-    assert.equal(githubNotificationChannel.id, 'agent-system-github');
-    assert.deepEqual(githubNotificationChannel.config.listAccountIds(config), ['data']);
-    assert.equal(githubNotificationChannel.config.resolveAccount(config, 'data').enabled, true);
-    assert.deepEqual(githubNotificationChannel.reload, {
+    assert.equal(channel.id, 'agent-system-github');
+    assert.deepEqual(channel.config.listAccountIds(config), ['data']);
+    assert.equal(channel.config.resolveAccount(config, 'data').enabled, true);
+    assert.deepEqual(channel.reload, {
       configPrefixes: ['channels.agent-system-github'],
     });
-    assert.equal(githubNotificationChannel.outbound, undefined);
-    assert.equal(githubNotificationChannel.message, undefined);
+    assert.equal(channel.outbound, undefined);
+    assert.equal(channel.message, undefined);
+  });
+
+  it('should expose scheduler lifecycle and healthy monitor status', async () => {
+    const controller = new AbortController();
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = '/workspace/data';
+    state.lastSuccessfulPollAt = 1_000;
+    const statuses: Array<Record<string, unknown>> = [];
+    const runtimeChannel = createGitHubNotificationChannel({
+      clock: () => 2_000,
+      monitorService: {
+        async runAccount(agentId, signal, onCycle) {
+          assert.equal(agentId, 'data');
+          await onCycle?.({
+            agentId,
+            baselineEstablished: false,
+            code: 'github-notification-poll-complete',
+            status: 'completed',
+          });
+          await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+        },
+      },
+      stateStore: { read: async () => structuredClone(state) },
+    });
+    const account = runtimeChannel.config.resolveAccount(configuredRoute(), 'data');
+    const running = runtimeChannel.gateway?.startAccount?.({
+      abortSignal: controller.signal,
+      account,
+      accountId: 'data',
+      cfg: configuredRoute(),
+      getStatus: () => ({ accountId: 'data' }),
+      runtime: {} as never,
+      setStatus: (status) => statuses.push(status),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      statuses.some(({ running }) => running === true),
+      true,
+    );
+    controller.abort();
+    await running;
+    assert.equal(statuses.at(-1)?.running, false);
+
+    const snapshot = await runtimeChannel.status?.buildAccountSnapshot?.({
+      account,
+      cfg: configuredRoute(),
+      runtime: { accountId: 'data', running: true },
+    });
+    assert.equal(snapshot?.connected, true);
+    assert.equal(snapshot?.healthState, 'healthy');
+    assert.equal(snapshot?.lastConnectedAt, 1_000);
+    assert.equal(snapshot?.lastEventAt, 1_000);
+    assert.equal(snapshot?.mode, 'polling');
   });
 
   it('should record an observe-only assignment through the inbound kernel', async () => {

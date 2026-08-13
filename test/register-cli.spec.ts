@@ -158,6 +158,8 @@ function createProgram() {
             agentId: refreshOptions.agentId ?? 'tanaabot',
             approved: 1,
             baseline: 0,
+            baselineAt: 1_000,
+            baselineEstablished: true,
             code: 'github-notification-poll-complete',
             duplicates: 0,
             rejected: 0,
@@ -373,6 +375,17 @@ describe('lib/register-cli', () => {
       },
     ]);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
+  });
+
+  it('should report baseline readiness in human notification refresh output', async () => {
+    const { output, program } = createProgram();
+
+    await program.parseAsync(['node', 'openclaw', 'agent-system', 'notifications', 'refresh']);
+
+    assert.match(
+      output.join(''),
+      /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
+    );
   });
 
   it('should register structured json validation output', async () => {

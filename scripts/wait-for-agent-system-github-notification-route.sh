@@ -30,7 +30,7 @@ while true; do
   if status_output="$(openclaw channels status --channel agent-system-github --json 2>&1)"; then
     if [[ "$expected_state" == "present" ]]; then
       if jq -e --arg accountId "$account_id" \
-        '(.channelAccounts["agent-system-github"] // []) | any(.accountId == $accountId and .configured == true and .enabled == true)' \
+        '(.channelAccounts["agent-system-github"] // []) | any(.accountId == $accountId and .configured == true and .enabled == true and .running == true and .connected == true and .healthState == "healthy")' \
         <<< "$status_output" > /dev/null; then
         exit 0
       fi

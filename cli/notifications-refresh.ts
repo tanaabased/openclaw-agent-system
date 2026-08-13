@@ -50,6 +50,7 @@ export default async function refreshNotificationsAgentSystem(
     writeCliJson(options.output, result);
   } else {
     const counts = [
+      ['baseline', result.baseline],
       ['approved', result.approved],
       ['rejected', result.rejected],
       ['duplicate', result.duplicates],
@@ -58,6 +59,12 @@ export default async function refreshNotificationsAgentSystem(
       .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
       .map(([label, value]) => `${label}=${value}`)
       .join(' ');
+    const baseline =
+      result.baselineAt === undefined
+        ? 'pending'
+        : result.baselineEstablished
+          ? `established at ${new Date(result.baselineAt).toISOString()} with ${result.baseline ?? 0} existing assignments`
+          : `ready since ${new Date(result.baselineAt).toISOString()}`;
     writeCliSummary(
       options.output,
       [
@@ -68,6 +75,28 @@ export default async function refreshNotificationsAgentSystem(
           value: result.status,
         },
         { label: 'code', style: 'field', value: result.code },
+        { label: 'baseline', style: 'field', value: baseline },
+        ...(result.diagnosticCode
+          ? [{ label: 'diagnostic', style: 'field' as const, value: result.diagnosticCode }]
+          : []),
+        ...(result.retryAt === undefined
+          ? []
+          : [
+              {
+                label: 'retry',
+                style: 'field' as const,
+                value: new Date(result.retryAt).toISOString(),
+              },
+            ]),
+        ...(result.nextPollAt === undefined || result.retryAt !== undefined
+          ? []
+          : [
+              {
+                label: 'next poll',
+                style: 'field' as const,
+                value: new Date(result.nextPollAt).toISOString(),
+              },
+            ]),
         ...(counts ? [{ label: 'items', style: 'field' as const, value: counts }] : []),
       ],
       options.styles,

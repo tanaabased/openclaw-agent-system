@@ -7,12 +7,20 @@ import {
   type AgentSystemLifecycleContext,
 } from '../../../lib/lifecycle-registry.ts';
 import type NotificationRoutingService from './routing-service.ts';
+import type GitHubNotificationMonitorService from './monitor-service.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 
+const notificationLifecycleLeaseWaitMs = 120_000;
+
 export interface NotificationLifecycleDependencies {
+  monitorService?: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   routingService: Pick<NotificationRoutingService, 'inspect' | 'reconcile'>;
   stateStore?: Pick<GitHubNotificationMonitorStateStore, 'read'> &
     Partial<Pick<GitHubNotificationMonitorStateStore, 'remove'>>;
+}
+
+function isoTime(value: number | undefined): string {
+  return value === undefined ? 'unknown' : new Date(value).toISOString();
 }
 
 function desiredState(context: AgentSystemLifecycleContext): NotificationRoutingDesiredState {
@@ -178,8 +186,20 @@ export default function createNotificationLifecycleContribution(
           ...routingFinding,
           {
             code: state.diagnosticCode,
-            message: 'The GitHub notification monitor is waiting after a value-free diagnostic.',
-            remediation: 'Review Gateway logs and the GitHub notification manifest declaration.',
+            message: `The GitHub notification monitor is waiting after ${state.diagnosticCode}; next retry is ${isoTime(state.nextPollAt)}.`,
+            remediation:
+              'Resolve the named diagnostic, then run openclaw agent-system notifications refresh.',
+            status: 'warning' as const,
+          },
+        ];
+      }
+      if (state.baselineAt === undefined || state.lastSuccessfulPollAt === undefined) {
+        return [
+          ...routingFinding,
+          {
+            code: 'github-notification-monitor-pending',
+            message: 'The GitHub notification monitor has not completed its first observation.',
+            remediation: 'Run openclaw agent-system notifications refresh.',
             status: 'warning' as const,
           },
         ];
@@ -188,7 +208,7 @@ export default function createNotificationLifecycleContribution(
         ...routingFinding,
         {
           code: 'github-notification-monitor-healthy',
-          message: 'The GitHub notification monitor has a successful read-only observation.',
+          message: `The GitHub notification monitor last completed a successful read-only observation at ${isoTime(state.lastSuccessfulPollAt)}.`,
           status: 'healthy' as const,
         },
       ];
@@ -197,15 +217,31 @@ export default function createNotificationLifecycleContribution(
       try {
         const result = await dependencies.routingService.reconcile(desiredState(context));
         const disabled = !context.manifest.github?.notifications;
-        const state = disabled
-          ? await dependencies.stateStore?.read(context.manifest.agent.id)
-          : undefined;
-        const retirementPending = githubNotificationRetirementItemKeys(state).length > 0;
-        const monitorStateRemoved =
+        const initialState = await dependencies.stateStore?.read(context.manifest.agent.id);
+        let state = initialState;
+        if (
+          disabled &&
+          githubNotificationRetirementItemKeys(state).length > 0 &&
+          dependencies.monitorService !== undefined
+        ) {
+          await dependencies.monitorService.runOnce({
+            agentId: context.manifest.agent.id,
+            bypassInterval: true,
+            waitForLeaseMs: notificationLifecycleLeaseWaitMs,
+          });
+          state = await dependencies.stateStore?.read(context.manifest.agent.id);
+        }
+        const retirementPending =
+          disabled && githubNotificationRetirementItemKeys(state).length > 0;
+        let monitorStateRemoved = disabled && initialState !== undefined && state === undefined;
+        if (
           disabled &&
           !retirementPending &&
-          dependencies.stateStore?.remove !== undefined &&
-          (await dependencies.stateStore.remove(context.manifest.agent.id));
+          !monitorStateRemoved &&
+          dependencies.stateStore?.remove !== undefined
+        ) {
+          monitorStateRemoved = await dependencies.stateStore.remove(context.manifest.agent.id);
+        }
         const warnings = retirementPending
           ? [
               {
@@ -215,6 +251,35 @@ export default function createNotificationLifecycleContribution(
               },
             ]
           : [];
+        let baselineOutcome;
+        if (
+          !disabled &&
+          state?.baselineAt === undefined &&
+          dependencies.monitorService !== undefined
+        ) {
+          const [baseline] = await dependencies.monitorService.runOnce({
+            agentId: context.manifest.agent.id,
+            bypassInterval: true,
+            waitForLeaseMs: notificationLifecycleLeaseWaitMs,
+          });
+          if (!baseline || baseline.status !== 'completed' || baseline.baselineAt === undefined) {
+            const code = baseline?.diagnosticCode ?? baseline?.code ?? 'no-result';
+            const retry =
+              baseline?.retryAt === undefined ? '' : ` Retry after ${isoTime(baseline.retryAt)}.`;
+            throw new AgentSystemLifecycleError(
+              'github-notifications',
+              'github-notification-baseline-failed',
+              `The initial GitHub notification baseline did not complete (code=${code}).${retry}`,
+            );
+          }
+          if (baseline.baselineEstablished) {
+            baselineOutcome = {
+              code: 'github-notification-baseline-established',
+              message: `GitHub notification baseline established with ${baseline.baseline ?? 0} existing assignments.`,
+              status: 'created' as const,
+            };
+          }
+        }
         if (result.plan.kind === 'noop' && result.plan.code === 'notification-routing-disabled') {
           return {
             outcomes: monitorStateRemoved
@@ -257,10 +322,12 @@ export default function createNotificationLifecycleContribution(
                   },
                 ]
               : []),
+            ...(baselineOutcome ? [baselineOutcome] : []),
           ],
           warnings,
         };
       } catch (error) {
+        if (error instanceof AgentSystemLifecycleError) throw error;
         throw new AgentSystemLifecycleError(
           'github-notifications',
           'github-notifications-reconcile-failed',
