@@ -89,7 +89,8 @@ describe('channels/github/lib/monitor-service', () => {
           return await new Promise<never>((_resolve, reject) => {
             signal?.addEventListener(
               'abort',
-              () => reject(new GitHubAccountClientError('github-account-tool-unavailable', 'aborted')),
+              () =>
+                reject(new GitHubAccountClientError('github-account-tool-unavailable', 'aborted')),
               { once: true },
             );
           });
@@ -123,9 +124,7 @@ describe('channels/github/lib/monitor-service', () => {
     controller.abort();
     await running;
 
-    assert.deepEqual(cycles, [
-      { code: 'github-notification-cycle-aborted', status: 'skipped' },
-    ]);
+    assert.deepEqual(cycles, [{ code: 'github-notification-cycle-aborted', status: 'skipped' }]);
     assert.equal(writes, 0);
     assert.deepEqual(state, initialState);
     assert.deepEqual(warnings, []);
