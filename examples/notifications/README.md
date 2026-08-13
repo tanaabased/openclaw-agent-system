@@ -136,7 +136,8 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
   --reader-agent notification-actor \
   --repository tanaabased/agent-system-test \
   --issue "$issue_number" \
-  --author "$agent_login"
+  --author "$agent_login" \
+  --diagnostic-agent notification-data
 
 # should keep deterministic intake free of repository pushes
 cd "$TMPDIR/agent-system-notification-actor"
@@ -163,6 +164,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
   --repository tanaabased/agent-system-test \
   --issue "$issue_number" \
   --author "$agent_login" \
+  --diagnostic-agent notification-data \
   --timeout 30
 
 # should logically retire an unassigned item while preserving local state
@@ -192,6 +194,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
   --repository tanaabased/agent-system-test \
   --issue "$issue_number" \
   --author "$agent_login" \
+  --diagnostic-agent notification-data \
   --timeout 30
 ```
 

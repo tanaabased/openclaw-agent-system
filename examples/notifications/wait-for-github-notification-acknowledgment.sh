@@ -6,10 +6,11 @@ reader_agent=''
 repository=''
 issue_number=''
 author=''
+diagnostic_agent=''
 timeout_seconds=240
 
 usage() {
-  echo "Usage: wait-for-github-notification-acknowledgment.sh --reader-agent <id> --repository <owner/repo> --issue <number> --author <login> [--timeout <seconds>]" >&2
+  echo "Usage: wait-for-github-notification-acknowledgment.sh --reader-agent <id> --repository <owner/repo> --issue <number> --author <login> [--diagnostic-agent <id>] [--timeout <seconds>]" >&2
 }
 
 while (($# > 0)); do
@@ -32,6 +33,10 @@ while (($# > 0)); do
       ;;
     --author)
       author="${2:-}"
+      shift 2
+      ;;
+    --diagnostic-agent)
+      diagnostic_agent="${2:-}"
       shift 2
       ;;
     --timeout)
@@ -69,6 +74,10 @@ while true; do
   if ((SECONDS >= deadline)); then
     echo "GitHub acknowledgment did not reach its safe exactly-once shape within $timeout_seconds seconds." >&2
     printf '%s\n' "$comments" >&2
+    if [[ -n "$diagnostic_agent" ]]; then
+      doctor_output="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system doctor --agent "$diagnostic_agent" --json || true)"
+      jq -c '[.findings[] | select(.component == "github-notifications") | {code,status}]' <<< "$doctor_output" >&2 || true
+    fi
     "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
     exit 1
   fi

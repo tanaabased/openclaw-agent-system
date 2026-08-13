@@ -124,6 +124,11 @@ export default class GitHubNotificationAcknowledgmentService {
     const scheduled = itemKeys.filter(
       (itemKey) => this.schedule(agentId, itemKey) === 'scheduled',
     ).length;
+    if (itemKeys.length > 0) {
+      this.#dependencies.logger.info(
+        `github-notifications: acknowledgment drain agent=${agentId} pending=${itemKeys.length} scheduled=${scheduled}`,
+      );
+    }
     return { pending: itemKeys.length, scheduled, status: 'active' };
   }
 
@@ -165,15 +170,29 @@ export default class GitHubNotificationAcknowledgmentService {
   }
 
   async #run(agentId: string, itemKey: string, signal: AbortSignal): Promise<void> {
+    this.#logStage(agentId, 'lease-acquiring');
     const acknowledgmentLease = await this.#dependencies.leaseStore.acquire(agentId, {
       scope: 'acknowledgment',
       signal,
     });
-    if (acknowledgmentLease.status !== 'acquired') return;
+    if (acknowledgmentLease.status !== 'acquired') {
+      if (!signal.aborted) {
+        this.#dependencies.logger.warn(
+          `github-notifications: acknowledgment deferred agent=${agentId} code=github-notification-acknowledgment-lease-${acknowledgmentLease.status}`,
+        );
+      }
+      return;
+    }
     try {
+      this.#logStage(agentId, 'lease-acquired');
       const pending = await this.#loadPending(agentId, itemKey);
-      if (!pending) return;
+      if (!pending) {
+        this.#logStage(agentId, 'pending-state-missing');
+        return;
+      }
+      this.#logStage(agentId, 'manifest-loading');
       const loaded = await this.#loadManifest(agentId, pending.state.workspaceDir);
+      this.#logStage(agentId, 'github-connecting');
       const connected = await this.#dependencies.accountClient.connect(
         { manifest: loaded.manifest, workspaceDir: pending.state.workspaceDir },
         'service',
@@ -181,6 +200,7 @@ export default class GitHubNotificationAcknowledgmentService {
       );
       const client = new GitHubWorkEventClient(connected);
       const marker = githubAssignmentAcknowledgmentMarker(pending.delivery.assignmentEventId);
+      this.#logStage(agentId, 'duplicate-checking');
       const existing = await client.findOwnIssueComment(
         pending.item.repositoryOwner,
         pending.item.repositoryName,
@@ -188,9 +208,13 @@ export default class GitHubNotificationAcknowledgmentService {
         marker,
       );
       if (existing) {
-        await this.#checkpointReceipt(agentId, itemKey, existing, signal);
+        this.#logStage(agentId, 'receipt-adopting');
+        if (await this.#checkpointReceipt(agentId, itemKey, existing, signal)) {
+          this.#logStage(agentId, 'completed');
+        }
         return;
       }
+      this.#logStage(agentId, 'generation-starting');
       const text = await this.#dependencies.sessions.generateAcknowledgment({
         agentId,
         delivery: pending.delivery,
@@ -199,7 +223,10 @@ export default class GitHubNotificationAcknowledgmentService {
         workspaceDir: pending.state.workspaceDir,
         worktree: pending.worktree,
       });
-      await this.#publish(agentId, itemKey, text, marker, signal);
+      this.#logStage(agentId, 'generation-completed');
+      if (await this.#publish(agentId, itemKey, text, marker, signal)) {
+        this.#logStage(agentId, 'completed');
+      }
     } finally {
       await acknowledgmentLease.lease.release();
     }
@@ -211,12 +238,18 @@ export default class GitHubNotificationAcknowledgmentService {
     text: string,
     marker: string,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    this.#logStage(agentId, 'publication-lease-acquiring');
     const cycleLease = await this.#acquireCycleLease(agentId, signal);
-    if (!cycleLease) return;
+    if (!cycleLease) return false;
     try {
+      this.#logStage(agentId, 'publication-lease-acquired');
+      this.#logStage(agentId, 'publication-authorizing');
       const pending = await this.#loadPending(agentId, itemKey);
-      if (!pending) return;
+      if (!pending) {
+        this.#logStage(agentId, 'pending-state-missing');
+        return false;
+      }
       const authority = await this.#dependencies.authority.inspect({
         agentId,
         delivery: pending.delivery,
@@ -249,6 +282,7 @@ export default class GitHubNotificationAcknowledgmentService {
         signal,
       );
       const client = new GitHubWorkEventClient(connected);
+      this.#logStage(agentId, 'publication-reconciling');
       const existing = await client.findOwnIssueComment(
         pending.item.repositoryOwner,
         pending.item.repositoryName,
@@ -264,6 +298,8 @@ export default class GitHubNotificationAcknowledgmentService {
           githubAssignmentAcknowledgmentComment(text, marker),
         ));
       await this.#writeReceipt(pending.state, itemKey, receipt);
+      this.#logStage(agentId, existing ? 'receipt-adopted' : 'comment-published');
+      return true;
     } finally {
       await cycleLease.release();
     }
@@ -274,12 +310,16 @@ export default class GitHubNotificationAcknowledgmentService {
     itemKey: string,
     receipt: GitHubIssueCommentReceipt,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    this.#logStage(agentId, 'publication-lease-acquiring');
     const cycleLease = await this.#acquireCycleLease(agentId, signal);
-    if (!cycleLease) return;
+    if (!cycleLease) return false;
     try {
+      this.#logStage(agentId, 'publication-lease-acquired');
       const pending = await this.#loadPending(agentId, itemKey);
-      if (pending) await this.#writeReceipt(pending.state, itemKey, receipt);
+      if (!pending) return false;
+      await this.#writeReceipt(pending.state, itemKey, receipt);
+      return true;
     } finally {
       await cycleLease.release();
     }
@@ -328,7 +368,18 @@ export default class GitHubNotificationAcknowledgmentService {
       signal,
       waitMs: cycleLeaseWaitMs,
     });
+    if (acquisition.status !== 'acquired' && !signal.aborted) {
+      this.#dependencies.logger.warn(
+        `github-notifications: acknowledgment deferred agent=${agentId} code=github-notification-acknowledgment-publication-lease-${acquisition.status}`,
+      );
+    }
     return acquisition.status === 'acquired' ? acquisition.lease : undefined;
+  }
+
+  #logStage(agentId: string, stage: string): void {
+    this.#dependencies.logger.info(
+      `github-notifications: acknowledgment progress agent=${agentId} stage=${stage}`,
+    );
   }
 
   async #loadManifest(agentId: string, workspaceDir: string) {

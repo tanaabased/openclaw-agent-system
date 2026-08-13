@@ -82,6 +82,7 @@ function leaseStore(scopes: string[]) {
 describe('channels/github/lib/acknowledgment-service', () => {
   it('should generate and publish once before checkpointing a value-free receipt', async () => {
     const store = memoryStore();
+    const information: string[] = [];
     const scopes: string[] = [];
     const requests: Array<{ argv: string[]; stdin?: string }> = [];
     let generations = 0;
@@ -108,7 +109,7 @@ describe('channels/github/lib/acknowledgment-service', () => {
       },
       authority: { inspect: async () => ({ authorized: true }) },
       leaseStore: leaseStore(scopes),
-      logger: { error() {}, info() {}, warn() {} },
+      logger: { error() {}, info: (message) => information.push(message), warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest() },
       sessions: {
         async generateAcknowledgment() {
@@ -135,6 +136,68 @@ describe('channels/github/lib/acknowledgment-service', () => {
       status: 'published',
     });
     assert.equal(store.state().items[notificationItemKey]?.delivery?.failureCode, undefined);
+    assert.deepEqual(
+      information
+        .filter((message) => message.includes('acknowledgment progress'))
+        .map((message) => message.match(/stage=([^ ]+)/u)?.[1]),
+      [
+        'lease-acquiring',
+        'lease-acquired',
+        'manifest-loading',
+        'github-connecting',
+        'duplicate-checking',
+        'generation-starting',
+        'generation-completed',
+        'publication-lease-acquiring',
+        'publication-lease-acquired',
+        'publication-authorizing',
+        'publication-reconciling',
+        'comment-published',
+        'completed',
+      ],
+    );
+    assert.doesNotMatch(information.join('\n'), /issue-7|\/workspace/u);
+  });
+
+  it('should report a busy acknowledgment lease without exposing notification data', async () => {
+    const store = memoryStore();
+    const warnings: string[] = [];
+    let generations = 0;
+    const service = new GitHubNotificationAcknowledgmentService({
+      accountClient: {
+        async connect() {
+          throw new Error('not used');
+        },
+      },
+      authority: { inspect: async () => ({ authorized: true }) },
+      leaseStore: {
+        async acquire() {
+          return { status: 'busy' as const };
+        },
+      },
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      sessions: {
+        async generateAcknowledgment() {
+          generations += 1;
+          return 'On it.';
+        },
+      },
+      stateStore: store,
+    });
+
+    service.start('tanaabot');
+    service.schedule('tanaabot', notificationItemKey);
+    await service.settle();
+
+    assert.equal(generations, 0);
+    assert.deepEqual(warnings, [
+      'github-notifications: acknowledgment deferred agent=tanaabot code=github-notification-acknowledgment-lease-busy',
+    ]);
+    assert.doesNotMatch(warnings.join('\n'), /issue-7|\/workspace/u);
+    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
+      status: 'pending',
+    });
   });
 
   it('should adopt an existing own marker without generating or posting again', async () => {

@@ -181,6 +181,12 @@ export default function createNotificationLifecycleContribution(
           },
         ];
       }
+      const pendingAcknowledgmentWithoutFailure = Object.values(state.items).some(
+        (item) =>
+          item.delivery?.stage === 'active' &&
+          item.delivery.acknowledgment?.status === 'pending' &&
+          item.delivery.failureCode === undefined,
+      );
       const acknowledgmentFindings = [
         ...new Set(
           Object.values(state.items)
@@ -198,6 +204,14 @@ export default function createNotificationLifecycleContribution(
           remediation: 'Keep the OpenClaw Gateway running, then rerun doctor.',
           status: 'warning' as const,
         }));
+      if (pendingAcknowledgmentWithoutFailure) {
+        acknowledgmentFindings.unshift({
+          code: 'github-notification-acknowledgment-pending',
+          message: 'A GitHub assignment acknowledgment is still pending.',
+          remediation: 'Keep the OpenClaw Gateway running, then rerun doctor.',
+          status: 'warning' as const,
+        });
+      }
       if (state.diagnosticCode) {
         return [
           ...routingFinding,
