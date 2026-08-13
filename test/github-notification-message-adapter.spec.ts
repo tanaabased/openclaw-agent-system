@@ -54,6 +54,7 @@ function activeState(): GitHubNotificationMonitorState {
   const item = state.items[notificationItemKey]!;
   item.delivery = {
     ...item.delivery!,
+    activation: { status: 'planned' },
     sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
     stage: 'active',
     worktreeBranch: 'agent/tanaabot/issue-7',

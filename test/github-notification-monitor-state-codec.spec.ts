@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 
 import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
-import {
-  legacyNotificationMonitorState,
-  notificationMonitorState,
-} from './github-notification-fixtures.ts';
+import { notificationMonitorState } from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/monitor-state-codec', () => {
   it('should accept current value-free state and reject unknown fields', () => {
@@ -28,6 +25,24 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
+  it('should retain activation history when an active assignment retires', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.disposition = 'retired';
+    item.reasonCode = 'item-unassigned';
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 91, status: 'published' },
+      activation: { status: 'planned' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'retired',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+  });
+
   it('should accept a session-recording checkpoint', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
@@ -41,23 +56,23 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
-  it('should retain decode compatibility with pre-foundation acknowledgment receipts', () => {
+  it('should reject acknowledgment metadata before the active checkpoint', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
     item.delivery!.acknowledgment = { commentId: 91, status: 'published' };
 
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
   });
 
-  it('should explicitly migrate valid phase one state to a safe baseline', () => {
-    const decoded = decodeGitHubNotificationMonitorState(
-      legacyNotificationMonitorState(),
-      'tanaabot',
-    );
+  it('should reject older state shapes instead of migrating them', () => {
+    const state = notificationMonitorState();
 
-    assert.equal(decoded?.status, 'migrated-v1');
-    assert.deepEqual(decoded?.state.baselineItemNodeIds, ['I_item']);
-    assert.deepEqual(decoded?.state.items, {});
-    assert.equal(decoded?.state.diagnosticCode, 'github-notification-state-migrated-v1');
+    assert.equal(
+      decodeGitHubNotificationMonitorState(
+        { ...state, baselineItemNodeIds: [], schemaVersion: 2 },
+        state.agentId,
+      ),
+      undefined,
+    );
   });
 });

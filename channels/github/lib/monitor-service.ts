@@ -250,12 +250,6 @@ export default class GitHubNotificationMonitorService {
               state ? ({ state, status: 'ready' } as const) : ({ status: 'missing' } as const),
             );
       let current = loadedState.status === 'missing' ? undefined : loadedState.state;
-      if (loadedState.status === 'migrated-v1') {
-        await this.#dependencies.stateStore.write(loadedState.state);
-        this.#dependencies.logger.info(
-          `github-notifications: monitor state migrated agent=${agentId} code=github-notification-state-migrated-v1`,
-        );
-      }
       const notifications = loaded.manifest.github?.notifications;
       if (!notifications) {
         await this.#retireDisabledAssignments(agentId, current, now, signal);

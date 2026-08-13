@@ -7,6 +7,7 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
+import GitHubNotificationActivationService from '../channels/github/lib/activation-service.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   type GitHubNotificationAssignmentBoundaryInput,
 } from '../channels/github/lib/assignment-orchestrator.ts';
@@ -16,6 +17,7 @@ import GitHubNotificationMonitorService from '../channels/github/lib/monitor-ser
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
+import GitHubNotificationPublicationService from '../channels/github/lib/publication-service.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
@@ -242,7 +244,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
     readConfig: readRuntimeConfig,
   });
+  const notificationPublicationService = new GitHubNotificationPublicationService();
   const notificationSessionService = new GitHubNotificationSessionService({
+    dispatchReplyWithBufferedBlockDispatcher:
+      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    publicationService: notificationPublicationService,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });
@@ -276,10 +282,18 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     routingService: notificationRoutingService,
     stateStore: notificationMonitorStateStore,
   });
+  const notificationActivationService = new GitHubNotificationActivationService({
+    authority: notificationAssignmentProvider,
+    leaseStore: notificationMonitorCycleLeaseStore,
+    logger,
+    sessions: notificationSessionService,
+    stateStore: notificationMonitorStateStore,
+  });
   notificationMonitorServiceRef.current = notificationMonitorService;
 
   api.registerChannel({
     plugin: createGitHubNotificationChannel({
+      activationService: notificationActivationService,
       message: createGitHubNotificationMessageAdapter({
         accountClient: githubCapability.accountClient,
         authority: notificationAssignmentProvider,

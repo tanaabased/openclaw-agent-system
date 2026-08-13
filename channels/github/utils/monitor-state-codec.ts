@@ -1,17 +1,14 @@
 import { isAbsolute } from 'node:path';
 
 import {
-  migrateGitHubNotificationMonitorStateV1,
   type GitHubNotificationDeliveryState,
   type GitHubNotificationItemState,
-  type GitHubNotificationItemStateV1,
   type GitHubNotificationMonitorState,
-  type GitHubNotificationMonitorStateV1,
 } from './monitor-state.ts';
 
 export type GitHubNotificationMonitorStateDecodeResult = {
   state: GitHubNotificationMonitorState;
-  status: 'migrated-v1' | 'ready';
+  status: 'ready';
 };
 
 const stateKeys = new Set([
@@ -19,7 +16,6 @@ const stateKeys = new Set([
   'accountNodeId',
   'agentId',
   'baselineAt',
-  'baselineItemNodeIds',
   'diagnosticCode',
   'failureCount',
   'items',
@@ -32,7 +28,7 @@ const stateKeys = new Set([
   'workspaceDir',
 ]);
 
-const legacyItemKeys = new Set([
+const itemBaseKeys = new Set([
   'assignmentActorNodeId',
   'assignmentEventNodeId',
   'disposition',
@@ -51,9 +47,10 @@ const legacyItemKeys = new Set([
   'repositoryPermission',
 ]);
 
-const itemKeys = new Set([...legacyItemKeys, 'delivery', 'itemDatabaseId']);
+const itemKeys = new Set([...itemBaseKeys, 'delivery', 'itemDatabaseId']);
 
 const deliveryKeys = new Set([
+  'activation',
   'acknowledgment',
   'assignmentEventId',
   'failureCode',
@@ -67,6 +64,7 @@ const deliveryKeys = new Set([
 ]);
 
 const acknowledgmentKeys = new Set(['commentId', 'status']);
+const activationKeys = new Set(['failureCode', 'status']);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
@@ -95,7 +93,7 @@ function hasControlCharacter(value: string): boolean {
 
 function validItemFields(
   value: Record<string, unknown>,
-  item: Partial<GitHubNotificationItemStateV1>,
+  item: Partial<GitHubNotificationItemState>,
 ): boolean {
   return (
     ['approved', 'baseline', 'rejected', 'retired'].includes(item.disposition ?? '') &&
@@ -154,12 +152,25 @@ function validAcknowledgment(value: unknown): boolean {
   );
 }
 
+function validActivation(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const activation = value as { failureCode?: unknown; status?: unknown };
+  return (
+    hasOnlyKeys(value, activationKeys) &&
+    ['adopted', 'ineligible', 'pending', 'planned'].includes(String(activation.status)) &&
+    optionalBoundedString(activation.failureCode, 255) &&
+    (activation.failureCode === undefined ||
+      /^[a-z0-9][a-z0-9-]*$/u.test(String(activation.failureCode)))
+  );
+}
+
 function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const delivery = value as Partial<GitHubNotificationDeliveryState>;
   const validBase =
     hasOnlyKeys(value, deliveryKeys) &&
     delivery.schemaVersion === 1 &&
+    (delivery.activation === undefined || validActivation(delivery.activation)) &&
     (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
     validNodeId(delivery.assignmentEventId) &&
     ['active', 'admitted', 'retired', 'session-recording', 'worktree-ready'].includes(
@@ -182,6 +193,8 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
   const hasSession = typeof delivery.sessionKey === 'string';
   if (delivery.stage === 'admitted') {
     return (
+      delivery.activation === undefined &&
+      delivery.acknowledgment === undefined &&
       delivery.worktreeBranch === undefined &&
       delivery.worktreePath === undefined &&
       !hasSession &&
@@ -189,23 +202,26 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     );
   }
   if (['session-recording', 'worktree-ready'].includes(delivery.stage ?? '')) {
-    return hasWorktree && !hasSession && delivery.sessionId === undefined;
+    return (
+      delivery.activation === undefined &&
+      delivery.acknowledgment === undefined &&
+      hasWorktree &&
+      !hasSession &&
+      delivery.sessionId === undefined
+    );
   }
   if (delivery.stage === 'active') {
-    return hasWorktree && hasSession;
+    return (
+      hasWorktree &&
+      hasSession &&
+      delivery.activation !== undefined &&
+      delivery.acknowledgment !== undefined
+    );
   }
   return (
     (delivery.worktreeBranch === undefined) === (delivery.worktreePath === undefined) &&
     (delivery.worktreePath === undefined || isAbsolute(delivery.worktreePath)) &&
     (delivery.sessionId === undefined || hasSession)
-  );
-}
-
-function validLegacyItem(value: unknown): value is GitHubNotificationItemStateV1 {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  return (
-    hasOnlyKeys(value, legacyItemKeys) &&
-    validItemFields(value as Record<string, unknown>, value as GitHubNotificationItemStateV1)
   );
 }
 
@@ -248,10 +264,6 @@ function validStateFields(value: object): boolean {
     optionalFiniteNumber(state.nextPollAt) &&
     (state.diagnosticCode === undefined || typeof state.diagnosticCode === 'string') &&
     (state.searchBoundary === undefined || !Number.isNaN(Date.parse(state.searchBoundary))) &&
-    Array.isArray(state.baselineItemNodeIds) &&
-    state.baselineItemNodeIds.length <= 2_000 &&
-    state.baselineItemNodeIds.every(validNodeId) &&
-    new Set(state.baselineItemNodeIds).size === state.baselineItemNodeIds.length &&
     Array.isArray(state.processedEventNodeIds) &&
     state.processedEventNodeIds.length <= 2_000 &&
     state.processedEventNodeIds.every(validNodeId) &&
@@ -266,7 +278,7 @@ function validState(value: unknown): value is GitHubNotificationMonitorState {
   const state = value as Partial<GitHubNotificationMonitorState>;
   return (
     hasOnlyKeys(value, stateKeys) &&
-    state.schemaVersion === 2 &&
+    state.schemaVersion === 3 &&
     validStateFields(value) &&
     state.items !== undefined &&
     Object.entries(state.items).every(
@@ -275,31 +287,13 @@ function validState(value: unknown): value is GitHubNotificationMonitorState {
   );
 }
 
-function validLegacyState(value: unknown): value is GitHubNotificationMonitorStateV1 {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const state = value as Partial<GitHubNotificationMonitorStateV1>;
-  return (
-    hasOnlyKeys(value, stateKeys) &&
-    state.schemaVersion === 1 &&
-    validStateFields(value) &&
-    state.items !== undefined &&
-    Object.entries(state.items).every(
-      ([key, item]) =>
-        validLegacyItem(item) && key === `github:${item.repositoryNodeId}:${item.number}`,
-    )
-  );
-}
-
-/** Validate current state or explicitly migrate a valid Phase 1 record. */
+/** Validate only the current value-free monitor state contract. */
 export default function decodeGitHubNotificationMonitorState(
   value: unknown,
   agentId: string,
 ): GitHubNotificationMonitorStateDecodeResult | undefined {
   if (validState(value) && value.agentId === agentId) {
     return { state: value, status: 'ready' };
-  }
-  if (validLegacyState(value) && value.agentId === agentId) {
-    return { state: migrateGitHubNotificationMonitorStateV1(value), status: 'migrated-v1' };
   }
   return undefined;
 }

@@ -109,12 +109,11 @@ describe('channels/github/lib/lifecycle', () => {
     const healthyState: GitHubNotificationMonitorState = {
       agentId: 'data',
       baselineAt: 1,
-      baselineItemNodeIds: [],
       failureCount: 0,
       items: {},
       lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
-      schemaVersion: 2,
+      schemaVersion: 3,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [
@@ -371,6 +370,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:data:github:item',
       stage: 'active',
@@ -438,6 +438,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:data:github:item',
       stage: 'active',

@@ -14,6 +14,7 @@ import {
 
 import type GitHubNotificationMonitorService from './lib/monitor-service.ts';
 import type GitHubNotificationMonitorStateStore from './lib/monitor-state-store.ts';
+import type GitHubNotificationActivationService from './lib/activation-service.ts';
 import type { GitHubNotificationMonitorState } from './utils/monitor-state.ts';
 import {
   githubNotificationChannelId,
@@ -28,6 +29,7 @@ interface ResolvedNotificationChannelAccount {
 }
 
 export interface GitHubNotificationChannelDependencies {
+  activationService: Pick<GitHubNotificationActivationService, 'schedule' | 'settle'>;
   clock?: () => number;
   message: ChannelMessageAdapter;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
@@ -161,13 +163,18 @@ export function createGitHubNotificationChannel(
           });
         };
         await publish(clock());
+        dependencies.activationService.schedule(context.accountId, context.abortSignal);
         try {
           await dependencies.monitorService.runAccount(
             context.accountId,
             context.abortSignal,
-            async () => publish(),
+            async () => {
+              dependencies.activationService.schedule(context.accountId, context.abortSignal);
+              await publish();
+            },
           );
         } finally {
+          await dependencies.activationService.settle(context.accountId);
           status({
             connected: false,
             healthState: 'stopped',

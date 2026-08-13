@@ -56,22 +56,10 @@ export function notificationMonitorState(): GitHubNotificationMonitorState {
     accountNodeId: notificationAccount.nodeId,
     agentId: notificationAccount.login,
     baselineAt: 1,
-    baselineItemNodeIds: [],
     failureCount: 0,
     items: { [notificationItemKey]: approvedNotificationItem() },
     processedEventNodeIds: ['EV_assignment'],
-    schemaVersion: 2,
+    schemaVersion: 3,
     workspaceDir: '/workspace',
-  };
-}
-
-export function legacyNotificationMonitorState(): Record<string, unknown> {
-  const item: Record<string, unknown> = { ...approvedNotificationItem() };
-  delete item.delivery;
-  delete item.itemDatabaseId;
-  return {
-    ...notificationMonitorState(),
-    items: { [notificationItemKey]: item },
-    schemaVersion: 1,
   };
 }

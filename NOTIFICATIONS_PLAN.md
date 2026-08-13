@@ -313,6 +313,8 @@ Notifications 2 owns everything after initial issue intake.
 | 3        | Operators can deliberately publish progress from local chat        | high      | medium          |
 | 4        | Assignment and pull-request lifecycle stays correlated             | medium    | medium          |
 | 5        | Operators can inspect, replay, and clean up state                  | medium    | medium          |
+| 6        | Operators can opt into automatic work after planning               | high      | medium          |
+| 7        | The agent can safely choose whether to wait or continue            | medium    | high            |
 
 ### Message Flow
 
@@ -372,7 +374,7 @@ Publication eligibility is origin-aware:
 - Preserve value-free progress diagnostics around scheduling, generation,
   adapter delivery, and receipt commitment.
 
-### Phase 1: Plan Assigned Work and Acknowledge Understanding
+### Phase 1A: Plan Assigned Work and Acknowledge Understanding
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
 - After deterministic intake reaches its active checkpoint, claim a durable
@@ -390,7 +392,7 @@ Publication eligibility is origin-aware:
 - Record the complete planning response only in the private OpenClaw session.
   In plan-only behavior, stop there and wait for a subsequent operator-authored
   local message in that same session. A GitHub comment never approves work, and
-  this pause is not represented as an OpenClaw command-approval request.
+  this pause is not represented as an OpenClaw command-confirmation request.
 - After the planning turn is adopted and completes, create one
   `initial-acknowledgment` publication intent from its bounded final response.
   The GitHub candidate must accurately communicate whether the agent reviewed
@@ -404,34 +406,14 @@ Publication eligibility is origin-aware:
   duplicate planning turns.
 - Persist only value-free activation checkpoints and stable authorization,
   context-fetch, dispatch, cancellation, and ambiguous-delivery diagnostics.
-- Use this phase's monitor-state migration to remove the unused
-  `baselineItemNodeIds` inventory while accepting valid MVP 1 state;
+- Remove the unused `baselineItemNodeIds` inventory as a state-contract update;
+  no legacy monitor-state migration or retroactive activation is required.
   `baselineAt` remains the historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
 
-Implement Phase 1 in three increments:
-
-1. **Plan-only activation:** ship the planning lifecycle above as the only
-   behavior. Do not add a manifest setting while there is only one supported
-   choice.
-2. **Configured work continuation:** add optional `activation-mode` with `plan`
-   and `work` values and a default of `plan`. Both modes complete and checkpoint
-   the same tool-free planning turn. `plan` stops for a local operator response;
-   `work` automatically dispatches a separate implementation turn to the same
-   session only after planning completes. The implementation turn receives the
-   normal Agent System tool surface under existing binding, containment,
-   credential, and tool-policy boundaries.
-3. **Automatic selection:** add `auto` only after both explicit modes have
-   installed acceptance coverage. The planning turn must return a bounded
-   structured continue-or-wait decision under an explicit rubric. Ambiguity,
-   missing acceptance criteria, broad or destructive changes, security-sensitive
-   work, migrations, releases, and other high-consequence work resolve to `plan`;
-   only clearly actionable bounded work may continue automatically.
-
-Planning completion and implementation adoption use separate durable checkpoints.
-Changing configuration after a planning checkpoint must not reinterpret or
-silently continue an existing assignment. Keep GitHub-facing publication
-unavailable beyond the initial acknowledgment until Phase 2.
+Ship Phase 1A as plan-only activation. Do not add a manifest setting while there
+is only one supported choice. Keep GitHub-facing publication unavailable beyond
+the initial acknowledgment until Phase 2.
 
 ### Phase 2: Approved GitHub Mention Conversations
 
@@ -483,6 +465,32 @@ unavailable beyond the initial acknowledgment until Phase 2.
 - Add explicit, non-destructive cleanup through the owning session and Git
   capabilities.
 - Define retention for retired routing state and delivery receipts.
+
+### Phase 6: Configured Work Continuation (Formerly Phase 1B)
+
+- Add optional `activation-mode` with `plan` and `work` values and a default of
+  `plan`.
+- Make both modes complete and checkpoint the same tool-free planning turn.
+- Keep `plan` waiting for a local operator response. Let `work` dispatch a
+  separately checkpointed implementation turn to the same session only after
+  planning completes.
+- Give the implementation turn the normal Agent System tool surface under the
+  existing binding, containment, credential, and tool-policy boundaries.
+- Do not reinterpret or silently continue an existing assignment when
+  configuration changes after its planning checkpoint.
+
+### Phase 7: Automatic Activation Selection (Formerly Phase 1C)
+
+- Add `auto` only after both explicit activation modes have installed acceptance
+  coverage.
+- Require the planning turn to return a bounded structured continue-or-wait
+  decision under an explicit rubric.
+- Resolve ambiguity, missing acceptance criteria, broad or destructive changes,
+  security-sensitive work, migrations, releases, and other high-consequence
+  work to `plan`. Continue automatically only for clearly actionable bounded
+  work.
+- Keep planning completion and implementation adoption as separate durable
+  checkpoints.
 
 ## Validation
 
@@ -561,7 +569,7 @@ implementation modules.
     `auto` is added only after an explicit bounded decision contract exists.
 16. Treat a later operator-authored message in the private issue session as the
     continuation mechanism for plan-only work. Do not model that pause as a
-    command approval or let a GitHub comment authorize implementation.
+    command confirmation or let a GitHub comment authorize implementation.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,

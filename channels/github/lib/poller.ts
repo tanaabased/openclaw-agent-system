@@ -181,9 +181,8 @@ export async function pollGitHubNotifications(
         );
       }
       state.baselineAt = input.now;
-      state.baselineItemNodeIds = [...new Set(discovery.candidates.map(({ nodeId }) => nodeId))];
       state.searchBoundary = new Date(input.now).toISOString();
-      counts.baseline = state.baselineItemNodeIds.length;
+      counts.baseline = new Set(discovery.candidates.map(({ nodeId }) => nodeId)).size;
       counts.baselineEstablished = true;
       return { ...counts, state };
     }

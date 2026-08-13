@@ -105,7 +105,6 @@ describe('channels/github/lib/poller', () => {
     assert.equal(result.baseline, 1);
     assert.equal(result.baselineEstablished, true);
     assert.equal(result.approved, 0);
-    assert.deepEqual(result.state.baselineItemNodeIds, [candidate.nodeId]);
     assert.deepEqual(result.state.items, {});
   });
 
@@ -137,7 +136,6 @@ describe('channels/github/lib/poller', () => {
     assert.equal(baseline.baseline, 0);
     assert.equal(baseline.baselineEstablished, true);
     assert.equal(baseline.state.baselineAt, baselineAt);
-    assert.deepEqual(baseline.state.baselineItemNodeIds, []);
     assert.equal(approved.approved, 1);
     assert.equal(approved.baselineEstablished, false);
     assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {

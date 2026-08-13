@@ -11,13 +11,23 @@ import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
 import { resolveNotificationRoute } from '../utils/routing.ts';
-import GitHubWorkEventClient, { GitHubWorkEventClientError } from './work-event-client.ts';
+import GitHubWorkEventClient, {
+  GitHubWorkEventClientError,
+  type GitHubNotificationPlanningContext,
+} from './work-event-client.ts';
 
 export interface GitHubNotificationAssignmentProviderDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
+
+export type GitHubNotificationPlanningContextResult =
+  | { authorized: false; reasonCode: string }
+  | { authorized: true; context: GitHubNotificationPlanningContext };
+
+type GitHubNotificationAssignmentInspection =
+  { authorized: false; reasonCode?: string } | { authorized: true; client: GitHubWorkEventClient };
 
 /** Read current GitHub authority for assignment delivery. */
 export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
@@ -30,6 +40,44 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   async inspect(
     input: GitHubNotificationAssignmentBoundaryInput,
   ): Promise<{ authorized: boolean; reasonCode?: string }> {
+    const inspection = await this.#inspect(input);
+    return inspection.authorized
+      ? { authorized: true }
+      : {
+          authorized: false,
+          ...(inspection.reasonCode === undefined ? {} : { reasonCode: inspection.reasonCode }),
+        };
+  }
+
+  async loadPlanningContext(
+    input: GitHubNotificationAssignmentBoundaryInput,
+  ): Promise<GitHubNotificationPlanningContextResult> {
+    if (input.item.itemType !== 'issue') {
+      return {
+        authorized: false,
+        reasonCode: 'github-notification-activation-pull-request-deferred',
+      };
+    }
+    const inspection = await this.#inspect(input);
+    if (!inspection.authorized) {
+      return {
+        authorized: false,
+        reasonCode: inspection.reasonCode ?? 'github-notification-authority-revoked',
+      };
+    }
+    return {
+      authorized: true,
+      context: await inspection.client.getPlanningContext(
+        input.item.repositoryOwner,
+        input.item.repositoryName,
+        input.item.number,
+      ),
+    };
+  }
+
+  async #inspect(
+    input: GitHubNotificationAssignmentBoundaryInput,
+  ): Promise<GitHubNotificationAssignmentInspection> {
     if (
       input.delivery.assignmentEventId !== input.item.assignmentEventNodeId ||
       input.delivery.workId !== `${input.item.itemType}-${input.item.itemDatabaseId}`
@@ -111,7 +159,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
               : admission.code,
         };
       }
-      return { authorized: true };
+      return { authorized: true, client: context.client };
     } catch (error) {
       if (
         error instanceof GitHubWorkEventClientError &&

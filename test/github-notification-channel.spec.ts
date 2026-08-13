@@ -52,9 +52,17 @@ function messageAdapter() {
   });
 }
 
+function activationService() {
+  return {
+    schedule: () => 'scheduled' as const,
+    settle: async () => undefined,
+  };
+}
+
 describe('channels/github/channel', () => {
   const message = messageAdapter();
   const channel = createGitHubNotificationChannel({
+    activationService: activationService(),
     message,
     monitorService: { runAccount: async () => undefined },
     stateStore: { read: async () => undefined },
@@ -79,9 +87,20 @@ describe('channels/github/channel', () => {
 
   it('should expose scheduler lifecycle and live monitor status', async () => {
     const controller = new AbortController();
+    let activationSchedules = 0;
+    let activationSettles = 0;
     let state: ReturnType<typeof notificationMonitorState> | undefined;
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
+      activationService: {
+        schedule() {
+          activationSchedules += 1;
+          return 'scheduled';
+        },
+        async settle() {
+          activationSettles += 1;
+        },
+      },
       clock: () => 2_000,
       message: messageAdapter(),
       monitorService: {
@@ -135,6 +154,8 @@ describe('channels/github/channel', () => {
     );
     controller.abort();
     await running;
+    assert.equal(activationSchedules, 3);
+    assert.equal(activationSettles, 1);
     assert.deepEqual(
       (({ connected, healthState, running }) => ({ connected, healthState, running }))(
         statuses.at(-1) ?? {},

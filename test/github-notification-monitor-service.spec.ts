@@ -281,6 +281,7 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:tanaabot:github:item',
       stage: 'active',
@@ -345,6 +346,7 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:tanaabot:github:item',
       stage: 'active',
