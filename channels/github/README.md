@@ -8,11 +8,12 @@ The GitHub notifications channel is a local
 [OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
 approved GitHub issue assignments into agent-scoped local work. It verifies the
 agent, assigning actor, and repository before creating one managed worktree and
-one local OpenClaw session for the issue.
+one local OpenClaw session for the issue, then posts a short acknowledgment in
+the agent's voice.
 
 > [!IMPORTANT]
 > The channel does not currently fetch issue prose, comments, or mentions,
-> invoke a model, or write to GitHub.
+> or activate the agent to begin issue work.
 
 ## Overview
 
@@ -22,10 +23,12 @@ one local OpenClaw session for the issue.
   assigning actor, repository owner, and repository access.
 - For each accepted assignment, creates or reuses one deterministic managed
   worktree and one local OpenClaw session.
+- After local intake completes, asks the agent for one short, tool-free
+  acknowledgment and posts it to the issue exactly once.
 
 The Gateway monitor runs this lifecycle in the background. The manual refresh
-command runs the same intake path immediately. Both stop after local session
-recording without dispatching an agent turn.
+command runs the same deterministic intake path immediately and returns without
+waiting for acknowledgment generation.
 
 ## Requirements
 
@@ -160,6 +163,11 @@ and the account has sufficient repository access.
 Private monitor state contains no tokens or GitHub content. Deterministic
 worktree and session identities make delivery retry-safe without duplicating
 local work.
+
+The acknowledgment turn receives no issue prose, comments, tools, local paths,
+or credential values. Its single short response must pass a fail-closed
+plain-text safety gate before publication. A hidden deterministic marker and a
+value-free receipt prevent retries or restarts from duplicating the comment.
 
 `install` adds or repairs only the channel account and binding owned by Agent
 System. Removing `github.notifications` and running `install` again removes the

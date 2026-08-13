@@ -5,7 +5,11 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 export type GitHubNotificationDeliveryStage =
   'active' | 'admitted' | 'retired' | 'session-recording' | 'worktree-ready';
 
+export type GitHubNotificationAcknowledgmentState =
+  { status: 'pending' } | { commentId: number; status: 'published' };
+
 export interface GitHubNotificationDeliveryState {
+  acknowledgment?: GitHubNotificationAcknowledgmentState;
   assignmentEventId: string;
   failureCode?: string;
   schemaVersion: 1;

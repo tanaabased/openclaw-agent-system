@@ -135,6 +135,7 @@ describe('channels/github/lib/poller', () => {
 
     assert.equal(approved.approved, 1);
     assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
+      acknowledgment: { status: 'pending' },
       assignmentEventId: assignment.nodeId,
       schemaVersion: 1,
       stage: 'admitted',

@@ -46,7 +46,14 @@ export interface GitHubNotificationAssignmentSessions {
   ): Promise<GitHubNotificationObservedSession>;
 }
 
+export interface GitHubNotificationAssignmentAcknowledgments {
+  schedule(agentId: string, itemKey: string): void;
+  start(): void;
+  stop(): Promise<void>;
+}
+
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
+  acknowledgments?: GitHubNotificationAssignmentAcknowledgments;
   authority: GitHubNotificationAssignmentAuthority;
   sessions: GitHubNotificationAssignmentSessions;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
@@ -86,6 +93,14 @@ export default class GitHubNotificationAssignmentOrchestrator {
     return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
   }
 
+  async stop(): Promise<void> {
+    await this.#dependencies.acknowledgments?.stop();
+  }
+
+  start(): void {
+    this.#dependencies.acknowledgments?.start();
+  }
+
   async #reconcile(
     agentId: string,
     itemKey: string,
@@ -120,6 +135,12 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
+      if (delivery.stage === 'active') {
+        if (delivery.acknowledgment?.status === 'pending') {
+          this.#dependencies.acknowledgments?.schedule(agentId, itemKey);
+        }
+        return;
+      }
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);

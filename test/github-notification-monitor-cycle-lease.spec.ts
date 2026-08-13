@@ -88,6 +88,32 @@ describe('channels/github/lib/monitor-cycle-lease', () => {
     }
   });
 
+  it('should isolate acknowledgment publication from the monitor cycle lock', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-scopes-'));
+    const targets: string[] = [];
+    try {
+      const store = new GitHubNotificationMonitorCycleLeaseStore({
+        async acquireFileLock(targetPath) {
+          targets.push(targetPath);
+          return { lockPath: `${targetPath}.lock`, async release() {} };
+        },
+        rootDir: join(temporaryDirectory, 'state'),
+      });
+
+      const cycle = await store.acquire('tanaabot');
+      const acknowledgment = await store.acquire('tanaabot', { scope: 'acknowledgment' });
+
+      assert.deepEqual(
+        targets.map((target) => target.slice(target.lastIndexOf('/') + 1)),
+        ['github-notifications', 'github-notifications-acknowledgment'],
+      );
+      if (cycle.status === 'acquired') await cycle.lease.release();
+      if (acknowledgment.status === 'acquired') await acknowledgment.lease.release();
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
   it('should stop a bounded wait when notification processing is aborted', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-abort-'));
     try {

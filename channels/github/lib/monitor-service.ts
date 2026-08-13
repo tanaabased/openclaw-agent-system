@@ -26,6 +26,8 @@ export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
+    start?(): void;
+    stop?(): Promise<void>;
   };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
@@ -79,7 +81,8 @@ function pendingDeliveryItemKeys(state: GitHubNotificationMonitorState | undefin
       ([, item]) =>
         item.delivery !== undefined &&
         ((item.disposition === 'approved' &&
-          item.delivery.stage !== 'active' &&
+          (item.delivery.stage !== 'active' ||
+            item.delivery.acknowledgment?.status === 'pending') &&
           item.delivery.stage !== 'retired') ||
           (item.disposition === 'retired' && item.delivery.stage !== 'retired')),
     )
@@ -108,6 +111,7 @@ export default class GitHubNotificationMonitorService {
 
   start(): void {
     if (this.#controller) return;
+    this.#dependencies.assignmentOrchestrator.start?.();
     this.#controller = new AbortController();
     this.#loop = this.#runLoop(this.#controller.signal);
   }
@@ -115,6 +119,7 @@ export default class GitHubNotificationMonitorService {
   async stop(): Promise<void> {
     this.#controller?.abort();
     await this.#loop;
+    await this.#dependencies.assignmentOrchestrator.stop?.();
     this.#controller = undefined;
     this.#loop = undefined;
   }

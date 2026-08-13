@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
+import { githubAssignmentAcknowledgmentMarker } from '../channels/github/utils/acknowledgment.ts';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -136,5 +137,61 @@ describe('channels/github/lib/work-event-client', () => {
     const projection = requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
     assert.match(projection, /actor:\{login:\.assigner\.login/u);
     assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
+  });
+
+  it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
+    const marker = githubAssignmentAcknowledgmentMarker('EV_assignment');
+    const body = `On it.\n\n${marker}`;
+    const requests: Array<{ argv: string[]; stdin?: string }> = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv, stdin) {
+        requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
+        if (argv.includes('POST')) {
+          return response({
+            body,
+            databaseId: 91,
+            nodeId: 'IC_published',
+            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+          });
+        }
+        return response([]);
+      },
+    });
+
+    assert.equal(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), undefined);
+    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
+      databaseId: 91,
+      nodeId: 'IC_published',
+    });
+    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
+    assert.equal(requests[1]?.argv.includes(body), false);
+    assert.ok(requests[1]?.argv.includes('--input'));
+  });
+
+  it('should adopt only the authenticated account marker receipt', async () => {
+    const marker = githubAssignmentAcknowledgmentMarker('EV_assignment');
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        return response([
+          {
+            databaseId: 90,
+            nodeId: 'IC_other',
+            user: { login: 'someone', nodeId: 'U_other', type: 'User' },
+          },
+          {
+            databaseId: 91,
+            nodeId: 'IC_own',
+            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+          },
+        ]);
+      },
+    });
+
+    assert.deepEqual(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), {
+      databaseId: 91,
+      nodeId: 'IC_own',
+    });
   });
 });

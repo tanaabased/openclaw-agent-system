@@ -32,6 +32,42 @@ function memoryStore(initial = monitorState()) {
 }
 
 describe('channels/github/lib/assignment-orchestrator', () => {
+  it('should schedule a pending acknowledgment without reopening active intake', async () => {
+    const state = monitorState();
+    state.items[itemKey]!.delivery = {
+      ...state.items[itemKey]!.delivery!,
+      sessionKey: activeSession.key,
+      stage: 'active',
+      worktreeBranch: worktree.branch,
+      worktreePath: worktree.path,
+    };
+    const store = memoryStore(state);
+    const scheduled: string[] = [];
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      acknowledgments: {
+        schedule(agentId, scheduledItemKey) {
+          scheduled.push(`${agentId}:${scheduledItemKey}`);
+        },
+        start() {},
+        async stop() {},
+      },
+      authority: {
+        inspect: async () => Promise.reject(new Error('active intake should not be reopened')),
+      },
+      sessions: { recordSession: async () => Promise.reject(new Error('unexpected session')) },
+      stateStore: store,
+      worktrees: {
+        inspect: async () => Promise.reject(new Error('unexpected inspection')),
+        prepare: async () => Promise.reject(new Error('unexpected preparation')),
+      },
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    assert.deepEqual(scheduled, [`tanaabot:${itemKey}`]);
+    assert.equal(store.writes.length, 0);
+  });
+
   it('should serialize duplicate reconciliation around one channel-owned session record', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;

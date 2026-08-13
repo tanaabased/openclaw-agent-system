@@ -13,6 +13,7 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
+const maximumCommentPages = 10;
 
 export class GitHubWorkEventClientError extends Error {
   override name = 'GitHubWorkEventClientError';
@@ -32,6 +33,11 @@ export interface GitHubAssignedItemDiscovery {
   incomplete: boolean;
   totalCount: number;
   truncated: boolean;
+}
+
+export interface GitHubIssueCommentReceipt {
+  databaseId: number;
+  nodeId: string;
 }
 
 interface ApiPage<T> {
@@ -309,6 +315,91 @@ export default class GitHubWorkEventClient {
     return { events, truncated: hasNextPage };
   }
 
+  async findOwnIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    marker: string,
+  ): Promise<GitHubIssueCommentReceipt | undefined> {
+    if (!/^<!-- agent-system-github-assignment-ack:[a-f0-9]{32} -->$/u.test(marker)) {
+      throw new Error('GitHub assignment acknowledgment markers are invalid.');
+    }
+    let hasNextPage = false;
+    for (let page = 1; page <= maximumCommentPages; page += 1) {
+      const response = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${this.#itemEndpoint(owner, name, number)}/comments`,
+          '-F',
+          `per_page=${pageSize}`,
+          '-F',
+          `page=${page}`,
+          '--jq',
+          `[.[]|select(.body|contains(${JSON.stringify(marker)}))|{databaseId:.id,nodeId:.node_id,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}]`,
+        ],
+        'issue comments',
+      );
+      if (!Array.isArray(response.value))
+        throw new Error('GitHub returned invalid issue comments.');
+      for (const item of response.value) {
+        const value = record(item, 'issue comment');
+        const author = identity(value.user, 'issue-comment author');
+        if (author.nodeId !== this.identity.nodeId) continue;
+        return {
+          databaseId: positiveInteger(value.databaseId, 'issue-comment database id'),
+          nodeId: nodeId(value.nodeId, 'issue-comment node id'),
+        };
+      }
+      hasNextPage = response.hasNextPage;
+      if (!hasNextPage) return undefined;
+    }
+    if (hasNextPage) {
+      throw new GitHubWorkEventClientError(
+        'github-notification-comments-truncated',
+        'GitHub issue comments exceeded the acknowledgment reconciliation boundary.',
+        this.rateLimit,
+      );
+    }
+    return undefined;
+  }
+
+  async createIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): Promise<GitHubIssueCommentReceipt> {
+    if (!body || body.length > 1_024 || /\0/u.test(body)) {
+      throw new Error('GitHub assignment acknowledgment comments are invalid.');
+    }
+    const response = await this.#api(
+      [
+        '--method',
+        'POST',
+        `${this.#itemEndpoint(owner, name, number)}/comments`,
+        '--input',
+        '-',
+        '--jq',
+        '{databaseId:.id,nodeId:.node_id,body,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}',
+      ],
+      'issue-comment publication',
+      JSON.stringify({ body }),
+    );
+    const value = record(response.value, 'published issue comment');
+    const author = identity(value.user, 'published issue-comment author');
+    if (
+      author.nodeId !== this.identity.nodeId ||
+      string(value.body, 'published issue-comment body') !== body
+    ) {
+      throw new Error('GitHub returned a conflicting published issue comment.');
+    }
+    return {
+      databaseId: positiveInteger(value.databaseId, 'published issue-comment database id'),
+      nodeId: nodeId(value.nodeId, 'published issue-comment node id'),
+    };
+  }
+
   #itemEndpoint(owner: string, name: string, number: number): string {
     if (!Number.isSafeInteger(number) || number < 1) {
       throw new Error('GitHub work-item numbers must be positive safe integers.');
@@ -316,8 +407,8 @@ export default class GitHubWorkEventClient {
     return `${repositoryEndpoint(owner, name)}/issues/${number}`;
   }
 
-  async #api(argv: string[], label: string): Promise<ApiPage<unknown>> {
-    const result = await this.#client.execute(['api', '--include', ...argv], undefined, {
+  async #api(argv: string[], label: string, stdin?: string): Promise<ApiPage<unknown>> {
+    const result = await this.#client.execute(['api', '--include', ...argv], stdin, {
       maxOutputBytes: 512 * 1024,
       timeoutMs: 30_000,
     });

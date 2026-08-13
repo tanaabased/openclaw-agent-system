@@ -54,6 +54,7 @@ const legacyItemKeys = new Set([
 const itemKeys = new Set([...legacyItemKeys, 'delivery', 'itemDatabaseId']);
 
 const deliveryKeys = new Set([
+  'acknowledgment',
   'assignmentEventId',
   'failureCode',
   'schemaVersion',
@@ -64,6 +65,8 @@ const deliveryKeys = new Set([
   'worktreeBranch',
   'worktreePath',
 ]);
+
+const acknowledgmentKeys = new Set(['commentId', 'status']);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
@@ -139,12 +142,25 @@ function optionalBoundedString(value: unknown, maximumLength: number): boolean {
   );
 }
 
+function validAcknowledgment(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const acknowledgment = value as { commentId?: unknown; status?: unknown };
+  if (!hasOnlyKeys(value, acknowledgmentKeys)) return false;
+  if (acknowledgment.status === 'pending') return acknowledgment.commentId === undefined;
+  return (
+    acknowledgment.status === 'published' &&
+    Number.isSafeInteger(acknowledgment.commentId) &&
+    Number(acknowledgment.commentId) > 0
+  );
+}
+
 function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const delivery = value as Partial<GitHubNotificationDeliveryState>;
   const validBase =
     hasOnlyKeys(value, deliveryKeys) &&
     delivery.schemaVersion === 1 &&
+    (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
     validNodeId(delivery.assignmentEventId) &&
     ['active', 'admitted', 'retired', 'session-recording', 'worktree-ready'].includes(
       delivery.stage ?? '',
