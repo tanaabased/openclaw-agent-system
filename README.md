@@ -37,11 +37,15 @@ Today, Agent System:
 - [`git`](./tools/git/README.md) — Runs ordinary Git commands and manages durable worktrees with the agent's identity, SSH configuration, signing, and operation policy.
 - [`gh`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
 
-A public [Tool API](./API.md) is planned for compatible third-party wrappers.
-
 ### Channels
 
 - [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and local OpenClaw sessions without invoking a model or writing to GitHub.
+
+### Skills
+
+- [Git CLI](./skills/git-cli/SKILL.md) — Guides agents through ordinary Git operations with `agent_system_git`.
+- [Git worktree](./skills/git-worktree/SKILL.md) — Guides agents through preparing, reusing, and removing managed worktrees.
+- [GitHub CLI](./skills/github-cli/SKILL.md) — Guides agents through GitHub operations with `agent_system_github`.
 
 ## Installation
 

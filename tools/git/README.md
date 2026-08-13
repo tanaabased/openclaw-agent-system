@@ -9,8 +9,6 @@ durable worktrees with the active agent's declared identity, workspace, SSH
 configuration, and operation policy. It is the preferred Git path when an Agent
 System workspace declares `git`.
 
-[Agent System](../../README.md) · [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md) · [Raw worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md)
-
 ## Overview
 
 One shared runtime provides five Git interfaces:

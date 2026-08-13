@@ -140,10 +140,9 @@ openclaw agent-system notifications refresh [--agent <id>] [--json]
 | `--agent <id>` | Selects an installed agent instead of workspace discovery |
 | `--json`       | Returns an undecorated machine-readable result            |
 
-The command bypasses only the configured polling interval. It preserves the
-ordinary baseline, provider backoff, failure state, and per-agent execution
-lease. A completed cycle may create a managed worktree and local session;
-deferred and failed cycles return a nonzero exit code.
+The command runs the same intake lifecycle immediately. It can establish the
+first baseline or create a managed worktree and local session for an accepted
+assignment. Deferred and failed cycles return a nonzero exit code.
 
 See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
 for result and concurrency semantics.
@@ -156,12 +155,11 @@ routing fails closed.
 
 An assignment is accepted only when the authenticated account is still assigned,
 the immutable assigning actor is approved, the repository owner is eligible,
-and the account has sufficient repository access. GitHub issue titles, bodies,
-comments, and mentions are not fetched or treated as instructions.
+and the account has sufficient repository access.
 
-Private monitor state contains correlation ids and delivery checkpoints, not
-tokens or GitHub content. Deterministic worktree and session identities make
-delivery retry-safe without duplicating local work.
+Private monitor state contains no tokens or GitHub content. Deterministic
+worktree and session identities make delivery retry-safe without duplicating
+local work.
 
 `install` adds or repairs only the channel account and binding owned by Agent
 System. Removing `github.notifications` and running `install` again removes the

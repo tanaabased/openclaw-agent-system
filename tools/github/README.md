@@ -8,8 +8,6 @@ The GitHub CLI tool runs ordinary noninteractive `gh` commands with the active
 agent's credential, isolated configuration, and operation policy. It is the
 preferred GitHub path when an Agent System workspace declares `github`.
 
-[Agent System](../../README.md) · [GitHub notifications channel](../../channels/github/README.md) · [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md)
-
 > [!IMPORTANT]
 > GitHub authorization and server-side protections are authoritative. Agent
 > System adds only the narrow release control documented under
