@@ -2,11 +2,11 @@
 
 ### New Features
 
-- Added live polling and connection health to `agent-system-github` channel status.
+- Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 
 ### Bug Fixes
 
-- Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable.
+- Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 
