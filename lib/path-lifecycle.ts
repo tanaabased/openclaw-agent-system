@@ -101,6 +101,28 @@ export default function createPathLifecycleContribution(
                     'Codex workspace configuration is user-managed; Agent System will not repair it.',
                   status: 'manual' as const,
                 },
+          ...(path.codex.ownership === 'absent'
+            ? []
+            : [
+                path.codex.loginShellDisabled
+                  ? {
+                      code: 'codex-login-shell-disabled',
+                      message: 'Codex login-shell execution is disabled.',
+                      status: 'healthy' as const,
+                    }
+                  : {
+                      code: 'codex-login-shell-enabled',
+                      message: 'Codex login-shell execution is not disabled.',
+                      remediation:
+                        path.codex.ownership === 'managed'
+                          ? 'Run openclaw agent-system install from this workspace.'
+                          : 'Add allow_login_shell = false to .codex/config.toml as documented in ADVANCED.md, then start a new Codex session.',
+                      status:
+                        path.codex.ownership === 'managed'
+                          ? ('drift' as const)
+                          : ('warning' as const),
+                    },
+              ]),
           path.codex.gitignored
             ? {
                 code: 'codex-config-gitignored',
@@ -142,12 +164,14 @@ export default function createPathLifecycleContribution(
         }
         if (
           result.codexStatus === 'managed' &&
-          (!verification.codex.pathMatches || !verification.codex.gitignored)
+          (!verification.codex.pathMatches ||
+            !verification.codex.loginShellDisabled ||
+            !verification.codex.gitignored)
         ) {
           throw new AgentSystemLifecycleError(
             'path',
             'codex-path-verification-failed',
-            `Codex path configuration for ${context.manifest.agent.id} did not match after installation.`,
+            `Codex execution configuration for ${context.manifest.agent.id} did not match after installation.`,
           );
         }
       } catch (error) {

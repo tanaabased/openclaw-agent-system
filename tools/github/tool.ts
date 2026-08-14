@@ -8,7 +8,7 @@ import { resolveGitHubCliConfiguration, type GitHubCliConfiguration } from './co
 import {
   authorizeGitHubOperation,
   classifyGitHubOperation,
-  githubCommandPosition,
+  resolveGitHubCommand,
 } from './policy.ts';
 import { githubToolSchema, type GitHubToolInput } from './tool-schema.ts';
 
@@ -57,8 +57,7 @@ function validateInput(input: GitHubToolInput): void {
     );
   }
 
-  const position = githubCommandPosition(input.argv);
-  const command = position < 0 ? undefined : input.argv[position];
+  const { command, position } = resolveGitHubCommand(input.argv);
   const subcommand = position < 0 ? undefined : input.argv[position + 1];
   if (!command) toolError('invalid_arguments', 'The GitHub CLI command is missing.');
   if (command === 'alias' || command === 'extension') {

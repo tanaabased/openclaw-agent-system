@@ -9,6 +9,9 @@ function selectsReleasesPolicy(argv: string[]): boolean {
 describe('tools/github/policy', () => {
   it('should retain read and write risk metadata without using it for authorization', () => {
     for (const argv of [
+      ['--help'],
+      ['-h'],
+      ['--version'],
       ['repo', 'view', 'tanaabased/openclaw-agent-system'],
       ['issue', 'list'],
       ['search', 'code', 'AgentSystemToolRuntime'],

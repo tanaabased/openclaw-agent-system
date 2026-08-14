@@ -45,6 +45,11 @@ const readWords = new Set([
 const destructiveWords = new Set(['archive', 'cancel', 'delete', 'destroy', 'purge', 'remove']);
 const destructiveFlags = new Set(['--cleanup-tag', '--delete-branch', '--delete-last']);
 const rootReadCommands = new Set(['completion', 'help', 'search', 'status', 'version']);
+const rootFlagCommands = new Map([
+  ['--help', 'help'],
+  ['-h', 'help'],
+  ['--version', 'version'],
+]);
 const releaseReadSubcommands = new Set(['download', 'list', 'ls', 'view']);
 
 export function githubCommandPosition(argv: readonly string[]): number {
@@ -58,6 +63,17 @@ export function githubCommandPosition(argv: readonly string[]): number {
     if (!value.startsWith('-')) return index;
   }
   return -1;
+}
+
+/** Resolve semantic root help and version commands without changing the forwarded arguments. */
+export function resolveGitHubCommand(argv: readonly string[]): {
+  command?: string;
+  position: number;
+} {
+  const position = githubCommandPosition(argv);
+  if (position >= 0) return { command: argv[position], position };
+  const command = argv.length === 1 ? rootFlagCommands.get(argv[0] ?? '') : undefined;
+  return { command, position };
 }
 
 function operation(
@@ -163,8 +179,9 @@ function classifyApi(argv: readonly string[]): AgentSystemOperation {
 
 /** Classify a GitHub CLI request and select only explicit release mutations for policy. */
 export function classifyGitHubOperation(input: GitHubToolInput): AgentSystemOperation {
-  const position = githubCommandPosition(input.argv);
-  const command = position < 0 ? 'command' : (input.argv[position]?.toLowerCase() ?? 'command');
+  const resolved = resolveGitHubCommand(input.argv);
+  const { position } = resolved;
+  const command = resolved.command?.toLowerCase() ?? 'command';
   const subcommandOffset =
     position < 0 ? -1 : githubCommandPosition(input.argv.slice(position + 1));
   const subcommandPosition =

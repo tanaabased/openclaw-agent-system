@@ -21,9 +21,11 @@ describe('utils/codex-path-config', () => {
     const source = renderCodexPathConfig(projection.path);
 
     assert.equal(classifyCodexPathConfig(source), 'managed');
+    assert.equal(source.includes('allow_login_shell = false'), true);
     assert.equal(source.includes('shell_snapshot = true'), true);
     assert.equal(source.includes('inherit = "all"'), false);
     assert.deepEqual(inspectCodexPathConfig(source, projection), {
+      loginShellDisabled: true,
       ownership: 'managed',
       pathMatches: true,
     });
@@ -40,8 +42,28 @@ describe('utils/codex-path-config', () => {
     );
 
     assert.deepEqual(inspectCodexPathConfig(source, projection), {
+      loginShellDisabled: true,
       ownership: 'managed',
       pathMatches: false,
     });
+  });
+
+  it('should inspect only the root login-shell setting', () => {
+    const manualSource = `${manualCodexPathMarker}
+allow_login_shell = false
+
+[features]
+shell_snapshot = true
+
+[shell_environment_policy.set]
+PATH = ${JSON.stringify(projection.path)}
+`;
+    const nestedSource = manualSource.replace(
+      'allow_login_shell = false\n\n[features]',
+      '[custom]\nallow_login_shell = false\n\n[features]',
+    );
+
+    assert.equal(inspectCodexPathConfig(manualSource, projection).loginShellDisabled, true);
+    assert.equal(inspectCodexPathConfig(nestedSource, projection).loginShellDisabled, false);
   });
 });
