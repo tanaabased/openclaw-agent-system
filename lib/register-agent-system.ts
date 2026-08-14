@@ -354,6 +354,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         credentialManager,
         doctorService,
         environmentService,
+        input: process.stdin,
         installService,
         logger: createAgentSystemLogger(cliLogger, api.id),
         manifestService,

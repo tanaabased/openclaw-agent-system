@@ -13,7 +13,10 @@ import type { AgentManifest } from '../utils/manifest-types.ts';
 export const toolTestWorkspaceDir = '/workspace/data';
 export const toolTestManifest: AgentManifest = { schemaVersion: 1, agent: { id: 'data' } };
 export const toolTestParameters = Type.Object(
-  { argument: Type.String({ minLength: 1 }) },
+  {
+    argument: Type.String({ minLength: 1 }),
+    stdin: Type.Optional(Type.String()),
+  },
   { additionalProperties: false },
 );
 
@@ -52,7 +55,10 @@ export interface ToolTestDefinitionOptions {
     configuration: ToolTestConfiguration,
   ): AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>;
   configured?: boolean;
-  validate?(input: { argument: string }, configuration: ToolTestConfiguration): void;
+  validate?(
+    input: { argument: string; stdin?: string },
+    configuration: ToolTestConfiguration,
+  ): void;
 }
 
 export function loadedToolTestManifest(
@@ -94,7 +100,10 @@ export function createToolTestDefinition(
     tool: {
       classify: () => ({ action: 'inspect', risk: 'read', summary: 'Inspect test data.' }),
       description: 'Exercise the generic Agent System tool runtime.',
-      inputFromCommand: ([argument = 'status']) => ({ argument }),
+      inputFromCommand: ([argument = 'status'], stdin) => ({
+        argument,
+        ...(stdin === undefined ? {} : { stdin }),
+      }),
       label: 'Test tool',
       name: 'agent_system_test_tool',
       normalize: (result) => result.stdout,

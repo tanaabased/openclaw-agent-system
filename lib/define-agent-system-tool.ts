@@ -41,7 +41,7 @@ interface ToolDefinition<TParameters extends TSchema, TDeclaredConfiguration> {
       configuration: TDeclaredConfiguration,
     ): AgentSystemOperation;
     description: string;
-    inputFromCommand(argv: string[]): Static<TParameters>;
+    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
     label: string;
     name: string;
     parameters: TParameters;
@@ -142,8 +142,8 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
     ...(definition.guidance ? { guidance: definition.guidance } : {}),
     id: definition.id,
     isConfigured: (manifest) => definition.configuration.read(manifest) !== undefined,
-    invoke(runtime, argv, scope) {
-      return execute(runtime, definition.tool.inputFromCommand(argv), scope);
+    invoke(runtime, argv, scope, stdin) {
+      return execute(runtime, definition.tool.inputFromCommand(argv, stdin), scope);
     },
     registerTools(api, runtime) {
       api.registerTool(factory(runtime), { name: definition.tool.name });

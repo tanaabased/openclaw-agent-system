@@ -57,6 +57,29 @@ describe('bin/gh', () => {
     assert.equal(output.launcherDirectory, packageBin);
   });
 
+  it('should preserve redirected standard input for openclaw', async () => {
+    const hostBin = join(root, 'host-bin');
+    await mkdir(hostBin);
+    await writeFile(
+      join(hostBin, 'openclaw'),
+      "#!/usr/bin/env node\nconst { text } = require('node:stream/consumers');\ntext(process.stdin).then((input) => process.stdout.write(input));\n",
+    );
+    await chmod(join(hostBin, 'openclaw'), 0o755);
+
+    const result = spawnSync(command, ['api', '/repos/owner/repo/issues', '--input', '-'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: [hostBin, packageBin, process.env.PATH].filter(Boolean).join(delimiter),
+      },
+      input: '{"title":"test"}\n',
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, '{"title":"test"}\n');
+    assert.equal(result.stderr, '');
+  });
+
   it('should preserve a delegated command failure', async () => {
     const hostBin = join(root, 'host-bin');
     await mkdir(hostBin);

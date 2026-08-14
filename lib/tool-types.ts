@@ -188,7 +188,7 @@ export interface AgentSystemCliToolDefinition<
       configuration: TDeclaredConfiguration,
     ): AgentSystemOperation;
     description: string;
-    inputFromCommand(argv: string[]): Static<TParameters>;
+    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
     label: string;
     name: string;
     normalize(result: AgentSystemCliResult, configuration: TResolvedConfiguration): TOutput;
@@ -237,7 +237,7 @@ export interface AgentSystemSemanticToolDefinition<
       configuration: TDeclaredConfiguration,
     ): AgentSystemOperation;
     description: string;
-    inputFromCommand(argv: string[]): Static<TParameters>;
+    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
     label: string;
     name: string;
     parameters: TParameters;
@@ -283,6 +283,7 @@ export interface RegisteredAgentSystemTool {
     runtime: AgentSystemToolRuntime,
     argv: string[],
     scope: AgentSystemToolScope,
+    stdin?: string,
   ): Promise<AgentSystemToolExecutionResult>;
   registerTools(
     api: Pick<OpenClawPluginApi, 'registerTool'>,
