@@ -58,9 +58,13 @@ openclaw agents bindings --json | jq -e '[.[] | select(.agentId == "notification
 ```
 
 ```bash
-# should retain the install-time baseline during manual refresh
+# should keep debug notification logs separate from one json refresh result
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
+refresh_stdout="$TMPDIR/agent-system-notification-refresh.stdout"
+refresh_stderr="$TMPDIR/agent-system-notification-refresh.stderr"
+OPENCLAW_LOG_LEVEL=debug openclaw agent-system notifications refresh --agent notification-data --json >"$refresh_stdout" 2>"$refresh_stderr"
+jq -s -e 'length == 1 and .[0].status == "completed" and .[0].baselineAt != null and .[0].baselineEstablished == false' "$refresh_stdout"
+grep -F 'github-notification-poll-complete' "$refresh_stderr"
 
 # should keep baseline assignments free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"
