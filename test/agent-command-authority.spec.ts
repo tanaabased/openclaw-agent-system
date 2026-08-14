@@ -67,7 +67,8 @@ describe('lib/agent-command-authority', () => {
       },
       now: () => now,
       async resolveCodexAgentId(context) {
-        return context.codexHome === codexHome && context.openClawStateDir === openClawStateDir
+        return context.codexHome === codexHome &&
+          (context.openClawStateDir === undefined || context.openClawStateDir === openClawStateDir)
           ? 'data'
           : undefined;
       },
@@ -118,13 +119,22 @@ describe('lib/agent-command-authority', () => {
         {
           CODEX_HOME: codexHome,
           CODEX_THREAD_ID: 'codex-thread-one',
-          OPENCLAW_STATE_DIR: openClawStateDir,
         },
         otherAgentWorkspace,
       ),
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
     );
+  });
+
+  it('should bind an OpenClaw Codex descendant under the default state profile', async () => {
+    const binding = await authority.resolve(
+      { CODEX_HOME: codexHome, CODEX_THREAD_ID: 'codex-thread-one' },
+      workspaceDir,
+    );
+
+    assert.equal(binding?.agentId, 'data');
+    assert.equal(binding?.workingDirectory, workspaceDir);
   });
 
   it('should leave standalone Codex descendants unbound', async () => {

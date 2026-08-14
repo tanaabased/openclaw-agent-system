@@ -34,7 +34,7 @@ interface AuthorityRequest {
 
 export interface CodexCommandContext {
   codexHome: string;
-  openClawStateDir: string;
+  openClawStateDir?: string;
   threadId: string;
 }
 
@@ -361,15 +361,15 @@ export default class AgentCommandAuthority {
     cwd: string,
   ): Promise<AgentCommandBinding | undefined> {
     const threadId = environment.CODEX_THREAD_ID?.trim();
-    const openClawStateDir = environment.OPENCLAW_STATE_DIR?.trim();
-    if (!threadId || !openClawStateDir) return undefined;
+    if (!threadId) return undefined;
     const codexHome = environment.CODEX_HOME?.trim();
+    const openClawStateDir = environment.OPENCLAW_STATE_DIR?.trim();
     if (
       !codexHome ||
       !isAbsolute(codexHome) ||
-      !isAbsolute(openClawStateDir) ||
       codexHome.includes('\0') ||
-      openClawStateDir.includes('\0') ||
+      (openClawStateDir !== undefined &&
+        (!isAbsolute(openClawStateDir) || openClawStateDir.includes('\0'))) ||
       threadId.length > 256 ||
       !isAbsolute(cwd) ||
       !this.#resolveCodexAgentId
@@ -378,11 +378,19 @@ export default class AgentCommandAuthority {
     }
     let agentId: string | undefined;
     try {
-      agentId = await this.#resolveCodexAgentId({ codexHome, openClawStateDir, threadId });
+      agentId = await this.#resolveCodexAgentId({
+        codexHome,
+        ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
+        threadId,
+      });
     } catch {
       throw this.#unresolved();
     }
-    if (!agentId || !agentIdPattern.test(agentId)) throw this.#unresolved();
+    if (!agentId) {
+      if (openClawStateDir !== undefined) throw this.#unresolved();
+      return undefined;
+    }
+    if (!agentIdPattern.test(agentId)) throw this.#unresolved();
     let response: AuthorityResponse;
     try {
       response = await this.#authorizeAgent(agentId, cwd);

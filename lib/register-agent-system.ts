@@ -235,22 +235,24 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
     async resolveCodexAgentId({ codexHome, openClawStateDir }) {
       let canonicalCodexHome: string;
-      let canonicalStateDir: string;
       try {
-        [canonicalCodexHome, canonicalStateDir] = await Promise.all([
-          realpath(codexHome),
-          realpath(openClawStateDir),
-        ]);
+        canonicalCodexHome = await realpath(codexHome);
       } catch {
         return undefined;
       }
-      let runtimeStateDir: string;
-      try {
-        runtimeStateDir = await realpath(api.runtime.state.resolveStateDir());
-      } catch {
-        return undefined;
+      if (openClawStateDir !== undefined) {
+        let canonicalStateDir: string;
+        let runtimeStateDir: string;
+        try {
+          [canonicalStateDir, runtimeStateDir] = await Promise.all([
+            realpath(openClawStateDir),
+            realpath(api.runtime.state.resolveStateDir()),
+          ]);
+        } catch {
+          return undefined;
+        }
+        if (canonicalStateDir !== runtimeStateDir) return undefined;
       }
-      if (canonicalStateDir !== runtimeStateDir) return undefined;
 
       const config = api.runtime.config.current() as OpenClawConfig;
       for (const entry of config.agents?.list ?? []) {
