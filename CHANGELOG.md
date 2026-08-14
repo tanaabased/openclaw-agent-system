@@ -3,6 +3,7 @@
 ### New Features
 
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
+- Added compact structured GitHub comment turns with hidden provider context and isolated public reply candidates. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added explicit operator-scoped progress publication from active local GitHub notification sessions.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)

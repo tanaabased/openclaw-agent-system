@@ -342,12 +342,15 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       'GitHub comment revision ids',
       255,
     )}`;
-    const notification = `An approved GitHub comment mentioned this agent on issue #${assignment.event.itemNumber}.`;
-    const prompt = githubNotificationCommentPrompt({ comment: input.context, item: input.item });
     const author = input.context.author;
     if (!author || author.nodeId !== input.comment.actorNodeId) {
       throw new Error('The GitHub notification comment author is invalid.');
     }
+    const presentation = githubNotificationCommentPrompt({
+      comment: input.context,
+      item: { ...input.item, delivery: input.delivery },
+      revision: input.comment,
+    });
     const ctxPayload = buildChannelInboundEventContext({
       accountId: assignment.route.accountId,
       channel: githubNotificationChannelId,
@@ -364,14 +367,15 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         githubItemNumber: assignment.event.itemNumber,
         githubItemType: assignment.event.itemType,
         githubRepositoryId: assignment.event.repositoryId,
+        UntrustedStructuredContext: [presentation.untrustedContext],
       },
       from: `github:${author.nodeId}`,
       message: {
-        body: notification,
-        bodyForAgent: prompt,
+        body: presentation.body,
+        bodyForAgent: presentation.body,
         commandBody: '',
         inboundEventKind: 'user_request',
-        rawBody: notification,
+        rawBody: presentation.body,
       },
       messageId,
       reply: {

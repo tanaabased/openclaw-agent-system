@@ -179,7 +179,12 @@ describe('channels/github/lib/session-service', () => {
           /https:\/\/github\.com\/tanaabased\/openclaw-agent-system\/issues\/42/u,
         );
         assert.match(String(input.ctx.BodyForAgent), /\*\*Mode:\*\* Plan/u);
-        assert.match(String(input.ctx.BodyForAgent), /## Assessment/u);
+        assert.ok(
+          String(input.ctx.BodyForAgent).endsWith(
+            '**Mode:** Plan — do not use tools or begin implementation.',
+          ),
+        );
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /## Assessment/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /GITHUB_CONTEXT_JSON/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /\/workspace\/data/u);
@@ -202,8 +207,6 @@ describe('channels/github/lib/session-service', () => {
           {
             isCommentary: true,
             text: [
-              'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
-              '',
               '## Assessment',
               '',
               'The request is bounded.',
@@ -215,6 +218,8 @@ describe('channels/github/lib/session-service', () => {
               '## Plan',
               '',
               '1. Implement it.',
+              '',
+              '> ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
             ].join('\n'),
           },
           { kind: 'final' },
@@ -280,15 +285,52 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.replyOptions?.disableTools, true);
         assert.deepEqual(input.toolsAllow, []);
         assert.equal(input.ctx.SenderId, 'U_actor');
-        assert.match(String(input.ctx.BodyForAgent), /Do not use tools/u);
-        assert.match(String(input.ctx.BodyForAgent), /no verified current update/u);
+        assert.match(String(input.ctx.BodyForAgent), /^## 💬 Comment received$/mu);
+        assert.match(String(input.ctx.BodyForAgent), /\[@pirog\]\(https:\/\/github\.com\/pirog\)/u);
+        assert.match(
+          String(input.ctx.BodyForAgent),
+          /https:\/\/github\.com\/tanaabased\/openclaw-agent-system\/issues\/42#issuecomment-92/u,
+        );
+        assert.match(String(input.ctx.BodyForAgent), /^> @data can you share a status update\?$/mu);
+        assert.ok(
+          String(input.ctx.BodyForAgent).endsWith(
+            '**Mode:** Comment response — do not use tools or begin implementation.',
+          ),
+        );
+        assert.doesNotMatch(
+          String(input.ctx.BodyForAgent),
+          /STATUS_EVIDENCE_JSON|GITHUB_COMMENT_JSON|revisionId/u,
+        );
+        assert.deepEqual(input.ctx.UntrustedStructuredContext, [
+          {
+            label: 'GitHub issue comment context',
+            payload: {
+              comment: context,
+              provenance: {
+                bodyDigest: revision.bodyDigest,
+                commentDatabaseId: 92,
+                commentNodeId: 'IC_comment',
+                revisionId: revision.revisionId,
+              },
+              statusEvidence: {
+                acknowledgmentStatus: 'published',
+                assignmentActive: true,
+                planningStatus: 'planned',
+              },
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/issues/42#issuecomment-92',
+            type: 'github_issue_comment',
+          },
+        ]);
         await input.replyOptions?.onTurnAdopted?.();
         await input.dispatcherOptions.deliver(
           {
             text: [
-              'GITHUB_REPLY: I have the plan ready, but I do not have a newly verified implementation update yet.',
-              'RESPONSE:',
+              '## Response',
+              '',
               'The assignment is active and the plan is recorded. A local follow-up is required before I can claim fresh repository or test status.',
+              '',
+              '> GITHUB_REPLY: I have the plan ready, but I do not have a newly verified implementation update yet.',
             ].join('\n'),
           },
           { kind: 'final' },

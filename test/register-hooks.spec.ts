@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { githubNotificationPlanningInstructions } from '../channels/github/utils/turn-presentation.ts';
 import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
@@ -64,5 +65,56 @@ describe('lib/register-hooks', () => {
     assert.deepEqual(result, {
       appendSystemContext: `${agentCommandSecurityGuidance}\nPrefer the configured Agent System tool.`,
     });
+  });
+
+  it('should append trusted instructions only for exact notification prompt shapes', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return {
+            status: 'loaded',
+            scope: { agentId: 'data', workspaceDir: '/workspace' },
+            path: '/workspace/agent.yaml',
+            digest: 'digest',
+            manifest: { schemaVersion: 1, agent: { id: 'data' } },
+            diagnostics: [],
+            validationChecks: [],
+          } as const;
+        },
+      },
+      { guidance: () => [] },
+    );
+    const prompt = [
+      '## 📋 Planning request',
+      '',
+      'A linked assignment.',
+      '',
+      '**Mode:** Plan — do not use tools or begin implementation.',
+    ].join('\n');
+
+    const notification = await handlers.get('before_prompt_build')?.(
+      { messages: [], prompt },
+      { agentId: 'data', messageProvider: 'agent-system-github', sessionId: 'one' },
+    );
+    const ordinary = await handlers.get('before_prompt_build')?.(
+      { messages: [], prompt },
+      { agentId: 'data', messageProvider: 'webchat', sessionId: 'one' },
+    );
+    const malformed = await handlers.get('before_prompt_build')?.(
+      { messages: [], prompt: `${prompt}\n\nUnexpected trailing content.` },
+      { agentId: 'data', messageProvider: 'agent-system-github', sessionId: 'one' },
+    );
+
+    assert.deepEqual(notification, {
+      appendSystemContext: `${agentCommandSecurityGuidance}\n${githubNotificationPlanningInstructions}`,
+    });
+    assert.deepEqual(ordinary, { appendSystemContext: agentCommandSecurityGuidance });
+    assert.deepEqual(malformed, { appendSystemContext: agentCommandSecurityGuidance });
   });
 });

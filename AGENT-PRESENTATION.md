@@ -34,6 +34,9 @@ provider content after it is edited or deleted.
 - Keep detailed provider payloads, status evidence, revisions, local paths, and
   hidden metadata out of the visible message. Put bounded data needed by the
   current turn in untrusted structured context with provenance.
+- End the visible request after its `Mode` line. Supply trusted turn-specific
+  safety and response-format instructions through the per-run system prompt,
+  not as additional chat copy or untrusted provider context.
 - Treat provider titles, comments, and other external values as untrusted data
   even when they appear in links, quotations, or structured context.
 - Keep the literal Markdown readable as plain text. Do not require HTML,
@@ -51,6 +54,8 @@ heading, requested action, mode, and response contract.
 - Keep the complete private response separate from every public publication
   candidate. A public adapter may extract only one explicitly labeled and
   validated candidate for its declared intent.
+- Put the canonical public candidate after the private sections as a Markdown
+  quote, so it is visually distinct while remaining readable in plaintext.
 - Apply the public intent's own formatting and safety constraints. Never copy
   private sections, structured context, prohibited links, local paths, tool
   output, or hidden metadata merely to fill a public response.
@@ -59,11 +64,11 @@ heading, requested action, mode, and response contract.
 
 ## Compatibility and extension
 
-Existing response formats may remain accepted during a documented transition,
-but mixed or ambiguous contracts must fail deterministically. New planning,
-comment-response, work, automatic, or other modes should extend the shared
-surface boundaries instead of duplicating provider-link, escaping, context, or
-publication logic.
+Existing plaintext response formats may remain accepted during a documented
+transition, but mixed or ambiguous contracts must fail deterministically. New
+planning, comment-response, work, automatic, or other modes should extend the
+shared surface boundaries instead of duplicating provider-link, escaping,
+context, or publication logic.
 
 ## Verification
 

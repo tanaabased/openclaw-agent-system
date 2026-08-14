@@ -4,6 +4,10 @@ import {
   GitHubNotificationPublicationError,
   githubNotificationPublicationText,
 } from './publication.ts';
+import {
+  githubNotificationMarkdownResponse,
+  githubNotificationPublicCandidates,
+} from './response-presentation.ts';
 
 const fallbackAcknowledgment = 'Got it — I have reviewed the assignment and prepared a plan.';
 const requiredSections = ['ASSESSMENT', 'BLOCKERS', 'PLAN'] as const;
@@ -44,28 +48,13 @@ function planningSections(response: string): {
   lines: string[];
   sections: PlanningSection[];
 } {
-  const lines = response.replace(/\r\n?/gu, '\n').split('\n');
+  const markdown = githubNotificationMarkdownResponse(response);
+  const lines = markdown.lines;
   const sections: PlanningSection[] = [];
   const formats = new Set<PlanningResponseFormat>();
-  let fence: { character: '`' | '~'; length: number } | undefined;
 
-  for (const [lineNumber, line] of lines.entries()) {
-    const marker = /^[ \t]{0,3}(`{3,}|~{3,})/u.exec(line)?.[1];
-    if (fence) {
-      if (
-        marker?.[0] === fence.character &&
-        marker.length >= fence.length &&
-        line.slice(marker.length).trim() === ''
-      ) {
-        fence = undefined;
-      }
-      continue;
-    }
-    if (marker) {
-      fence = { character: marker[0] as '`' | '~', length: marker.length };
-      continue;
-    }
-    const section = planningSection(line);
+  for (const { line: lineNumber, text } of markdown.visibleLines) {
+    const section = planningSection(text);
     if (!section) continue;
     formats.add(section.format);
     sections.push({ line: lineNumber, name: section.name });
@@ -146,15 +135,18 @@ export function assertGitHubNotificationPlanningResponse(
 export default function githubNotificationPlanningAcknowledgment(
   payloads: readonly ReplyPayload[],
 ): string {
-  const response = payloads.map(planningResponseText).filter(Boolean).join('\n');
-  const matches = [...response.matchAll(/^ACKNOWLEDGMENT:[ \t]*(.+?)[ \t]*$/gmu)];
-  if (matches.length !== 1 || !matches[0]?.[1]) {
+  const candidates = payloads.flatMap((payload) =>
+    githubNotificationPublicCandidates(planningResponseText(payload), 'ACKNOWLEDGMENT'),
+  );
+  if (candidates.length !== 1 || !candidates[0]?.value) {
     return githubNotificationPublicationText('initial-acknowledgment', [
       { text: fallbackAcknowledgment },
     ]);
   }
   try {
-    return githubNotificationPublicationText('initial-acknowledgment', [{ text: matches[0][1] }]);
+    return githubNotificationPublicationText('initial-acknowledgment', [
+      { text: candidates[0].value },
+    ]);
   } catch (error) {
     if (!(error instanceof GitHubNotificationPublicationError)) throw error;
     return githubNotificationPublicationText('initial-acknowledgment', [

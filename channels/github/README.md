@@ -66,6 +66,10 @@ Please review it and prepare a private implementation plan.
 **Mode:** Plan — do not use tools or begin implementation.
 ```
 
+The visible chat turn intentionally stops after `Mode`. Agent System supplies
+the trusted safety and response-format contract through the run's system prompt
+instead of printing those operating instructions into the conversation.
+
 The issue body, labels, and comments are supplied separately through OpenClaw's
 current-turn untrusted structured context. They remain available to the agent
 without appearing in normal chat history. The request also keeps managed
@@ -83,8 +87,6 @@ decision and deterministic safety gate.
 The private planning response uses this canonical Markdown contract:
 
 ```markdown
-ACKNOWLEDGMENT: I reviewed the assignment and prepared a plan.
-
 ## Assessment
 
 🧭 The requested outcome and its relevant constraints.
@@ -97,6 +99,8 @@ None.
 
 1. **🔎 Inspect the boundary.** Trace the current behavior.
 2. **✅ Verify the result.** Run the relevant checks.
+
+> ACKNOWLEDGMENT: I reviewed the assignment and prepared a plan.
 ```
 
 `Assessment`, `Blockers`, and `Plan` must each appear once, in that order, and
@@ -112,6 +116,55 @@ required for the plan to remain readable.
 Only the separate `ACKNOWLEDGMENT:` candidate can enter the public publication
 path. It remains subject to the one-sentence safety gate and cannot publish the
 private sections, links, issue context, or local paths.
+
+## Private Comment Presentation
+
+An admitted comment turn continues the same issue session with one compact
+linked request:
+
+```markdown
+## 💬 Comment received
+
+[@pirog](https://github.com/pirog) commented on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7#issuecomment-123):
+
+> @tanaabot Can you share a status update based on what is already recorded?
+
+Please respond conversationally in this private issue session.
+
+**Mode:** Comment response — do not use tools or begin implementation.
+```
+
+The visible turn contains the actor, stable GitHub source, quoted comment,
+requested action, and mode. It excludes status envelopes, revision digests,
+node ids, worktree paths, and response-format instructions. The complete
+canonical comment, its database and node identities, revision id and body
+digest, and Agent System-owned delivery evidence are attached as current-turn
+untrusted structured context. Comment bodies are limited to 1,000 characters;
+truncated comments are rejected instead of dispatched.
+
+The canonical private response puts one non-empty response section before one
+visually isolated public candidate:
+
+```markdown
+## Response
+
+The complete private response, with any useful Markdown formatting.
+
+> GITHUB_REPLY: One concise public-safe reply in the agent's own voice.
+```
+
+Only the quoted `GITHUB_REPLY:` candidate can enter publication, after the
+existing bounded-content safety gate. The legacy plaintext `GITHUB_REPLY:` plus
+`RESPONSE:` format remains accepted during migration; mixed, duplicated,
+reordered, ambiguous, or empty structures fail deterministically.
+
+Under normal OpenClaw retention, the model-facing structured context remains in
+the raw session transcript. Sanitized `chat.history` output and later
+model-turn replay omit it. Each context entry retains the GitHub issue or exact
+comment URL, so GitHub is the primary re-fetch source if the local transcript
+has expired, been pruned, or been truncated. Re-fetch observes the provider's
+current state and cannot reconstruct content that GitHub has edited or deleted;
+Agent System does not promise indefinite transcript retention.
 
 Each enabled channel account owns its polling lifecycle while the Gateway is
 running. `openclaw channels status --channel agent-system-github --json`

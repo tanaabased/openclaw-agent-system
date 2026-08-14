@@ -12,6 +12,10 @@ function markdownLabel(value: string): string {
     .replace(/[\\[\]`*_]/gu, '\\$&');
 }
 
+export function githubNotificationActorLink(login: string): string {
+  return `[@${markdownLabel(login)}](https://github.com/${encodeURIComponent(login)})`;
+}
+
 export function githubNotificationItemUrl(item: GitHubNotificationPresentationItem): string {
   const collection = item.itemType === 'pull-request' ? 'pull' : 'issues';
   return `https://github.com/${encodeURIComponent(item.repositoryOwner)}/${encodeURIComponent(item.repositoryName)}/${collection}/${item.number}`;
@@ -24,6 +28,24 @@ export function githubNotificationItemLink(
   const reference = `${item.repositoryOwner}/${item.repositoryName}#${item.number}`;
   const label = title?.trim() ? `${reference} — ${title}` : reference;
   return `[${markdownLabel(label)}](${githubNotificationItemUrl(item)})`;
+}
+
+export function githubNotificationCommentUrl(
+  item: GitHubNotificationPresentationItem,
+  commentDatabaseId: number,
+): string {
+  if (!Number.isSafeInteger(commentDatabaseId) || commentDatabaseId < 1) {
+    throw new Error('GitHub comment database ids must be positive safe integers.');
+  }
+  return `${githubNotificationItemUrl(item)}#issuecomment-${commentDatabaseId}`;
+}
+
+export function githubNotificationCommentLink(
+  item: GitHubNotificationPresentationItem,
+  commentDatabaseId: number,
+): string {
+  const label = `${item.repositoryOwner}/${item.repositoryName}#${item.number}`;
+  return `[${markdownLabel(label)}](${githubNotificationCommentUrl(item, commentDatabaseId)})`;
 }
 
 /** Format the shared assignment introduction for mode-specific private requests. */

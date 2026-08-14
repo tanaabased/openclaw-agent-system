@@ -165,6 +165,7 @@ jq -e '
   | visible_text("user") as $user
   | {
       assessment: ($assistant | contains("## Assessment")),
+      acknowledgment: ($assistant | contains("> ACKNOWLEDGMENT:")),
       blockers: ($assistant | contains("## Blockers")),
       plan: ($assistant | contains("## Plan")),
       assignment: (($user | ascii_downcase) | contains("assigned")),
@@ -172,6 +173,7 @@ jq -e '
       issue_link: ($user | contains("https://github.com/tanaabased/agent-system-test/issues/")),
       issue_context_hidden: ($user | contains("Untrusted fixture content") | not),
       legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
+      trusted_instructions_hidden: ($user | contains("Return exactly one non-empty") | not),
       worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
     } as $checks
   | if ($checks | all(.[]; .)) then $checks else error("notification presentation checks failed: \($checks)") end
@@ -179,6 +181,16 @@ jq -e '
 jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+
+# should retain planning provider context in the raw transcript but not sanitized history
+cd "$TMPDIR/agent-system-notifications"
+session_key="$(cat "$TMPDIR/approved-session-key")"
+store_path="$(openclaw sessions --agent notification-data --json | jq -er '.path')"
+session_id="$(jq -er --arg key "$session_key" '.[$key].sessionId' "$store_path")"
+transcript_path="$(dirname "$store_path")/$session_id.jsonl"
+test -f "$transcript_path"
+grep -F 'GitHub issue context' "$transcript_path"
+grep -F 'Untrusted fixture content' "$transcript_path"
 
 # should publish one explicit local progress update once for a duplicate command dispatch
 cd "$TMPDIR/agent-system-notifications"
@@ -242,8 +254,46 @@ done
 test "$reply_count" = '1'
 cd "$TMPDIR/agent-system-notifications"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("GITHUB_REPLY:") and contains("RESPONSE:")'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
+jq -e '
+  def visible_text($role):
+    [
+      .messages[]?
+      | select(.role == $role)
+      | if (.content | type) == "string" then
+          .content
+        elif (.content | type) == "array" then
+          .content[]? | select(.type == "text") | .text
+        else
+          empty
+        end
+    ] | join("\n");
+  visible_text("assistant") as $assistant
+  | visible_text("user") as $user
+  | {
+      comment_request: ($user | contains("## 💬 Comment received")),
+      commenter: ($user | contains("https://github.com/pirog")),
+      comment_link: ($user | contains("#issuecomment-")),
+      comment_content: ($user | contains("Can you share a status update based only on what is already recorded?")),
+      mode: ($user | contains("**Mode:** Comment response")),
+      private_response: ($assistant | contains("## Response")),
+      public_candidate: ($assistant | contains("> GITHUB_REPLY:")),
+      legacy_envelopes_hidden: (($user | contains("STATUS_EVIDENCE_JSON") or contains("GITHUB_COMMENT_JSON")) | not),
+      revision_hidden: (($user | contains("revisionId") or contains("bodyDigest")) | not),
+      worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
+    } as $checks
+  | if ($checks | all(.[]; .)) then $checks else error("comment presentation checks failed: \($checks)") end
+' <<< "$history"
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
+
+# should retain revision-bound comment context in the raw transcript
+store_path="$(openclaw sessions --agent notification-data --json | jq -er '.path')"
+session_id="$(jq -er --arg key "$session_key" '.[$key].sessionId' "$store_path")"
+transcript_path="$(dirname "$store_path")/$session_id.jsonl"
+test -f "$transcript_path"
+grep -F 'GitHub issue comment context' "$transcript_path"
+grep -F 'statusEvidence' "$transcript_path"
+grep -F 'Can you share a status update based only on what is already recorded?' "$transcript_path"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 

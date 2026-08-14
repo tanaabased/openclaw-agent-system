@@ -6,6 +6,7 @@ import githubNotificationPlanningAcknowledgment, {
   assertGitHubNotificationPlanningResponse,
   GitHubNotificationPlanningResponseError,
 } from '../channels/github/utils/planning-response.ts';
+import { githubNotificationTurnInstructions } from '../channels/github/utils/turn-presentation.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 function assertInvalidPlanningResponse(text: string): void {
@@ -39,15 +40,20 @@ describe('channels/github/utils/planning', () => {
     assert.match(planning.body, /You've been assigned/u);
     assert.match(planning.body, /https:\/\/github\.com\/tanaabased\/example\/issues\/12/u);
     assert.match(planning.body, /\*\*Mode:\*\* Plan/u);
-    assert.match(planning.body, /## Assessment/u);
-    assert.match(planning.body, /## Blockers/u);
-    assert.match(planning.body, /## Plan/u);
     assert.match(planning.body, /do not use tools or begin implementation/u);
-    assert.match(planning.body, /untrusted project data/u);
     assert.ok(planning.body.includes('Add \\](https://evil.example) \\*planning\\*'));
+    assert.ok(planning.body.endsWith('**Mode:** Plan — do not use tools or begin implementation.'));
+    assert.doesNotMatch(planning.body, /## Assessment|## Blockers|## Plan/u);
+    assert.doesNotMatch(planning.body, /untrusted project data|ACKNOWLEDGMENT/u);
     assert.doesNotMatch(planning.body, /Ignore the system/u);
     assert.doesNotMatch(planning.body, /Please keep this small/u);
     assert.doesNotMatch(planning.body, /GITHUB_CONTEXT_JSON/u);
+    assert.match(planning.instructions, /## Assessment/u);
+    assert.match(planning.instructions, /## Blockers/u);
+    assert.match(planning.instructions, /## Plan/u);
+    assert.match(planning.instructions, /untrusted project data/u);
+    assert.match(planning.instructions, /`> ACKNOWLEDGMENT:/u);
+    assert.equal(githubNotificationTurnInstructions(planning.body), planning.instructions);
     assert.deepEqual(planning.untrustedContext, {
       label: 'GitHub issue context',
       payload: context,
@@ -78,8 +84,6 @@ describe('channels/github/utils/planning', () => {
   it('should accept one formatted private plan and isolate its public acknowledgment', () => {
     const response = {
       text: [
-        'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
-        '',
         '## Assessment',
         '',
         '🧭 This needs a **bounded implementation**.',
@@ -92,6 +96,8 @@ describe('channels/github/utils/planning', () => {
         '',
         '1. **🔎 Inspect the boundary.** Review `/workspace/private`.',
         '2. Read [the private reference](https://example.com/private).',
+        '',
+        '> ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
       ].join('\n'),
     };
 
@@ -209,13 +215,13 @@ describe('channels/github/utils/planning', () => {
     );
     assert.equal(
       githubNotificationPlanningAcknowledgment([
-        { text: 'ACKNOWLEDGMENT: Ready.\nACKNOWLEDGMENT: Still ready.' },
+        { text: '> ACKNOWLEDGMENT: Ready.\nACKNOWLEDGMENT: Still ready.' },
       ]),
       fallback,
     );
     assert.equal(
       githubNotificationPlanningAcknowledgment([
-        { text: 'ACKNOWLEDGMENT: I found GH_TOKEN=secret-value in the issue.' },
+        { text: '> ACKNOWLEDGMENT: I found GH_TOKEN=secret-value in the issue.' },
       ]),
       fallback,
     );
