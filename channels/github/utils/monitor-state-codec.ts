@@ -63,7 +63,7 @@ const deliveryKeys = new Set([
   'worktreePath',
 ]);
 
-const acknowledgmentKeys = new Set(['commentId', 'status']);
+const acknowledgmentKeys = new Set(['commentId', 'failureCode', 'status']);
 const activationKeys = new Set(['failureCode', 'status']);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
@@ -142,11 +142,26 @@ function optionalBoundedString(value: unknown, maximumLength: number): boolean {
 
 function validAcknowledgment(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const acknowledgment = value as { commentId?: unknown; status?: unknown };
+  const acknowledgment = value as {
+    commentId?: unknown;
+    failureCode?: unknown;
+    status?: unknown;
+  };
   if (!hasOnlyKeys(value, acknowledgmentKeys)) return false;
-  if (acknowledgment.status === 'pending') return acknowledgment.commentId === undefined;
+  if (acknowledgment.status === 'pending') {
+    return acknowledgment.commentId === undefined && acknowledgment.failureCode === undefined;
+  }
+  if (acknowledgment.status === 'failed') {
+    return (
+      acknowledgment.commentId === undefined &&
+      optionalBoundedString(acknowledgment.failureCode, 255) &&
+      typeof acknowledgment.failureCode === 'string' &&
+      /^[a-z0-9][a-z0-9-]*$/u.test(acknowledgment.failureCode)
+    );
+  }
   return (
     acknowledgment.status === 'published' &&
+    acknowledgment.failureCode === undefined &&
     Number.isSafeInteger(acknowledgment.commentId) &&
     Number(acknowledgment.commentId) > 0
   );

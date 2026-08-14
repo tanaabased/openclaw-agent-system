@@ -6,7 +6,9 @@ export type GitHubNotificationDeliveryStage =
   'active' | 'admitted' | 'retired' | 'session-recording' | 'worktree-ready';
 
 export type GitHubNotificationAcknowledgmentState =
-  { status: 'pending' } | { commentId: number; status: 'published' };
+  | { failureCode: string; status: 'failed' }
+  | { status: 'pending' }
+  | { commentId: number; status: 'published' };
 
 export interface GitHubNotificationActivationState {
   failureCode?: string;

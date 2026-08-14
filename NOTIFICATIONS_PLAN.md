@@ -1,8 +1,8 @@
 # GitHub Notifications Plan
 
-Status: Notifications MVP 1 is shipped. Notifications 2 is active development on
-`pirog-notifications-2`. No Notifications 2 phase is complete until its public
-channel-SDK path and packed third-party installed acceptance proof pass.
+Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0 and Phase 1A are
+implemented on `main` through the public channel SDK and covered by the packed
+third-party notifications scenario. Phases 2 through 7 remain planned work.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -74,21 +74,28 @@ boundaries. It covers:
 Leia scenarios remain CI-only and must not run against a developer's normal
 OpenClaw state.
 
-## Implemented Ahead of MVP 1
+## Current Notifications 2 Implementation
 
-The branch contains tested implementation that is deliberately outside the MVP
-1 product promise:
+Current `main` contains tested behavior deliberately outside the MVP 1 product
+promise:
 
 - issue-shaped pull-request discovery and classification;
 - canonical unassignment and authority-revocation transitions;
 - logical retirement that preserves sessions and worktrees;
 - reassignment and multi-stage delivery state;
 - optional immutable repository-owner restrictions; and
-- safely retryable deterministic session recording.
+- safely retryable deterministic session recording;
+- asynchronous bounded issue-context planning with tools disabled;
+- one model-authored, personality-aware acknowledgment candidate extracted from
+  the private planning response;
+- fail-closed publication through the public channel message adapter and durable
+  outbound lifecycle; and
+- value-free activation, acknowledgment, and provider-receipt checkpoints.
 
-Keep these paths unless they destabilize MVP 1, but describe them as
-implemented ahead until Notifications 2 supplies installed acceptance coverage,
-operator controls, and a complete lifecycle contract.
+The packed notifications scenario covers the plan-only turn, one public
+acknowledgment, restart deduplication, and logical retirement. Later comment,
+progress, pull-request, operator replay, cleanup, and automatic-work behavior
+remains unavailable until its owning phase is implemented and accepted.
 
 ## Configuration Contract
 
@@ -263,6 +270,12 @@ Private state contains assignment ids, canonical repository/item ids, baseline
 cursors, delivery checkpoints, worktree/session correlation, retry timing, and
 stable diagnostic codes. It does not contain credentials or GitHub prose.
 
+Acknowledgment state is explicit and value-free: `pending` while activation or
+publication is in progress, `published` only with a confirmed provider comment
+receipt, and `failed` with a stable diagnostic code after a terminal publication
+outcome. Doctor reports pending and failed acknowledgments independently from
+monitor read health; a healthy poll does not hide an incomplete publication.
+
 Delivery is deterministic and idempotent from Agent System's perspective:
 
 - checkpoint before worktree preparation;
@@ -322,16 +335,18 @@ OpenClaw and GitHub intentionally receive different outputs from one agent turn:
 
 1. an admitted GitHub event resolves the deterministic issue conversation;
 2. OpenClaw records the full agent response in the private local session;
-3. a publication composer receives only the bounded final local response and
-   relevant public issue context, never the complete transcript;
-4. the composer produces a separate concise, conversational, personality-aware
-   GitHub candidate;
+3. bounded model generation produces a separately labeled, concise,
+   conversational, personality-aware GitHub candidate without exposing the
+   complete transcript;
+4. the initial planning turn emits its acknowledgment candidate alongside the
+   private assessment, blockers, and plan; later intents may use their own
+   bounded composer when their owning phase is implemented;
 5. a deterministic fail-closed gate rejects unsafe or unsupported candidates;
 6. one GitHub message adapter reauthorizes and durably publishes the accepted
    candidate; and
 7. Agent System persists only value-free checkpoints and delivery receipts.
 
-Formatting, summarization, and personality belong to the publication composer,
+Formatting, summarization, and personality belong to bounded model generation
 before the final safety gate. The message adapter remains a deterministic
 transport and authorization boundary so retries cannot regenerate different
 content. Sanitization means rejecting a candidate that cannot be proven safe,
@@ -353,8 +368,10 @@ Publication eligibility is origin-aware:
 - Route inbound final-reply delivery through
   `deliverInboundReplyWithMessageSendContext(...)` and use OpenClaw's durable
   outbound helpers for queueing, retries, hooks, and normalized receipts.
-- Provide one Agent System publication entry point accepting only explicit
+- Model one Agent System publication target vocabulary for the explicit
   `initial-acknowledgment`, `github-reply`, and `operator-progress` intents.
+  Enable only `initial-acknowledgment` until the later intent's owning phase is
+  implemented.
 - Resolve the channel account and conversation target to one admitted canonical
   issue before any credential resolution or provider mutation.
 - Reauthorize the current assignment or admitted comment, verified GitHub
@@ -366,6 +383,10 @@ Publication eligibility is origin-aware:
   the intent contract.
 - Reconcile deterministic provider markers and OpenClaw message receipts so
   retries, restarts, and ambiguous delivery cannot create duplicate comments.
+- Let OpenClaw's durable send own each publication attempt, provider retries,
+  normalized receipts, and unknown-send reconciliation. Agent System owns only
+  the resulting confirmed-comment or stable-failure checkpoint and does not add
+  a parallel automatic retry transport.
 - Keep credentials, GitHub prose, local paths, and generated payloads out of
   private control state and routine diagnostics.
 - Replace the current context-free acknowledgment capture and direct GitHub
@@ -396,19 +417,25 @@ Publication eligibility is origin-aware:
 - After the planning turn is adopted and completes, create one
   `initial-acknowledgment` publication intent from its bounded final response.
   The GitHub candidate must accurately communicate whether the agent reviewed
-  the issue and prepared a plan, found a blocker, or is beginning work. It must
-  not imply that implementation started in plan-only behavior.
+  the issue and prepared a plan, found a blocker, or is beginning work. Once the
+  issue has been processed and planning has begun, conversational wording such
+  as "I've started working" is accurate; plan-only behavior must not claim that
+  repository inspection, code changes, or other implementation steps occurred.
 - Compose and publish the acknowledgment asynchronously through Phase 0's single
   outbound path. A delayed or failed acknowledgment must not block the local
-  planning or implementation lifecycle.
+  planning or implementation lifecycle. Persist a confirmed provider receipt or
+  a stable terminal failure, surface pending and failed outcomes through doctor
+  and logs, and leave explicit replay to Phase 5.
 - Make activation retryable and cancellable, and distinguish a turn the host has
   adopted from one that failed before adoption so ambiguous delivery cannot start
   duplicate planning turns.
 - Persist only value-free activation checkpoints and stable authorization,
   context-fetch, dispatch, cancellation, and ambiguous-delivery diagnostics.
 - Remove the unused `baselineItemNodeIds` inventory as a state-contract update;
-  no legacy monitor-state migration or retroactive activation is required.
-  `baselineAt` remains the historical admission boundary.
+  schema 2 is an intentionally unsupported legacy shape because the only known
+  installation was manually upgraded. Do not add migration or retroactive
+  activation unless the support policy changes. `baselineAt` remains the
+  historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
 
 Ship Phase 1A as plan-only activation. Do not add a manifest setting while there
@@ -570,6 +597,17 @@ implementation modules.
 16. Treat a later operator-authored message in the private issue session as the
     continuation mechanism for plan-only work. Do not model that pause as a
     command confirmation or let a GitHub comment authorize implementation.
+17. Let the planning model write the initial acknowledgment in its own voice as
+    a separately labeled candidate. Treat planning as work from the user's
+    perspective, while reserving claims about repository inspection, code
+    changes, or implementation completion for phases that actually perform them.
+18. Let OpenClaw own durable send attempts, provider retries, normalized receipts,
+    and unknown-send reconciliation. Agent System records only the confirmed
+    comment receipt or stable failed outcome and exposes incomplete publication
+    separately from monitor health.
+19. Keep monitor-state schema 2 unsupported. The only known installation was
+    manually upgraded, so future optimization passes must not add a migration or
+    retroactive activation without a changed support policy.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,

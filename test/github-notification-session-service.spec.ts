@@ -214,7 +214,9 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.equal(adopted, 1);
-    assert.deepEqual(result, { acknowledgmentCommentId: 91 });
+    assert.deepEqual(result, {
+      acknowledgment: { commentId: 91, status: 'published' },
+    });
     assert.equal(published?.intent, 'initial-acknowledgment');
     assert.deepEqual(published?.payload, {
       text: 'I have read this through and mapped out a plan.',
@@ -251,9 +253,57 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.deepEqual(result, {
-      acknowledgmentFailureCode: 'github-notification-planning-acknowledgment-missing',
+      acknowledgment: {
+        failureCode: 'github-notification-planning-acknowledgment-missing',
+        status: 'failed',
+      },
     });
     assert.equal(publications, 0);
+  });
+
+  it('should preserve planning completion when durable publication is not confirmed', async () => {
+    const service = createService({
+      async dispatch(input) {
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              'ACKNOWLEDGMENT: Got it, I have started working through the plan.',
+              'ASSESSMENT:',
+              'The request is bounded.',
+              'BLOCKERS:',
+              'None.',
+              'PLAN:',
+              '1. Implement it.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        return { error: new Error('provider unavailable'), status: 'failed' };
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...assignmentInput,
+      context: {
+        body: '',
+        comments: [],
+        labels: [],
+        title: 'Implement the behavior',
+        truncated: false,
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.deepEqual(result, {
+      acknowledgment: {
+        failureCode: 'github-notification-acknowledgment-publication-failed',
+        status: 'failed',
+      },
+    });
   });
 
   it('should prepare a deterministic observe-only session record', async () => {

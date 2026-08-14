@@ -48,10 +48,10 @@ export interface GitHubNotificationPlanningTurnInput extends GitHubNotificationA
   onTurnAdopted(): Promise<void> | void;
 }
 
-export interface GitHubNotificationPlanningTurnResult {
-  acknowledgmentCommentId?: number;
-  acknowledgmentFailureCode?: string;
-}
+export type GitHubNotificationPlanningTurnResult = {
+  acknowledgment:
+    { failureCode: string; status: 'failed' } | { commentId: number; status: 'published' };
+};
 
 export interface GitHubNotificationSessionTurnInput {
   config: OpenClawConfig;
@@ -270,7 +270,9 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     try {
       acknowledgment = githubNotificationPlanningAcknowledgment([planningPayload]);
     } catch (error) {
-      return { acknowledgmentFailureCode: errorCode(error) };
+      return {
+        acknowledgment: { failureCode: errorCode(error), status: 'failed' },
+      };
     }
     try {
       const publication = await this.#dependencies.publicationService.publish({
@@ -285,11 +287,22 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         publicationId: input.delivery.assignmentEventId,
       });
       const acknowledgmentCommentId = publishedCommentId(publication);
+      const acknowledgmentFailureCode =
+        publication.status === 'failed'
+          ? errorCode(publication.error)
+          : 'github-notification-acknowledgment-not-confirmed';
       return acknowledgmentCommentId === undefined
-        ? { acknowledgmentFailureCode: 'github-notification-acknowledgment-not-confirmed' }
-        : { acknowledgmentCommentId };
+        ? {
+            acknowledgment: {
+              failureCode: acknowledgmentFailureCode,
+              status: 'failed',
+            },
+          }
+        : { acknowledgment: { commentId: acknowledgmentCommentId, status: 'published' } };
     } catch (error) {
-      return { acknowledgmentFailureCode: errorCode(error) };
+      return {
+        acknowledgment: { failureCode: errorCode(error), status: 'failed' },
+      };
     }
   }
 

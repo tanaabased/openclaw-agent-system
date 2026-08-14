@@ -205,11 +205,27 @@ export default function createNotificationLifecycleContribution(
         ];
       }
       const activationFailureCounts = new Map<string, number>();
+      const acknowledgmentFailureCounts = new Map<string, number>();
+      let acknowledgmentPendingCount = 0;
       for (const item of Object.values(state.items)) {
-        const activation = item.delivery?.activation;
+        const delivery = item.delivery;
+        const activation = delivery?.activation;
         if (activation?.status !== 'failed') continue;
         const code = activation.failureCode ?? 'github-notification-activation-failed';
         activationFailureCounts.set(code, (activationFailureCounts.get(code) ?? 0) + 1);
+      }
+      for (const item of Object.values(state.items)) {
+        const delivery = item.delivery;
+        if (item.disposition !== 'approved' || delivery?.stage !== 'active') continue;
+        const acknowledgment = delivery.acknowledgment;
+        if (acknowledgment?.status === 'pending') {
+          acknowledgmentPendingCount += 1;
+        } else if (acknowledgment?.status === 'failed') {
+          acknowledgmentFailureCounts.set(
+            acknowledgment.failureCode,
+            (acknowledgmentFailureCounts.get(acknowledgment.failureCode) ?? 0) + 1,
+          );
+        }
       }
       const activationFindings = [...activationFailureCounts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
@@ -219,9 +235,32 @@ export default function createNotificationLifecycleContribution(
           remediation: 'Resolve the named diagnostic, then use a fresh assignment.',
           status: 'warning' as const,
         }));
+      const acknowledgmentFindings = [...acknowledgmentFailureCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub notification acknowledgment${count === 1 ? '' : 's'} failed after the private planning turn completed.`,
+          remediation:
+            'The private plan remains available. Resolve the named diagnostic; automatic acknowledgment replay is not currently supported.',
+          status: 'warning' as const,
+        }));
+      const acknowledgmentPendingFindings =
+        acknowledgmentPendingCount === 0
+          ? []
+          : [
+              {
+                code: 'github-notification-acknowledgment-pending',
+                message: `${acknowledgmentPendingCount} GitHub notification acknowledgment${acknowledgmentPendingCount === 1 ? ' is waiting for its' : 's are waiting for their'} planning or publication checkpoint.`,
+                remediation:
+                  'Wait for Gateway activation to settle; if this persists, inspect the Gateway logs and use a fresh assignment.',
+                status: 'warning' as const,
+              },
+            ];
       return [
         ...routingFinding,
         ...activationFindings,
+        ...acknowledgmentFindings,
+        ...acknowledgmentPendingFindings,
         {
           code: 'github-notification-monitor-healthy',
           message: `The GitHub notification monitor last completed a successful read-only observation at ${isoTime(state.lastSuccessfulPollAt)}.`,

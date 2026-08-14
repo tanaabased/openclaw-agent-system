@@ -34,7 +34,10 @@ running. `openclaw channels status --channel agent-system-github --json`
 reports whether that account is running, connected, and healthy. The manual
 refresh command runs the deterministic intake path immediately and returns
 without waiting for a model. The running Gateway owns asynchronous planning and
-acknowledgment delivery.
+acknowledgment delivery. OpenClaw owns each durable send attempt, provider retry,
+receipt normalization, and unknown-send reconciliation. Agent System stores only
+the confirmed comment receipt or a stable failed diagnostic; `doctor` reports
+pending and failed acknowledgments separately from monitor read health.
 
 ## Requirements
 
