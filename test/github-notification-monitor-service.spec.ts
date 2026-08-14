@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import { GitHubNotificationAssignmentOrchestratorError } from '../channels/github/lib/assignment-orchestrator.ts';
+import GitHubNotificationAssignmentOrchestrator, {
+  GitHubNotificationAssignmentOrchestratorError,
+} from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import { GitHubAccountClientError } from '../lib/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
@@ -231,23 +233,65 @@ describe('channels/github/lib/monitor-service', () => {
   });
 
   it('should reconcile transitional retirement before the next remote poll', async () => {
-    const reconciled: string[] = [];
-    const state = notificationMonitorState();
+    let state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
+    const delivery = state.items[notificationItemKey]?.delivery;
+    assert.ok(delivery);
+    const sessionKey = 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item';
+    const worktree = {
+      branch: 'issue-7-branch',
+      path: '/workspace/worktrees/issue-7',
+    };
     state.items[notificationItemKey] = {
       ...state.items[notificationItemKey]!,
+      delivery: {
+        ...delivery,
+        acknowledgment: { commentId: 42, status: 'published' },
+        activation: { status: 'planned' },
+        sessionId: 'session-1',
+        sessionKey,
+        stage: 'active',
+        worktreeBranch: worktree.branch,
+        worktreePath: worktree.path,
+      },
       disposition: 'retired',
-      reasonCode: 'item-unassigned',
+      reasonCode: 'item-closed',
     };
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-      assignmentOrchestrator: {
-        async reconcile(_agentId, itemKey) {
-          reconciled.push(itemKey);
+    const stateStore = {
+      async read() {
+        return structuredClone(state);
+      },
+      async write(next: GitHubNotificationMonitorState) {
+        state = structuredClone(next);
+      },
+    };
+    let sessionRecords = 0;
+    let worktreeOperations = 0;
+    const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async recordSession() {
+          sessionRecords += 1;
+          return { key: sessionKey, status: 'active' };
         },
       },
+      stateStore,
+      worktrees: {
+        async inspect() {
+          worktreeOperations += 1;
+          return worktree;
+        },
+        async prepare() {
+          worktreeOperations += 1;
+          return worktree;
+        },
+      },
+    });
+    const service = new GitHubNotificationMonitorService({
+      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+      assignmentOrchestrator,
       clock: () => 1_000,
       cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn() {} },
@@ -260,15 +304,19 @@ describe('channels/github/lib/monitor-service', () => {
           message: 'ready',
         }),
       },
-      stateStore: {
-        read: async () => structuredClone(state),
-        write: async () => undefined,
-      },
+      stateStore,
     });
 
-    await service.runOnce();
+    const [result] = await service.runOnce();
 
-    assert.deepEqual(reconciled, [notificationItemKey]);
+    assert.equal(result?.code, 'github-notification-pending-reconciled');
+    assert.equal(state.items[notificationItemKey]?.delivery?.stage, 'retired');
+    assert.equal(state.items[notificationItemKey]?.delivery?.sessionId, 'session-1');
+    assert.equal(state.items[notificationItemKey]?.delivery?.sessionKey, sessionKey);
+    assert.equal(state.items[notificationItemKey]?.delivery?.worktreeBranch, worktree.branch);
+    assert.equal(state.items[notificationItemKey]?.delivery?.worktreePath, worktree.path);
+    assert.equal(sessionRecords, 0);
+    assert.equal(worktreeOperations, 0);
   });
 
   it('should verify exact routing before resolving a credential', async () => {
