@@ -24,6 +24,10 @@
 - Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
 - Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
 
+### Notes
+
+- Moved the GitHub notification presentation contract into the packaged channel documentation and tightened the channel entrypoint.
+
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 
 ### New Features

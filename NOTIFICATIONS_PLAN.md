@@ -1,11 +1,20 @@
 # GitHub Notifications Plan
 
-Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A,
-Phase 2, Phase 3, and Phase 4A are implemented through the public channel SDK
-and covered by packed third-party assignment scenarios. Phase 4B and Phase 5 are
-reserved for the upcoming release. Later work continuation, model-routing, and
-automatic-activation capabilities are tracked as separate Feature issues
-outside this release plan.
+Status: Notifications MVP 1 and Notifications 2 Phases 0, 1A, 2, 3, and 4A
+are shipped through the public channel SDK. Phase 4B and Phase 5 remain planned;
+work continuation, model routing, and automatic activation remain separate
+Feature issues.
+
+| Surface                                    | State       | Current boundary                                     |
+| ------------------------------------------ | ----------- | ---------------------------------------------------- |
+| MVP 1 issue intake                         | shipped     | deterministic assignment, worktree, and session      |
+| Phase 0 outbound foundation                | implemented | one authorized durable GitHub delivery path          |
+| Phase 1A private planning                  | implemented | tool-free plan and bounded acknowledgment            |
+| Phase 2 approved mention conversations     | implemented | revision-aware private turn and bounded public reply |
+| Phase 3 explicit local progress            | implemented | operator-selected publication from the exact session |
+| Phase 4A direct pull-request assignments   | implemented | monitoring session without an eager worktree         |
+| Phase 4B correlated pull-request lifecycle | planned     | issue conversation reuse and review handoff          |
+| Phase 5 operations and cleanup             | planned     | inspection, replay, retention, and explicit cleanup  |
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -77,7 +86,7 @@ boundaries. It covers:
 Leia scenarios remain CI-only and must not run against a developer's normal
 OpenClaw state.
 
-## Current Notifications 2 Implementation
+## Implemented Notifications 2 Contract
 
 The current implementation contains tested behavior deliberately outside the
 MVP 1 product promise:
@@ -332,20 +341,21 @@ local session.
 - Return nonzero for busy, deferred, configuration, authentication, provider,
   state, or delivery failure.
 
-## Notifications 2 Plan
+## Notifications 2 Roadmap
 
-Notifications 2 owns everything after initial issue intake.
+Notifications 2 owns everything after initial issue intake. Phases 0 through 4A
+below are implemented and expressed as durable maintenance requirements. Phase
+4B and Phase 5 are the remaining release plan.
 
-| Priority | User outcome                                                       | Impact    | Relative effort |
-| -------- | ------------------------------------------------------------------ | --------- | --------------- |
-| 0        | Every GitHub write uses one safe channel delivery path             | very high | medium          |
-| 1        | The agent understands the issue, proposes a plan, and acknowledges | very high | high            |
-| 2        | Approved GitHub mentions receive local and GitHub responses        | very high | high            |
-| 3        | Operators can deliberately publish progress from local chat        | high      | medium          |
-| 4        | Direct and correlated pull-request lifecycles remain deterministic | medium    | medium          |
-| 5        | Operators can inspect, replay, and clean up state                  | medium    | medium          |
-| 6        | Operators can opt into automatic work after planning               | high      | medium          |
-| 7        | The agent can safely choose whether to wait or continue            | medium    | high            |
+| Phase | User outcome                                                      | State       |
+| ----- | ----------------------------------------------------------------- | ----------- |
+| 0     | Every GitHub write uses one safe channel delivery path            | implemented |
+| 1A    | The agent understands the item, proposes a plan, and acknowledges | implemented |
+| 2     | Approved GitHub mentions receive private and public responses     | implemented |
+| 3     | Operators deliberately publish bounded progress from local chat   | implemented |
+| 4A    | Direct pull-request assignments receive deterministic monitoring  | implemented |
+| 4B    | Correlated pull requests reuse issue conversations and handoff    | planned     |
+| 5     | Operators can inspect, replay, retain, and clean up state         | planned     |
 
 ### Message Flow
 
@@ -380,7 +390,10 @@ Publication eligibility is origin-aware:
 - a local progress update becomes eligible only through an explicit operator
   publication action, never through an autonomous model decision.
 
-### Phase 0: GitHub Outbound Foundation
+### Phase 0: GitHub Outbound Foundation (Implemented)
+
+Phase 0 is implemented as the channel's single message adapter, authorization
+gate, publication-safety boundary, and durable receipt path.
 
 - Register one `message` adapter through `defineChannelMessageAdapter(...)` from
   `openclaw/plugin-sdk/channel-outbound`.
@@ -391,7 +404,7 @@ Publication eligibility is origin-aware:
   `initial-acknowledgment`, `github-reply`, and `operator-progress` intents.
   Enable each intent only through its implemented origin-specific phase.
 - Resolve the channel account and conversation target to one admitted canonical
-  issue before any credential resolution or provider mutation.
+  issue or pull request before any credential resolution or provider mutation.
 - Reauthorize the current assignment or admitted comment, verified GitHub
   identity, repository permission, and applicable narrow GitHub policy
   immediately before every write.
@@ -407,13 +420,12 @@ Publication eligibility is origin-aware:
   a parallel automatic retry transport.
 - Keep credentials, GitHub prose, local paths, and generated payloads out of
   private control state and routine diagnostics.
-- Replace the current context-free acknowledgment capture and direct GitHub
-  publication path. Caller-owned delivery may observe local turn completion but
-  must not remain a parallel external transport.
+- Keep caller-owned delivery limited to observing local turn completion; it
+  must not become a parallel external transport.
 - Preserve value-free progress diagnostics around scheduling, generation,
   adapter delivery, and receipt commitment.
 
-### Phase 1A: Plan Assigned Work and Acknowledge Understanding
+### Phase 1A: Plan Assigned Work and Acknowledge Understanding (Implemented)
 
 - Keep polling, admission, worktree preparation, and session recording model-free.
 - After deterministic intake reaches its active checkpoint, claim a durable
@@ -449,8 +461,8 @@ Publication eligibility is origin-aware:
   duplicate planning turns.
 - Persist only value-free activation checkpoints and stable authorization,
   context-fetch, dispatch, cancellation, and ambiguous-delivery diagnostics.
-- Remove the unused `baselineItemNodeIds` inventory as a state-contract update;
-  schema 2 is an intentionally unsupported legacy shape because the only known
+- Keep the removed `baselineItemNodeIds` inventory out of the state contract.
+  Schema 2 is an intentionally unsupported legacy shape because the only known
   installation was manually upgraded. Do not add migration or retroactive
   activation unless the support policy changes. `baselineAt` remains the
   historical admission boundary.
@@ -460,9 +472,12 @@ Phase 1A shipped as plan-only activation without a manifest setting because it
 has only one supported choice. Its GitHub-facing publication boundary ends at
 the initial acknowledgment; Phase 2 owns approved-comment replies.
 
-### Phase 2: Approved GitHub Mention Conversations
+### Phase 2: Approved GitHub Mention Conversations (Implemented)
 
-- Poll only active canonical issue conversations.
+Phase 2 is implemented for approved top-level issue and direct pull-request
+comments in the existing assignment conversation.
+
+- Poll only active canonical issue and direct pull-request conversations.
 - Establish a safe comment baseline when conversation tracking begins.
 - Admit only canonical human comments from approved immutable actor ids.
 - Require an exact standalone mention of the verified GitHub account login in
@@ -471,8 +486,8 @@ the initial acknowledgment; Phase 2 owns approved-comment replies.
 - Deduplicate create, edit, retry, self, quote-only, and stale-revision events.
 - Dispatch admitted comments asynchronously to the existing local conversation
   with bounded provenance and untrusted-content framing.
-- Let status questions use only bounded evidence already recorded in the issue
-  session and Agent System-owned checkpoints. Do not let an admitted GitHub
+- Let status questions use only bounded evidence already recorded in the
+  assignment session and Agent System-owned checkpoints. Do not let an admitted GitHub
   comment trigger tools or fresh repository inspection, and do not claim a
   current repository, test, or pull-request status without recorded evidence.
 - When recorded evidence is insufficient, say that no verified current update
@@ -487,7 +502,7 @@ the initial acknowledgment; Phase 2 owns approved-comment replies.
 - Do not publish responses to rejected, stale, self-authored, quote-only, or
   unmentioned comments.
 
-### Phase 3: Explicit Local Progress Publication
+### Phase 3: Explicit Local Progress Publication (Implemented)
 
 Phase 3 is implemented as the `/agent-system-progress` plugin command. The
 command requires real Gateway `operator.write` authority and the exact active
@@ -495,8 +510,8 @@ assignment session, bypasses the model, checkpoints an opaque publication identi
 and reuses the common safety, adapter, authorization, durable receipt, and
 unknown-send reconciliation path.
 
-- Add an explicit operator action that selects a bounded local progress update
-  for GitHub publication.
+- Keep progress publication behind an explicit operator action that selects one
+  bounded local update for GitHub publication.
 - Let the operator satisfy a retained status request through a normal locally
   authorized, tool-enabled turn before selecting its bounded result for
   publication. The GitHub request itself never authorizes that inspection.
@@ -508,7 +523,10 @@ unknown-send reconciliation path.
 - Never publish tool traces, hidden context, local paths, failed attempts,
   arbitrary local turns, or content that cannot be proven secret-safe.
 
-### Phase 4A: Direct Pull-request Assignments
+### Phase 4A: Direct Pull-request Assignments (Implemented)
+
+Phase 4A is implemented and covered by the packed GitHub Actions-only
+`pull-request` scenario.
 
 - Admit directly assigned pull requests into their own deterministic monitoring
   session without preparing an eager managed worktree.
@@ -520,10 +538,10 @@ unknown-send reconciliation path.
   the existing assignment conversation safeguards.
 - Retire closed or merged PRs logically while preserving their session,
   including across Gateway restart.
-- Prove the installed lifecycle in the GitHub Actions-only
-  `pull-request` Leia scenario.
+- Keep the installed lifecycle covered by the GitHub Actions-only `pull-request`
+  Leia scenario.
 
-### Phase 4B: Correlated Pull-request Delivery and Review Handoff
+### Phase 4B: Correlated Pull-request Delivery and Review Handoff (Planned)
 
 - Correlate an agent-created pull request to its existing issue conversation.
 - Extend approved-comment intake to correlated pull requests without creating a
@@ -536,7 +554,7 @@ unknown-send reconciliation path.
 - Use native archival only if OpenClaw exposes a public scoped API; otherwise
   keep retirement logical.
 
-### Phase 5: Operations and Cleanup
+### Phase 5: Operations and Cleanup (Planned)
 
 - Add status and replay controls with stable value-free diagnostics.
 - Add explicit, non-destructive cleanup through the owning session and Git
@@ -578,6 +596,7 @@ implementation modules.
 
 ## Primary References
 
+- [GitHub notification presentation](./channels/github/PRESENTATION.md)
 - [OpenClaw channel plugin guide](https://docs.openclaw.ai/plugins/sdk-channel-plugins)
 - [OpenClaw channel inbound API](https://docs.openclaw.ai/plugins/sdk-channel-inbound)
 - [OpenClaw channel outbound API](https://docs.openclaw.ai/plugins/sdk-channel-outbound)

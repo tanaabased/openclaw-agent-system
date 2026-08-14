@@ -47,7 +47,7 @@ tool-provided sections.
 
 Agent System currently owns no global plugin settings. Its public configuration
 is the per-workspace manifest plus any configured tool sections. When
-[`github.notifications`](./channels/github/README.md#configuration) is present,
+[`github.notifications`](./channels/github/README.md#configuration-reference) is present,
 `install` projects only a non-secret channel account and exact agent binding into
 global OpenClaw configuration; notification policy and credentials remain
 workspace-owned.
