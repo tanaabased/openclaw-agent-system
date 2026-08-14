@@ -87,9 +87,6 @@ export function createGitHubNotificationMessageAdapter(
   }) => {
     const accountId = normalizedAccountId(input.accountId);
     const parsed = parseGitHubNotificationPublicationTarget(input.to);
-    if (parsed.intent === 'operator-progress') {
-      fail('github-notification-publication-intent-not-active');
-    }
     const state = await dependencies.stateStore.read(accountId);
     if (!state || state.agentId !== accountId) {
       fail('github-notification-publication-state-missing');
@@ -119,6 +116,20 @@ export function createGitHubNotificationMessageAdapter(
           }) === input.to
         ) {
           matches.push({ item });
+        }
+        continue;
+      }
+      if (parsed.intent === 'operator-progress') {
+        for (const publicationId of Object.keys(delivery.progress ?? {})) {
+          if (
+            githubNotificationPublicationTarget({
+              intent: parsed.intent,
+              item,
+              publicationId,
+            }) === input.to
+          ) {
+            matches.push({ item });
+          }
         }
         continue;
       }

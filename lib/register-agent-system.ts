@@ -19,6 +19,8 @@ import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/mon
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import GitHubNotificationPublicationService from '../channels/github/lib/publication-service.ts';
+import registerGitHubNotificationProgressCommand from '../channels/github/lib/progress-command.ts';
+import GitHubNotificationProgressService from '../channels/github/lib/progress-service.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
@@ -264,6 +266,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     readConfig: readRuntimeConfig,
   });
   const notificationPublicationService = new GitHubNotificationPublicationService();
+  const notificationProgressService = new GitHubNotificationProgressService({
+    leaseStore: notificationMonitorCycleLeaseStore,
+    publicationService: notificationPublicationService,
+    stateStore: notificationMonitorStateStore,
+  });
   const notificationSessionService = new GitHubNotificationSessionService({
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
@@ -317,6 +324,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     stateStore: notificationMonitorStateStore,
   });
   notificationMonitorServiceRef.current = notificationMonitorService;
+
+  registerGitHubNotificationProgressCommand(api, {
+    logger,
+    progressService: notificationProgressService,
+  });
 
   api.registerChannel({
     plugin: createGitHubNotificationChannel({

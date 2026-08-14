@@ -1,9 +1,9 @@
 # GitHub Notifications Plan
 
-Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A, and
-Phase 2 are implemented through the public channel SDK and covered by the packed
-third-party notifications scenario. Phases 3 through 7 remain planned work, with
-Phase 3 as the next implementation target.
+Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A,
+Phase 2, and Phase 3 are implemented through the public channel SDK and covered
+by the packed third-party notifications scenario. Phases 4 through 7 remain
+planned work, with Phase 4 as the next implementation target.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -95,15 +95,17 @@ MVP 1 product promise:
   recorded status evidence and untrusted-content framing;
 - fail-closed publication through the public channel message adapter and durable
   outbound lifecycle for initial acknowledgments and admitted-comment replies;
-  and
+- explicit local progress selection through an operator-scoped plugin command
+  in the exact active issue session; and
 - value-free activation, acknowledgment, comment-revision, turn, and
-  provider-receipt checkpoints.
+  progress provider-receipt checkpoints.
 
 The packed notifications scenario covers the plan-only turn, one public
 acknowledgment, approved and rejected comment mentions, one revision-bound public
-reply, restart deduplication, and logical retirement. Locally initiated progress,
-pull-request conversations, operator replay, cleanup, and automatic-work behavior
-remain unavailable until their owning phases are implemented and accepted.
+reply, one explicit local progress update, restart deduplication, and logical
+retirement. Pull-request conversations, operator replay, cleanup, and
+automatic-work behavior remain unavailable until their owning phases are
+implemented and accepted.
 
 ## Configuration Contract
 
@@ -348,8 +350,8 @@ OpenClaw and GitHub intentionally receive different outputs from one agent turn:
    complete transcript;
 4. the initial planning turn emits its acknowledgment candidate alongside the
    private assessment, blockers, and plan; admitted comment turns use their own
-   bounded GitHub-reply composer, while operator progress remains unavailable
-   until Phase 3;
+   bounded GitHub-reply composer, while an explicit local command selects
+   operator progress without invoking the model;
 5. a deterministic fail-closed gate rejects unsafe or unsupported candidates;
 6. one GitHub message adapter reauthorizes and durably publishes the accepted
    candidate; and
@@ -379,8 +381,7 @@ Publication eligibility is origin-aware:
   outbound helpers for queueing, retries, hooks, and normalized receipts.
 - Model one Agent System publication target vocabulary for the explicit
   `initial-acknowledgment`, `github-reply`, and `operator-progress` intents.
-  Enable `initial-acknowledgment` and `github-reply` through their implemented
-  phases, and keep `operator-progress` inactive until Phase 3.
+  Enable each intent only through its implemented origin-specific phase.
 - Resolve the channel account and conversation target to one admitted canonical
   issue before any credential resolution or provider mutation.
 - Reauthorize the current assignment or admitted comment, verified GitHub
@@ -480,13 +481,20 @@ the initial acknowledgment; Phase 2 owns approved-comment replies.
 
 ### Phase 3: Explicit Local Progress Publication
 
+Phase 3 is implemented as the `/agent-system-progress` plugin command. The
+command requires real Gateway `operator.write` authority and the exact active
+issue session, bypasses the model, checkpoints an opaque publication identity,
+and reuses the common safety, adapter, authorization, durable receipt, and
+unknown-send reconciliation path.
+
 - Add an explicit operator action that selects a bounded local progress update
   for GitHub publication.
 - Let the operator satisfy a retained status request through a normal locally
   authorized, tool-enabled turn before selecting its bounded result for
   publication. The GitHub request itself never authorizes that inspection.
-- Create one `operator-progress` intent and use the same composer, authorization,
-  safety, adapter, marker, and receipt pipeline as every other GitHub message.
+- Create one `operator-progress` intent and use the explicit selection contract
+  plus the same authorization, safety, adapter, marker, and receipt pipeline as
+  every other GitHub message.
 - Keep ordinary OpenClaw chat turns local by default. Do not let a model rubric
   independently decide that local content should leave the private session.
 - Never publish tool traces, hidden context, local paths, failed attempts,

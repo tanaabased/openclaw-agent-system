@@ -152,6 +152,25 @@ openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 
+# should publish one explicit local progress update once for a duplicate command dispatch
+cd "$TMPDIR/agent-system-notifications"
+session_key="$(cat "$TMPDIR/approved-session-key")"
+progress_key="notification-progress-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+params="$(jq -cn --arg sessionKey "$session_key" --arg idempotencyKey "$progress_key" '{agentId:"notification-data",sessionKey:$sessionKey,message:"/agent-system-progress Implementation is underway and the current checks are passing.",deliver:false,idempotencyKey:$idempotencyKey}')"
+openclaw gateway call chat.send --params "$params" --json | jq -e '.status == "started" or .status == "in_flight" or .status == "ok"'
+openclaw gateway call chat.send --params "$params" --json | jq -e '.status == "started" or .status == "in_flight" or .status == "ok"'
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+progress_count='0'
+for attempt in $(seq 1 60); do
+  cd "$TMPDIR/agent-system-notification-actor"
+  progress_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("Implementation is underway and the current checks are passing.") and contains("agent-system-github-publication:operator-progress")))] | length')"
+  if [[ "$progress_count" == '1' ]]; then
+    break
+  fi
+  sleep 2
+done
+test "$progress_count" = '1'
+
 # should reject a quote-only mention without starting a comment turn
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -234,11 +253,12 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
-# should preserve exactly one acknowledgment after restart
+# should preserve exactly one publication of each kind after restart
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length' | grep -Fx '1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:operator-progress")))] | length' | grep -Fx '1'
 # should logically retire an unassigned item while preserving local state
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"

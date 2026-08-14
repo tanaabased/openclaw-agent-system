@@ -358,7 +358,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.deepEqual(state, before);
   });
 
-  it('should report pending and failed acknowledgments without hiding monitor health', async () => {
+  it('should report pending and failed publications without hiding monitor health', async () => {
     const state = notificationMonitorState();
     state.agentId = 'data';
     state.workspaceDir = context.workspaceDir;
@@ -368,6 +368,9 @@ describe('channels/github/lib/lifecycle', () => {
       ...item.delivery!,
       acknowledgment: { status: 'pending' },
       activation: { status: 'adopted' },
+      progress: {
+        '123e4567-e89b-42d3-a456-426614174000': { status: 'pending' },
+      },
       sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/data/issue-7',
@@ -395,14 +398,30 @@ describe('channels/github/lib/lifecycle', () => {
       findings?.find(({ code }) => code === 'github-notification-acknowledgment-pending')?.status,
       'warning',
     );
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-progress-publication-pending')
+        ?.status,
+      'warning',
+    );
     item.delivery.acknowledgment = {
       failureCode: 'github-notification-acknowledgment-not-confirmed',
       status: 'failed',
     };
     item.delivery.activation = { status: 'planned' };
+    item.delivery.progress = {
+      '123e4567-e89b-42d3-a456-426614174000': {
+        failureCode: 'github-notification-publication-authority-revoked',
+        status: 'failed',
+      },
+    };
     findings = await contribution.inspect?.(context);
     assert.equal(
       findings?.find(({ code }) => code === 'github-notification-acknowledgment-not-confirmed')
+        ?.status,
+      'warning',
+    );
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-publication-authority-revoked')
         ?.status,
       'warning',
     );

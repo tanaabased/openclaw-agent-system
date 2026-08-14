@@ -57,6 +57,7 @@ const deliveryKeys = new Set([
   'acknowledgment',
   'assignmentEventId',
   'failureCode',
+  'progress',
   'schemaVersion',
   'sessionId',
   'sessionKey',
@@ -185,6 +186,21 @@ function validAcknowledgment(value: unknown): boolean {
   );
 }
 
+function validProgress(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const progress = value as Record<string, unknown>;
+  return (
+    Object.getPrototypeOf(value) === Object.prototype &&
+    Object.keys(progress).length <= 100 &&
+    Object.entries(progress).every(
+      ([publicationId, checkpoint]) =>
+        /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
+          publicationId,
+        ) && validAcknowledgment(checkpoint),
+    )
+  );
+}
+
 function validActivation(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const activation = value as { failureCode?: unknown; status?: unknown };
@@ -270,6 +286,7 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     delivery.schemaVersion === 1 &&
     (delivery.activation === undefined || validActivation(delivery.activation)) &&
     (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
+    (delivery.progress === undefined || validProgress(delivery.progress)) &&
     validNodeId(delivery.assignmentEventId) &&
     ['active', 'admitted', 'retired', 'session-recording', 'worktree-ready'].includes(
       delivery.stage ?? '',
@@ -293,6 +310,7 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
+      delivery.progress === undefined &&
       delivery.worktreeBranch === undefined &&
       delivery.worktreePath === undefined &&
       !hasSession &&
@@ -303,6 +321,7 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
+      delivery.progress === undefined &&
       hasWorktree &&
       !hasSession &&
       delivery.sessionId === undefined
