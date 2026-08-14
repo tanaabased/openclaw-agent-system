@@ -1,6 +1,8 @@
 import { isAbsolute } from 'node:path';
 
 import {
+  type GitHubNotificationCommentRevisionState,
+  type GitHubNotificationCommentTrackingState,
   type GitHubNotificationDeliveryState,
   type GitHubNotificationItemState,
   type GitHubNotificationMonitorState,
@@ -31,6 +33,7 @@ const stateKeys = new Set([
 const itemBaseKeys = new Set([
   'assignmentActorNodeId',
   'assignmentEventNodeId',
+  'commentTracking',
   'disposition',
   'itemNodeId',
   'itemType',
@@ -65,6 +68,21 @@ const deliveryKeys = new Set([
 
 const acknowledgmentKeys = new Set(['commentId', 'failureCode', 'status']);
 const activationKeys = new Set(['failureCode', 'status']);
+const commentTrackingKeys = new Set(['baselineAt', 'diagnosticCode', 'revisions']);
+const commentRevisionKeys = new Set([
+  'actorNodeId',
+  'bodyDigest',
+  'commentDatabaseId',
+  'commentNodeId',
+  'createdAt',
+  'disposition',
+  'reasonCode',
+  'reply',
+  'revisionId',
+  'turn',
+  'updatedAt',
+]);
+const commentTurnKeys = new Set(['failureCode', 'status']);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
@@ -179,6 +197,71 @@ function validActivation(value: unknown): boolean {
   );
 }
 
+function validCommentTurn(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const turn = value as { failureCode?: unknown; status?: unknown };
+  return (
+    hasOnlyKeys(value, commentTurnKeys) &&
+    ['adopted', 'failed', 'pending', 'responded'].includes(String(turn.status)) &&
+    optionalBoundedString(turn.failureCode, 255) &&
+    (turn.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(String(turn.failureCode)))
+  );
+}
+
+function validCommentRevision(value: unknown): value is GitHubNotificationCommentRevisionState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const revision = value as Partial<GitHubNotificationCommentRevisionState>;
+  const base =
+    hasOnlyKeys(value, commentRevisionKeys) &&
+    (revision.actorNodeId === undefined || validNodeId(revision.actorNodeId)) &&
+    typeof revision.bodyDigest === 'string' &&
+    /^[a-f0-9]{64}$/u.test(revision.bodyDigest) &&
+    Number.isSafeInteger(revision.commentDatabaseId) &&
+    Number(revision.commentDatabaseId) > 0 &&
+    validNodeId(revision.commentNodeId) &&
+    optionalFiniteNumber(revision.createdAt) &&
+    typeof revision.createdAt === 'number' &&
+    ['approved', 'baseline', 'rejected'].includes(revision.disposition ?? '') &&
+    typeof revision.reasonCode === 'string' &&
+    /^[a-z0-9][a-z0-9-]*$/u.test(revision.reasonCode) &&
+    typeof revision.revisionId === 'string' &&
+    /^[a-f0-9]{64}$/u.test(revision.revisionId) &&
+    optionalFiniteNumber(revision.updatedAt) &&
+    typeof revision.updatedAt === 'number' &&
+    revision.updatedAt >= revision.createdAt;
+  if (!base) return false;
+  if (revision.disposition !== 'approved') {
+    return revision.turn === undefined && revision.reply === undefined;
+  }
+  const turn = revision.turn;
+  if (!turn || !validCommentTurn(turn)) return false;
+  if (turn.status === 'responded') {
+    return validAcknowledgment(revision.reply);
+  }
+  return revision.reply === undefined;
+}
+
+function validCommentTracking(value: unknown): value is GitHubNotificationCommentTrackingState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const tracking = value as Partial<GitHubNotificationCommentTrackingState>;
+  if (
+    !hasOnlyKeys(value, commentTrackingKeys) ||
+    !optionalFiniteNumber(tracking.baselineAt) ||
+    (tracking.diagnosticCode !== undefined &&
+      (typeof tracking.diagnosticCode !== 'string' ||
+        !/^[a-z0-9][a-z0-9-]*$/u.test(tracking.diagnosticCode))) ||
+    !tracking.revisions ||
+    Array.isArray(tracking.revisions) ||
+    Object.keys(tracking.revisions).length > 1_000
+  ) {
+    return false;
+  }
+  if (tracking.baselineAt === undefined && Object.keys(tracking.revisions).length > 0) return false;
+  return Object.entries(tracking.revisions).every(
+    ([key, revision]) => validCommentRevision(revision) && key === revision.commentNodeId,
+  );
+}
+
 function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const delivery = value as Partial<GitHubNotificationDeliveryState>;
@@ -248,6 +331,7 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
     validItemFields(value as Record<string, unknown>, item) &&
     Number.isSafeInteger(item.itemDatabaseId) &&
     Number(item.itemDatabaseId) > 0 &&
+    (item.commentTracking === undefined || validCommentTracking(item.commentTracking)) &&
     (item.delivery === undefined || validDelivery(item.delivery)) &&
     (item.disposition === 'approved'
       ? item.delivery !== undefined && item.delivery.stage !== 'retired'
@@ -256,7 +340,10 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
         : item.delivery === undefined) &&
     (item.delivery === undefined ||
       (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
-        item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`))
+        item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`)) &&
+    (item.commentTracking === undefined ||
+      (item.itemType === 'issue' &&
+        (item.disposition === 'approved' || item.disposition === 'retired')))
   );
 }
 

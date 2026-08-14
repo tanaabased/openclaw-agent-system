@@ -15,6 +15,31 @@ export interface GitHubNotificationActivationState {
   status: 'adopted' | 'failed' | 'ineligible' | 'pending' | 'planned';
 }
 
+export interface GitHubNotificationCommentTurnState {
+  failureCode?: string;
+  status: 'adopted' | 'failed' | 'pending' | 'responded';
+}
+
+export interface GitHubNotificationCommentRevisionState {
+  actorNodeId?: string;
+  bodyDigest: string;
+  commentDatabaseId: number;
+  commentNodeId: string;
+  createdAt: number;
+  disposition: 'approved' | 'baseline' | 'rejected';
+  reasonCode: string;
+  reply?: GitHubNotificationAcknowledgmentState;
+  revisionId: string;
+  turn?: GitHubNotificationCommentTurnState;
+  updatedAt: number;
+}
+
+export interface GitHubNotificationCommentTrackingState {
+  baselineAt?: number;
+  diagnosticCode?: string;
+  revisions: Record<string, GitHubNotificationCommentRevisionState>;
+}
+
 export interface GitHubNotificationDeliveryState {
   activation?: GitHubNotificationActivationState;
   acknowledgment?: GitHubNotificationAcknowledgmentState;
@@ -32,6 +57,7 @@ export interface GitHubNotificationDeliveryState {
 export interface GitHubNotificationItemState {
   assignmentActorNodeId?: string;
   assignmentEventNodeId?: string;
+  commentTracking?: GitHubNotificationCommentTrackingState;
   delivery?: GitHubNotificationDeliveryState;
   disposition: GitHubNotificationItemDisposition;
   itemDatabaseId: number;

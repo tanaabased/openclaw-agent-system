@@ -52,6 +52,10 @@ export interface GitHubNotificationMonitorRunResult {
   baselineAt?: number;
   baselineEstablished?: boolean;
   code: string;
+  commentApproved?: number;
+  commentBaseline?: number;
+  commentRejected?: number;
+  commentTrackingDeferred?: number;
   diagnosticCode?: string;
   duplicates?: number;
   lastSuccessfulPollAt?: number;
@@ -361,7 +365,7 @@ export default class GitHubNotificationMonitorService {
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';
       this.#dependencies.logger.info(
-        `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
+        `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired} commentBaseline=${result.commentBaseline} commentApproved=${result.commentApproved} commentRejected=${result.commentRejected} commentDeferred=${result.commentTrackingDeferred}`,
       );
       return {
         agentId,
@@ -370,6 +374,10 @@ export default class GitHubNotificationMonitorService {
         baselineAt: result.state.baselineAt,
         baselineEstablished: result.baselineEstablished,
         code,
+        commentApproved: result.commentApproved,
+        commentBaseline: result.commentBaseline,
+        commentRejected: result.commentRejected,
+        commentTrackingDeferred: result.commentTrackingDeferred,
         duplicates: result.duplicates,
         lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
         nextPollAt: result.state.nextPollAt,

@@ -1,8 +1,8 @@
 # GitHub Notifications Plan
 
-Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0 and Phase 1A are
-implemented on `main` through the public channel SDK and covered by the packed
-third-party notifications scenario. Phases 2 through 7 remain planned work.
+Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A, and
+Phase 2 are implemented through the public channel SDK and covered by the packed
+third-party notifications scenario. Phases 3 through 7 remain planned work.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -76,8 +76,8 @@ OpenClaw state.
 
 ## Current Notifications 2 Implementation
 
-Current `main` contains tested behavior deliberately outside the MVP 1 product
-promise:
+The current implementation contains tested behavior deliberately outside the
+MVP 1 product promise:
 
 - issue-shaped pull-request discovery and classification;
 - canonical unassignment and authority-revocation transitions;
@@ -88,14 +88,21 @@ promise:
 - asynchronous bounded issue-context planning with tools disabled;
 - one model-authored, personality-aware acknowledgment candidate extracted from
   the private planning response;
+- revision-aware comment baselines and immutable human mention admission for
+  active canonical issue conversations;
+- tool-free comment turns in the existing private issue session, with bounded
+  recorded status evidence and untrusted-content framing;
 - fail-closed publication through the public channel message adapter and durable
-  outbound lifecycle; and
-- value-free activation, acknowledgment, and provider-receipt checkpoints.
+  outbound lifecycle for initial acknowledgments and admitted-comment replies;
+  and
+- value-free activation, acknowledgment, comment-revision, turn, and
+  provider-receipt checkpoints.
 
 The packed notifications scenario covers the plan-only turn, one public
-acknowledgment, restart deduplication, and logical retirement. Later comment,
-progress, pull-request, operator replay, cleanup, and automatic-work behavior
-remains unavailable until its owning phase is implemented and accepted.
+acknowledgment, approved and rejected comment mentions, one revision-bound public
+reply, restart deduplication, and logical retirement. Locally initiated progress,
+pull-request conversations, operator replay, cleanup, and automatic-work behavior
+remain unavailable until their owning phases are implemented and accepted.
 
 ## Configuration Contract
 
@@ -453,6 +460,13 @@ the initial acknowledgment until Phase 2.
 - Deduplicate create, edit, retry, self, quote-only, and stale-revision events.
 - Dispatch admitted comments asynchronously to the existing local conversation
   with bounded provenance and untrusted-content framing.
+- Let status questions use only bounded evidence already recorded in the issue
+  session and Agent System-owned checkpoints. Do not let an admitted GitHub
+  comment trigger tools or fresh repository inspection, and do not claim a
+  current repository, test, or pull-request status without recorded evidence.
+- When recorded evidence is insufficient, say that no verified current update
+  is available from the notification turn and retain the status request for a
+  locally authorized continuation.
 - Keep the full response in the private OpenClaw session, then create one
   `github-reply` intent from the bounded final response because the admitted
   GitHub origin supplies explicit reply intent.
@@ -466,6 +480,9 @@ the initial acknowledgment until Phase 2.
 
 - Add an explicit operator action that selects a bounded local progress update
   for GitHub publication.
+- Let the operator satisfy a retained status request through a normal locally
+  authorized, tool-enabled turn before selecting its bounded result for
+  publication. The GitHub request itself never authorizes that inspection.
 - Create one `operator-progress` intent and use the same composer, authorization,
   safety, adapter, marker, and receipt pipeline as every other GitHub message.
 - Keep ordinary OpenClaw chat turns local by default. Do not let a model rubric
@@ -608,6 +625,14 @@ implementation modules.
 19. Keep monitor-state schema 2 unsupported. The only known installation was
     manually upgraded, so future optimization passes must not add a migration or
     retroactive activation without a changed support policy.
+20. Keep admitted GitHub comment turns tool-free. Status replies may use only
+    evidence already recorded in the issue session and Agent System-owned
+    checkpoints; fresh inspection and progress publication require a locally
+    authorized operator turn.
+21. Establish the comment baseline during deterministic issue admission so a
+    comment posted immediately after assignment cannot fall into a later baseline.
+    After that baseline, poll comments only for active canonical issue
+    conversations.
 
 Future work must not weaken actor identity, repository permission, owner
 restriction, exact routing, agent identity, lazy credential resolution,

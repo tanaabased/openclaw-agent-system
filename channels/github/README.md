@@ -10,10 +10,13 @@ approved GitHub issue assignments into agent-scoped local work. It verifies the
 agent, assigning actor, and repository before creating one managed worktree and
 one local OpenClaw session for the issue. The Gateway then asks the agent to
 review the issue and prepare a plan before posting one short acknowledgment.
+Later approved comments that address the verified agent account continue the
+same private conversation and receive one bounded public reply.
 
 > [!IMPORTANT]
-> The channel does not currently ingest new mentions, start implementation,
-> publish local progress, or manage pull-request conversations.
+> GitHub comments never authorize implementation or local tool use. The channel
+> does not currently publish locally initiated progress or manage pull-request
+> conversations.
 
 ## Overview
 
@@ -28,16 +31,23 @@ review the issue and prepare a plan before posting one short acknowledgment.
   context, then runs one tool-free private planning turn.
 - Publishes only the planning response's separate one-sentence acknowledgment
   through the channel's authorization, safety, and durable delivery path.
+- Establishes a complete bounded comment baseline for each admitted issue, then
+  admits only later exact standalone mentions from approved immutable human
+  identities.
+- Rechecks the exact current comment revision before a tool-free private reply
+  turn and again before publishing its separate GitHub reply candidate.
 
 Each enabled channel account owns its polling lifecycle while the Gateway is
 running. `openclaw channels status --channel agent-system-github --json`
 reports whether that account is running, connected, and healthy. The manual
 refresh command runs the deterministic intake path immediately and returns
-without waiting for a model. The running Gateway owns asynchronous planning and
-acknowledgment delivery. OpenClaw owns each durable send attempt, provider retry,
-receipt normalization, and unknown-send reconciliation. Agent System stores only
-the confirmed comment receipt or a stable failed diagnostic; `doctor` reports
-pending and failed acknowledgments separately from monitor read health.
+without waiting for a model. The running Gateway owns asynchronous planning,
+acknowledgment delivery, and admitted-comment responses. OpenClaw owns each
+durable send attempt, provider retry, receipt normalization, and unknown-send
+reconciliation. Agent System stores only value-free revision checkpoints,
+confirmed comment receipts, or stable failed diagnostics; `doctor` reports
+pending and failed acknowledgments and replies separately from monitor read
+health.
 
 ## Requirements
 
@@ -48,7 +58,7 @@ pending and failed acknowledgments separately from monitor read health.
 - `git.worktrees`, `github.username`, `github.token`, and
   `github.notifications` configured
 - the named GitHub token available in the completed Agent System environment
-- an authenticated default OpenClaw model for the private planning turn
+- an authenticated default OpenClaw model for private planning and comment turns
 
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
@@ -176,11 +186,20 @@ An assignment is accepted only when the authenticated account is still assigned,
 the immutable assigning actor is approved, the repository owner is eligible,
 and the account has sufficient repository access.
 
-Issue prose and comments are bounded and framed as untrusted project data. The
-planning turn cannot use tools and its complete response remains in the private
-OpenClaw session. Only the separately labeled acknowledgment candidate can pass
-through the fail-closed GitHub publication gate, which rejects secrets, links,
-mentions, local paths, and unsupported output.
+Issue prose and comments are bounded and framed as untrusted project data.
+Planning and admitted-comment turns cannot use tools, and their complete
+responses remain in the private OpenClaw session. Only separately labeled
+acknowledgment or GitHub-reply candidates can pass through the fail-closed
+publication gate, which rejects secrets, links, mentions, local paths, and
+unsupported output.
+
+A comment mention addresses the agent but does not authorize file inspection,
+repository commands, tests, implementation, or any other tool use. Status
+questions may be answered from evidence already recorded in the issue session
+and Agent System-owned checkpoints. If that evidence is insufficient, the reply
+must say that no verified current update is available from the notification
+turn. A later tool-enabled status check and progress publication require an
+explicit locally authorized operator action.
 
 Private monitor state contains no tokens, GitHub prose, or generated content.
 Deterministic worktree, session, activation, and publication identities make

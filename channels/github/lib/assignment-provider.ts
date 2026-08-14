@@ -10,6 +10,12 @@ import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
+import {
+  admitGitHubComment,
+  githubCommentRevision,
+  type GitHubCanonicalIssueComment,
+} from '../utils/comment-admission.ts';
+import type { GitHubNotificationCommentRevisionState } from '../utils/monitor-state.ts';
 import { resolveNotificationRoute } from '../utils/routing.ts';
 import GitHubWorkEventClient, {
   GitHubWorkEventClientError,
@@ -27,7 +33,20 @@ export type GitHubNotificationPlanningContextResult =
   | { authorized: true; context: GitHubNotificationPlanningContext };
 
 type GitHubNotificationAssignmentInspection =
-  { authorized: false; reasonCode?: string } | { authorized: true; client: GitHubWorkEventClient };
+  | { authorized: false; reasonCode?: string }
+  | {
+      authorized: true;
+      client: GitHubWorkEventClient;
+      configuration: GitHubNotificationsConfiguration;
+    };
+
+export interface GitHubNotificationCommentBoundaryInput extends GitHubNotificationAssignmentBoundaryInput {
+  comment: GitHubNotificationCommentRevisionState;
+}
+
+export type GitHubNotificationCommentContextResult =
+  | { authorized: false; reasonCode: string }
+  | { authorized: true; context: GitHubCanonicalIssueComment };
 
 /** Read current GitHub authority for assignment delivery. */
 export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
@@ -73,6 +92,78 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         input.item.number,
       ),
     };
+  }
+
+  async inspectComment(
+    input: GitHubNotificationCommentBoundaryInput,
+  ): Promise<{ authorized: boolean; reasonCode?: string }> {
+    const result = await this.#loadComment(input);
+    return result.authorized
+      ? { authorized: true }
+      : { authorized: false, reasonCode: result.reasonCode };
+  }
+
+  async loadCommentContext(
+    input: GitHubNotificationCommentBoundaryInput,
+  ): Promise<GitHubNotificationCommentContextResult> {
+    return this.#loadComment(input);
+  }
+
+  async #loadComment(
+    input: GitHubNotificationCommentBoundaryInput,
+  ): Promise<GitHubNotificationCommentContextResult> {
+    if (input.item.itemType !== 'issue' || input.comment.disposition !== 'approved') {
+      return {
+        authorized: false,
+        reasonCode: 'github-notification-comment-ineligible',
+      };
+    }
+    const inspection = await this.#inspect(input);
+    if (!inspection.authorized) {
+      return {
+        authorized: false,
+        reasonCode: inspection.reasonCode ?? 'github-notification-authority-revoked',
+      };
+    }
+    try {
+      const comment = await inspection.client.getIssueComment(
+        input.item.repositoryOwner,
+        input.item.repositoryName,
+        input.item.number,
+        input.comment.commentDatabaseId,
+      );
+      const revision = githubCommentRevision(comment);
+      if (
+        comment.nodeId !== input.comment.commentNodeId ||
+        revision.revisionId !== input.comment.revisionId ||
+        revision.bodyDigest !== input.comment.bodyDigest ||
+        comment.author?.nodeId !== input.comment.actorNodeId
+      ) {
+        return {
+          authorized: false,
+          reasonCode: 'github-notification-comment-revision-stale',
+        };
+      }
+      const admission = admitGitHubComment({
+        account: inspection.client.identity,
+        comment,
+        configuration: inspection.configuration,
+      });
+      return admission.disposition === 'approved'
+        ? { authorized: true, context: comment }
+        : {
+            authorized: false,
+            reasonCode: `github-notification-${admission.code}`,
+          };
+    } catch (error) {
+      if (
+        error instanceof GitHubWorkEventClientError &&
+        error.code === 'github-notification-resource-missing'
+      ) {
+        return { authorized: false, reasonCode: error.code };
+      }
+      throw error;
+    }
   }
 
   async #inspect(
@@ -159,7 +250,11 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
               : admission.code,
         };
       }
-      return { authorized: true, client: context.client };
+      return {
+        authorized: true,
+        client: context.client,
+        configuration: context.configuration,
+      };
     } catch (error) {
       if (
         error instanceof GitHubWorkEventClientError &&

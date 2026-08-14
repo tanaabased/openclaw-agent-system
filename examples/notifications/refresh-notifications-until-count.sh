@@ -8,7 +8,7 @@ minimum=''
 timeout_seconds=180
 
 usage() {
-  echo "Usage: refresh-notifications-until-count.sh --agent <id> --field <approved|rejected|retired> --minimum <count> [--timeout <seconds>]" >&2
+  echo "Usage: refresh-notifications-until-count.sh --agent <id> --field <approved|commentApproved|commentRejected|rejected|retired> --minimum <count> [--timeout <seconds>]" >&2
 }
 
 while (($# > 0)); do
@@ -45,7 +45,7 @@ if [[ -z "$agent_id" ]]; then
   exit 2
 fi
 case "$field" in
-  approved | rejected | retired) ;;
+  approved | commentApproved | commentRejected | rejected | retired) ;;
   *)
     usage
     exit 2

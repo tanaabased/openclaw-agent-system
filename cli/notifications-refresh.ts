@@ -55,6 +55,10 @@ export default async function refreshNotificationsAgentSystem(
       ['rejected', result.rejected],
       ['duplicate', result.duplicates],
       ['retired', result.retired],
+      ['comment-baseline', result.commentBaseline],
+      ['comment-approved', result.commentApproved],
+      ['comment-rejected', result.commentRejected],
+      ['comment-deferred', result.commentTrackingDeferred],
     ]
       .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
       .map(([label, value]) => `${label}=${value}`)

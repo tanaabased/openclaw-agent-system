@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added revision-aware replies for approved GitHub issue mentions, with tool-free private turns, exact comment reauthorization, and durable public delivery. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
 - Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)

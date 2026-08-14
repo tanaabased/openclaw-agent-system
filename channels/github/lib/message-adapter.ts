@@ -16,8 +16,12 @@ import {
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
 } from '../utils/publication.ts';
+import type {
+  GitHubNotificationCommentRevisionState,
+  GitHubNotificationItemState,
+} from '../utils/monitor-state.ts';
 import { githubNotificationChannelId, resolveNotificationRoute } from '../utils/routing.ts';
-import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
+import type GitHubNotificationAssignmentProvider from './assignment-provider.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import GitHubWorkEventClient, { type GitHubIssueCommentReceipt } from './work-event-client.ts';
@@ -26,7 +30,7 @@ const cycleLeaseWaitMs = 30_000;
 
 export interface GitHubNotificationMessageAdapterDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
-  authority: GitHubNotificationAssignmentAuthority;
+  authority: Pick<GitHubNotificationAssignmentProvider, 'inspect' | 'inspectComment'>;
   leaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
@@ -83,31 +87,57 @@ export function createGitHubNotificationMessageAdapter(
   }) => {
     const accountId = normalizedAccountId(input.accountId);
     const parsed = parseGitHubNotificationPublicationTarget(input.to);
-    if (parsed.intent !== 'initial-acknowledgment') {
+    if (parsed.intent === 'operator-progress') {
       fail('github-notification-publication-intent-not-active');
     }
     const state = await dependencies.stateStore.read(accountId);
     if (!state || state.agentId !== accountId) {
       fail('github-notification-publication-state-missing');
     }
-    const matches = Object.values(state.items).filter((item) => {
+    const matches: Array<{
+      comment?: GitHubNotificationCommentRevisionState;
+      item: GitHubNotificationItemState;
+    }> = [];
+    for (const item of Object.values(state.items)) {
       const delivery = item.delivery;
-      return (
-        item.disposition === 'approved' &&
-        delivery?.stage === 'active' &&
+      if (
+        item.disposition !== 'approved' ||
+        delivery?.stage !== 'active' ||
         githubNotificationConversationId({
           itemNumber: item.number,
           repositoryId: item.repositoryNodeId,
-        }) === parsed.conversationId &&
-        githubNotificationPublicationTarget({
-          intent: parsed.intent,
-          item,
-          publicationId: delivery.assignmentEventId,
-        }) === input.to
-      );
-    });
+        }) !== parsed.conversationId
+      ) {
+        continue;
+      }
+      if (parsed.intent === 'initial-acknowledgment') {
+        if (
+          githubNotificationPublicationTarget({
+            intent: parsed.intent,
+            item,
+            publicationId: delivery.assignmentEventId,
+          }) === input.to
+        ) {
+          matches.push({ item });
+        }
+        continue;
+      }
+      for (const comment of Object.values(item.commentTracking?.revisions ?? {})) {
+        if (
+          comment.disposition === 'approved' &&
+          comment.turn?.status === 'adopted' &&
+          githubNotificationPublicationTarget({
+            intent: parsed.intent,
+            item,
+            publicationId: comment.revisionId,
+          }) === input.to
+        ) {
+          matches.push({ comment, item });
+        }
+      }
+    }
     if (matches.length !== 1) fail('github-notification-publication-target-not-admitted');
-    const item = matches[0]!;
+    const { comment, item } = matches[0]!;
     const delivery = item.delivery!;
     try {
       resolveNotificationRoute(
@@ -134,13 +164,16 @@ export function createGitHubNotificationMessageAdapter(
     if (authorizeGitHubOperation(operation, loaded.manifest.github).status !== 'allowed') {
       fail('github-notification-publication-policy-denied');
     }
-    const authority = await dependencies.authority.inspect({
+    const boundary = {
       agentId: accountId,
       delivery,
       item,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       workspaceDir: state.workspaceDir,
-    });
+    };
+    const authority = comment
+      ? await dependencies.authority.inspectComment({ ...boundary, comment })
+      : await dependencies.authority.inspect(boundary);
     if (!authority.authorized) {
       fail(authority.reasonCode ?? 'github-notification-publication-authority-revoked');
     }

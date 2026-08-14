@@ -187,6 +187,63 @@ describe('channels/github/lib/work-event-client', () => {
     assert.ok(requests[1]?.includes('per_page=50'));
   });
 
+  it('should list bounded canonical issue comments with immutable actor and revision facts', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response([
+          {
+            author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+            body: '@tanaabot status?',
+            bodyLength: 18,
+            createdAt: '2026-08-14T12:00:00Z',
+            databaseId: 91,
+            nodeId: 'IC_comment',
+            updatedAt: '2026-08-14T12:01:00Z',
+          },
+        ]);
+      },
+    });
+
+    const page = await client.listIssueComments('tanaabased', 'example', 7);
+
+    assert.equal(page.truncated, false);
+    assert.equal(page.comments[0]?.author?.nodeId, 'U_actor');
+    assert.equal(page.comments[0]?.updatedAt, '2026-08-14T12:01:00Z');
+    assert.equal(page.comments[0]?.bodyTruncated, false);
+    assert.ok(requests[0]?.includes('per_page=100'));
+    assert.ok(requests[0]?.some((value) => value.includes('bodyLength')));
+  });
+
+  it('should re-read an exact comment only when it belongs to the expected issue', async () => {
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        return response({
+          author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+          body: '@tanaabot status?',
+          bodyLength: 18,
+          createdAt: '2026-08-14T12:00:00Z',
+          databaseId: 91,
+          issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
+          nodeId: 'IC_comment',
+          updatedAt: '2026-08-14T12:01:00Z',
+        });
+      },
+    });
+
+    assert.equal(
+      (await client.getIssueComment('tanaabased', 'example', 7, 91)).nodeId,
+      'IC_comment',
+    );
+    await assert.rejects(
+      client.getIssueComment('tanaabased', 'example', 8, 91),
+      /another work item/u,
+    );
+  });
+
   it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
     const marker = publicationMarker;
     const body = `On it.\n\n${marker}`;
