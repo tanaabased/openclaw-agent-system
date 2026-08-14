@@ -173,6 +173,11 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
         assert.match(String(input.ctx.BodyForAgent), /^## 📋 Planning request$/mu);
+        assert.match(String(input.ctx.BodyForAgent), /You've been assigned/u);
+        assert.match(
+          String(input.ctx.BodyForAgent),
+          /https:\/\/github\.com\/tanaabased\/openclaw-agent-system\/issues\/42/u,
+        );
         assert.match(String(input.ctx.BodyForAgent), /\*\*Mode:\*\* Plan/u);
         assert.match(String(input.ctx.BodyForAgent), /## Assessment/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);

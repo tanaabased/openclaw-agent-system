@@ -147,9 +147,33 @@ session_key="$(cat "$TMPDIR/approved-session-key")"
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## Assessment") and contains("## Blockers") and contains("## Plan")'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $text | ($text | contains("## 📥 Assignment received")) and ($text | contains("## 📋 Planning request")) and ($text | contains("https://github.com/tanaabased/agent-system-test/issues/")) and ($text | contains("Untrusted fixture content") | not) and ($text | contains("GITHUB_CONTEXT_JSON") | not) and ($text | contains("/.agent-system/worktrees/") | not)'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
+jq -e '
+  def visible_text($role):
+    [.messages[]? | select(.role == $role) | .content[]? | select(.type == "text") | .text] | join("\n");
+  visible_text("assistant") as $text
+  | {
+      assessment: ($text | contains("## Assessment")),
+      blockers: ($text | contains("## Blockers")),
+      plan: ($text | contains("## Plan"))
+    } as $checks
+  | if ($checks | all(.[]; .)) then $checks else error("private plan checks failed: \($checks)") end
+' <<< "$history"
+jq -e '
+  def visible_text($role):
+    [.messages[]? | select(.role == $role) | .content[]? | select(.type == "text") | .text] | join("\n");
+  visible_text("user") as $text
+  | {
+      assignment: (($text | ascii_downcase) | contains("assigned")),
+      planning_request: ($text | contains("## 📋 Planning request")),
+      issue_link: ($text | contains("https://github.com/tanaabased/agent-system-test/issues/")),
+      issue_context_hidden: ($text | contains("Untrusted fixture content") | not),
+      legacy_envelope_hidden: ($text | contains("GITHUB_CONTEXT_JSON") | not),
+      worktree_path_hidden: ($text | contains("/.agent-system/worktrees/") | not)
+    } as $checks
+  | if ($checks | all(.[]; .)) then $checks else error("planning request checks failed: \($checks)") end
+' <<< "$history"
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 

@@ -43,8 +43,8 @@ can also explicitly select one bounded progress update for publication.
 
 ## Private Assignment Presentation
 
-Each admitted assignment starts with two private inbound records. A compact,
-mode-neutral receipt creates the issue session:
+Each admitted assignment first creates the issue session with a compact,
+mode-neutral receipt in its session metadata:
 
 ```markdown
 ## 📥 Assignment received
@@ -52,13 +52,16 @@ mode-neutral receipt creates the issue session:
 You've been assigned [tanaabased/example#7](https://github.com/tanaabased/example/issues/7).
 ```
 
-The activation service then sends the mode-specific request. The currently
-supported plan request uses this shape:
+Session metadata is not a chat message, so the activation service composes the
+assignment introduction into the single visible mode-specific request. The
+currently supported plan request uses this shape:
 
 ```markdown
 ## 📋 Planning request
 
-Please review [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7) and prepare a private implementation plan.
+You've been assigned [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7).
+
+Please review it and prepare a private implementation plan.
 
 **Mode:** Plan — do not use tools or begin implementation.
 ```
@@ -70,11 +73,12 @@ worktree paths out of the visible message. A presentation path that exposes the
 structured context receives fenced JSON, which remains readable as plain text
 and is shown as a collapsed JSON disclosure by the OpenClaw Control UI.
 
-Only plan mode is currently implemented. The neutral receipt and mode-specific
-request are deliberately separate so future work and auto modes can provide
-accurate instructions without changing issue-context transport. Work mode still
-plans before a separately checkpointed implementation turn; auto mode will add
-its own structured continue-or-wait decision and deterministic safety gate.
+Only plan mode is currently implemented. The shared assignment introduction and
+mode-specific request are deliberately composed from separate formatters so
+future work and auto modes can provide accurate instructions without changing
+issue-context transport. Work mode still plans before a separately checkpointed
+implementation turn; auto mode will add its own structured continue-or-wait
+decision and deterministic safety gate.
 
 The private planning response uses this canonical Markdown contract:
 

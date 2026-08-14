@@ -36,6 +36,8 @@ describe('channels/github/utils/planning', () => {
     const planning = githubNotificationPlanningPrompt({ context, item });
 
     assert.match(planning.body, /^## 📋 Planning request$/mu);
+    assert.match(planning.body, /You've been assigned/u);
+    assert.match(planning.body, /https:\/\/github\.com\/tanaabased\/example\/issues\/12/u);
     assert.match(planning.body, /\*\*Mode:\*\* Plan/u);
     assert.match(planning.body, /## Assessment/u);
     assert.match(planning.body, /## Blockers/u);

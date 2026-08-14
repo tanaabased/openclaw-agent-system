@@ -26,13 +26,17 @@ export function githubNotificationItemLink(
   return `[${markdownLabel(label)}](${githubNotificationItemUrl(item)})`;
 }
 
+/** Format the shared assignment introduction for mode-specific private requests. */
+export function githubNotificationAssignmentSentence(
+  item: GitHubNotificationPresentationItem,
+  title?: string,
+): string {
+  return `You've been assigned ${githubNotificationItemLink(item, title)}.`;
+}
+
 /** Format the mode-neutral assignment receipt that opens the private issue session. */
 export default function githubNotificationAssignmentNotice(
   item: GitHubNotificationPresentationItem,
 ): string {
-  return [
-    '## 📥 Assignment received',
-    '',
-    `You've been assigned ${githubNotificationItemLink(item)}.`,
-  ].join('\n');
+  return ['## 📥 Assignment received', '', githubNotificationAssignmentSentence(item)].join('\n');
 }

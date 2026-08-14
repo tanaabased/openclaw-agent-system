@@ -1,6 +1,6 @@
 import type { GitHubNotificationPlanningContext } from '../lib/work-event-client.ts';
 import {
-  githubNotificationItemLink,
+  githubNotificationAssignmentSentence,
   githubNotificationItemUrl,
 } from './assignment-presentation.ts';
 import type { GitHubNotificationItemState } from './monitor-state.ts';
@@ -27,12 +27,13 @@ export interface GitHubNotificationPlanningPrompt {
 export default function githubNotificationPlanningPrompt(
   input: GitHubNotificationPlanningPromptInput,
 ): GitHubNotificationPlanningPrompt {
-  const link = githubNotificationItemLink(input.item, input.context.title);
   return {
     body: [
       '## 📋 Planning request',
       '',
-      `Please review ${link} and prepare a private implementation plan.`,
+      githubNotificationAssignmentSentence(input.item, input.context.title),
+      '',
+      'Please review it and prepare a private implementation plan.',
       '',
       '**Mode:** Plan — do not use tools or begin implementation.',
       '',
