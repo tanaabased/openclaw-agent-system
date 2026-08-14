@@ -27,6 +27,7 @@ describe('index', () => {
       | undefined;
     const hookNames: string[] = [];
     const channelIds: string[] = [];
+    const commandNames: string[] = [];
     const policyIds: string[] = [];
     const serviceIds: string[] = [];
     const toolNames: string[] = [];
@@ -79,6 +80,9 @@ describe('index', () => {
         const id = registration.plugin?.id ?? registration.id;
         if (id) channelIds.push(id);
       },
+      registerCommand(command: { name: string }) {
+        commandNames.push(command.name);
+      },
       registerService(service: { id: string }) {
         serviceIds.push(service.id);
       },
@@ -100,6 +104,7 @@ describe('index', () => {
       'before_prompt_build',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
+    assert.deepEqual(commandNames, ['agent-system-progress']);
     assert.deepEqual(serviceIds, ['agent-system-command-authority']);
     assert.deepEqual(toolNames, [
       'agent_system_git',

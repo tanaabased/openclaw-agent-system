@@ -149,6 +149,32 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
   });
 
+  it('should accept bounded value-free progress checkpoints and reject persisted prose', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { status: 'planned' },
+      progress: {
+        '123e4567-e89b-42d3-a456-426614174000': { commentId: 94, status: 'published' },
+      },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const unsafe = structuredClone(state) as unknown as {
+      items: Record<string, { delivery: { progress: Record<string, object> } }>;
+    };
+    unsafe.items[Object.keys(unsafe.items)[0]!]!.delivery.progress[
+      '123e4567-e89b-42d3-a456-426614174000'
+    ] = { body: 'private progress prose', status: 'published' };
+    assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
+  });
+
   it('should reject older state shapes instead of migrating them', () => {
     const state = notificationMonitorState();
 

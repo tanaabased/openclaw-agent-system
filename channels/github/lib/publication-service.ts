@@ -16,6 +16,18 @@ import { githubNotificationChannelId } from '../utils/routing.ts';
 
 type Delivery = AssembledInboundReply['delivery']['deliver'];
 
+/** Read a confirmed numeric GitHub comment receipt from durable delivery. */
+export function githubNotificationPublishedCommentId(
+  result: DurableInboundReplyDeliveryResult,
+): number | undefined {
+  if (result.status !== 'handled_visible') return undefined;
+  const value =
+    result.delivery.messageIds?.[0] ?? result.delivery.receipt?.primaryPlatformMessageId;
+  if (!value || !/^[1-9]\d*$/u.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 export interface GitHubNotificationPublicationServiceDependencies {
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
 }
@@ -32,8 +44,12 @@ export interface GitHubNotificationPublicationInput {
   publicationId: string;
 }
 
+export interface GitHubNotificationPublications {
+  publish(input: GitHubNotificationPublicationInput): Promise<DurableInboundReplyDeliveryResult>;
+}
+
 /** Route an explicit GitHub publication intent through OpenClaw's durable send lifecycle. */
-export default class GitHubNotificationPublicationService {
+export default class GitHubNotificationPublicationService implements GitHubNotificationPublications {
   readonly #deliver: typeof deliverInboundReplyWithMessageSendContext;
 
   constructor(dependencies: GitHubNotificationPublicationServiceDependencies = {}) {

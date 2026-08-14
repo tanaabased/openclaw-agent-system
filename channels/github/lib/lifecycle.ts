@@ -206,10 +206,12 @@ export default function createNotificationLifecycleContribution(
       }
       const activationFailureCounts = new Map<string, number>();
       const acknowledgmentFailureCounts = new Map<string, number>();
+      const progressFailureCounts = new Map<string, number>();
       const commentDiagnosticCounts = new Map<string, number>();
       const commentDispatchFailureCounts = new Map<string, number>();
       const commentReplyFailureCounts = new Map<string, number>();
       let acknowledgmentPendingCount = 0;
+      let progressPendingCount = 0;
       let commentBaselinePendingCount = 0;
       let commentResponsePendingCount = 0;
       for (const item of Object.values(state.items)) {
@@ -230,6 +232,16 @@ export default function createNotificationLifecycleContribution(
             acknowledgment.failureCode,
             (acknowledgmentFailureCounts.get(acknowledgment.failureCode) ?? 0) + 1,
           );
+        }
+        for (const progress of Object.values(delivery.progress ?? {})) {
+          if (progress.status === 'pending') {
+            progressPendingCount += 1;
+          } else if (progress.status === 'failed') {
+            progressFailureCounts.set(
+              progress.failureCode,
+              (progressFailureCounts.get(progress.failureCode) ?? 0) + 1,
+            );
+          }
         }
       }
       for (const item of Object.values(state.items)) {
@@ -296,6 +308,28 @@ export default function createNotificationLifecycleContribution(
                 status: 'warning' as const,
               },
             ];
+      const progressFindings = [
+        ...[...progressFailureCounts.entries()]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([code, count]) => ({
+            code,
+            message: `${count} explicit GitHub progress publication${count === 1 ? '' : 's'} failed after local selection.`,
+            remediation:
+              'Resolve the named diagnostic, then explicitly select a fresh progress update; automatic replay is not currently supported.',
+            status: 'warning' as const,
+          })),
+        ...(progressPendingCount === 0
+          ? []
+          : [
+              {
+                code: 'github-notification-progress-publication-pending',
+                message: `${progressPendingCount} explicit GitHub progress publication${progressPendingCount === 1 ? ' is' : 's are'} waiting for its durable delivery checkpoint.`,
+                remediation:
+                  'Keep the OpenClaw Gateway running; if this persists, inspect the Gateway logs before selecting a fresh update.',
+                status: 'warning' as const,
+              },
+            ]),
+      ];
       const commentDiagnosticFindings = [...commentDiagnosticCounts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([code, count]) => ({
@@ -349,6 +383,7 @@ export default function createNotificationLifecycleContribution(
         ...activationFindings,
         ...acknowledgmentFindings,
         ...acknowledgmentPendingFindings,
+        ...progressFindings,
         ...commentDiagnosticFindings,
         ...commentDispatchFindings,
         ...commentReplyFindings,

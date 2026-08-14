@@ -11,12 +11,14 @@ agent, assigning actor, and repository before creating one managed worktree and
 one local OpenClaw session for the issue. The Gateway then asks the agent to
 review the issue and prepare a plan before posting one short acknowledgment.
 Later approved comments that address the verified agent account continue the
-same private conversation and receive one bounded public reply.
+same private conversation and receive one bounded public reply. A local operator
+can also explicitly select one bounded progress update for publication.
 
 > [!IMPORTANT]
 > GitHub comments never authorize implementation or local tool use. The channel
-> does not currently publish locally initiated progress or manage pull-request
-> conversations.
+> publishes local progress only through an authorized `/agent-system-progress`
+> action in the exact issue session, and it does not currently manage
+> pull-request conversations.
 
 ## Overview
 
@@ -36,6 +38,8 @@ same private conversation and receive one bounded public reply.
   identities.
 - Rechecks the exact current comment revision before a tool-free private reply
   turn and again before publishing its separate GitHub reply candidate.
+- Publishes a locally selected progress update only from the exact active issue
+  session through an authorized Gateway operator command that bypasses the model.
 
 Each enabled channel account owns its polling lifecycle while the Gateway is
 running. `openclaw channels status --channel agent-system-github --json`
@@ -46,8 +50,8 @@ acknowledgment delivery, and admitted-comment responses. OpenClaw owns each
 durable send attempt, provider retry, receipt normalization, and unknown-send
 reconciliation. Agent System stores only value-free revision checkpoints,
 confirmed comment receipts, or stable failed diagnostics; `doctor` reports
-pending and failed acknowledgments and replies separately from monitor read
-health.
+pending and failed acknowledgments, replies, and progress publications
+separately from monitor read health.
 
 ## Requirements
 
@@ -176,6 +180,31 @@ cycles return a nonzero exit code.
 See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
 for result and concurrency semantics.
 
+## Explicit Progress Publication
+
+Open the active local notification session for an issue, complete any desired
+tool-enabled inspection in an ordinary local turn, then explicitly select the
+public update with:
+
+```text
+/agent-system-progress Implementation is underway and the current checks are passing.
+```
+
+The slash command bypasses the model. It publishes the selected text only after
+the common bounded-content safety gate and the same send-time assignment,
+manifest, GitHub policy, repository permission, account identity, durable
+delivery, and unknown-send reconciliation used by other notification replies.
+The command requires an authorized Gateway client with `operator.write` scope
+in the exact active issue session. GitHub-originated messages and ordinary local
+chat cannot trigger it, and owner status on a remote chat surface does not
+substitute for Gateway operator scope.
+
+The selected update is trimmed, limited to 800 characters, and rejected if it
+contains secrets, links, mentions, local paths, structured tool output, or
+unsupported formatting. A failed or pending publication remains visible through
+`doctor`; automatic replay is deferred to the notification state-management
+phase.
+
 ## Security and Lifecycle
 
 The installed channel account and binding must route to the same agent and
@@ -189,17 +218,18 @@ and the account has sufficient repository access.
 Issue prose and comments are bounded and framed as untrusted project data.
 Planning and admitted-comment turns cannot use tools, and their complete
 responses remain in the private OpenClaw session. Only separately labeled
-acknowledgment or GitHub-reply candidates can pass through the fail-closed
-publication gate, which rejects secrets, links, mentions, local paths, and
-unsupported output.
+acknowledgment or GitHub-reply candidates, plus text explicitly selected by the
+local progress command, can pass through the fail-closed publication gate,
+which rejects secrets, links, mentions, local paths, and unsupported output.
 
 A comment mention addresses the agent but does not authorize file inspection,
 repository commands, tests, implementation, or any other tool use. Status
 questions may be answered from evidence already recorded in the issue session
 and Agent System-owned checkpoints. If that evidence is insufficient, the reply
 must say that no verified current update is available from the notification
-turn. A later tool-enabled status check and progress publication require an
-explicit locally authorized operator action.
+turn. A later tool-enabled status check remains an ordinary local turn, and its
+result leaves the private session only when an operator explicitly selects a
+bounded update with `/agent-system-progress`.
 
 Private monitor state contains no tokens, GitHub prose, or generated content.
 Deterministic worktree, session, activation, and publication identities make

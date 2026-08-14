@@ -45,6 +45,7 @@ export interface GitHubNotificationDeliveryState {
   acknowledgment?: GitHubNotificationAcknowledgmentState;
   assignmentEventId: string;
   failureCode?: string;
+  progress?: Record<string, GitHubNotificationAcknowledgmentState>;
   schemaVersion: 1;
   sessionId?: string;
   sessionKey?: string;

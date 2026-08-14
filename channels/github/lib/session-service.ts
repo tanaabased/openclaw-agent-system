@@ -6,7 +6,6 @@ import {
   type AssembledInboundReply,
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
-import type { DurableInboundReplyDeliveryResult } from 'openclaw/plugin-sdk/channel-outbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
@@ -42,12 +41,15 @@ import {
   type ResolvedNotificationRoute,
 } from '../utils/routing.ts';
 import type { GitHubNotificationPlanningContext } from './work-event-client.ts';
-import type GitHubNotificationPublicationService from './publication-service.ts';
+import {
+  githubNotificationPublishedCommentId,
+  type GitHubNotificationPublications,
+} from './publication-service.ts';
 
 export interface GitHubNotificationSessionServiceDependencies {
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
-  publicationService: Pick<GitHubNotificationPublicationService, 'publish'>;
+  publicationService: GitHubNotificationPublications;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
@@ -126,15 +128,6 @@ function commentErrorCode(error: unknown): string {
     return error.code;
   }
   return 'github-notification-reply-publication-failed';
-}
-
-function publishedCommentId(result: DurableInboundReplyDeliveryResult): number | undefined {
-  if (result.status !== 'handled_visible') return undefined;
-  const value =
-    result.delivery.messageIds?.[0] ?? result.delivery.receipt?.primaryPlatformMessageId;
-  if (!value || !/^[1-9]\d*$/u.test(value)) return undefined;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 /** Record one assignment through OpenClaw's channel-owned session lifecycle. */
@@ -317,7 +310,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         payload: { text: acknowledgment },
         publicationId: input.delivery.assignmentEventId,
       });
-      const acknowledgmentCommentId = publishedCommentId(publication);
+      const acknowledgmentCommentId = githubNotificationPublishedCommentId(publication);
       const acknowledgmentFailureCode =
         publication.status === 'failed'
           ? errorCode(publication.error)
@@ -483,7 +476,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         payload: { text: reply },
         publicationId: input.comment.revisionId,
       });
-      const commentId = publishedCommentId(publication);
+      const commentId = githubNotificationPublishedCommentId(publication);
       return commentId === undefined
         ? {
             reply: {
