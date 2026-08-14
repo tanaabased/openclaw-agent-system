@@ -5,7 +5,6 @@ import githubNotificationPlanningAcknowledgment, {
   assertGitHubNotificationPlanningResponse,
   GitHubNotificationPlanningResponseError,
 } from '../channels/github/utils/planning-response.ts';
-import { GitHubNotificationPublicationError } from '../channels/github/utils/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/planning', () => {
@@ -101,26 +100,24 @@ describe('channels/github/utils/planning', () => {
     );
   });
 
-  it('should reject missing, ambiguous, or secret-shaped public candidates', () => {
-    assert.throws(
-      () => githubNotificationPlanningAcknowledgment([{ text: 'ASSESSMENT:\nReady.' }]),
-      (error: unknown) =>
-        error instanceof GitHubNotificationPlanningResponseError &&
-        error.code === 'github-notification-planning-acknowledgment-missing',
+  it('should fall back for missing, ambiguous, or secret-shaped public candidates', () => {
+    const fallback = 'Got it — I have reviewed the assignment and prepared a plan.';
+
+    assert.equal(
+      githubNotificationPlanningAcknowledgment([{ text: 'ASSESSMENT:\nReady.' }]),
+      fallback,
     );
-    assert.throws(
-      () =>
-        githubNotificationPlanningAcknowledgment([
-          { text: 'ACKNOWLEDGMENT: Ready.\nACKNOWLEDGMENT: Still ready.' },
-        ]),
-      GitHubNotificationPlanningResponseError,
+    assert.equal(
+      githubNotificationPlanningAcknowledgment([
+        { text: 'ACKNOWLEDGMENT: Ready.\nACKNOWLEDGMENT: Still ready.' },
+      ]),
+      fallback,
     );
-    assert.throws(
-      () =>
-        githubNotificationPlanningAcknowledgment([
-          { text: 'ACKNOWLEDGMENT: I found GH_TOKEN=secret-value in the issue.' },
-        ]),
-      GitHubNotificationPublicationError,
+    assert.equal(
+      githubNotificationPlanningAcknowledgment([
+        { text: 'ACKNOWLEDGMENT: I found GH_TOKEN=secret-value in the issue.' },
+      ]),
+      fallback,
     );
   });
 });

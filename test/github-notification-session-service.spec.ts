@@ -223,8 +223,9 @@ describe('channels/github/lib/session-service', () => {
     });
   });
 
-  it('should preserve planning completion when the public candidate is missing', async () => {
+  it('should publish a safe fallback when the public candidate is missing', async () => {
     let publications = 0;
+    let published: Record<string, unknown> | undefined;
     const service = createService({
       async dispatch(input) {
         await input.replyOptions?.onTurnAdopted?.();
@@ -234,9 +235,13 @@ describe('channels/github/lib/session-service', () => {
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
-      async publish() {
+      async publish(input) {
         publications += 1;
-        return { reason: 'non_final', status: 'not_applicable' };
+        published = input as unknown as Record<string, unknown>;
+        return {
+          delivery: { messageIds: ['92'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
       },
     });
 
@@ -253,12 +258,12 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.deepEqual(result, {
-      acknowledgment: {
-        failureCode: 'github-notification-planning-acknowledgment-missing',
-        status: 'failed',
-      },
+      acknowledgment: { commentId: 92, status: 'published' },
     });
-    assert.equal(publications, 0);
+    assert.equal(publications, 1);
+    assert.deepEqual(published?.payload, {
+      text: 'Got it — I have reviewed the assignment and prepared a plan.',
+    });
   });
 
   it('should preserve planning completion when durable publication is not confirmed', async () => {
