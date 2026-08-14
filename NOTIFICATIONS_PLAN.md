@@ -2,8 +2,10 @@
 
 Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A,
 Phase 2, and Phase 3 are implemented through the public channel SDK and covered
-by the packed third-party notifications scenario. Phases 4 through 7 remain
-planned work, with Phase 4 as the next implementation target.
+by the packed third-party notifications scenario. Phases 4 and 5 are reserved
+for the upcoming release, with Phase 4 as the next implementation target. Later
+work continuation, model-routing, and automatic-activation capabilities are
+tracked as separate Feature issues outside this release plan.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -103,9 +105,10 @@ MVP 1 product promise:
 The packed notifications scenario covers the plan-only turn, one public
 acknowledgment, approved and rejected comment mentions, one revision-bound public
 reply, one explicit local progress update, restart deduplication, and logical
-retirement. Pull-request conversations, operator replay, cleanup, and
-automatic-work behavior remain unavailable until their owning phases are
-implemented and accepted.
+retirement. Pull-request conversations, operator replay, and cleanup remain
+unavailable until Phases 4 and 5 are implemented and accepted. Configured work
+continuation, complexity-based model routing, and automatic activation remain
+deferred to their separate Feature issues.
 
 ## Configuration Contract
 
@@ -520,31 +523,14 @@ unknown-send reconciliation path.
   capabilities.
 - Define retention for retired routing state and delivery receipts.
 
-### Phase 6: Configured Work Continuation (Formerly Phase 1B)
+## Deferred Feature Work
 
-- Add optional `activation-mode` with `plan` and `work` values and a default of
-  `plan`.
-- Make both modes complete and checkpoint the same tool-free planning turn.
-- Keep `plan` waiting for a local operator response. Let `work` dispatch a
-  separately checkpointed implementation turn to the same session only after
-  planning completes.
-- Give the implementation turn the normal Agent System tool surface under the
-  existing binding, containment, credential, and tool-policy boundaries.
-- Do not reinterpret or silently continue an existing assignment when
-  configuration changes after its planning checkpoint.
+Later notification-to-work capabilities are tracked outside this release plan:
 
-### Phase 7: Automatic Activation Selection (Formerly Phase 1C)
-
-- Add `auto` only after both explicit activation modes have installed acceptance
-  coverage.
-- Require the planning turn to return a bounded structured continue-or-wait
-  decision under an explicit rubric.
-- Resolve ambiguity, missing acceptance criteria, broad or destructive changes,
-  security-sensitive work, migrations, releases, and other high-consequence
-  work to `plan`. Continue automatically only for clearly actionable bounded
-  work.
-- Keep planning completion and implementation adoption as separate durable
-  checkpoints.
+- configured notification work mode: [#30](https://github.com/tanaabased/openclaw-agent-system/issues/30);
+- complexity-based model routing: [#31](https://github.com/tanaabased/openclaw-agent-system/issues/31); and
+- automatic notification activation selection: [#32](https://github.com/tanaabased/openclaw-agent-system/issues/32),
+  blocked by #30 and #31.
 
 ## Validation
 
