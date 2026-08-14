@@ -1,8 +1,9 @@
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import AgentSystemToolError from '../../lib/tool-error.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitPrivateKeySource } from './config-schema.ts';
 
 const maximumPrivateKeyBytes = 65_536;
@@ -24,11 +25,6 @@ interface GitPrivateKeyFileMetadata {
   mode: number;
   size: number;
   uid: number;
-}
-
-function isContained(directory: string, path: string): boolean {
-  const difference = relative(resolve(directory), resolve(path));
-  return difference === '' || (!difference.startsWith('..') && !isAbsolute(difference));
 }
 
 function validatePrivateKeyMaterial(value: string): string {
@@ -69,7 +65,9 @@ export function resolveGitPrivateKeyPath(
   if (declaredPath.startsWith('~')) throw new Error('named home paths are unsupported');
   if (isAbsolute(declaredPath)) return resolve(declaredPath);
   const path = resolve(workspaceDir, declaredPath);
-  if (!isContained(workspaceDir, path)) throw new Error('relative path escapes workspace');
+  if (!isPathContained(resolve(workspaceDir), path)) {
+    throw new Error('relative path escapes workspace');
+  }
   return path;
 }
 
@@ -111,7 +109,7 @@ export async function loadGitPrivateKeySources(
             canonicalizeDirectory(context.workspaceDir),
             canonicalizeDirectory(dirname(path)),
           ]);
-          if (!isContained(canonicalWorkspace, canonicalParent)) {
+          if (!isPathContained(canonicalWorkspace, canonicalParent)) {
             throw new Error('relative path escapes workspace through a symlink');
           }
           path = join(canonicalParent, basename(path));

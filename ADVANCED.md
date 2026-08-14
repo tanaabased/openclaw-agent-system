@@ -167,25 +167,30 @@ OpenClaw agent context. They remain the preferred direct execution path for
 agents.
 
 Gateway-hosted native `exec` calls also receive a short-lived opaque capability.
-When a repository helper invokes the packaged `git` or `gh` shim, the delegated
+When a repository helper invokes a packaged managed launcher, the delegated
 `tool` process redeems that capability through Agent System's owner-only local
-authority. OpenClaw-hosted Codex `exec_command` descendants use the same command
-scope after Agent System matches their OpenClaw state and `CODEX_HOME` to the
-configured per-agent Codex app-server home. Standalone Codex does not satisfy
-that OpenClaw harness check.
+authority. The generic `agent-system-tool` launcher accepts any statically
+registered command; the current `git` and `gh` shims are convenience launchers
+over that same route. Unknown commands remain unavailable, and each registered
+tool retains its own configuration, policy, credential, and audit behavior.
+OpenClaw-hosted Codex `exec_command` descendants use the same command scope after
+Agent System matches their OpenClaw state and `CODEX_HOME` to the configured
+per-agent Codex app-server home. Standalone Codex does not satisfy that OpenClaw
+harness check.
 
 In both harnesses the active agent is authoritative; the helper's eventual
 directory is admitted only when it remains inside that agent's workspace, a
 declared `git.worktrees.repositories.local` repository, or its managed worktree
 root. Changing directory cannot select another agent, and `--agent` is rejected
-while the binding is active. Capabilities are not issued to sandbox or node
-hosts.
+while the binding is active. A Gateway descendant receives an explicit denial
+marker instead of falling back to directory discovery when authority or agent
+resolution is unavailable. Capabilities are not issued to sandbox or node hosts.
 
 Direct `tool` commands without that capability and every `credentials` command
 remain trusted operator interfaces. Their `--agent` option intentionally selects
 an installed agent, and workspace discovery can select one from its directory.
 The descendant bindings prevent cwd-based cross-agent identity selection through
-managed shims; they are practical same-user guardrails, not secret boundaries.
+managed launchers; they are practical same-user guardrails, not secret boundaries.
 They do not make arbitrary checkout code safe or intercept absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, or unrelated host
 processes. See OpenClaw's [security model](https://docs.openclaw.ai/gateway/security)
@@ -321,9 +326,9 @@ configuration, security, lifecycle, and result semantics.
 Runs a registered command through its Agent System tool. Direct invocations are
 an explicitly selected operator identity and are intended for administration,
 testing, and debugging. A verified OpenClaw native-exec or Codex-harness binding
-instead fixes a managed shim invocation to the active agent and rejects
+instead fixes a managed launcher invocation to the active agent and rejects
 `--agent`; agents should still use the corresponding native `agent_system_*`
-tool for direct work. The current release uses a closed registry, not an
+tool for direct work. The current release uses a closed command registry, not an
 arbitrary executable or raw-secret interface. A public tool integration contract
 is planned in [Tool API](./API.md).
 

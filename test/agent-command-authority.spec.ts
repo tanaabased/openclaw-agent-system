@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import AgentCommandAuthority, {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
+  deniedAgentCommandEnvironment,
 } from '../lib/agent-command-authority.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import AgentSystemToolError from '../lib/tool-error.ts';
@@ -184,6 +185,18 @@ describe('lib/agent-command-authority', () => {
     await assert.rejects(authority.resolve(forged, workspaceDir));
     now += 1_001;
     await assert.rejects(authority.resolve(environment, workspaceDir));
+  });
+
+  it('should fail closed when gateway authority is unavailable', async () => {
+    await authority.stop();
+    const environment = authority.issue('data');
+
+    assert.deepEqual(environment, deniedAgentCommandEnvironment());
+    await assert.rejects(
+      authority.resolve(environment, workspaceDir),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
+    );
   });
 
   it('should leave ordinary operator commands unbound', async () => {

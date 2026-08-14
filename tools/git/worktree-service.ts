@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 
+import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
@@ -53,11 +54,6 @@ interface RegisteredWorktree {
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
-}
-
-function isContained(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
 function getOwn<T>(record: Record<string, T>, key: string): T | undefined {
@@ -189,7 +185,7 @@ export default class GitWorktreeService {
       ]),
     );
     const canonicalPath = await realpath(path);
-    if (canonicalPath !== path || !isContained(layout.worktreeRoot, canonicalPath)) {
+    if (canonicalPath !== path || !isPathContained(layout.worktreeRoot, canonicalPath)) {
       throw new Error('Git prepared an unexpected worktree path.');
     }
     return this.#result(
@@ -210,7 +206,7 @@ export default class GitWorktreeService {
     const worktrees = await Promise.all(
       repositories.map(async (repository) =>
         (await this.#registeredWorktrees(context, repository))
-          .filter((worktree) => isContained(layout.worktreeRoot, worktree.path))
+          .filter((worktree) => isPathContained(layout.worktreeRoot, worktree.path))
           .map((worktree) => ({
             branch: worktree.branch,
             path: worktree.path,

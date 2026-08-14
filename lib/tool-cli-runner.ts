@@ -1,15 +1,11 @@
 import { spawn } from 'node:child_process';
 import { access, lstat, realpath } from 'node:fs/promises';
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
+import isPathContained from '../utils/is-path-contained.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunRequest } from './tool-types.ts';
 
 const forcedTerminationGraceMs = 100;
-
-function isInside(path: string, directory: string): boolean {
-  const difference = relative(resolve(directory), resolve(path));
-  return difference === '' || (!difference.startsWith('..') && !isAbsolute(difference));
-}
 
 async function executableCandidate(path: string): Promise<string | undefined> {
   try {
@@ -50,8 +46,10 @@ export async function resolveToolExecutable(
     const resolvedCandidate = await executableCandidate(candidate);
     if (!resolvedCandidate) continue;
     if (
-      excludedDirectories.some((directory) => isInside(candidate, directory)) ||
-      resolvedExcludedDirectories.some((directory) => isInside(resolvedCandidate, directory))
+      excludedDirectories.some((directory) =>
+        isPathContained(resolve(directory), resolve(candidate)),
+      ) ||
+      resolvedExcludedDirectories.some((directory) => isPathContained(directory, resolvedCandidate))
     ) {
       continue;
     }

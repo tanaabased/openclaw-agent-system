@@ -87,6 +87,21 @@ describe('utils/inspect-agent-command', () => {
     ]);
   });
 
+  it('should treat any command behind the generic managed launcher as a shim', () => {
+    const result = inspectAgentCommand(
+      'exec_command',
+      { cmd: '/package/bin/agent-system-tool future-command inspect' },
+      { managedExecutableDirectories: ['/package/bin'] },
+    );
+
+    assert.deepEqual(result.operatorInvocations, [
+      {
+        surface: 'shim',
+        targetAgentDynamic: false,
+      },
+    ]);
+  });
+
   it('should not treat command text passed to another executable as an invocation', () => {
     const result = inspectAgentCommand('exec', {
       command: "printf '%s' 'openclaw agent-system tool gh -- api user'",

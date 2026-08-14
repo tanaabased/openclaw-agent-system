@@ -2,10 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { chmod, lstat, mkdir, realpath, unlink } from 'node:fs/promises';
 import { userInfo } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
+import isPathContained from '../utils/is-path-contained.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import AgentSystemToolError from './tool-error.ts';
 
@@ -67,9 +68,12 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
 }
 
-function isContained(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+/** Mark one Gateway command descendant as explicitly unbound when authority is unavailable. */
+export function deniedAgentCommandEnvironment(): Record<string, string> {
+  return {
+    [agentCommandAuthorityEnvironmentName]: 'denied',
+    [agentCommandCapabilityEnvironmentName]: 'denied',
+  };
 }
 
 function defaultAuthorityRoot(): string {
@@ -221,10 +225,10 @@ export default class AgentCommandAuthority {
     if (socketPath) await unlink(socketPath).catch(() => undefined);
   }
 
-  issue(agentId: string): Record<string, string> | undefined {
+  issue(agentId: string): Record<string, string> {
     const normalizedAgentId = agentId.trim();
     if (!this.#server || !this.#authorityId || !agentIdPattern.test(normalizedAgentId)) {
-      return undefined;
+      return deniedAgentCommandEnvironment();
     }
     this.#prune();
     while (this.#leases.size >= maximumLeases) {
@@ -345,7 +349,7 @@ export default class AgentCommandAuthority {
     } catch {
       return { status: 'denied' };
     }
-    if (!admittedWorkingDirectories.some((root) => isContained(root, workingDirectory))) {
+    if (!admittedWorkingDirectories.some((root) => isPathContained(root, workingDirectory))) {
       return { status: 'denied' };
     }
     return {

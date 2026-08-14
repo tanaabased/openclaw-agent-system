@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 
+import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 
 export const defaultGitRepositoryRoot = '.agent-system/repositories';
@@ -14,11 +15,6 @@ export interface GitWorktreeLayout {
   workspaceDir: string;
 }
 
-function isContained(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-}
-
 function resolveConfiguredPath(input: string, workspaceDir: string, homeDirectory: string): string {
   if (input === '~') return resolve(homeDirectory);
   if (input.startsWith(`~${sep}`) || input.startsWith('~/')) {
@@ -29,7 +25,7 @@ function resolveConfiguredPath(input: string, workspaceDir: string, homeDirector
 }
 
 function ignoreEntry(workspaceDir: string, path: string): string | undefined {
-  if (!isContained(workspaceDir, path) || path === workspaceDir) return undefined;
+  if (!isPathContained(workspaceDir, path) || path === workspaceDir) return undefined;
   const workspacePath = relative(workspaceDir, path)
     .split(sep)
     .join('/')
@@ -57,8 +53,8 @@ export default function resolveGitWorktreeLayout(
   );
   if (
     worktreeRoot === repositoryRoot ||
-    isContained(worktreeRoot, repositoryRoot) ||
-    isContained(repositoryRoot, worktreeRoot)
+    isPathContained(worktreeRoot, repositoryRoot) ||
+    isPathContained(repositoryRoot, worktreeRoot)
   ) {
     throw new Error('Git worktree and repository roots must be separate directories.');
   }
@@ -71,7 +67,7 @@ export default function resolveGitWorktreeLayout(
   );
   if (
     Object.values(localRepositories).some(
-      (path) => isContained(repositoryRoot, path) || isContained(worktreeRoot, path),
+      (path) => isPathContained(repositoryRoot, path) || isPathContained(worktreeRoot, path),
     )
   ) {
     throw new Error('Git local repository overrides may not be inside managed roots.');

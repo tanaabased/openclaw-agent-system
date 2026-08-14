@@ -1,4 +1,3 @@
-import { realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +24,7 @@ import NotificationRoutingService from '../channels/github/lib/routing-service.t
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
+import resolveCodexCommandAgentId from '../utils/resolve-codex-command-agent-id.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
 import AgentCommandAuthority from './agent-command-authority.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
@@ -235,37 +235,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(currentUid === undefined ? {} : { currentUid }),
     manifestService,
     async resolveCodexAgentId({ codexHome, openClawStateDir }) {
-      let canonicalCodexHome: string;
-      try {
-        canonicalCodexHome = await realpath(codexHome);
-      } catch {
-        return undefined;
-      }
-      if (openClawStateDir !== undefined) {
-        let canonicalStateDir: string;
-        let runtimeStateDir: string;
-        try {
-          [canonicalStateDir, runtimeStateDir] = await Promise.all([
-            realpath(openClawStateDir),
-            realpath(api.runtime.state.resolveStateDir()),
-          ]);
-        } catch {
-          return undefined;
-        }
-        if (canonicalStateDir !== runtimeStateDir) return undefined;
-      }
-
       const config = api.runtime.config.current() as OpenClawConfig;
-      for (const entry of config.agents?.list ?? []) {
-        const agentId = entry.id.trim().toLowerCase();
-        if (!agentId) continue;
-        const agentDir = api.runtime.agent.resolveAgentDir(config, agentId);
-        const expectedCodexHome = await realpath(join(agentDir, 'codex-home')).catch(
-          () => undefined,
-        );
-        if (expectedCodexHome === canonicalCodexHome) return agentId;
-      }
-      return undefined;
+      return resolveCodexCommandAgentId({
+        agentIds: (config.agents?.list ?? []).map(({ id }) => id),
+        codexHome,
+        ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
+        resolveAgentDir: (agentId) => api.runtime.agent.resolveAgentDir(config, agentId),
+        resolveStateDir: () => api.runtime.state.resolveStateDir(),
+      });
     },
   });
   const doctorService = new AgentDoctorService({ lifecycleRegistry });

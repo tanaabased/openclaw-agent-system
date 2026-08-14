@@ -1,8 +1,9 @@
 import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
-import { isAbsolute, relative } from 'node:path';
+import { relative } from 'node:path';
 
 import runToolCli from '../../lib/tool-cli-runner.ts';
 import WorkspaceGitignoreService from '../../lib/workspace-gitignore-service.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import resolveGitWorktreeLayout, { type GitWorktreeLayout } from './worktree-layout.ts';
 
@@ -53,8 +54,8 @@ async function directoryStatus(
 
 function workspaceManagedPaths(workspaceDir: string, layout: GitWorktreeLayout): string[] {
   return [layout.repositoryRoot, layout.worktreeRoot]
-    .map((path) => relative(workspaceDir, path))
-    .filter((path) => path !== '' && !path.startsWith('..') && !isAbsolute(path));
+    .filter((path) => path !== workspaceDir && isPathContained(workspaceDir, path))
+    .map((path) => relative(workspaceDir, path));
 }
 
 /** Inspect and reconcile workspace-owned repository and worktree roots. */

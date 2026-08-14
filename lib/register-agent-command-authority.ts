@@ -1,6 +1,9 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import type AgentCommandAuthority from './agent-command-authority.ts';
+import {
+  deniedAgentCommandEnvironment,
+  type default as AgentCommandAuthority,
+} from './agent-command-authority.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type { Logger } from './logger.ts';
 
@@ -37,7 +40,7 @@ export default function registerAgentCommandAuthority(
       context,
       'resolve_exec_env',
     );
-    if (loaded.status !== 'loaded') return;
+    if (loaded.status !== 'loaded') return deniedAgentCommandEnvironment();
     return dependencies.authority.issue(loaded.manifest.agent.id);
   });
 }
