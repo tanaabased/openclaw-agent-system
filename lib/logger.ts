@@ -1,5 +1,6 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
+import { getChildLogger, getConsoleSettings } from 'openclaw/plugin-sdk/runtime';
 
 import type { AgentManifestLoadResult } from './agent-manifest-service.ts';
 
@@ -14,6 +15,11 @@ export interface AgentSystemDiagnostic {
 
 export interface CreateAgentSystemLoggerOptions {
   hostAttributed?: boolean;
+}
+
+export interface CreateAgentSystemLifecycleLoggerOptions extends CreateAgentSystemLoggerOptions {
+  consoleDebugEnabled?: () => boolean;
+  writeFileInfo?: (message: string) => void;
 }
 
 function loggerNamespace(pluginId: string): string {
@@ -42,6 +48,41 @@ export function createAgentSystemLogger(
     info: (message) => logger.info(format(message)),
     warn: (message) => logger.warn(format(message)),
   };
+}
+
+/** Keep routine lifecycle metadata in file logs unless console debugging is explicit. */
+export function createAgentSystemLifecycleLogger(
+  logger: PluginLogger,
+  pluginId: string,
+  options: CreateAgentSystemLifecycleLoggerOptions = {},
+): Logger {
+  const consoleDebugEnabled =
+    options.consoleDebugEnabled ??
+    (() => {
+      const level = getConsoleSettings().level;
+      return level === 'debug' || level === 'trace';
+    });
+  let fileLogger: ReturnType<typeof getChildLogger> | undefined;
+  const writeFileInfo =
+    options.writeFileInfo ??
+    ((message: string) => {
+      fileLogger ??= getChildLogger({ subsystem: 'plugins' });
+      fileLogger.info(message);
+    });
+
+  return createAgentSystemLogger(
+    {
+      ...(logger.debug ? { debug: logger.debug.bind(logger) } : {}),
+      error: logger.error.bind(logger),
+      info(message) {
+        if (consoleDebugEnabled()) logger.info(message);
+        else writeFileInfo(message);
+      },
+      warn: logger.warn.bind(logger),
+    },
+    pluginId,
+    options,
+  );
 }
 
 export function formatDiagnostic(diagnostic: AgentSystemDiagnostic): string {

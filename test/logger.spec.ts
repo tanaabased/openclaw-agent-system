@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {
+  createAgentSystemLifecycleLogger,
   createAgentSystemLogger,
   formatDiagnostic,
   reportManifestDiagnostics,
@@ -61,6 +62,38 @@ describe('lib/logger', () => {
     logger.info('manifest_loaded');
 
     assert.deepEqual(test.records.info, ['manifest_loaded']);
+  });
+
+  it('should keep routine lifecycle metadata out of the console by default', () => {
+    const test = createLogger();
+    const fileInfo: string[] = [];
+    const logger = createAgentSystemLifecycleLogger(test.logger, 'agent-system', {
+      consoleDebugEnabled: () => false,
+      writeFileInfo: (message) => fileInfo.push(message),
+    });
+
+    logger.info('manifest_loaded');
+    logger.warn('manifest_shadowed');
+    logger.error('manifest_invalid');
+
+    assert.deepEqual(fileInfo, ['[agent-system] manifest_loaded']);
+    assert.deepEqual(test.records.info, []);
+    assert.deepEqual(test.records.warn, ['[agent-system] manifest_shadowed']);
+    assert.deepEqual(test.records.error, ['[agent-system] manifest_invalid']);
+  });
+
+  it('should show routine lifecycle metadata once when console debugging is explicit', () => {
+    const test = createLogger();
+    const fileInfo: string[] = [];
+    const logger = createAgentSystemLifecycleLogger(test.logger, 'agent-system', {
+      consoleDebugEnabled: () => true,
+      writeFileInfo: (message) => fileInfo.push(message),
+    });
+
+    logger.info('tool_call_completed');
+
+    assert.deepEqual(test.records.info, ['[agent-system] tool_call_completed']);
+    assert.deepEqual(fileInfo, []);
   });
 
   it('should format diagnostic identity as metadata instead of another namespace', () => {
