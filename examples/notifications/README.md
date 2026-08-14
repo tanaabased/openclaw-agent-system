@@ -150,28 +150,31 @@ params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:
 history="$(openclaw gateway call chat.history --params "$params" --json)"
 jq -e '
   def visible_text($role):
-    [.messages[]? | select(.role == $role) | .content[]? | select(.type == "text") | .text] | join("\n");
-  visible_text("assistant") as $text
+    [
+      .messages[]?
+      | select(.role == $role)
+      | if (.content | type) == "string" then
+          .content
+        elif (.content | type) == "array" then
+          .content[]? | select(.type == "text") | .text
+        else
+          empty
+        end
+    ] | join("\n");
+  visible_text("assistant") as $assistant
+  | visible_text("user") as $user
   | {
-      assessment: ($text | contains("## Assessment")),
-      blockers: ($text | contains("## Blockers")),
-      plan: ($text | contains("## Plan"))
+      assessment: ($assistant | contains("## Assessment")),
+      blockers: ($assistant | contains("## Blockers")),
+      plan: ($assistant | contains("## Plan")),
+      assignment: (($user | ascii_downcase) | contains("assigned")),
+      planning_request: ($user | contains("## 📋 Planning request")),
+      issue_link: ($user | contains("https://github.com/tanaabased/agent-system-test/issues/")),
+      issue_context_hidden: ($user | contains("Untrusted fixture content") | not),
+      legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
+      worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
     } as $checks
-  | if ($checks | all(.[]; .)) then $checks else error("private plan checks failed: \($checks)") end
-' <<< "$history"
-jq -e '
-  def visible_text($role):
-    [.messages[]? | select(.role == $role) | .content[]? | select(.type == "text") | .text] | join("\n");
-  visible_text("user") as $text
-  | {
-      assignment: (($text | ascii_downcase) | contains("assigned")),
-      planning_request: ($text | contains("## 📋 Planning request")),
-      issue_link: ($text | contains("https://github.com/tanaabased/agent-system-test/issues/")),
-      issue_context_hidden: ($text | contains("Untrusted fixture content") | not),
-      legacy_envelope_hidden: ($text | contains("GITHUB_CONTEXT_JSON") | not),
-      worktree_path_hidden: ($text | contains("/.agent-system/worktrees/") | not)
-    } as $checks
-  | if ($checks | all(.[]; .)) then $checks else error("planning request checks failed: \($checks)") end
+  | if ($checks | all(.[]; .)) then $checks else error("notification presentation checks failed: \($checks)") end
 ' <<< "$history"
 jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
 cd "$TMPDIR/agent-system-notification-actor"
