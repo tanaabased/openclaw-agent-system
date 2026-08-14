@@ -1,6 +1,6 @@
 # Agent Command Security Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that a managed agent cannot use a command tool to invoke an Agent System operator route through another agent identity.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that a repository helper can use a managed shim with the active identity but cannot switch identity by changing into another agent workspace.
 
 ## Setup
 
@@ -50,12 +50,13 @@ OPENCLAW_LOG_LEVEL=debug "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
 ## Testing
 
 ```bash
-# should prevent tanaabot from executing through emori identity
+# should bind helper shims to tanaabot and prevent a cwd switch to emori
 openclaw agent \
   --agent tanaabot \
   --session-key agent:tanaabot:agent-system-security-leia \
   --message-file "$GITHUB_WORKSPACE/examples/security/cross-agent.md" \
   --timeout 120
+grep -F 'tanaabot-security@example.invalid' "$TMPDIR/agent-system-active-agent-result.txt"
 test ! -e "$TMPDIR/agent-system-cross-agent-result.txt"
 ```
 

@@ -90,6 +90,29 @@ describe('lib/tool-manifest-binding', () => {
     assert.deepEqual(calls, ['data:cli']);
   });
 
+  it('should bind an agent command to its authoritative agent instead of caller cwd discovery', async () => {
+    const calls: string[] = [];
+    const result = await loadBoundToolManifest(
+      {
+        async loadForAgentId(agentId, trigger) {
+          calls.push(`${agentId}:${trigger}`);
+          return loadedManifest(agentId);
+        },
+        async loadForCommandDirectory() {
+          throw new Error('agent command cwd discovery should not run');
+        },
+      },
+      {
+        agentId: 'data',
+        source: 'agent-command',
+        workspaceDir: '/repos/canon',
+      },
+    );
+
+    assert.equal(result.manifest.agent.id, 'data');
+    assert.deepEqual(calls, ['data:cli']);
+  });
+
   it('should reject an explicit command agent that resolves to another identity', async () => {
     await assert.rejects(
       loadBoundToolManifest(

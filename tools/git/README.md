@@ -21,10 +21,13 @@ One shared runtime provides five Git interfaces:
 | `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
 | `git`                                 | Packaged compatibility shim on supported agent command paths |
 
-The model-facing tools bind requests to trusted OpenClaw agent context. The CLI
-and shim are operator interfaces that select an agent by option or workspace.
-Every interface applies policy, resolves the selected identity, and launches the
-real `git` without a shell.
+The model-facing tools bind requests to trusted OpenClaw agent context. Direct
+CLI use is an operator interface that selects an agent by option or workspace.
+Inside a Gateway-hosted native agent command, the shim instead redeems a
+short-lived capability that fixes the active agent. An OpenClaw-hosted Codex
+`exec_command` descendant is fixed to the agent whose configured app-server home
+matches its `CODEX_HOME`. Both routes apply policy and launch the real `git`
+without a shell.
 
 ## Requirements
 
@@ -315,9 +318,12 @@ passes arguments to `openclaw agent-system tool git`, exports its canonical
 directory, and preserves the caller's directory. The runtime excludes managed
 command paths when resolving the real `git` to prevent wrapper recursion.
 
-The shim is an operator-compatible routing convenience, not an agent security
-boundary. Absolute binaries, replaced `PATH` values, and unrelated host
-processes can bypass it.
+In direct shells the shim remains an operator-compatible routing convenience.
+As a descendant of a Gateway-hosted native or Codex agent command, it must prove
+the active-agent binding and may run only in that agent's workspace, declared
+local repositories, or managed worktree root. A later `cd` cannot switch agent
+identity. Absolute binaries, replaced `PATH` values, and unrelated host processes
+can still bypass the shim.
 
 ## Further Reading
 

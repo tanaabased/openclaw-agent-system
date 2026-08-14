@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +25,7 @@ import GitHubNotificationSessionService from '../channels/github/lib/session-ser
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
+import AgentCommandAuthority from './agent-command-authority.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
 import AgentEnvironmentService from './agent-environment-service.ts';
 import AgentInstallService from './agent-install-service.ts';
@@ -42,6 +44,7 @@ import OpEnvironmentService from './op-environment-service.ts';
 import createPathLifecycleContribution from './path-lifecycle.ts';
 import PathProjectionStore from './path-projection-store.ts';
 import registerAgentSystemCli from './register-cli.ts';
+import registerAgentCommandAuthority from './register-agent-command-authority.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolRegistry from './tool-registry.ts';
 import AgentSystemToolRuntime from './tool-runtime.ts';
@@ -227,6 +230,41 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     opEnvironmentService,
   });
   environmentServiceRef.current = environmentService;
+  const commandAuthority = new AgentCommandAuthority({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    manifestService,
+    async resolveCodexAgentId({ codexHome, openClawStateDir }) {
+      let canonicalCodexHome: string;
+      let canonicalStateDir: string;
+      try {
+        [canonicalCodexHome, canonicalStateDir] = await Promise.all([
+          realpath(codexHome),
+          realpath(openClawStateDir),
+        ]);
+      } catch {
+        return undefined;
+      }
+      let runtimeStateDir: string;
+      try {
+        runtimeStateDir = await realpath(api.runtime.state.resolveStateDir());
+      } catch {
+        return undefined;
+      }
+      if (canonicalStateDir !== runtimeStateDir) return undefined;
+
+      const config = api.runtime.config.current() as OpenClawConfig;
+      for (const entry of config.agents?.list ?? []) {
+        const agentId = entry.id.trim().toLowerCase();
+        if (!agentId) continue;
+        const agentDir = api.runtime.agent.resolveAgentDir(config, agentId);
+        const expectedCodexHome = await realpath(join(agentDir, 'codex-home')).catch(
+          () => undefined,
+        );
+        if (expectedCodexHome === canonicalCodexHome) return agentId;
+      }
+      return undefined;
+    },
+  });
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
   const toolRuntime = new AgentSystemToolRuntime({
     baseEnvironment: process.env,
@@ -308,6 +346,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService);
+  registerAgentCommandAuthority(api, {
+    authority: commandAuthority,
+    logger,
+    manifestService,
+  });
   registerAgentCommandSecurity(api, {
     logger,
     managedExecutableDirectories: excludedToolExecutableDirectories,
@@ -317,6 +360,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {
+        commandAuthority,
         credentialInput: opCredentialInput,
         credentialManager,
         doctorService,

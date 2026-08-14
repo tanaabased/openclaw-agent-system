@@ -23,10 +23,14 @@ One shared runtime provides three GitHub interfaces:
 | `openclaw agent-system tool gh` | Explicit operator command                                    |
 | `gh`                            | Packaged compatibility shim on supported agent command paths |
 
-The model-facing tool binds the request to trusted OpenClaw agent context. The
-CLI and shim are operator interfaces that select an agent by option or workspace.
-All three then apply policy before loading the selected agent's credential and
-launch the real `gh` executable without a shell.
+The model-facing tool binds the request to trusted OpenClaw agent context.
+Direct CLI use is an operator interface that selects an agent by option or
+workspace. Inside a Gateway-hosted native agent command, the shim instead
+redeems a short-lived capability that fixes the active agent. An
+OpenClaw-hosted Codex `exec_command` descendant is fixed to the agent whose
+configured app-server home matches its `CODEX_HOME`. Every route applies policy
+before loading the bound credential and launching the real `gh` executable
+without a shell.
 
 ## Requirements
 
@@ -229,9 +233,13 @@ launcher directory, and never receives a credential. The runtime resolves the
 real `gh` executable while excluding Agent System-managed command paths to
 prevent substitution and wrapper recursion.
 
-The shim is an operator-compatible routing convenience, not an agent security
-boundary or universal interception. Absolute binaries, replaced `PATH` values,
-direct HTTP, SDKs, MCP tools, and unrelated host processes can bypass it.
+In direct shells the shim remains an operator-compatible routing convenience.
+As a descendant of a Gateway-hosted native or Codex agent command, it must prove
+the active-agent binding and may infer a repository only from that agent's
+workspace, declared local repositories, or managed worktree root. A later `cd`
+cannot switch agent identity. This is not universal interception: absolute
+binaries, replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated
+host processes can bypass it.
 
 ## Further Reading
 

@@ -3,6 +3,88 @@ import assert from 'node:assert/strict';
 import runAgentSystemTool from '../cli/tool.ts';
 
 describe('cli/tool', () => {
+  it('should use an opaque active-agent binding for descendant command shims', async () => {
+    const scopes: unknown[] = [];
+
+    await runAgentSystemTool({
+      argv: ['api', 'user'],
+      command: 'gh',
+      logger: { error() {}, info() {}, warn() {} },
+      output: { writeStdout() {} },
+      async resolveCommandBinding() {
+        return {
+          admittedWorkingDirectories: ['/workspace/data', '/repos/canon'],
+          agentId: 'data',
+          workingDirectory: '/repos/canon',
+        };
+      },
+      setExitCode() {},
+      toolRegistry: {
+        async invoke(_command, _runtime, _argv, scope) {
+          scopes.push(scope);
+          return {
+            auditId: 'audit-id',
+            kind: 'cli' as const,
+            commandResult: {
+              exitCode: 0,
+              stderr: '',
+              stdout: '',
+              timedOut: false,
+              truncated: false,
+            },
+            operation: { action: 'github.cli.invoke', risk: 'read' as const, summary: 'Read.' },
+            output: {},
+          };
+        },
+      },
+      toolRuntime: {} as never,
+      workspaceDir: '/repos/canon',
+    });
+
+    assert.deepEqual(scopes, [
+      {
+        admittedWorkingDirectories: ['/workspace/data', '/repos/canon'],
+        agentId: 'data',
+        source: 'agent-command',
+        workspaceDir: '/repos/canon',
+      },
+    ]);
+  });
+
+  it('should reject an explicit agent selector when an active-agent binding exists', async () => {
+    const exitCodes: number[] = [];
+    const errors: string[] = [];
+
+    await runAgentSystemTool({
+      agentId: 'emori',
+      argv: ['status'],
+      command: 'git',
+      logger: { error: (message) => errors.push(message), info() {}, warn() {} },
+      output: { writeStdout() {} },
+      async resolveCommandBinding() {
+        return {
+          admittedWorkingDirectories: ['/workspace/data'],
+          agentId: 'data',
+          workingDirectory: '/workspace/data',
+        };
+      },
+      setExitCode: (code) => exitCodes.push(code),
+      toolRegistry: {
+        async invoke() {
+          throw new Error('the tool must not be invoked');
+        },
+      },
+      toolRuntime: {} as never,
+      workspaceDir: '/workspace/data',
+    });
+
+    assert.deepEqual(exitCodes, [1]);
+    assert.equal(
+      errors.some((message) => message.includes('invalid_arguments')),
+      true,
+    );
+  });
+
   it('should preserve child output streams and a nonzero exit code', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];

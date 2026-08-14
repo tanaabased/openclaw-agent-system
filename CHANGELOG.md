@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Bound managed `git` and `gh` shim descendants from native OpenClaw exec and the OpenClaw Codex harness to the active agent with workspace and repository admission.
 - Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)

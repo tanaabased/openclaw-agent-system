@@ -293,9 +293,9 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
       admittedWorkingDirectories(_input, configuration, scope) {
         if (!configuration.worktrees) return [];
         const layout = resolveGitWorktreeLayout(scope.workspaceDir, configuration.worktrees);
-        return scope.source === 'command'
-          ? [layout.worktreeRoot, ...Object.values(layout.localRepositories)]
-          : [layout.worktreeRoot];
+        return scope.source === 'tool'
+          ? [layout.worktreeRoot]
+          : [layout.worktreeRoot, ...Object.values(layout.localRepositories)];
       },
       workingDirectory(input, _configuration, scope) {
         return scope.source === 'tool' ? (input.cwd ?? '.') : scope.commandWorkingDirectory;
