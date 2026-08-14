@@ -139,6 +139,14 @@ describe('channels/github/lib/session-service', () => {
       recordedContext?.ConversationLabel,
       'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
     );
+    assert.equal(
+      recordedContext?.BodyForAgent,
+      [
+        '## 📥 Assignment received',
+        '',
+        "You've been assigned [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/issues/42).",
+      ].join('\n'),
+    );
     assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
@@ -164,18 +172,48 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
-        assert.match(String(input.ctx.BodyForAgent), /private, plan-only first pass/u);
+        assert.match(String(input.ctx.BodyForAgent), /^## 📋 Planning request$/mu);
+        assert.match(String(input.ctx.BodyForAgent), /You've been assigned/u);
+        assert.match(
+          String(input.ctx.BodyForAgent),
+          /https:\/\/github\.com\/tanaabased\/openclaw-agent-system\/issues\/42/u,
+        );
+        assert.match(String(input.ctx.BodyForAgent), /\*\*Mode:\*\* Plan/u);
+        assert.match(String(input.ctx.BodyForAgent), /## Assessment/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /GITHUB_CONTEXT_JSON/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /\/workspace\/data/u);
+        assert.deepEqual(input.ctx.UntrustedStructuredContext, [
+          {
+            label: 'GitHub issue context',
+            payload: {
+              body: 'Please implement the behavior.',
+              comments: [],
+              labels: ['feature'],
+              title: 'Implement the behavior',
+              truncated: false,
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/issues/42',
+            type: 'github_issue',
+          },
+        ]);
         await input.replyOptions?.onTurnAdopted?.();
         await input.dispatcherOptions.deliver(
           {
             isCommentary: true,
             text: [
               'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
-              'ASSESSMENT:',
+              '',
+              '## Assessment',
+              '',
               'The request is bounded.',
-              'BLOCKERS:',
+              '',
+              '## Blockers',
+              '',
               'None.',
-              'PLAN:',
+              '',
+              '## Plan',
+              '',
               '1. Implement it.',
             ].join('\n'),
           },
@@ -354,11 +392,17 @@ describe('channels/github/lib/session-service', () => {
           {
             text: [
               'ACKNOWLEDGMENT: Got it, I have started working through the plan.',
-              'ASSESSMENT:',
+              '',
+              '## Assessment',
+              '',
               'The request is bounded.',
-              'BLOCKERS:',
+              '',
+              '## Blockers',
+              '',
               'None.',
-              'PLAN:',
+              '',
+              '## Plan',
+              '',
               '1. Implement it.',
             ].join('\n'),
           },
@@ -408,7 +452,7 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.ctxPayload.SessionKey, route.sessionKey);
     assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
-    assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
+    assert.equal(turn.ctxPayload.BodyForAgent, event.title);
     assert.equal(turn.ctxPayload.Provider, 'agent-system-github');
     assert.equal(turn.ctxPayload.Surface, 'agent-system-github');
     assert.equal(turn.ctxPayload.OriginatingChannel, 'agent-system-github');
