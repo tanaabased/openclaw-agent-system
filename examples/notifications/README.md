@@ -147,7 +147,8 @@ session_key="$(cat "$TMPDIR/approved-session-key")"
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")'
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## Assessment") and contains("## Blockers") and contains("## Plan")'
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $text | ($text | contains("## 📥 Assignment received")) and ($text | contains("## 📋 Planning request")) and ($text | contains("https://github.com/tanaabased/agent-system-test/issues/")) and ($text | contains("Untrusted fixture content") | not) and ($text | contains("GITHUB_CONTEXT_JSON") | not) and ($text | contains("/.agent-system/worktrees/") | not)'
 openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'

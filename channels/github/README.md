@@ -41,6 +41,74 @@ can also explicitly select one bounded progress update for publication.
 - Publishes a locally selected progress update only from the exact active issue
   session through an authorized Gateway operator command that bypasses the model.
 
+## Private Assignment Presentation
+
+Each admitted assignment starts with two private inbound records. A compact,
+mode-neutral receipt creates the issue session:
+
+```markdown
+## 📥 Assignment received
+
+You've been assigned [tanaabased/example#7](https://github.com/tanaabased/example/issues/7).
+```
+
+The activation service then sends the mode-specific request. The currently
+supported plan request uses this shape:
+
+```markdown
+## 📋 Planning request
+
+Please review [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7) and prepare a private implementation plan.
+
+**Mode:** Plan — do not use tools or begin implementation.
+```
+
+The issue body, labels, and comments are supplied separately through OpenClaw's
+current-turn untrusted structured context. They remain available to the agent
+without appearing in normal chat history. The request also keeps managed
+worktree paths out of the visible message. A presentation path that exposes the
+structured context receives fenced JSON, which remains readable as plain text
+and is shown as a collapsed JSON disclosure by the OpenClaw Control UI.
+
+Only plan mode is currently implemented. The neutral receipt and mode-specific
+request are deliberately separate so future work and auto modes can provide
+accurate instructions without changing issue-context transport. Work mode still
+plans before a separately checkpointed implementation turn; auto mode will add
+its own structured continue-or-wait decision and deterministic safety gate.
+
+The private planning response uses this canonical Markdown contract:
+
+```markdown
+ACKNOWLEDGMENT: I reviewed the assignment and prepared a plan.
+
+## Assessment
+
+🧭 The requested outcome and its relevant constraints.
+
+## Blockers
+
+None.
+
+## Plan
+
+1. **🔎 Inspect the boundary.** Trace the current behavior.
+2. **✅ Verify the result.** Run the relevant checks.
+```
+
+`Assessment`, `Blockers`, and `Plan` must each appear once, in that order, and
+contain content. `Plan` must contain an ordered or bulleted list. Spacing,
+emphasis, emoji, and relevant links are supported inside the private sections;
+the required headings stay exact so validation remains deterministic. Legacy
+`ASSESSMENT:`, `BLOCKERS:`, and `PLAN:` markers remain accepted during the
+transition, but mixed Markdown and plaintext section markers are rejected.
+Clients that do not render Markdown show the same literal headings, list
+markers, link labels and destinations, and emoji; no HTML-only presentation is
+required for the plan to remain readable.
+
+Only the separate `ACKNOWLEDGMENT:` candidate can enter the public publication
+path. It remains subject to the one-sentence safety gate and cannot publish the
+private sections, links, issue context, or local paths.
+
 Each enabled channel account owns its polling lifecycle while the Gateway is
 running. `openclaw channels status --channel agent-system-github --json`
 reports whether that account is running, connected, and healthy. The manual
