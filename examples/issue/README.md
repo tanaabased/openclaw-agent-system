@@ -147,8 +147,36 @@ session_key="$(cat "$TMPDIR/approved-session-key")"
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
+jq -e '
+  def visible_text($role):
+    [
+      .messages[]?
+      | select(.role == $role)
+      | if (.content | type) == "string" then
+          .content
+        elif (.content | type) == "array" then
+          .content[]? | select(.type == "text") | .text
+        else
+          empty
+        end
+    ] | join("\n");
+  visible_text("assistant") as $assistant
+  | visible_text("user") as $user
+  | {
+      assessment: ($assistant | contains("## Assessment")),
+      blockers: ($assistant | contains("## Blockers")),
+      plan: ($assistant | contains("## Plan")),
+      assignment: (($user | ascii_downcase) | contains("assigned")),
+      planning_request: ($user | contains("## 📋 Planning request")),
+      issue_link: ($user | contains("https://github.com/tanaabased/agent-system-test/issues/")),
+      issue_context_hidden: ($user | contains("Untrusted fixture content") | not),
+      legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
+      worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
+    } as $checks
+  | if ($checks | all(.[]; .)) then $checks else error("notification presentation checks failed: \($checks)") end
+' <<< "$history"
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 

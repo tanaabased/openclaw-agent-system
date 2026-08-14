@@ -20,11 +20,12 @@ import {
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channel.ts';
-import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
+import githubNotificationAssignmentNotice from '../utils/assignment-presentation.ts';
 import githubNotificationCommentPrompt from '../utils/comment-context.ts';
 import githubNotificationCommentReply, {
   assertGitHubNotificationCommentResponse,
 } from '../utils/comment-response.ts';
+import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
 import type { GitHubCanonicalIssueComment } from '../utils/comment-admission.ts';
 import type {
   GitHubNotificationAcknowledgmentState,
@@ -207,17 +208,16 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     let sessionRecordTask: Promise<unknown> | undefined;
     const eventId = requiredText(assignment.event.id, 'GitHub notification event ids', 256);
     const messageId = `plan:${eventId}`;
-    const notification = `Plan GitHub ${assignment.event.itemType} #${assignment.event.itemNumber}.`;
-    const prompt = githubNotificationPlanningPrompt({
+    const planning = githubNotificationPlanningPrompt({
       context: input.context,
       item: input.item,
-      worktree: input.worktree,
     });
     const workContext = assignmentContext({
       itemType: assignment.event.itemType,
       ...(input.item.pullRequest === undefined ? {} : { pullRequest: input.item.pullRequest }),
       ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
     });
+    const prompt = planning.body;
     const ctxPayload = buildChannelInboundEventContext({
       accountId: assignment.route.accountId,
       channel: githubNotificationChannelId,
@@ -232,14 +232,15 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         githubItemType: assignment.event.itemType,
         githubRepositoryId: assignment.event.repositoryId,
         ...workContext,
+        UntrustedStructuredContext: [planning.untrustedContext],
       },
       from: `github:${assignment.event.repositoryId}`,
       message: {
-        body: notification,
+        body: prompt,
         bodyForAgent: prompt,
         commandBody: '',
         inboundEventKind: 'user_request',
-        rawBody: notification,
+        rawBody: prompt,
       },
       messageId,
       reply: {
@@ -553,7 +554,11 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
     });
     const conversationId = input.route.conversationId;
-    const notification = `GitHub ${input.event.itemType} #${input.event.itemNumber} was assigned to this agent.`;
+    const notification = requiredText(
+      input.event.title,
+      'GitHub notification assignment notices',
+      2_000,
+    );
     const ctxPayload = buildChannelInboundEventContext({
       accountId: input.route.accountId,
       channel: githubNotificationChannelId,
@@ -644,7 +649,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       itemNumber: input.item.number,
       itemType: input.item.itemType,
       repositoryId: input.item.repositoryNodeId,
-      title: `GitHub ${input.item.itemType} #${input.item.number} assignment`,
+      title: githubNotificationAssignmentNotice(input.item),
     };
     const route = resolveNotificationRoute(
       config,

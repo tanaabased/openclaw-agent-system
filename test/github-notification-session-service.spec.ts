@@ -82,6 +82,21 @@ const assignmentInput = {
   },
   workspaceDir: '/workspace/data',
 };
+const pullRequestAssignmentInput = {
+  agentId: assignmentInput.agentId,
+  delivery: {
+    assignmentEventId: assignmentInput.delivery.assignmentEventId,
+    schemaVersion: 1 as const,
+    stage: 'session-recording' as const,
+    workId: 'pull-request-42',
+  },
+  item: {
+    ...assignmentInput.item,
+    itemType: 'pull-request' as const,
+    pullRequest,
+  },
+  workspaceDir: assignmentInput.workspaceDir,
+};
 
 function createService(
   overrides: {
@@ -145,6 +160,14 @@ describe('channels/github/lib/session-service', () => {
       recordedContext?.ConversationLabel,
       'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
     );
+    assert.equal(
+      recordedContext?.BodyForAgent,
+      [
+        '## 📥 Assignment received',
+        '',
+        "You've been assigned [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/issues/42).",
+      ].join('\n'),
+    );
     assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
@@ -165,27 +188,19 @@ describe('channels/github/lib/session-service', () => {
         recordedContext = ctx;
       },
     });
-    const pullRequestInput = {
-      agentId: assignmentInput.agentId,
-      delivery: {
-        assignmentEventId: assignmentInput.delivery.assignmentEventId,
-        schemaVersion: 1 as const,
-        stage: 'session-recording' as const,
-        workId: 'pull-request-42',
-      },
-      item: {
-        ...assignmentInput.item,
-        itemType: 'pull-request' as const,
-        pullRequest,
-      },
-      workspaceDir: assignmentInput.workspaceDir,
-    };
-
-    const observed = await service.recordSession(pullRequestInput);
+    const observed = await service.recordSession(pullRequestAssignmentInput);
 
     assert.equal(
       recordedContext?.ConversationLabel,
       'tanaabased/openclaw-agent-system#42 · head@aaaaaaaaaaaa',
+    );
+    assert.equal(
+      recordedContext?.BodyForAgent,
+      [
+        '## 📥 Assignment received',
+        '',
+        "You've been assigned [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/pull/42).",
+      ].join('\n'),
     );
     const context = recordedContext as unknown as Record<string, unknown>;
     assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
@@ -205,18 +220,48 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
-        assert.match(String(input.ctx.BodyForAgent), /private, plan-only first pass/u);
+        assert.match(String(input.ctx.BodyForAgent), /^## 📋 Planning request$/mu);
+        assert.match(String(input.ctx.BodyForAgent), /You've been assigned/u);
+        assert.match(
+          String(input.ctx.BodyForAgent),
+          /https:\/\/github\.com\/tanaabased\/openclaw-agent-system\/issues\/42/u,
+        );
+        assert.match(String(input.ctx.BodyForAgent), /\*\*Mode:\*\* Plan/u);
+        assert.match(String(input.ctx.BodyForAgent), /## Assessment/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /GITHUB_CONTEXT_JSON/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /\/workspace\/data/u);
+        assert.deepEqual(input.ctx.UntrustedStructuredContext, [
+          {
+            label: 'GitHub issue context',
+            payload: {
+              body: 'Please implement the behavior.',
+              comments: [],
+              labels: ['feature'],
+              title: 'Implement the behavior',
+              truncated: false,
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/issues/42',
+            type: 'github_issue',
+          },
+        ]);
         await input.replyOptions?.onTurnAdopted?.();
         await input.dispatcherOptions.deliver(
           {
             isCommentary: true,
             text: [
               'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
-              'ASSESSMENT:',
+              '',
+              '## Assessment',
+              '',
               'The request is bounded.',
-              'BLOCKERS:',
+              '',
+              '## Blockers',
+              '',
               'None.',
-              'PLAN:',
+              '',
+              '## Plan',
+              '',
               '1. Implement it.',
             ].join('\n'),
           },
@@ -262,6 +307,97 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(published?.intent, 'initial-acknowledgment');
     assert.deepEqual(published?.payload, {
       text: 'I have read this through and mapped out a plan.',
+    });
+  });
+
+  it('should plan a direct pull request from observed head context without a worktree', async () => {
+    const planningContext = {
+      body: 'Please review the assigned change.',
+      comments: [],
+      files: [
+        {
+          additions: 4,
+          changes: 5,
+          deletions: 1,
+          filename: 'channels/github/lib/session-service.ts',
+          status: 'modified',
+        },
+      ],
+      labels: ['review'],
+      title: 'Review the notification session',
+      truncated: false,
+    };
+    const service = createService({
+      async dispatch(input) {
+        const context = input.ctx as unknown as Record<string, unknown>;
+        assert.equal(context.githubPullRequestHeadRef, pullRequest.headRef);
+        assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+        assert.equal(context.githubWorktreeBranch, undefined);
+        assert.equal(context.githubWorktreePath, undefined);
+        assert.match(String(input.ctx.BodyForAgent), /private stewardship plan/u);
+        assert.match(String(input.ctx.BodyForAgent), /No managed worktree is prepared/u);
+        assert.deepEqual(context.UntrustedStructuredContext, [
+          {
+            label: 'GitHub pull-request context',
+            payload: {
+              ...planningContext,
+              pullRequest: {
+                baseRef: pullRequest.baseRef,
+                draft: pullRequest.draft,
+                headRef: pullRequest.headRef,
+                headSha: pullRequest.headSha,
+              },
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/pull/42',
+            type: 'github_pull_request',
+          },
+        ]);
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              'ACKNOWLEDGMENT: I reviewed the pull request and prepared a stewardship plan.',
+              '',
+              '## Assessment',
+              '',
+              'The assigned head is ready for monitoring.',
+              '',
+              '## Blockers',
+              '',
+              'None.',
+              '',
+              '## Plan',
+              '',
+              '1. Monitor discussion and merge readiness.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        return {
+          delivery: { messageIds: ['94'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...pullRequestAssignmentInput,
+      context: planningContext,
+      delivery: {
+        ...pullRequestAssignmentInput.delivery,
+        acknowledgment: { status: 'pending' as const },
+        activation: { status: 'pending' as const },
+        sessionKey: route.sessionKey,
+        stage: 'active' as const,
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.deepEqual(result, {
+      acknowledgment: { commentId: 94, status: 'published' },
     });
   });
 
@@ -395,11 +531,17 @@ describe('channels/github/lib/session-service', () => {
           {
             text: [
               'ACKNOWLEDGMENT: Got it, I have started working through the plan.',
-              'ASSESSMENT:',
+              '',
+              '## Assessment',
+              '',
               'The request is bounded.',
-              'BLOCKERS:',
+              '',
+              '## Blockers',
+              '',
               'None.',
-              'PLAN:',
+              '',
+              '## Plan',
+              '',
               '1. Implement it.',
             ].join('\n'),
           },
@@ -448,7 +590,7 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.ctxPayload.SessionKey, route.sessionKey);
     assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
-    assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
+    assert.equal(turn.ctxPayload.BodyForAgent, event.title);
     assert.equal(turn.ctxPayload.Provider, 'agent-system-github');
     assert.equal(turn.ctxPayload.Surface, 'agent-system-github');
     assert.equal(turn.ctxPayload.OriginatingChannel, 'agent-system-github');
@@ -480,10 +622,7 @@ describe('channels/github/lib/session-service', () => {
       route,
     });
 
-    assert.equal(
-      turn.ctxPayload.BodyForAgent,
-      'GitHub pull-request #42 was assigned to this agent.',
-    );
+    assert.equal(turn.ctxPayload.BodyForAgent, pullRequestEvent.title);
     assert.equal(
       (turn.ctxPayload as unknown as Record<string, unknown>).githubItemType,
       'pull-request',

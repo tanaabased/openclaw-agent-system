@@ -120,10 +120,39 @@ session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
 expected_head="$(cat "$TMPDIR/assigned-pull-request-head")"
-openclaw gateway call chat.history --params "$params" --json | jq -e --arg head "$expected_head" '[.messages[]? | .. | strings] | join("\n") | contains($head)'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+jq -e --arg head "$expected_head" '
+  def visible_text($role):
+    [
+      .messages[]?
+      | select(.role == $role)
+      | if (.content | type) == "string" then
+          .content
+        elif (.content | type) == "array" then
+          .content[]? | select(.type == "text") | .text
+        else
+          empty
+        end
+    ] | join("\n");
+  visible_text("assistant") as $assistant
+  | visible_text("user") as $user
+  | {
+      assessment: ($assistant | contains("## Assessment")),
+      blockers: ($assistant | contains("## Blockers")),
+      plan: ($assistant | contains("## Plan")),
+      assignment: (($user | ascii_downcase) | contains("assigned")),
+      planning_request: ($user | contains("## 📋 Planning request")),
+      pull_request_link: ($user | contains("https://github.com/tanaabased/agent-system-test/pull/")),
+      stewardship: (($user | ascii_downcase) | contains("stewardship")),
+      no_worktree: (($user | ascii_downcase) | contains("no managed worktree")),
+      provider_context_hidden: ($user | contains("Untrusted pull-request content") | not),
+      legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
+      head_sha_hidden: ($user | contains($head) | not)
+    } as $checks
+  | if ($checks | all(.[]; .)) then $checks else error("pull-request presentation checks failed: \($checks)") end
+' <<< "$history"
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
 
 # should publish one explicitly selected progress update on the pull request
 cd "$TMPDIR/agent-system-pr-notifications"

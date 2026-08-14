@@ -61,7 +61,7 @@ while ((SECONDS < deadline)); do
     command_timeout=10
   fi
   history="$("$timeout_command" --kill-after=5 "$command_timeout" openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
-  if printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")' >/dev/null 2>&1; then
+  if printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## Assessment") and contains("## Blockers") and contains("## Plan")' >/dev/null 2>&1; then
     comments="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$item_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:initial-acknowledgment"))] | length' 2>/dev/null || true)"
     if test "$comments" = '1'; then
       exit 0
@@ -77,9 +77,9 @@ if test -n "$history"; then
     | [$assistant[]? | .. | strings] | join("\n") as $text
     | {
         assistantMessages: ($assistant | length),
-        hasAssessment: ($text | contains("ASSESSMENT:")),
-        hasBlockers: ($text | contains("BLOCKERS:")),
-        hasPlan: ($text | contains("PLAN:"))
+        hasAssessment: ($text | contains("## Assessment")),
+        hasBlockers: ($text | contains("## Blockers")),
+        hasPlan: ($text | contains("## Plan"))
       }
   ' >&2 || true
 fi
