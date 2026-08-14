@@ -120,6 +120,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
+      if (delivery.stage === 'active') return;
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);
@@ -380,6 +381,8 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const delivery = state.items[itemKey]?.delivery;
     if (!delivery) return;
     await this.#checkpointDelivery(state, itemKey, {
+      acknowledgment: { status: 'pending' },
+      activation: { status: 'pending' },
       ...withoutFailure(delivery),
       sessionId: session.id,
       sessionKey: session.key,

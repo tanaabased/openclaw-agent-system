@@ -3,18 +3,20 @@
 This Ubuntu-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
-worktree and one local session without invoking a model, adopts both after restart,
-and retires without deleting either. Scenario setup creates and updates uniquely named
-issues in `tanaabased/agent-system-test`; the notification channel itself must never
-comment, push, or perform another outbound GitHub write.
+worktree and one local session, runs one tool-free private planning turn, publishes
+one safe acknowledgment through the channel message adapter, preserves local state
+after restart, and retires without deleting it. Scenario setup creates and updates
+uniquely named issues in `tanaabased/agent-system-test`.
 
 ## Setup
 
 ```bash
-# should configure the default openclaw profile without model authorization
+# should configure the default openclaw profile with the ci planning model
 openclaw onboard --non-interactive --accept-risk \
   --mode local \
-  --auth-choice skip \
+  --auth-choice openai-api-key \
+  --openai-api-key "$OPENAI_API_KEY" \
+  --secret-input-mode plaintext \
   --workspace "$TMPDIR/main" \
   --gateway-bind loopback \
   --skip-daemon \
@@ -26,6 +28,7 @@ openclaw onboard --non-interactive --accept-risk \
   --skip-skills \
   --skip-ui \
   --suppress-gateway-token-output
+openclaw models set "openai/$OPENAI_MODEL"
 openclaw config set agents.defaults.heartbeat.every "0m"
 
 # should install and enable the packed plugin
@@ -90,6 +93,9 @@ cd "$TMPDIR/agent-system-notifications"
   --minimum 1
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
 openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
+cd "$TMPDIR/agent-system-notification-actor"
+rejected_issue="$(cat "$TMPDIR/rejected-issue-number")"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$rejected_issue/comments" --jq length | grep -Fx '0'
 
 # should create an approved assignment fixture
 cd "$TMPDIR/agent-system-notification-actor"
@@ -120,18 +126,41 @@ branch="$(cat "$TMPDIR/approved-worktree-branch")"
 session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
-# should keep deterministic intake free of github writes
-cd "$TMPDIR/agent-system-notification-actor"
+# should reject a direct channel write without an internal publication target
+if OPENCLAW_LOG_LEVEL=error openclaw message send \
+  --channel agent-system-github \
+  --account notification-data \
+  --target github:R_repo:12 \
+  --message 'This direct channel write must be rejected.'; then
+  exit 1
+fi
+
+# should complete one private plan and one safe public acknowledgment asynchronously
+cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
+session_key="$(cat "$TMPDIR/approved-session-key")"
+"$GITHUB_WORKSPACE/examples/notifications/wait-for-notification-plan.sh" \
+  --actor-agent notification-actor \
+  --issue-number "$issue_number" \
+  --notification-agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --session-key "$session_key"
+params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")'
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+cd "$TMPDIR/agent-system-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+
+# should keep deterministic intake free of repository pushes
+cd "$TMPDIR/agent-system-notification-actor"
 branch="$(cat "$TMPDIR/approved-worktree-branch")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq length | grep -Fx '0'
 remote_branch="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate repos/tanaabased/agent-system-test/branches --jq ".[] | select(.name == \"$branch\") | .name")"
 test -z "$remote_branch"
 
 # should restart the gateway with the active assignment checkpoint intact
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
-# should adopt the same worktree and session after restart
+# should preserve the same worktree and session after restart
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 session_key="$(cat "$TMPDIR/approved-session-key")"
@@ -141,6 +170,10 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_label="tanaabased/agent-system-test#$issue_number · $branch"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
+# should preserve exactly one acknowledgment after restart
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
 # should logically retire an unassigned item while preserving local state
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
@@ -154,7 +187,7 @@ cd "$TMPDIR/agent-system-notifications"
   --minimum 1
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 
-# should retain one session and worktree without an outbound github write
+# should retain one session, worktree, and acknowledgment after retirement
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
@@ -162,7 +195,7 @@ branch="$(cat "$TMPDIR/approved-worktree-branch")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" 'length == 1 and .[0].repositoryId == "github-1329940218" and .[0].branch == $branch and .[0].status == "active"'
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq length | grep -Fx '0'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
 ```
 
 ## Cleanup

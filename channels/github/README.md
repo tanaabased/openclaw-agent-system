@@ -8,11 +8,12 @@ The GitHub notifications channel is a local
 [OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
 approved GitHub issue assignments into agent-scoped local work. It verifies the
 agent, assigning actor, and repository before creating one managed worktree and
-one local OpenClaw session for the issue.
+one local OpenClaw session for the issue. The Gateway then asks the agent to
+review the issue and prepare a plan before posting one short acknowledgment.
 
 > [!IMPORTANT]
-> The channel does not currently fetch issue prose, comments, or mentions,
-> invoke a model, or write to GitHub.
+> The channel does not currently ingest new mentions, start implementation,
+> publish local progress, or manage pull-request conversations.
 
 ## Overview
 
@@ -23,12 +24,17 @@ one local OpenClaw session for the issue.
   assigning actor, repository owner, and repository access.
 - For each accepted assignment, creates or reuses one deterministic managed
   worktree and one local OpenClaw session.
+- Fetches a bounded issue title, body, labels, and recent comments as untrusted
+  context, then runs one tool-free private planning turn.
+- Publishes only the planning response's separate one-sentence acknowledgment
+  through the channel's authorization, safety, and durable delivery path.
 
 Each enabled channel account owns its polling lifecycle while the Gateway is
 running. `openclaw channels status --channel agent-system-github --json`
 reports whether that account is running, connected, and healthy. The manual
-refresh command runs the same intake path immediately. Both stop after local
-session recording without dispatching an agent turn.
+refresh command runs the deterministic intake path immediately and returns
+without waiting for a model. The running Gateway owns asynchronous planning and
+acknowledgment delivery.
 
 ## Requirements
 
@@ -39,6 +45,7 @@ session recording without dispatching an agent turn.
 - `git.worktrees`, `github.username`, `github.token`, and
   `github.notifications` configured
 - the named GitHub token available in the completed Agent System environment
+- an authenticated default OpenClaw model for the private planning turn
 
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
@@ -149,8 +156,9 @@ openclaw agent-system notifications refresh [--agent <id>] [--json]
 
 The command runs the same intake lifecycle immediately. It reports baseline
 readiness, diagnostics, and retry timing, and it can create a managed worktree
-and local session for an accepted assignment. Deferred and failed cycles return
-a nonzero exit code.
+and local session for an accepted assignment. It does not wait for planning;
+the running Gateway picks up that checkpoint asynchronously. Deferred and failed
+cycles return a nonzero exit code.
 
 See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
 for result and concurrency semantics.
@@ -165,9 +173,15 @@ An assignment is accepted only when the authenticated account is still assigned,
 the immutable assigning actor is approved, the repository owner is eligible,
 and the account has sufficient repository access.
 
-Private monitor state contains no tokens or GitHub content. Deterministic
-worktree and session identities make delivery retry-safe without duplicating
-local work.
+Issue prose and comments are bounded and framed as untrusted project data. The
+planning turn cannot use tools and its complete response remains in the private
+OpenClaw session. Only the separately labeled acknowledgment candidate can pass
+through the fail-closed GitHub publication gate, which rejects secrets, links,
+mentions, local paths, and unsupported output.
+
+Private monitor state contains no tokens, GitHub prose, or generated content.
+Deterministic worktree, session, activation, and publication identities make
+delivery retry-safe without duplicating local work or GitHub comments.
 
 `install` adds or repairs only the channel account and binding owned by Agent
 System. Removing `github.notifications` and running `install` again retires

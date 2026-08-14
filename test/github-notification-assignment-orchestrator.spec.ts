@@ -64,6 +64,10 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     assert.equal(worktreePreparations, 1);
     assert.equal(sessionRecords, 1);
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
+    assert.deepEqual(store.state().items[itemKey]?.delivery?.activation, { status: 'pending' });
+    assert.deepEqual(store.state().items[itemKey]?.delivery?.acknowledgment, {
+      status: 'pending',
+    });
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
       ['admitted', 'worktree-ready', 'session-recording', 'active'],

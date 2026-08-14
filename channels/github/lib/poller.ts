@@ -44,12 +44,6 @@ export interface GitHubNotificationPollResult {
   rejected: number;
   retired: number;
   state: GitHubNotificationMonitorState;
-  transitions: GitHubNotificationTransition[];
-}
-
-export interface GitHubNotificationTransition {
-  itemKey: string;
-  kind: 'admitted' | 'retired';
 }
 
 function pollError(error: unknown, now: number): GitHubNotificationPollError {
@@ -176,7 +170,6 @@ export async function pollGitHubNotifications(
     rejected: 0,
     retired: 0,
   };
-  const transitions: GitHubNotificationTransition[] = [];
 
   try {
     if (state.baselineAt === undefined) {
@@ -188,11 +181,10 @@ export async function pollGitHubNotifications(
         );
       }
       state.baselineAt = input.now;
-      state.baselineItemNodeIds = [...new Set(discovery.candidates.map(({ nodeId }) => nodeId))];
       state.searchBoundary = new Date(input.now).toISOString();
-      counts.baseline = state.baselineItemNodeIds.length;
+      counts.baseline = new Set(discovery.candidates.map(({ nodeId }) => nodeId)).size;
       counts.baselineEstablished = true;
-      return { ...counts, state, transitions };
+      return { ...counts, state };
     }
 
     for (const [key, current] of Object.entries(state.items)) {
@@ -235,10 +227,6 @@ export async function pollGitHubNotifications(
             lastObservedAt: input.now,
             reasonCode: reason,
           };
-          transitions.push({
-            itemKey: key,
-            kind: 'retired',
-          });
           counts.retired += 1;
         } else {
           state.items[key] = { ...current, lastObservedAt: input.now };
@@ -254,10 +242,6 @@ export async function pollGitHubNotifications(
             lastObservedAt: input.now,
             reasonCode: 'github-notification-resource-missing',
           };
-          transitions.push({
-            itemKey: key,
-            kind: 'retired',
-          });
           counts.retired += 1;
           continue;
         }
@@ -334,13 +318,10 @@ export async function pollGitHubNotifications(
         assignment,
       );
       state.items[key] = nextItem;
-      if (admission.disposition === 'approved') {
-        transitions.push({ itemKey: key, kind: 'admitted' });
-      }
       counts[admission.disposition] += 1;
     }
     state.searchBoundary = new Date(input.now).toISOString();
-    return { ...counts, state, transitions };
+    return { ...counts, state };
   } catch (error) {
     throw pollError(error, input.now);
   }

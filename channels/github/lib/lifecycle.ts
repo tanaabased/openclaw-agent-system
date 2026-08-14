@@ -204,8 +204,24 @@ export default function createNotificationLifecycleContribution(
           },
         ];
       }
+      const activationFailureCounts = new Map<string, number>();
+      for (const item of Object.values(state.items)) {
+        const activation = item.delivery?.activation;
+        if (activation?.status !== 'failed') continue;
+        const code = activation.failureCode ?? 'github-notification-activation-failed';
+        activationFailureCounts.set(code, (activationFailureCounts.get(code) ?? 0) + 1);
+      }
+      const activationFindings = [...activationFailureCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub notification activation${count === 1 ? '' : 's'} failed after OpenClaw adopted the planning turn.`,
+          remediation: 'Resolve the named diagnostic, then use a fresh assignment.',
+          status: 'warning' as const,
+        }));
       return [
         ...routingFinding,
+        ...activationFindings,
         {
           code: 'github-notification-monitor-healthy',
           message: `The GitHub notification monitor last completed a successful read-only observation at ${isoTime(state.lastSuccessfulPollAt)}.`,

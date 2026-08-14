@@ -61,6 +61,7 @@ function provider(assigned = true, routeReady = true, onConnect = () => undefine
           async execute(argv: string[]) {
             const endpoint = argv.find((value) => value.startsWith('/repos/')) ?? '';
             if (endpoint.endsWith('/permission')) return response({ permission: 'write' });
+            if (endpoint.endsWith('/comments')) return response([]);
             if (endpoint.endsWith('/events')) {
               return response([
                 {
@@ -74,6 +75,14 @@ function provider(assigned = true, routeReady = true, onConnect = () => undefine
               ]);
             }
             if (endpoint.endsWith('/issues/12')) {
+              if (argv.some((value) => value.includes('commentCount:.comments'))) {
+                return response({
+                  body: 'Please implement this safely.',
+                  commentCount: 0,
+                  labels: ['feature'],
+                  title: 'Implement notification planning',
+                });
+              }
               return response({
                 assignees: assigned ? [notificationAccount] : [],
                 databaseId: 7,
@@ -149,5 +158,20 @@ describe('channels/github/lib/assignment-provider', () => {
       },
     );
     assert.equal(connections, 0);
+  });
+
+  it('should return bounded planning prose only after authority succeeds', async () => {
+    const result = await provider().loadPlanningContext(input());
+
+    assert.deepEqual(result, {
+      authorized: true,
+      context: {
+        body: 'Please implement this safely.',
+        comments: [],
+        labels: ['feature'],
+        title: 'Implement notification planning',
+        truncated: false,
+      },
+    });
   });
 });

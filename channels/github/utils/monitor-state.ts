@@ -5,7 +5,17 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 export type GitHubNotificationDeliveryStage =
   'active' | 'admitted' | 'retired' | 'session-recording' | 'worktree-ready';
 
+export type GitHubNotificationAcknowledgmentState =
+  { status: 'pending' } | { commentId: number; status: 'published' };
+
+export interface GitHubNotificationActivationState {
+  failureCode?: string;
+  status: 'adopted' | 'failed' | 'ineligible' | 'pending' | 'planned';
+}
+
 export interface GitHubNotificationDeliveryState {
+  activation?: GitHubNotificationActivationState;
+  acknowledgment?: GitHubNotificationAcknowledgmentState;
   assignmentEventId: string;
   failureCode?: string;
   schemaVersion: 1;
@@ -43,7 +53,6 @@ export interface GitHubNotificationMonitorState {
   accountNodeId?: string;
   agentId: string;
   baselineAt?: number;
-  baselineItemNodeIds: string[];
   diagnosticCode?: string;
   failureCount: number;
   items: Record<string, GitHubNotificationItemState>;
@@ -51,23 +60,10 @@ export interface GitHubNotificationMonitorState {
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
   processedEventNodeIds: string[];
-  schemaVersion: 2;
+  schemaVersion: 3;
   searchBoundary?: string;
   workspaceDir: string;
 }
-
-export type GitHubNotificationItemStateV1 = Omit<
-  GitHubNotificationItemState,
-  'delivery' | 'itemDatabaseId'
->;
-
-export type GitHubNotificationMonitorStateV1 = Omit<
-  GitHubNotificationMonitorState,
-  'items' | 'schemaVersion'
-> & {
-  items: Record<string, GitHubNotificationItemStateV1>;
-  schemaVersion: 1;
-};
 
 export function createGitHubNotificationMonitorState(
   agentId: string,
@@ -75,11 +71,10 @@ export function createGitHubNotificationMonitorState(
 ): GitHubNotificationMonitorState {
   return {
     agentId,
-    baselineItemNodeIds: [],
     failureCount: 0,
     items: {},
     processedEventNodeIds: [],
-    schemaVersion: 2,
+    schemaVersion: 3,
     workspaceDir,
   };
 }
@@ -93,23 +88,6 @@ export function githubNotificationRetirementItemKeys(
     .filter(([, item]) => item.delivery !== undefined && item.delivery.stage !== 'retired')
     .map(([itemKey]) => itemKey)
     .sort();
-}
-
-/** Establish a safe baseline instead of retroactively delivering Phase 1 admissions. */
-export function migrateGitHubNotificationMonitorStateV1(
-  state: GitHubNotificationMonitorStateV1,
-): GitHubNotificationMonitorState {
-  const baselineItemNodeIds = [
-    ...state.baselineItemNodeIds,
-    ...Object.values(state.items).map(({ itemNodeId }) => itemNodeId),
-  ];
-  return {
-    ...state,
-    baselineItemNodeIds: [...new Set(baselineItemNodeIds)].slice(-2_000),
-    diagnosticCode: 'github-notification-state-migrated-v1',
-    items: {},
-    schemaVersion: 2,
-  };
 }
 
 export function rememberProcessedEvent(

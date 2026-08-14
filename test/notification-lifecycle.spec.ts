@@ -109,12 +109,11 @@ describe('channels/github/lib/lifecycle', () => {
     const healthyState: GitHubNotificationMonitorState = {
       agentId: 'data',
       baselineAt: 1,
-      baselineItemNodeIds: [],
       failureCount: 0,
       items: {},
       lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
-      schemaVersion: 2,
+      schemaVersion: 3,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [
@@ -150,6 +149,50 @@ describe('channels/github/lib/lifecycle', () => {
       (await contribution.inspect?.(context))?.at(-1)?.code,
       'github-notification-search-truncated',
     );
+  });
+
+  it('should report terminal activation failures without hiding monitor health', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: {
+        failureCode: 'github-notification-planning-response-invalid',
+        status: 'failed',
+      },
+      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid')
+        ?.status,
+      'warning',
+    );
+    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
   });
 
   it('should translate routing reconciliation and preserve attributed failures', async () => {
@@ -371,6 +414,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:data:github:item',
       stage: 'active',
@@ -438,6 +482,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:data:github:item',
       stage: 'active',

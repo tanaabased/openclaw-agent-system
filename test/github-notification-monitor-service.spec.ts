@@ -137,6 +137,13 @@ describe('channels/github/lib/monitor-service', () => {
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
+    state.items[notificationItemKey]!.delivery = {
+      ...state.items[notificationItemKey]!.delivery!,
+      sessionKey: 'agent:tanaabot:github:item',
+      stage: 'session-recording',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
     const service = new GitHubNotificationMonitorService({
       accountClient: {
         async connect() {
@@ -274,6 +281,7 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:tanaabot:github:item',
       stage: 'active',
@@ -338,6 +346,7 @@ describe('channels/github/lib/monitor-service', () => {
     assert.ok(delivery);
     state.items[notificationItemKey]!.delivery = {
       ...delivery,
+      activation: { status: 'planned' },
       sessionId: 'session-1',
       sessionKey: 'agent:tanaabot:github:item',
       stage: 'active',

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
 
+const publicationMarker =
+  '<!-- agent-system-github-publication:initial-acknowledgment:0123456789abcdef0123456789abcdef -->';
+
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
     exitCode: 0,
@@ -136,5 +139,107 @@ describe('channels/github/lib/work-event-client', () => {
     const projection = requests[0]?.find((value) => value.includes('createdAt:.created_at')) ?? '';
     assert.match(projection, /actor:\{login:\.assigner\.login/u);
     assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
+  });
+
+  it('should fetch a bounded issue projection with the newest comment page', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        if (requests.length === 1) {
+          return response({
+            body: 'Please add the thing.',
+            commentCount: 51,
+            labels: ['feature'],
+            title: 'Implement the thing',
+          });
+        }
+        if (requests.length === 2) {
+          return response(
+            Array.from({ length: 50 }, (_, index) => ({
+              authorLogin: 'pirog',
+              body: `Earlier comment ${index + 1}.`,
+              createdAt: '2026-08-11T12:04:00Z',
+            })),
+            '<https://api.github.com/repos/tanaabased/example/issues/7/comments?page=2>; rel="next"',
+          );
+        }
+        return response([
+          {
+            authorLogin: 'pirog',
+            body: 'The latest requirement.',
+            createdAt: '2026-08-11T12:05:00Z',
+          },
+        ]);
+      },
+    });
+
+    const context = await client.getPlanningContext('tanaabased', 'example', 7);
+
+    assert.equal(context.title, 'Implement the thing');
+    assert.equal(context.truncated, true);
+    assert.equal(context.comments.length, 50);
+    assert.equal(context.comments[0]?.body, 'Earlier comment 2.');
+    assert.equal(context.comments.at(-1)?.body, 'The latest requirement.');
+    assert.ok(requests[1]?.includes('page=1'));
+    assert.ok(requests[2]?.includes('page=2'));
+    assert.ok(requests[1]?.includes('per_page=50'));
+  });
+
+  it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
+    const marker = publicationMarker;
+    const body = `On it.\n\n${marker}`;
+    const requests: Array<{ argv: string[]; stdin?: string }> = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv, stdin) {
+        requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
+        if (argv.includes('POST')) {
+          return response({
+            body,
+            databaseId: 91,
+            nodeId: 'IC_published',
+            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+          });
+        }
+        return response([]);
+      },
+    });
+
+    assert.equal(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), undefined);
+    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
+      databaseId: 91,
+      nodeId: 'IC_published',
+    });
+    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
+    assert.equal(requests[1]?.argv.includes(body), false);
+    assert.ok(requests[1]?.argv.includes('--input'));
+  });
+
+  it('should adopt only the authenticated account marker receipt', async () => {
+    const marker = publicationMarker;
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute() {
+        return response([
+          {
+            databaseId: 90,
+            nodeId: 'IC_other',
+            user: { login: 'someone', nodeId: 'U_other', type: 'User' },
+          },
+          {
+            databaseId: 91,
+            nodeId: 'IC_own',
+            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+          },
+        ]);
+      },
+    });
+
+    assert.deepEqual(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), {
+      databaseId: 91,
+      nodeId: 'IC_own',
+    });
   });
 });

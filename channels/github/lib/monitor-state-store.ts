@@ -12,8 +12,7 @@ export interface GitHubNotificationMonitorStateStoreDependencies {
 }
 
 export type GitHubNotificationMonitorStateLoadResult =
-  | { state: GitHubNotificationMonitorState; status: 'migrated-v1' | 'ready' }
-  | { status: 'missing' };
+  { state: GitHubNotificationMonitorState; status: 'ready' } | { status: 'missing' };
 
 /** Persist value-free GitHub monitor control state with private atomic replacement. */
 export default class GitHubNotificationMonitorStateStore {

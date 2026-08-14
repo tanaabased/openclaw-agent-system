@@ -13,6 +13,22 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
+const maximumCommentPages = 10;
+const maximumPlanningComments = 50;
+
+export interface GitHubNotificationPlanningComment {
+  authorLogin: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface GitHubNotificationPlanningContext {
+  body: string;
+  comments: GitHubNotificationPlanningComment[];
+  labels: string[];
+  title: string;
+  truncated: boolean;
+}
 
 export class GitHubWorkEventClientError extends Error {
   override name = 'GitHubWorkEventClientError';
@@ -32,6 +48,11 @@ export interface GitHubAssignedItemDiscovery {
   incomplete: boolean;
   totalCount: number;
   truncated: boolean;
+}
+
+export interface GitHubIssueCommentReceipt {
+  databaseId: number;
+  nodeId: string;
 }
 
 interface ApiPage<T> {
@@ -88,6 +109,21 @@ function hasControlCharacter(value: string): boolean {
     const code = character.codePointAt(0) ?? 0;
     return code < 32 || code === 127;
   });
+}
+
+function boundedProse(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): { text: string; truncated: boolean } {
+  if (value === null) return { text: '', truncated: false };
+  if (typeof value !== 'string' || value.includes('\0')) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  return {
+    text: value.slice(0, maximumLength),
+    truncated: value.length > maximumLength,
+  };
 }
 
 function identity(value: unknown, label: string): GitHubIdentity {
@@ -266,6 +302,92 @@ export default class GitHubWorkEventClient {
     };
   }
 
+  /** Fetch a bounded, prose-only projection for the private planning turn. */
+  async getPlanningContext(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<GitHubNotificationPlanningContext> {
+    const endpoint = this.#itemEndpoint(owner, name, number);
+    const response = await this.#api(
+      [
+        endpoint,
+        '--jq',
+        '{title,body,commentCount:.comments,labels:[.labels[]|(if type=="string" then . else .name end)]}',
+      ],
+      'planning context',
+    );
+    const value = record(response.value, 'planning context');
+    const title = boundedProse(value.title, 'planning-context title', 512);
+    if (!title.text.trim()) throw new Error('GitHub returned an invalid planning-context title.');
+    const body = boundedProse(value.body, 'planning-context body', 24_000);
+    const commentCount = integer(value.commentCount, 'planning-context comment count');
+    if (!Array.isArray(value.labels)) throw new Error('GitHub returned invalid issue labels.');
+    const labels = value.labels.slice(0, 100).map((label) => {
+      const parsed = string(label, 'issue label');
+      if (parsed.length > 100 || hasControlCharacter(parsed)) {
+        throw new Error('GitHub returned an invalid issue label.');
+      }
+      return parsed;
+    });
+    const comments: GitHubNotificationPlanningComment[] = [];
+    let commentsTruncated = commentCount > maximumPlanningComments;
+    if (commentCount > 0) {
+      const commentValues: unknown[] = [];
+      const firstPage = Math.max(1, Math.ceil(commentCount / maximumPlanningComments) - 1);
+      let page = firstPage;
+      let hasNextPage: boolean;
+      do {
+        const commentsResponse = await this.#api(
+          [
+            '--method',
+            'GET',
+            `${endpoint}/comments`,
+            '-F',
+            `per_page=${maximumPlanningComments}`,
+            '-F',
+            `page=${page}`,
+            '--jq',
+            '[.[]|{authorLogin:(.user.login//"unknown"),body,createdAt:.created_at}]',
+          ],
+          'planning comments',
+        );
+        if (!Array.isArray(commentsResponse.value)) {
+          throw new Error('GitHub returned invalid planning comments.');
+        }
+        commentValues.push(...commentsResponse.value);
+        hasNextPage = commentsResponse.hasNextPage;
+        page += 1;
+      } while (hasNextPage && page < firstPage + 2);
+      commentsTruncated ||= firstPage > 1 || hasNextPage || commentValues.length > 50;
+      for (const item of commentValues.slice(-maximumPlanningComments)) {
+        const comment = record(item, 'planning comment');
+        const authorLogin = boundedProse(comment.authorLogin, 'planning-comment author', 100);
+        if (!authorLogin.text) {
+          throw new Error('GitHub returned an invalid planning-comment author.');
+        }
+        const commentBody = boundedProse(comment.body, 'planning-comment body', 2_000);
+        commentsTruncated ||= authorLogin.truncated || commentBody.truncated;
+        comments.push({
+          authorLogin: authorLogin.text,
+          body: commentBody.text,
+          createdAt: timestamp(comment.createdAt, 'planning-comment time'),
+        });
+      }
+    }
+    return {
+      body: body.text,
+      comments,
+      labels,
+      title: title.text,
+      truncated:
+        title.truncated ||
+        body.truncated ||
+        commentsTruncated ||
+        value.labels.length > labels.length,
+    };
+  }
+
   async listAssignmentEvents(
     owner: string,
     name: string,
@@ -309,6 +431,95 @@ export default class GitHubWorkEventClient {
     return { events, truncated: hasNextPage };
   }
 
+  async findOwnIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    marker: string,
+  ): Promise<GitHubIssueCommentReceipt | undefined> {
+    if (
+      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|operator-progress):[a-f0-9]{32} -->$/u.test(
+        marker,
+      )
+    ) {
+      throw new Error('GitHub notification publication markers are invalid.');
+    }
+    let hasNextPage = false;
+    for (let page = 1; page <= maximumCommentPages; page += 1) {
+      const response = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${this.#itemEndpoint(owner, name, number)}/comments`,
+          '-F',
+          `per_page=${pageSize}`,
+          '-F',
+          `page=${page}`,
+          '--jq',
+          `[.[]|select(.body|contains(${JSON.stringify(marker)}))|{databaseId:.id,nodeId:.node_id,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}]`,
+        ],
+        'issue comments',
+      );
+      if (!Array.isArray(response.value))
+        throw new Error('GitHub returned invalid issue comments.');
+      for (const item of response.value) {
+        const value = record(item, 'issue comment');
+        const author = identity(value.user, 'issue-comment author');
+        if (author.nodeId !== this.identity.nodeId) continue;
+        return {
+          databaseId: positiveInteger(value.databaseId, 'issue-comment database id'),
+          nodeId: nodeId(value.nodeId, 'issue-comment node id'),
+        };
+      }
+      hasNextPage = response.hasNextPage;
+      if (!hasNextPage) return undefined;
+    }
+    if (hasNextPage) {
+      throw new GitHubWorkEventClientError(
+        'github-notification-comments-truncated',
+        'GitHub issue comments exceeded the publication reconciliation boundary.',
+        this.rateLimit,
+      );
+    }
+    return undefined;
+  }
+
+  async createIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): Promise<GitHubIssueCommentReceipt> {
+    if (!body || body.length > 1_024 || /\0/u.test(body)) {
+      throw new Error('GitHub notification publication comments are invalid.');
+    }
+    const response = await this.#api(
+      [
+        '--method',
+        'POST',
+        `${this.#itemEndpoint(owner, name, number)}/comments`,
+        '--input',
+        '-',
+        '--jq',
+        '{databaseId:.id,nodeId:.node_id,body,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}',
+      ],
+      'issue-comment publication',
+      JSON.stringify({ body }),
+    );
+    const value = record(response.value, 'published issue comment');
+    const author = identity(value.user, 'published issue-comment author');
+    if (
+      author.nodeId !== this.identity.nodeId ||
+      string(value.body, 'published issue-comment body') !== body
+    ) {
+      throw new Error('GitHub returned a conflicting published issue comment.');
+    }
+    return {
+      databaseId: positiveInteger(value.databaseId, 'published issue-comment database id'),
+      nodeId: nodeId(value.nodeId, 'published issue-comment node id'),
+    };
+  }
+
   #itemEndpoint(owner: string, name: string, number: number): string {
     if (!Number.isSafeInteger(number) || number < 1) {
       throw new Error('GitHub work-item numbers must be positive safe integers.');
@@ -316,8 +527,8 @@ export default class GitHubWorkEventClient {
     return `${repositoryEndpoint(owner, name)}/issues/${number}`;
   }
 
-  async #api(argv: string[], label: string): Promise<ApiPage<unknown>> {
-    const result = await this.#client.execute(['api', '--include', ...argv], undefined, {
+  async #api(argv: string[], label: string, stdin?: string): Promise<ApiPage<unknown>> {
+    const result = await this.#client.execute(['api', '--include', ...argv], stdin, {
       maxOutputBytes: 512 * 1024,
       timeoutMs: 30_000,
     });

@@ -13,10 +13,10 @@ import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
-import type NotificationRoutingService from './routing-service.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
+import type NotificationRoutingService from './routing-service.ts';
 import GitHubWorkEventClient from './work-event-client.ts';
 
 const schedulerIntervalMs = 30_000;
@@ -250,12 +250,6 @@ export default class GitHubNotificationMonitorService {
               state ? ({ state, status: 'ready' } as const) : ({ status: 'missing' } as const),
             );
       let current = loadedState.status === 'missing' ? undefined : loadedState.state;
-      if (loadedState.status === 'migrated-v1') {
-        await this.#dependencies.stateStore.write(loadedState.state);
-        this.#dependencies.logger.info(
-          `github-notifications: monitor state migrated agent=${agentId} code=github-notification-state-migrated-v1`,
-        );
-      }
       const notifications = loaded.manifest.github?.notifications;
       if (!notifications) {
         await this.#retireDisabledAssignments(agentId, current, now, signal);

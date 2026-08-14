@@ -79,6 +79,8 @@ const assignmentInput = {
 function createService(
   overrides: {
     config?: OpenClawConfig;
+    dispatch?: GitHubNotificationSessionServiceDependencies['dispatchReplyWithBufferedBlockDispatcher'];
+    publish?: GitHubNotificationSessionServiceDependencies['publicationService']['publish'];
     record?: (params: InboundSessionRecord) => void | Promise<void>;
     recordTask?: Promise<void>;
   } = {},
@@ -91,6 +93,14 @@ function createService(
       params.trackSessionMetaTask?.(recordTask);
     };
   return new GitHubNotificationSessionService({
+    dispatchReplyWithBufferedBlockDispatcher:
+      overrides.dispatch ?? (async () => ({ counts: {} }) as never),
+    logger: { error() {}, info() {}, warn() {} },
+    publicationService: {
+      publish:
+        overrides.publish ??
+        (async () => ({ reason: 'non_final', status: 'not_applicable' as const })),
+    },
     readConfig: () => overrides.config ?? config,
     recordInboundSession,
   });
@@ -141,6 +151,111 @@ describe('channels/github/lib/session-service', () => {
     await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
   });
 
+  it('should run one tool-free private plan before publishing its safe acknowledgment', async () => {
+    let adopted = 0;
+    let published: Record<string, unknown> | undefined;
+    const service = createService({
+      async dispatch(input) {
+        assert.equal(input.ctx.Provider, 'agent-system-github');
+        assert.equal(input.ctx.Surface, 'agent-system-github');
+        assert.equal(input.ctx.OriginatingChannel, 'agent-system-github');
+        assert.equal(input.replyOptions?.disableTools, true);
+        assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
+        assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
+        assert.deepEqual(input.toolsAllow, []);
+        assert.match(String(input.ctx.BodyForAgent), /private, plan-only first pass/u);
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            isCommentary: true,
+            text: [
+              'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
+              'ASSESSMENT:',
+              'The request is bounded.',
+              'BLOCKERS:',
+              'None.',
+              'PLAN:',
+              '1. Implement it.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish(input) {
+        published = input as unknown as Record<string, unknown>;
+        return {
+          delivery: { messageIds: ['91'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
+      },
+    });
+    const delivery = {
+      ...assignmentInput.delivery,
+      acknowledgment: { status: 'pending' as const },
+      activation: { status: 'pending' as const },
+      sessionKey: route.sessionKey,
+      stage: 'active' as const,
+    };
+
+    const result = await service.planAssignment({
+      ...assignmentInput,
+      context: {
+        body: 'Please implement the behavior.',
+        comments: [],
+        labels: ['feature'],
+        title: 'Implement the behavior',
+        truncated: false,
+      },
+      delivery,
+      async onTurnAdopted() {
+        adopted += 1;
+      },
+    });
+
+    assert.equal(adopted, 1);
+    assert.deepEqual(result, { acknowledgmentCommentId: 91 });
+    assert.equal(published?.intent, 'initial-acknowledgment');
+    assert.deepEqual(published?.payload, {
+      text: 'I have read this through and mapped out a plan.',
+    });
+  });
+
+  it('should preserve planning completion when the public candidate is missing', async () => {
+    let publications = 0;
+    const service = createService({
+      async dispatch(input) {
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          { text: 'ASSESSMENT:\nReady.\nBLOCKERS:\nNone.\nPLAN:\n1. Implement it.' },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        publications += 1;
+        return { reason: 'non_final', status: 'not_applicable' };
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...assignmentInput,
+      context: {
+        body: '',
+        comments: [],
+        labels: [],
+        title: 'Implement the behavior',
+        truncated: false,
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.deepEqual(result, {
+      acknowledgmentFailureCode: 'github-notification-planning-acknowledgment-missing',
+    });
+    assert.equal(publications, 0);
+  });
+
   it('should prepare a deterministic observe-only session record', async () => {
     const service = createService();
     const turn = service.prepareTurn({
@@ -159,6 +274,9 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
     assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
     assert.equal(turn.ctxPayload.BodyForAgent, 'GitHub issue #42 was assigned to this agent.');
+    assert.equal(turn.ctxPayload.Provider, 'agent-system-github');
+    assert.equal(turn.ctxPayload.Surface, 'agent-system-github');
+    assert.equal(turn.ctxPayload.OriginatingChannel, 'agent-system-github');
     const context = turn.ctxPayload as unknown as Record<string, unknown>;
     assert.equal(context.githubItemNumber, event.itemNumber);
     assert.equal(context.githubItemType, event.itemType);
