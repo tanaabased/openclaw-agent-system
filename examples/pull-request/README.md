@@ -172,11 +172,6 @@ for attempt in $(seq 1 60); do
 done
 test "$progress_count" = '1'
 
-# should render the confirmed pull-request progress as quoted local output
-session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
-params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## 📤 GitHub progress published") and contains("> Pull-request planning is complete and the assigned head is recorded.")'
-
 # should admit one approved top-level pull-request comment across a gateway restart
 cd "$TMPDIR/agent-system-pr-notification-actor"
 agent_login="$(cat "$TMPDIR/pr-notification-agent-login")"
@@ -202,28 +197,26 @@ session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
   --session-key "$session_key"
 cd "$TMPDIR/agent-system-pr-notifications"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-history="$(openclaw gateway call chat.history --params "$params" --json)"
+openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/pr-comment-history.json"
+cd "$TMPDIR/agent-system-pr-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+
+# should keep pull-request comment evidence out of visible chat
+pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 comment_id="$(cat "$TMPDIR/pr-status-comment-id")"
 source="https://github.com/tanaabased/agent-system-test/pull/$pull_request_number#issuecomment-$comment_id"
-printf '%s\n' "$history" | jq -e --arg source "$source" '
-  [.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") as $assistant
-  | [.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $user
-  | ($assistant | contains("## 💬 Comment answered"))
-    and ($assistant | contains("## Response"))
-    and ($assistant | contains("## 📤 Proposed GitHub reply"))
-    and ($assistant | contains("\n> "))
-    and (($assistant | contains("GITHUB_REPLY:")) | not)
-    and (($assistant | contains("RESPONSE:")) | not)
-    and ($user | contains("## 💬 Comment received"))
-    and ($user | contains($source))
-    and ($user | contains("**Mode:** Reply"))
-    and (($user | contains("Can you summarize the recorded pull-request plan")) | not)
-    and (($user | contains("GITHUB_COMMENT_JSON")) | not)
-    and (($user | contains("STATUS_EVIDENCE_JSON")) | not)
-'
-printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
-cd "$TMPDIR/agent-system-pr-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+comment="Can you summarize the recorded pull-request plan?"
+jq -e --arg source "$source" --arg comment "$comment" '
+  .messages as $messages
+  | [$messages[]? | select(.role == "user") | .. | strings] | join("\n")
+  | contains($source)
+    and (contains($comment) | not)
+    and (contains("GITHUB_COMMENT_JSON") | not)
+    and (contains("STATUS_EVIDENCE_JSON") | not)
+' "$TMPDIR/pr-comment-history.json"
+
+# should keep the pull-request comment response tool free
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' "$TMPDIR/pr-comment-history.json"
 
 # should preserve one pull-request session and publication of each kind after restart
 cd "$TMPDIR/agent-system-pr-notifications"

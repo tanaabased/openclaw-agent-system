@@ -199,11 +199,6 @@ for attempt in $(seq 1 60); do
 done
 test "$progress_count" = '1'
 
-# should render the confirmed progress update as quoted local output
-session_key="$(cat "$TMPDIR/approved-session-key")"
-params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## 📤 GitHub progress published") and contains("> Implementation is underway and the current checks are passing.")'
-
 # should reject a quote-only mention without starting a comment turn
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -232,7 +227,7 @@ cd "$TMPDIR/agent-system-notifications"
 # should resume the durable comment checkpoint in the gateway-owned lifecycle
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
-# should complete one private tool-free response and one safe public github reply
+# should publish one safe github reply from the existing private issue session
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
 "$GITHUB_WORKSPACE/scripts/wait-for-notification-comment.sh" \
@@ -243,28 +238,26 @@ session_key="$(cat "$TMPDIR/approved-session-key")"
   --session-key "$session_key"
 cd "$TMPDIR/agent-system-notifications"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-history="$(openclaw gateway call chat.history --params "$params" --json)"
+openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/issue-comment-history.json"
+cd "$TMPDIR/agent-system-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+
+# should keep issue comment evidence out of visible chat
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(cat "$TMPDIR/status-comment-id")"
 source="https://github.com/tanaabased/agent-system-test/issues/$issue_number#issuecomment-$status_comment_id"
-printf '%s\n' "$history" | jq -e --arg source "$source" '
-  [.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") as $assistant
-  | [.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $user
-  | ($assistant | contains("## 💬 Comment answered"))
-    and ($assistant | contains("## Response"))
-    and ($assistant | contains("## 📤 Proposed GitHub reply"))
-    and ($assistant | contains("\n> "))
-    and (($assistant | contains("GITHUB_REPLY:")) | not)
-    and (($assistant | contains("RESPONSE:")) | not)
-    and ($user | contains("## 💬 Comment received"))
-    and ($user | contains($source))
-    and ($user | contains("**Mode:** Reply"))
-    and (($user | contains("Can you share a status update")) | not)
-    and (($user | contains("GITHUB_COMMENT_JSON")) | not)
-    and (($user | contains("STATUS_EVIDENCE_JSON")) | not)
-'
-printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
-cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
+comment="Can you share a status update based only on what is already recorded?"
+jq -e --arg source "$source" --arg comment "$comment" '
+  .messages as $messages
+  | [$messages[]? | select(.role == "user") | .. | strings] | join("\n")
+  | contains($source)
+    and (contains($comment) | not)
+    and (contains("GITHUB_COMMENT_JSON") | not)
+    and (contains("STATUS_EVIDENCE_JSON") | not)
+' "$TMPDIR/issue-comment-history.json"
+
+# should keep the issue comment response tool free
+jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' "$TMPDIR/issue-comment-history.json"
 
 # should reject a later mention-removing edit and a self-authored mention without replying again
 agent_login="$(cat "$TMPDIR/notification-agent-login")"

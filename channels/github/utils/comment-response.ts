@@ -26,26 +26,14 @@ function responseText(payload: ReplyPayload): string {
 function assertMarkdownResponse(response: string): void {
   const lines = response.replace(/\r\n?/gu, '\n').split('\n');
   const headings = githubNotificationMarkdownHeadings(lines);
-  const expected = [
-    '## 💬 Comment answered',
-    '## Response',
-    githubNotificationProposedReplyHeading,
-  ];
-  if (
-    headings.length !== expected.length ||
-    headings[0]?.line !== 0 ||
-    headings.map(({ text }) => text).join('\n') !== expected.join('\n')
-  ) {
+  const candidates = headings.filter(({ text }) => text === githubNotificationProposedReplyHeading);
+  if (candidates.length !== 1 || !candidates[0]) {
     throw new GitHubNotificationCommentResponseError(
       'github-notification-comment-response-invalid',
     );
   }
-  const summary = lines.slice(1, headings[1]!.line).join('\n').trim();
-  const privateResponse = lines
-    .slice(headings[1]!.line + 1, headings[2]!.line)
-    .join('\n')
-    .trim();
-  if (!summary || summary.includes('\n') || !privateResponse) {
+  const privateResponse = lines.slice(0, candidates[0].line).join('\n').trim();
+  if (!privateResponse) {
     throw new GitHubNotificationCommentResponseError(
       'github-notification-comment-response-invalid',
     );
@@ -68,11 +56,7 @@ function responseFormat(response: string): GitHubNotificationCommentResponseForm
   const headingTexts = githubNotificationMarkdownHeadings(
     response.replace(/\r\n?/gu, '\n').split('\n'),
   ).map(({ text }) => text);
-  const hasMarkdown = [
-    '## 💬 Comment answered',
-    '## Response',
-    githubNotificationProposedReplyHeading,
-  ].some((heading) => headingTexts.includes(heading));
+  const hasMarkdown = headingTexts.includes(githubNotificationProposedReplyHeading);
   const hasLegacy = /^GITHUB_REPLY:|^RESPONSE:/mu.test(response);
   if (hasMarkdown && hasLegacy) {
     throw new GitHubNotificationCommentResponseError(

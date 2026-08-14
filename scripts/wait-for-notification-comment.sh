@@ -54,7 +54,6 @@ if ! command -v "$timeout_command" > /dev/null 2>&1; then
 fi
 
 deadline=$((SECONDS + timeout_seconds))
-history=''
 reply_count='0'
 while ((SECONDS < deadline)); do
   remaining_seconds=$((deadline - SECONDS))
@@ -62,17 +61,15 @@ while ((SECONDS < deadline)); do
   if ((command_timeout > 10)); then
     command_timeout=10
   fi
-  history="$("$timeout_command" --kill-after=5 "$command_timeout" openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
-  if printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## 💬 Comment answered") and contains("## Response") and contains("## 📤 Proposed GitHub reply")' >/dev/null 2>&1; then
-    reply_count="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$item_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:github-reply"))] | length' 2>/dev/null || true)"
-    if test "$reply_count" = '1'; then
-      exit 0
-    fi
+  reply_count="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$item_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:github-reply"))] | length' 2>/dev/null || true)"
+  if test "$reply_count" = '1'; then
+    exit 0
   fi
   sleep 2
 done
 
 printf 'notification comment response did not complete within %s seconds\n' "$timeout_seconds" >&2
+history="$("$timeout_command" --kill-after=5 10 openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
 if test -n "$history"; then
   printf '%s\n' "$history" | jq -c --arg replyCount "$reply_count" '
     [.messages[]? | select(.role == "assistant")] as $assistant

@@ -38,6 +38,23 @@ describe('channels/github/utils/comment-response', () => {
     );
   });
 
+  it('should accept flexible private markdown around one quoted public reply', () => {
+    const payload = {
+      text: [
+        '### Recorded status',
+        '',
+        'The assignment is active and its plan is recorded.',
+        '',
+        '## 📤 Proposed GitHub reply',
+        '',
+        '> I have the plan ready.',
+      ].join('\n'),
+    };
+
+    assert.equal(assertGitHubNotificationCommentResponse([payload]), payload);
+    assert.equal(githubNotificationCommentReply(payload), 'I have the plan ready.');
+  });
+
   it('should prefer one complete ordinary final over commentary', () => {
     const commentary = {
       isCommentary: true,
@@ -75,7 +92,7 @@ describe('channels/github/utils/comment-response', () => {
       ],
       [
         {
-          text: commentResponse('Public.', ''),
+          text: '## 📤 Proposed GitHub reply\n\n> Public.',
         },
       ],
     ]) {
