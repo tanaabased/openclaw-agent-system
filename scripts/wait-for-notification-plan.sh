@@ -3,7 +3,7 @@
 set -euo pipefail
 
 actor_agent=''
-issue_number=''
+item_number=''
 notification_agent=''
 repository=''
 session_key=''
@@ -14,8 +14,8 @@ while test "$#" -gt 0; do
       actor_agent="$2"
       shift 2
       ;;
-    --issue-number)
-      issue_number="$2"
+    --item-number)
+      item_number="$2"
       shift 2
       ;;
     --notification-agent)
@@ -37,13 +37,21 @@ while test "$#" -gt 0; do
   esac
 done
 
-if test -z "$actor_agent" || test -z "$issue_number" || test -z "$notification_agent" || test -z "$repository" || test -z "$session_key"; then
+if test -z "$actor_agent" || test -z "$item_number" || test -z "$notification_agent" || test -z "$repository" || test -z "$session_key"; then
   printf 'all notification plan wait arguments are required\n' >&2
   exit 2
 fi
 
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
 timeout_seconds=300
+timeout_command='timeout'
+if ! command -v "$timeout_command" > /dev/null 2>&1; then
+  timeout_command='gtimeout'
+fi
+if ! command -v "$timeout_command" > /dev/null 2>&1; then
+  printf 'a gnu timeout command is required\n' >&2
+  exit 1
+fi
 deadline=$((SECONDS + timeout_seconds))
 history=''
 while ((SECONDS < deadline)); do
@@ -52,9 +60,9 @@ while ((SECONDS < deadline)); do
   if ((command_timeout > 10)); then
     command_timeout=10
   fi
-  history="$(timeout --kill-after=5 "$command_timeout" openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
+  history="$("$timeout_command" --kill-after=5 "$command_timeout" openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
   if printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## Assessment") and contains("## Blockers") and contains("## Plan")' >/dev/null 2>&1; then
-    comments="$(OPENCLAW_LOG_LEVEL=error timeout --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$issue_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:initial-acknowledgment"))] | length' 2>/dev/null || true)"
+    comments="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$item_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:initial-acknowledgment"))] | length' 2>/dev/null || true)"
     if test "$comments" = '1'; then
       exit 0
     fi
@@ -75,7 +83,7 @@ if test -n "$history"; then
       }
   ' >&2 || true
 fi
-doctor="$(OPENCLAW_LOG_LEVEL=error timeout --kill-after=5 10 openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
+doctor="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 10 openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
 if test -n "$doctor"; then
   printf '%s\n' "$doctor" | jq -c '
     {

@@ -4,9 +4,11 @@ import GitHubNotificationCommentService from '../channels/github/lib/comment-ser
 import { githubCommentRevision } from '../channels/github/utils/comment-admission.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import {
+  approvedPullRequestNotificationItem,
   notificationActor,
   notificationItemKey,
   notificationMonitorState,
+  notificationPullRequestItemKey,
 } from './github-notification-fixtures.ts';
 
 const context = {
@@ -49,6 +51,22 @@ function activeState(): GitHubNotificationMonitorState {
       },
     },
   };
+  return state;
+}
+
+function activePullRequestState(): GitHubNotificationMonitorState {
+  const state = activeState();
+  const issue = state.items[notificationItemKey]!;
+  const item = approvedPullRequestNotificationItem();
+  item.delivery = {
+    ...issue.delivery!,
+    assignmentEventId: item.assignmentEventNodeId!,
+    workId: 'pull-request-8',
+  };
+  delete item.delivery.worktreeBranch;
+  delete item.delivery.worktreePath;
+  item.commentTracking = structuredClone(issue.commentTracking);
+  state.items = { [notificationPullRequestItemKey]: item };
   return state;
 }
 
@@ -137,6 +155,35 @@ describe('channels/github/lib/comment-service', () => {
     assert.equal(responses, 0);
     assert.equal(revision?.disposition, 'rejected');
     assert.equal(revision?.reasonCode, 'github-notification-comment-revision-stale');
+  });
+
+  it('should dispatch an admitted top-level pull-request comment in its own session', async () => {
+    const store = memoryStore(activePullRequestState());
+    let itemType: string | undefined;
+    const service = new GitHubNotificationCommentService({
+      authority: { loadCommentContext: async () => ({ authorized: true, context }) },
+      leaseStore: leaseStore(),
+      logger,
+      sessions: {
+        async respondToComment(input) {
+          itemType = input.item.itemType;
+          assert.equal(input.worktree, undefined);
+          await input.onTurnAdopted();
+          return { reply: { commentId: 94, status: 'published' } };
+        },
+      },
+      stateStore: store,
+    });
+
+    service.schedule('tanaabot', new AbortController().signal);
+    await service.settle('tanaabot');
+
+    assert.equal(itemType, 'pull-request');
+    assert.deepEqual(
+      store.state().items[notificationPullRequestItemKey]?.commentTracking?.revisions.IC_comment
+        ?.reply,
+      { commentId: 94, status: 'published' },
+    );
   });
 
   it('should retry only failures before the host adopts the comment turn', async () => {

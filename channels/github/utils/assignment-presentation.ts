@@ -34,7 +34,7 @@ export function githubNotificationAssignmentSentence(
   return `You've been assigned ${githubNotificationItemLink(item, title)}.`;
 }
 
-/** Format the mode-neutral assignment receipt that opens the private issue session. */
+/** Format the mode-neutral assignment receipt that opens the private assignment session. */
 export default function githubNotificationAssignmentNotice(
   item: GitHubNotificationPresentationItem,
 ): string {

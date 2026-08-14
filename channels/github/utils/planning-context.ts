@@ -3,13 +3,23 @@ import {
   githubNotificationAssignmentSentence,
   githubNotificationItemUrl,
 } from './assignment-presentation.ts';
-import type { GitHubNotificationItemState } from './monitor-state.ts';
+import type {
+  GitHubNotificationItemState,
+  GitHubNotificationPullRequestState,
+} from './monitor-state.ts';
 
 export interface GitHubNotificationPlanningPromptInput {
   context: GitHubNotificationPlanningContext;
   item: Pick<
     GitHubNotificationItemState,
-    'itemType' | 'number' | 'repositoryName' | 'repositoryOwner'
+    'itemType' | 'number' | 'pullRequest' | 'repositoryName' | 'repositoryOwner'
+  >;
+}
+
+export interface GitHubNotificationPlanningPromptContext extends GitHubNotificationPlanningContext {
+  pullRequest?: Pick<
+    GitHubNotificationPullRequestState,
+    'baseRef' | 'draft' | 'headRef' | 'headSha'
   >;
 }
 
@@ -17,23 +27,49 @@ export interface GitHubNotificationPlanningPrompt {
   body: string;
   untrustedContext: {
     label: string;
-    payload: GitHubNotificationPlanningContext;
+    payload: GitHubNotificationPlanningPromptContext;
     source: string;
     type: 'github_issue' | 'github_pull_request';
   };
 }
 
-/** Separate one readable planning request from its current-turn-only untrusted issue data. */
+/** Separate one readable planning request from its current-turn-only untrusted provider data. */
 export default function githubNotificationPlanningPrompt(
   input: GitHubNotificationPlanningPromptInput,
 ): GitHubNotificationPlanningPrompt {
+  const pullRequest = input.item.pullRequest;
+  const action =
+    input.item.itemType === 'pull-request'
+      ? 'Please review it and prepare a private stewardship plan for monitoring discussion, blockers, and merge readiness.'
+      : 'Please review it and prepare a private implementation plan.';
+  const localContext =
+    input.item.itemType === 'pull-request'
+      ? [
+          '',
+          'No managed worktree is prepared for this direct pull-request assignment. Implementation and repository commands require a separate authorized local action.',
+        ]
+      : [];
+  const payload = structuredClone({
+    ...input.context,
+    ...(pullRequest === undefined
+      ? {}
+      : {
+          pullRequest: {
+            baseRef: pullRequest.baseRef,
+            draft: pullRequest.draft,
+            headRef: pullRequest.headRef,
+            headSha: pullRequest.headSha,
+          },
+        }),
+  });
   return {
     body: [
       '## 📋 Planning request',
       '',
       githubNotificationAssignmentSentence(input.item, input.context.title),
       '',
-      'Please review it and prepare a private implementation plan.',
+      action,
+      ...localContext,
       '',
       '**Mode:** Plan — do not use tools or begin implementation.',
       '',
@@ -47,7 +83,7 @@ export default function githubNotificationPlanningPrompt(
     ].join('\n'),
     untrustedContext: {
       label: `GitHub ${input.item.itemType} context`,
-      payload: structuredClone(input.context),
+      payload,
       source: githubNotificationItemUrl(input.item),
       type: input.item.itemType === 'pull-request' ? 'github_pull_request' : 'github_issue',
     },

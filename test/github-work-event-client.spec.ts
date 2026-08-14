@@ -110,6 +110,57 @@ describe('channels/github/lib/work-event-client', () => {
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
   });
 
+  it('should load canonical pull-request head and lifecycle facts separately', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        if (requests.length === 1) {
+          return response({
+            assignees: [{ login: 'tanaabot', nodeId: 'U_agent', type: 'User' }],
+            databaseId: 43,
+            isPullRequest: true,
+            nodeId: 'PR_item',
+            number: 8,
+            state: 'open',
+            updatedAt: '2026-08-14T12:00:00Z',
+          });
+        }
+        return response({
+          author: { login: 'pirog', nodeId: 'U_author', type: 'User' },
+          base: { ref: 'main', repository: { databaseId: 3, nodeId: 'R_repo' } },
+          draft: false,
+          head: {
+            ref: 'notification-pr',
+            repository: { databaseId: 4, nodeId: 'R_fork' },
+            sha: 'a'.repeat(40),
+          },
+          merged: false,
+        });
+      },
+    });
+
+    const item = await client.getItem('tanaabased', 'example', 8);
+
+    assert.equal(item.itemType, 'pull-request');
+    assert.deepEqual(item.itemType === 'pull-request' ? item.pullRequest : undefined, {
+      author: { login: 'pirog', nodeId: 'U_author', type: 'User' },
+      baseRef: 'main',
+      baseRepositoryDatabaseId: 3,
+      baseRepositoryNodeId: 'R_repo',
+      draft: false,
+      headRef: 'notification-pr',
+      headRepositoryDatabaseId: 4,
+      headRepositoryNodeId: 'R_fork',
+      headSha: 'a'.repeat(40),
+      merged: false,
+    });
+    assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/8'));
+    assert.ok(requests[1]?.includes('/repos/tanaabased/example/pulls/8'));
+    assert.ok(requests[1]?.some((value) => value.includes('sha:.head.sha')));
+  });
+
   it('should map assignment authority from the github assigner', async () => {
     const requests: string[][] = [];
     const client = new GitHubWorkEventClient({
@@ -185,6 +236,53 @@ describe('channels/github/lib/work-event-client', () => {
     assert.ok(requests[1]?.includes('page=1'));
     assert.ok(requests[2]?.includes('page=2'));
     assert.ok(requests[1]?.includes('per_page=50'));
+  });
+
+  it('should include bounded pull-request file summaries without patches', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        if (requests.length === 1) {
+          return response({
+            body: 'Please review the pull request.',
+            commentCount: 0,
+            labels: ['review'],
+            title: 'Update notifications',
+          });
+        }
+        return response(
+          [
+            {
+              additions: 12,
+              changes: 15,
+              deletions: 3,
+              filename: 'channels/github/lib/poller.ts',
+              previousFilename: null,
+              status: 'modified',
+            },
+          ],
+          '<https://api.github.com/repos/tanaabased/example/pulls/8/files?page=2>; rel="next"',
+        );
+      },
+    });
+
+    const context = await client.getPlanningContext('tanaabased', 'example', 8, 'pull-request');
+
+    assert.equal(context.truncated, true);
+    assert.deepEqual(context.files, [
+      {
+        additions: 12,
+        changes: 15,
+        deletions: 3,
+        filename: 'channels/github/lib/poller.ts',
+        status: 'modified',
+      },
+    ]);
+    assert.ok(requests[1]?.includes('/repos/tanaabased/example/pulls/8/files'));
+    assert.ok(requests[1]?.some((value) => value.includes('additions')));
+    assert.ok(requests[1]?.every((value) => !value.includes('patch')));
   });
 
   it('should list bounded canonical issue comments with immutable actor and revision facts', async () => {

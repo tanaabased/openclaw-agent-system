@@ -30,6 +30,7 @@ import type { GitHubCanonicalIssueComment } from '../utils/comment-admission.ts'
 import type {
   GitHubNotificationAcknowledgmentState,
   GitHubNotificationCommentRevisionState,
+  GitHubNotificationPullRequestState,
 } from '../utils/monitor-state.ts';
 import githubNotificationPlanningPrompt from '../utils/planning-context.ts';
 import githubNotificationPlanningAcknowledgment, {
@@ -79,9 +80,9 @@ export interface GitHubNotificationSessionTurnInput {
   config: OpenClawConfig;
   event: GitHubNotificationAssignmentEvent;
   label: string;
+  pullRequest?: GitHubNotificationPullRequestState;
   route: ResolvedNotificationRoute;
-  worktreeBranch: string;
-  worktreePath: string;
+  worktree?: { branch: string; path: string };
 }
 
 interface ResolvedAssignmentSession {
@@ -105,6 +106,39 @@ function absolutePath(value: string, label: string): string {
   const normalized = resolve(requiredText(value, label, 4096));
   if (!isAbsolute(value)) throw new Error(`${label} must be an absolute path.`);
   return normalized;
+}
+
+function assignmentContext(input: {
+  itemType: GitHubNotificationAssignmentEvent['itemType'];
+  pullRequest?: GitHubNotificationPullRequestState;
+  worktree?: { branch: string; path: string };
+}): Record<string, string> {
+  if (input.itemType === 'issue') {
+    if (!input.worktree) throw new Error('GitHub issue assignments require a managed worktree.');
+    return {
+      githubWorktreeBranch: requiredText(
+        input.worktree.branch,
+        'GitHub notification worktree branches',
+        255,
+      ),
+      githubWorktreePath: absolutePath(input.worktree.path, 'GitHub notification worktree paths'),
+    };
+  }
+  if (!input.pullRequest) {
+    throw new Error('GitHub pull-request assignments require observed head metadata.');
+  }
+  const headSha = requiredText(input.pullRequest.headSha, 'GitHub pull-request head SHAs', 64);
+  if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(headSha)) {
+    throw new Error('GitHub pull-request head SHAs are invalid.');
+  }
+  return {
+    githubPullRequestHeadRef: requiredText(
+      input.pullRequest.headRef,
+      'GitHub pull-request head refs',
+      255,
+    ),
+    githubPullRequestHeadSha: headSha,
+  };
 }
 
 function errorCode(error: unknown): string {
@@ -151,9 +185,9 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
           config: assignment.config,
           event,
           label: assignment.label,
+          ...(input.item.pullRequest === undefined ? {} : { pullRequest: input.item.pullRequest }),
           route,
-          worktreeBranch: input.worktree.branch,
-          worktreePath: input.worktree.path,
+          ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
         }),
     });
     if (
@@ -178,6 +212,11 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       context: input.context,
       item: input.item,
     });
+    const workContext = assignmentContext({
+      itemType: assignment.event.itemType,
+      ...(input.item.pullRequest === undefined ? {} : { pullRequest: input.item.pullRequest }),
+      ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+    });
     const prompt = planning.body;
     const ctxPayload = buildChannelInboundEventContext({
       accountId: assignment.route.accountId,
@@ -192,8 +231,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         githubItemNumber: assignment.event.itemNumber,
         githubItemType: assignment.event.itemType,
         githubRepositoryId: assignment.event.repositoryId,
-        githubWorktreeBranch: input.worktree.branch,
-        githubWorktreePath: input.worktree.path,
+        ...workContext,
         UntrustedStructuredContext: [planning.untrustedContext],
       },
       from: `github:${assignment.event.repositoryId}`,
@@ -342,7 +380,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       'GitHub comment revision ids',
       255,
     )}`;
-    const notification = `An approved GitHub comment mentioned this agent on issue #${assignment.event.itemNumber}.`;
+    const notification = `An approved GitHub comment mentioned this agent on ${assignment.event.itemType} #${assignment.event.itemNumber}.`;
     const prompt = githubNotificationCommentPrompt({ comment: input.context, item: input.item });
     const author = input.context.author;
     if (!author || author.nodeId !== input.comment.actorNodeId) {
@@ -510,12 +548,11 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       throw new Error('GitHub notification item types are invalid.');
     }
     absolutePath(input.route.workspaceDir, 'Agent workspace directories');
-    const worktreeBranch = requiredText(
-      input.worktreeBranch,
-      'GitHub notification worktree branches',
-      255,
-    );
-    const worktreePath = absolutePath(input.worktreePath, 'GitHub notification worktree paths');
+    const workContext = assignmentContext({
+      itemType: input.event.itemType,
+      ...(input.pullRequest === undefined ? {} : { pullRequest: input.pullRequest }),
+      ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+    });
     const conversationId = input.route.conversationId;
     const notification = requiredText(
       input.event.title,
@@ -535,8 +572,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         githubItemNumber: input.event.itemNumber,
         githubItemType: input.event.itemType,
         githubRepositoryId: repositoryId,
-        githubWorktreeBranch: worktreeBranch,
-        githubWorktreePath: worktreePath,
+        ...workContext,
       },
       from: `github:${repositoryId}`,
       message: {
@@ -620,8 +656,19 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       desired,
       githubNotificationConversationId(event),
     );
+    const assignmentLabel =
+      input.item.itemType === 'issue'
+        ? input.worktree?.branch
+        : input.item.pullRequest === undefined
+          ? undefined
+          : `head@${input.item.pullRequest.headSha.slice(0, 12)}`;
+    if (!assignmentLabel) {
+      throw new Error(
+        `GitHub ${input.item.itemType} assignments are missing their required local context.`,
+      );
+    }
     const label =
-      `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.item.number} · ${input.worktree.branch}`
+      `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.item.number} · ${assignmentLabel}`
         .slice(0, 120)
         .trim();
     return { config, desired, event, label, route };

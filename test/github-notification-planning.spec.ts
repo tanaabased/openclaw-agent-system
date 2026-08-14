@@ -6,7 +6,10 @@ import githubNotificationPlanningAcknowledgment, {
   assertGitHubNotificationPlanningResponse,
   GitHubNotificationPlanningResponseError,
 } from '../channels/github/utils/planning-response.ts';
-import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import {
+  approvedNotificationItem,
+  approvedPullRequestNotificationItem,
+} from './github-notification-fixtures.ts';
 
 function assertInvalidPlanningResponse(text: string): void {
   assert.throws(
@@ -55,6 +58,50 @@ describe('channels/github/utils/planning', () => {
       type: 'github_issue',
     });
     assert.notEqual(planning.untrustedContext.payload, context);
+  });
+
+  it('should frame pull-request identity and file summaries without patch content', () => {
+    const context = {
+      body: 'Please review this change.',
+      comments: [],
+      files: [
+        {
+          additions: 12,
+          changes: 15,
+          deletions: 3,
+          filename: 'channels/github/lib/poller.ts',
+          status: 'modified',
+        },
+      ],
+      labels: ['review'],
+      title: 'Update notifications',
+      truncated: false,
+    };
+    const item = approvedPullRequestNotificationItem();
+    const planning = githubNotificationPlanningPrompt({ context, item });
+
+    assert.match(planning.body, /private stewardship plan/u);
+    assert.match(planning.body, /No managed worktree is prepared/u);
+    assert.match(planning.body, /monitoring discussion, blockers, and merge readiness/u);
+    assert.match(planning.body, /https:\/\/github\.com\/tanaabased\/example\/pull\/13/u);
+    assert.doesNotMatch(planning.body, /channels\/github\/lib\/poller\.ts/u);
+    assert.doesNotMatch(planning.body, /notification-pr/u);
+    assert.doesNotMatch(planning.body, /a{40}/u);
+    assert.deepEqual(planning.untrustedContext, {
+      label: 'GitHub pull-request context',
+      payload: {
+        ...context,
+        pullRequest: {
+          baseRef: 'main',
+          draft: false,
+          headRef: 'notification-pr',
+          headSha: 'a'.repeat(40),
+        },
+      },
+      source: 'https://github.com/tanaabased/example/pull/13',
+      type: 'github_pull_request',
+    });
+    assert.equal('patch' in planning.untrustedContext.payload, false);
   });
 
   it('should render one linked mode-neutral assignment receipt', () => {

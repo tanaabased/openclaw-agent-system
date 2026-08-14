@@ -79,7 +79,7 @@ function validPublicationId(value: string): boolean {
   return /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 }
 
-/** Publish one explicitly selected local update into the exact active issue session. */
+/** Publish one explicitly selected local update into the exact active assignment session. */
 export default class GitHubNotificationProgressService {
   readonly #createPublicationId: () => string;
   readonly #dependencies: GitHubNotificationProgressServiceDependencies;
@@ -190,7 +190,6 @@ export default class GitHubNotificationProgressService {
         const delivery = item.delivery;
         return (
           item.disposition === 'approved' &&
-          item.itemType === 'issue' &&
           delivery?.stage === 'active' &&
           delivery.sessionKey === sessionKey
         );

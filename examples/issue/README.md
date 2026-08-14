@@ -1,6 +1,6 @@
-# GitHub Notifications Example
+# GitHub Issue Notifications Example
 
-This Ubuntu-only scenario runs the prepared Agent System package in the default
+This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
 worktree and one local session, runs tool-free private planning and approved-comment
@@ -39,8 +39,8 @@ openclaw plugins enable agent-system
 # should prepare notification and approved-actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
-cp "$GITHUB_WORKSPACE/examples/notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
-cp "$GITHUB_WORKSPACE/examples/notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/issue/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
+cp "$GITHUB_WORKSPACE/examples/issue/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation
@@ -78,7 +78,7 @@ openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | 
 
 # should create a self-authored assignment fixture
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/notifications/create-and-assign-github-notification-issue.sh" \
+"$GITHUB_WORKSPACE/examples/issue/create-and-assign-github-issue.sh" \
   --creator-agent notification-data \
   --repository tanaabased/agent-system-test \
   --title "agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -88,7 +88,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 
 # should reject a self-authored assignment without creating local work
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field rejected \
   --minimum 1
@@ -101,7 +101,7 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-acto
 # should create an approved assignment fixture
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/notifications/create-and-assign-github-notification-issue.sh" \
+"$GITHUB_WORKSPACE/examples/issue/create-and-assign-github-issue.sh" \
   --creator-agent notification-actor \
   --repository tanaabased/agent-system-test \
   --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -111,7 +111,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 
 # should admit one approved assignment into a local session
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field approved \
   --minimum 1
@@ -140,9 +140,9 @@ fi
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
-"$GITHUB_WORKSPACE/examples/notifications/wait-for-notification-plan.sh" \
+"$GITHUB_WORKSPACE/scripts/wait-for-notification-plan.sh" \
   --actor-agent notification-actor \
-  --issue-number "$issue_number" \
+  --item-number "$issue_number" \
   --notification-agent notification-data \
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
@@ -206,7 +206,7 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method POST "repos/tanaabased/agent-system-test/issues/$issue_number/comments" -f "body=> @$agent_login please provide a status update" --jq .id)"
 printf '%s' "$status_comment_id" > "$TMPDIR/status-comment-id"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field commentRejected \
   --minimum 1
@@ -219,7 +219,7 @@ status_comment_id="$(cat "$TMPDIR/status-comment-id")"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method PATCH "repos/tanaabased/agent-system-test/issues/comments/$status_comment_id" -f "body=@$agent_login Can you share a status update based only on what is already recorded?" --jq .id | grep -Fx "$status_comment_id"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field commentApproved \
   --minimum 1
@@ -255,7 +255,7 @@ cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method PATCH "repos/tanaabased/agent-system-test/issues/comments/$status_comment_id" -f 'body=No further update is requested.' --jq .id | grep -Fx "$status_comment_id"
 cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method POST "repos/tanaabased/agent-system-test/issues/$issue_number/comments" -f "body=@$agent_login this self-authored mention must not dispatch" --jq .id > /dev/null
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field commentRejected \
   --minimum 2
@@ -294,7 +294,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/examples/notifications/refresh-notifications-until-count.sh" \
+"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
   --field retired \
   --minimum 1
@@ -313,6 +313,7 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-acto
 # should report the notification monitor through the installed doctor after logical retirement
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system doctor --agent notification-data --json | jq -e '[.findings[] | select(.component == "github-notifications" and .code == "github-notification-monitor-healthy")] | length == 1'
+
 ```
 
 ## Cleanup

@@ -6,10 +6,13 @@
 
 The GitHub notifications channel is a local
 [OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
-approved GitHub issue assignments into agent-scoped local work. It verifies the
-agent, assigning actor, and repository before creating one managed worktree and
-one local OpenClaw session for the issue. The Gateway then asks the agent to
-review the issue and prepare a plan before posting one short acknowledgment.
+approved GitHub issue and pull-request assignments into agent-scoped local work.
+It verifies the agent, assigning actor, and repository before creating one local
+OpenClaw session for the assigned work item. Issue assignments also create one
+managed worktree. Direct pull-request assignments retain the exact observed PR
+head as session metadata without preparing a worktree. The Gateway then asks the
+agent to review the work item and prepare a plan before posting one short
+acknowledgment.
 Later approved comments that address the verified agent account continue the
 same private conversation and receive one bounded public reply. A local operator
 can also explicitly select one bounded progress update for publication.
@@ -17,33 +20,37 @@ can also explicitly select one bounded progress update for publication.
 > [!IMPORTANT]
 > GitHub comments never authorize implementation or local tool use. The channel
 > publishes local progress only through an authorized `/agent-system-progress`
-> action in the exact issue session, and it does not currently manage
-> pull-request conversations.
+> action in the exact assignment session. Direct pull requests have their own
+> conversation; the channel does not correlate them with issue conversations or
+> participate in inline review threads.
 
 ## Overview
 
-- During `install`, records the agent's currently assigned open issues as a
+- During `install`, records the agent's currently assigned open work items as a
   safe baseline without creating local work. An empty result is a valid,
   persisted baseline.
 - On later cycles, discovers new assignments and rechecks the agent account,
   assigning actor, repository owner, and repository access.
-- For each accepted assignment, creates or reuses one deterministic managed
-  worktree and one local OpenClaw session.
-- Fetches a bounded issue title, body, labels, and recent comments as untrusted
-  context, then runs one tool-free private planning turn.
+- For each accepted issue assignment, creates or reuses one deterministic
+  managed worktree and one local OpenClaw session. A direct pull-request
+  assignment creates only its local monitoring session.
+- Fetches a bounded title, body, labels, and recent comments as untrusted
+  context, plus summary-only changed-file metadata for a pull request, then runs
+  one tool-free private planning turn. Patch content is never included.
 - Publishes only the planning response's separate one-sentence acknowledgment
   through the channel's authorization, safety, and durable delivery path.
-- Establishes a complete bounded comment baseline for each admitted issue, then
-  admits only later exact standalone mentions from approved immutable human
-  identities.
+- Establishes a complete bounded top-level comment baseline for each admitted
+  issue or pull request, then admits only later exact standalone mentions from
+  approved immutable human identities.
 - Rechecks the exact current comment revision before a tool-free private reply
   turn and again before publishing its separate GitHub reply candidate.
-- Publishes a locally selected progress update only from the exact active issue
-  session through an authorized Gateway operator command that bypasses the model.
+- Publishes a locally selected progress update only from the exact active
+  assignment session through an authorized Gateway operator command that
+  bypasses the model.
 
 ## Private Assignment Presentation
 
-Each admitted assignment first creates the issue session with a compact,
+Each admitted assignment first creates its private session with a compact,
 mode-neutral receipt in its session metadata:
 
 ```markdown
@@ -66,17 +73,24 @@ Please review it and prepare a private implementation plan.
 **Mode:** Plan — do not use tools or begin implementation.
 ```
 
-The issue body, labels, and comments are supplied separately through OpenClaw's
-current-turn untrusted structured context. They remain available to the agent
-without appearing in normal chat history. The request also keeps managed
-worktree paths out of the visible message. A presentation path that exposes the
-structured context receives fenced JSON, which remains readable as plain text
-and is shown as a collapsed JSON disclosure by the OpenClaw Control UI.
+For a direct pull request, the link targets the pull request and the request asks
+for a stewardship plan covering discussion, blockers, and merge readiness. It
+also states that no managed worktree exists and that implementation requires a
+separate authorized local action.
+
+The title, body, labels, and comments are supplied separately through OpenClaw's
+current-turn untrusted structured context. Pull requests also receive their
+verified head identity and summary-only changed-file metadata. These values
+remain available to the agent without appearing in normal chat history. The
+request also keeps managed worktree paths out of the visible message. A
+presentation path that exposes the structured context receives fenced JSON,
+which remains readable as plain text and is shown as a collapsed JSON disclosure
+by the OpenClaw Control UI.
 
 Only plan mode is currently implemented. The shared assignment introduction and
 mode-specific request are deliberately composed from separate formatters so
 future work and auto modes can provide accurate instructions without changing
-issue-context transport. Work mode still plans before a separately checkpointed
+provider-context transport. Work mode still plans before a separately checkpointed
 implementation turn; auto mode will add its own structured continue-or-wait
 decision and deterministic safety gate.
 
@@ -245,7 +259,8 @@ openclaw agent-system notifications refresh [--agent <id>] [--json]
 
 The command runs the same intake lifecycle immediately. It reports baseline
 readiness, diagnostics, and retry timing, and it can create a managed worktree
-and local session for an accepted assignment. It does not wait for planning;
+and local session for an accepted issue or a session for an accepted pull
+request. It does not wait for planning;
 the running Gateway picks up that checkpoint asynchronously. Deferred and failed
 cycles return a nonzero exit code.
 
@@ -254,7 +269,7 @@ for result and concurrency semantics.
 
 ## Explicit Progress Publication
 
-Open the active local notification session for an issue, complete any desired
+Open the active local notification session for an issue or pull request, complete any desired
 tool-enabled inspection in an ordinary local turn, then explicitly select the
 public update with:
 
@@ -267,8 +282,8 @@ the common bounded-content safety gate and the same send-time assignment,
 manifest, GitHub policy, repository permission, account identity, durable
 delivery, and unknown-send reconciliation used by other notification replies.
 The command requires an authorized Gateway client with `operator.write` scope
-in the exact active issue session. GitHub-originated messages and ordinary local
-chat cannot trigger it, and owner status on a remote chat surface does not
+in the exact active assignment session. GitHub-originated messages and ordinary
+local chat cannot trigger it, and owner status on a remote chat surface does not
 substitute for Gateway operator scope.
 
 The selected update is trimmed, limited to 800 characters, and rejected if it
@@ -287,30 +302,39 @@ An assignment is accepted only when the authenticated account is still assigned,
 the immutable assigning actor is approved, the repository owner is eligible,
 and the account has sufficient repository access.
 
-Issue prose and comments are bounded and framed as untrusted project data.
-Planning and admitted-comment turns cannot use tools, and their complete
-responses remain in the private OpenClaw session. Only separately labeled
+Issue and pull-request prose, top-level comments, and summary-only changed-file
+metadata are bounded and framed as untrusted project data. Planning and
+admitted-comment turns cannot use tools, and their complete responses remain in
+the private OpenClaw session. Only separately labeled
 acknowledgment or GitHub-reply candidates, plus text explicitly selected by the
 local progress command, can pass through the fail-closed publication gate,
 which rejects secrets, links, mentions, local paths, and unsupported output.
 
 A comment mention addresses the agent but does not authorize file inspection,
 repository commands, tests, implementation, or any other tool use. Status
-questions may be answered from evidence already recorded in the issue session
-and Agent System-owned checkpoints. If that evidence is insufficient, the reply
+questions may be answered from evidence already recorded in the assignment
+session and Agent System-owned checkpoints. If that evidence is insufficient, the reply
 must say that no verified current update is available from the notification
 turn. A later tool-enabled status check remains an ordinary local turn, and its
 result leaves the private session only when an operator explicitly selects a
 bounded update with `/agent-system-progress`.
 
 Private monitor state contains no tokens, GitHub prose, or generated content.
-Deterministic worktree, session, activation, and publication identities make
+For a directly assigned pull request, Agent System records the verified head ref
+and SHA used for admission in the private session context. It does not prepare a
+managed worktree or authorize code inspection. Repository commands or
+implementation require a separate authorized local action. Closing or merging
+the PR retires the route logically while preserving its session. Issue-to-PR
+correlation, review requests, and inline review-comment intake remain outside
+this phase.
+
+Deterministic issue-worktree, session, activation, and publication identities make
 delivery retry-safe without duplicating local work or GitHub comments.
 
 `install` adds or repairs only the channel account and binding owned by Agent
 System. Removing `github.notifications` and running `install` again retires
 outstanding local assignments, removes the owned route and converged private
-monitor state, and stops new intake. Existing worktrees and sessions are
+monitor state, and stops new intake. Existing issue worktrees and sessions are
 preserved deliberately; use a fresh isolated OpenClaw profile and agent id when
 a post-delivery test must begin without those artifacts.
 

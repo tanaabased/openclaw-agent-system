@@ -5,7 +5,12 @@ import type { OpenClawPluginCommandDefinition } from 'openclaw/plugin-sdk/plugin
 import registerGitHubNotificationProgressCommand from '../channels/github/lib/progress-command.ts';
 import GitHubNotificationProgressService from '../channels/github/lib/progress-service.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+import {
+  approvedPullRequestNotificationItem,
+  notificationItemKey,
+  notificationMonitorState,
+  notificationPullRequestItemKey,
+} from './github-notification-fixtures.ts';
 
 const publicationId = '123e4567-e89b-42d3-a456-426614174000';
 const sessionKey = 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item';
@@ -22,6 +27,20 @@ function activeState(): GitHubNotificationMonitorState {
     worktreeBranch: 'agent/tanaabot/issue-7',
     worktreePath: '/workspace/.agent-system/worktrees/issue-7',
   };
+  return state;
+}
+
+function activePullRequestState(): GitHubNotificationMonitorState {
+  const state = activeState();
+  const item = approvedPullRequestNotificationItem();
+  item.delivery = {
+    ...state.items[notificationItemKey]!.delivery!,
+    assignmentEventId: item.assignmentEventNodeId!,
+    workId: 'pull-request-8',
+  };
+  delete item.delivery.worktreeBranch;
+  delete item.delivery.worktreePath;
+  state.items = { [notificationPullRequestItemKey]: item };
   return state;
 }
 
@@ -127,6 +146,44 @@ describe('channels/github/lib/progress-service', () => {
     );
     assert.equal(publications, 0);
     assert.equal(writes, 0);
+  });
+
+  it('should publish explicit progress from an active pull-request session', async () => {
+    let current = activePullRequestState();
+    const service = new GitHubNotificationProgressService({
+      createPublicationId: () => publicationId,
+      leaseStore: leaseStore(),
+      publicationService: {
+        async publish() {
+          return {
+            delivery: { messageIds: ['95'], visibleReplySent: true },
+            status: 'handled_visible' as const,
+          };
+        },
+      },
+      stateStore: {
+        async read() {
+          return structuredClone(current);
+        },
+        async write(state) {
+          current = structuredClone(state);
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await service.publish({
+        agentId: 'tanaabot',
+        config: {},
+        sessionKey,
+        text: 'Pull request review is underway.',
+      }),
+      { commentId: 95, status: 'published' },
+    );
+    assert.deepEqual(
+      current.items[notificationPullRequestItemKey]?.delivery?.progress?.[publicationId],
+      { commentId: 95, status: 'published' },
+    );
   });
 
   it('should retain a value-free failure checkpoint after terminal publication failure', async () => {

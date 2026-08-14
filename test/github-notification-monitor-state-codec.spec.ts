@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 
 import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
-import { notificationMonitorState } from './github-notification-fixtures.ts';
+import {
+  approvedPullRequestNotificationItem,
+  notificationItemKey,
+  notificationMonitorState,
+  notificationPullRequestItemKey,
+} from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/monitor-state-codec', () => {
   it('should accept current value-free state and reject unknown fields', () => {
@@ -147,6 +152,42 @@ describe('channels/github/utils/monitor-state-codec', () => {
       body: '@tanaabot private prose',
     };
     assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
+  });
+
+  it('should accept pull-request identity and comment state without changing schema three', () => {
+    const state = notificationMonitorState();
+    const item = approvedPullRequestNotificationItem();
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { status: 'planned' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
+      stage: 'active',
+    };
+    item.commentTracking = { baselineAt: 2, revisions: {} };
+    state.items = { [notificationPullRequestItemKey]: item };
+
+    assert.equal(state.schemaVersion, 3);
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const legacy = structuredClone(state);
+    delete legacy.items[notificationPullRequestItemKey]!.pullRequest;
+    assert.equal(decodeGitHubNotificationMonitorState(legacy, state.agentId)?.status, 'ready');
+    state.items[notificationPullRequestItemKey]!.pullRequest!.headSha = 'not-a-sha';
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+
+    const issueWithoutWorktree = notificationMonitorState();
+    const issueDelivery = issueWithoutWorktree.items[notificationItemKey]!.delivery!;
+    issueWithoutWorktree.items[notificationItemKey]!.delivery = {
+      ...issueDelivery,
+      acknowledgment: { status: 'pending' },
+      activation: { status: 'pending' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+    };
+    assert.equal(
+      decodeGitHubNotificationMonitorState(issueWithoutWorktree, issueWithoutWorktree.agentId),
+      undefined,
+    );
   });
 
   it('should accept bounded value-free progress checkpoints and reject persisted prose', () => {

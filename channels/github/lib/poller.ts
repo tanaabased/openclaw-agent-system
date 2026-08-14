@@ -8,6 +8,7 @@ import {
   type GitHubNotificationCommentTrackingState,
   type GitHubNotificationItemState,
   type GitHubNotificationMonitorState,
+  type GitHubNotificationPullRequestState,
 } from '../utils/monitor-state.ts';
 import { githubRepositoryPath, githubWorkItemKey } from '../utils/work-item.ts';
 import {
@@ -160,6 +161,9 @@ function itemState(
     itemType: item.itemType,
     lastObservedAt: now,
     number: item.number,
+    ...(item.itemType === 'pull-request'
+      ? { pullRequest: pullRequestState(item.pullRequest) }
+      : {}),
     reasonCode,
     repositoryCloneUrl: repository.cloneUrl,
     repositoryDatabaseId: repository.databaseId,
@@ -170,6 +174,37 @@ function itemState(
     repositoryOwnerNodeId: repository.owner.nodeId,
     repositoryPermission: permission,
   };
+}
+
+function pullRequestState(
+  pullRequest: Extract<
+    Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
+    { itemType: 'pull-request' }
+  >['pullRequest'],
+): GitHubNotificationPullRequestState {
+  return {
+    ...(pullRequest.author === undefined ? {} : { authorNodeId: pullRequest.author.nodeId }),
+    baseRef: pullRequest.baseRef,
+    draft: pullRequest.draft,
+    headRef: pullRequest.headRef,
+    ...(pullRequest.headRepositoryDatabaseId === undefined
+      ? {}
+      : { headRepositoryDatabaseId: pullRequest.headRepositoryDatabaseId }),
+    ...(pullRequest.headRepositoryNodeId === undefined
+      ? {}
+      : { headRepositoryNodeId: pullRequest.headRepositoryNodeId }),
+    headSha: pullRequest.headSha,
+  };
+}
+
+function closedReason(
+  item: Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
+): string | undefined {
+  if (item.state === 'open') return undefined;
+  if (item.itemType === 'pull-request') {
+    return item.pullRequest.merged ? 'pull-request-merged' : 'pull-request-closed';
+  }
+  return 'item-closed';
 }
 
 function commentState(
@@ -311,15 +346,24 @@ export async function pollGitHubNotifications(
           repository.owner.login !== current.repositoryOwner ||
           repository.name !== current.repositoryName ||
           item.databaseId !== current.itemDatabaseId ||
-          item.nodeId !== current.itemNodeId;
+          item.nodeId !== current.itemNodeId ||
+          item.itemType !== current.itemType ||
+          (item.itemType === 'pull-request' &&
+            (item.pullRequest.baseRepositoryDatabaseId !== current.repositoryDatabaseId ||
+              item.pullRequest.baseRepositoryNodeId !== current.repositoryNodeId ||
+              (current.pullRequest !== undefined &&
+                (item.pullRequest.baseRef !== current.pullRequest.baseRef ||
+                  item.pullRequest.headRef !== current.pullRequest.headRef ||
+                  item.pullRequest.headRepositoryDatabaseId !==
+                    current.pullRequest.headRepositoryDatabaseId ||
+                  item.pullRequest.headRepositoryNodeId !==
+                    current.pullRequest.headRepositoryNodeId ||
+                  item.pullRequest.author?.nodeId !== current.pullRequest.authorNodeId))));
         const reason = identityChanged
           ? 'github-notification-resource-changed'
           : (repositoryReason ??
-            (item.state !== 'open'
-              ? 'item-closed'
-              : isAccountAssigned(item, input.client.identity)
-                ? undefined
-                : 'item-unassigned'));
+            closedReason(item) ??
+            (isAccountAssigned(item, input.client.identity) ? undefined : 'item-unassigned'));
         if (reason) {
           state.items[key] = {
             ...current,
@@ -329,8 +373,14 @@ export async function pollGitHubNotifications(
           };
           counts.retired += 1;
         } else {
-          const next = { ...current, lastObservedAt: input.now };
-          if (current.itemType === 'issue' && current.delivery?.stage === 'active') {
+          const next: GitHubNotificationItemState = {
+            ...current,
+            lastObservedAt: input.now,
+            ...(item.itemType === 'pull-request' && current.pullRequest === undefined
+              ? { pullRequest: pullRequestState(item.pullRequest) }
+              : {}),
+          };
+          if (current.delivery?.stage === 'active') {
             const comments = await trackComments({
               account: input.client.identity,
               client: input.client,
@@ -385,7 +435,10 @@ export async function pollGitHubNotifications(
         item.databaseId !== candidate.databaseId ||
         item.nodeId !== candidate.nodeId ||
         item.number !== candidate.number ||
-        item.itemType !== candidate.itemType
+        item.itemType !== candidate.itemType ||
+        (item.itemType === 'pull-request' &&
+          (item.pullRequest.baseRepositoryDatabaseId !== repository.databaseId ||
+            item.pullRequest.baseRepositoryNodeId !== repository.nodeId))
       ) {
         throw new GitHubNotificationPollError(
           'github-notification-item-identity-mismatch',
@@ -432,7 +485,7 @@ export async function pollGitHubNotifications(
         permission,
         assignment,
       );
-      if (admission.disposition === 'approved' && nextItem.itemType === 'issue') {
+      if (admission.disposition === 'approved') {
         const comments = await trackComments({
           account: input.client.identity,
           client: input.client,

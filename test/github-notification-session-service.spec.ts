@@ -41,6 +41,12 @@ const event: GitHubNotificationAssignmentEvent = {
   title: 'GitHub issue #42 assignment',
 };
 const route = resolveNotificationRoute(config, desired, 'github:R_kgDOExample:42');
+const pullRequest = {
+  baseRef: 'main',
+  draft: false,
+  headRef: 'notification-pr',
+  headSha: 'a'.repeat(40),
+};
 const assignmentInput = {
   agentId: 'data',
   delivery: {
@@ -75,6 +81,21 @@ const assignmentInput = {
     path: '/workspace/data/.agent-system/worktrees/github-42',
   },
   workspaceDir: '/workspace/data',
+};
+const pullRequestAssignmentInput = {
+  agentId: assignmentInput.agentId,
+  delivery: {
+    assignmentEventId: assignmentInput.delivery.assignmentEventId,
+    schemaVersion: 1 as const,
+    stage: 'session-recording' as const,
+    workId: 'pull-request-42',
+  },
+  item: {
+    ...assignmentInput.item,
+    itemType: 'pull-request' as const,
+    pullRequest,
+  },
+  workspaceDir: assignmentInput.workspaceDir,
 };
 
 function createService(
@@ -158,6 +179,33 @@ describe('channels/github/lib/session-service', () => {
     });
 
     await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
+  });
+
+  it('should label a pull-request session by its observed head without a worktree', async () => {
+    let recordedContext: InboundSessionRecord['ctx'] | undefined;
+    const service = createService({
+      record: ({ ctx }) => {
+        recordedContext = ctx;
+      },
+    });
+    const observed = await service.recordSession(pullRequestAssignmentInput);
+
+    assert.equal(
+      recordedContext?.ConversationLabel,
+      'tanaabased/openclaw-agent-system#42 · head@aaaaaaaaaaaa',
+    );
+    assert.equal(
+      recordedContext?.BodyForAgent,
+      [
+        '## 📥 Assignment received',
+        '',
+        "You've been assigned [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/pull/42).",
+      ].join('\n'),
+    );
+    const context = recordedContext as unknown as Record<string, unknown>;
+    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+    assert.equal(context.githubWorktreePath, undefined);
+    assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
   it('should run one tool-free private plan before publishing its safe acknowledgment', async () => {
@@ -259,6 +307,97 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(published?.intent, 'initial-acknowledgment');
     assert.deepEqual(published?.payload, {
       text: 'I have read this through and mapped out a plan.',
+    });
+  });
+
+  it('should plan a direct pull request from observed head context without a worktree', async () => {
+    const planningContext = {
+      body: 'Please review the assigned change.',
+      comments: [],
+      files: [
+        {
+          additions: 4,
+          changes: 5,
+          deletions: 1,
+          filename: 'channels/github/lib/session-service.ts',
+          status: 'modified',
+        },
+      ],
+      labels: ['review'],
+      title: 'Review the notification session',
+      truncated: false,
+    };
+    const service = createService({
+      async dispatch(input) {
+        const context = input.ctx as unknown as Record<string, unknown>;
+        assert.equal(context.githubPullRequestHeadRef, pullRequest.headRef);
+        assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+        assert.equal(context.githubWorktreeBranch, undefined);
+        assert.equal(context.githubWorktreePath, undefined);
+        assert.match(String(input.ctx.BodyForAgent), /private stewardship plan/u);
+        assert.match(String(input.ctx.BodyForAgent), /No managed worktree is prepared/u);
+        assert.deepEqual(context.UntrustedStructuredContext, [
+          {
+            label: 'GitHub pull-request context',
+            payload: {
+              ...planningContext,
+              pullRequest: {
+                baseRef: pullRequest.baseRef,
+                draft: pullRequest.draft,
+                headRef: pullRequest.headRef,
+                headSha: pullRequest.headSha,
+              },
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/pull/42',
+            type: 'github_pull_request',
+          },
+        ]);
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              'ACKNOWLEDGMENT: I reviewed the pull request and prepared a stewardship plan.',
+              '',
+              '## Assessment',
+              '',
+              'The assigned head is ready for monitoring.',
+              '',
+              '## Blockers',
+              '',
+              'None.',
+              '',
+              '## Plan',
+              '',
+              '1. Monitor discussion and merge readiness.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        return {
+          delivery: { messageIds: ['94'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...pullRequestAssignmentInput,
+      context: planningContext,
+      delivery: {
+        ...pullRequestAssignmentInput.delivery,
+        acknowledgment: { status: 'pending' as const },
+        activation: { status: 'pending' as const },
+        sessionKey: route.sessionKey,
+        stage: 'active' as const,
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.deepEqual(result, {
+      acknowledgment: { commentId: 94, status: 'published' },
     });
   });
 
@@ -442,8 +581,7 @@ describe('channels/github/lib/session-service', () => {
       event,
       label: 'tanaabased/openclaw-agent-system#42',
       route,
-      worktreeBranch: assignmentInput.worktree.branch,
-      worktreePath: assignmentInput.worktree.path,
+      worktree: assignmentInput.worktree,
     });
 
     assert.equal(turn.channel, 'agent-system-github');
@@ -467,6 +605,33 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(typeof turn.record?.trackSessionMetaTask, 'function');
     assert.equal(typeof turn.afterRecord, 'function');
     await assert.rejects(turn.runDispatch(), /must not dispatch an agent turn/u);
+  });
+
+  it('should identify a directly assigned pull request in its observe-only session', () => {
+    const service = createService();
+    const pullRequestEvent = {
+      ...event,
+      itemType: 'pull-request' as const,
+      title: 'GitHub pull request #42 assignment',
+    };
+    const turn = service.prepareTurn({
+      config,
+      event: pullRequestEvent,
+      label: 'tanaabased/openclaw-agent-system#42',
+      pullRequest,
+      route,
+    });
+
+    assert.equal(turn.ctxPayload.BodyForAgent, pullRequestEvent.title);
+    assert.equal(
+      (turn.ctxPayload as unknown as Record<string, unknown>).githubItemType,
+      'pull-request',
+    );
+    const context = turn.ctxPayload as unknown as Record<string, unknown>;
+    assert.equal(context.githubPullRequestHeadRef, pullRequest.headRef);
+    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+    assert.equal(context.githubWorktreeBranch, undefined);
+    assert.equal(context.githubWorktreePath, undefined);
   });
 
   it('should fail closed when the configured binding resolves another agent', async () => {
@@ -499,8 +664,10 @@ describe('channels/github/lib/session-service', () => {
           event,
           label: 'repository#42',
           route,
-          worktreeBranch: assignmentInput.worktree.branch,
-          worktreePath: '.agent-system/worktrees/github-42',
+          worktree: {
+            branch: assignmentInput.worktree.branch,
+            path: '.agent-system/worktrees/github-42',
+          },
         }),
       /worktree paths must be an absolute path/u,
     );

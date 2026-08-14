@@ -71,10 +71,10 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   async loadPlanningContext(
     input: GitHubNotificationAssignmentBoundaryInput,
   ): Promise<GitHubNotificationPlanningContextResult> {
-    if (input.item.itemType !== 'issue') {
+    if (input.item.itemType === 'pull-request' && input.item.pullRequest === undefined) {
       return {
         authorized: false,
-        reasonCode: 'github-notification-activation-pull-request-deferred',
+        reasonCode: 'github-notification-pull-request-state-missing',
       };
     }
     const inspection = await this.#inspect(input);
@@ -90,6 +90,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         input.item.repositoryOwner,
         input.item.repositoryName,
         input.item.number,
+        input.item.itemType,
       ),
     };
   }
@@ -112,7 +113,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   async #loadComment(
     input: GitHubNotificationCommentBoundaryInput,
   ): Promise<GitHubNotificationCommentContextResult> {
-    if (input.item.itemType !== 'issue' || input.comment.disposition !== 'approved') {
+    if (input.comment.disposition !== 'approved') {
       return {
         authorized: false,
         reasonCode: 'github-notification-comment-ineligible',
@@ -215,7 +216,17 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         item.databaseId !== input.item.itemDatabaseId ||
         item.nodeId !== input.item.itemNodeId ||
         item.itemType !== input.item.itemType ||
-        item.number !== input.item.number
+        item.number !== input.item.number ||
+        (item.itemType === 'pull-request' &&
+          (input.item.pullRequest === undefined ||
+            item.pullRequest.baseRepositoryDatabaseId !== input.item.repositoryDatabaseId ||
+            item.pullRequest.baseRepositoryNodeId !== input.item.repositoryNodeId ||
+            item.pullRequest.baseRef !== input.item.pullRequest.baseRef ||
+            item.pullRequest.headRef !== input.item.pullRequest.headRef ||
+            item.pullRequest.headRepositoryDatabaseId !==
+              input.item.pullRequest.headRepositoryDatabaseId ||
+            item.pullRequest.headRepositoryNodeId !== input.item.pullRequest.headRepositoryNodeId ||
+            item.pullRequest.author?.nodeId !== input.item.pullRequest.authorNodeId))
       ) {
         return { authorized: false, reasonCode: 'github-notification-resource-changed' };
       }

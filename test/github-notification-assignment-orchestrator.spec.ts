@@ -5,8 +5,10 @@ import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../channels/github/lib/assignment-orchestrator.ts';
 import {
+  approvedPullRequestNotificationItem,
   notificationItemKey as itemKey,
   notificationMonitorState as monitorState,
+  notificationPullRequestItemKey,
 } from './github-notification-fixtures.ts';
 
 const worktree = { branch: 'issue-7-branch', path: '/workspace/worktrees/issue-7' };
@@ -71,6 +73,54 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
       ['admitted', 'worktree-ready', 'session-recording', 'active'],
+    );
+  });
+
+  it('should record a pull-request session without inspecting or preparing a worktree', async () => {
+    const state = monitorState();
+    state.items = {
+      [notificationPullRequestItemKey]: approvedPullRequestNotificationItem(),
+    };
+    const store = memoryStore(state);
+    let worktreeInspections = 0;
+    let worktreePreparations = 0;
+    let recordedWorktree: unknown = 'not-recorded';
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async recordSession(input) {
+          recordedWorktree = input.worktree;
+          assert.equal(input.item.pullRequest?.headSha, 'a'.repeat(40));
+          return activeSession;
+        },
+      },
+      stateStore: store,
+      worktrees: {
+        async inspect() {
+          worktreeInspections += 1;
+          return undefined;
+        },
+        async prepare() {
+          worktreePreparations += 1;
+          return worktree;
+        },
+      },
+    });
+
+    await orchestrator.reconcile('tanaabot', notificationPullRequestItemKey);
+
+    const delivery = store.state().items[notificationPullRequestItemKey]?.delivery;
+    assert.equal(recordedWorktree, undefined);
+    assert.equal(worktreeInspections, 0);
+    assert.equal(worktreePreparations, 0);
+    assert.equal(delivery?.stage, 'active');
+    assert.equal(delivery?.worktreeBranch, undefined);
+    assert.equal(delivery?.worktreePath, undefined);
+    assert.deepEqual(
+      store.writes.map(
+        (checkpoint) => checkpoint.items[notificationPullRequestItemKey]?.delivery?.stage,
+      ),
+      ['session-recording', 'active'],
     );
   });
 

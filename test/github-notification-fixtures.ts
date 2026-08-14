@@ -21,6 +21,8 @@ export const notificationRepository = {
   owner: notificationOwner,
 };
 export const notificationItemKey = 'github:R_repo:12';
+export const notificationPullRequestItemKey = 'github:R_repo:13';
+export const notificationPullRequestHeadSha = 'a'.repeat(40);
 
 export function approvedNotificationItem(): GitHubNotificationItemState {
   return {
@@ -38,6 +40,43 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
     itemType: 'issue',
     lastObservedAt: 2,
     number: 12,
+    reasonCode: 'assignment-approved',
+    repositoryCloneUrl: notificationRepository.cloneUrl,
+    repositoryDatabaseId: notificationRepository.databaseId,
+    repositoryDefaultBranch: notificationRepository.defaultBranch,
+    repositoryName: notificationRepository.name,
+    repositoryNodeId: notificationRepository.nodeId,
+    repositoryOwner: notificationOwner.login,
+    repositoryOwnerNodeId: notificationOwner.nodeId,
+    repositoryPermission: 'write',
+  };
+}
+
+export function approvedPullRequestNotificationItem(): GitHubNotificationItemState {
+  return {
+    assignmentActorNodeId: notificationActor.nodeId,
+    assignmentEventNodeId: 'EV_pull_request_assignment',
+    delivery: {
+      assignmentEventId: 'EV_pull_request_assignment',
+      schemaVersion: 1,
+      stage: 'admitted',
+      workId: 'pull-request-8',
+    },
+    disposition: 'approved',
+    itemDatabaseId: 8,
+    itemNodeId: 'PR_item',
+    itemType: 'pull-request',
+    lastObservedAt: 2,
+    number: 13,
+    pullRequest: {
+      authorNodeId: notificationActor.nodeId,
+      baseRef: 'main',
+      draft: false,
+      headRef: 'notification-pr',
+      headRepositoryDatabaseId: notificationRepository.databaseId,
+      headRepositoryNodeId: notificationRepository.nodeId,
+      headSha: notificationPullRequestHeadSha,
+    },
     reasonCode: 'assignment-approved',
     repositoryCloneUrl: notificationRepository.cloneUrl,
     repositoryDatabaseId: notificationRepository.databaseId,

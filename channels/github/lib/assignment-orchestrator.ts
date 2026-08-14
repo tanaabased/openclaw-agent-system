@@ -37,7 +37,7 @@ export interface GitHubNotificationAssignmentWorktrees {
 }
 
 export interface GitHubNotificationAssignmentSessionInput extends GitHubNotificationAssignmentBoundaryInput {
-  worktree: GitHubNotificationObservedWorktree;
+  worktree?: GitHubNotificationObservedWorktree;
 }
 
 export interface GitHubNotificationAssignmentSessions {
@@ -122,7 +122,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const { delivery, item, state } = loaded;
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
-      const action = planGitHubNotificationDelivery(delivery, observation);
+      const action = planGitHubNotificationDelivery(
+        delivery,
+        observation,
+        item.itemType === 'issue',
+      );
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
         await this.#retire(state, itemKey, action.reasonCode);
@@ -168,7 +172,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         continue;
       }
       const worktree = observation.worktree;
-      if (!worktree) {
+      if (item.itemType === 'issue' && !worktree) {
         throw new GitHubNotificationAssignmentOrchestratorError(
           'github-notification-worktree-reconciliation-failed',
           'The GitHub notification worktree could not be reconciled.',
@@ -197,7 +201,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
             agentId,
             ...checkpoint,
             signal,
-            worktree,
+            ...(worktree === undefined ? {} : { worktree }),
             workspaceDir: state.workspaceDir,
           }),
       );
@@ -238,18 +242,20 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const worktree =
       !authority.authorized || item.disposition === 'retired'
         ? checkpointedWorktree
-        : await this.#diagnosticBoundary(
-            'github-notification-worktree-inspection-failed',
-            'The notification worktree could not be inspected.',
-            () =>
-              this.#dependencies.worktrees.inspect({
-                agentId,
-                delivery,
-                item,
-                signal,
-                workspaceDir,
-              }),
-          );
+        : item.itemType === 'pull-request'
+          ? checkpointedWorktree
+          : await this.#diagnosticBoundary(
+              'github-notification-worktree-inspection-failed',
+              'The notification worktree could not be inspected.',
+              () =>
+                this.#dependencies.worktrees.inspect({
+                  agentId,
+                  delivery,
+                  item,
+                  signal,
+                  workspaceDir,
+                }),
+            );
     if (!worktree) {
       return {
         authority,

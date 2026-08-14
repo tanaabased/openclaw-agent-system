@@ -39,6 +39,7 @@ const itemBaseKeys = new Set([
   'itemType',
   'lastObservedAt',
   'number',
+  'pullRequest',
   'reasonCode',
   'repositoryCloneUrl',
   'repositoryDatabaseId',
@@ -84,6 +85,15 @@ const commentRevisionKeys = new Set([
   'updatedAt',
 ]);
 const commentTurnKeys = new Set(['failureCode', 'status']);
+const pullRequestKeys = new Set([
+  'authorNodeId',
+  'baseRef',
+  'draft',
+  'headRef',
+  'headRepositoryDatabaseId',
+  'headRepositoryNodeId',
+  'headSha',
+]);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
@@ -156,6 +166,38 @@ function optionalBoundedString(value: unknown, maximumLength: number): boolean {
       value.length > 0 &&
       value.length <= maximumLength &&
       !hasControlCharacter(value))
+  );
+}
+
+function validPullRequest(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const pullRequest = value as {
+    authorNodeId?: unknown;
+    baseRef?: unknown;
+    draft?: unknown;
+    headRef?: unknown;
+    headRepositoryDatabaseId?: unknown;
+    headRepositoryNodeId?: unknown;
+    headSha?: unknown;
+  };
+  const hasHeadRepositoryDatabaseId = pullRequest.headRepositoryDatabaseId !== undefined;
+  const hasHeadRepositoryNodeId = pullRequest.headRepositoryNodeId !== undefined;
+  return (
+    hasOnlyKeys(value, pullRequestKeys) &&
+    (pullRequest.authorNodeId === undefined || validNodeId(pullRequest.authorNodeId)) &&
+    optionalBoundedString(pullRequest.baseRef, 255) &&
+    typeof pullRequest.baseRef === 'string' &&
+    typeof pullRequest.draft === 'boolean' &&
+    optionalBoundedString(pullRequest.headRef, 255) &&
+    typeof pullRequest.headRef === 'string' &&
+    hasHeadRepositoryDatabaseId === hasHeadRepositoryNodeId &&
+    (pullRequest.headRepositoryDatabaseId === undefined ||
+      (Number.isSafeInteger(pullRequest.headRepositoryDatabaseId) &&
+        Number(pullRequest.headRepositoryDatabaseId) > 0)) &&
+    (pullRequest.headRepositoryNodeId === undefined ||
+      validNodeId(pullRequest.headRepositoryNodeId)) &&
+    typeof pullRequest.headSha === 'string' &&
+    /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(pullRequest.headSha)
   );
 }
 
@@ -278,7 +320,10 @@ function validCommentTracking(value: unknown): value is GitHubNotificationCommen
   );
 }
 
-function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
+function validDelivery(
+  value: unknown,
+  itemType: GitHubNotificationItemState['itemType'],
+): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const delivery = value as Partial<GitHubNotificationDeliveryState>;
   const validBase =
@@ -301,10 +346,14 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     typeof delivery.workId === 'string' &&
     !delivery.workId.startsWith('-');
   if (!validBase) return false;
+  const hasWorktreeBranch = typeof delivery.worktreeBranch === 'string';
+  const hasWorktreePath = typeof delivery.worktreePath === 'string';
+  if (hasWorktreeBranch !== hasWorktreePath) return false;
   const hasWorktree =
     typeof delivery.worktreeBranch === 'string' &&
     typeof delivery.worktreePath === 'string' &&
     isAbsolute(delivery.worktreePath);
+  if (hasWorktreePath && !hasWorktree) return false;
   const hasSession = typeof delivery.sessionKey === 'string';
   if (delivery.stage === 'admitted') {
     return (
@@ -317,7 +366,7 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
-  if (['session-recording', 'worktree-ready'].includes(delivery.stage ?? '')) {
+  if (delivery.stage === 'worktree-ready') {
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
@@ -327,9 +376,19 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
+  if (delivery.stage === 'session-recording') {
+    return (
+      delivery.activation === undefined &&
+      delivery.acknowledgment === undefined &&
+      delivery.progress === undefined &&
+      (itemType === 'pull-request' || hasWorktree) &&
+      !hasSession &&
+      delivery.sessionId === undefined
+    );
+  }
   if (delivery.stage === 'active') {
     return (
-      hasWorktree &&
+      (itemType === 'pull-request' || hasWorktree) &&
       hasSession &&
       delivery.activation !== undefined &&
       delivery.acknowledgment !== undefined
@@ -351,7 +410,10 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
     Number.isSafeInteger(item.itemDatabaseId) &&
     Number(item.itemDatabaseId) > 0 &&
     (item.commentTracking === undefined || validCommentTracking(item.commentTracking)) &&
-    (item.delivery === undefined || validDelivery(item.delivery)) &&
+    (item.itemType === 'issue'
+      ? item.pullRequest === undefined
+      : item.pullRequest === undefined || validPullRequest(item.pullRequest)) &&
+    (item.delivery === undefined || validDelivery(item.delivery, item.itemType!)) &&
     (item.disposition === 'approved'
       ? item.delivery !== undefined && item.delivery.stage !== 'retired'
       : item.disposition === 'retired'
@@ -361,8 +423,8 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
       (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
         item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`)) &&
     (item.commentTracking === undefined ||
-      (item.itemType === 'issue' &&
-        (item.disposition === 'approved' || item.disposition === 'retired')))
+      item.disposition === 'approved' ||
+      item.disposition === 'retired')
   );
 }
 
