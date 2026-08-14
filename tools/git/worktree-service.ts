@@ -29,6 +29,8 @@ export interface GitWorktreeServiceContext {
 export interface GitWorktreePrepareInput {
   baseRef: string;
   cloneUrl?: string;
+  expectedCommit?: string;
+  fetchRef?: { destination: string; source: string };
   repositoryId: string;
   workId: string;
 }
@@ -135,12 +137,15 @@ export default class GitWorktreeService {
       if (existing.branch !== branch) {
         throw new Error('The deterministic Git worktree path uses another branch.');
       }
+      if (input.expectedCommit !== undefined) {
+        await this.#requireExpectedCommit(context, existing.path, 'HEAD', input.expectedCommit);
+      }
       return this.#result(input.repositoryId, input.workId, existing, 'existing');
     }
     if ((await pathKind(path)) !== 'absent') {
       throw new Error('The deterministic Git worktree path is already occupied.');
     }
-    if (repository.refreshBeforeCreate) {
+    if (repository.refreshBeforeCreate && input.fetchRef === undefined) {
       requireGitSuccess(
         'fetch',
         await this.#run(context, repository.path, [
@@ -151,11 +156,30 @@ export default class GitWorktreeService {
       );
     }
 
+    if (input.fetchRef !== undefined) {
+      requireGitSuccess(
+        'source-ref validation',
+        await this.#run(context, repository.path, ['check-ref-format', input.fetchRef.source]),
+      );
+      requireGitSuccess(
+        'destination-ref validation',
+        await this.#run(context, repository.path, ['check-ref-format', input.fetchRef.destination]),
+      );
+      requireGitSuccess(
+        'fetch',
+        await this.#run(context, repository.path, [
+          'fetch',
+          'origin',
+          `+${input.fetchRef.source}:${input.fetchRef.destination}`,
+        ]),
+      );
+    }
+
     requireGitSuccess(
       'branch validation',
       await this.#run(context, repository.path, ['check-ref-format', '--branch', branch]),
     );
-    requireGitSuccess(
+    const baseCommit = requireGitSuccess(
       'base-ref validation',
       await this.#run(context, repository.path, [
         'rev-parse',
@@ -163,7 +187,10 @@ export default class GitWorktreeService {
         '--end-of-options',
         `${input.baseRef}^{commit}`,
       ]),
-    );
+    ).stdout.trim();
+    if (input.expectedCommit !== undefined && baseCommit !== input.expectedCommit) {
+      throw new Error('The Git worktree base ref did not match the expected commit.');
+    }
     const branchExists =
       (
         await this.#run(context, repository.path, [
@@ -187,6 +214,9 @@ export default class GitWorktreeService {
     const canonicalPath = await realpath(path);
     if (canonicalPath !== path || !isPathContained(layout.worktreeRoot, canonicalPath)) {
       throw new Error('Git prepared an unexpected worktree path.');
+    }
+    if (input.expectedCommit !== undefined) {
+      await this.#requireExpectedCommit(context, canonicalPath, 'HEAD', input.expectedCommit);
     }
     return this.#result(
       input.repositoryId,
@@ -263,6 +293,42 @@ export default class GitWorktreeService {
     validateIdentifier(input.workId, 'work id');
     validateIdentifier(input.baseRef, 'base ref');
     if (input.cloneUrl !== undefined) normalizeGitWorktreeRemote(input.cloneUrl);
+    if (
+      input.expectedCommit !== undefined &&
+      !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(input.expectedCommit)
+    ) {
+      throw new Error('The Git worktree expected commit is invalid.');
+    }
+    if (input.fetchRef !== undefined) {
+      validateIdentifier(input.fetchRef.source, 'source ref');
+      validateIdentifier(input.fetchRef.destination, 'destination ref');
+      if (
+        !input.fetchRef.source.startsWith('refs/') ||
+        !input.fetchRef.destination.startsWith('refs/')
+      ) {
+        throw new Error('The Git worktree fetch refs are invalid.');
+      }
+    }
+  }
+
+  async #requireExpectedCommit(
+    context: GitWorktreeServiceContext,
+    cwd: string,
+    ref: string,
+    expectedCommit: string,
+  ): Promise<void> {
+    const result = requireGitSuccess(
+      'expected-commit validation',
+      await this.#run(context, cwd, [
+        'rev-parse',
+        '--verify',
+        '--end-of-options',
+        `${ref}^{commit}`,
+      ]),
+    );
+    if (result.stdout.trim() !== expectedCommit) {
+      throw new Error('The Git worktree did not match the expected commit.');
+    }
   }
 
   #worktreePath(layout: GitWorktreeLayout, repositoryId: string, name: string): string {

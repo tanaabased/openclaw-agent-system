@@ -39,6 +39,7 @@ const itemBaseKeys = new Set([
   'itemType',
   'lastObservedAt',
   'number',
+  'pullRequest',
   'reasonCode',
   'repositoryCloneUrl',
   'repositoryDatabaseId',
@@ -84,6 +85,15 @@ const commentRevisionKeys = new Set([
   'updatedAt',
 ]);
 const commentTurnKeys = new Set(['failureCode', 'status']);
+const pullRequestKeys = new Set([
+  'authorNodeId',
+  'baseRef',
+  'draft',
+  'headRef',
+  'headRepositoryDatabaseId',
+  'headRepositoryNodeId',
+  'headSha',
+]);
 
 function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
@@ -156,6 +166,38 @@ function optionalBoundedString(value: unknown, maximumLength: number): boolean {
       value.length > 0 &&
       value.length <= maximumLength &&
       !hasControlCharacter(value))
+  );
+}
+
+function validPullRequest(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const pullRequest = value as {
+    authorNodeId?: unknown;
+    baseRef?: unknown;
+    draft?: unknown;
+    headRef?: unknown;
+    headRepositoryDatabaseId?: unknown;
+    headRepositoryNodeId?: unknown;
+    headSha?: unknown;
+  };
+  const hasHeadRepositoryDatabaseId = pullRequest.headRepositoryDatabaseId !== undefined;
+  const hasHeadRepositoryNodeId = pullRequest.headRepositoryNodeId !== undefined;
+  return (
+    hasOnlyKeys(value, pullRequestKeys) &&
+    (pullRequest.authorNodeId === undefined || validNodeId(pullRequest.authorNodeId)) &&
+    optionalBoundedString(pullRequest.baseRef, 255) &&
+    typeof pullRequest.baseRef === 'string' &&
+    typeof pullRequest.draft === 'boolean' &&
+    optionalBoundedString(pullRequest.headRef, 255) &&
+    typeof pullRequest.headRef === 'string' &&
+    hasHeadRepositoryDatabaseId === hasHeadRepositoryNodeId &&
+    (pullRequest.headRepositoryDatabaseId === undefined ||
+      (Number.isSafeInteger(pullRequest.headRepositoryDatabaseId) &&
+        Number(pullRequest.headRepositoryDatabaseId) > 0)) &&
+    (pullRequest.headRepositoryNodeId === undefined ||
+      validNodeId(pullRequest.headRepositoryNodeId)) &&
+    typeof pullRequest.headSha === 'string' &&
+    /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(pullRequest.headSha)
   );
 }
 
@@ -351,6 +393,9 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
     Number.isSafeInteger(item.itemDatabaseId) &&
     Number(item.itemDatabaseId) > 0 &&
     (item.commentTracking === undefined || validCommentTracking(item.commentTracking)) &&
+    (item.itemType === 'issue'
+      ? item.pullRequest === undefined
+      : item.pullRequest === undefined || validPullRequest(item.pullRequest)) &&
     (item.delivery === undefined || validDelivery(item.delivery)) &&
     (item.disposition === 'approved'
       ? item.delivery !== undefined && item.delivery.stage !== 'retired'
@@ -361,8 +406,8 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
       (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
         item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`)) &&
     (item.commentTracking === undefined ||
-      (item.itemType === 'issue' &&
-        (item.disposition === 'approved' || item.disposition === 'retired')))
+      item.disposition === 'approved' ||
+      item.disposition === 'retired')
   );
 }
 

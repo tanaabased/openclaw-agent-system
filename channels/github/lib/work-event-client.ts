@@ -18,6 +18,7 @@ const maximumCommentPages = 10;
 const maximumCommentBodyLength = 1_000;
 const maximumTrackedCommentPages = 3;
 const maximumPlanningComments = 50;
+const maximumPlanningFiles = 100;
 
 export interface GitHubNotificationPlanningComment {
   authorLogin: string;
@@ -28,9 +29,19 @@ export interface GitHubNotificationPlanningComment {
 export interface GitHubNotificationPlanningContext {
   body: string;
   comments: GitHubNotificationPlanningComment[];
+  files?: GitHubNotificationPlanningFile[];
   labels: string[];
   title: string;
   truncated: boolean;
+}
+
+export interface GitHubNotificationPlanningFile {
+  additions: number;
+  changes: number;
+  deletions: number;
+  filename: string;
+  previousFilename?: string;
+  status: string;
 }
 
 export class GitHubWorkEventClientError extends Error {
@@ -150,6 +161,40 @@ function identity(value: unknown, label: string): GitHubIdentity {
 
 function optionalIdentity(value: unknown, label: string): GitHubIdentity | undefined {
   return value === null || value === undefined ? undefined : identity(value, label);
+}
+
+function gitRef(value: unknown, label: string): string {
+  const parsed = string(value, label);
+  if (parsed.length > 255 || hasControlCharacter(parsed)) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  return parsed;
+}
+
+function gitSha(value: unknown, label: string): string {
+  const parsed = string(value, label).toLowerCase();
+  if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(parsed)) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  return parsed;
+}
+
+function repositoryReference(
+  value: unknown,
+  label: string,
+): { databaseId: number; nodeId: string } {
+  const repository = record(value, label);
+  return {
+    databaseId: positiveInteger(repository.databaseId, `${label} database id`),
+    nodeId: nodeId(repository.nodeId, `${label} node id`),
+  };
+}
+
+function optionalRepositoryReference(
+  value: unknown,
+  label: string,
+): { databaseId: number; nodeId: string } | undefined {
+  return value === null || value === undefined ? undefined : repositoryReference(value, label);
 }
 
 function issueComment(value: unknown): GitHubCanonicalIssueComment {
@@ -318,14 +363,53 @@ export default class GitHubWorkEventClient {
       throw new Error('GitHub returned an unsupported work-item state.');
     }
     if (!Array.isArray(value.assignees)) throw new Error('GitHub returned invalid assignees.');
-    return {
+    const item = {
       assignees: value.assignees.map((item) => identity(item, 'assignee')),
       databaseId: positiveInteger(value.databaseId, 'work-item database id'),
-      itemType: boolean(value.isPullRequest, 'work-item type') ? 'pull-request' : 'issue',
       nodeId: nodeId(value.nodeId, 'work-item node id'),
       number: positiveInteger(value.number, 'work-item number'),
-      state,
+      state: state as 'closed' | 'open',
       updatedAt: timestamp(value.updatedAt, 'work-item update time'),
+    };
+    if (!boolean(value.isPullRequest, 'work-item type')) {
+      return { ...item, itemType: 'issue' };
+    }
+
+    const pullResponse = await this.#api(
+      [
+        `${repositoryEndpoint(owner, name)}/pulls/${number}`,
+        '--jq',
+        '{author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),base:{ref:.base.ref,repository:{databaseId:.base.repo.id,nodeId:.base.repo.node_id}},draft,head:{ref:.head.ref,sha:.head.sha,repository:(if .head.repo==null then null else {databaseId:.head.repo.id,nodeId:.head.repo.node_id} end)},merged}',
+      ],
+      'pull request',
+    );
+    const pull = record(pullResponse.value, 'pull request');
+    const base = record(pull.base, 'pull-request base');
+    const head = record(pull.head, 'pull-request head');
+    const baseRepository = repositoryReference(base.repository, 'pull-request base repository');
+    const headRepository = optionalRepositoryReference(
+      head.repository,
+      'pull-request head repository',
+    );
+    return {
+      ...item,
+      itemType: 'pull-request',
+      pullRequest: {
+        author: optionalIdentity(pull.author, 'pull-request author'),
+        baseRef: gitRef(base.ref, 'pull-request base ref'),
+        baseRepositoryDatabaseId: baseRepository.databaseId,
+        baseRepositoryNodeId: baseRepository.nodeId,
+        draft: boolean(pull.draft, 'pull-request draft flag'),
+        headRef: gitRef(head.ref, 'pull-request head ref'),
+        ...(headRepository === undefined
+          ? {}
+          : {
+              headRepositoryDatabaseId: headRepository.databaseId,
+              headRepositoryNodeId: headRepository.nodeId,
+            }),
+        headSha: gitSha(head.sha, 'pull-request head sha'),
+        merged: boolean(pull.merged, 'pull-request merged flag'),
+      },
     };
   }
 
@@ -334,6 +418,7 @@ export default class GitHubWorkEventClient {
     owner: string,
     name: string,
     number: number,
+    itemType: 'issue' | 'pull-request' = 'issue',
   ): Promise<GitHubNotificationPlanningContext> {
     const endpoint = this.#itemEndpoint(owner, name, number);
     const response = await this.#api(
@@ -402,15 +487,61 @@ export default class GitHubWorkEventClient {
         });
       }
     }
+    const files: GitHubNotificationPlanningFile[] = [];
+    let filesTruncated = false;
+    if (itemType === 'pull-request') {
+      const filesResponse = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${repositoryEndpoint(owner, name)}/pulls/${number}/files`,
+          '-F',
+          `per_page=${maximumPlanningFiles}`,
+          '-F',
+          'page=1',
+          '--jq',
+          '[.[]|{additions,changes,deletions,filename,previousFilename:.previous_filename,status}]',
+        ],
+        'pull-request files',
+      );
+      if (!Array.isArray(filesResponse.value)) {
+        throw new Error('GitHub returned invalid pull-request files.');
+      }
+      filesTruncated = filesResponse.hasNextPage;
+      for (const entry of filesResponse.value.slice(0, maximumPlanningFiles)) {
+        const file = record(entry, 'pull-request file');
+        const filename = boundedProse(file.filename, 'pull-request filename', 1_024);
+        const previousFilename =
+          file.previousFilename === null || file.previousFilename === undefined
+            ? undefined
+            : boundedProse(file.previousFilename, 'pull-request previous filename', 1_024);
+        const status = boundedProse(file.status, 'pull-request file status', 32);
+        if (!filename.text || !status.text) {
+          throw new Error('GitHub returned an invalid pull-request file.');
+        }
+        filesTruncated ||=
+          filename.truncated || previousFilename?.truncated === true || status.truncated;
+        files.push({
+          additions: integer(file.additions, 'pull-request file additions'),
+          changes: integer(file.changes, 'pull-request file changes'),
+          deletions: integer(file.deletions, 'pull-request file deletions'),
+          filename: filename.text,
+          ...(previousFilename === undefined ? {} : { previousFilename: previousFilename.text }),
+          status: status.text,
+        });
+      }
+    }
     return {
       body: body.text,
       comments,
+      ...(itemType === 'pull-request' ? { files } : {}),
       labels,
       title: title.text,
       truncated:
         title.truncated ||
         body.truncated ||
         commentsTruncated ||
+        filesTruncated ||
         value.labels.length > labels.length,
     };
   }
@@ -458,7 +589,7 @@ export default class GitHubWorkEventClient {
     return { events, truncated: hasNextPage };
   }
 
-  /** List a complete bounded projection of comments for one active issue conversation. */
+  /** List a complete bounded projection of top-level comments through GitHub's issue API. */
   async listIssueComments(
     owner: string,
     name: string,
@@ -491,7 +622,7 @@ export default class GitHubWorkEventClient {
     return { comments, truncated: hasNextPage };
   }
 
-  /** Re-read one exact canonical comment revision before dispatch or publication. */
+  /** Re-read one exact canonical top-level comment before dispatch or publication. */
   async getIssueComment(
     owner: string,
     name: string,

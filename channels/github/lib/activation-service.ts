@@ -130,16 +130,13 @@ export default class GitHubNotificationActivationService {
         workspaceDir: pending.workspaceDir,
       });
       if (!planning.authorized) {
-        const ineligible =
-          planning.reasonCode === 'github-notification-activation-pull-request-deferred';
         await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
           ...delivery,
           activation: {
             failureCode: planning.reasonCode,
-            status: ineligible ? 'ineligible' : 'pending',
+            status: 'pending',
           },
         }));
-        if (ineligible) return;
         throw new GitHubNotificationActivationServiceError(planning.reasonCode);
       }
       const result = await this.#dependencies.sessions.planAssignment({

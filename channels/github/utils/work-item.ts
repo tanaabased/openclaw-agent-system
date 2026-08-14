@@ -24,15 +24,33 @@ export interface GitHubRepositoryIdentity {
   owner: GitHubIdentity;
 }
 
-export interface GitHubCanonicalWorkItem {
+export interface GitHubPullRequestIdentity {
+  author?: GitHubIdentity;
+  baseRef: string;
+  baseRepositoryDatabaseId: number;
+  baseRepositoryNodeId: string;
+  draft: boolean;
+  headRef: string;
+  headRepositoryDatabaseId?: number;
+  headRepositoryNodeId?: string;
+  headSha: string;
+  merged: boolean;
+}
+
+interface GitHubCanonicalWorkItemBase {
   assignees: GitHubIdentity[];
   databaseId: number;
-  itemType: 'issue' | 'pull-request';
   nodeId: string;
   number: number;
   state: 'closed' | 'open';
   updatedAt: string;
 }
+
+export type GitHubCanonicalWorkItem = GitHubCanonicalWorkItemBase &
+  (
+    | { itemType: 'issue'; pullRequest?: never }
+    | { itemType: 'pull-request'; pullRequest: GitHubPullRequestIdentity }
+  );
 
 export interface GitHubAssignmentEvent {
   actor: GitHubIdentity;

@@ -425,6 +425,32 @@ describe('channels/github/lib/session-service', () => {
     await assert.rejects(turn.runDispatch(), /must not dispatch an agent turn/u);
   });
 
+  it('should identify a directly assigned pull request in its observe-only session', () => {
+    const service = createService();
+    const pullRequestEvent = {
+      ...event,
+      itemType: 'pull-request' as const,
+      title: 'GitHub pull request #42 assignment',
+    };
+    const turn = service.prepareTurn({
+      config,
+      event: pullRequestEvent,
+      label: 'tanaabased/openclaw-agent-system#42',
+      route,
+      worktreeBranch: assignmentInput.worktree.branch,
+      worktreePath: assignmentInput.worktree.path,
+    });
+
+    assert.equal(
+      turn.ctxPayload.BodyForAgent,
+      'GitHub pull-request #42 was assigned to this agent.',
+    );
+    assert.equal(
+      (turn.ctxPayload as unknown as Record<string, unknown>).githubItemType,
+      'pull-request',
+    );
+  });
+
   it('should fail closed when the configured binding resolves another agent', async () => {
     const service = createService({
       config: {

@@ -16,6 +16,8 @@ function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = 
   const prepared: Array<{
     baseRef: string;
     cloneUrl?: string;
+    expectedCommit?: string;
+    fetchRef?: { destination: string; source: string };
     repositoryId: string;
     workId: string;
   }> = [];
@@ -143,6 +145,7 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 12,
       itemType: 'issue',
       repositoryDatabaseId: 7,
     });
@@ -167,6 +170,44 @@ describe('tools/git/trusted-worktree-service', () => {
     assert.equal(result.workId, 'issue-3');
   });
 
+  it('should fetch the fixed pull-request ref and require its observed head sha', async () => {
+    const { events, prepared, service } = fixture();
+
+    const result = await service.prepareGitHub({
+      agentId: 'data',
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 4,
+      itemNumber: 13,
+      itemType: 'pull-request',
+      pullRequestHeadSha: 'a'.repeat(40),
+      repositoryDatabaseId: 7,
+    });
+
+    assert.deepEqual(events, [
+      'manifest',
+      'authorize',
+      'environment',
+      'acquire-authenticated',
+      'prepare',
+      'dispose',
+    ]);
+    assert.deepEqual(prepared, [
+      {
+        baseRef: 'refs/remotes/origin/pull/13/head',
+        cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+        expectedCommit: 'a'.repeat(40),
+        fetchRef: {
+          destination: 'refs/remotes/origin/pull/13/head',
+          source: 'refs/pull/13/head',
+        },
+        repositoryId: 'github-7',
+        workId: 'pull-request-4',
+      },
+    ]);
+    assert.equal(result.workId, 'pull-request-4');
+  });
+
   it('should not resolve environment values when git authorization is denied', async () => {
     const { events, service } = fixture({ deny: true });
 
@@ -176,6 +217,7 @@ describe('tools/git/trusted-worktree-service', () => {
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
         defaultBranch: 'main',
         itemDatabaseId: 3,
+        itemNumber: 12,
         itemType: 'issue',
         repositoryDatabaseId: 7,
       }),
@@ -192,6 +234,7 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 12,
       itemType: 'issue',
       repositoryDatabaseId: 7,
     });
@@ -207,6 +250,7 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 12,
       itemType: 'issue',
       repositoryDatabaseId: 7,
     });
@@ -232,6 +276,7 @@ describe('tools/git/trusted-worktree-service', () => {
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
         defaultBranch: 'main',
         itemDatabaseId: 0,
+        itemNumber: 12,
         itemType: 'issue',
         repositoryDatabaseId: 7,
       }),

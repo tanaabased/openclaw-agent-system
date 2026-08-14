@@ -1,11 +1,11 @@
 # GitHub Notifications Plan
 
 Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A,
-Phase 2, and Phase 3 are implemented through the public channel SDK and covered
-by the packed third-party notifications scenario. Phases 4 and 5 are reserved
-for the upcoming release, with Phase 4 as the next implementation target. Later
-work continuation, model-routing, and automatic-activation capabilities are
-tracked as separate Feature issues outside this release plan.
+Phase 2, Phase 3, and Phase 4A are implemented through the public channel SDK
+and covered by packed third-party assignment scenarios. Phase 4B and Phase 5 are
+reserved for the upcoming release. Later work continuation, model-routing, and
+automatic-activation capabilities are tracked as separate Feature issues
+outside this release plan.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -62,7 +62,7 @@ comments, retire sessions, or clean up worktrees.
 
 ### Completed MVP 1 Acceptance Proof
 
-The GitHub Actions-only notifications scenario proves a packed third-party
+The GitHub Actions-only `issue` scenario proves a packed third-party
 installation across the actual CLI, Gateway, channel, session, and worktree
 boundaries. It covers:
 
@@ -82,33 +82,38 @@ OpenClaw state.
 The current implementation contains tested behavior deliberately outside the
 MVP 1 product promise:
 
-- issue-shaped pull-request discovery and classification;
+- directly assigned pull-request discovery with canonical head, base, repository,
+  and lifecycle facts;
 - canonical unassignment and authority-revocation transitions;
 - logical retirement that preserves sessions and worktrees;
 - reassignment and multi-stage delivery state;
 - optional immutable repository-owner restrictions;
 - safely retryable deterministic session recording;
-- asynchronous bounded issue-context planning with tools disabled;
+- asynchronous bounded assignment-context planning with tools disabled, including
+  summary-only changed-file metadata for pull requests;
 - one model-authored, personality-aware acknowledgment candidate extracted from
   the private planning response;
 - revision-aware comment baselines and immutable human mention admission for
-  active canonical issue conversations;
-- tool-free comment turns in the existing private issue session, with bounded
+  active canonical assignment conversations;
+- tool-free comment turns in the existing private assignment session, with bounded
   recorded status evidence and untrusted-content framing;
 - fail-closed publication through the public channel message adapter and durable
   outbound lifecycle for initial acknowledgments and admitted-comment replies;
 - explicit local progress selection through an operator-scoped plugin command
-  in the exact active issue session; and
+  in the exact active assignment session; and
 - value-free activation, acknowledgment, comment-revision, turn, and
   progress provider-receipt checkpoints.
 
-The packed notifications scenario covers the plan-only turn, one public
+The packed `issue` scenario covers the plan-only turn, one public
 acknowledgment, approved and rejected comment mentions, one revision-bound public
 reply, one explicit local progress update, restart deduplication, and logical
-retirement. Pull-request conversations, operator replay, and cleanup remain
-unavailable until Phases 4 and 5 are implemented and accepted. Configured work
-continuation, complexity-based model routing, and automatic activation remain
-deferred to their separate Feature issues.
+retirement. The packed `pull-request` scenario covers direct PR
+assignment, exact observed-head checkout, its distinct private conversation,
+top-level replies, explicit progress, restart, and close retirement. Correlated
+issue-to-PR delivery, operator replay, and cleanup remain unavailable until Phase
+4B and Phase 5 are implemented and accepted. Configured work continuation,
+complexity-based model routing, and automatic activation remain deferred to their
+separate Feature issues.
 
 ## Configuration Contract
 
@@ -337,7 +342,7 @@ Notifications 2 owns everything after initial issue intake.
 | 1        | The agent understands the issue, proposes a plan, and acknowledges | very high | high            |
 | 2        | Approved GitHub mentions receive local and GitHub responses        | very high | high            |
 | 3        | Operators can deliberately publish progress from local chat        | high      | medium          |
-| 4        | Assignment and pull-request lifecycle stays correlated             | medium    | medium          |
+| 4        | Direct and correlated pull-request lifecycles remain deterministic | medium    | medium          |
 | 5        | Operators can inspect, replay, and clean up state                  | medium    | medium          |
 | 6        | Operators can opt into automatic work after planning               | high      | medium          |
 | 7        | The agent can safely choose whether to wait or continue            | medium    | high            |
@@ -346,7 +351,7 @@ Notifications 2 owns everything after initial issue intake.
 
 OpenClaw and GitHub intentionally receive different outputs from one agent turn:
 
-1. an admitted GitHub event resolves the deterministic issue conversation;
+1. an admitted GitHub event resolves the deterministic assignment conversation;
 2. OpenClaw records the full agent response in the private local session;
 3. bounded model generation produces a separately labeled, concise,
    conversational, personality-aware GitHub candidate without exposing the
@@ -486,7 +491,7 @@ the initial acknowledgment; Phase 2 owns approved-comment replies.
 
 Phase 3 is implemented as the `/agent-system-progress` plugin command. The
 command requires real Gateway `operator.write` authority and the exact active
-issue session, bypasses the model, checkpoints an opaque publication identity,
+assignment session, bypasses the model, checkpoints an opaque publication identity,
 and reuses the common safety, adapter, authorization, durable receipt, and
 unknown-send reconciliation path.
 
@@ -503,15 +508,28 @@ unknown-send reconciliation path.
 - Never publish tool traces, hidden context, local paths, failed attempts,
   arbitrary local turns, or content that cannot be proven secret-safe.
 
-### Phase 4: Assignment and Pull-request Lifecycle
+### Phase 4A: Direct Pull-request Assignments
 
-- Add installed proof for directly assigned pull requests and their distinct
-  lifecycle semantics.
+- Admit directly assigned pull requests into their own deterministic session and
+  managed worktree.
+- Pin the worktree to the verified PR head observed at admission and provide
+  bounded summary-only changed-file metadata to the private planning turn.
+- Admit approved top-level PR comments and explicit progress publication through
+  the existing assignment conversation safeguards.
+- Retire closed or merged PRs logically while preserving their session and
+  worktree, including across Gateway restart.
+- Prove the installed lifecycle in the GitHub Actions-only
+  `pull-request` Leia scenario.
+
+### Phase 4B: Correlated Pull-request Delivery and Review Handoff
+
 - Correlate an agent-created pull request to its existing issue conversation.
-- Extend approved-comment intake to correlated pull requests.
+- Extend approved-comment intake to correlated pull requests without creating a
+  second conversation.
 - Use `Closes #<issue-number>` only when merge should close the issue.
 - Request review from the original assigner when provider authorization permits.
-- Complete restart and ambiguous-delivery reconciliation for lifecycle changes.
+- Complete restart and ambiguous-delivery reconciliation for correlated
+  lifecycle changes.
 - Preserve sessions and worktrees on unassignment or authority revocation.
 - Use native archival only if OpenClaw exposes a public scoped API; otherwise
   keep retirement logical.

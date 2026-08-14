@@ -341,7 +341,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       'GitHub comment revision ids',
       255,
     )}`;
-    const notification = `An approved GitHub comment mentioned this agent on issue #${assignment.event.itemNumber}.`;
+    const notification = `An approved GitHub comment mentioned this agent on ${assignment.event.itemType} #${assignment.event.itemNumber}.`;
     const prompt = githubNotificationCommentPrompt({ comment: input.context, item: input.item });
     const author = input.context.author;
     if (!author || author.nodeId !== input.comment.actorNodeId) {

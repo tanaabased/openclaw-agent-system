@@ -15,7 +15,9 @@ export interface TrustedGitHubWorktreeInput {
   cloneUrl: string;
   defaultBranch: string;
   itemDatabaseId: number;
+  itemNumber: number;
   itemType: 'issue' | 'pull-request';
+  pullRequestHeadSha?: string;
   repositoryDatabaseId: number;
   signal?: AbortSignal;
 }
@@ -108,14 +110,30 @@ export default class TrustedGitWorktreeService {
       input.itemDatabaseId,
       'The GitHub work-item database id',
     );
+    const itemNumber = positiveInteger(input.itemNumber, 'The GitHub work-item number');
     if (input.itemType !== 'issue' && input.itemType !== 'pull-request') {
       throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
     }
     const repositoryId = `github-${repositoryDatabaseId}`;
     const workId = `${input.itemType}-${itemDatabaseId}`;
+    const pullRequestHeadSha = input.pullRequestHeadSha?.trim().toLowerCase();
+    if (
+      (input.itemType === 'pull-request' &&
+        !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(pullRequestHeadSha ?? '')) ||
+      (input.itemType === 'issue' && input.pullRequestHeadSha !== undefined)
+    ) {
+      throw new AgentSystemToolError(
+        'invalid_arguments',
+        'The GitHub pull-request head sha is invalid.',
+      );
+    }
+    const baseRef =
+      input.itemType === 'pull-request'
+        ? `refs/remotes/origin/pull/${itemNumber}/head`
+        : `origin/${defaultBranch}`;
     const toolInput = {
       action: 'prepare' as const,
-      baseRef: `origin/${defaultBranch}`,
+      baseRef,
       repository: {
         cloneUrl: requiredText(input.cloneUrl, 'The GitHub clone URL', 4096),
         id: repositoryId,
@@ -123,7 +141,24 @@ export default class TrustedGitWorktreeService {
       workId,
     };
 
-    const result = await this.#execute(agentId, toolInput, input.signal);
+    const result = await this.#execute(
+      agentId,
+      toolInput,
+      input.signal,
+      input.itemType === 'pull-request'
+        ? {
+            baseRef,
+            cloneUrl: toolInput.repository.cloneUrl,
+            expectedCommit: pullRequestHeadSha!,
+            fetchRef: {
+              destination: baseRef,
+              source: `refs/pull/${itemNumber}/head`,
+            },
+            repositoryId,
+            workId,
+          }
+        : undefined,
+    );
     if (
       Array.isArray(result) ||
       !result.workId ||
@@ -142,6 +177,7 @@ export default class TrustedGitWorktreeService {
     agentId: string,
     toolInput: GitWorktreeToolInput,
     signal?: AbortSignal,
+    trustedPrepare?: Parameters<GitWorktreeToolDefinition['prepareTrusted']>[0],
   ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
@@ -202,14 +238,25 @@ export default class TrustedGitWorktreeService {
         return resolution.value;
       },
     });
-    return this.#dependencies.definition.execute(executionInput, configuration, {
+    const scope = {
       agentId,
-      resolveEnvironment(name) {
+      resolveEnvironment(name: string) {
         return values[name];
       },
       ...(signal === undefined ? {} : { signal }),
       source: 'command',
       workspaceDir: loaded.scope.workspaceDir,
-    });
+    } as const;
+    if (!trustedPrepare) {
+      return this.#dependencies.definition.execute(executionInput, configuration, scope);
+    }
+    const trustedInput =
+      declared.git.ssh && trustedPrepare.cloneUrl
+        ? {
+            ...trustedPrepare,
+            cloneUrl: githubSshWorktreeRemote(trustedPrepare.cloneUrl),
+          }
+        : trustedPrepare;
+    return this.#dependencies.definition.prepareTrusted(trustedInput, configuration, scope);
   }
 }

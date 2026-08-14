@@ -40,6 +40,16 @@ export interface GitHubNotificationCommentTrackingState {
   revisions: Record<string, GitHubNotificationCommentRevisionState>;
 }
 
+export interface GitHubNotificationPullRequestState {
+  authorNodeId?: string;
+  baseRef: string;
+  draft: boolean;
+  headRef: string;
+  headRepositoryDatabaseId?: number;
+  headRepositoryNodeId?: string;
+  headSha: string;
+}
+
 export interface GitHubNotificationDeliveryState {
   activation?: GitHubNotificationActivationState;
   acknowledgment?: GitHubNotificationAcknowledgmentState;
@@ -66,6 +76,7 @@ export interface GitHubNotificationItemState {
   itemType: 'issue' | 'pull-request';
   lastObservedAt: number;
   number: number;
+  pullRequest?: GitHubNotificationPullRequestState;
   reasonCode: string;
   repositoryDatabaseId: number;
   repositoryCloneUrl: string;

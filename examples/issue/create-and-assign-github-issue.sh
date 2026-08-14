@@ -10,7 +10,7 @@ assignee=''
 issue_number_path=''
 
 usage() {
-  echo "Usage: create-and-assign-github-notification-issue.sh --creator-agent <id> --repository <owner/repo> --title <title> --body <body> --assignee <login> --issue-number-path <path>" >&2
+  echo "Usage: create-and-assign-github-issue.sh --creator-agent <id> --repository <owner/repo> --title <title> --body <body> --assignee <login> --issue-number-path <path>" >&2
 }
 
 while (($# > 0)); do

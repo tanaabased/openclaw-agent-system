@@ -246,11 +246,7 @@ export default function createNotificationLifecycleContribution(
       }
       for (const item of Object.values(state.items)) {
         const delivery = item.delivery;
-        if (
-          item.disposition !== 'approved' ||
-          item.itemType !== 'issue' ||
-          delivery?.stage !== 'active'
-        ) {
+        if (item.disposition !== 'approved' || delivery?.stage !== 'active') {
           continue;
         }
         const tracking = item.commentTracking;
@@ -334,7 +330,7 @@ export default function createNotificationLifecycleContribution(
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([code, count]) => ({
           code,
-          message: `${count} GitHub issue conversation${count === 1 ? '' : 's'} could not advance comment tracking safely.`,
+          message: `${count} GitHub work-item conversation${count === 1 ? '' : 's'} could not advance comment tracking safely.`,
           remediation:
             'Reduce the comment history below the bounded pagination limit, then run openclaw agent-system notifications refresh.',
           status: 'warning' as const,
@@ -362,7 +358,7 @@ export default function createNotificationLifecycleContribution(
           : [
               {
                 code: 'github-notification-comment-baseline-pending',
-                message: `${commentBaselinePendingCount} active GitHub issue conversation${commentBaselinePendingCount === 1 ? ' is' : 's are'} waiting for a safe comment baseline.`,
+                message: `${commentBaselinePendingCount} active GitHub work-item conversation${commentBaselinePendingCount === 1 ? ' is' : 's are'} waiting for a safe comment baseline.`,
                 remediation: 'Run openclaw agent-system notifications refresh.',
                 status: 'warning' as const,
               },

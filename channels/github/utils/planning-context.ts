@@ -5,7 +5,7 @@ export interface GitHubNotificationPlanningPromptInput {
   context: GitHubNotificationPlanningContext;
   item: Pick<
     GitHubNotificationItemState,
-    'itemType' | 'number' | 'repositoryName' | 'repositoryOwner'
+    'itemType' | 'number' | 'pullRequest' | 'repositoryName' | 'repositoryOwner'
   >;
   worktree: { branch: string; path: string };
 }
@@ -17,7 +17,18 @@ export default function githubNotificationPlanningPrompt(
   const context = JSON.stringify({
     body: input.context.body,
     comments: input.context.comments,
+    ...(input.context.files === undefined ? {} : { files: input.context.files }),
     labels: input.context.labels,
+    ...(input.item.pullRequest === undefined
+      ? {}
+      : {
+          pullRequest: {
+            baseRef: input.item.pullRequest.baseRef,
+            draft: input.item.pullRequest.draft,
+            headRef: input.item.pullRequest.headRef,
+            headSha: input.item.pullRequest.headSha,
+          },
+        }),
     title: input.context.title,
     truncated: input.context.truncated,
   });
@@ -30,7 +41,7 @@ export default function githubNotificationPlanningPrompt(
     '',
     `GITHUB_CONTEXT_JSON=${context}`,
     '',
-    'Review the issue and respond in exactly this structure:',
+    `Review the assigned ${input.item.itemType === 'pull-request' ? 'pull request' : 'issue'} and respond in exactly this structure:`,
     'ACKNOWLEDGMENT: one short, natural sentence in your own voice saying you reviewed the assignment and prepared a plan, or that you found a blocker',
     'ASSESSMENT:',
     'a concise understanding of the requested outcome and relevant constraints',

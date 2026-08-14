@@ -68,7 +68,6 @@ function pendingComment(
     const delivery = item.delivery;
     if (
       item.disposition !== 'approved' ||
-      item.itemType !== 'issue' ||
       delivery?.stage !== 'active' ||
       !delivery.sessionKey ||
       !delivery.worktreeBranch ||

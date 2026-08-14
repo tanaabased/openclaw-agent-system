@@ -8,6 +8,7 @@ import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import {
   approvedNotificationItem,
+  approvedPullRequestNotificationItem,
   notificationAccount,
   notificationActor,
   notificationOwner,
@@ -57,7 +58,9 @@ function provider(
   routeReady = true,
   onConnect = () => undefined,
   commentBody = '@tanaabot status?',
+  pullRequest = false,
 ) {
+  const itemNumber = pullRequest ? 13 : 12;
   return new GitHubNotificationAssignmentProvider({
     accountClient: {
       async connect() {
@@ -74,7 +77,7 @@ function provider(
                 bodyLength: commentBody.length,
                 createdAt: '2026-08-14T12:00:00.000Z',
                 databaseId: 91,
-                issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/12',
+                issueUrl: `https://api.github.com/repos/tanaabased/example/issues/${itemNumber}`,
                 nodeId: 'IC_comment',
                 updatedAt: '2026-08-14T12:00:00.000Z',
               });
@@ -88,25 +91,52 @@ function provider(
                   createdAt: '2026-08-11T12:00:00Z',
                   databaseId: 9,
                   event: 'assigned',
-                  nodeId: 'EV_assignment',
+                  nodeId: pullRequest ? 'EV_pull_request_assignment' : 'EV_assignment',
                 },
               ]);
             }
-            if (endpoint.endsWith('/issues/12')) {
+            if (endpoint.endsWith(`/pulls/${itemNumber}/files`)) return response([]);
+            if (endpoint.endsWith(`/pulls/${itemNumber}`)) {
+              return response({
+                author: notificationActor,
+                base: {
+                  ref: 'main',
+                  repository: {
+                    databaseId: notificationRepository.databaseId,
+                    nodeId: notificationRepository.nodeId,
+                  },
+                },
+                draft: false,
+                head: {
+                  ref: 'notification-pr',
+                  repository: {
+                    databaseId: notificationRepository.databaseId,
+                    nodeId: notificationRepository.nodeId,
+                  },
+                  sha: 'b'.repeat(40),
+                },
+                merged: false,
+              });
+            }
+            if (endpoint.endsWith(`/issues/${itemNumber}`)) {
               if (argv.some((value) => value.includes('commentCount:.comments'))) {
                 return response({
-                  body: 'Please implement this safely.',
+                  body: pullRequest
+                    ? 'Please review this safely.'
+                    : 'Please implement this safely.',
                   commentCount: 0,
-                  labels: ['feature'],
-                  title: 'Implement notification planning',
+                  labels: [pullRequest ? 'review' : 'feature'],
+                  title: pullRequest
+                    ? 'Review notification planning'
+                    : 'Implement notification planning',
                 });
               }
               return response({
                 assignees: assigned ? [notificationAccount] : [],
-                databaseId: 7,
-                isPullRequest: false,
-                nodeId: 'I_item',
-                number: 12,
+                databaseId: pullRequest ? 8 : 7,
+                isPullRequest: pullRequest,
+                nodeId: pullRequest ? 'PR_item' : 'I_item',
+                number: itemNumber,
                 state: 'open',
                 updatedAt: '2026-08-11T12:00:00Z',
               });
@@ -144,6 +174,16 @@ function provider(
 
 function input() {
   const item = approvedNotificationItem();
+  return {
+    agentId: 'tanaabot',
+    delivery: item.delivery!,
+    item,
+    workspaceDir,
+  };
+}
+
+function pullRequestInput() {
+  const item = approvedPullRequestNotificationItem();
   return {
     agentId: 'tanaabot',
     delivery: item.delivery!,
@@ -193,6 +233,28 @@ describe('channels/github/lib/assignment-provider', () => {
     });
   });
 
+  it('should authorize direct pull-request planning from stable identity facts', async () => {
+    const result = await provider(
+      true,
+      true,
+      () => undefined,
+      '@tanaabot status?',
+      true,
+    ).loadPlanningContext(pullRequestInput());
+
+    assert.deepEqual(result, {
+      authorized: true,
+      context: {
+        body: 'Please review this safely.',
+        comments: [],
+        files: [],
+        labels: ['review'],
+        title: 'Review notification planning',
+        truncated: false,
+      },
+    });
+  });
+
   it('should authorize only the exact current admitted comment revision', async () => {
     const context = {
       author: notificationActor,
@@ -230,6 +292,41 @@ describe('channels/github/lib/assignment-provider', () => {
         authorized: false,
         reasonCode: 'github-notification-comment-revision-stale',
       },
+    );
+  });
+
+  it('should reauthorize an admitted pull-request top-level comment', async () => {
+    const context = {
+      author: notificationActor,
+      body: '@tanaabot status?',
+      bodyTruncated: false,
+      createdAt: '2026-08-14T12:00:00.000Z',
+      databaseId: 91,
+      nodeId: 'IC_comment',
+      updatedAt: '2026-08-14T12:00:00.000Z',
+    };
+    const revision = githubCommentRevision(context);
+    const commentInput = {
+      ...pullRequestInput(),
+      comment: {
+        actorNodeId: notificationActor.nodeId,
+        bodyDigest: revision.bodyDigest,
+        commentDatabaseId: context.databaseId,
+        commentNodeId: context.nodeId,
+        createdAt: Date.parse(context.createdAt),
+        disposition: 'approved' as const,
+        reasonCode: 'comment-approved',
+        revisionId: revision.revisionId,
+        turn: { status: 'pending' as const },
+        updatedAt: Date.parse(context.updatedAt),
+      },
+    };
+
+    assert.deepEqual(
+      await provider(true, true, () => undefined, context.body, true).loadCommentContext(
+        commentInput,
+      ),
+      { authorized: true, context },
     );
   });
 });

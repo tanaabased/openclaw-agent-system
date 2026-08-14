@@ -59,6 +59,14 @@ if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   echo "Timeout must be a positive integer: $timeout_seconds" >&2
   exit 2
 fi
+timeout_command='timeout'
+if ! command -v "$timeout_command" > /dev/null 2>&1; then
+  timeout_command='gtimeout'
+fi
+if ! command -v "$timeout_command" > /dev/null 2>&1; then
+  echo 'A GNU timeout command is required.' >&2
+  exit 1
+fi
 
 deadline=$((SECONDS + timeout_seconds))
 while true; do
@@ -66,7 +74,7 @@ while true; do
   if ((remaining_seconds < 1)); then
     remaining_seconds=1
   fi
-  if output="$(timeout --kill-after=10 "$remaining_seconds" openclaw agent-system notifications refresh --agent "$agent_id" --json)"; then
+  if output="$("$timeout_command" --kill-after=10 "$remaining_seconds" openclaw agent-system notifications refresh --agent "$agent_id" --json)"; then
     if ! jq -e 'type == "object" and .status == "completed"' <<< "$output" > /dev/null; then
       echo "Notification refresh returned an unexpected result." >&2
       printf '%s\n' "$output" >&2

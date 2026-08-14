@@ -36,6 +36,35 @@ const item = {
   state: 'open' as const,
   updatedAt: candidate.updatedAt,
 };
+const pullRequestCandidate = {
+  databaseId: 8,
+  itemType: 'pull-request' as const,
+  nodeId: 'PR_item',
+  number: 13,
+  repositoryPath: '/repos/tanaabased/example',
+  updatedAt: '2026-08-11T12:06:00.000Z',
+};
+const pullRequestItem = {
+  assignees: [account],
+  databaseId: pullRequestCandidate.databaseId,
+  itemType: 'pull-request' as const,
+  nodeId: pullRequestCandidate.nodeId,
+  number: pullRequestCandidate.number,
+  pullRequest: {
+    author: actor,
+    baseRef: 'main',
+    baseRepositoryDatabaseId: repository.databaseId,
+    baseRepositoryNodeId: repository.nodeId,
+    draft: false,
+    headRef: 'notification-pr',
+    headRepositoryDatabaseId: repository.databaseId,
+    headRepositoryNodeId: repository.nodeId,
+    headSha: 'a'.repeat(40),
+    merged: false,
+  },
+  state: 'open' as const,
+  updatedAt: pullRequestCandidate.updatedAt,
+};
 const assignment = {
   actor,
   assignee: account,
@@ -53,10 +82,11 @@ const configuration = {
 function client(
   options: {
     assigned?: boolean;
-    candidates?: (typeof candidate)[];
+    candidates?: Array<typeof candidate | typeof pullRequestCandidate>;
     comments?: GitHubCanonicalIssueComment[];
     commentsTruncated?: boolean;
     identity?: typeof account;
+    item?: typeof item | (Omit<typeof pullRequestItem, 'state'> & { state: 'closed' | 'open' });
     permission?: GitHubRepositoryPermission;
     repository?: typeof repository;
     resourceMissing?: boolean;
@@ -86,9 +116,10 @@ function client(
       return options.permission ?? ('write' as const);
     },
     async getItem() {
+      const selected = options.item ?? item;
       return {
-        ...item,
-        assignees: options.assigned === false ? [] : item.assignees,
+        ...selected,
+        assignees: options.assigned === false ? [] : selected.assignees,
       };
     },
     async listAssignmentEvents() {
@@ -159,6 +190,114 @@ describe('channels/github/lib/poller', () => {
     assert.equal(restarted.duplicates, 1);
     assert.deepEqual(restarted.state.processedEventNodeIds, [assignment.nodeId]);
     assert.equal(Object.values(restarted.state.items)[0]?.disposition, 'approved');
+  });
+
+  it('should admit a direct pull request with a fixed head snapshot and comment baseline', async () => {
+    const existing: GitHubCanonicalIssueComment = {
+      author: actor,
+      body: '@tanaabot old review note',
+      bodyTruncated: false,
+      createdAt: '2026-08-11T12:06:00.000Z',
+      databaseId: 93,
+      nodeId: 'IC_pull_request_existing',
+      updatedAt: '2026-08-11T12:06:00.000Z',
+    };
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    const approved = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({
+        candidates: [pullRequestCandidate],
+        comments: [existing],
+        item: pullRequestItem,
+      }),
+      configuration,
+      now: baselineAt + 300_000,
+      state: baseline.state,
+      workspaceDir: '/workspace',
+    });
+
+    const approvedItem = Object.values(approved.state.items)[0];
+    assert.equal(approved.approved, 1);
+    assert.equal(approved.commentBaseline, 1);
+    assert.equal(approvedItem?.itemType, 'pull-request');
+    assert.deepEqual(approvedItem?.delivery, {
+      assignmentEventId: assignment.nodeId,
+      schemaVersion: 1,
+      stage: 'admitted',
+      workId: 'pull-request-8',
+    });
+    assert.deepEqual(approvedItem?.pullRequest, {
+      authorNodeId: actor.nodeId,
+      baseRef: 'main',
+      draft: false,
+      headRef: 'notification-pr',
+      headRepositoryDatabaseId: repository.databaseId,
+      headRepositoryNodeId: repository.nodeId,
+      headSha: 'a'.repeat(40),
+    });
+    assert.equal(
+      approvedItem?.commentTracking?.revisions.IC_pull_request_existing?.disposition,
+      'baseline',
+    );
+  });
+
+  it('should distinguish merged and closed pull-request retirement', async () => {
+    const state = notificationMonitorState();
+    const pullRequestState = structuredClone(state);
+    const approved = {
+      ...Object.values(pullRequestState.items)[0]!,
+      delivery: {
+        assignmentEventId: assignment.nodeId,
+        schemaVersion: 1 as const,
+        stage: 'active' as const,
+        workId: 'pull-request-8',
+        worktreeBranch: 'pull-request-8-branch',
+        worktreePath: '/workspace/worktrees/pull-request-8',
+        sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
+        activation: { status: 'planned' as const },
+        acknowledgment: { commentId: 90, status: 'published' as const },
+      },
+      itemDatabaseId: pullRequestItem.databaseId,
+      itemNodeId: pullRequestItem.nodeId,
+      itemType: 'pull-request' as const,
+      number: pullRequestItem.number,
+      pullRequest: {
+        authorNodeId: actor.nodeId,
+        baseRef: 'main',
+        draft: false,
+        headRef: 'notification-pr',
+        headRepositoryDatabaseId: repository.databaseId,
+        headRepositoryNodeId: repository.nodeId,
+        headSha: 'a'.repeat(40),
+      },
+    };
+    pullRequestState.items = { 'github:R_repo:13': approved };
+    for (const [merged, expected] of [
+      [true, 'pull-request-merged'],
+      [false, 'pull-request-closed'],
+    ] as const) {
+      const result = await pollGitHubNotifications({
+        agentId: 'tanaabot',
+        client: client({
+          item: {
+            ...pullRequestItem,
+            pullRequest: { ...pullRequestItem.pullRequest, merged },
+            state: 'closed',
+          },
+        }),
+        configuration,
+        now: baselineAt + 600_000,
+        state: pullRequestState,
+        workspaceDir: '/workspace',
+      });
+      assert.equal(Object.values(result.state.items)[0]?.reasonCode, expected);
+    }
   });
 
   it('should retire an active item when canonical assignment is revoked', async () => {

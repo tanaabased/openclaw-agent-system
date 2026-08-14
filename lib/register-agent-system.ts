@@ -284,7 +284,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     cloneUrl: input.item.repositoryCloneUrl,
     defaultBranch: input.item.repositoryDefaultBranch,
     itemDatabaseId: input.item.itemDatabaseId,
+    itemNumber: input.item.number,
     itemType: input.item.itemType,
+    ...(input.item.pullRequest === undefined
+      ? {}
+      : { pullRequestHeadSha: input.item.pullRequest.headSha }),
     repositoryDatabaseId: input.item.repositoryDatabaseId,
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
