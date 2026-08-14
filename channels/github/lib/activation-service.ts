@@ -153,6 +153,9 @@ export default class GitHubNotificationActivationService {
             ...delivery,
             activation: { status: 'adopted' },
           }));
+          this.#dependencies.logger.info(
+            `github-notifications: planning turn adopted agent=${agentId} acknowledgment=pending`,
+          );
         },
         signal,
         workspaceDir: pending.workspaceDir,
@@ -163,20 +166,18 @@ export default class GitHubNotificationActivationService {
       });
       await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
         ...delivery,
-        acknowledgment:
-          result.acknowledgmentCommentId === undefined
-            ? { status: 'pending' }
-            : { commentId: result.acknowledgmentCommentId, status: 'published' },
-        activation: {
-          ...(result.acknowledgmentFailureCode === undefined
-            ? {}
-            : { failureCode: result.acknowledgmentFailureCode }),
-          status: 'planned',
-        },
+        acknowledgment: result.acknowledgment,
+        activation: { status: 'planned' },
       }));
-      this.#dependencies.logger.info(
-        `github-notifications: activation complete agent=${agentId} code=github-notification-planning-complete`,
-      );
+      if (result.acknowledgment.status === 'failed') {
+        this.#dependencies.logger.warn(
+          `github-notifications: planning complete agent=${agentId} acknowledgment=failed code=${result.acknowledgment.failureCode}`,
+        );
+      } else {
+        this.#dependencies.logger.info(
+          `github-notifications: planning complete agent=${agentId} acknowledgment=published code=github-notification-planning-complete`,
+        );
+      }
     } catch (error) {
       if (signal.aborted) return;
       const code = errorCode(error);

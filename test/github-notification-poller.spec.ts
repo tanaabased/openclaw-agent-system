@@ -9,9 +9,12 @@ import {
   type default as GitHubWorkEventClient,
 } from '../channels/github/lib/work-event-client.ts';
 import type { GitHubRepositoryPermission } from '../channels/github/utils/work-item.ts';
+import type { GitHubCanonicalIssueComment } from '../channels/github/utils/comment-admission.ts';
 import {
   notificationAccount as account,
   notificationActor as actor,
+  notificationItemKey,
+  notificationMonitorState,
   notificationRepository as repository,
 } from './github-notification-fixtures.ts';
 
@@ -51,6 +54,8 @@ function client(
   options: {
     assigned?: boolean;
     candidates?: (typeof candidate)[];
+    comments?: GitHubCanonicalIssueComment[];
+    commentsTruncated?: boolean;
     identity?: typeof account;
     permission?: GitHubRepositoryPermission;
     repository?: typeof repository;
@@ -88,6 +93,12 @@ function client(
     },
     async listAssignmentEvents() {
       return { events: [assignment], truncated: false };
+    },
+    async listIssueComments() {
+      return {
+        comments: options.comments ?? [],
+        truncated: options.commentsTruncated ?? false,
+      };
     },
   } as unknown as GitHubWorkEventClient;
 }
@@ -296,5 +307,110 @@ describe('channels/github/lib/poller', () => {
       });
       assert.equal(Object.values(result.state.items)[0]?.reasonCode, entry.expected);
     }
+  });
+
+  it('should baseline active issue comments before admitting a later exact mention', async () => {
+    const existing: GitHubCanonicalIssueComment = {
+      author: actor,
+      body: '@tanaabot old status?',
+      bodyTruncated: false,
+      createdAt: '2026-08-11T12:05:00.000Z',
+      databaseId: 91,
+      nodeId: 'IC_existing',
+      updatedAt: '2026-08-11T12:05:00.000Z',
+    };
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    const approved = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ candidates: [candidate], comments: [existing] }),
+      configuration,
+      now: baselineAt + 300_000,
+      state: baseline.state,
+      workspaceDir: '/workspace',
+    });
+    const active = structuredClone(approved.state);
+    const activeItem = Object.values(active.items)[0]!;
+    activeItem.delivery = {
+      ...activeItem.delivery!,
+      activation: { status: 'planned' },
+      acknowledgment: { commentId: 90, status: 'published' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    assert.equal(approved.commentBaseline, 1);
+    assert.equal(activeItem.commentTracking?.revisions.IC_existing?.disposition, 'baseline');
+
+    const mentioned: GitHubCanonicalIssueComment = {
+      ...existing,
+      body: '@tanaabot can you give me a status update?',
+      createdAt: '2026-08-11T12:11:00.000Z',
+      databaseId: 92,
+      nodeId: 'IC_mentioned',
+      updatedAt: '2026-08-11T12:11:00.000Z',
+    };
+    const second = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ comments: [existing, mentioned] }),
+      configuration,
+      now: baselineAt + 900_000,
+      state: active,
+      workspaceDir: '/workspace',
+    });
+    const revision = Object.values(second.state.items)[0]?.commentTracking?.revisions.IC_mentioned;
+    assert.equal(second.commentApproved, 1);
+    assert.equal(revision?.disposition, 'approved');
+    assert.deepEqual(revision?.turn, { status: 'pending' });
+
+    const edited = { ...mentioned, body: 'Never mind.', updatedAt: '2026-08-11T12:12:00.000Z' };
+    const third = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ comments: [existing, edited] }),
+      configuration,
+      now: baselineAt + 1_200_000,
+      state: second.state,
+      workspaceDir: '/workspace',
+    });
+    const editedRevision = Object.values(third.state.items)[0]?.commentTracking?.revisions
+      .IC_mentioned;
+    assert.equal(third.commentRejected, 1);
+    assert.equal(editedRevision?.disposition, 'rejected');
+    assert.equal(editedRevision?.turn, undefined);
+    assert.notEqual(editedRevision?.revisionId, revision?.revisionId);
+  });
+
+  it('should retain the prior comment checkpoint when comment pagination is incomplete', async () => {
+    const state = notificationMonitorState();
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      activation: { status: 'planned' },
+      acknowledgment: { commentId: 90, status: 'published' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    item.commentTracking = { baselineAt, revisions: {} };
+    const before = structuredClone(item.commentTracking);
+    const result = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ commentsTruncated: true }),
+      configuration,
+      now: baselineAt + 900_000,
+      state,
+      workspaceDir: '/workspace',
+    });
+    const tracking = Object.values(result.state.items)[0]?.commentTracking;
+    assert.equal(result.commentTrackingDeferred, 1);
+    assert.equal(tracking?.diagnosticCode, 'github-notification-comments-truncated');
+    assert.deepEqual(tracking?.revisions, before?.revisions);
   });
 });

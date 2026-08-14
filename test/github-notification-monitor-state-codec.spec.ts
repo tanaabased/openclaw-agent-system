@@ -62,6 +62,30 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
+  it('should accept only value-free terminal acknowledgment failures', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: {
+        failureCode: 'github-notification-acknowledgment-not-confirmed',
+        status: 'failed',
+      },
+      activation: { status: 'planned' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    item.delivery.acknowledgment = {
+      failureCode: 'provider failure with prose',
+      status: 'failed',
+    };
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+  });
+
   it('should accept a session-recording checkpoint', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
@@ -81,6 +105,48 @@ describe('channels/github/utils/monitor-state-codec', () => {
     item.delivery!.acknowledgment = { commentId: 91, status: 'published' };
 
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+  });
+
+  it('should accept bounded value-free comment checkpoints and reject persisted prose', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { status: 'planned' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    item.commentTracking = {
+      baselineAt: 2,
+      revisions: {
+        IC_comment: {
+          actorNodeId: 'U_actor',
+          bodyDigest: 'a'.repeat(64),
+          commentDatabaseId: 92,
+          commentNodeId: 'IC_comment',
+          createdAt: 2,
+          disposition: 'approved',
+          reasonCode: 'comment-approved',
+          reply: { commentId: 93, status: 'published' },
+          revisionId: 'b'.repeat(64),
+          turn: { status: 'responded' },
+          updatedAt: 3,
+        },
+      },
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const unsafe = structuredClone(state) as unknown as {
+      items: Record<string, { commentTracking: { revisions: Record<string, object> } }>;
+    };
+    unsafe.items[Object.keys(unsafe.items)[0]!]!.commentTracking.revisions.IC_comment = {
+      ...unsafe.items[Object.keys(unsafe.items)[0]!]!.commentTracking.revisions.IC_comment,
+      body: '@tanaabot private prose',
+    };
+    assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
   });
 
   it('should reject older state shapes instead of migrating them', () => {

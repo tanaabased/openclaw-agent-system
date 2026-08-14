@@ -5,6 +5,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/utils/publication.ts';
+import { githubCommentRevision } from '../channels/github/utils/comment-admission.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
@@ -72,6 +73,49 @@ function target(state = activeState()): string {
   });
 }
 
+function activeReplyState(): GitHubNotificationMonitorState {
+  const state = activeState();
+  const item = state.items[notificationItemKey]!;
+  const comment = {
+    author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+    body: '@tanaabot status?',
+    bodyTruncated: false,
+    createdAt: '2026-08-14T12:00:00.000Z',
+    databaseId: 92,
+    nodeId: 'IC_comment',
+    updatedAt: '2026-08-14T12:00:00.000Z',
+  };
+  const revision = githubCommentRevision(comment);
+  item.commentTracking = {
+    baselineAt: 1,
+    revisions: {
+      [comment.nodeId]: {
+        actorNodeId: 'U_actor',
+        bodyDigest: revision.bodyDigest,
+        commentDatabaseId: comment.databaseId,
+        commentNodeId: comment.nodeId,
+        createdAt: Date.parse(comment.createdAt),
+        disposition: 'approved',
+        reasonCode: 'comment-approved',
+        revisionId: revision.revisionId,
+        turn: { status: 'adopted' },
+        updatedAt: Date.parse(comment.updatedAt),
+      },
+    },
+  };
+  return state;
+}
+
+function replyTarget(state = activeReplyState()): string {
+  const item = state.items[notificationItemKey]!;
+  const comment = item.commentTracking!.revisions.IC_comment!;
+  return githubNotificationPublicationTarget({
+    intent: 'github-reply',
+    item,
+    publicationId: comment.revisionId,
+  });
+}
+
 function loadedManifest() {
   return {
     diagnostics: [],
@@ -88,7 +132,10 @@ describe('channels/github/lib/message-adapter', () => {
   it('should prove only text and unknown-send reconciliation capabilities', async () => {
     const adapter = createGitHubNotificationMessageAdapter({
       accountClient: { connect: async () => Promise.reject(new Error('not used')) },
-      authority: { inspect: async () => ({ authorized: false }) },
+      authority: {
+        inspect: async () => ({ authorized: false }),
+        inspectComment: async () => ({ authorized: false }),
+      },
       leaseStore: { acquire: async () => ({ status: 'busy' }) },
       manifestService: { loadForAgentId: async () => Promise.reject(new Error('not used')) },
       stateStore: { read: async () => undefined },
@@ -153,6 +200,7 @@ describe('channels/github/lib/message-adapter', () => {
           order.push('authority');
           return { authorized: true };
         },
+        inspectComment: async () => ({ authorized: false }),
       },
       leaseStore: {
         async acquire() {
@@ -213,7 +261,10 @@ describe('channels/github/lib/message-adapter', () => {
           };
         },
       },
-      authority: { inspect: async () => ({ authorized: true }) },
+      authority: {
+        inspect: async () => ({ authorized: true }),
+        inspectComment: async () => ({ authorized: false }),
+      },
       leaseStore: {
         acquire: async () => ({ lease: { async release() {} }, status: 'acquired' as const }),
       },
@@ -232,6 +283,103 @@ describe('channels/github/lib/message-adapter', () => {
     assert.equal(posts, 0);
   });
 
+  it('should reauthorize the exact admitted comment revision before publishing its reply', async () => {
+    const state = activeReplyState();
+    const order: string[] = [];
+    const adapter = createGitHubNotificationMessageAdapter({
+      accountClient: {
+        async connect() {
+          order.push('credentials');
+          return {
+            identity: notificationAccount,
+            async execute(argv, stdin) {
+              if (!argv.includes('POST')) return response([]);
+              const body = String(JSON.parse(stdin ?? '{}').body);
+              return response({
+                body,
+                databaseId: 93,
+                nodeId: 'IC_reply',
+                user: notificationAccount,
+              });
+            },
+          };
+        },
+      },
+      authority: {
+        inspect: async () => Promise.reject(new Error('assignment-only authority must not run')),
+        async inspectComment(input) {
+          order.push('comment-authority');
+          assert.equal(input.comment.commentNodeId, 'IC_comment');
+          return { authorized: true };
+        },
+      },
+      leaseStore: {
+        async acquire() {
+          order.push('lease');
+          return { lease: { async release() {} }, status: 'acquired' as const };
+        },
+      },
+      manifestService: {
+        async loadForAgentId() {
+          order.push('manifest');
+          return loadedManifest();
+        },
+      },
+      stateStore: {
+        async read() {
+          order.push('state');
+          return structuredClone(state);
+        },
+      },
+    });
+
+    const result = await adapter.send!.text!({
+      accountId: 'tanaabot',
+      cfg: config,
+      text: 'The plan is ready, but I do not have a fresh verified implementation update.',
+      to: replyTarget(state),
+    });
+
+    assert.equal(result.messageId, '93');
+    assert.deepEqual(order, ['lease', 'state', 'manifest', 'comment-authority', 'credentials']);
+  });
+
+  it('should reject a stale comment revision before resolving credentials', async () => {
+    const state = activeReplyState();
+    let credentials = 0;
+    const adapter = createGitHubNotificationMessageAdapter({
+      accountClient: {
+        async connect() {
+          credentials += 1;
+          throw new Error('must not connect');
+        },
+      },
+      authority: {
+        inspect: async () => ({ authorized: true }),
+        inspectComment: async () => ({
+          authorized: false,
+          reasonCode: 'github-notification-comment-revision-stale',
+        }),
+      },
+      leaseStore: {
+        acquire: async () => ({ lease: { async release() {} }, status: 'acquired' as const }),
+      },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      stateStore: { read: async () => structuredClone(state) },
+    });
+
+    await assert.rejects(
+      adapter.send!.text!({
+        accountId: 'tanaabot',
+        cfg: config,
+        text: 'Status update.',
+        to: replyTarget(state),
+      }),
+      /could not be delivered/u,
+    );
+    assert.equal(credentials, 0);
+  });
+
   it('should fail before credentials when the target or current authority is invalid', async () => {
     const state = activeState();
     let credentials = 0;
@@ -242,7 +390,10 @@ describe('channels/github/lib/message-adapter', () => {
           throw new Error('must not connect');
         },
       },
-      authority: { inspect: async () => ({ authorized: false }) },
+      authority: {
+        inspect: async () => ({ authorized: false }),
+        inspectComment: async () => ({ authorized: false }),
+      },
       leaseStore: {
         acquire: async () => ({ lease: { async release() {} }, status: 'acquired' as const }),
       },
@@ -289,7 +440,10 @@ describe('channels/github/lib/message-adapter', () => {
           };
         },
       },
-      authority: { inspect: async () => ({ authorized: true }) },
+      authority: {
+        inspect: async () => ({ authorized: true }),
+        inspectComment: async () => ({ authorized: false }),
+      },
       leaseStore: {
         acquire: async () => ({ lease: { async release() {} }, status: 'acquired' as const }),
       },

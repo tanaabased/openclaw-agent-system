@@ -45,7 +45,10 @@ function configuredRoute(agentId = 'data'): OpenClawConfig {
 function messageAdapter() {
   return createGitHubNotificationMessageAdapter({
     accountClient: { connect: async () => Promise.reject(new Error('not used')) },
-    authority: { inspect: async () => ({ authorized: false }) },
+    authority: {
+      inspect: async () => ({ authorized: false }),
+      inspectComment: async () => ({ authorized: false }),
+    },
     leaseStore: { acquire: async () => ({ status: 'busy' }) },
     manifestService: { loadForAgentId: async () => Promise.reject(new Error('not used')) },
     stateStore: { read: async () => undefined },
@@ -59,10 +62,18 @@ function activationService() {
   };
 }
 
+function commentService() {
+  return {
+    schedule: () => 'scheduled' as const,
+    settle: async () => undefined,
+  };
+}
+
 describe('channels/github/channel', () => {
   const message = messageAdapter();
   const channel = createGitHubNotificationChannel({
     activationService: activationService(),
+    commentService: commentService(),
     message,
     monitorService: { runAccount: async () => undefined },
     stateStore: { read: async () => undefined },
@@ -89,6 +100,8 @@ describe('channels/github/channel', () => {
     const controller = new AbortController();
     let activationSchedules = 0;
     let activationSettles = 0;
+    let commentSchedules = 0;
+    let commentSettles = 0;
     let state: ReturnType<typeof notificationMonitorState> | undefined;
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
@@ -99,6 +112,15 @@ describe('channels/github/channel', () => {
         },
         async settle() {
           activationSettles += 1;
+        },
+      },
+      commentService: {
+        schedule() {
+          commentSchedules += 1;
+          return 'scheduled';
+        },
+        async settle() {
+          commentSettles += 1;
         },
       },
       clock: () => 2_000,
@@ -156,6 +178,8 @@ describe('channels/github/channel', () => {
     await running;
     assert.equal(activationSchedules, 3);
     assert.equal(activationSettles, 1);
+    assert.equal(commentSchedules, 3);
+    assert.equal(commentSettles, 1);
     assert.deepEqual(
       (({ connected, healthState, running }) => ({ connected, healthState, running }))(
         statuses.at(-1) ?? {},

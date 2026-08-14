@@ -195,6 +195,147 @@ describe('channels/github/lib/lifecycle', () => {
     assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
   });
 
+  it('should report pending and failed acknowledgments without hiding monitor health', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: { status: 'adopted' },
+      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    let findings = await contribution.inspect?.(context);
+
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-acknowledgment-pending')?.status,
+      'warning',
+    );
+    item.delivery.acknowledgment = {
+      failureCode: 'github-notification-acknowledgment-not-confirmed',
+      status: 'failed',
+    };
+    item.delivery.activation = { status: 'planned' };
+    findings = await contribution.inspect?.(context);
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-acknowledgment-not-confirmed')
+        ?.status,
+      'warning',
+    );
+    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
+  });
+
+  it('should report comment baseline, dispatch, and reply diagnostics separately from monitor health', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { status: 'planned' },
+      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    let findings = await contribution.inspect?.(context);
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-comment-baseline-pending')?.status,
+      'warning',
+    );
+
+    item.commentTracking = {
+      baselineAt: 2,
+      diagnosticCode: 'github-notification-comments-truncated',
+      revisions: {
+        IC_failed: {
+          actorNodeId: 'U_actor',
+          bodyDigest: 'a'.repeat(64),
+          commentDatabaseId: 91,
+          commentNodeId: 'IC_failed',
+          createdAt: 2,
+          disposition: 'approved',
+          reasonCode: 'comment-approved',
+          revisionId: 'b'.repeat(64),
+          turn: {
+            failureCode: 'github-notification-comment-dispatch-failed',
+            status: 'failed',
+          },
+          updatedAt: 2,
+        },
+        IC_reply_failed: {
+          actorNodeId: 'U_actor',
+          bodyDigest: 'c'.repeat(64),
+          commentDatabaseId: 92,
+          commentNodeId: 'IC_reply_failed',
+          createdAt: 3,
+          disposition: 'approved',
+          reasonCode: 'comment-approved',
+          reply: {
+            failureCode: 'github-notification-reply-not-confirmed',
+            status: 'failed',
+          },
+          revisionId: 'd'.repeat(64),
+          turn: { status: 'responded' },
+          updatedAt: 3,
+        },
+      },
+    };
+    findings = await contribution.inspect?.(context);
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-comments-truncated')?.status,
+      'warning',
+    );
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-comment-dispatch-failed')?.status,
+      'warning',
+    );
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-reply-not-confirmed')?.status,
+      'warning',
+    );
+    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
+  });
+
   it('should translate routing reconciliation and preserve attributed failures', async () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {

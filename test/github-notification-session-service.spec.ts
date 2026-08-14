@@ -7,6 +7,7 @@ import GitHubNotificationSessionService, {
   type GitHubNotificationSessionServiceDependencies,
 } from '../channels/github/lib/session-service.ts';
 import { resolveNotificationRoute } from '../channels/github/utils/routing.ts';
+import { githubCommentRevision } from '../channels/github/utils/comment-admission.ts';
 
 type InboundSessionRecord = Parameters<
   GitHubNotificationSessionServiceDependencies['recordInboundSession']
@@ -214,15 +215,97 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.equal(adopted, 1);
-    assert.deepEqual(result, { acknowledgmentCommentId: 91 });
+    assert.deepEqual(result, {
+      acknowledgment: { commentId: 91, status: 'published' },
+    });
     assert.equal(published?.intent, 'initial-acknowledgment');
     assert.deepEqual(published?.payload, {
       text: 'I have read this through and mapped out a plan.',
     });
   });
 
-  it('should preserve planning completion when the public candidate is missing', async () => {
+  it('should run one tool-free comment turn and publish only its labeled github reply', async () => {
+    const context = {
+      author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+      body: '@data can you share a status update?',
+      bodyTruncated: false,
+      createdAt: '2026-08-14T12:00:00.000Z',
+      databaseId: 92,
+      nodeId: 'IC_comment',
+      updatedAt: '2026-08-14T12:01:00.000Z',
+    };
+    const revision = githubCommentRevision(context);
+    let published: Record<string, unknown> | undefined;
+    let adopted = 0;
+    const service = createService({
+      async dispatch(input) {
+        assert.equal(input.replyOptions?.disableTools, true);
+        assert.deepEqual(input.toolsAllow, []);
+        assert.equal(input.ctx.SenderId, 'U_actor');
+        assert.match(String(input.ctx.BodyForAgent), /Do not use tools/u);
+        assert.match(String(input.ctx.BodyForAgent), /no verified current update/u);
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              'GITHUB_REPLY: I have the plan ready, but I do not have a newly verified implementation update yet.',
+              'RESPONSE:',
+              'The assignment is active and the plan is recorded. A local follow-up is required before I can claim fresh repository or test status.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish(input) {
+        published = input as unknown as Record<string, unknown>;
+        return {
+          delivery: { messageIds: ['93'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
+      },
+    });
+    const delivery = {
+      ...assignmentInput.delivery,
+      acknowledgment: { commentId: 91, status: 'published' as const },
+      activation: { status: 'planned' as const },
+      sessionKey: route.sessionKey,
+      stage: 'active' as const,
+    };
+
+    const result = await service.respondToComment({
+      ...assignmentInput,
+      comment: {
+        actorNodeId: 'U_actor',
+        bodyDigest: revision.bodyDigest,
+        commentDatabaseId: context.databaseId,
+        commentNodeId: context.nodeId,
+        createdAt: Date.parse(context.createdAt),
+        disposition: 'approved',
+        reasonCode: 'comment-approved',
+        revisionId: revision.revisionId,
+        turn: { status: 'pending' },
+        updatedAt: Date.parse(context.updatedAt),
+      },
+      context,
+      delivery,
+      async onTurnAdopted() {
+        adopted += 1;
+      },
+    });
+
+    assert.equal(adopted, 1);
+    assert.deepEqual(result, { reply: { commentId: 93, status: 'published' } });
+    assert.equal(published?.intent, 'github-reply');
+    assert.equal(published?.publicationId, revision.revisionId);
+    assert.deepEqual(published?.payload, {
+      text: 'I have the plan ready, but I do not have a newly verified implementation update yet.',
+    });
+  });
+
+  it('should publish a safe fallback when the public candidate is missing', async () => {
     let publications = 0;
+    let published: Record<string, unknown> | undefined;
     const service = createService({
       async dispatch(input) {
         await input.replyOptions?.onTurnAdopted?.();
@@ -232,9 +315,13 @@ describe('channels/github/lib/session-service', () => {
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
-      async publish() {
+      async publish(input) {
         publications += 1;
-        return { reason: 'non_final', status: 'not_applicable' };
+        published = input as unknown as Record<string, unknown>;
+        return {
+          delivery: { messageIds: ['92'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
       },
     });
 
@@ -251,9 +338,57 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.deepEqual(result, {
-      acknowledgmentFailureCode: 'github-notification-planning-acknowledgment-missing',
+      acknowledgment: { commentId: 92, status: 'published' },
     });
-    assert.equal(publications, 0);
+    assert.equal(publications, 1);
+    assert.deepEqual(published?.payload, {
+      text: 'Got it — I have reviewed the assignment and prepared a plan.',
+    });
+  });
+
+  it('should preserve planning completion when durable publication is not confirmed', async () => {
+    const service = createService({
+      async dispatch(input) {
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              'ACKNOWLEDGMENT: Got it, I have started working through the plan.',
+              'ASSESSMENT:',
+              'The request is bounded.',
+              'BLOCKERS:',
+              'None.',
+              'PLAN:',
+              '1. Implement it.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        return { error: new Error('provider unavailable'), status: 'failed' };
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...assignmentInput,
+      context: {
+        body: '',
+        comments: [],
+        labels: [],
+        title: 'Implement the behavior',
+        truncated: false,
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.deepEqual(result, {
+      acknowledgment: {
+        failureCode: 'github-notification-acknowledgment-publication-failed',
+        status: 'failed',
+      },
+    });
   });
 
   it('should prepare a deterministic observe-only session record', async () => {
