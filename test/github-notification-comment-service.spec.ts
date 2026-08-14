@@ -62,9 +62,9 @@ function activePullRequestState(): GitHubNotificationMonitorState {
     ...issue.delivery!,
     assignmentEventId: item.assignmentEventNodeId!,
     workId: 'pull-request-8',
-    worktreeBranch: 'agent/tanaabot/pull-request-8',
-    worktreePath: '/workspace/worktrees/pull-request-8',
   };
+  delete item.delivery.worktreeBranch;
+  delete item.delivery.worktreePath;
   item.commentTracking = structuredClone(issue.commentTracking);
   state.items = { [notificationPullRequestItemKey]: item };
   return state;
@@ -167,6 +167,7 @@ describe('channels/github/lib/comment-service', () => {
       sessions: {
         async respondToComment(input) {
           itemType = input.item.itemType;
+          assert.equal(input.worktree, undefined);
           await input.onTurnAdopted();
           return { reply: { commentId: 94, status: 'published' } };
         },

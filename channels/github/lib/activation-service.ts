@@ -15,8 +15,6 @@ interface PendingActivation {
   delivery: GitHubNotificationDeliveryState & {
     activation: { failureCode?: string; status: 'pending' };
     sessionKey: string;
-    worktreeBranch: string;
-    worktreePath: string;
   };
   item: GitHubNotificationItemState;
   itemKey: string;
@@ -66,8 +64,8 @@ function pendingActivation(
       delivery?.stage === 'active' &&
       delivery.activation?.status === 'pending' &&
       delivery.sessionKey &&
-      delivery.worktreeBranch &&
-      delivery.worktreePath
+      (item.itemType === 'pull-request' ||
+        (delivery.worktreeBranch !== undefined && delivery.worktreePath !== undefined))
     ) {
       return {
         delivery: delivery as PendingActivation['delivery'],
@@ -156,10 +154,15 @@ export default class GitHubNotificationActivationService {
         },
         signal,
         workspaceDir: pending.workspaceDir,
-        worktree: {
-          branch: pending.delivery.worktreeBranch,
-          path: pending.delivery.worktreePath,
-        },
+        ...(pending.delivery.worktreeBranch === undefined ||
+        pending.delivery.worktreePath === undefined
+          ? {}
+          : {
+              worktree: {
+                branch: pending.delivery.worktreeBranch,
+                path: pending.delivery.worktreePath,
+              },
+            }),
       });
       await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
         ...delivery,

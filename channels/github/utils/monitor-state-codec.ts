@@ -320,7 +320,10 @@ function validCommentTracking(value: unknown): value is GitHubNotificationCommen
   );
 }
 
-function validDelivery(value: unknown): value is GitHubNotificationDeliveryState {
+function validDelivery(
+  value: unknown,
+  itemType: GitHubNotificationItemState['itemType'],
+): value is GitHubNotificationDeliveryState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const delivery = value as Partial<GitHubNotificationDeliveryState>;
   const validBase =
@@ -343,10 +346,14 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
     typeof delivery.workId === 'string' &&
     !delivery.workId.startsWith('-');
   if (!validBase) return false;
+  const hasWorktreeBranch = typeof delivery.worktreeBranch === 'string';
+  const hasWorktreePath = typeof delivery.worktreePath === 'string';
+  if (hasWorktreeBranch !== hasWorktreePath) return false;
   const hasWorktree =
     typeof delivery.worktreeBranch === 'string' &&
     typeof delivery.worktreePath === 'string' &&
     isAbsolute(delivery.worktreePath);
+  if (hasWorktreePath && !hasWorktree) return false;
   const hasSession = typeof delivery.sessionKey === 'string';
   if (delivery.stage === 'admitted') {
     return (
@@ -359,7 +366,7 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
-  if (['session-recording', 'worktree-ready'].includes(delivery.stage ?? '')) {
+  if (delivery.stage === 'worktree-ready') {
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
@@ -369,9 +376,19 @@ function validDelivery(value: unknown): value is GitHubNotificationDeliveryState
       delivery.sessionId === undefined
     );
   }
+  if (delivery.stage === 'session-recording') {
+    return (
+      delivery.activation === undefined &&
+      delivery.acknowledgment === undefined &&
+      delivery.progress === undefined &&
+      (itemType === 'pull-request' || hasWorktree) &&
+      !hasSession &&
+      delivery.sessionId === undefined
+    );
+  }
   if (delivery.stage === 'active') {
     return (
-      hasWorktree &&
+      (itemType === 'pull-request' || hasWorktree) &&
       hasSession &&
       delivery.activation !== undefined &&
       delivery.acknowledgment !== undefined
@@ -396,7 +413,7 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
     (item.itemType === 'issue'
       ? item.pullRequest === undefined
       : item.pullRequest === undefined || validPullRequest(item.pullRequest)) &&
-    (item.delivery === undefined || validDelivery(item.delivery)) &&
+    (item.delivery === undefined || validDelivery(item.delivery, item.itemType!)) &&
     (item.disposition === 'approved'
       ? item.delivery !== undefined && item.delivery.stage !== 'retired'
       : item.disposition === 'retired'

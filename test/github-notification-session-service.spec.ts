@@ -41,6 +41,12 @@ const event: GitHubNotificationAssignmentEvent = {
   title: 'GitHub issue #42 assignment',
 };
 const route = resolveNotificationRoute(config, desired, 'github:R_kgDOExample:42');
+const pullRequest = {
+  baseRef: 'main',
+  draft: false,
+  headRef: 'notification-pr',
+  headSha: 'a'.repeat(40),
+};
 const assignmentInput = {
   agentId: 'data',
   delivery: {
@@ -150,6 +156,41 @@ describe('channels/github/lib/session-service', () => {
     });
 
     await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
+  });
+
+  it('should label a pull-request session by its observed head without a worktree', async () => {
+    let recordedContext: InboundSessionRecord['ctx'] | undefined;
+    const service = createService({
+      record: ({ ctx }) => {
+        recordedContext = ctx;
+      },
+    });
+    const pullRequestInput = {
+      agentId: assignmentInput.agentId,
+      delivery: {
+        assignmentEventId: assignmentInput.delivery.assignmentEventId,
+        schemaVersion: 1 as const,
+        stage: 'session-recording' as const,
+        workId: 'pull-request-42',
+      },
+      item: {
+        ...assignmentInput.item,
+        itemType: 'pull-request' as const,
+        pullRequest,
+      },
+      workspaceDir: assignmentInput.workspaceDir,
+    };
+
+    const observed = await service.recordSession(pullRequestInput);
+
+    assert.equal(
+      recordedContext?.ConversationLabel,
+      'tanaabased/openclaw-agent-system#42 · head@aaaaaaaaaaaa',
+    );
+    const context = recordedContext as unknown as Record<string, unknown>;
+    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+    assert.equal(context.githubWorktreePath, undefined);
+    assert.deepEqual(observed, { key: route.sessionKey, status: 'active' });
   });
 
   it('should run one tool-free private plan before publishing its safe acknowledgment', async () => {
@@ -398,8 +439,7 @@ describe('channels/github/lib/session-service', () => {
       event,
       label: 'tanaabased/openclaw-agent-system#42',
       route,
-      worktreeBranch: assignmentInput.worktree.branch,
-      worktreePath: assignmentInput.worktree.path,
+      worktree: assignmentInput.worktree,
     });
 
     assert.equal(turn.channel, 'agent-system-github');
@@ -436,9 +476,8 @@ describe('channels/github/lib/session-service', () => {
       config,
       event: pullRequestEvent,
       label: 'tanaabased/openclaw-agent-system#42',
+      pullRequest,
       route,
-      worktreeBranch: assignmentInput.worktree.branch,
-      worktreePath: assignmentInput.worktree.path,
     });
 
     assert.equal(
@@ -449,6 +488,11 @@ describe('channels/github/lib/session-service', () => {
       (turn.ctxPayload as unknown as Record<string, unknown>).githubItemType,
       'pull-request',
     );
+    const context = turn.ctxPayload as unknown as Record<string, unknown>;
+    assert.equal(context.githubPullRequestHeadRef, pullRequest.headRef);
+    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
+    assert.equal(context.githubWorktreeBranch, undefined);
+    assert.equal(context.githubWorktreePath, undefined);
   });
 
   it('should fail closed when the configured binding resolves another agent', async () => {
@@ -481,8 +525,10 @@ describe('channels/github/lib/session-service', () => {
           event,
           label: 'repository#42',
           route,
-          worktreeBranch: assignmentInput.worktree.branch,
-          worktreePath: '.agent-system/worktrees/github-42',
+          worktree: {
+            branch: assignmentInput.worktree.branch,
+            path: '.agent-system/worktrees/github-42',
+          },
         }),
       /worktree paths must be an absolute path/u,
     );

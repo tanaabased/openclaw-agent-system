@@ -2,10 +2,11 @@
 
 This Ubuntu-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed lifecycle for one directly assigned GitHub pull
-request. It admits the assignment into its own private session, pins the managed
-worktree to the observed PR head, publishes only bounded authorized messages,
-survives restart, and retires without deleting local proof. Scenario setup creates
-and closes a uniquely named pull request in `tanaabased/agent-system-test`.
+request. It admits the assignment into its own private session, anchors that
+session to the observed PR head metadata without preparing a worktree, publishes
+only bounded authorized messages, survives restart, and retires without deleting
+local proof. Scenario setup creates and closes a uniquely named pull request in
+`tanaabased/agent-system-test`.
 
 ## Setup
 
@@ -91,24 +92,20 @@ cd "$TMPDIR/agent-system-pr-notifications"
 session_key="$(openclaw sessions --agent notification-data --json | jq -er '(.sessions // []) as $sessions | if ($sessions | length) == 1 then $sessions[0].key else error("expected exactly one pull-request session") end')"
 printf '%s' "$session_key" > "$TMPDIR/assigned-pull-request-session-key"
 
-# should prepare one managed worktree at the exact observed pull-request head
-cd "$TMPDIR/agent-system-pr-notifications"
-worktree="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -er 'if length == 1 and .[0].status == "active" and (.branch | startswith("pull-request-")) then .[0] else error("expected one active pull-request worktree") end')"
-printf '%s\n' "$worktree" | jq -r .branch > "$TMPDIR/assigned-pull-request-worktree-branch"
-printf '%s\n' "$worktree" | jq -r .path > "$TMPDIR/assigned-pull-request-worktree-path"
+# should retain the exact observed pull-request head without preparing a worktree
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 cd "$TMPDIR/agent-system-pr-notification-actor"
 expected_head="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/pulls/$pull_request_number" --jq .head.sha)"
-cd "$(cat "$TMPDIR/assigned-pull-request-worktree-path")"
-actual_head="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD)"
-test "$actual_head" = "$expected_head"
+printf '%s' "$expected_head" > "$TMPDIR/assigned-pull-request-head"
+cd "$TMPDIR/agent-system-pr-notifications"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
 
-# should label the private session with the pull-request identity and worktree branch
+# should label the private session with the pull-request identity and observed head
 cd "$TMPDIR/agent-system-pr-notifications"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
-branch="$(cat "$TMPDIR/assigned-pull-request-worktree-branch")"
-session_label="tanaabased/agent-system-test#$pull_request_number · $branch"
+expected_head="$(cat "$TMPDIR/assigned-pull-request-head")"
+session_label="tanaabased/agent-system-test#$pull_request_number · head@${expected_head:0:12}"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
 # should complete private pull-request planning and publish one safe acknowledgment
@@ -123,19 +120,21 @@ session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
   --session-key "$session_key"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
 openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("ASSESSMENT:") and contains("BLOCKERS:") and contains("PLAN:")'
+expected_head="$(cat "$TMPDIR/assigned-pull-request-head")"
+openclaw gateway call chat.history --params "$params" --json | jq -e --arg head "$expected_head" '[.messages[]? | .. | strings] | join("\n") | contains($head)'
 openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
 
 # should publish one explicitly selected progress update on the pull request
 cd "$TMPDIR/agent-system-pr-notifications"
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
 progress_key="assigned-pr-progress-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-params="$(jq -cn --arg sessionKey "$session_key" --arg idempotencyKey "$progress_key" '{agentId:"notification-data",sessionKey:$sessionKey,message:"/agent-system-progress Pull-request planning is complete and the assigned head is verified.",deliver:false,idempotencyKey:$idempotencyKey}')"
+params="$(jq -cn --arg sessionKey "$session_key" --arg idempotencyKey "$progress_key" '{agentId:"notification-data",sessionKey:$sessionKey,message:"/agent-system-progress Pull-request planning is complete and the assigned head is recorded.",deliver:false,idempotencyKey:$idempotencyKey}')"
 openclaw gateway call chat.send --params "$params" --json | jq -e '.status == "started" or .status == "in_flight" or .status == "ok"'
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 progress_count='0'
 for attempt in $(seq 1 60); do
   cd "$TMPDIR/agent-system-pr-notification-actor"
-  progress_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("Pull-request planning is complete and the assigned head is verified.") and contains("agent-system-github-publication:operator-progress")))] | length')"
+  progress_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("Pull-request planning is complete and the assigned head is recorded.") and contains("agent-system-github-publication:operator-progress")))] | length')"
   if [[ "$progress_count" == '1' ]]; then
     break
   fi
@@ -174,14 +173,13 @@ params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:
 openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("GITHUB_REPLY:") and contains("RESPONSE:")'
 openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
 
-# should preserve one pull-request session, worktree, and publication of each kind after restart
+# should preserve one pull-request session and publication of each kind after restart
 cd "$TMPDIR/agent-system-pr-notifications"
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
-branch="$(cat "$TMPDIR/assigned-pull-request-worktree-branch")"
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" '[.[] | select(.branch == $branch and .status == "active")] | length == 1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
 cd "$TMPDIR/agent-system-pr-notification-actor"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
@@ -198,9 +196,8 @@ cd "$TMPDIR/agent-system-pr-notifications"
   --field retired \
   --minimum 1
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
-branch="$(cat "$TMPDIR/assigned-pull-request-worktree-branch")"
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" '[.[] | select(.branch == $branch and .status == "active")] | length == 1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
 ```
 
 ## Cleanup

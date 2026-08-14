@@ -20,8 +20,6 @@ interface PendingComment {
   delivery: GitHubNotificationDeliveryState & {
     sessionKey: string;
     stage: 'active';
-    worktreeBranch: string;
-    worktreePath: string;
   };
   item: GitHubNotificationItemState;
   itemKey: string;
@@ -70,8 +68,8 @@ function pendingComment(
       item.disposition !== 'approved' ||
       delivery?.stage !== 'active' ||
       !delivery.sessionKey ||
-      !delivery.worktreeBranch ||
-      !delivery.worktreePath
+      (item.itemType === 'issue' &&
+        (delivery.worktreeBranch === undefined || delivery.worktreePath === undefined))
     ) {
       continue;
     }
@@ -180,10 +178,15 @@ export default class GitHubNotificationCommentService {
         },
         signal,
         workspaceDir: pending.workspaceDir,
-        worktree: {
-          branch: pending.delivery.worktreeBranch,
-          path: pending.delivery.worktreePath,
-        },
+        ...(pending.delivery.worktreeBranch === undefined ||
+        pending.delivery.worktreePath === undefined
+          ? {}
+          : {
+              worktree: {
+                branch: pending.delivery.worktreeBranch,
+                path: pending.delivery.worktreePath,
+              },
+            }),
       });
       await this.#checkpoint(agentId, pending, signal, (comment) => ({
         ...comment,

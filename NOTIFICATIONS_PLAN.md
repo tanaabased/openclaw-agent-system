@@ -85,7 +85,7 @@ MVP 1 product promise:
 - directly assigned pull-request discovery with canonical head, base, repository,
   and lifecycle facts;
 - canonical unassignment and authority-revocation transitions;
-- logical retirement that preserves sessions and worktrees;
+- logical retirement that preserves sessions and any existing worktrees;
 - reassignment and multi-stage delivery state;
 - optional immutable repository-owner restrictions;
 - safely retryable deterministic session recording;
@@ -108,7 +108,7 @@ The packed `issue` scenario covers the plan-only turn, one public
 acknowledgment, approved and rejected comment mentions, one revision-bound public
 reply, one explicit local progress update, restart deduplication, and logical
 retirement. The packed `pull-request` scenario covers direct PR
-assignment, exact observed-head checkout, its distinct private conversation,
+assignment, exact observed-head recording without an eager worktree, its distinct private conversation,
 top-level replies, explicit progress, restart, and close retirement. Correlated
 issue-to-PR delivery, operator replay, and cleanup remain unavailable until Phase
 4B and Phase 5 are implemented and accepted. Configured work continuation,
@@ -510,14 +510,16 @@ unknown-send reconciliation path.
 
 ### Phase 4A: Direct Pull-request Assignments
 
-- Admit directly assigned pull requests into their own deterministic session and
-  managed worktree.
-- Pin the worktree to the verified PR head observed at admission and provide
+- Admit directly assigned pull requests into their own deterministic monitoring
+  session without preparing an eager managed worktree.
+- Retain the verified PR head observed at admission and provide its identity plus
   bounded summary-only changed-file metadata to the private planning turn.
+- Require a separate authorized local action before code inspection, repository
+  commands, or implementation work.
 - Admit approved top-level PR comments and explicit progress publication through
   the existing assignment conversation safeguards.
-- Retire closed or merged PRs logically while preserving their session and
-  worktree, including across Gateway restart.
+- Retire closed or merged PRs logically while preserving their session,
+  including across Gateway restart.
 - Prove the installed lifecycle in the GitHub Actions-only
   `pull-request` Leia scenario.
 

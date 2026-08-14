@@ -29,6 +29,7 @@ export type GitHubNotificationDeliveryAction =
 export function planGitHubNotificationDelivery(
   delivery: GitHubNotificationDeliveryState,
   observation: GitHubNotificationDeliveryObservation,
+  worktreeRequired = true,
 ): GitHubNotificationDeliveryAction {
   if (delivery.stage === 'retired') return { kind: 'none' };
   if (observation.retirementRequested || !observation.authority.authorized) {
@@ -39,6 +40,7 @@ export function planGitHubNotificationDelivery(
     return { kind: 'retire', reasonCode };
   }
   if (delivery.stage === 'active') return { kind: 'none' };
+  if (!worktreeRequired) return { kind: 'record-session' };
   if (!observation.worktree) return { kind: 'prepare-worktree' };
   if (
     delivery.worktreeBranch !== observation.worktree.branch ||

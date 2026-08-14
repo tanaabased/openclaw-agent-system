@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
 import {
   approvedPullRequestNotificationItem,
+  notificationItemKey,
   notificationMonitorState,
   notificationPullRequestItemKey,
 } from './github-notification-fixtures.ts';
@@ -162,8 +163,6 @@ describe('channels/github/utils/monitor-state-codec', () => {
       activation: { status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
       stage: 'active',
-      worktreeBranch: 'agent/tanaabot/pull-request-8',
-      worktreePath: '/workspace/worktrees/pull-request-8',
     };
     item.commentTracking = { baselineAt: 2, revisions: {} };
     state.items = { [notificationPullRequestItemKey]: item };
@@ -175,6 +174,20 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(legacy, state.agentId)?.status, 'ready');
     state.items[notificationPullRequestItemKey]!.pullRequest!.headSha = 'not-a-sha';
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+
+    const issueWithoutWorktree = notificationMonitorState();
+    const issueDelivery = issueWithoutWorktree.items[notificationItemKey]!.delivery!;
+    issueWithoutWorktree.items[notificationItemKey]!.delivery = {
+      ...issueDelivery,
+      acknowledgment: { status: 'pending' },
+      activation: { status: 'pending' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+    };
+    assert.equal(
+      decodeGitHubNotificationMonitorState(issueWithoutWorktree, issueWithoutWorktree.agentId),
+      undefined,
+    );
   });
 
   it('should accept bounded value-free progress checkpoints and reject persisted prose', () => {

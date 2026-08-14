@@ -39,7 +39,7 @@ Today, Agent System:
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Turns approved issue and pull-request assignments into managed worktrees, private sessions, safe replies, and explicitly selected progress updates.
+- [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and issue or pull-request assignments into private sessions, safe replies, and explicitly selected progress updates.
 
 ### Skills
 

@@ -2,7 +2,6 @@ import AgentSystemToolError from '../../lib/tool-error.ts';
 import type {
   AgentSystemOperation,
   AgentSystemSemanticToolDefinition,
-  AgentSystemToolScope,
 } from '../../lib/tool-types.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import { Value } from 'typebox/value';
@@ -17,11 +16,7 @@ import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
-import type {
-  GitWorktreePrepareInput,
-  GitWorktreeResult,
-  GitWorktreeServiceContext,
-} from './worktree-service.ts';
+import type { GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
 
 export interface ResolvedGitWorktreeToolConfiguration {
@@ -36,26 +31,12 @@ export interface GitWorktreeToolDependencies {
   service: Pick<GitWorktreeService, 'list' | 'prepare' | 'remove'>;
 }
 
-interface GitWorktreeExecutionScope {
-  agentId: string;
-  resolveEnvironment(name: string): string | undefined;
-  signal?: AbortSignal;
-  source: AgentSystemToolScope['source'];
-  workspaceDir: string;
-}
-
 export type GitWorktreeToolDefinition = AgentSystemSemanticToolDefinition<
   typeof gitWorktreeToolSchema,
   GitToolConfiguration,
   ResolvedGitWorktreeToolConfiguration,
   GitWorktreeResult | GitWorktreeResult[]
-> & {
-  prepareTrusted(
-    input: GitWorktreePrepareInput,
-    configuration: ResolvedGitWorktreeToolConfiguration,
-    scope: GitWorktreeExecutionScope,
-  ): Promise<GitWorktreeResult>;
-};
+>;
 
 function readConfiguration(manifest: AgentManifest): GitToolConfiguration | undefined {
   if (!manifest.git?.worktrees) return undefined;
@@ -163,52 +144,6 @@ function normalizeToolError(error: unknown): AgentSystemToolError {
 export function createGitWorktreeToolDefinition(
   dependencies: GitWorktreeToolDependencies,
 ): GitWorktreeToolDefinition {
-  const executeWithLease = async <T extends GitWorktreeResult | GitWorktreeResult[]>(
-    authentication: boolean,
-    configuration: ResolvedGitWorktreeToolConfiguration,
-    scope: GitWorktreeExecutionScope,
-    operation: (context: GitWorktreeServiceContext) => Promise<T>,
-  ): Promise<T> => {
-    const lease = await dependencies.runnerFactory.acquire(
-      configuration,
-      {
-        resolveEnvironment: scope.resolveEnvironment,
-        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-        workspaceDir: scope.workspaceDir,
-      },
-      { authentication },
-    );
-    const context = {
-      configuration: configuration.worktrees,
-      git: lease.git,
-      ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-      workspaceDir: scope.workspaceDir,
-    };
-    let operationError: AgentSystemToolError | undefined;
-    let result: T | undefined;
-    try {
-      result = await operation(context);
-    } catch (error) {
-      operationError = normalizeToolError(error);
-    }
-    try {
-      await lease.dispose();
-    } catch {
-      throw new AgentSystemToolError(
-        'resource_cleanup_failed',
-        'The Git worktree tool could not clean up invocation resources.',
-      );
-    }
-    if (operationError) throw operationError;
-    if (result === undefined) {
-      throw new AgentSystemToolError(
-        'execution_failed',
-        'The Git worktree request returned no result.',
-      );
-    }
-    return result;
-  };
-
   return {
     apiVersion: 1,
     id: 'git-worktree',
@@ -228,9 +163,26 @@ export function createGitWorktreeToolDefinition(
       },
     },
     async execute(input, configuration, scope) {
-      return executeWithLease(input.action === 'prepare', configuration, scope, async (context) => {
+      const lease = await dependencies.runnerFactory.acquire(
+        configuration,
+        {
+          resolveEnvironment: scope.resolveEnvironment,
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+          workspaceDir: scope.workspaceDir,
+        },
+        { authentication: input.action === 'prepare' },
+      );
+      const context = {
+        configuration: configuration.worktrees,
+        git: lease.git,
+        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+        workspaceDir: scope.workspaceDir,
+      };
+      let operationError: AgentSystemToolError | undefined;
+      let result: GitWorktreeResult | GitWorktreeResult[] | undefined;
+      try {
         if (input.action === 'prepare') {
-          return dependencies.service.prepare(context, {
+          result = await dependencies.service.prepare(context, {
             baseRef: input.baseRef,
             ...(input.repository.cloneUrl === undefined
               ? {}
@@ -238,17 +190,30 @@ export function createGitWorktreeToolDefinition(
             repositoryId: input.repository.id,
             workId: input.workId,
           });
+        } else if (input.action === 'list') {
+          result = await dependencies.service.list(context, input.repositoryId);
+        } else {
+          result = await dependencies.service.remove(context, input.repositoryId, input.workId);
         }
-        if (input.action === 'list') {
-          return dependencies.service.list(context, input.repositoryId);
-        }
-        return dependencies.service.remove(context, input.repositoryId, input.workId);
-      });
-    },
-    async prepareTrusted(input, configuration, scope) {
-      return executeWithLease(true, configuration, scope, (context) =>
-        dependencies.service.prepare(context, input),
-      );
+      } catch (error) {
+        operationError = normalizeToolError(error);
+      }
+      try {
+        await lease.dispose();
+      } catch {
+        throw new AgentSystemToolError(
+          'resource_cleanup_failed',
+          'The Git worktree tool could not clean up invocation resources.',
+        );
+      }
+      if (operationError) throw operationError;
+      if (result === undefined) {
+        throw new AgentSystemToolError(
+          'execution_failed',
+          'The Git worktree request returned no result.',
+        );
+      }
+      return result;
     },
     guidance: {
       prompt:

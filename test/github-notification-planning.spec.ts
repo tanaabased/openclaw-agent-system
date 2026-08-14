@@ -56,13 +56,14 @@ describe('channels/github/utils/planning', () => {
         truncated: false,
       },
       item: approvedPullRequestNotificationItem(),
-      worktree: {
-        branch: 'agent/tanaabot/pull-request-8',
-        path: '/workspace/worktrees/pull-request-8',
-      },
     });
 
     assert.match(prompt, /Review the assigned pull request/u);
+    assert.match(prompt, /No managed worktree was prepared/u);
+    assert.match(
+      prompt,
+      /stewardship plan for monitoring discussion, blockers, and merge readiness/u,
+    );
     assert.match(prompt, /channels\/github\/lib\/poller\.ts/u);
     assert.match(prompt, /notification-pr/u);
     assert.match(prompt, /"headSha":"a{40}"/u);

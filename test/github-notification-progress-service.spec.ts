@@ -37,9 +37,9 @@ function activePullRequestState(): GitHubNotificationMonitorState {
     ...state.items[notificationItemKey]!.delivery!,
     assignmentEventId: item.assignmentEventNodeId!,
     workId: 'pull-request-8',
-    worktreeBranch: 'agent/tanaabot/pull-request-8',
-    worktreePath: '/workspace/.agent-system/worktrees/pull-request-8',
   };
+  delete item.delivery.worktreeBranch;
+  delete item.delivery.worktreePath;
   state.items = { [notificationPullRequestItemKey]: item };
   return state;
 }

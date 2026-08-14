@@ -41,6 +41,12 @@ describe('channels/github/utils/delivery-plan', () => {
     });
   });
 
+  it('should record a pull-request session without preparing a worktree', () => {
+    assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }, false), {
+      kind: 'record-session',
+    });
+  });
+
   it('should treat active delivery as complete without inspecting a session', () => {
     assert.deepEqual(
       planGitHubNotificationDelivery({ ...admitted, stage: 'active' }, { authority }),

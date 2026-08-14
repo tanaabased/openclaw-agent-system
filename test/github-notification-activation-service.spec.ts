@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationActivationService from '../channels/github/lib/activation-service.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+import {
+  approvedPullRequestNotificationItem,
+  notificationItemKey,
+  notificationMonitorState,
+  notificationPullRequestItemKey,
+} from './github-notification-fixtures.ts';
 
 function activeState(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
@@ -17,6 +22,22 @@ function activeState(): GitHubNotificationMonitorState {
     worktreeBranch: 'agent/tanaabot/issue-7',
     worktreePath: '/workspace/worktrees/issue-7',
   };
+  return state;
+}
+
+function activePullRequestState(): GitHubNotificationMonitorState {
+  const state = notificationMonitorState();
+  const item = approvedPullRequestNotificationItem();
+  item.delivery = {
+    acknowledgment: { status: 'pending' },
+    activation: { status: 'pending' },
+    assignmentEventId: item.assignmentEventNodeId!,
+    schemaVersion: 1,
+    sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
+    stage: 'active',
+    workId: 'pull-request-8',
+  };
+  state.items = { [notificationPullRequestItemKey]: item };
   return state;
 }
 
@@ -84,6 +105,36 @@ describe('channels/github/lib/activation-service', () => {
     assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
       commentId: 91,
       status: 'published',
+    });
+  });
+
+  it('should plan an active pull request without a managed worktree', async () => {
+    const store = memoryStore(activePullRequestState());
+    let plans = 0;
+    const service = new GitHubNotificationActivationService({
+      authority: {
+        loadPlanningContext: async () => ({ authorized: true, context: planningContext }),
+      },
+      leaseStore: leaseStore(),
+      logger,
+      sessions: {
+        async planAssignment(input) {
+          plans += 1;
+          assert.equal(input.item.itemType, 'pull-request');
+          assert.equal(input.worktree, undefined);
+          await input.onTurnAdopted();
+          return { acknowledgment: { commentId: 93, status: 'published' } };
+        },
+      },
+      stateStore: store,
+    });
+
+    service.schedule('tanaabot', new AbortController().signal);
+    await service.settle('tanaabot');
+
+    assert.equal(plans, 1);
+    assert.deepEqual(store.state().items[notificationPullRequestItemKey]?.delivery?.activation, {
+      status: 'planned',
     });
   });
 

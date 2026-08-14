@@ -257,8 +257,6 @@ describe('channels/github/lib/poller', () => {
         schemaVersion: 1 as const,
         stage: 'active' as const,
         workId: 'pull-request-8',
-        worktreeBranch: 'pull-request-8-branch',
-        worktreePath: '/workspace/worktrees/pull-request-8',
         sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
         activation: { status: 'planned' as const },
         acknowledgment: { commentId: 90, status: 'published' as const },

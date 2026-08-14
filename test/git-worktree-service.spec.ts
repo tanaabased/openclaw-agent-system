@@ -8,7 +8,6 @@ import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.
 
 interface FakeWorktree {
   branch: string;
-  commit: string;
   repository: string;
 }
 
@@ -17,8 +16,6 @@ class FakeGitRunner implements GitWorktreeGitRunner {
   readonly calls: Array<{ argv: string[]; cwd: string }> = [];
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
-  readonly refs = new Map<string, string>();
-  readonly remoteRefs = new Map<string, string>();
   removeFails = false;
   readonly worktrees = new Map<string, FakeWorktree>();
 
@@ -54,34 +51,13 @@ class FakeGitRunner implements GitWorktreeGitRunner {
         stdout: '',
       };
     }
-    if (command === 'fetch') {
-      const refspec = argv.find((value) => value.startsWith('+refs/'));
-      if (refspec && !refspec.includes('*')) {
-        const [source, destination] = refspec.slice(1).split(':');
-        const commit = source ? this.remoteRefs.get(source) : undefined;
-        if (!commit || !destination) {
-          return { exitCode: 1, stderr: 'missing remote ref', stdout: '' };
-        }
-        this.refs.set(destination, commit);
-      }
-    }
-    if (command === 'rev-parse') {
-      const ref = (argv.at(-1) ?? '').replace(/\^\{commit\}$/u, '');
-      const commit = ref === 'HEAD' ? this.worktrees.get(input.cwd)?.commit : this.refs.get(ref);
-      return { exitCode: 0, stderr: '', stdout: commit ? `${commit}\n` : '' };
-    }
     if (command === 'worktree' && argv[0] === 'add') {
       const createsBranch = argv[1] === '-b';
       const branch = createsBranch ? (argv[2] ?? '') : (argv.at(-1) ?? '');
       const path = createsBranch ? (argv[3] ?? '') : (argv[1] ?? '');
-      const baseRef = argv.at(-1) ?? '';
       await mkdir(path, { recursive: true });
       this.branches.add(branch);
-      this.worktrees.set(path, {
-        branch,
-        commit: this.refs.get(baseRef) ?? '0'.repeat(40),
-        repository: input.cwd,
-      });
+      this.worktrees.set(path, { branch, repository: input.cwd });
     }
     if (command === 'worktree' && argv[0] === 'remove') {
       if (this.removeFails) return { exitCode: 1, stderr: 'contains modified files', stdout: '' };
@@ -226,42 +202,6 @@ describe('tools/git/worktree-service', () => {
         'origin',
         '+refs/heads/*:refs/remotes/origin/*',
       ]);
-    } finally {
-      await rm(workspaceDir, { force: true, recursive: true });
-    }
-  });
-
-  it('should fetch and verify one fixed provider ref before preparing its worktree', async () => {
-    const { context, git, service, workspaceDir } = await fixture();
-    try {
-      const expectedCommit = 'a'.repeat(40);
-      git.remoteRefs.set('refs/pull/13/head', expectedCommit);
-      const input = {
-        baseRef: 'refs/remotes/origin/pull/13/head',
-        cloneUrl: 'https://example.com/owner/repository.git',
-        expectedCommit,
-        fetchRef: {
-          destination: 'refs/remotes/origin/pull/13/head',
-          source: 'refs/pull/13/head',
-        },
-        repositoryId: 'owner/repository',
-        workId: 'pull-request-13',
-      };
-
-      const prepared = await service.prepare(context, input);
-
-      assert.equal(prepared.status, 'created');
-      assert.deepEqual(git.calls.find(({ argv }) => argv[0] === 'fetch')?.argv, [
-        'fetch',
-        'origin',
-        '+refs/pull/13/head:refs/remotes/origin/pull/13/head',
-      ]);
-      assert.equal(git.worktrees.get(prepared.path)?.commit, expectedCommit);
-      assert.equal((await service.prepare(context, input)).status, 'existing');
-      await assert.rejects(
-        service.prepare(context, { ...input, expectedCommit: 'b'.repeat(40) }),
-        /did not match the expected commit/u,
-      );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });
     }

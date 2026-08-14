@@ -7,11 +7,12 @@
 The GitHub notifications channel is a local
 [OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
 approved GitHub issue and pull-request assignments into agent-scoped local work.
-It verifies the agent, assigning actor, and repository before creating one
-managed worktree and one local OpenClaw session for the assigned work item. A
-directly assigned pull request starts from the exact observed PR head. The
-Gateway then asks the agent to review the work item and prepare a plan before
-posting one short acknowledgment.
+It verifies the agent, assigning actor, and repository before creating one local
+OpenClaw session for the assigned work item. Issue assignments also create one
+managed worktree. Direct pull-request assignments retain the exact observed PR
+head as session metadata without preparing a worktree. The Gateway then asks the
+agent to review the work item and prepare a plan before posting one short
+acknowledgment.
 Later approved comments that address the verified agent account continue the
 same private conversation and receive one bounded public reply. A local operator
 can also explicitly select one bounded progress update for publication.
@@ -30,8 +31,9 @@ can also explicitly select one bounded progress update for publication.
   persisted baseline.
 - On later cycles, discovers new assignments and rechecks the agent account,
   assigning actor, repository owner, and repository access.
-- For each accepted assignment, creates or reuses one deterministic managed
-  worktree and one local OpenClaw session.
+- For each accepted issue assignment, creates or reuses one deterministic
+  managed worktree and one local OpenClaw session. A direct pull-request
+  assignment creates only its local monitoring session.
 - Fetches a bounded title, body, labels, and recent comments as untrusted
   context, plus summary-only changed-file metadata for a pull request, then runs
   one tool-free private planning turn. Patch content is never included.
@@ -178,7 +180,8 @@ openclaw agent-system notifications refresh [--agent <id>] [--json]
 
 The command runs the same intake lifecycle immediately. It reports baseline
 readiness, diagnostics, and retry timing, and it can create a managed worktree
-and local session for an accepted work item. It does not wait for planning;
+and local session for an accepted issue or a session for an accepted pull
+request. It does not wait for planning;
 the running Gateway picks up that checkpoint asynchronously. Deferred and failed
 cycles return a nonzero exit code.
 
@@ -238,20 +241,21 @@ result leaves the private session only when an operator explicitly selects a
 bounded update with `/agent-system-progress`.
 
 Private monitor state contains no tokens, GitHub prose, or generated content.
-For a directly assigned pull request, Agent System fetches GitHub's synthetic PR
-head ref and verifies that the managed worktree commit matches the admitted head
-SHA. Later PR commits do not silently move that admitted worktree. Closing or
-merging the PR retires the route logically while preserving its session and
-worktree. Issue-to-PR correlation, review requests, and inline review-comment
-intake remain outside this phase.
+For a directly assigned pull request, Agent System records the verified head ref
+and SHA used for admission in the private session context. It does not prepare a
+managed worktree or authorize code inspection. Repository commands or
+implementation require a separate authorized local action. Closing or merging
+the PR retires the route logically while preserving its session. Issue-to-PR
+correlation, review requests, and inline review-comment intake remain outside
+this phase.
 
-Deterministic worktree, session, activation, and publication identities make
+Deterministic issue-worktree, session, activation, and publication identities make
 delivery retry-safe without duplicating local work or GitHub comments.
 
 `install` adds or repairs only the channel account and binding owned by Agent
 System. Removing `github.notifications` and running `install` again retires
 outstanding local assignments, removes the owned route and converged private
-monitor state, and stops new intake. Existing worktrees and sessions are
+monitor state, and stops new intake. Existing issue worktrees and sessions are
 preserved deliberately; use a fresh isolated OpenClaw profile and agent id when
 a post-delivery test must begin without those artifacts.
 
