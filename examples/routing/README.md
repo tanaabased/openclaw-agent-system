@@ -66,9 +66,22 @@ OPENCLAW_LOG_LEVEL=debug openclaw agent-system notifications refresh --agent not
 jq -s -e 'length == 1 and .[0].status == "completed" and .[0].baselineAt != null and .[0].baselineEstablished == false' "$refresh_stdout"
 grep -F 'github-notification-poll-complete' "$refresh_stderr"
 
+# should keep trace logs separate from human-readable validation output
+cd "$TMPDIR/agent-system-notifications"
+validate_stdout="$TMPDIR/agent-system-validate.stdout"
+validate_stderr="$TMPDIR/agent-system-validate.stderr"
+OPENCLAW_LOG_LEVEL=trace openclaw agent-system validate --agent notification-data >"$validate_stdout" 2>"$validate_stderr"
+grep -F 'valid' "$validate_stdout"
+grep -F 'manifest_loaded' "$validate_stderr"
+if grep -F '[agent-system]' "$validate_stdout"; then exit 1; fi
+
 # should keep baseline assignments free of managed worktrees
 cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
+tool_stdout="$TMPDIR/agent-system-tool.stdout"
+tool_stderr="$TMPDIR/agent-system-tool.stderr"
+OPENCLAW_LOG_LEVEL=debug openclaw agent-system tool worktree --agent notification-data -- list >"$tool_stdout" 2>"$tool_stderr"
+jq -e 'length == 0' "$tool_stdout"
+grep -F 'tool_call_completed' "$tool_stderr"
 
 # should keep baseline assignments free of local sessions
 cd "$TMPDIR/agent-system-notifications"
