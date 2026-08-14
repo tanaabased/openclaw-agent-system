@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 
+import isPathContained from './is-path-contained.ts';
 import type { ManifestDiagnostic } from './manifest-types.ts';
 import parseDotenv from './parse-dotenv.ts';
 import type { AgentEnvironmentInputSource } from './resolve-agent-environment.ts';
@@ -16,14 +17,6 @@ export type AgentDotenvLoadResult =
       status: 'loaded';
       sources: AgentEnvironmentInputSource[];
     };
-
-function isWithin(root: string, candidate: string): boolean {
-  const pathFromRoot = relative(root, candidate);
-  return (
-    pathFromRoot === '' ||
-    (pathFromRoot !== '..' && !pathFromRoot.startsWith(`..${sep}`) && !isAbsolute(pathFromRoot))
-  );
-}
 
 function diagnostic(code: string, message: string, index: number): ManifestDiagnostic {
   return {
@@ -75,7 +68,7 @@ export default async function loadAgentDotenv(
     }
 
     const candidatePath = resolve(normalizedWorkspace, declaredPath);
-    if (!isWithin(normalizedWorkspace, candidatePath)) {
+    if (!isPathContained(normalizedWorkspace, candidatePath)) {
       diagnostics.push(
         diagnostic(
           'dotenv-path-outside-workspace',
@@ -103,7 +96,7 @@ export default async function loadAgentDotenv(
       continue;
     }
 
-    if (!isWithin(canonicalWorkspace, canonicalPath)) {
+    if (!isPathContained(canonicalWorkspace, canonicalPath)) {
       diagnostics.push(
         diagnostic(
           'dotenv-path-outside-workspace',

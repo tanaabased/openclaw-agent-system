@@ -21,7 +21,7 @@ export interface AgentCommandSecurityDependencies {
 }
 
 export const agentCommandSecurityGuidance =
-  'Use native agent_system_* tools for Agent System-managed operations. Never select another agent or invoke openclaw agent-system tool, credentials, or managed command shims through command tools. Do not access another agent workspace, manifest, environment, credentials, or identity. If the required native capability is unavailable, stop and ask the operator.';
+  'Use native agent_system_* tools for direct Agent System-managed operations. Repository helpers may invoke packaged Agent System launchers for registered command routes; OpenClaw binds those descendants to the active agent and admits only its workspace, declared local repositories, and managed worktree root. Never select another agent or directly invoke unbound openclaw agent-system tool or credentials routes through command tools. Do not access another agent workspace, manifest, environment, credentials, or identity. If neither a native capability nor a managed helper route is available, stop and ask the operator.';
 
 interface BlockDecision {
   blockReason: string;
@@ -67,7 +67,7 @@ function operatorDecision(
     };
   }
 
-  const invocation = invocations[0];
+  const invocation = invocations.find(({ surface }) => surface !== 'shim');
   if (!invocation) return undefined;
   const retry = invocation.recommendedTool
     ? ` Retry this operation with ${invocation.recommendedTool} using the active agent context.`
@@ -102,7 +102,7 @@ function reportBlockedCommand(
   logger[decision.severity](`security: agent_command_blocked ${attributes.join(' ')}`);
 }
 
-/** Deny agent access to operator command surfaces while preserving direct operator CLI use. */
+/** Deny operator surfaces while allowing active-agent-bound registered command launchers. */
 export default function registerAgentCommandSecurity(
   api: HookApi,
   dependencies: AgentCommandSecurityDependencies,

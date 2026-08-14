@@ -9,6 +9,7 @@ import refreshNotificationsAgentSystem from '../cli/notifications-refresh.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
+import type AgentCommandAuthority from './agent-command-authority.ts';
 import type AgentDoctorService from './agent-doctor-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
@@ -32,6 +33,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
+  commandAuthority?: Pick<AgentCommandAuthority, 'resolve'>;
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
@@ -59,6 +61,7 @@ export default function registerAgentSystemCli(
   options: RegisterAgentSystemCliOptions,
 ): void {
   const cwd = options.cwd ?? process.cwd;
+  const commandAuthority = options.commandAuthority;
   const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const agentSystem = program
@@ -160,6 +163,14 @@ export default function registerAgentSystemCli(
         command: String(command),
         logger: options.logger,
         output,
+        ...(commandAuthority
+          ? {
+              resolveCommandBinding: (
+                environment: Readonly<NodeJS.ProcessEnv>,
+                workspaceDir: string,
+              ) => commandAuthority.resolve(environment, workspaceDir),
+            }
+          : {}),
         setExitCode,
         ...(process.stdout.isTTY && process.stdout.columns > 0
           ? { terminalColumns: process.stdout.columns }

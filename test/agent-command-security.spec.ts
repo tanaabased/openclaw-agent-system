@@ -95,6 +95,20 @@ describe('lib/agent-command-security', () => {
     assert.equal(logs.warn[0]?.includes('secret-marker'), false);
   });
 
+  it('should allow a managed shim to use the injected active-agent authority', async () => {
+    const { handler, logs } = setup();
+    const result = await handler(
+      {
+        params: { command: '/package/bin/gh api user', cwd: '/workspace/tanaabot' },
+        toolName: 'exec',
+      } as never,
+      context() as never,
+    );
+
+    assert.equal(result, undefined);
+    assert.deepEqual(logs, { error: [], warn: [] });
+  });
+
   it('should hard-block an explicit cross-agent identity without exposing the command', async () => {
     const { handler, logs } = setup();
     const result = await handler(

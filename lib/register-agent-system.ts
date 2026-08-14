@@ -24,7 +24,9 @@ import NotificationRoutingService from '../channels/github/lib/routing-service.t
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
+import resolveCodexCommandAgentId from '../utils/resolve-codex-command-agent-id.ts';
 import registerAgentCommandSecurity from './agent-command-security.ts';
+import AgentCommandAuthority from './agent-command-authority.ts';
 import AgentDoctorService from './agent-doctor-service.ts';
 import AgentEnvironmentService from './agent-environment-service.ts';
 import AgentInstallService from './agent-install-service.ts';
@@ -43,6 +45,7 @@ import OpEnvironmentService from './op-environment-service.ts';
 import createPathLifecycleContribution from './path-lifecycle.ts';
 import PathProjectionStore from './path-projection-store.ts';
 import registerAgentSystemCli from './register-cli.ts';
+import registerAgentCommandAuthority from './register-agent-command-authority.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolRegistry from './tool-registry.ts';
 import AgentSystemToolRuntime from './tool-runtime.ts';
@@ -228,6 +231,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     opEnvironmentService,
   });
   environmentServiceRef.current = environmentService;
+  const commandAuthority = new AgentCommandAuthority({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    manifestService,
+    async resolveCodexAgentId({ codexHome, openClawStateDir }) {
+      const config = api.runtime.config.current() as OpenClawConfig;
+      return resolveCodexCommandAgentId({
+        agentIds: (config.agents?.list ?? []).map(({ id }) => id),
+        codexHome,
+        ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
+        resolveAgentDir: (agentId) => api.runtime.agent.resolveAgentDir(config, agentId),
+        resolveStateDir: () => api.runtime.state.resolveStateDir(),
+      });
+    },
+  });
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
   const toolRuntime = new AgentSystemToolRuntime({
     baseEnvironment: process.env,
@@ -317,6 +334,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService);
+  registerAgentCommandAuthority(api, {
+    authority: commandAuthority,
+    logger,
+    manifestService,
+  });
   registerAgentCommandSecurity(api, {
     logger,
     managedExecutableDirectories: excludedToolExecutableDirectories,
@@ -326,6 +348,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {
+        commandAuthority,
         credentialInput: opCredentialInput,
         credentialManager,
         doctorService,

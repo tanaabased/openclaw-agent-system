@@ -86,7 +86,7 @@ export default async function executeAgentSystemCliTool<
 ): Promise<AgentSystemCliToolExecutionPayload<TOutput>> {
   const { agentId, manifest, resolvedConfiguration, values, workspaceDir } = options.context;
   const workingDirectoryScope = {
-    ...(options.scope.source === 'command' && options.scope.workspaceDir
+    ...(options.scope.source !== 'tool' && options.scope.workspaceDir
       ? { commandWorkingDirectory: options.scope.workspaceDir }
       : {}),
     source: options.scope.source,
@@ -95,21 +95,31 @@ export default async function executeAgentSystemCliTool<
   let childWorkingDirectory = workspaceDir;
   if (options.definition.runner.workingDirectory) {
     try {
-      const admitted =
-        (await options.definition.runner.admittedWorkingDirectories?.(
-          options.input,
-          resolvedConfiguration,
-          { source: options.scope.source, workspaceDir },
-        )) ?? [];
-      childWorkingDirectory = await resolveToolWorkingDirectory(
-        workspaceDir,
-        await options.definition.runner.workingDirectory(
-          options.input,
-          resolvedConfiguration,
-          workingDirectoryScope,
-        ),
-        admitted,
+      const requestedDirectory = await options.definition.runner.workingDirectory(
+        options.input,
+        resolvedConfiguration,
+        workingDirectoryScope,
       );
+      if (requestedDirectory === undefined) {
+        childWorkingDirectory = workspaceDir;
+      } else {
+        const admitted =
+          (await options.definition.runner.admittedWorkingDirectories?.(
+            options.input,
+            resolvedConfiguration,
+            { source: options.scope.source, workspaceDir },
+          )) ?? [];
+        childWorkingDirectory = await resolveToolWorkingDirectory(
+          workspaceDir,
+          requestedDirectory,
+          [
+            ...(options.scope.source === 'agent-command'
+              ? (options.scope.admittedWorkingDirectories ?? [])
+              : []),
+            ...admitted,
+          ],
+        );
+      }
     } catch {
       throw new AgentSystemToolError(
         'invalid_arguments',

@@ -169,6 +169,9 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         return input.stdin;
       },
       timeoutMs: 30_000,
+      workingDirectory(_input, _configuration, scope) {
+        return scope.source === 'agent-command' ? scope.commandWorkingDirectory : undefined;
+      },
     },
     commands: [{ command: 'gh' }],
     tool: {

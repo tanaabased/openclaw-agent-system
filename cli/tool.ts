@@ -1,6 +1,7 @@
 import type AgentSystemToolRegistry from '../lib/tool-registry.ts';
 import AgentSystemToolError from '../lib/tool-error.ts';
 import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
+import type { AgentCommandBinding } from '../lib/agent-command-authority.ts';
 import type { CliOutput } from '../lib/cli-output.ts';
 import { type Logger, reportError } from '../lib/logger.ts';
 
@@ -12,6 +13,10 @@ export interface RunAgentSystemToolOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   terminalColumns?: number;
+  resolveCommandBinding?(
+    environment: Readonly<NodeJS.ProcessEnv>,
+    cwd: string,
+  ): Promise<AgentCommandBinding | undefined>;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
   toolRuntime: AgentSystemToolRuntime;
   workspaceDir: string;
@@ -22,17 +27,33 @@ export default async function runAgentSystemTool(
   options: RunAgentSystemToolOptions,
 ): Promise<void> {
   try {
+    const binding = await options.resolveCommandBinding?.(process.env, options.workspaceDir);
+    if (binding && options.agentId) {
+      throw new AgentSystemToolError(
+        'invalid_arguments',
+        'An active agent command binding may not select another agent.',
+      );
+    }
     const result = await options.toolRegistry.invoke(
       options.command,
       options.toolRuntime,
       options.argv,
       {
-        source: 'command',
+        ...(binding
+          ? {
+              admittedWorkingDirectories: binding.admittedWorkingDirectories,
+              agentId: binding.agentId,
+              source: 'agent-command' as const,
+              workspaceDir: binding.workingDirectory,
+            }
+          : {
+              ...(options.agentId ? { agentId: options.agentId } : {}),
+              source: 'command' as const,
+              workspaceDir: options.workspaceDir,
+            }),
         ...(options.terminalColumns === undefined
           ? {}
           : { terminalColumns: options.terminalColumns }),
-        ...(options.agentId ? { agentId: options.agentId } : {}),
-        workspaceDir: options.workspaceDir,
       },
     );
     if (result.kind === 'semantic') {

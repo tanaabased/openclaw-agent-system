@@ -93,9 +93,14 @@ describe('index', () => {
     plugin.register(api as never);
 
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, ['before_tool_call', 'session_start', 'before_prompt_build']);
+    assert.deepEqual(hookNames, [
+      'resolve_exec_env',
+      'before_tool_call',
+      'session_start',
+      'before_prompt_build',
+    ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
-    assert.deepEqual(serviceIds, []);
+    assert.deepEqual(serviceIds, ['agent-system-command-authority']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

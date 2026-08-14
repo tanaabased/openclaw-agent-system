@@ -41,8 +41,9 @@ export interface ToolTestDefinitionOptions {
     configuration: ToolTestConfiguration,
     scope: {
       agentId: string;
+      resolveEnvironment(name: string): string | undefined;
       signal?: AbortSignal;
-      source: 'command' | 'tool';
+      source: 'agent-command' | 'command' | 'tool';
       workspaceDir: string;
     },
   ): Promise<AgentSystemToolResourceLease | undefined> | AgentSystemToolResourceLease | undefined;

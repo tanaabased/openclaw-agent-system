@@ -53,7 +53,8 @@ export interface AgentSystemCliRunRequest {
 }
 
 export interface AgentSystemToolScope {
-  source: 'command' | 'tool';
+  source: 'agent-command' | 'command' | 'tool';
+  admittedWorkingDirectories?: readonly string[];
   agentId?: string;
   terminalColumns?: number;
   toolCallId?: string;

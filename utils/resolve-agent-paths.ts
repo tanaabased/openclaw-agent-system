@@ -1,6 +1,7 @@
 import { lstat, realpath } from 'node:fs/promises';
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
+import isPathContained from './is-path-contained.ts';
 import type { AgentManifest, ManifestDiagnostic } from './manifest-types.ts';
 
 export type AgentPathSource =
@@ -24,11 +25,6 @@ export interface ResolveAgentPathsOptions {
   basePath: string;
   packageDir: string;
   workspaceDir: string;
-}
-
-function isInside(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
 async function inspectDirectory(
@@ -117,7 +113,7 @@ export default async function resolveAgentPaths(
     }
     const canonicalPath = inspected.path;
     if (!canonicalPath) continue;
-    if (candidate.source !== 'agent-system.bin' && !isInside(workspaceDir, canonicalPath)) {
+    if (candidate.source !== 'agent-system.bin' && !isPathContained(workspaceDir, canonicalPath)) {
       diagnostics.push({
         code: 'path-workspace-escape',
         fieldPath: candidate.fieldPath,

@@ -38,6 +38,24 @@ export default async function loadBoundToolManifest(
     return result;
   }
 
+  if (scope.source === 'agent-command') {
+    const agentId = scope.agentId?.trim();
+    if (!agentId || !scope.workspaceDir) {
+      throw new AgentSystemToolError(
+        'agent_not_resolved',
+        'Agent System could not resolve the active agent command context.',
+      );
+    }
+    const result = await manifestService.loadForAgentId(agentId, 'cli');
+    if (result.status !== 'loaded' || result.manifest.agent.id !== agentId) {
+      throw new AgentSystemToolError(
+        'agent_not_resolved',
+        'Agent System could not bind the active agent command context.',
+      );
+    }
+    return result;
+  }
+
   if (scope.agentId) {
     const result = await manifestService.loadForAgentId(scope.agentId, 'cli');
     if (result.status !== 'loaded' || result.manifest.agent.id !== scope.agentId) {
