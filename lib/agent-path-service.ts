@@ -136,7 +136,7 @@ export default class AgentPathService {
               {
                 code: 'codex-config-user-managed',
                 message:
-                  'The existing .codex/config.toml is user-managed; add the Agent System PATH entries manually as documented in ADVANCED.md.',
+                  'The existing .codex/config.toml is user-managed; add allow_login_shell = false and the Agent System PATH entries manually as documented in ADVANCED.md.',
               },
             ]
           : [],

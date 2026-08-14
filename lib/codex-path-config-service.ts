@@ -21,6 +21,7 @@ export type CodexPathConfigStatus = 'created' | 'updated' | 'unchanged' | 'manua
 
 export interface CodexPathConfigInspection {
   gitignored: boolean;
+  loginShellDisabled: boolean;
   ownership: 'absent' | 'managed' | 'manual' | 'user';
   pathMatches: boolean;
 }
@@ -89,6 +90,7 @@ export default class CodexPathConfigService {
     if (source === undefined) {
       return {
         gitignored,
+        loginShellDisabled: false,
         ownership: 'absent',
         pathMatches: false,
       };
@@ -96,6 +98,7 @@ export default class CodexPathConfigService {
     const inspection = inspectCodexPathConfig(source, projection);
     return {
       gitignored,
+      loginShellDisabled: inspection.loginShellDisabled,
       ownership: inspection.ownership,
       pathMatches: inspection.pathMatches,
     };
@@ -131,6 +134,7 @@ export default class CodexPathConfigService {
     return {
       gitignored: true,
       gitignoreUpdated,
+      loginShellDisabled: true,
       ownership: 'managed',
       pathMatches: true,
       status,

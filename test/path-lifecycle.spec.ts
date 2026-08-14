@@ -33,7 +33,12 @@ describe('lib/path-lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
+            codex: {
+              gitignored: true,
+              loginShellDisabled: true,
+              ownership: 'managed',
+              pathMatches: true,
+            },
             openClawMatches: true,
             projection,
           };
@@ -49,6 +54,7 @@ describe('lib/path-lifecycle', () => {
       [
         { code: 'openclaw-exec-path-ready', status: 'healthy' },
         { code: 'codex-path-ready', status: 'healthy' },
+        { code: 'codex-login-shell-disabled', status: 'healthy' },
         { code: 'codex-config-gitignored', status: 'healthy' },
       ],
     );
@@ -59,7 +65,12 @@ describe('lib/path-lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: { gitignored: false, ownership: 'manual', pathMatches: false },
+            codex: {
+              gitignored: false,
+              loginShellDisabled: false,
+              ownership: 'manual',
+              pathMatches: false,
+            },
             openClawMatches: true,
             projection,
           };
@@ -75,9 +86,39 @@ describe('lib/path-lifecycle', () => {
       [
         { code: 'openclaw-exec-path-ready', status: 'healthy' },
         { code: 'codex-config-manual', status: 'manual' },
+        { code: 'codex-login-shell-enabled', status: 'warning' },
         { code: 'codex-config-not-gitignored', status: 'warning' },
       ],
     );
+  });
+
+  it('should report managed login-shell drift as automatically repairable', async () => {
+    const contribution = createPathLifecycleContribution({
+      pathService: {
+        async inspect() {
+          return {
+            codex: {
+              gitignored: true,
+              loginShellDisabled: false,
+              ownership: 'managed',
+              pathMatches: true,
+            },
+            openClawMatches: true,
+            projection,
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+    });
+
+    const finding = (await contribution.inspect?.(context))?.find(
+      ({ code }) => code === 'codex-login-shell-enabled',
+    );
+
+    assert.equal(finding?.status, 'drift');
+    assert.match(finding?.remediation ?? '', /agent-system install/u);
   });
 
   it('should convert an invalid path projection into drift', async () => {
@@ -105,7 +146,12 @@ describe('lib/path-lifecycle', () => {
         async inspect() {
           inspections += 1;
           return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
+            codex: {
+              gitignored: true,
+              loginShellDisabled: true,
+              ownership: 'managed',
+              pathMatches: true,
+            },
             openClawMatches: true,
             projection,
           };
@@ -139,7 +185,12 @@ describe('lib/path-lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
+            codex: {
+              gitignored: true,
+              loginShellDisabled: true,
+              ownership: 'managed',
+              pathMatches: true,
+            },
             openClawMatches: true,
             projection,
           };
@@ -158,7 +209,12 @@ describe('lib/path-lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: { gitignored: true, ownership: 'managed', pathMatches: true },
+            codex: {
+              gitignored: true,
+              loginShellDisabled: true,
+              ownership: 'managed',
+              pathMatches: true,
+            },
             openClawMatches: false,
             projection,
           };

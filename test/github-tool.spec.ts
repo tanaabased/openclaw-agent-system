@@ -180,6 +180,32 @@ describe('tools/github/tool', () => {
     assert.equal(logs.join('\n').includes('private-token'), false);
   });
 
+  it('should preserve root help and version arguments', async () => {
+    const requests: AgentSystemCliRunRequest[] = [];
+    const registry = new AgentSystemToolRegistry([createTool()]);
+    const runtime = createRuntime({
+      runCli: async (request) => {
+        requests.push(request);
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : 'output\n',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+
+    for (const argv of [['--help'], ['-h'], ['--version']]) {
+      await registry.invoke('gh', runtime, argv, { source: 'command', workspaceDir });
+    }
+
+    assert.deepEqual(
+      requests.filter(({ argv }) => argv[0] !== 'api').map(({ argv }) => argv),
+      [['--help'], ['-h'], ['--version']],
+    );
+  });
+
   it('should fall back from GH_TOKEN to GITHUB_TOKEN inside the completed agent environment', async () => {
     const fallbackManifest: AgentManifest = {
       schemaVersion: 1,

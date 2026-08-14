@@ -427,6 +427,8 @@ to a user-managed file without duplicating existing TOML tables:
 ```toml
 # agent-system: manual-path-v1
 
+allow_login_shell = false
+
 [features]
 shell_snapshot = true
 
@@ -435,6 +437,7 @@ PATH = "/absolute/workspace/bin:/absolute/agent-system/bin:/base/path"
 ```
 
 Rerun `install` when the workspace, package location, declared paths, or host PATH
-changes, then start a new Codex session. Agent System sets only PATH and does not
-change Codex's inherited-environment policy. Remote, sandboxed, ACP, MCP, and
-third-party surfaces retain their own path and mount contracts.
+changes, then start a new Codex session. Agent System disables login-shell
+execution and sets the deterministic PATH without otherwise changing Codex's
+inherited-environment policy. Remote, sandboxed, ACP, MCP, and third-party
+surfaces retain their own path and mount contracts.
