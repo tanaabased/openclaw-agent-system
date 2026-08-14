@@ -3,6 +3,7 @@
 ### New Features
 
 - Bound managed `git` and `gh` shim descendants from native OpenClaw exec and the OpenClaw Codex harness to the active agent with workspace and repository admission.
+- Added revision-aware replies for approved GitHub issue mentions, with tool-free private turns, exact comment reauthorization, and durable public delivery. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
 - Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
@@ -10,6 +11,8 @@
 ### Bug Fixes
 
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
+- Fixed malformed notification acknowledgment output to fall back to a safe deterministic response instead of leaving assignment intake failed. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
+- Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
 - Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)

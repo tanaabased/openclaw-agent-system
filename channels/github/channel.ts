@@ -15,6 +15,7 @@ import {
 import type GitHubNotificationMonitorService from './lib/monitor-service.ts';
 import type GitHubNotificationMonitorStateStore from './lib/monitor-state-store.ts';
 import type GitHubNotificationActivationService from './lib/activation-service.ts';
+import type GitHubNotificationCommentService from './lib/comment-service.ts';
 import type { GitHubNotificationMonitorState } from './utils/monitor-state.ts';
 import {
   githubNotificationChannelId,
@@ -30,6 +31,7 @@ interface ResolvedNotificationChannelAccount {
 
 export interface GitHubNotificationChannelDependencies {
   activationService: Pick<GitHubNotificationActivationService, 'schedule' | 'settle'>;
+  commentService: Pick<GitHubNotificationCommentService, 'schedule' | 'settle'>;
   clock?: () => number;
   message: ChannelMessageAdapter;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
@@ -164,17 +166,22 @@ export function createGitHubNotificationChannel(
         };
         await publish(clock());
         dependencies.activationService.schedule(context.accountId, context.abortSignal);
+        dependencies.commentService.schedule(context.accountId, context.abortSignal);
         try {
           await dependencies.monitorService.runAccount(
             context.accountId,
             context.abortSignal,
             async () => {
               dependencies.activationService.schedule(context.accountId, context.abortSignal);
+              dependencies.commentService.schedule(context.accountId, context.abortSignal);
               await publish();
             },
           );
         } finally {
-          await dependencies.activationService.settle(context.accountId);
+          await Promise.all([
+            dependencies.activationService.settle(context.accountId),
+            dependencies.commentService.settle(context.accountId),
+          ]);
           status({
             connected: false,
             healthState: 'stopped',

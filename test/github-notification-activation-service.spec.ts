@@ -66,7 +66,7 @@ describe('channels/github/lib/activation-service', () => {
             store.state().items[notificationItemKey]?.delivery?.activation?.status,
             'adopted',
           );
-          return { acknowledgmentCommentId: 91 };
+          return { acknowledgment: { commentId: 91, status: 'published' } };
         },
       },
       stateStore: store,
@@ -85,6 +85,63 @@ describe('channels/github/lib/activation-service', () => {
       commentId: 91,
       status: 'published',
     });
+  });
+
+  it('should checkpoint and log a terminal acknowledgment failure without failing planning', async () => {
+    const store = memoryStore();
+    const info: string[] = [];
+    const warnings: string[] = [];
+    const service = new GitHubNotificationActivationService({
+      authority: {
+        loadPlanningContext: async () => ({ authorized: true, context: planningContext }),
+      },
+      leaseStore: leaseStore(),
+      logger: {
+        error() {},
+        info(message) {
+          info.push(message);
+        },
+        warn(message) {
+          warnings.push(message);
+        },
+      },
+      sessions: {
+        async planAssignment(input) {
+          await input.onTurnAdopted();
+          return {
+            acknowledgment: {
+              failureCode: 'github-notification-acknowledgment-not-confirmed',
+              status: 'failed',
+            },
+          };
+        },
+      },
+      stateStore: store,
+    });
+    const controller = new AbortController();
+
+    service.schedule('tanaabot', controller.signal);
+    await service.settle('tanaabot');
+
+    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
+      status: 'planned',
+    });
+    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
+      failureCode: 'github-notification-acknowledgment-not-confirmed',
+      status: 'failed',
+    });
+    assert.equal(
+      info.some((message) => message.includes('acknowledgment=pending')),
+      true,
+    );
+    assert.equal(
+      warnings.some(
+        (message) =>
+          message.includes('acknowledgment=failed') &&
+          message.includes('code=github-notification-acknowledgment-not-confirmed'),
+      ),
+      true,
+    );
   });
 
   it('should retry only failures that happen before the host adopts the turn', async () => {

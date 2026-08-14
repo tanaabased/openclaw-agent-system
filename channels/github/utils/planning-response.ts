@@ -1,6 +1,11 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
-import { githubNotificationPublicationText } from './publication.ts';
+import {
+  GitHubNotificationPublicationError,
+  githubNotificationPublicationText,
+} from './publication.ts';
+
+const fallbackAcknowledgment = 'Got it — I have reviewed the assignment and prepared a plan.';
 
 export class GitHubNotificationPlanningResponseError extends Error {
   override name = 'GitHubNotificationPlanningResponseError';
@@ -72,9 +77,16 @@ export default function githubNotificationPlanningAcknowledgment(
   const response = payloads.map(planningResponseText).filter(Boolean).join('\n');
   const matches = [...response.matchAll(/^ACKNOWLEDGMENT:[ \t]*(.+?)[ \t]*$/gmu)];
   if (matches.length !== 1 || !matches[0]?.[1]) {
-    throw new GitHubNotificationPlanningResponseError(
-      'github-notification-planning-acknowledgment-missing',
-    );
+    return githubNotificationPublicationText('initial-acknowledgment', [
+      { text: fallbackAcknowledgment },
+    ]);
   }
-  return githubNotificationPublicationText('initial-acknowledgment', [{ text: matches[0][1] }]);
+  try {
+    return githubNotificationPublicationText('initial-acknowledgment', [{ text: matches[0][1] }]);
+  } catch (error) {
+    if (!(error instanceof GitHubNotificationPublicationError)) throw error;
+    return githubNotificationPublicationText('initial-acknowledgment', [
+      { text: fallbackAcknowledgment },
+    ]);
+  }
 }

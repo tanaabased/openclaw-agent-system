@@ -22,6 +22,15 @@ import {
   type GitHubNotificationAssignmentEvent,
 } from '../channel.ts';
 import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
+import githubNotificationCommentPrompt from '../utils/comment-context.ts';
+import githubNotificationCommentReply, {
+  assertGitHubNotificationCommentResponse,
+} from '../utils/comment-response.ts';
+import type { GitHubCanonicalIssueComment } from '../utils/comment-admission.ts';
+import type {
+  GitHubNotificationAcknowledgmentState,
+  GitHubNotificationCommentRevisionState,
+} from '../utils/monitor-state.ts';
 import githubNotificationPlanningPrompt from '../utils/planning-context.ts';
 import githubNotificationPlanningAcknowledgment, {
   assertGitHubNotificationPlanningResponse,
@@ -48,10 +57,20 @@ export interface GitHubNotificationPlanningTurnInput extends GitHubNotificationA
   onTurnAdopted(): Promise<void> | void;
 }
 
-export interface GitHubNotificationPlanningTurnResult {
-  acknowledgmentCommentId?: number;
-  acknowledgmentFailureCode?: string;
+export type GitHubNotificationPlanningTurnResult = {
+  acknowledgment:
+    { failureCode: string; status: 'failed' } | { commentId: number; status: 'published' };
+};
+
+export interface GitHubNotificationCommentTurnInput extends GitHubNotificationAssignmentSessionInput {
+  comment: GitHubNotificationCommentRevisionState;
+  context: GitHubCanonicalIssueComment;
+  onTurnAdopted(): Promise<void> | void;
 }
+
+export type GitHubNotificationCommentTurnResult = {
+  reply: Exclude<GitHubNotificationAcknowledgmentState, { status: 'pending' }>;
+};
 
 export interface GitHubNotificationSessionTurnInput {
   config: OpenClawConfig;
@@ -95,6 +114,18 @@ function errorCode(error: unknown): string {
     return error.code;
   }
   return 'github-notification-acknowledgment-publication-failed';
+}
+
+function commentErrorCode(error: unknown): string {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.startsWith('github-notification-')
+  ) {
+    return error.code;
+  }
+  return 'github-notification-reply-publication-failed';
 }
 
 function publishedCommentId(result: DurableInboundReplyDeliveryResult): number | undefined {
@@ -270,7 +301,9 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     try {
       acknowledgment = githubNotificationPlanningAcknowledgment([planningPayload]);
     } catch (error) {
-      return { acknowledgmentFailureCode: errorCode(error) };
+      return {
+        acknowledgment: { failureCode: errorCode(error), status: 'failed' },
+      };
     }
     try {
       const publication = await this.#dependencies.publicationService.publish({
@@ -285,11 +318,185 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
         publicationId: input.delivery.assignmentEventId,
       });
       const acknowledgmentCommentId = publishedCommentId(publication);
+      const acknowledgmentFailureCode =
+        publication.status === 'failed'
+          ? errorCode(publication.error)
+          : 'github-notification-acknowledgment-not-confirmed';
       return acknowledgmentCommentId === undefined
-        ? { acknowledgmentFailureCode: 'github-notification-acknowledgment-not-confirmed' }
-        : { acknowledgmentCommentId };
+        ? {
+            acknowledgment: {
+              failureCode: acknowledgmentFailureCode,
+              status: 'failed',
+            },
+          }
+        : { acknowledgment: { commentId: acknowledgmentCommentId, status: 'published' } };
     } catch (error) {
-      return { acknowledgmentFailureCode: errorCode(error) };
+      return {
+        acknowledgment: { failureCode: errorCode(error), status: 'failed' },
+      };
+    }
+  }
+
+  public async respondToComment(
+    input: GitHubNotificationCommentTurnInput,
+  ): Promise<GitHubNotificationCommentTurnResult> {
+    const assignment = await this.#resolveAssignment(input);
+    const finalPayloads: ReplyPayload[] = [];
+    let sessionRecordTask: Promise<unknown> | undefined;
+    const messageId = `comment:${requiredText(
+      input.comment.revisionId,
+      'GitHub comment revision ids',
+      255,
+    )}`;
+    const notification = `An approved GitHub comment mentioned this agent on issue #${assignment.event.itemNumber}.`;
+    const prompt = githubNotificationCommentPrompt({ comment: input.context, item: input.item });
+    const author = input.context.author;
+    if (!author || author.nodeId !== input.comment.actorNodeId) {
+      throw new Error('The GitHub notification comment author is invalid.');
+    }
+    const ctxPayload = buildChannelInboundEventContext({
+      accountId: assignment.route.accountId,
+      channel: githubNotificationChannelId,
+      conversation: {
+        id: assignment.route.conversationId,
+        kind: 'direct',
+        label: assignment.label,
+        routePeer: { id: assignment.route.conversationId, kind: 'direct' },
+      },
+      extra: {
+        githubCommentId: input.comment.commentDatabaseId,
+        githubCommentNodeId: input.comment.commentNodeId,
+        githubCommentRevisionId: input.comment.revisionId,
+        githubItemNumber: assignment.event.itemNumber,
+        githubItemType: assignment.event.itemType,
+        githubRepositoryId: assignment.event.repositoryId,
+      },
+      from: `github:${author.nodeId}`,
+      message: {
+        body: notification,
+        bodyForAgent: prompt,
+        commandBody: '',
+        inboundEventKind: 'user_request',
+        rawBody: notification,
+      },
+      messageId,
+      reply: {
+        sourceReplyDeliveryMode: 'none',
+        to: assignment.route.conversationId,
+      },
+      route: {
+        accountId: assignment.route.accountId,
+        agentId: assignment.route.agentId,
+        createIfMissing: false,
+        routeSessionKey: assignment.route.sessionKey,
+      },
+      sender: {
+        displayLabel: author.login,
+        id: author.nodeId,
+        isBot: false,
+        name: author.login,
+      },
+      surface: githubNotificationChannelId,
+      timestamp: Date.parse(input.context.updatedAt),
+    });
+    const result = await dispatchChannelInboundReply({
+      accountId: assignment.route.accountId,
+      agentId: assignment.route.agentId,
+      afterRecord: async () => {
+        if (!sessionRecordTask) {
+          throw new Error('OpenClaw did not expose the notification session record task.');
+        }
+        await sessionRecordTask;
+      },
+      cfg: assignment.config,
+      channel: githubNotificationChannelId,
+      ctxPayload,
+      delivery: {
+        async deliver(payload, info) {
+          if (info.kind === 'final') finalPayloads.push(payload);
+          return { visibleReplySent: false };
+        },
+      },
+      dispatchReplyWithBufferedBlockDispatcher:
+        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+      messageId,
+      onTurnAdopted: input.onTurnAdopted,
+      record: {
+        createIfMissing: false,
+        onRecordError(error) {
+          throw error;
+        },
+        trackSessionMetaTask(task) {
+          sessionRecordTask = task;
+        },
+      },
+      recordInboundSession: this.#dependencies.recordInboundSession,
+      replyOptions: {
+        ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+        commentaryPayloadsEnabled: true,
+        disableTools: true,
+        sourceReplyDeliveryMode: 'automatic',
+        suppressDefaultToolProgressMessages: true,
+        suppressTyping: true,
+        toolsAllow: [],
+      },
+      routeSessionKey: assignment.route.sessionKey,
+      storePath: resolveStorePath(assignment.config.session?.store, {
+        agentId: assignment.route.agentId,
+      }),
+      toolsAllow: [],
+    });
+    if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
+      throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
+    }
+    const dispatch = result.dispatchResult;
+    this.#dependencies.logger.info(
+      [
+        'github-notifications: comment dispatch complete',
+        `agent=${assignment.route.agentId}`,
+        `payloads=${finalPayloads.length}`,
+        `final=${dispatch.counts.final ?? 0}`,
+        `block=${dispatch.counts.block ?? 0}`,
+        `tool=${dispatch.counts.tool ?? 0}`,
+        `failed-final=${dispatch.failedCounts?.final ?? 0}`,
+        `failed-block=${dispatch.failedCounts?.block ?? 0}`,
+        `failed-tool=${dispatch.failedCounts?.tool ?? 0}`,
+        `queued-final=${dispatch.queuedFinal === true}`,
+      ].join(' '),
+    );
+    let reply: string;
+    try {
+      const response = assertGitHubNotificationCommentResponse(finalPayloads);
+      reply = githubNotificationCommentReply(response);
+    } catch (error) {
+      return { reply: { failureCode: commentErrorCode(error), status: 'failed' } };
+    }
+    try {
+      const publication = await this.#dependencies.publicationService.publish({
+        accountId: assignment.route.accountId,
+        agentId: assignment.route.agentId,
+        cfg: assignment.config,
+        ctxPayload,
+        info: { kind: 'final' },
+        intent: 'github-reply',
+        item: input.item,
+        payload: { text: reply },
+        publicationId: input.comment.revisionId,
+      });
+      const commentId = publishedCommentId(publication);
+      return commentId === undefined
+        ? {
+            reply: {
+              failureCode:
+                publication.status === 'failed'
+                  ? commentErrorCode(publication.error)
+                  : 'github-notification-reply-not-confirmed',
+              status: 'failed',
+            },
+          }
+        : { reply: { commentId, status: 'published' } };
+    } catch (error) {
+      return { reply: { failureCode: commentErrorCode(error), status: 'failed' } };
     }
   }
 

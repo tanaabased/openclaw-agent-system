@@ -309,8 +309,10 @@ ordinary interval deadline, and preserves active failure and provider backoff.
 Human output includes baseline readiness, a stable diagnostic, and the next poll
 or retry time when available. JSON exposes `baselineAt`,
 `baselineEstablished`, `diagnosticCode`, `lastSuccessfulPollAt`, `nextPollAt`,
-and `retryAt` when applicable. Deferred and failed cycles return a nonzero exit
-code. See the
+`retryAt`, and assignment plus comment baseline, admission, rejection, and
+deferred counts when applicable. The command may checkpoint an admitted comment,
+but it does not wait for the Gateway-owned model turn or public reply. Deferred
+and failed cycles return a nonzero exit code. See the
 [GitHub notifications channel](./channels/github/README.md) for
 configuration, security, lifecycle, and result semantics.
 

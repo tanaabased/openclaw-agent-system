@@ -205,11 +205,67 @@ export default function createNotificationLifecycleContribution(
         ];
       }
       const activationFailureCounts = new Map<string, number>();
+      const acknowledgmentFailureCounts = new Map<string, number>();
+      const commentDiagnosticCounts = new Map<string, number>();
+      const commentDispatchFailureCounts = new Map<string, number>();
+      const commentReplyFailureCounts = new Map<string, number>();
+      let acknowledgmentPendingCount = 0;
+      let commentBaselinePendingCount = 0;
+      let commentResponsePendingCount = 0;
       for (const item of Object.values(state.items)) {
-        const activation = item.delivery?.activation;
+        const delivery = item.delivery;
+        const activation = delivery?.activation;
         if (activation?.status !== 'failed') continue;
         const code = activation.failureCode ?? 'github-notification-activation-failed';
         activationFailureCounts.set(code, (activationFailureCounts.get(code) ?? 0) + 1);
+      }
+      for (const item of Object.values(state.items)) {
+        const delivery = item.delivery;
+        if (item.disposition !== 'approved' || delivery?.stage !== 'active') continue;
+        const acknowledgment = delivery.acknowledgment;
+        if (acknowledgment?.status === 'pending') {
+          acknowledgmentPendingCount += 1;
+        } else if (acknowledgment?.status === 'failed') {
+          acknowledgmentFailureCounts.set(
+            acknowledgment.failureCode,
+            (acknowledgmentFailureCounts.get(acknowledgment.failureCode) ?? 0) + 1,
+          );
+        }
+      }
+      for (const item of Object.values(state.items)) {
+        const delivery = item.delivery;
+        if (
+          item.disposition !== 'approved' ||
+          item.itemType !== 'issue' ||
+          delivery?.stage !== 'active'
+        ) {
+          continue;
+        }
+        const tracking = item.commentTracking;
+        if (tracking?.baselineAt === undefined) commentBaselinePendingCount += 1;
+        if (tracking?.diagnosticCode) {
+          commentDiagnosticCounts.set(
+            tracking.diagnosticCode,
+            (commentDiagnosticCounts.get(tracking.diagnosticCode) ?? 0) + 1,
+          );
+        }
+        for (const comment of Object.values(tracking?.revisions ?? {})) {
+          if (comment.disposition !== 'approved') continue;
+          if (comment.turn?.status === 'pending' || comment.turn?.status === 'adopted') {
+            commentResponsePendingCount += 1;
+          } else if (comment.turn?.status === 'failed') {
+            const code = comment.turn.failureCode ?? 'github-notification-comment-dispatch-failed';
+            commentDispatchFailureCounts.set(
+              code,
+              (commentDispatchFailureCounts.get(code) ?? 0) + 1,
+            );
+          } else if (comment.reply?.status === 'failed') {
+            commentReplyFailureCounts.set(
+              comment.reply.failureCode,
+              (commentReplyFailureCounts.get(comment.reply.failureCode) ?? 0) + 1,
+            );
+          }
+        }
       }
       const activationFindings = [...activationFailureCounts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
@@ -219,9 +275,84 @@ export default function createNotificationLifecycleContribution(
           remediation: 'Resolve the named diagnostic, then use a fresh assignment.',
           status: 'warning' as const,
         }));
+      const acknowledgmentFindings = [...acknowledgmentFailureCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub notification acknowledgment${count === 1 ? '' : 's'} failed after the private planning turn completed.`,
+          remediation:
+            'The private plan remains available. Resolve the named diagnostic; automatic acknowledgment replay is not currently supported.',
+          status: 'warning' as const,
+        }));
+      const acknowledgmentPendingFindings =
+        acknowledgmentPendingCount === 0
+          ? []
+          : [
+              {
+                code: 'github-notification-acknowledgment-pending',
+                message: `${acknowledgmentPendingCount} GitHub notification acknowledgment${acknowledgmentPendingCount === 1 ? ' is waiting for its' : 's are waiting for their'} planning or publication checkpoint.`,
+                remediation:
+                  'Wait for Gateway activation to settle; if this persists, inspect the Gateway logs and use a fresh assignment.',
+                status: 'warning' as const,
+              },
+            ];
+      const commentDiagnosticFindings = [...commentDiagnosticCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub issue conversation${count === 1 ? '' : 's'} could not advance comment tracking safely.`,
+          remediation:
+            'Reduce the comment history below the bounded pagination limit, then run openclaw agent-system notifications refresh.',
+          status: 'warning' as const,
+        }));
+      const commentDispatchFindings = [...commentDispatchFailureCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub comment response turn${count === 1 ? '' : 's'} failed after OpenClaw adopted the turn.`,
+          remediation: 'Resolve the named diagnostic, then use a new comment revision.',
+          status: 'warning' as const,
+        }));
+      const commentReplyFindings = [...commentReplyFailureCounts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => ({
+          code,
+          message: `${count} GitHub comment response${count === 1 ? '' : 's'} remained private because public reply delivery failed.`,
+          remediation:
+            'The private response remains available. Resolve the named diagnostic; automatic reply replay is not currently supported.',
+          status: 'warning' as const,
+        }));
+      const commentPendingFindings = [
+        ...(commentBaselinePendingCount === 0
+          ? []
+          : [
+              {
+                code: 'github-notification-comment-baseline-pending',
+                message: `${commentBaselinePendingCount} active GitHub issue conversation${commentBaselinePendingCount === 1 ? ' is' : 's are'} waiting for a safe comment baseline.`,
+                remediation: 'Run openclaw agent-system notifications refresh.',
+                status: 'warning' as const,
+              },
+            ]),
+        ...(commentResponsePendingCount === 0
+          ? []
+          : [
+              {
+                code: 'github-notification-comment-response-pending',
+                message: `${commentResponsePendingCount} admitted GitHub comment${commentResponsePendingCount === 1 ? ' is' : 's are'} waiting for its private response or publication checkpoint.`,
+                remediation: 'Keep the OpenClaw Gateway running until comment delivery settles.',
+                status: 'warning' as const,
+              },
+            ]),
+      ];
       return [
         ...routingFinding,
         ...activationFindings,
+        ...acknowledgmentFindings,
+        ...acknowledgmentPendingFindings,
+        ...commentDiagnosticFindings,
+        ...commentDispatchFindings,
+        ...commentReplyFindings,
+        ...commentPendingFindings,
         {
           code: 'github-notification-monitor-healthy',
           message: `The GitHub notification monitor last completed a successful read-only observation at ${isoTime(state.lastSuccessfulPollAt)}.`,
