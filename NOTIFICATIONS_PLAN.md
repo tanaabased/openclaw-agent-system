@@ -2,7 +2,8 @@
 
 Status: Notifications MVP 1 is shipped. Notifications 2 Phase 0, Phase 1A, and
 Phase 2 are implemented through the public channel SDK and covered by the packed
-third-party notifications scenario. Phases 3 through 7 remain planned work.
+third-party notifications scenario. Phases 3 through 7 remain planned work, with
+Phase 3 as the next implementation target.
 
 This document is the durable product and architecture plan. Historical
 implementation notes, transient test counts, and completed spike details are
@@ -83,7 +84,7 @@ MVP 1 product promise:
 - canonical unassignment and authority-revocation transitions;
 - logical retirement that preserves sessions and worktrees;
 - reassignment and multi-stage delivery state;
-- optional immutable repository-owner restrictions; and
+- optional immutable repository-owner restrictions;
 - safely retryable deterministic session recording;
 - asynchronous bounded issue-context planning with tools disabled;
 - one model-authored, personality-aware acknowledgment candidate extracted from
@@ -346,8 +347,9 @@ OpenClaw and GitHub intentionally receive different outputs from one agent turn:
    conversational, personality-aware GitHub candidate without exposing the
    complete transcript;
 4. the initial planning turn emits its acknowledgment candidate alongside the
-   private assessment, blockers, and plan; later intents may use their own
-   bounded composer when their owning phase is implemented;
+   private assessment, blockers, and plan; admitted comment turns use their own
+   bounded GitHub-reply composer, while operator progress remains unavailable
+   until Phase 3;
 5. a deterministic fail-closed gate rejects unsafe or unsupported candidates;
 6. one GitHub message adapter reauthorizes and durably publishes the accepted
    candidate; and
@@ -377,8 +379,8 @@ Publication eligibility is origin-aware:
   outbound helpers for queueing, retries, hooks, and normalized receipts.
 - Model one Agent System publication target vocabulary for the explicit
   `initial-acknowledgment`, `github-reply`, and `operator-progress` intents.
-  Enable only `initial-acknowledgment` until the later intent's owning phase is
-  implemented.
+  Enable `initial-acknowledgment` and `github-reply` through their implemented
+  phases, and keep `operator-progress` inactive until Phase 3.
 - Resolve the channel account and conversation target to one admitted canonical
   issue before any credential resolution or provider mutation.
 - Reauthorize the current assignment or admitted comment, verified GitHub
@@ -445,9 +447,9 @@ Publication eligibility is origin-aware:
   historical admission boundary.
 - Do not call protected Gateway session APIs or write directly to session storage.
 
-Ship Phase 1A as plan-only activation. Do not add a manifest setting while there
-is only one supported choice. Keep GitHub-facing publication unavailable beyond
-the initial acknowledgment until Phase 2.
+Phase 1A shipped as plan-only activation without a manifest setting because it
+has only one supported choice. Its GitHub-facing publication boundary ends at
+the initial acknowledgment; Phase 2 owns approved-comment replies.
 
 ### Phase 2: Approved GitHub Mention Conversations
 
