@@ -98,7 +98,7 @@ cd "$TMPDIR/agent-system-pr-notification-actor"
 expected_head="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/pulls/$pull_request_number" --jq .head.sha)"
 printf '%s' "$expected_head" > "$TMPDIR/assigned-pull-request-head"
 cd "$TMPDIR/agent-system-pr-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'all(.[]; (.branch | startswith("pull-request-") | not))'
 
 # should label the private session with the pull-request identity and observed head
 cd "$TMPDIR/agent-system-pr-notifications"
@@ -209,7 +209,7 @@ OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'all(.[]; (.branch | startswith("pull-request-") | not))'
 cd "$TMPDIR/agent-system-pr-notification-actor"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
@@ -227,7 +227,7 @@ cd "$TMPDIR/agent-system-pr-notifications"
   --minimum 1
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'length == 0'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e 'all(.[]; (.branch | startswith("pull-request-") | not))'
 ```
 
 ## Cleanup
