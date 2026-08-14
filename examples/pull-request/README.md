@@ -172,11 +172,17 @@ for attempt in $(seq 1 60); do
 done
 test "$progress_count" = '1'
 
+# should render the confirmed pull-request progress as quoted local output
+session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
+params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## 📤 GitHub progress published") and contains("> Pull-request planning is complete and the assigned head is recorded.")'
+
 # should admit one approved top-level pull-request comment across a gateway restart
 cd "$TMPDIR/agent-system-pr-notification-actor"
 agent_login="$(cat "$TMPDIR/pr-notification-agent-login")"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method POST "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" -f "body=@$agent_login Can you summarize the recorded pull-request plan?" --jq .id > /dev/null
+comment_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method POST "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" -f "body=@$agent_login Can you summarize the recorded pull-request plan?" --jq .id)"
+printf '%s' "$comment_id" > "$TMPDIR/pr-status-comment-id"
 cd "$TMPDIR/agent-system-pr-notifications"
 "$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
   --agent notification-data \
@@ -188,20 +194,36 @@ OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 cd "$TMPDIR/agent-system-pr-notifications"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
-reply_count='0'
-for attempt in $(seq 1 60); do
-  cd "$TMPDIR/agent-system-pr-notification-actor"
-  reply_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
-  if [[ "$reply_count" == '1' ]]; then
-    break
-  fi
-  sleep 2
-done
-test "$reply_count" = '1'
+"$GITHUB_WORKSPACE/scripts/wait-for-notification-comment.sh" \
+  --actor-agent notification-actor \
+  --item-number "$pull_request_number" \
+  --notification-agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --session-key "$session_key"
 cd "$TMPDIR/agent-system-pr-notifications"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("GITHUB_REPLY:") and contains("RESPONSE:")'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
+comment_id="$(cat "$TMPDIR/pr-status-comment-id")"
+source="https://github.com/tanaabased/agent-system-test/pull/$pull_request_number#issuecomment-$comment_id"
+printf '%s\n' "$history" | jq -e --arg source "$source" '
+  [.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") as $assistant
+  | [.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $user
+  | ($assistant | contains("## 💬 Comment answered"))
+    and ($assistant | contains("## Response"))
+    and ($assistant | contains("## 📤 Proposed GitHub reply"))
+    and ($assistant | contains("\n> "))
+    and (($assistant | contains("GITHUB_REPLY:")) | not)
+    and (($assistant | contains("RESPONSE:")) | not)
+    and ($user | contains("## 💬 Comment received"))
+    and ($user | contains($source))
+    and ($user | contains("**Mode:** Reply"))
+    and (($user | contains("Can you summarize the recorded pull-request plan")) | not)
+    and (($user | contains("GITHUB_COMMENT_JSON")) | not)
+    and (($user | contains("STATUS_EVIDENCE_JSON")) | not)
+'
+printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+cd "$TMPDIR/agent-system-pr-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 
 # should preserve one pull-request session and publication of each kind after restart
 cd "$TMPDIR/agent-system-pr-notifications"

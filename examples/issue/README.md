@@ -199,6 +199,11 @@ for attempt in $(seq 1 60); do
 done
 test "$progress_count" = '1'
 
+# should render the confirmed progress update as quoted local output
+session_key="$(cat "$TMPDIR/approved-session-key")"
+params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
+openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("## 📤 GitHub progress published") and contains("> Implementation is underway and the current checks are passing.")'
+
 # should reject a quote-only mention without starting a comment turn
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -230,20 +235,34 @@ OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 # should complete one private tool-free response and one safe public github reply
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 session_key="$(cat "$TMPDIR/approved-session-key")"
-reply_count='0'
-for attempt in $(seq 1 60); do
-  cd "$TMPDIR/agent-system-notification-actor"
-  reply_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
-  if [[ "$reply_count" == '1' ]]; then
-    break
-  fi
-  sleep 2
-done
-test "$reply_count" = '1'
+"$GITHUB_WORKSPACE/scripts/wait-for-notification-comment.sh" \
+  --actor-agent notification-actor \
+  --item-number "$issue_number" \
+  --notification-agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --session-key "$session_key"
 cd "$TMPDIR/agent-system-notifications"
 params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") | contains("GITHUB_REPLY:") and contains("RESPONSE:")'
-openclaw gateway call chat.history --params "$params" --json | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
+history="$(openclaw gateway call chat.history --params "$params" --json)"
+status_comment_id="$(cat "$TMPDIR/status-comment-id")"
+source="https://github.com/tanaabased/agent-system-test/issues/$issue_number#issuecomment-$status_comment_id"
+printf '%s\n' "$history" | jq -e --arg source "$source" '
+  [.messages[]? | select(.role == "assistant") | .. | strings] | join("\n") as $assistant
+  | [.messages[]? | select(.role == "user") | .. | strings] | join("\n") as $user
+  | ($assistant | contains("## 💬 Comment answered"))
+    and ($assistant | contains("## Response"))
+    and ($assistant | contains("## 📤 Proposed GitHub reply"))
+    and ($assistant | contains("\n> "))
+    and (($assistant | contains("GITHUB_REPLY:")) | not)
+    and (($assistant | contains("RESPONSE:")) | not)
+    and ($user | contains("## 💬 Comment received"))
+    and ($user | contains($source))
+    and ($user | contains("**Mode:** Reply"))
+    and (($user | contains("Can you share a status update")) | not)
+    and (($user | contains("GITHUB_COMMENT_JSON")) | not)
+    and (($user | contains("STATUS_EVIDENCE_JSON")) | not)
+'
+printf '%s\n' "$history" | jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 

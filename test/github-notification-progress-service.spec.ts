@@ -259,6 +259,7 @@ describe('channels/github/lib/progress-command', () => {
       sessionKey,
     } as never);
     assert.equal(missingScope.isError, true);
+    assert.match(missingScope.text ?? '', /^## ⚠️ GitHub progress not published$/mu);
     assert.match(missingScope.text ?? '', /operator-authorization-required/u);
 
     const missingSession = await command!.handler({
@@ -271,6 +272,7 @@ describe('channels/github/lib/progress-command', () => {
       isAuthorizedSender: true,
     } as never);
     assert.equal(missingSession.isError, true);
+    assert.match(missingSession.text ?? '', /The selected progress update was not published/u);
     assert.match(missingSession.text ?? '', /session-required/u);
 
     const result = await command!.handler({
@@ -283,7 +285,15 @@ describe('channels/github/lib/progress-command', () => {
       isAuthorizedSender: true,
       sessionKey,
     } as never);
-    assert.deepEqual(result, { text: 'Published the selected progress update to GitHub.' });
+    assert.deepEqual(result, {
+      text: [
+        '## 📤 GitHub progress published',
+        '',
+        'The selected progress update was published to GitHub.',
+        '',
+        '> Implementation is underway.',
+      ].join('\n'),
+    });
     assert.equal(calls.length, 1);
   });
 });

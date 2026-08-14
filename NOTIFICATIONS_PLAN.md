@@ -363,9 +363,10 @@ OpenClaw and GitHub intentionally receive different outputs from one agent turn:
 
 1. an admitted GitHub event resolves the deterministic assignment conversation;
 2. OpenClaw records the full agent response in the private local session;
-3. bounded model generation produces a separately labeled, concise,
-   conversational, personality-aware GitHub candidate without exposing the
-   complete transcript;
+3. bounded model generation produces a concise, conversational,
+   personality-aware GitHub candidate without exposing the complete transcript;
+   admitted comment replies make that candidate visibly explicit as a
+   blockquote;
 4. the initial planning turn emits its acknowledgment candidate alongside the
    private assessment, blockers, and plan; admitted comment turns use their own
    bounded GitHub-reply composer, while an explicit local command selects
@@ -485,7 +486,9 @@ comments in the existing assignment conversation.
 - Treat mentions as addressing, never authorization.
 - Deduplicate create, edit, retry, self, quote-only, and stale-revision events.
 - Dispatch admitted comments asynchronously to the existing local conversation
-  with bounded provenance and untrusted-content framing.
+  as compact linked Markdown ending after its mode note. Supply the exact
+  comment, revision provenance, bounds, and recorded status evidence separately
+  as ephemeral current-turn untrusted structured context.
 - Let status questions use only bounded evidence already recorded in the
   assignment session and Agent System-owned checkpoints. Do not let an admitted GitHub
   comment trigger tools or fresh repository inspection, and do not claim a
@@ -493,8 +496,9 @@ comments in the existing assignment conversation.
 - When recorded evidence is insufficient, say that no verified current update
   is available from the notification turn and retain the status request for a
   locally authorized continuation.
-- Keep the full response in the private OpenClaw session, then create one
-  `github-reply` intent from the bounded final response because the admitted
+- Keep the rich response in the private OpenClaw session, visually isolate its
+  public candidate beneath a descriptive heading as a Markdown blockquote, then
+  create one `github-reply` intent from the extracted text because the admitted
   GitHub origin supplies explicit reply intent.
 - Produce and publish the concise GitHub-facing response through Phase 0's
   composer, safety gate, message adapter, and durable receipt path. Never mirror,

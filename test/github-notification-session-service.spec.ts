@@ -401,7 +401,7 @@ describe('channels/github/lib/session-service', () => {
     });
   });
 
-  it('should run one tool-free comment turn and publish only its labeled github reply', async () => {
+  it('should run one tool-free rich comment turn and publish only its quoted github reply', async () => {
     const context = {
       author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
       body: '@data can you share a status update?',
@@ -419,15 +419,66 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.replyOptions?.disableTools, true);
         assert.deepEqual(input.toolsAllow, []);
         assert.equal(input.ctx.SenderId, 'U_actor');
+        const visible = [
+          '## 💬 Comment received',
+          '',
+          'pirog mentioned you on [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/issues/42#issuecomment-92).',
+          '',
+          '**Mode:** Reply — answer from recorded evidence without using tools.',
+        ].join('\n');
+        assert.equal(input.ctx.Body, visible);
+        assert.equal(input.ctx.RawBody, visible);
+        assert.match(String(input.ctx.BodyForAgent), /^## 💬 Comment received$/mu);
         assert.match(String(input.ctx.BodyForAgent), /Do not use tools/u);
         assert.match(String(input.ctx.BodyForAgent), /no verified current update/u);
+        assert.match(String(input.ctx.BodyForAgent), /## 📤 Proposed GitHub reply/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /STATUS_EVIDENCE_JSON/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /GITHUB_COMMENT_JSON/u);
+        assert.doesNotMatch(String(input.ctx.BodyForAgent), /can you share a status update/u);
+        assert.deepEqual(input.ctx.UntrustedStructuredContext, [
+          {
+            label: 'GitHub issue comment context',
+            payload: {
+              bounds: {
+                commentBodyCharacters: context.body.length,
+                commentBodyTruncated: false,
+              },
+              comment: context,
+              item: {
+                itemType: 'issue',
+                number: 42,
+                repositoryName: 'openclaw-agent-system',
+                repositoryOwner: 'tanaabased',
+              },
+              revision: {
+                bodyDigest: revision.bodyDigest,
+                id: revision.revisionId,
+              },
+              statusEvidence: {
+                acknowledgmentStatus: 'published',
+                assignmentActive: true,
+                planningStatus: 'planned',
+              },
+            },
+            source: 'https://github.com/tanaabased/openclaw-agent-system/issues/42#issuecomment-92',
+            type: 'github_issue_comment',
+          },
+        ]);
         await input.replyOptions?.onTurnAdopted?.();
         await input.dispatcherOptions.deliver(
           {
             text: [
-              'GITHUB_REPLY: I have the plan ready, but I do not have a newly verified implementation update yet.',
-              'RESPONSE:',
+              '## 💬 Comment answered',
+              '',
+              'The recorded assignment evidence supports a bounded status reply.',
+              '',
+              '## Response',
+              '',
               'The assignment is active and the plan is recorded. A local follow-up is required before I can claim fresh repository or test status.',
+              '',
+              '## 📤 Proposed GitHub reply',
+              '',
+              '> I have the plan ready, but I do not have a newly verified implementation update yet.',
             ].join('\n'),
           },
           { kind: 'final' },

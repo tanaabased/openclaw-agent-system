@@ -8,6 +8,7 @@
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)
+- Added rich linked GitHub comment turns with ephemeral structured evidence, private Markdown responses, and visibly quoted public reply candidates. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added revision-aware replies for approved GitHub issue mentions, with tool-free private turns, exact comment reauthorization, and durable public delivery. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
 - Bound registered command-launcher descendants, including `git` and `gh`, to active OpenClaw and Codex agents with fail-closed admission. [#23](https://github.com/tanaabased/openclaw-agent-system/pull/23)
 

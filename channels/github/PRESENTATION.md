@@ -57,6 +57,10 @@ visible message, copy them into the private response without a user-facing
 reason, or promise that transient provider content will be retained
 indefinitely.
 
+OpenClaw's structured-context boundary is ephemeral current-turn input. It is
+omitted from sanitized display and later model replay and is not, by itself, a
+historical audit record. GitHub remains the authoritative re-fetch source.
+
 ## Inbound Messages
 
 An inbound notification says what happened and, when needed, what mode or

@@ -204,9 +204,10 @@ phase.
   assigning actor, an eligible repository owner, and sufficient repository
   access.
 - GitHub prose and changed-file metadata remain bounded untrusted data.
-  Planning and admitted-comment turns cannot use tools, and only separately
-  labeled or explicitly selected candidates may enter the fail-closed public
-  delivery path.
+  Planning and admitted-comment turns cannot use tools. Admitted comments and
+  status evidence use ephemeral current-turn structured context. Public
+  delivery accepts only the planning turn's separate acknowledgment, an
+  admitted comment's visibly quoted reply, or explicitly selected progress.
 - Comment mentions do not authorize inspection or implementation. Status replies
   use only recorded evidence; fresh inspection remains a local tool-enabled turn
   whose result stays private unless an operator invokes

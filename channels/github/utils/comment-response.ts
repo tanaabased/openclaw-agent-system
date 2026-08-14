@@ -1,6 +1,15 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
-import { githubNotificationPublicationText } from './publication.ts';
+import { githubNotificationProposedReplyHeading } from './presentation.ts';
+import {
+  GitHubNotificationPublicationError,
+  githubNotificationPublicationText,
+} from './publication.ts';
+import githubNotificationQuotedCandidate, {
+  githubNotificationMarkdownHeadings,
+} from './quoted-candidate.ts';
+
+type GitHubNotificationCommentResponseFormat = 'legacy' | 'markdown';
 
 export class GitHubNotificationCommentResponseError extends Error {
   override name = 'GitHubNotificationCommentResponseError';
@@ -14,9 +23,77 @@ function responseText(payload: ReplyPayload): string {
   return payload.text?.trim() ?? '';
 }
 
+function assertMarkdownResponse(response: string): void {
+  const lines = response.replace(/\r\n?/gu, '\n').split('\n');
+  const headings = githubNotificationMarkdownHeadings(lines);
+  const expected = [
+    '## 💬 Comment answered',
+    '## Response',
+    githubNotificationProposedReplyHeading,
+  ];
+  if (
+    headings.length !== expected.length ||
+    headings[0]?.line !== 0 ||
+    headings.map(({ text }) => text).join('\n') !== expected.join('\n')
+  ) {
+    throw new GitHubNotificationCommentResponseError(
+      'github-notification-comment-response-invalid',
+    );
+  }
+  const summary = lines.slice(1, headings[1]!.line).join('\n').trim();
+  const privateResponse = lines
+    .slice(headings[1]!.line + 1, headings[2]!.line)
+    .join('\n')
+    .trim();
+  if (!summary || summary.includes('\n') || !privateResponse) {
+    throw new GitHubNotificationCommentResponseError(
+      'github-notification-comment-response-invalid',
+    );
+  }
+  try {
+    githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading);
+  } catch {
+    throw new GitHubNotificationCommentResponseError(
+      'github-notification-comment-response-invalid',
+    );
+  }
+}
+
+function legacyComplete(response: string): boolean {
+  const privateResponse = /^RESPONSE:[ \t]*$\n(?<body>[\s\S]+)$/mu.exec(response)?.groups?.body;
+  return /^GITHUB_REPLY:[ \t]*\S.+$/mu.test(response) && Boolean(privateResponse?.trim());
+}
+
+function responseFormat(response: string): GitHubNotificationCommentResponseFormat {
+  const headingTexts = githubNotificationMarkdownHeadings(
+    response.replace(/\r\n?/gu, '\n').split('\n'),
+  ).map(({ text }) => text);
+  const hasMarkdown = [
+    '## 💬 Comment answered',
+    '## Response',
+    githubNotificationProposedReplyHeading,
+  ].some((heading) => headingTexts.includes(heading));
+  const hasLegacy = /^GITHUB_REPLY:|^RESPONSE:/mu.test(response);
+  if (hasMarkdown && hasLegacy) {
+    throw new GitHubNotificationCommentResponseError(
+      'github-notification-comment-response-invalid',
+    );
+  }
+  if (hasMarkdown) {
+    assertMarkdownResponse(response);
+    return 'markdown';
+  }
+  if (hasLegacy && legacyComplete(response)) return 'legacy';
+  throw new GitHubNotificationCommentResponseError('github-notification-comment-response-missing');
+}
+
 function completeResponse(payload: ReplyPayload): boolean {
-  const text = responseText(payload);
-  return /^GITHUB_REPLY:[ \t]*\S.+$/mu.test(text) && /^RESPONSE:[ \t]*$/mu.test(text);
+  try {
+    responseFormat(responseText(payload));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Select one complete private comment response, preferring an ordinary final. */
@@ -33,20 +110,27 @@ export function assertGitHubNotificationCommentResponse(
         : 'github-notification-comment-response-invalid',
     );
   }
-  const candidate = candidates[0]!;
-  const response = responseText(candidate);
-  const section = /^RESPONSE:[ \t]*$\n(?<body>[\s\S]+)$/mu.exec(response)?.groups?.body?.trim();
-  if (!section) {
-    throw new GitHubNotificationCommentResponseError(
-      'github-notification-comment-response-invalid',
-    );
-  }
-  return candidate;
+  return candidates[0];
 }
 
-/** Extract only the explicitly labeled public candidate from a private comment response. */
+/** Extract only the visibly quoted or legacy-labeled public candidate. */
 export default function githubNotificationCommentReply(payload: ReplyPayload): string {
-  const matches = [...responseText(payload).matchAll(/^GITHUB_REPLY:[ \t]*(.+?)[ \t]*$/gmu)];
+  const response = responseText(payload);
+  const format = responseFormat(response);
+  if (format === 'markdown') {
+    try {
+      return githubNotificationPublicationText('github-reply', [
+        {
+          text: githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading),
+        },
+      ]);
+    } catch (error) {
+      if (error instanceof GitHubNotificationCommentResponseError) throw error;
+      if (error instanceof GitHubNotificationPublicationError) throw error;
+      throw new GitHubNotificationCommentResponseError('github-notification-comment-reply-missing');
+    }
+  }
+  const matches = [...response.matchAll(/^GITHUB_REPLY:[ \t]*(.+?)[ \t]*$/gmu)];
   if (matches.length !== 1 || !matches[0]?.[1]) {
     throw new GitHubNotificationCommentResponseError('github-notification-comment-reply-missing');
   }

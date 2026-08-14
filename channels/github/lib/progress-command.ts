@@ -5,6 +5,7 @@ import type {
 } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { Logger } from '../../../lib/logger.ts';
+import githubNotificationMessage, { githubNotificationBlockquote } from '../utils/presentation.ts';
 import type GitHubNotificationProgressService from './progress-service.ts';
 
 export const githubNotificationProgressCommandName = 'agent-system-progress';
@@ -17,7 +18,26 @@ export interface GitHubNotificationProgressCommandDependencies {
 function commandError(code: string): PluginCommandResult {
   return {
     isError: true,
-    text: `The progress update was not published. Diagnostic: ${code}.`,
+    text: githubNotificationMessage({
+      emoji: '⚠️',
+      note: { label: 'Diagnostic', text: code },
+      summary: 'The selected progress update was not published to GitHub.',
+      title: 'GitHub progress not published',
+    }),
+  };
+}
+
+function commandSuccess(text: string): PluginCommandResult {
+  return {
+    text: [
+      githubNotificationMessage({
+        emoji: '📤',
+        summary: 'The selected progress update was published to GitHub.',
+        title: 'GitHub progress published',
+      }),
+      '',
+      githubNotificationBlockquote(text),
+    ].join('\n'),
   };
 }
 
@@ -60,16 +80,17 @@ export default function registerGitHubNotificationProgressCommand(
         return commandError('github-notification-progress-session-required');
       }
       try {
+        const text = context.args?.trim() ?? '';
         const result = await dependencies.progressService.publish({
           agentId: context.agentId,
           config: context.config,
           sessionKey: context.sessionKey,
-          text: context.args ?? '',
+          text,
         });
         dependencies.logger.info(
           `github-notifications: progress published agent=${context.agentId} comment=${result.commentId}`,
         );
-        return { text: 'Published the selected progress update to GitHub.' };
+        return commandSuccess(text);
       } catch (error) {
         const code = errorCode(error);
         dependencies.logger.warn(

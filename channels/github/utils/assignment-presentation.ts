@@ -1,16 +1,10 @@
 import type { GitHubNotificationItemState } from './monitor-state.ts';
+import githubNotificationMessage, { githubNotificationMarkdownText } from './presentation.ts';
 
 export type GitHubNotificationPresentationItem = Pick<
   GitHubNotificationItemState,
   'itemType' | 'number' | 'repositoryName' | 'repositoryOwner'
 >;
-
-function markdownLabel(value: string): string {
-  return value
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .replace(/[\\[\]`*_]/gu, '\\$&');
-}
 
 export function githubNotificationItemUrl(item: GitHubNotificationPresentationItem): string {
   const collection = item.itemType === 'pull-request' ? 'pull' : 'issues';
@@ -23,7 +17,28 @@ export function githubNotificationItemLink(
 ): string {
   const reference = `${item.repositoryOwner}/${item.repositoryName}#${item.number}`;
   const label = title?.trim() ? `${reference} — ${title}` : reference;
-  return `[${markdownLabel(label)}](${githubNotificationItemUrl(item)})`;
+  return `[${githubNotificationMarkdownText(label)}](${githubNotificationItemUrl(item)})`;
+}
+
+export function githubNotificationCommentUrl(
+  item: GitHubNotificationPresentationItem,
+  commentDatabaseId: number,
+): string {
+  if (!Number.isSafeInteger(commentDatabaseId) || commentDatabaseId < 1) {
+    throw new Error('GitHub notification comment ids must be positive safe integers.');
+  }
+  return `${githubNotificationItemUrl(item)}#issuecomment-${commentDatabaseId}`;
+}
+
+export function githubNotificationCommentLink(
+  item: GitHubNotificationPresentationItem,
+  commentDatabaseId: number,
+): string {
+  const reference = `${item.repositoryOwner}/${item.repositoryName}#${item.number}`;
+  return `[${githubNotificationMarkdownText(reference)}](${githubNotificationCommentUrl(
+    item,
+    commentDatabaseId,
+  )})`;
 }
 
 /** Format the shared assignment introduction for mode-specific private requests. */
@@ -38,5 +53,9 @@ export function githubNotificationAssignmentSentence(
 export default function githubNotificationAssignmentNotice(
   item: GitHubNotificationPresentationItem,
 ): string {
-  return ['## 📥 Assignment received', '', githubNotificationAssignmentSentence(item)].join('\n');
+  return githubNotificationMessage({
+    emoji: '📥',
+    summary: githubNotificationAssignmentSentence(item),
+    title: 'Assignment received',
+  });
 }
