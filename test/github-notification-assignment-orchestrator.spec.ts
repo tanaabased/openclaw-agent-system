@@ -170,6 +170,59 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
   });
 
+  it('should complete local retirement for an active delivery', async () => {
+    const state = monitorState();
+    const item = state.items[itemKey];
+    assert.ok(item?.delivery);
+    item.disposition = 'retired';
+    item.reasonCode = 'item-closed';
+    item.delivery = {
+      ...item.delivery,
+      acknowledgment: { commentId: 42, status: 'published' },
+      activation: { status: 'planned' },
+      sessionId: 'session-1',
+      sessionKey: activeSession.key,
+      stage: 'active',
+      worktreeBranch: worktree.branch,
+      worktreePath: worktree.path,
+    };
+    const activeDelivery = structuredClone(item.delivery);
+    const store = memoryStore(state);
+    let sessionRecords = 0;
+    let worktreeInspections = 0;
+    let worktreePreparations = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      sessions: {
+        async recordSession() {
+          sessionRecords += 1;
+          return activeSession;
+        },
+      },
+      stateStore: store,
+      worktrees: {
+        async inspect() {
+          worktreeInspections += 1;
+          return worktree;
+        },
+        async prepare() {
+          worktreePreparations += 1;
+          return worktree;
+        },
+      },
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    const retired = store.state().items[itemKey];
+    assert.equal(retired?.disposition, 'retired');
+    assert.equal(retired?.reasonCode, 'item-closed');
+    assert.deepEqual(retired?.delivery, { ...activeDelivery, stage: 'retired' });
+    assert.equal(sessionRecords, 0);
+    assert.equal(worktreeInspections, 0);
+    assert.equal(worktreePreparations, 0);
+  });
+
   it('should recheck authority immediately before recording the session', async () => {
     const state = monitorState();
     state.items[itemKey]!.delivery = {

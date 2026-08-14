@@ -48,6 +48,20 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
+  it('should prioritize requested retirement over active delivery', () => {
+    assert.deepEqual(
+      planGitHubNotificationDelivery(
+        { ...admitted, stage: 'active' },
+        {
+          authority,
+          retirementReasonCode: 'item-closed',
+          retirementRequested: true,
+        },
+      ),
+      { kind: 'retire', reasonCode: 'item-closed' },
+    );
+  });
+
   it('should retry a deterministic session record', () => {
     assert.deepEqual(
       planGitHubNotificationDelivery(

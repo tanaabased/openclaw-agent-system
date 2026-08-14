@@ -120,7 +120,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
-      if (delivery.stage === 'active') return;
 
       const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
       const action = planGitHubNotificationDelivery(delivery, observation);

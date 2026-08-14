@@ -10,6 +10,7 @@
 
 ### Bug Fixes
 
+- Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Fixed malformed notification acknowledgment output to fall back to a safe deterministic response instead of leaving assignment intake failed. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
 - Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
