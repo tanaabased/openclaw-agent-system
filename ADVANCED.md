@@ -176,6 +176,8 @@ authority. The generic `agent-system-tool` launcher accepts any statically
 registered command; the current `git` and `gh` shims are convenience launchers
 over that same route. Unknown commands remain unavailable, and each registered
 tool retains its own configuration, policy, credential, and audit behavior.
+Redirected standard input is forwarded up to 64 KiB without reading from an
+interactive terminal, matching the bounded input contract of native tools.
 OpenClaw-hosted Codex `exec_command` descendants use the same command scope after
 Agent System matches their OpenClaw state and `CODEX_HOME` to the configured
 per-agent Codex app-server home. Standalone Codex does not satisfy that OpenClaw

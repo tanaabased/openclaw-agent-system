@@ -306,8 +306,8 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
       classify: classifyGitOperation,
       description:
         'Run Git with the active Agent System agent identity, managed SSH signing, and a contained working directory. Supply ordinary non-interactive git arguments in argv, optional bounded stdin, and an optional cwd inside the agent workspace or configured worktree root. Configuration mutation, signing overrides, credential commands, hooks, and working-directory escape options are unavailable.',
-      inputFromCommand(argv): GitToolInput {
-        return { argv: [...argv] };
+      inputFromCommand(argv, stdin): GitToolInput {
+        return { argv: [...argv], ...(stdin === undefined ? {} : { stdin }) };
       },
       label: 'Agent System Git',
       name: 'agent_system_git',

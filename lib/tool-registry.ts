@@ -57,6 +57,7 @@ export default class AgentSystemToolRegistry {
     runtime: AgentSystemToolRuntime,
     argv: string[],
     scope: AgentSystemToolScope,
+    stdin?: string,
   ): Promise<AgentSystemToolExecutionResult> {
     const tool = this.#commands.get(command);
     if (!tool) {
@@ -65,7 +66,7 @@ export default class AgentSystemToolRegistry {
         `Agent System tool command ${command} is unavailable.`,
       );
     }
-    return tool.invoke(runtime, argv, scope);
+    return tool.invoke(runtime, argv, scope, stdin);
   }
 
   registerTools(

@@ -1,14 +1,18 @@
+import type { Readable } from 'node:stream';
+
 import type AgentSystemToolRegistry from '../lib/tool-registry.ts';
 import AgentSystemToolError from '../lib/tool-error.ts';
 import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
 import type { AgentCommandBinding } from '../lib/agent-command-authority.ts';
 import type { CliOutput } from '../lib/cli-output.ts';
 import { type Logger, reportError } from '../lib/logger.ts';
+import readToolCommandStdin from '../utils/read-tool-command-stdin.ts';
 
 export interface RunAgentSystemToolOptions {
   agentId?: string;
   argv: string[];
   command: string;
+  input?: Readable;
   logger: Logger;
   output: CliOutput;
   setExitCode(code: number): void;
@@ -27,6 +31,17 @@ export default async function runAgentSystemTool(
   options: RunAgentSystemToolOptions,
 ): Promise<void> {
   try {
+    let stdin: string | undefined;
+    try {
+      stdin = await readToolCommandStdin(options.input);
+    } catch (error) {
+      throw new AgentSystemToolError(
+        error instanceof RangeError ? 'invalid_arguments' : 'execution_failed',
+        error instanceof RangeError
+          ? error.message
+          : 'Tool command standard input could not be read.',
+      );
+    }
     const binding = await options.resolveCommandBinding?.(process.env, options.workspaceDir);
     if (binding && options.agentId) {
       throw new AgentSystemToolError(
@@ -55,6 +70,7 @@ export default async function runAgentSystemTool(
           ? {}
           : { terminalColumns: options.terminalColumns }),
       },
+      stdin,
     );
     if (result.kind === 'semantic') {
       const serialized = JSON.stringify(result.output, undefined, 2);

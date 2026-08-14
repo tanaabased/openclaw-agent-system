@@ -1,3 +1,5 @@
+import type { Readable } from 'node:stream';
+
 import envAgentSystem from '../cli/env.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import runAgentSystemTool from '../cli/tool.ts';
@@ -40,6 +42,7 @@ export interface RegisterAgentSystemCliOptions {
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   installService: Pick<AgentInstallService, 'install'>;
+  input?: Readable;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
@@ -161,6 +164,7 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         argv: Array.isArray(args) ? args.map(String) : [],
         command: String(command),
+        ...(options.input ? { input: options.input } : {}),
         logger: options.logger,
         output,
         ...(commandAuthority

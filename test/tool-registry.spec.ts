@@ -66,11 +66,21 @@ describe('lib/tool-registry', () => {
     } as AgentSystemToolRuntime;
     const registry = new AgentSystemToolRegistry([registeredTestTool()]);
 
-    await registry.invoke('test-tool', runtime, ['status'], {
-      source: 'command',
-      workspaceDir: toolTestWorkspaceDir,
-    });
+    await registry.invoke(
+      'test-tool',
+      runtime,
+      ['status'],
+      {
+        source: 'command',
+        workspaceDir: toolTestWorkspaceDir,
+      },
+      'request body',
+    );
     assert.equal(runtimeCalls.length, 1);
+    assert.deepEqual((runtimeCalls[0] as { input: unknown }).input, {
+      argument: 'status',
+      stdin: 'request body',
+    });
     assert.throws(
       () =>
         registry.invoke('missing', runtime, [], {

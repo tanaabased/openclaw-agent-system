@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
@@ -33,7 +34,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
   },
 };
 
-function createProgram() {
+function createProgram(input?: Readable) {
   const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
   const output: string[] = [];
   const calls = {
@@ -59,6 +60,7 @@ function createProgram() {
       argv: string[];
       command: string;
       scope: AgentSystemToolScope;
+      stdin?: string;
     }>,
     workspace: [] as string[],
   };
@@ -134,6 +136,7 @@ function createProgram() {
         return { outcomes: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' };
       },
     },
+    ...(input ? { input } : {}),
     logger: {
       error: (message) => logs.error.push(message),
       info: (message) => logs.info.push(message),
@@ -171,8 +174,13 @@ function createProgram() {
     },
     output: { writeStdout: (message) => output.push(message) },
     toolRegistry: {
-      async invoke(command, _runtime, argv, scope) {
-        calls.tool.push({ argv, command, scope });
+      async invoke(command, _runtime, argv, scope, stdin) {
+        calls.tool.push({
+          argv,
+          command,
+          scope,
+          ...(stdin === undefined ? {} : { stdin }),
+        });
         return {
           auditId: 'audit-id',
           kind: 'cli' as const,
@@ -238,6 +246,25 @@ describe('lib/register-cli', () => {
       },
     ]);
     assert.equal(output.join(''), 'tanaabot\n');
+  });
+
+  it('should delegate redirected tool input from the current workspace', async () => {
+    const { calls, program } = createProgram(Readable.from(['{"title":"test"}\n']));
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'tool',
+      'gh',
+      '--',
+      'api',
+      '/repos/owner/repo/issues',
+      '--input',
+      '-',
+    ]);
+
+    assert.equal(calls.tool[0]?.stdin, '{"title":"test"}\n');
   });
 
   it('should delegate a tool command for an explicit agent', async () => {

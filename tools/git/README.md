@@ -315,8 +315,10 @@ git status --short
 
 The shim delegates through the packaged `agent-system-tool` launcher, which
 passes arguments to `openclaw agent-system tool git`, exports its canonical
-directory, and preserves the caller's directory. The runtime excludes managed
-command paths when resolving the real `git` to prevent wrapper recursion.
+directory, preserves the caller's directory, and forwards redirected standard
+input up to 64 KiB without reading from an interactive terminal. The runtime
+excludes managed command paths when resolving the real `git` to prevent wrapper
+recursion.
 
 In direct shells the shim remains an operator-compatible routing convenience.
 As a descendant of a Gateway-hosted native or Codex agent command, it must prove

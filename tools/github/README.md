@@ -209,11 +209,12 @@ openclaw as tool gh --agent tanaabot -- api user --jq .login
 
 ### Behavior
 
-Arguments after `--` pass to `gh` unchanged. Child standard output and error pass
-through directly, and the child exit code is preserved. The runtime blocks token
-display, authentication or generated-config mutation, aliases, extensions, and
-browser or editor launch paths. These are non-configurable Agent System
-invariants, not operation policy.
+Arguments after `--` pass to `gh` unchanged. Redirected standard input passes
+through up to 64 KiB; an interactive terminal is never read implicitly. Child
+standard output and error pass through directly, and the child exit code is
+preserved. The runtime blocks token display, authentication or generated-config
+mutation, aliases, extensions, and browser or editor launch paths. These are
+non-configurable Agent System invariants, not operation policy.
 
 ## Shim
 

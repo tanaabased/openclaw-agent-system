@@ -179,8 +179,8 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
       },
       description:
         'Run the trusted GitHub CLI with the active Agent System agent credential and isolated configuration. Supply ordinary non-interactive gh arguments in argv and optional bounded stdin. Authentication mutation, credential display, config mutation, aliases, extensions, browsers, and editors are unavailable.',
-      inputFromCommand(argv): GitHubToolInput {
-        return { argv: [...argv] };
+      inputFromCommand(argv, stdin): GitHubToolInput {
+        return { argv: [...argv], ...(stdin === undefined ? {} : { stdin }) };
       },
       label: 'Agent System GitHub CLI',
       name: 'agent_system_github',
