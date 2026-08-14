@@ -31,6 +31,7 @@
 
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
+- Keep the cross-mode agent-session presentation, structured-context, private-response, and public-publication boundary in `AGENT-PRESENTATION.md`.
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put each first-party channel's complete configuration, routing, lifecycle, and security guide in `channels/<provider>/README.md`.
 - Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
@@ -60,18 +61,22 @@
 
 ## Agent session presentation
 
-- Treat notification prompts and agent responses as user-facing product surfaces. Keep each turn compact, scannable, and readable as literal plaintext when Markdown rendering is unavailable.
-- Present an inbound activation with one descriptive Markdown heading, a modest mode-relevant emoji, the minimum safe context needed to act, and a clickable provider link. State the requested action and mode plainly; keep detailed provider payloads in current-turn-only untrusted context rather than printing raw JSON or hidden metadata in session history.
-- Use the assignment receipt and planning request as the shared baseline, not a planning-only template. Reuse mode-neutral presentation helpers while allowing planning, comment-response, work, and future modes to supply their own actions and response sections.
-- Format private agent output with stable Markdown headings and lists where structure helps. Relevant emphasis, links, and emoji are welcome; presentation must not depend on HTML, accordions, or renderer-specific extensions.
-- Keep private response content separate from each explicitly labeled public publication candidate. Public adapters may extract and publish only the validated candidate and must not expose private sections, detailed context, private links, local paths, tool output, or hidden metadata.
-- Test stable extraction, section, link, and isolation contracts exactly. For human-facing copy and ornamentation, assert semantic signal rather than complete message text unless exact wording is itself the contract.
+- Apply the complete cross-mode contract in `AGENT-PRESENTATION.md` to notification prompts, current-turn structured context, private responses, and public publication candidates.
+- Reuse mode-neutral presentation helpers while allowing planning, comment-response, work, and future modes to supply their own actions and response sections.
 
 ## Test design
 
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Assert exact values only for stable public, schema, and security contracts. For human messages and logs, assert semantic signal and stable diagnostic codes.
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
+
+## Optimization
+
+- Audit every session-facing inbound and outbound path against `AGENT-PRESENTATION.md`, including visible request content, current-turn structured context, private response structure, public candidate isolation, plaintext fallback, and mode-neutral shared helpers.
+- Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
+- Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
+- Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.
+- Preserve aligned surfaces and recommend changes only for evidenced presentation drift, context leakage, publication-boundary violations, ambiguous compatibility behavior, or machine-output contamination.
 
 ## Accepted optimization decisions
 
