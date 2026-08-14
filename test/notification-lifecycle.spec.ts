@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
+import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
@@ -193,6 +194,168 @@ describe('channels/github/lib/lifecycle', () => {
       'warning',
     );
     assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
+    assert.deepEqual(state.items[notificationItemKey]?.delivery?.activation, {
+      failureCode: 'github-notification-planning-response-invalid',
+      status: 'failed',
+    });
+  });
+
+  it('should ignore terminal activation failures for retired items while retaining history', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.disposition = 'retired';
+    item.reasonCode = 'assignment-no-longer-authorized';
+    item.delivery = {
+      ...item.delivery!,
+      activation: {
+        failureCode: 'github-notification-planning-response-invalid',
+        status: 'failed',
+      },
+      stage: 'retired',
+    };
+    const before = structuredClone(state);
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(
+      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid'),
+      undefined,
+    );
+    assert.deepEqual(state, before);
+  });
+
+  it('should count live activation failures by code without counting retired history', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'data';
+    state.workspaceDir = context.workspaceDir;
+    state.lastSuccessfulPollAt = 1;
+    const item = state.items[notificationItemKey]!;
+    item.assignmentEventNodeId = 'EV_assignment_live_1';
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: {
+        failureCode: 'github-notification-planning-response-invalid',
+        status: 'failed',
+      },
+      assignmentEventId: 'EV_assignment_live_1',
+      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      workId: 'issue-7',
+      worktreeBranch: 'agent/data/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    state.items['github:R_repo:13'] = {
+      ...item,
+      assignmentEventNodeId: 'EV_assignment_live_2',
+      itemDatabaseId: 8,
+      itemNodeId: 'I_item_2',
+      number: 13,
+      delivery: {
+        ...item.delivery!,
+        assignmentEventId: 'EV_assignment_live_2',
+        activation: {
+          failureCode: 'github-notification-planning-response-invalid',
+          status: 'failed',
+        },
+        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:13',
+        workId: 'issue-8',
+        worktreeBranch: 'agent/data/issue-8',
+        worktreePath: '/workspace/worktrees/issue-8',
+      },
+    };
+    state.items['github:R_repo:15'] = {
+      ...item,
+      assignmentEventNodeId: 'EV_assignment_live_3',
+      itemDatabaseId: 10,
+      itemNodeId: 'I_item_4',
+      number: 15,
+      delivery: {
+        ...item.delivery!,
+        assignmentEventId: 'EV_assignment_live_3',
+        activation: {
+          failureCode: 'github-notification-planning-response-missing',
+          status: 'failed',
+        },
+        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:15',
+        workId: 'issue-10',
+        worktreeBranch: 'agent/data/issue-10',
+        worktreePath: '/workspace/worktrees/issue-10',
+      },
+    };
+    state.items['github:R_repo:14'] = {
+      ...item,
+      assignmentEventNodeId: 'EV_assignment_retired_1',
+      disposition: 'retired',
+      itemDatabaseId: 9,
+      itemNodeId: 'I_item_3',
+      number: 14,
+      reasonCode: 'assignment-no-longer-authorized',
+      delivery: {
+        ...item.delivery!,
+        acknowledgment: { status: 'pending' },
+        activation: {
+          failureCode: 'github-notification-planning-response-missing',
+          status: 'failed',
+        },
+        assignmentEventId: 'EV_assignment_retired_1',
+        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:14',
+        stage: 'retired',
+        workId: 'issue-9',
+        worktreeBranch: 'agent/data/issue-9',
+        worktreePath: '/workspace/worktrees/issue-9',
+      },
+    };
+    const before = structuredClone(state);
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const contribution = createNotificationLifecycleContribution({
+      routingService: {
+        async inspect() {
+          return {
+            code: 'notification-routing-ready',
+            kind: 'noop' as const,
+            message: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+      stateStore: { read: async () => state },
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.match(
+      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid')
+        ?.message ?? '',
+      /2 GitHub notification activations failed/,
+    );
+    assert.match(
+      findings?.find(({ code }) => code === 'github-notification-planning-response-missing')
+        ?.message ?? '',
+      /1 GitHub notification activation failed/,
+    );
+    assert.deepEqual(state, before);
   });
 
   it('should report pending and failed acknowledgments without hiding monitor health', async () => {

@@ -261,6 +261,10 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notificatio
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
+
+# should report the notification monitor through the installed doctor after logical retirement
+cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system doctor --agent notification-data --json | jq -e '[.findings[] | select(.component == "github-notifications" and .code == "github-notification-monitor-healthy")] | length == 1'
 ```
 
 ## Cleanup

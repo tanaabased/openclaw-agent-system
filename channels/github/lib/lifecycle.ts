@@ -215,7 +215,7 @@ export default function createNotificationLifecycleContribution(
       for (const item of Object.values(state.items)) {
         const delivery = item.delivery;
         const activation = delivery?.activation;
-        if (activation?.status !== 'failed') continue;
+        if (item.disposition !== 'approved' || activation?.status !== 'failed') continue;
         const code = activation.failureCode ?? 'github-notification-activation-failed';
         activationFailureCounts.set(code, (activationFailureCounts.get(code) ?? 0) + 1);
       }
