@@ -37,7 +37,7 @@ import CodexPathConfigService from './codex-path-config-service.ts';
 import createCredentialStores from './credential-store-registry.ts';
 import { resolveFileCredentialStoreRoot } from './file-credential-store.ts';
 import AgentSystemLifecycleRegistry from './lifecycle-registry.ts';
-import { createAgentSystemLogger } from './logger.ts';
+import { createAgentSystemLifecycleLogger, createAgentSystemLogger } from './logger.ts';
 import OpCredentialInput from './op-credential-input.ts';
 import OpCredentialManager from './op-credential-manager.ts';
 import OpCredentialService from './op-credential-service.ts';
@@ -58,6 +58,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const runtimeDir = dirname(fileURLToPath(runtimeUrl));
   const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
   const logger = createAgentSystemLogger(api.logger, api.id);
+  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id);
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
   const readConfig = () => {
     // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
@@ -212,7 +213,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   ]);
   const manifestService = new AgentManifestService({
     getConfig: () => api.runtime.config.current(),
-    logger,
+    logger: lifecycleLogger,
     parseSessionAgentId(sessionKey) {
       return parseAgentSessionKey(sessionKey)?.agentId;
     },
@@ -226,7 +227,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   manifestServiceRef.current = manifestService;
   const environmentService = new AgentEnvironmentService({
     hostEnvironment: process.env,
-    logger,
+    logger: lifecycleLogger,
     manifestService,
     opEnvironmentService,
   });
@@ -250,7 +251,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     baseEnvironment: process.env,
     environmentService,
     excludedExecutableDirectories: excludedToolExecutableDirectories,
-    logger,
+    logger: lifecycleLogger,
     manifestService,
   });
   const installService = new AgentInstallService({

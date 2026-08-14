@@ -156,9 +156,12 @@ alias. Bare `agent-system` or `as` prints help.
 | `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
 | `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`             | Writes undecorated structured output.                                    |
 
-Human output uses standard output and honors `NO_COLOR` and `FORCE_COLOR=0`.
-Warnings and failures use the OpenClaw plugin logger on standard error. A failed
-operation sets a nonzero exit code.
+Human and machine-readable command results use standard output and honor
+`NO_COLOR` and `FORCE_COLOR=0`. Routine Agent System lifecycle metadata remains
+in OpenClaw's file logs so it cannot corrupt command results. Warnings and
+failures use the OpenClaw plugin logger on standard error, and explicit debug
+logging also mirrors lifecycle metadata to the console. A failed operation sets
+a nonzero exit code.
 
 ### Trust Boundary
 

@@ -110,9 +110,10 @@ Stop supervision with `Ctrl-C`; audit logs persist between runs. See DevGuard's 
 
 ## Logging
 
-Set `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process for detailed Agent System
-lifecycle diagnostics. Agent System logs metadata through the OpenClaw plugin
-logger with an `[agent-system]` prefix and never includes manifest or environment
+Agent System records routine lifecycle metadata in OpenClaw's file logs without
+mixing it into CLI command results. Set `OPENCLAW_LOG_LEVEL=debug` on the
+OpenClaw process to mirror those events to the console while developing. The
+events use an `[agent-system]` prefix and never include manifest or environment
 values.
 
 | Events                 | Purpose                                      |
@@ -121,10 +122,10 @@ values.
 | `environment_resolved` | Value-free environment resolution metadata   |
 | `tool_call_*`          | Tool start, completion, and failure metadata |
 
-During DevGuard development, these messages appear in the `devguard run` terminal.
-`devguard tail` reads DevGuard policy audit records instead of the plugin logger
-stream. Stable Agent System diagnostic identities are emitted as `code=<code>`
-metadata.
+With debug logging enabled, these messages appear in the `devguard run`
+terminal. `devguard tail` reads DevGuard policy audit records instead of the
+plugin logger stream. Stable Agent System diagnostic identities are emitted as
+`code=<code>` metadata.
 
 ## Testing
 
