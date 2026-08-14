@@ -105,7 +105,8 @@ cd "$TMPDIR/agent-system-pr-notifications"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
 expected_head="$(cat "$TMPDIR/assigned-pull-request-head")"
-session_label="tanaabased/agent-system-test#$pull_request_number · head@${expected_head:0:12}"
+head_short="$(printf '%.12s' "$expected_head")"
+session_label="tanaabased/agent-system-test#$pull_request_number · head@$head_short"
 openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
 
 # should complete private pull-request planning and publish one safe acknowledgment
