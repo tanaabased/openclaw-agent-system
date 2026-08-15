@@ -1,10 +1,15 @@
 import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
+import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import type {
+  GitHubNotificationLifecycle,
+  GitHubNotificationLifecycleBoundaryInput,
+  GitHubNotificationLifecycleWorktree,
+} from '../lifecycles/types.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import {
   planGitHubNotificationDelivery,
   type GitHubNotificationDeliveryObservation,
-  type GitHubNotificationObservedWorktree,
 } from '../utils/delivery-plan.ts';
 import type {
   GitHubNotificationDeliveryState,
@@ -12,33 +17,16 @@ import type {
   GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
 
-export interface GitHubNotificationAssignmentBoundaryInput {
-  agentId: string;
-  delivery: GitHubNotificationDeliveryState;
-  item: GitHubNotificationItemState;
-  signal?: AbortSignal;
-  workspaceDir: string;
-}
-
 export interface GitHubNotificationAssignmentAuthority {
   inspect(
-    input: GitHubNotificationAssignmentBoundaryInput,
+    input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<{ authorized: boolean; reasonCode?: string }>;
-}
-
-export interface GitHubNotificationAssignmentWorktrees {
-  inspect(
-    input: GitHubNotificationAssignmentBoundaryInput,
-  ): Promise<GitHubNotificationObservedWorktree | undefined>;
-  prepare(
-    input: GitHubNotificationAssignmentBoundaryInput,
-  ): Promise<GitHubNotificationObservedWorktree>;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
+  lifecycles: GitHubNotificationLifecycleRegistry;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
-  worktrees: GitHubNotificationAssignmentWorktrees;
 }
 
 export class GitHubNotificationAssignmentOrchestratorError extends Error {
@@ -108,12 +96,20 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
       const { delivery, item, state } = loaded;
+      const lifecycle = this.#dependencies.lifecycles.resolve(item.itemType);
 
-      const observation = await this.#observe(agentId, state.workspaceDir, item, delivery, signal);
+      const observation = await this.#observe(
+        lifecycle,
+        agentId,
+        state.workspaceDir,
+        item,
+        delivery,
+        signal,
+      );
       const action = planGitHubNotificationDelivery(
         delivery,
         observation,
-        item.itemType === 'issue',
+        lifecycle.worktree.required,
       );
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
@@ -145,11 +141,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
           ))
         )
           continue;
+        const worktreeOwner = lifecycle.worktree;
+        if (!worktreeOwner.required) {
+          throw new GitHubNotificationAssignmentOrchestratorError(
+            'github-notification-lifecycle-invalid',
+            'The GitHub notification lifecycle requested an unsupported worktree action.',
+          );
+        }
         const worktree = await this.#diagnosticBoundary(
           'github-notification-worktree-preparation-failed',
           'The notification worktree could not be prepared.',
           () =>
-            this.#dependencies.worktrees.prepare({
+            worktreeOwner.prepare({
               agentId,
               ...checkpoint,
               signal,
@@ -168,6 +171,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
   }
 
   async #observe(
+    lifecycle: GitHubNotificationLifecycle,
     agentId: string,
     workspaceDir: string,
     item: GitHubNotificationItemState,
@@ -193,16 +197,17 @@ export default class GitHubNotificationAssignmentOrchestrator {
       delivery.worktreeBranch && delivery.worktreePath
         ? { branch: delivery.worktreeBranch, path: delivery.worktreePath }
         : undefined;
+    const worktreeOwner = lifecycle.worktree;
     const worktree =
       !authority.authorized || item.disposition === 'retired'
         ? checkpointedWorktree
-        : item.itemType === 'pull-request'
+        : !worktreeOwner.required
           ? checkpointedWorktree
           : await this.#diagnosticBoundary(
               'github-notification-worktree-inspection-failed',
               'The notification worktree could not be inspected.',
               () =>
-                this.#dependencies.worktrees.inspect({
+                worktreeOwner.inspect({
                   agentId,
                   delivery,
                   item,
@@ -315,7 +320,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
   async #checkpointWorktree(
     state: GitHubNotificationMonitorState,
     itemKey: string,
-    worktree: GitHubNotificationObservedWorktree,
+    worktree: GitHubNotificationLifecycleWorktree,
   ): Promise<void> {
     const delivery = state.items[itemKey]?.delivery;
     if (!delivery) return;

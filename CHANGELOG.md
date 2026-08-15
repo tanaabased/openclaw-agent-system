@@ -2,6 +2,8 @@
 
 ### New Features
 
+- Added explicit issue and direct pull-request lifecycle owners so admitted
+  work is classified before lifecycle-specific resources are reconciled. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignment intake with verified head metadata and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification intake inspection and tests.

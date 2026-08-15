@@ -2,10 +2,8 @@ import { resolve } from 'node:path';
 
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-import type {
-  GitHubNotificationAssignmentAuthority,
-  GitHubNotificationAssignmentBoundaryInput,
-} from './assignment-orchestrator.ts';
+import type { GitHubNotificationLifecycleBoundaryInput } from '../lifecycles/types.ts';
+import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
@@ -36,7 +34,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   }
 
   async inspect(
-    input: GitHubNotificationAssignmentBoundaryInput,
+    input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<{ authorized: boolean; reasonCode?: string }> {
     const inspection = await this.#inspect(input);
     return inspection.authorized
@@ -48,7 +46,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   }
 
   async #inspect(
-    input: GitHubNotificationAssignmentBoundaryInput,
+    input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<GitHubNotificationAssignmentInspection> {
     if (
       input.delivery.assignmentEventId !== input.item.assignmentEventNodeId ||
@@ -160,7 +158,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
     }
   }
 
-  async #connect(input: GitHubNotificationAssignmentBoundaryInput): Promise<
+  async #connect(input: GitHubNotificationLifecycleBoundaryInput): Promise<
     | {
         client: GitHubWorkEventClient;
         configuration: GitHubNotificationsConfiguration;

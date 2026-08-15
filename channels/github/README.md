@@ -16,6 +16,8 @@ disconnected while they are rebuilt on the [target design](./DESIGN.md).
 - Later polling or `notifications refresh` discovers new issue and pull-request
   assignments and verifies the agent account, assigning actor, repository owner,
   repository access, and exact assignment event.
+- Each admitted assignment resolves through its lifecycle machine id before
+  lifecycle-specific local resources are reconciled.
 - Accepted issue assignments create or reuse one deterministic managed
   worktree. Pull-request assignments retain bounded head metadata without
   creating a worktree.

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../channels/github/lib/assignment-orchestrator.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import { GitHubAccountClientError } from '../lib/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
@@ -270,17 +273,20 @@ describe('channels/github/lib/monitor-service', () => {
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      lifecycles: new GitHubNotificationLifecycleRegistry([
+        new GitHubIssueLifecycle({
+          async inspectGitHub() {
+            worktreeOperations += 1;
+            return worktree;
+          },
+          async prepareGitHub() {
+            worktreeOperations += 1;
+            return worktree;
+          },
+        }),
+        new GitHubPullRequestLifecycle(),
+      ]),
       stateStore,
-      worktrees: {
-        async inspect() {
-          worktreeOperations += 1;
-          return worktree;
-        },
-        async prepare() {
-          worktreeOperations += 1;
-          return worktree;
-        },
-      },
     });
     const service = new GitHubNotificationMonitorService({
       accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },

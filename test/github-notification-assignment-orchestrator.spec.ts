@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../channels/github/lib/assignment-orchestrator.ts';
+import GitHubIssueLifecycle, {
+  type GitHubIssueLifecycleWorktreeService,
+} from '../channels/github/lifecycles/issue.ts';
+import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import {
   approvedPullRequestNotificationItem,
@@ -29,6 +34,19 @@ function memoryStore(initial = monitorState()) {
   };
 }
 
+function lifecycles(worktrees: {
+  inspect: GitHubIssueLifecycleWorktreeService['inspectGitHub'];
+  prepare: GitHubIssueLifecycleWorktreeService['prepareGitHub'];
+}) {
+  return new GitHubNotificationLifecycleRegistry([
+    new GitHubIssueLifecycle({
+      inspectGitHub: worktrees.inspect,
+      prepareGitHub: worktrees.prepare,
+    }),
+    new GitHubPullRequestLifecycle(),
+  ]);
+}
+
 describe('channels/github/lib/assignment-orchestrator', () => {
   it('should prepare one issue worktree without creating a session or model turn', async () => {
     const store = memoryStore();
@@ -36,15 +54,15 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      stateStore: store,
-      worktrees: {
+      lifecycles: lifecycles({
         inspect: async () => observedWorktree,
         async prepare() {
           worktreePreparations += 1;
           observedWorktree = worktree;
           return worktree;
         },
-      },
+      }),
+      stateStore: store,
     });
 
     await Promise.all([
@@ -73,8 +91,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      stateStore: store,
-      worktrees: {
+      lifecycles: lifecycles({
         async inspect() {
           worktreeInspections += 1;
           return undefined;
@@ -83,7 +100,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           worktreePreparations += 1;
           return worktree;
         },
-      },
+      }),
+      stateStore: store,
     });
 
     await orchestrator.reconcile('tanaabot', notificationPullRequestItemKey);
@@ -103,6 +121,14 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      lifecycles: lifecycles({
+        inspect: async () => observedWorktree,
+        async prepare() {
+          worktreePreparations += 1;
+          observedWorktree = worktree;
+          return worktree;
+        },
+      }),
       stateStore: {
         read: store.read,
         async write(next) {
@@ -111,14 +137,6 @@ describe('channels/github/lib/assignment-orchestrator', () => {
             throw new Error('state write failed');
           }
           await store.write(next);
-        },
-      },
-      worktrees: {
-        inspect: async () => observedWorktree,
-        async prepare() {
-          worktreePreparations += 1;
-          observedWorktree = worktree;
-          return worktree;
         },
       },
     });
@@ -137,8 +155,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
+      lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
       stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
     });
 
     await orchestrator.reconcile('tanaabot', itemKey);
@@ -167,8 +185,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const store = memoryStore(state);
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
       stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
     });
 
     await orchestrator.reconcile('tanaabot', itemKey);
@@ -190,8 +208,11 @@ describe('channels/github/lib/assignment-orchestrator', () => {
                 throw new Error('restricted authority detail');
               },
             },
+            lifecycles: lifecycles({
+              inspect: async () => worktree,
+              prepare: async () => worktree,
+            }),
             stateStore: store,
-            worktrees: { inspect: async () => worktree, prepare: async () => worktree },
           });
         },
       },
@@ -200,13 +221,13 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            stateStore: store,
-            worktrees: {
+            lifecycles: lifecycles({
               inspect: async () => {
                 throw new Error('restricted inspection detail');
               },
               prepare: async () => worktree,
-            },
+            }),
+            stateStore: store,
           });
         },
       },
@@ -215,13 +236,13 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            stateStore: store,
-            worktrees: {
+            lifecycles: lifecycles({
               inspect: async () => undefined,
               prepare: async () => {
                 throw new Error('restricted preparation detail');
               },
-            },
+            }),
+            stateStore: store,
           });
         },
       },

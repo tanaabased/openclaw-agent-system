@@ -7,9 +7,10 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
-import GitHubNotificationAssignmentOrchestrator, {
-  type GitHubNotificationAssignmentBoundaryInput,
-} from '../channels/github/lib/assignment-orchestrator.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import GitHubNotificationAssignmentOrchestrator from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
@@ -259,24 +260,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
     readConfig: readRuntimeConfig,
   });
-  const trustedWorktreeInput = (input: GitHubNotificationAssignmentBoundaryInput) => ({
-    agentId: input.agentId,
-    cloneUrl: input.item.repositoryCloneUrl,
-    defaultBranch: input.item.repositoryDefaultBranch,
-    itemDatabaseId: input.item.itemDatabaseId,
-    itemType: input.item.itemType,
-    repositoryDatabaseId: input.item.repositoryDatabaseId,
-    ...(input.signal === undefined ? {} : { signal: input.signal }),
-  });
+  const notificationLifecycleRegistry = new GitHubNotificationLifecycleRegistry([
+    new GitHubIssueLifecycle(gitCapability.trustedWorktreeService),
+    new GitHubPullRequestLifecycle(),
+  ]);
   const notificationAssignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
     authority: notificationAssignmentProvider,
+    lifecycles: notificationLifecycleRegistry,
     stateStore: notificationMonitorStateStore,
-    worktrees: {
-      inspect: (input) =>
-        gitCapability.trustedWorktreeService.inspectGitHub(trustedWorktreeInput(input)),
-      prepare: (input) =>
-        gitCapability.trustedWorktreeService.prepareGitHub(trustedWorktreeInput(input)),
-    },
   });
   const notificationMonitorService = new GitHubNotificationMonitorService({
     accountClient: githubCapability.accountClient,

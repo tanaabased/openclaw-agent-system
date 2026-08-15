@@ -1,19 +1,15 @@
 import type { GitHubNotificationDeliveryState } from './monitor-state.ts';
-
-export interface GitHubNotificationObservedWorktree {
-  branch: string;
-  path: string;
-}
+import type { GitHubNotificationLifecycleWorktree } from '../lifecycles/types.ts';
 
 export interface GitHubNotificationDeliveryObservation {
   authority: { authorized: boolean; reasonCode?: string };
   retirementReasonCode?: string;
   retirementRequested?: boolean;
-  worktree?: GitHubNotificationObservedWorktree;
+  worktree?: GitHubNotificationLifecycleWorktree;
 }
 
 export type GitHubNotificationDeliveryAction =
-  | { kind: 'checkpoint-worktree'; worktree: GitHubNotificationObservedWorktree }
+  | { kind: 'checkpoint-worktree'; worktree: GitHubNotificationLifecycleWorktree }
   | { kind: 'none' }
   | { kind: 'prepare-worktree' }
   | { kind: 'retire'; reasonCode: string };
