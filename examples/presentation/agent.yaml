@@ -1,0 +1,25 @@
+schema-version: 1
+
+agent:
+  id: notification-presentation
+  name: Notification Presentation
+  email: notification-presentation@tanaab.dev
+
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+
+git:
+  worktrees: {}
+
+github:
+  host: github.com
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  notifications:
+    interval-minutes: 60
+    approved-actors:
+      - login: emoriwan
+        node-id: U_kgDOEUqvpg
+    allowed-repository-owners:
+      - login: tanaabased
+        node-id: O_kgDODNGy1g

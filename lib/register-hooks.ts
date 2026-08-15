@@ -30,7 +30,9 @@ export default function registerAgentSystemHooks(
         : undefined;
     const notificationTurn = context.messageProvider === githubNotificationChannelId;
     const request = notificationTurn
-      ? parseGitHubNotificationMessageRequest(context.channelContext?.agentSystemGitHubNotification)
+      ? parseGitHubNotificationMessageRequest(
+          context.channelContext?.chat?.agentSystemGitHubNotification,
+        )
       : undefined;
     if (notificationTurn && !request) {
       api.logger?.warn(

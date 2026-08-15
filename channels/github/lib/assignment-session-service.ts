@@ -229,8 +229,7 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
       accountId: input.route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
-        agentSystemGitHubNotification: request,
-        chat: { id: conversationId },
+        chat: { agentSystemGitHubNotification: request, id: conversationId },
         sender: { id: 'github-notifications' },
       },
       conversation: {

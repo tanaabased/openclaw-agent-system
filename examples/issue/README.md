@@ -64,21 +64,13 @@ openclaw agent-system install
 ## Testing
 
 ```bash
-# should retain the install-time baseline before assignment delivery
+# should expose one ready empty notification baseline before assignment delivery
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed" and .baselineAt != null and .baselineEstablished == false'
-
-# should keep the initial baseline free of managed worktrees
-cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
-
-# should keep the initial baseline free of local sessions
-cd "$TMPDIR/agent-system-notifications"
-openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
+openclaw agent-system notifications status --agent notification-data --json | jq -e '.status == "ready" and .baseline.status == "ready" and (.items | length) == 0'
 
 # should create a self-authored assignment fixture
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/issue/create-and-assign-github-issue.sh" \
+"$GITHUB_WORKSPACE/scripts/create-and-assign-github-issue.sh" \
   --creator-agent notification-data \
   --repository tanaabased/agent-system-test \
   --title "agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -88,20 +80,23 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 
 # should reject a self-authored assignment without creating local work
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
-  --agent notification-data \
-  --field rejected \
-  --minimum 1
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -e 'length == 0'
-openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | length == 0'
-cd "$TMPDIR/agent-system-notification-actor"
 rejected_issue="$(cat "$TMPDIR/rejected-issue-number")"
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$rejected_issue" \
+  --for assignment-rejected \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed" and .observation.items[0].disposition == "rejected"'
+cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$rejected_issue/comments" --jq length | grep -Fx '0'
 
 # should create an approved assignment fixture
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/examples/issue/create-and-assign-github-issue.sh" \
+"$GITHUB_WORKSPACE/scripts/create-and-assign-github-issue.sh" \
   --creator-agent notification-actor \
   --repository tanaabased/agent-system-test \
   --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -109,23 +104,18 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 
-# should admit one approved assignment into a local session
+# should admit the selected approved assignment into a local session and worktree
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
-  --agent notification-data \
-  --field approved \
-  --minimum 1
-session_key="$(openclaw sessions --agent notification-data --json | jq -er '(.sessions // []) as $sessions | if ($sessions | length) == 1 then $sessions[0].key else error("expected exactly one notification session, found \($sessions | length)") end')"
-printf '%s' "$session_key" > "$TMPDIR/approved-session-key"
-
-# should expose exactly one worktree and one local session
-cd "$TMPDIR/agent-system-notifications"
-session_key="$(cat "$TMPDIR/approved-session-key")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -er 'if length == 1 and .[0].repositoryId == "github-1329940218" and .[0].status == "active" then .[0].branch else error("expected exactly one active notification worktree") end' > "$TMPDIR/approved-worktree-branch"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-branch="$(cat "$TMPDIR/approved-worktree-branch")"
-session_label="tanaabased/agent-system-test#$issue_number · $branch"
-openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --for active \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed" and .observation.items[0].stage == "active" and .observation.items[0].session == "recorded" and .observation.items[0].worktree == "ready"'
 
 # should reject a direct channel write without an internal publication target
 if OPENCLAW_LOG_LEVEL=error openclaw message send \
@@ -136,69 +126,19 @@ if OPENCLAW_LOG_LEVEL=error openclaw message send \
   exit 1
 fi
 
-# should complete one private plan and one safe public acknowledgment asynchronously
+# should complete private planning and publish one safe acknowledgment
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-session_key="$(cat "$TMPDIR/approved-session-key")"
-"$GITHUB_WORKSPACE/scripts/wait-for-notification-plan.sh" \
-  --actor-agent notification-actor \
-  --item-number "$issue_number" \
-  --notification-agent notification-data \
+openclaw agent-system notifications wait \
+  --agent notification-data \
   --repository tanaabased/agent-system-test \
-  --session-key "$session_key"
-params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:20,maxChars:120000}')"
-history="$(openclaw gateway call chat.history --params "$params" --json)"
-jq -e '
-  def visible_text($role):
-    [
-      .messages[]?
-      | select(.role == $role)
-      | if (.content | type) == "string" then
-          .content
-        elif (.content | type) == "array" then
-          .content[]? | select(.type == "text") | .text
-        else
-          empty
-        end
-    ] | join("\n");
-  visible_text("assistant") as $assistant
-  | visible_text("user") as $user
-  | {
-      assessment: ($assistant | contains("## Assessment")),
-      blockers: ($assistant | contains("## Blockers")),
-      plan: ($assistant | contains("## Plan")),
-      assignment: (($user | ascii_downcase) | contains("assigned")),
-      plan_mode: ($user | contains("**Mode:** Plan")),
-      issue_link: ($user | contains("https://github.com/tanaabased/agent-system-test/issues/")),
-      issue_context_hidden: ($user | contains("Untrusted fixture content") | not),
-      plan_instructions_hidden: ($user | contains("Work in Plan mode for the assigned GitHub issue") | not),
-      legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
-      worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
-    } as $checks
-  | if ($checks | all(.[]; .)) then $checks else error("notification presentation checks failed: \($checks)") end
-' <<< "$history"
-jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' <<< "$history"
+  --kind issue \
+  --number "$issue_number" \
+  --for planning-complete \
+  --timeout 300 \
+  --json | jq -e '.status == "completed" and .observation.items[0].planning.status == "planned"'
 cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length == 1 and (.[0].body | contains("Untrusted fixture content") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
-
-# should publish one explicit local progress update once for a duplicate command dispatch
-cd "$TMPDIR/agent-system-notifications"
-session_key="$(cat "$TMPDIR/approved-session-key")"
-progress_key="notification-progress-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-params="$(jq -cn --arg sessionKey "$session_key" --arg idempotencyKey "$progress_key" '{agentId:"notification-data",sessionKey:$sessionKey,message:"/agent-system-progress Implementation is underway and the current checks are passing.",deliver:false,idempotencyKey:$idempotencyKey}')"
-openclaw gateway call chat.send --params "$params" --json | jq -e '.status == "started" or .status == "in_flight" or .status == "ok"'
-openclaw gateway call chat.send --params "$params" --json | jq -e '.status == "started" or .status == "in_flight" or .status == "ok"'
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-progress_count='0'
-for attempt in $(seq 1 60); do
-  cd "$TMPDIR/agent-system-notification-actor"
-  progress_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("Implementation is underway and the current checks are passing.") and contains("agent-system-github-publication:operator-progress")))] | length')"
-  if [[ "$progress_count" == '1' ]]; then
-    break
-  fi
-  sleep 2
-done
-test "$progress_count" = '1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] as $receipts | ($receipts | length) >= 1 and all($receipts[]; (.body | contains("Untrusted fixture content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 
 # should reject a quote-only mention without starting a comment turn
 cd "$TMPDIR/agent-system-notification-actor"
@@ -207,58 +147,54 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method POST "repos/tanaabased/agent-system-test/issues/$issue_number/comments" -f "body=> @$agent_login please provide a status update" --jq .id)"
 printf '%s' "$status_comment_id" > "$TMPDIR/status-comment-id"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
+openclaw agent-system notifications wait \
   --agent notification-data \
-  --field commentRejected \
-  --minimum 1
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --comment "$status_comment_id" \
+  --for comment-rejected \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed"'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length' | grep -Fx '0'
 
 # should admit the current edited revision with one exact standalone account mention
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(cat "$TMPDIR/status-comment-id")"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method PATCH "repos/tanaabased/agent-system-test/issues/comments/$status_comment_id" -f "body=@$agent_login Can you share a status update based only on what is already recorded?" --jq .id | grep -Fx "$status_comment_id"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
+openclaw agent-system notifications wait \
   --agent notification-data \
-  --field commentApproved \
-  --minimum 1
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --comment "$status_comment_id" \
+  --for comment-received \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed"'
 
 # should resume the durable comment checkpoint in the gateway-owned lifecycle
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
 # should publish one safe github reply from the existing private issue session
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-session_key="$(cat "$TMPDIR/approved-session-key")"
-"$GITHUB_WORKSPACE/scripts/wait-for-notification-comment.sh" \
-  --actor-agent notification-actor \
-  --item-number "$issue_number" \
-  --history-output "$TMPDIR/issue-comment-history.json" \
-  --notification-agent notification-data \
-  --repository tanaabased/agent-system-test \
-  --session-key "$session_key"
-cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
-
-# should present the admitted issue comment directly without hidden context or instructions
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(cat "$TMPDIR/status-comment-id")"
-source="https://github.com/tanaabased/agent-system-test/issues/$issue_number#issuecomment-$status_comment_id"
-comment="Can you share a status update based only on what is already recorded?"
-jq -e --arg source "$source" --arg comment "$comment" '
-  .messages as $messages
-  | [$messages[]? | select(.role == "user") | .. | strings] | join("\n")
-  | contains($comment)
-    and (contains($source) | not)
-    and (contains("Treat the attached comment context") | not)
-    and (contains("Return exactly one private Markdown response") | not)
-    and (contains("GITHUB_COMMENT_JSON") | not)
-    and (contains("STATUS_EVIDENCE_JSON") | not)
-' "$TMPDIR/issue-comment-history.json"
-
-# should keep the issue comment response tool free
-jq -e '[.messages[]? | select(.role == "tool" or .role == "toolResult")] | length == 0' "$TMPDIR/issue-comment-history.json"
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --comment "$status_comment_id" \
+  --for comment-replied \
+  --timeout 300 \
+  --json | jq -e --argjson comment "$status_comment_id" '.status == "completed" and any(.observation.items[0].comments[]; .commentId == $comment and .reply.status == "published")'
+cd "$TMPDIR/agent-system-notification-actor"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] as $replies | ($replies | length) >= 1 and all($replies[]; (.body | contains("GITHUB_COMMENT_JSON") | not) and (.body | contains("STATUS_EVIDENCE_JSON") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 
 # should reject a later mention-removing edit and a self-authored mention without replying again
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -267,60 +203,56 @@ status_comment_id="$(cat "$TMPDIR/status-comment-id")"
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --method PATCH "repos/tanaabased/agent-system-test/issues/comments/$status_comment_id" -f 'body=No further update is requested.' --jq .id | grep -Fx "$status_comment_id"
 cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method POST "repos/tanaabased/agent-system-test/issues/$issue_number/comments" -f "body=@$agent_login this self-authored mention must not dispatch" --jq .id > /dev/null
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
+self_comment_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method POST "repos/tanaabased/agent-system-test/issues/$issue_number/comments" -f "body=@$agent_login this self-authored mention must not dispatch" --jq .id)"
+openclaw agent-system notifications wait \
   --agent notification-data \
-  --field commentRejected \
-  --minimum 2
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --comment "$status_comment_id" \
+  --for comment-rejected \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed"'
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --comment "$self_comment_id" \
+  --for comment-rejected \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed"'
 cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length' | grep -Fx '1'
 
-# should keep deterministic intake free of repository pushes
-cd "$TMPDIR/agent-system-notification-actor"
-branch="$(cat "$TMPDIR/approved-worktree-branch")"
-remote_branch="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate repos/tanaabased/agent-system-test/branches --jq ".[] | select(.name == \"$branch\") | .name")"
-test -z "$remote_branch"
-
-# should restart the gateway with the active assignment checkpoint intact
-OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
-
-# should preserve the same worktree and session after restart
+# should preserve selected active state and bounded publications after restart
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system notifications refresh --agent notification-data --json | jq -e '.status == "completed"'
-session_key="$(cat "$TMPDIR/approved-session-key")"
-branch="$(cat "$TMPDIR/approved-worktree-branch")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" 'length == 1 and .[0].repositoryId == "github-1329940218" and .[0].branch == $branch and .[0].status == "active"'
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-session_label="tanaabased/agent-system-test#$issue_number · $branch"
-openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg key "$session_key" --arg label "$session_label" '[.sessions[]? | select(.key == $key and .origin.label == $label and .displayName == $label)] | length == 1'
-
-# should preserve exactly one publication of each kind after restart
+openclaw agent-system notifications status \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --json | jq -e '.items[0].stage == "active" and .items[0].session == "recorded" and .items[0].worktree == "ready" and .items[0].planning.status == "planned" and .items[0].acknowledgment.status == "published"'
 cd "$TMPDIR/agent-system-notification-actor"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length' | grep -Fx '1'
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:operator-progress")))] | length' | grep -Fx '1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '{acknowledgment: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length, reply: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length}' | jq -e '.acknowledgment >= 1 and .reply >= 1'
+
 # should logically retire an unassigned item while retaining its session
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-session_key="$(cat "$TMPDIR/approved-session-key")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/refresh-notifications-until-count.sh" \
+openclaw agent-system notifications wait \
   --agent notification-data \
-  --field retired \
-  --minimum 1
-openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-
-# should retain the issue worktree after logical retirement
-cd "$TMPDIR/agent-system-notifications"
-branch="$(cat "$TMPDIR/approved-worktree-branch")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" '[.[] | select(.repositoryId == "github-1329940218" and .branch == $branch and .status == "active")] | length == 1'
-
-# should report the notification monitor through the installed doctor after logical retirement
-cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system doctor --agent notification-data --json | jq -e '[.findings[] | select(.component == "github-notifications" and .code == "github-notification-monitor-healthy")] | length == 1'
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --for retired \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed" and .observation.items[0].stage == "retired" and .observation.items[0].session == "recorded" and .observation.items[0].worktree == "ready"'
 
 ```
 

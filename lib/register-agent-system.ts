@@ -16,6 +16,7 @@ import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignm
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
+import GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import GitHubNotificationPublicationService from '../channels/github/lib/publication-service.ts';
@@ -323,6 +324,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     sessions: notificationSessionService,
     stateStore: notificationMonitorStateStore,
   });
+  const notificationStatusService = new GitHubNotificationStatusService({
+    monitorService: notificationMonitorService,
+    stateStore: notificationMonitorStateStore,
+  });
   notificationMonitorServiceRef.current = notificationMonitorService;
 
   registerGitHubNotificationProgressCommand(api, {
@@ -371,6 +376,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         logger: createAgentSystemLogger(cliLogger, api.id),
         manifestService,
         notificationMonitorService,
+        notificationStatusService,
         toolRegistry,
         toolRuntime,
       });

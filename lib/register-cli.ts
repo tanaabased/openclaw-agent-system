@@ -8,8 +8,11 @@ import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
 import refreshNotificationsAgentSystem from '../cli/notifications-refresh.ts';
+import statusNotificationsAgentSystem from '../cli/notifications-status.ts';
+import waitNotificationsAgentSystem from '../cli/notifications-wait.ts';
 import validateAgentSystem from '../cli/validate.ts';
 import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
+import type GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
 import type AgentCommandAuthority from './agent-command-authority.ts';
 import type AgentDoctorService from './agent-doctor-service.ts';
@@ -46,6 +49,7 @@ export interface RegisterAgentSystemCliOptions {
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
+  notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   output?: CliOutput;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
   toolRuntime: AgentSystemToolRuntime;
@@ -151,6 +155,66 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        workspaceDir: cwd(),
+      });
+    });
+  const notificationsStatus = notifications
+    .command('status')
+    .description('Inspect redacted GitHub notification lifecycle state.')
+    .option('--agent <id>', 'Inspect notifications for an OpenClaw agent.')
+    .option('--repository <owner/name>', 'Select one GitHub repository.')
+    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
+    .option('--number <number>', 'Select one GitHub item number.')
+    .option('--json', 'Write structured JSON output.')
+    .action(async () => {
+      const commandOptions = notificationsStatus.opts();
+      const agentId = commandOptions.agent;
+      await statusNotificationsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        itemKind: commandOptions.kind,
+        itemNumber: commandOptions.number,
+        json: commandOptions.json === true,
+        logger: options.logger,
+        manifestService: options.manifestService,
+        output,
+        repository: commandOptions.repository,
+        setExitCode,
+        statusService: options.notificationStatusService,
+        styles: options.styles,
+        workspaceDir: cwd(),
+      });
+    });
+  const notificationsWait = notifications
+    .command('wait')
+    .description('Wait for a durable GitHub notification lifecycle checkpoint.')
+    .option('--agent <id>', 'Wait on notifications for an OpenClaw agent.')
+    .option('--repository <owner/name>', 'Select one GitHub repository.')
+    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
+    .option('--number <number>', 'Select one GitHub item number.')
+    .option('--comment <number>', 'Select one GitHub comment.')
+    .option('--for <target>', 'Select the semantic lifecycle checkpoint.')
+    .option('--refresh', 'Run intake refresh cycles while waiting.')
+    .option('--timeout <seconds>', 'Set the bounded wait timeout in seconds.')
+    .option('--json', 'Write structured JSON output.')
+    .action(async () => {
+      const commandOptions = notificationsWait.opts();
+      const agentId = commandOptions.agent;
+      await waitNotificationsAgentSystem({
+        ...(typeof agentId === 'string' ? { agentId } : {}),
+        commentId: commandOptions.comment,
+        itemKind: commandOptions.kind,
+        itemNumber: commandOptions.number,
+        json: commandOptions.json === true,
+        logger: options.logger,
+        manifestService: options.manifestService,
+        output,
+        refresh: commandOptions.refresh === true,
+        repository: commandOptions.repository,
+        setExitCode,
+        statusService: options.notificationStatusService,
+        styles: options.styles,
+        target: commandOptions.for,
+        timeoutSeconds: commandOptions.timeout,
         workspaceDir: cwd(),
       });
     });

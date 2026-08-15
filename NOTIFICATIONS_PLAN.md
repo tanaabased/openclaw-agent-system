@@ -556,12 +556,18 @@ Keep unit coverage strong while reducing duplicated prose assertions:
   requiring incidental prose.
 - Publication tests remain exact for extraction, safety rejection,
   authorization, idempotency, provider markers, and receipts.
+- Status-projection tests assert stable lifecycle semantics and prove that raw
+  provider content, hidden instructions, session keys, and local paths remain
+  private.
+- Wait-service tests assert bounded semantic checkpoints, explicit refresh
+  ownership, durable failure codes, and last-observation diagnostics.
 - Orchestration tests assert adopted turns, state transitions, resumption,
   publication intent, and stable diagnostic codes without duplicating complete
   Markdown owned by formatters.
-- Installed layer scenarios assert instructions and provider context do not
-  appear in visible chat, comments inherit mode, clarification resumes, and
-  restart does not duplicate turns or comments.
+- Installed layer scenarios use `notifications status` and `notifications wait`
+  for lifecycle coordination, retain independent provider and local-state
+  readbacks, and leave chat-history and response-envelope assertions to the
+  dedicated presentation scenario.
 
 Run the narrowest owning tests during each wave, then for implementation changes:
 

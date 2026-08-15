@@ -94,8 +94,10 @@ export default class GitHubNotificationCommentTurnService {
       accountId: assignment.route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
-        agentSystemGitHubNotification: comment.request,
-        chat: { id: assignment.route.conversationId },
+        chat: {
+          agentSystemGitHubNotification: comment.request,
+          id: assignment.route.conversationId,
+        },
         sender: { id: author.nodeId },
       },
       conversation: {

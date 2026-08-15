@@ -151,10 +151,10 @@ alias. Bare `agent-system` or `as` prints help.
 
 ### Common Behavior
 
-| Option         | Commands                                                                    | Behavior                                                                 |
-| -------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
-| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`             | Writes undecorated structured output.                                    |
+| Option         | Commands                                                                                                                  | Behavior                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
+| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait`             | Writes undecorated structured output.                                    |
 
 Human and machine-readable command results use standard output and honor
 `NO_COLOR` and `FORCE_COLOR=0`. Routine Agent System lifecycle metadata remains
@@ -325,6 +325,42 @@ but it does not wait for the Gateway-owned model turn or public reply. Deferred
 and failed cycles return a nonzero exit code. See the
 [GitHub notifications channel](./channels/github/README.md) for
 configuration, security, lifecycle, and result semantics.
+
+### `openclaw agent-system notifications status`
+
+Reads the private GitHub notification monitor state and returns a redacted
+semantic projection for the current workspace agent or one explicitly selected
+installed agent.
+
+```text
+openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+```
+
+The optional item selector is all-or-nothing. Results report baseline readiness,
+assignment disposition and stage, session and worktree readiness, planning,
+acknowledgment and progress checkpoints, bounded pull-request head metadata, and
+value-free comment admission, turn, and reply status. The schema omits raw
+provider content, hidden prompt layers, session keys, and local paths. A durable
+monitor diagnostic returns `degraded` and sets a nonzero exit code.
+
+### `openclaw agent-system notifications wait`
+
+Waits for one durable semantic checkpoint without parsing chat history or human
+presentation.
+
+```text
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--comment <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
+```
+
+Supported targets are `baseline-ready`, `assignment-rejected`, `received`,
+`active`, `planning-complete`, `acknowledgment-published`, `comment-rejected`,
+`comment-received`, `comment-replied`, `progress-published`, and `retired`.
+Comment targets require `--comment`; every non-baseline target requires the full
+item selector. `--refresh` explicitly runs intake cycles while waiting and
+retains the monitor's lease and backoff rules. Without it, the command only
+observes Gateway-owned asynchronous progress. The default timeout is 300
+seconds. Terminal diagnostics fail immediately, and failed or timed-out JSON
+results include the last redacted observation.
 
 ### `openclaw agent-system tool`
 

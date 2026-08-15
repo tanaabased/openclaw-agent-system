@@ -15,7 +15,7 @@ export interface GitHubNotificationMessageRequest {
 }
 
 declare module 'openclaw/plugin-sdk/channel-inbound' {
-  interface PluginHookChannelContext {
+  interface PluginHookChannelChatContext {
     agentSystemGitHubNotification?: GitHubNotificationMessageRequest;
   }
 }

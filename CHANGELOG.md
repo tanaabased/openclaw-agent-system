@@ -7,6 +7,11 @@
 - Added direct GitHub comment input with hidden instructions, structured evidence, and quoted `To GitHub` publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, progress, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added explicit operator-scoped progress publication from active local GitHub notification sessions.
+- Added redacted `notifications status` and bounded semantic `notifications wait`
+  commands for durable GitHub notification lifecycle inspection and tests.
+- Separated installed GitHub lifecycle checks from a dedicated notification
+  presentation scenario, and carried hidden turn instructions through OpenClaw's
+  provider-specific chat context.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Added plan-first GitHub notification activation with private issue assessment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)

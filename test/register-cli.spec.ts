@@ -5,6 +5,7 @@ import { Command } from 'commander';
 
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/lib/status-service.ts';
 import { createCliStyles } from '../lib/cli-output.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
 import type { AgentSystemToolScope } from '../lib/tool-types.ts';
@@ -56,6 +57,11 @@ function createProgram(input?: Readable) {
       bypassInterval?: boolean;
       waitForLeaseMs?: number;
     }>,
+    notificationStatus: [] as Array<{
+      agentId: string;
+      selector?: { itemType: string; number: number; repository: string };
+    }>,
+    notificationWait: [] as GitHubNotificationWaitInput[],
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -172,6 +178,37 @@ function createProgram(input?: Readable) {
         ];
       },
     },
+    notificationStatusService: {
+      async inspect(agentId, selector) {
+        calls.notificationStatus.push({ agentId, ...(selector ? { selector } : {}) });
+        return {
+          agentId,
+          baseline: { observedAt: 1_000, status: 'ready' as const },
+          code: 'github-notification-status-ready',
+          items: [],
+          schemaVersion: 1 as const,
+          status: 'ready' as const,
+        };
+      },
+      async wait(input) {
+        calls.notificationWait.push(input);
+        return {
+          agentId: input.agentId,
+          code: `github-notification-${input.target}`,
+          observation: {
+            agentId: input.agentId,
+            baseline: { observedAt: 1_000, status: 'ready' as const },
+            code: 'github-notification-status-ready',
+            items: [],
+            schemaVersion: 1 as const,
+            status: 'ready' as const,
+          },
+          schemaVersion: 1 as const,
+          status: 'completed' as const,
+          target: input.target,
+        };
+      },
+    },
     output: { writeStdout: (message) => output.push(message) },
     toolRegistry: {
       async invoke(command, _runtime, argv, scope, stdin) {
@@ -220,7 +257,7 @@ describe('lib/register-cli', () => {
       command?.commands
         .find((subcommand) => subcommand.name() === 'notifications')
         ?.commands.map((subcommand) => subcommand.name()),
-      ['refresh'],
+      ['refresh', 'status', 'wait'],
     );
   });
 
@@ -413,6 +450,77 @@ describe('lib/register-cli', () => {
       output.join(''),
       /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
     );
+  });
+
+  it('should inspect one notification item through the status command', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'status',
+      '--agent',
+      'data',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationStatus, [
+      {
+        agentId: 'tanaabot',
+        selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      },
+    ]);
+    assert.equal(JSON.parse(output.join('')).status, 'ready');
+  });
+
+  it('should wait for one comment reply with explicit refresh and timeout options', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'wait',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'pull-request',
+      '--number',
+      '13',
+      '--comment',
+      '91',
+      '--for',
+      'comment-replied',
+      '--refresh',
+      '--timeout',
+      '45',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationWait, [
+      {
+        agentId: 'tanaabot',
+        commentId: 91,
+        refresh: true,
+        selector: {
+          itemType: 'pull-request',
+          number: 13,
+          repository: 'tanaabased/example',
+        },
+        target: 'comment-replied',
+        timeoutMs: 45_000,
+      },
+    ]);
+    assert.equal(JSON.parse(output.join('')).status, 'completed');
   });
 
   it('should register structured json validation output', async () => {

@@ -281,7 +281,7 @@ describe('channels/github/lib/session-service', () => {
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /untrusted project data/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /\/workspace\/data/u);
-        assert.deepEqual(input.ctx.ChannelContext?.agentSystemGitHubNotification, {
+        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
           assignmentKind: 'issue',
           event: 'planning-request',
           mode: 'plan',
@@ -376,7 +376,7 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(context.githubWorktreePath, undefined);
         assert.match(String(input.ctx.BodyForAgent), /^## 🔀 Pull request assignment received$/mu);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /stewardship assessment/u);
-        assert.deepEqual(input.ctx.ChannelContext?.agentSystemGitHubNotification, {
+        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
           assignmentKind: 'pull-request',
           event: 'planning-request',
           mode: 'plan',
@@ -459,7 +459,7 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.ctx.Body, context.body);
         assert.equal(input.ctx.RawBody, context.body);
         assert.equal(input.ctx.BodyForAgent, context.body);
-        assert.deepEqual(input.ctx.ChannelContext?.agentSystemGitHubNotification, {
+        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
           assignmentKind: 'issue',
           event: 'comment-received',
           mode: 'plan',

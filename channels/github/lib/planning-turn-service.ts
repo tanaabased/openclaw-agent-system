@@ -66,8 +66,10 @@ export default class GitHubNotificationPlanningTurnService {
       accountId: assignment.route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
-        agentSystemGitHubNotification: planning.request,
-        chat: { id: assignment.route.conversationId },
+        chat: {
+          agentSystemGitHubNotification: planning.request,
+          id: assignment.route.conversationId,
+        },
         sender: { id: 'github-notifications' },
       },
       conversation: {

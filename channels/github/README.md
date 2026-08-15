@@ -105,6 +105,9 @@ openclaw agent-system doctor
 # process later assignments immediately.
 openclaw agent-system notifications refresh
 
+# inspect redacted assignment, planning, comment, and publication checkpoints.
+openclaw agent-system notifications status --json
+
 # inspect the live gateway scheduler and connection health.
 openclaw channels status --channel agent-system-github --json
 ```
@@ -156,22 +159,76 @@ can prepare the worktree without embedding a token in its clone URL.
 
 ```text
 openclaw agent-system notifications refresh [--agent <id>] [--json]
+openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--comment <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
-| Option         | Purpose                                                   |
-| -------------- | --------------------------------------------------------- |
-| `--agent <id>` | Selects an installed agent instead of workspace discovery |
-| `--json`       | Returns an undecorated machine-readable result            |
+| Option                      | Commands         | Purpose                                                                |
+| --------------------------- | ---------------- | ---------------------------------------------------------------------- |
+| `--agent <id>`              | all              | Selects an installed agent instead of workspace discovery              |
+| `--repository <owner/name>` | `status`, `wait` | Selects one repository; requires `--kind` and `--number`               |
+| `--kind <kind>`             | `status`, `wait` | Selects `issue` or `pull-request`; requires the complete item selector |
+| `--number <number>`         | `status`, `wait` | Selects one positive GitHub item number                                |
+| `--comment <number>`        | `wait`           | Selects one positive comment id for a comment target                   |
+| `--for <target>`            | `wait`           | Selects the durable semantic checkpoint                                |
+| `--refresh`                 | `wait`           | Runs bounded intake cycles while waiting                               |
+| `--timeout <seconds>`       | `wait`           | Sets the positive wait timeout; defaults to `300`                      |
+| `--json`                    | all              | Returns one undecorated machine-readable result                        |
 
-The command runs the same intake lifecycle immediately. It reports baseline
+### Refresh
+
+`notifications refresh` runs the same intake lifecycle immediately. It reports baseline
 readiness, diagnostics, and retry timing, and it can create a managed worktree
 and local session for an accepted issue or a session for an accepted pull
 request. It does not wait for planning;
 the running Gateway picks up that checkpoint asynchronously. Deferred and failed
 cycles return a nonzero exit code.
 
-See the [complete CLI reference](../../ADVANCED.md#openclaw-agent-system-notifications-refresh)
-for result and concurrency semantics.
+### Status
+
+`notifications status` reads the channel's durable private control state and
+returns a redacted semantic projection. Without an item selector it lists every
+tracked item. A selector must provide repository, kind, and number together.
+The result reports baseline readiness, disposition, delivery stage, mode,
+session and worktree readiness, planning and acknowledgment checkpoints,
+progress counts, bounded pull-request head metadata, and value-free comment turn
+and reply status.
+
+The projection never includes issue or comment bodies, structured provider
+context, hidden instructions, session keys, worktree paths, credentials, or raw
+provider payloads. A monitor diagnostic reports `degraded` and returns nonzero;
+missing or not-yet-observed state reports `pending` without inventing a failure.
+
+### Wait
+
+`notifications wait` polls that semantic projection until one checkpoint is
+reached, a durable failure appears, or the timeout expires. Use `--refresh` only
+for provider-observation transitions such as assignment admission, comment
+admission, or retirement. Omit it while waiting for Gateway-owned asynchronous
+planning, replies, and explicit progress publication.
+
+| Target                     | Meaning                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| `baseline-ready`           | The first safe provider observation completed                |
+| `assignment-rejected`      | The selected assignment failed admission                     |
+| `received`                 | Deterministic local receipt completed or advanced further    |
+| `active`                   | The selected assignment can run or accept continuations      |
+| `planning-complete`        | The current private planning turn completed                  |
+| `acknowledgment-published` | The assignment acknowledgment has a durable provider receipt |
+| `comment-rejected`         | The selected comment revision failed admission               |
+| `comment-received`         | The selected comment revision entered the private lifecycle  |
+| `comment-replied`          | Its private turn and public reply both completed             |
+| `progress-published`       | At least one explicit progress update has a durable receipt  |
+| `retired`                  | The selected assignment retired without deleting local proof |
+
+Comment targets require `--comment`. Every target except `baseline-ready`
+requires a complete item selector. Failed and timed-out waits return nonzero and
+include the last redacted observation in JSON for diagnostics.
+
+See the complete CLI reference for
+[`refresh`](../../ADVANCED.md#openclaw-agent-system-notifications-refresh),
+[`status`](../../ADVANCED.md#openclaw-agent-system-notifications-status), and
+[`wait`](../../ADVANCED.md#openclaw-agent-system-notifications-wait).
 
 ## Explicit Progress Publication
 

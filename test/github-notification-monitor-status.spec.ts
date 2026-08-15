@@ -1,0 +1,166 @@
+import assert from 'node:assert/strict';
+
+import {
+  evaluateGitHubNotificationWait,
+  githubNotificationMonitorStatus,
+} from '../channels/github/utils/monitor-status.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+
+describe('channels/github/utils/monitor-status', () => {
+  it('should project lifecycle checkpoints without private delivery values', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { commentId: 92, status: 'published' },
+      activation: { status: 'planned' },
+      progress: {
+        '123e4567-e89b-42d3-a456-426614174000': { commentId: 93, status: 'published' },
+      },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    item.commentTracking = {
+      baselineAt: 2,
+      revisions: {
+        C_comment: {
+          actorNodeId: 'U_actor',
+          bodyDigest: 'a'.repeat(64),
+          commentDatabaseId: 91,
+          commentNodeId: 'C_comment',
+          createdAt: 3,
+          disposition: 'approved',
+          reasonCode: 'comment-approved',
+          reply: { commentId: 94, status: 'published' },
+          revisionId: 'b'.repeat(64),
+          turn: { status: 'responded' },
+          updatedAt: 3,
+        },
+      },
+    };
+
+    const result = githubNotificationMonitorStatus('tanaabot', state, {
+      itemType: 'issue',
+      number: 12,
+      repository: 'tanaabased/example',
+    });
+
+    assert.equal(result.status, 'ready');
+    assert.deepEqual(result.items[0], {
+      acknowledgment: { commentId: 92, status: 'published' },
+      comments: [
+        {
+          commentId: 91,
+          disposition: 'approved',
+          reasonCode: 'comment-approved',
+          reply: { commentId: 94, status: 'published' },
+          turn: { status: 'responded' },
+        },
+      ],
+      disposition: 'approved',
+      itemType: 'issue',
+      mode: 'plan',
+      number: 12,
+      planning: { status: 'planned' },
+      progress: { failed: 0, pending: 0, published: 1 },
+      reasonCode: 'assignment-approved',
+      repository: 'tanaabased/example',
+      session: 'recorded',
+      stage: 'active',
+      worktree: 'ready',
+    });
+    const serialized = JSON.stringify(result);
+    assert.equal(serialized.includes('/workspace/worktrees'), false);
+    assert.equal(serialized.includes('agent:tanaabot:'), false);
+    assert.equal(serialized.includes('bodyDigest'), false);
+    assert.deepEqual(
+      evaluateGitHubNotificationWait(
+        result,
+        'comment-replied',
+        { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+        91,
+      ),
+      { code: 'github-notification-comment-replied', status: 'reached' },
+    );
+  });
+
+  it('should treat later delivery stages as proof that receipt completed', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: { status: 'pending' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const selector = { itemType: 'issue' as const, number: 12, repository: 'tanaabased/example' };
+    const result = githubNotificationMonitorStatus('tanaabot', state, selector);
+
+    assert.equal(evaluateGitHubNotificationWait(result, 'received', selector).status, 'reached');
+    assert.equal(evaluateGitHubNotificationWait(result, 'active', selector).status, 'reached');
+    assert.equal(
+      evaluateGitHubNotificationWait(result, 'planning-complete', selector).status,
+      'pending',
+    );
+  });
+
+  it('should surface durable terminal failures without waiting on presentation', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      activation: {
+        failureCode: 'github-notification-planning-response-invalid',
+        status: 'failed',
+      },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const selector = { itemType: 'issue' as const, number: 12, repository: 'tanaabased/example' };
+    const result = githubNotificationMonitorStatus('tanaabot', state, selector);
+
+    assert.deepEqual(evaluateGitHubNotificationWait(result, 'planning-complete', selector), {
+      code: 'github-notification-planning-response-invalid',
+      status: 'failed',
+    });
+  });
+
+  it('should surface progress publication failures without exposing publication keys', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      progress: {
+        'private-publication-key': {
+          failureCode: 'github-notification-progress-publication-not-confirmed',
+          status: 'failed',
+        },
+      },
+      stage: 'active',
+    };
+    const selector = {
+      itemType: 'issue' as const,
+      number: 12,
+      repository: 'tanaabased/example',
+    };
+    const result = githubNotificationMonitorStatus('tanaabot', state, selector);
+
+    assert.equal(JSON.stringify(result).includes('private-publication-key'), false);
+    assert.deepEqual(evaluateGitHubNotificationWait(result, 'progress-published', selector), {
+      code: 'github-notification-progress-publication-not-confirmed',
+      status: 'failed',
+    });
+  });
+});

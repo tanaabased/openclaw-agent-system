@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
 
 import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
@@ -91,13 +92,31 @@ describe('lib/register-hooks', () => {
       },
       { guidance: () => [] },
     );
-    const channelContext = {
-      agentSystemGitHubNotification: {
-        assignmentKind: 'issue',
-        event: 'comment-received',
-        mode: 'plan',
+    const inbound = buildChannelInboundEventContext({
+      channel: 'agent-system-github',
+      channelContext: {
+        chat: {
+          agentSystemGitHubNotification: {
+            assignmentKind: 'issue',
+            event: 'comment-received',
+            mode: 'plan',
+          },
+          id: 'github-issue',
+        },
+        sender: { id: 'github-actor' },
       },
-    };
+      conversation: {
+        id: 'github-issue',
+        kind: 'direct',
+        routePeer: { id: 'github-issue', kind: 'direct' },
+      },
+      from: 'github:github-actor',
+      message: { body: 'status?', rawBody: 'status?' },
+      reply: { to: 'github-issue' },
+      route: { agentId: 'data', routeSessionKey: 'agent:data:github-issue' },
+      sender: { id: 'github-actor' },
+    });
+    const channelContext = inbound.ChannelContext;
 
     const injected = await handlers.get('before_prompt_build')?.(
       {},
