@@ -115,8 +115,9 @@ OpenClaw's native `plugins/agent-system` subsystem logger. OpenClaw owns log
 levels, redaction, formatting, and file or console transports; Agent System does
 not implement a parallel transport or change the meaning of a log level. Set
 `OPENCLAW_LOG_LEVEL=debug` on the OpenClaw process to expose additional events
-while developing. Agent System CLI invocations route OpenClaw console logs to
-standard error so standard output remains command-owned. The events use
+while developing. Agent System activates OpenClaw's standard-error console route
+when its registered CLI command begins dispatch so Agent System logs cannot
+enter command-owned standard output. The events use
 OpenClaw's `[agent-system]` subsystem presentation and never include manifest or
 environment values.
 

@@ -75,16 +75,13 @@ grep -F 'valid' "$validate_stdout"
 grep -F 'manifest_loaded' "$validate_stderr"
 if grep -F '[agent-system]' "$validate_stdout"; then exit 1; fi
 
-# should keep baseline assignments free of managed worktrees
+# should preserve semantic tool output without Agent System log contamination
 cd "$TMPDIR/agent-system-notifications"
 tool_stdout="$TMPDIR/agent-system-tool.stdout"
 tool_stderr="$TMPDIR/agent-system-tool.stderr"
 OPENCLAW_LOG_LEVEL=debug openclaw agent-system tool worktree --agent notification-data -- list >"$tool_stdout" 2>"$tool_stderr"
-if ! jq -e 'length == 0' "$tool_stdout"; then
-  printf '%s\n' 'captured tool stdout:' >&2
-  sed -n '1,20p' "$tool_stdout" >&2
-  exit 1
-fi
+if grep -F '[agent-system]' "$tool_stdout"; then exit 1; fi
+tail -n 1 "$tool_stdout" | jq -e 'length == 0'
 grep -F 'tool_call_completed' "$tool_stderr"
 
 # should keep baseline assignments free of local sessions

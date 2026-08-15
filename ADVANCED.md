@@ -160,10 +160,10 @@ Human and machine-readable command results use standard output and honor
 `NO_COLOR` and `FORCE_COLOR=0`. Every `--json` mode writes exactly one JSON
 document followed by a newline. Agent System sends all logs through OpenClaw's
 `plugins/agent-system` subsystem logger, so OpenClaw retains ownership of log
-levels, redaction, formatting, and file or console transports. During an
-`agent-system` or `as` CLI invocation, OpenClaw routes console logs, including
-debug and trace records, to standard error so they cannot corrupt the command
-result. A failed operation sets a nonzero exit code.
+levels, redaction, formatting, and file or console transports. When an
+`agent-system` or `as` registered command begins dispatch, Agent System
+activates OpenClaw's standard-error console route so its debug and trace records
+cannot corrupt the command result. A failed operation sets a nonzero exit code.
 
 ### Trust Boundary
 
