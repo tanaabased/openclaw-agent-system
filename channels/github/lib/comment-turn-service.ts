@@ -5,13 +5,11 @@ import {
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../lib/logger.ts';
 import type GitHubNotificationCapabilityRegistry from '../capabilities/registry.ts';
-import githubNotificationWorkCommentInstructions from '../messages/instructions/work-comment.ts';
 import type {
   GitHubCanonicalIssueComment,
   GitHubCommentRevision,
@@ -27,7 +25,6 @@ import { githubNotificationConversationId } from '../channel.ts';
 export interface GitHubNotificationCommentTurnServiceDependencies {
   capabilities: Pick<GitHubNotificationCapabilityRegistry, 'resolve'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
-  enqueueNextTurnInjection: OpenClawPluginApi['session']['workflow']['enqueueNextTurnInjection'];
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
@@ -48,6 +45,17 @@ export interface GitHubNotificationCommentTurnResult {
   config: OpenClawConfig;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   publicText: string;
+}
+
+export class GitHubNotificationCommentTurnError extends Error {
+  override name = 'GitHubNotificationCommentTurnError';
+
+  constructor(
+    readonly code: string,
+    options?: ErrorOptions,
+  ) {
+    super('The GitHub notification comment turn could not be dispatched.', options);
+  }
 }
 
 /** Dispatch one admitted direct comment and retain the complete private response. */
@@ -82,7 +90,6 @@ export default class GitHubNotificationCommentTurnService {
       .resolve('work')
       .resolve(config, input.agentId);
     const messageId = `comment:${input.revision.revisionId}`;
-    const instructionIdempotencyKey = `github-comment:${input.revision.revisionId}`;
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
@@ -127,7 +134,7 @@ export default class GitHubNotificationCommentTurnService {
       route: {
         accountId: route.accountId,
         agentId: route.agentId,
-        createIfMissing: true,
+        createIfMissing: false,
         routeSessionKey: route.sessionKey,
       },
       sender: {
@@ -143,59 +150,80 @@ export default class GitHubNotificationCommentTurnService {
     });
     const finalPayloads: ReplyPayload[] = [];
     let sessionRecordTask: Promise<unknown> | undefined;
-    const result = await dispatchChannelInboundReply({
-      accountId: route.accountId,
-      agentId: route.agentId,
-      afterRecord: async () => {
-        if (!sessionRecordTask) {
-          throw new Error('OpenClaw did not expose the notification session record task.');
-        }
-        await sessionRecordTask;
-        const injection = await this.#dependencies.enqueueNextTurnInjection({
-          idempotencyKey: instructionIdempotencyKey,
-          placement: 'append_context',
-          sessionKey: route.sessionKey,
-          text: githubNotificationWorkCommentInstructions,
-        });
-        if (!injection.id) {
-          throw new Error('OpenClaw did not accept the notification turn instructions.');
-        }
-      },
-      cfg: config,
-      channel: githubNotificationChannelId,
-      ctxPayload,
-      delivery: {
-        async deliver(payload, info) {
-          if (info.kind === 'final') finalPayloads.push(payload);
-          return { visibleReplySent: false };
+    let result;
+    try {
+      result = await dispatchChannelInboundReply({
+        accountId: route.accountId,
+        agentId: route.agentId,
+        afterRecord: async () => {
+          if (!sessionRecordTask) {
+            throw new GitHubNotificationCommentTurnError(
+              'github-notification-comment-session-recording-failed',
+            );
+          }
+          if (!(await sessionRecordTask)) {
+            throw new GitHubNotificationCommentTurnError(
+              'github-notification-comment-session-missing',
+            );
+          }
         },
-      },
-      dispatchReplyWithBufferedBlockDispatcher:
-        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
-      messageId,
-      record: {
-        createIfMissing: true,
-        onRecordError(error) {
-          throw error;
+        cfg: config,
+        channel: githubNotificationChannelId,
+        ctxPayload,
+        delivery: {
+          async deliver(payload, info) {
+            if (info.kind === 'final') finalPayloads.push(payload);
+            return { visibleReplySent: false };
+          },
         },
-        trackSessionMetaTask(task) {
-          sessionRecordTask = task;
+        dispatchReplyWithBufferedBlockDispatcher:
+          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        messageId,
+        record: {
+          createIfMissing: false,
+          onRecordError(error) {
+            throw new GitHubNotificationCommentTurnError(
+              'github-notification-comment-session-recording-failed',
+              { cause: error },
+            );
+          },
+          trackSessionMetaTask(task) {
+            sessionRecordTask = task;
+          },
         },
-      },
-      recordInboundSession: this.#dependencies.recordInboundSession,
-      replyOptions: {
-        ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-        commentaryPayloadsEnabled: true,
-        disableTools: capability.disableTools,
-        sourceReplyDeliveryMode: 'automatic',
-        suppressDefaultToolProgressMessages: true,
-        suppressTyping: true,
+        recordInboundSession: this.#dependencies.recordInboundSession,
+        replyOptions: {
+          ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+          commentaryPayloadsEnabled: true,
+          disableTools: capability.disableTools,
+          sourceReplyDeliveryMode: 'automatic',
+          suppressDefaultToolProgressMessages: true,
+          suppressTyping: true,
+          ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
+        },
+        routeSessionKey: route.sessionKey,
+        storePath: resolveStorePath(config.session?.store, { agentId: route.agentId }),
         ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
-      },
-      routeSessionKey: route.sessionKey,
-      storePath: resolveStorePath(config.session?.store, { agentId: route.agentId }),
-      ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
-    });
+      });
+    } catch (error) {
+      const classified =
+        error instanceof GitHubNotificationCommentTurnError
+          ? error
+          : new GitHubNotificationCommentTurnError(
+              'github-notification-comment-model-dispatch-failed',
+              { cause: error },
+            );
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: comment turn failed',
+          `agent=${route.agentId}`,
+          `item=${input.item.repositoryOwner}/${input.item.repositoryName}#${input.item.number}`,
+          `revision=${input.revision.revisionId}`,
+          `code=${classified.code}`,
+        ].join(' '),
+      );
+      throw classified;
+    }
     if (!result.dispatched || result.routeSessionKey !== route.sessionKey) {
       throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
     }

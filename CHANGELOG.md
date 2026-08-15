@@ -8,8 +8,8 @@
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification intake inspection and tests.
 - Added one Work-mode issue comment loop with bounded comment admission,
-  OpenClaw-owned inbound session dispatch, durable hidden next-turn instructions, and
-  reauthorized idempotent GitHub publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+  assignment-time OpenClaw session preparation, channel-scoped hidden instructions,
+  ordinary inbound dispatch, and reauthorized idempotent GitHub publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added manifest-selected GitHub assignment discovery and exact-item notification
   refreshes for isolated lifecycle automation.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
@@ -17,8 +17,10 @@
 
 ### Bug Fixes
 
-- Fixed issue-comment response instructions across both OpenClaw and Codex
-  harnesses and kept comment-turn failures out of provider polling backoff. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Fixed issue-comment dispatch to require the assignment-created session and
+  select hidden response instructions by the canonical channel id across both
+  OpenClaw and Codex harnesses. Comment-turn failures remain outside provider
+  polling backoff. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed lifecycle intake to converge on a neutral `prepared` checkpoint instead
   of repeatedly reconciling admitted pull requests and worktree-ready issues. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed Agent System lifecycle logs to preserve clean CLI command output.

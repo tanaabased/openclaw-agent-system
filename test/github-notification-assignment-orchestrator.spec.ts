@@ -48,9 +48,10 @@ function lifecycles(worktrees: {
 }
 
 describe('channels/github/lib/assignment-orchestrator', () => {
-  it('should prepare one issue worktree without creating a session or model turn', async () => {
+  it('should prepare one issue worktree and assignment session without a model turn', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
+    let sessionPreparations = 0;
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
@@ -62,6 +63,12 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: {
+        async prepare(input) {
+          sessionPreparations += 1;
+          assert.deepEqual(input.worktree, worktree);
+        },
+      },
       stateStore: store,
     });
 
@@ -72,6 +79,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
     const intake = store.state().items[itemKey]?.intake;
     assert.equal(worktreePreparations, 1);
+    assert.equal(sessionPreparations, 1);
     assert.equal(intake?.stage, 'prepared');
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.intake?.stage),
@@ -99,6 +107,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -126,6 +135,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: { prepare: async () => undefined },
       stateStore: {
         read: store.read,
         async write(next) {
@@ -153,6 +163,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -180,6 +191,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -206,6 +218,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
               inspect: async () => worktree,
               prepare: async () => worktree,
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },
@@ -221,6 +234,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
               },
               prepare: async () => worktree,
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },
@@ -236,6 +250,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
                 throw new Error('restricted preparation detail');
               },
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },

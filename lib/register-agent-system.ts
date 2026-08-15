@@ -13,6 +13,7 @@ import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-reque
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
+import GitHubNotificationAssignmentSessionService from '../channels/github/lib/assignment-session-service.ts';
 import GitHubNotificationCommentOrchestrator from '../channels/github/lib/comment-orchestrator.ts';
 import GitHubNotificationCommentPublicationService from '../channels/github/lib/comment-publication-service.ts';
 import GitHubNotificationCommentTurnService from '../channels/github/lib/comment-turn-service.ts';
@@ -279,9 +280,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     new GitHubIssueLifecycle(gitCapability.trustedWorktreeService),
     new GitHubPullRequestLifecycle(),
   ]);
+  const notificationAssignmentSessionService = new GitHubNotificationAssignmentSessionService({
+    logger,
+    readConfig: readRuntimeConfig,
+    recordInboundSession: api.runtime.channel.session.recordInboundSession,
+  });
   const notificationAssignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
     authority: notificationAssignmentProvider,
     lifecycles: notificationLifecycleRegistry,
+    sessions: notificationAssignmentSessionService,
     stateStore: notificationMonitorStateStore,
   });
   const notificationCapabilities = new GitHubNotificationCapabilityRegistry();
@@ -289,7 +296,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     capabilities: notificationCapabilities,
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    enqueueNextTurnInjection: api.session.workflow.enqueueNextTurnInjection,
     logger,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,

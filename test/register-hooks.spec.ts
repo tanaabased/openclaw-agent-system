@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import githubNotificationWorkCommentInstructions from '../channels/github/messages/instructions/work-comment.ts';
+import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
@@ -62,7 +64,36 @@ describe('lib/register-hooks', () => {
     );
 
     assert.deepEqual(result, {
-      appendSystemContext: `${agentCommandSecurityGuidance}\nPrefer the configured Agent System tool.`,
+      appendSystemContext: `${agentCommandSecurityGuidance}\n\nPrefer the configured Agent System tool.`,
     });
+  });
+
+  it('should inject github response instructions from the canonical channel id', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] } as const;
+        },
+      },
+      { guidance: () => [] },
+    );
+
+    const result = await handlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: githubNotificationChannelId, sessionId: 'one' },
+    );
+    const unrelated = await handlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: 'github', sessionId: 'two' },
+    );
+
+    assert.deepEqual(result, { appendSystemContext: githubNotificationWorkCommentInstructions });
+    assert.equal(unrelated, undefined);
   });
 });

@@ -1,5 +1,7 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
+import githubNotificationWorkCommentInstructions from '../channels/github/messages/instructions/work-comment.ts';
+import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import { agentCommandSecurityGuidance } from './agent-command-security.ts';
 import type AgentSystemToolRegistry from './tool-registry.ts';
@@ -20,10 +22,13 @@ export default function registerAgentSystemHooks(
   });
   api.on('before_prompt_build', async (_event, context) => {
     const result = await manifestService.loadForRuntimeContext(context, 'before_prompt_build');
-    const guidance =
-      result.status === 'loaded'
-        ? [agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest)].join('\n')
-        : undefined;
-    return guidance ? { appendSystemContext: guidance } : undefined;
+    const guidance = [];
+    if (result.status === 'loaded') {
+      guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
+    }
+    if (context.messageProvider === githubNotificationChannelId) {
+      guidance.push(githubNotificationWorkCommentInstructions);
+    }
+    return guidance.length > 0 ? { appendSystemContext: guidance.join('\n\n') } : undefined;
   });
 }

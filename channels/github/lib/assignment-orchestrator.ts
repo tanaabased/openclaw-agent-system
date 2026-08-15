@@ -1,6 +1,7 @@
 import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import type GitHubNotificationAssignmentSessionService from './assignment-session-service.ts';
 import type {
   GitHubNotificationLifecycle,
   GitHubNotificationLifecycleBoundaryInput,
@@ -25,6 +26,7 @@ export interface GitHubNotificationAssignmentAuthority {
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
   lifecycles: GitHubNotificationLifecycleRegistry;
+  sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
 }
 
@@ -110,7 +112,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         return;
       }
       if (action.kind === 'mark-prepared') {
-        await this.#checkpointPrepared(state, itemKey, action.worktree);
+        await this.#checkpointPrepared(agentId, state, itemKey, action.worktree);
         return;
       }
       if (action.kind === 'prepare-worktree') {
@@ -146,7 +148,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
               workspaceDir: state.workspaceDir,
             }),
         );
-        await this.#checkpointPrepared(state, itemKey, worktree);
+        await this.#checkpointPrepared(agentId, state, itemKey, worktree);
         return;
       }
       continue;
@@ -302,12 +304,38 @@ export default class GitHubNotificationAssignmentOrchestrator {
   }
 
   async #checkpointPrepared(
+    agentId: string,
     state: GitHubNotificationMonitorState,
     itemKey: string,
     worktree?: GitHubNotificationLifecycleWorktree,
   ): Promise<void> {
-    const intake = state.items[itemKey]?.intake;
-    if (!intake) return;
+    const item = state.items[itemKey];
+    const intake = item?.intake;
+    if (!item || !intake) return;
+    if (item.lifecycleId === 'issue') {
+      const preparedWorktree =
+        worktree ??
+        (intake.worktreeBranch && intake.worktreePath
+          ? { branch: intake.worktreeBranch, path: intake.worktreePath }
+          : undefined);
+      if (!preparedWorktree) {
+        throw new GitHubNotificationAssignmentOrchestratorError(
+          'github-notification-assignment-session-context-missing',
+          'The GitHub issue assignment session is missing its prepared worktree.',
+        );
+      }
+      await this.#diagnosticBoundary(
+        'github-notification-assignment-session-recording-failed',
+        'The GitHub issue assignment session could not be prepared.',
+        () =>
+          this.#dependencies.sessions.prepare({
+            agentId,
+            item,
+            workspaceDir: state.workspaceDir,
+            worktree: preparedWorktree,
+          }),
+      );
+    }
     await this.#checkpointIntake(state, itemKey, {
       ...withoutFailure(intake),
       stage: 'prepared',

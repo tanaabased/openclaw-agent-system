@@ -442,6 +442,7 @@ describe('channels/github/lib/monitor-service', () => {
         }),
         new GitHubPullRequestLifecycle(),
       ]),
+      sessions: { prepare: async () => undefined },
       stateStore,
     });
     const service = new GitHubNotificationMonitorService({

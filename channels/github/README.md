@@ -21,19 +21,22 @@ lifecycle session and publishes the accepted public part of the response.
 - Accepted assignments converge on the lifecycle-neutral `prepared` intake
   checkpoint. Issues create or reuse one deterministic managed worktree;
   pull-request assignments retain bounded head metadata without creating one.
+- Before an issue reaches `prepared`, the shared coordinator records its
+  deterministic OpenClaw session and assignment-card context without invoking
+  the model. A later comment must resume that existing session.
 - Each prepared issue establishes a bounded comment baseline without replaying
   history. A later new or edited exact-mention comment from an approved human is
   re-read canonically and admitted as a direct message in the issue session.
 - The visible inbound message is the normalized author-written comment. Bounded
-  source and worktree facts are model-only context, and Work instructions are
-  queued behind the scenes for exactly the next session turn.
+  source and worktree facts are model-only context, and the canonical
+  `agent-system-github` prompt hook supplies hidden Work response instructions.
 - The current comment slice requires the configured agent's `coding` profile.
   It preserves that configured native coding surface across the built-in
   OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.
 - A comment turn accepts one complete private response with one quoted
   `To GitHub` candidate. Only the bounded candidate is persisted, reauthorized,
   reconciled by exact body and hidden marker, and published to GitHub.
-- Pull-request comments, assignment cards and acknowledgments, initial planning
+- Pull-request comments, GitHub assignment acknowledgments, initial planning
   turns, Plan and Auto modes, mode transitions, and chat-originated publication
   remain intentionally dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the

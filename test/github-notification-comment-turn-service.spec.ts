@@ -4,6 +4,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import GitHubNotificationCapabilityRegistry from '../channels/github/capabilities/registry.ts';
 import GitHubNotificationCommentTurnService, {
+  GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
 } from '../channels/github/lib/comment-turn-service.ts';
 import {
@@ -49,7 +50,7 @@ function incomingComment(): GitHubCanonicalIssueComment {
 }
 
 describe('channels/github/lib/comment-turn-service', () => {
-  it('should dispatch the exact comment with hidden work instructions and retain one public reply', async () => {
+  it('should dispatch the exact comment in the existing session and retain one public reply', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     item.intake = {
       ...item.intake!,
@@ -59,14 +60,14 @@ describe('channels/github/lib/comment-turn-service', () => {
     };
     const comment = incomingComment();
     const revision = githubCommentRevision(comment);
-    const injections: Parameters<
-      GitHubNotificationCommentTurnServiceDependencies['enqueueNextTurnInjection']
-    >[0][] = [];
+    let createIfMissing: boolean | undefined;
     let recorded = false;
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
+        createIfMissing = input.createIfMissing;
         const task = Promise.resolve().then(() => {
           recorded = true;
+          return { sessionId: 'session-1' };
         });
         input.trackSessionMetaTask?.(task);
       };
@@ -74,7 +75,7 @@ describe('channels/github/lib/comment-turn-service', () => {
       capabilities: new GitHubNotificationCapabilityRegistry(),
       async dispatchReplyWithBufferedBlockDispatcher(input) {
         assert.equal(recorded, true);
-        assert.equal(injections.length, 1);
+        assert.equal(createIfMissing, false);
         assert.equal(input.ctx.Body, comment.body);
         assert.equal(input.ctx.BodyForAgent, comment.body);
         assert.equal(input.ctx.RawBody, comment.body);
@@ -104,15 +105,6 @@ describe('channels/github/lib/comment-turn-service', () => {
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
-      async enqueueNextTurnInjection(injection) {
-        assert.equal(recorded, true);
-        injections.push(injection);
-        return {
-          enqueued: true,
-          id: injection.idempotencyKey ?? 'unexpected-injection',
-          sessionKey: injection.sessionKey,
-        };
-      },
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       recordInboundSession,
@@ -128,15 +120,6 @@ describe('channels/github/lib/comment-turn-service', () => {
 
     assert.equal(result.publicText, 'ready');
     assert.equal(result.accountId, agentId);
-    assert.deepEqual(injections, [
-      {
-        idempotencyKey: `github-comment:${revision.revisionId}`,
-        placement: 'append_context',
-        sessionKey: result.ctxPayload.SessionKey,
-        text: injections[0]?.text,
-      },
-    ]);
-    assert.match(injections[0]?.text ?? '', /Work mode/u);
     assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
       {
         comment: {
@@ -153,5 +136,40 @@ describe('channels/github/lib/comment-turn-service', () => {
         worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
       },
     ]);
+  });
+
+  it('should reject a comment turn when the assignment session is absent', async () => {
+    const item = notificationMonitorState().items[notificationItemKey]!;
+    item.intake = {
+      ...item.intake!,
+      stage: 'prepared',
+      worktreeBranch: 'issue-12',
+      worktreePath: '/workspace/worktrees/issue-12',
+    };
+    const comment = incomingComment();
+    const service = new GitHubNotificationCommentTurnService({
+      capabilities: new GitHubNotificationCapabilityRegistry(),
+      async dispatchReplyWithBufferedBlockDispatcher() {
+        throw new Error('unexpected model dispatch');
+      },
+      logger: { error() {}, info() {}, warn() {} },
+      readConfig: async () => config,
+      async recordInboundSession(input) {
+        input.trackSessionMetaTask?.(Promise.resolve(null));
+      },
+    });
+
+    await assert.rejects(
+      service.respond({
+        agentId,
+        comment,
+        item,
+        revision: githubCommentRevision(comment),
+        workspaceDir,
+      }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentTurnError &&
+        error.code === 'github-notification-comment-session-missing',
+    );
   });
 });

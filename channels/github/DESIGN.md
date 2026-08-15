@@ -138,9 +138,10 @@ unblocked plan may advance directly to `working`. Auto will define its own
 bounded transitions.
 
 The polling monitor owns provider intake stages (`admitted`, `prepared`, and
-`retired`). Lifecycle session state begins only after prepared intake and lives
-in a separate session-owned record. Do not add prompt, comment, publication, or
-conversation progress back to monitor state.
+`retired`). The shared coordinator may record the deterministic OpenClaw route
+while preparing intake, but model-backed lifecycle state begins after prepared
+intake and lives in a separate session-owned record. Do not add prompt, comment,
+publication, or conversation progress back to monitor state.
 
 ## Turn Contract
 

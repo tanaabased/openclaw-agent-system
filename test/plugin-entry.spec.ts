@@ -63,13 +63,6 @@ describe('index', () => {
           },
         },
       },
-      session: {
-        workflow: {
-          async enqueueNextTurnInjection(injection: { sessionKey: string }) {
-            return { enqueued: true, id: 'injection', sessionKey: injection.sessionKey };
-          },
-        },
-      },
       registerCli(
         nextRegistrar: (context: {
           logger: PluginLogger;
