@@ -52,6 +52,24 @@ Pull-request assignment and pull-request review are separate lifecycle types.
 Additional types may reuse the shared flow while supplying their own context,
 instructions, worktree requirements, and completion rules.
 
+### Lifecycle Ownership
+
+A lifecycle implementation such as `issue.ts` owns only provider-specific
+facts and resources:
+
+- validate that the classified item belongs to the lifecycle and project
+  bounded trusted inputs;
+- declare lifecycle-specific resources, such as the issue worktree;
+- supply lifecycle facts for shared presentation, structured context, hidden
+  instructions, and completion evidence as those capabilities are added.
+
+The shared coordinator owns admission, durable session identity and state,
+serialization, retries, mode enforcement, OpenClaw turn dispatch, response
+validation, and publication. Lifecycle implementations do not load credentials,
+write OpenClaw session storage, choose arbitrary tool lists, or publish directly.
+Add lifecycle behavior through small explicit capabilities rather than one
+all-purpose reconciliation method.
+
 ### Modes
 
 A mode determines what the agent may do inside the lifecycle session.
@@ -65,6 +83,32 @@ A mode determines what the agent may do inside the lifecycle session.
 The target `agent.yaml` notification configuration selects the initial mode.
 Mode transitions are trusted lifecycle actions; GitHub prose cannot select or
 elevate a mode. A comment inherits the session's current mode.
+
+### Capability Enforcement
+
+Mode capability is a shared runtime policy, not a lifecycle implementation
+detail. The effective capability is the intersection of the configured agent
+policy, trusted mode policy, harness support, sandbox policy, and execution
+authorization. A turn may narrow those boundaries but never widen them.
+
+- **Plan** uses an explicit inspection-and-research allowlist. It excludes
+  persistent filesystem mutation, unrestricted shell execution, and generic
+  provider mutation. A disposable experiment capability may add shell access
+  only inside an isolated workspace whose source is read-only, whose outputs
+  are disposable, and whose provider mutations are unavailable.
+- **Work** may use the configured agent's coding capability and Agent System
+  tools after a trusted mode transition. It does not imply OpenClaw's
+  unrestricted `full` profile.
+
+OpenClaw's `coding` profile is a useful configured ceiling for Work, not a Plan
+profile: it includes filesystem and runtime tools, and shell execution can
+mutate files even when write-specific tools are absent. The built-in harness
+can enforce a per-turn runtime tool allowlist. In the native Codex harness, a
+restrictive allowlist disables native code mode and exposes only permitted
+OpenClaw dynamic tools; Work can retain the native coding surface when the
+remaining sandbox and execution-authorization boundaries allow it. Capability
+enforcement must therefore be verified separately in both harnesses rather
+than expressed only as prompt instructions.
 
 ### States
 
@@ -92,6 +136,11 @@ any nonterminal state -> failed | retired
 In Plan, `plan-ready` waits for an authorized transition to Work. In Work, an
 unblocked plan may advance directly to `working`. Auto will define its own
 bounded transitions.
+
+The polling monitor owns provider intake stages (`admitted`, `prepared`, and
+`retired`). Lifecycle session state begins only after prepared intake and lives
+in a separate session-owned record. Do not add prompt, comment, publication, or
+conversation progress back to monitor state.
 
 ## Turn Contract
 
