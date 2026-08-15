@@ -106,6 +106,17 @@ Each model-backed turn keeps these layers separate:
 | Private response   | Complete local response                                      | Private session only                          |
 | GitHub response    | Concise candidate beneath `To GitHub`                        | Visible locally; publishable after validation |
 
+This contract must work through both the built-in OpenClaw agent harness and
+the native Codex app-server harness. Their prompt, context, hook, and tool
+projections may differ, but they must preserve the same visible presentation,
+hidden instruction, capability, response, and publication boundaries.
+
+Every agent-authored response printed in the chat must use the
+[complete response](./PRESENTATION.md#complete-response) composition: the full
+private response followed by an isolated, sanitized `To GitHub` summary. A
+visible response is incomplete without both parts, even when GitHub publication
+later fails.
+
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
 
@@ -116,8 +127,8 @@ GitHub prose trusted instructions or grant capabilities beyond the active mode.
   The acknowledgment may be deterministic and does not wait for the main turn.
 - **Turn:** Bounded provider context, hidden instructions, and enforced
   capability start the mode-specific model turn.
-- **Response:** Every agent-authored outcome contains a complete private response
-  and an isolated `To GitHub` response using the shared presentation components.
+- **Response:** Every agent-authored outcome uses the complete private and
+  `To GitHub` response composition.
 - **Plan:** The agent investigates the item, discussion, code, and documentation.
   It returns a plan or enters `clarification-needed` with a concise public
   question. An admitted answer resumes the same Plan session.

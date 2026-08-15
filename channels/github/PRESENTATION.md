@@ -65,9 +65,6 @@ Can you confirm whether this also covers comments received while planning?
 <complete private response>
 ```
 
-`Response` may be omitted when the complete private response is already concise
-under the outcome title.
-
 ## Plan
 
 ```markdown
@@ -107,7 +104,7 @@ under the outcome title.
 Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
 responses repeat the blockquote marker for each paragraph.
 
-## Composed Response
+## Complete Response
 
 ```markdown
 ## 💬 Comment answered
