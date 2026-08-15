@@ -1,4 +1,5 @@
 import type { GitHubRepositoryPermission } from './work-item.ts';
+import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
 
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
@@ -55,6 +56,7 @@ export interface GitHubNotificationDeliveryState {
   acknowledgment?: GitHubNotificationAcknowledgmentState;
   assignmentEventId: string;
   failureCode?: string;
+  mode?: GitHubNotificationExecutionMode;
   progress?: Record<string, GitHubNotificationAcknowledgmentState>;
   schemaVersion: 1;
   sessionId?: string;
@@ -66,6 +68,7 @@ export interface GitHubNotificationDeliveryState {
 }
 
 export interface GitHubNotificationItemState {
+  assignmentActorLogin?: string;
   assignmentActorNodeId?: string;
   assignmentEventNodeId?: string;
   commentTracking?: GitHubNotificationCommentTrackingState;

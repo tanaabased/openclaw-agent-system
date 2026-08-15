@@ -1,6 +1,9 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
-import { githubNotificationProposedReplyHeading } from './presentation.ts';
+import {
+  githubNotificationLegacyReplyHeading,
+  githubNotificationToGitHubHeading,
+} from '../messages/presentation/response-envelope.ts';
 import {
   GitHubNotificationPublicationError,
   githubNotificationPublicationText,
@@ -10,6 +13,11 @@ import githubNotificationQuotedCandidate, {
 } from './quoted-candidate.ts';
 
 type GitHubNotificationCommentResponseFormat = 'legacy' | 'markdown';
+
+const markdownReplyHeadings = [
+  githubNotificationToGitHubHeading,
+  githubNotificationLegacyReplyHeading,
+] as const;
 
 export class GitHubNotificationCommentResponseError extends Error {
   override name = 'GitHubNotificationCommentResponseError';
@@ -23,23 +31,32 @@ function responseText(payload: ReplyPayload): string {
   return payload.text?.trim() ?? '';
 }
 
-function assertMarkdownResponse(response: string): void {
+function markdownReplyHeading(response: string): (typeof markdownReplyHeadings)[number] {
   const lines = response.replace(/\r\n?/gu, '\n').split('\n');
   const headings = githubNotificationMarkdownHeadings(lines);
-  const candidates = headings.filter(({ text }) => text === githubNotificationProposedReplyHeading);
+  const candidates = headings.filter(({ text }) =>
+    markdownReplyHeadings.includes(text as (typeof markdownReplyHeadings)[number]),
+  );
   if (candidates.length !== 1 || !candidates[0]) {
     throw new GitHubNotificationCommentResponseError(
       'github-notification-comment-response-invalid',
     );
   }
-  const privateResponse = lines.slice(0, candidates[0].line).join('\n').trim();
+  return candidates[0].text as (typeof markdownReplyHeadings)[number];
+}
+
+function assertMarkdownResponse(response: string): void {
+  const lines = response.replace(/\r\n?/gu, '\n').split('\n');
+  const heading = markdownReplyHeading(response);
+  const candidate = githubNotificationMarkdownHeadings(lines).find(({ text }) => text === heading)!;
+  const privateResponse = lines.slice(0, candidate.line).join('\n').trim();
   if (!privateResponse) {
     throw new GitHubNotificationCommentResponseError(
       'github-notification-comment-response-invalid',
     );
   }
   try {
-    githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading);
+    githubNotificationQuotedCandidate(response, heading);
   } catch {
     throw new GitHubNotificationCommentResponseError(
       'github-notification-comment-response-invalid',
@@ -56,7 +73,9 @@ function responseFormat(response: string): GitHubNotificationCommentResponseForm
   const headingTexts = githubNotificationMarkdownHeadings(
     response.replace(/\r\n?/gu, '\n').split('\n'),
   ).map(({ text }) => text);
-  const hasMarkdown = headingTexts.includes(githubNotificationProposedReplyHeading);
+  const hasMarkdown = headingTexts.some((heading) =>
+    markdownReplyHeadings.includes(heading as (typeof markdownReplyHeadings)[number]),
+  );
   const hasLegacy = /^GITHUB_REPLY:|^RESPONSE:/mu.test(response);
   if (hasMarkdown && hasLegacy) {
     throw new GitHubNotificationCommentResponseError(
@@ -103,9 +122,10 @@ export default function githubNotificationCommentReply(payload: ReplyPayload): s
   const format = responseFormat(response);
   if (format === 'markdown') {
     try {
+      const heading = markdownReplyHeading(response);
       return githubNotificationPublicationText('github-reply', [
         {
-          text: githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading),
+          text: githubNotificationQuotedCandidate(response, heading),
         },
       ]);
     } catch (error) {

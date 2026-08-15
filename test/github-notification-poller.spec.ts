@@ -182,6 +182,7 @@ describe('channels/github/lib/poller', () => {
     assert.equal(approved.baselineEstablished, false);
     assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
       assignmentEventId: assignment.nodeId,
+      mode: 'plan',
       schemaVersion: 1,
       stage: 'admitted',
       workId: `issue-${candidate.databaseId}`,
@@ -228,6 +229,7 @@ describe('channels/github/lib/poller', () => {
     assert.equal(approvedItem?.itemType, 'pull-request');
     assert.deepEqual(approvedItem?.delivery, {
       assignmentEventId: assignment.nodeId,
+      mode: 'plan',
       schemaVersion: 1,
       stage: 'admitted',
       workId: 'pull-request-8',

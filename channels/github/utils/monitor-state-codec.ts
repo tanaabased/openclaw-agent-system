@@ -31,6 +31,7 @@ const stateKeys = new Set([
 ]);
 
 const itemBaseKeys = new Set([
+  'assignmentActorLogin',
   'assignmentActorNodeId',
   'assignmentEventNodeId',
   'commentTracking',
@@ -58,6 +59,7 @@ const deliveryKeys = new Set([
   'acknowledgment',
   'assignmentEventId',
   'failureCode',
+  'mode',
   'progress',
   'schemaVersion',
   'sessionId',
@@ -154,6 +156,9 @@ function validItemFields(
       item.repositoryPermission ?? '',
     ) &&
     (item.assignmentActorNodeId === undefined || validNodeId(item.assignmentActorNodeId)) &&
+    (item.assignmentActorLogin === undefined ||
+      (typeof item.assignmentActorLogin === 'string' &&
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(item.assignmentActorLogin))) &&
     (item.assignmentEventNodeId === undefined || validNodeId(item.assignmentEventNodeId)) &&
     Object.getPrototypeOf(value) === Object.prototype
   );
@@ -337,6 +342,7 @@ function validDelivery(
       delivery.stage ?? '',
     ) &&
     optionalBoundedString(delivery.failureCode, 255) &&
+    (delivery.mode === undefined || ['auto', 'plan', 'work'].includes(delivery.mode)) &&
     (delivery.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(delivery.failureCode)) &&
     optionalBoundedString(delivery.sessionId, 255) &&
     optionalBoundedString(delivery.sessionKey, 1_024) &&

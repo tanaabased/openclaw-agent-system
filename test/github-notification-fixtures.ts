@@ -26,10 +26,12 @@ export const notificationPullRequestHeadSha = 'a'.repeat(40);
 
 export function approvedNotificationItem(): GitHubNotificationItemState {
   return {
+    assignmentActorLogin: notificationActor.login,
     assignmentActorNodeId: notificationActor.nodeId,
     assignmentEventNodeId: 'EV_assignment',
     delivery: {
       assignmentEventId: 'EV_assignment',
+      mode: 'plan',
       schemaVersion: 1,
       stage: 'admitted',
       workId: 'issue-7',
@@ -54,10 +56,12 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
 
 export function approvedPullRequestNotificationItem(): GitHubNotificationItemState {
   return {
+    assignmentActorLogin: notificationActor.login,
     assignmentActorNodeId: notificationActor.nodeId,
     assignmentEventNodeId: 'EV_pull_request_assignment',
     delivery: {
       assignmentEventId: 'EV_pull_request_assignment',
+      mode: 'plan',
       schemaVersion: 1,
       stage: 'admitted',
       workId: 'pull-request-8',

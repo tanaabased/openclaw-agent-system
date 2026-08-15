@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import githubNotificationMessage, {
   githubNotificationBlockquote,
   githubNotificationMarkdownText,
-  githubNotificationProposedReplyHeading,
+  githubNotificationToGitHubHeading,
 } from '../channels/github/utils/presentation.ts';
 import githubNotificationQuotedCandidate, {
   GitHubNotificationQuotedCandidateError,
@@ -13,21 +13,20 @@ describe('channels/github/utils/presentation', () => {
   it('should render one rich message with an optional concise note', () => {
     assert.equal(
       githubNotificationMessage({
-        emoji: '💬',
+        emoji: '📣',
         note: {
-          label: 'Mode',
-          text: 'Reply — answer from recorded evidence without using tools.',
+          label: 'Delivery',
+          text: 'Ready for the explicit GitHub publication path.',
         },
-        summary:
-          'Michael mentioned you on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7).',
-        title: 'Comment received',
+        summary: 'The operator selected one bounded progress update.',
+        title: 'Progress selected',
       }),
       [
-        '## 💬 Comment received',
+        '## 📣 Progress selected',
         '',
-        'Michael mentioned you on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7).',
+        'The operator selected one bounded progress update.',
         '',
-        '**Mode:** Reply — answer from recorded evidence without using tools.',
+        '**Delivery:** Ready for the explicit GitHub publication path.',
       ].join('\n'),
     );
   });
@@ -52,17 +51,17 @@ describe('channels/github/utils/presentation', () => {
       '## Response',
       '',
       '```markdown',
-      githubNotificationProposedReplyHeading,
+      githubNotificationToGitHubHeading,
       '> not the real candidate',
       '```',
       '',
-      githubNotificationProposedReplyHeading,
+      githubNotificationToGitHubHeading,
       '',
       '> The plan is recorded.',
     ].join('\n');
 
     assert.equal(
-      githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading),
+      githubNotificationQuotedCandidate(response, githubNotificationToGitHubHeading),
       'The plan is recorded.',
     );
   });
@@ -71,19 +70,19 @@ describe('channels/github/utils/presentation', () => {
     for (const response of [
       '## Response\n\nPrivate only.',
       [
-        githubNotificationProposedReplyHeading,
+        githubNotificationToGitHubHeading,
         '',
         '> First.',
         '',
-        githubNotificationProposedReplyHeading,
+        githubNotificationToGitHubHeading,
         '',
         '> Second.',
       ].join('\n'),
-      `${githubNotificationProposedReplyHeading}\n`,
-      `${githubNotificationProposedReplyHeading}\n\n> Public.\nPrivate.`,
+      `${githubNotificationToGitHubHeading}\n`,
+      `${githubNotificationToGitHubHeading}\n\n> Public.\nPrivate.`,
     ]) {
       assert.throws(
-        () => githubNotificationQuotedCandidate(response, githubNotificationProposedReplyHeading),
+        () => githubNotificationQuotedCandidate(response, githubNotificationToGitHubHeading),
         GitHubNotificationQuotedCandidateError,
       );
     }

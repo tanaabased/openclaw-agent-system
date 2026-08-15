@@ -12,9 +12,10 @@ import {
 function activeState(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
   state.items[notificationItemKey]!.delivery = {
-    acknowledgment: { status: 'pending' },
+    acknowledgment: { commentId: 91, status: 'published' },
     activation: { status: 'pending' },
     assignmentEventId: 'EV_assignment',
+    mode: 'plan',
     schemaVersion: 1,
     sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
     stage: 'active',
@@ -29,9 +30,10 @@ function activePullRequestState(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
   const item = approvedPullRequestNotificationItem();
   item.delivery = {
-    acknowledgment: { status: 'pending' },
+    acknowledgment: { commentId: 93, status: 'published' },
     activation: { status: 'pending' },
     assignmentEventId: item.assignmentEventNodeId!,
+    mode: 'plan',
     schemaVersion: 1,
     sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
     stage: 'active',
@@ -70,7 +72,7 @@ const planningContext = {
 };
 
 describe('channels/github/lib/activation-service', () => {
-  it('should checkpoint adoption, planning, and the durable acknowledgment receipt', async () => {
+  it('should checkpoint adoption and planning without changing the assignment receipt', async () => {
     const store = memoryStore();
     let plans = 0;
     const service = new GitHubNotificationActivationService({
@@ -87,7 +89,7 @@ describe('channels/github/lib/activation-service', () => {
             store.state().items[notificationItemKey]?.delivery?.activation?.status,
             'adopted',
           );
-          return { acknowledgment: { commentId: 91, status: 'published' } };
+          return { status: 'planned' };
         },
       },
       stateStore: store,
@@ -123,7 +125,7 @@ describe('channels/github/lib/activation-service', () => {
           assert.equal(input.item.itemType, 'pull-request');
           assert.equal(input.worktree, undefined);
           await input.onTurnAdopted();
-          return { acknowledgment: { commentId: 93, status: 'published' } };
+          return { status: 'planned' };
         },
       },
       stateStore: store,
@@ -138,8 +140,13 @@ describe('channels/github/lib/activation-service', () => {
     });
   });
 
-  it('should checkpoint and log a terminal acknowledgment failure without failing planning', async () => {
-    const store = memoryStore();
+  it('should preserve a failed deterministic receipt without failing planning', async () => {
+    const initial = activeState();
+    initial.items[notificationItemKey]!.delivery!.acknowledgment = {
+      failureCode: 'github-notification-acknowledgment-not-confirmed',
+      status: 'failed',
+    };
+    const store = memoryStore(initial);
     const info: string[] = [];
     const warnings: string[] = [];
     const service = new GitHubNotificationActivationService({
@@ -159,12 +166,7 @@ describe('channels/github/lib/activation-service', () => {
       sessions: {
         async planAssignment(input) {
           await input.onTurnAdopted();
-          return {
-            acknowledgment: {
-              failureCode: 'github-notification-acknowledgment-not-confirmed',
-              status: 'failed',
-            },
-          };
+          return { status: 'planned' };
         },
       },
       stateStore: store,
@@ -182,17 +184,10 @@ describe('channels/github/lib/activation-service', () => {
       status: 'failed',
     });
     assert.equal(
-      info.some((message) => message.includes('acknowledgment=pending')),
+      info.some((message) => message.includes('planning complete') && message.includes('planned')),
       true,
     );
-    assert.equal(
-      warnings.some(
-        (message) =>
-          message.includes('acknowledgment=failed') &&
-          message.includes('code=github-notification-acknowledgment-not-confirmed'),
-      ),
-      true,
-    );
+    assert.deepEqual(warnings, []);
   });
 
   it('should retry only failures that happen before the host adopts the turn', async () => {

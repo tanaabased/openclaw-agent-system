@@ -5,7 +5,7 @@ import githubNotificationCommentPrompt from '../channels/github/utils/comment-co
 import { approvedPullRequestNotificationItem } from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/comment-context', () => {
-  it('should separate a visible pull-request receipt from current-turn evidence', () => {
+  it('should separate direct comment input from hidden instructions and current-turn evidence', () => {
     const comment = {
       author: { login: 'reviewer_*', nodeId: 'U_reviewer', type: 'User' },
       body: '@tanaabot please summarize the recorded plan.',
@@ -34,19 +34,15 @@ describe('channels/github/utils/comment-context', () => {
       },
     });
 
-    assert.equal(
-      prompt.body,
-      [
-        '## 💬 Comment received',
-        '',
-        'reviewer\\_\\* mentioned you on [tanaabased/example#13](https://github.com/tanaabased/example/pull/13#issuecomment-92).',
-        '',
-        '**Mode:** Reply — answer from recorded evidence without using tools.',
-      ].join('\n'),
-    );
-    assert.match(prompt.bodyForAgent, /Return exactly one private Markdown response/u);
-    assert.match(prompt.bodyForAgent, /## 📤 Proposed GitHub reply/u);
-    assert.doesNotMatch(prompt.bodyForAgent, /summarize the recorded plan/u);
+    assert.equal(prompt.body, comment.body);
+    assert.match(prompt.instructions, /Return exactly one private Markdown response/u);
+    assert.match(prompt.instructions, /## 📤 To GitHub/u);
+    assert.doesNotMatch(prompt.instructions, /summarize the recorded plan/u);
+    assert.deepEqual(prompt.request, {
+      assignmentKind: 'pull-request',
+      event: 'comment-received',
+      mode: 'plan',
+    });
     assert.deepEqual(prompt.untrustedContext, {
       label: 'GitHub pull-request comment context',
       payload: {

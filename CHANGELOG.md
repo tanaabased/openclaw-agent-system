@@ -3,12 +3,13 @@
 ### New Features
 
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
+- Added deterministic GitHub assignment receipts that publish before private planning begins. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Added direct GitHub comment input with hidden instructions, structured evidence, and quoted `To GitHub` publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, progress, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added explicit operator-scoped progress publication from active local GitHub notification sessions.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
-- Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
+- Added plan-first GitHub notification activation with private issue assessment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)
-- Added rich linked GitHub comment turns with ephemeral structured evidence, private Markdown responses, and visibly quoted public reply candidates. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added revision-aware replies for approved GitHub issue mentions, with tool-free private turns, exact comment reauthorization, and durable public delivery. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
 - Bound registered command-launcher descendants, including `git` and `gh`, to active OpenClaw and Codex agents with fail-closed admission. [#23](https://github.com/tanaabased/openclaw-agent-system/pull/23)
 
@@ -18,7 +19,7 @@
 - Fixed GitHub notification doctor activation-failure counts to ignore logically retired items while retaining historical state. [#20](https://github.com/tanaabased/openclaw-agent-system/issues/20)
 - Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
-- Fixed malformed notification acknowledgment output to fall back to a safe deterministic response instead of leaving assignment intake failed. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
+- Fixed GitHub assignment receipts to use deterministic channel text instead of model output. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed managed Codex config to set `allow_login_shell = false` and warn when user-managed config omits it. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
 - Fixed managed command launchers to preserve bounded redirected standard input.
 - Fixed managed `gh` launchers to accept root `--help`, `-h`, and `--version` flags used by repository helpers. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
@@ -28,6 +29,7 @@
 ### Notes
 
 - Moved the GitHub notification presentation contract into the packaged channel documentation and tightened the channel entrypoint.
+- Refactored GitHub notification message plumbing into separate presentation, context, instruction, capability, and turn owners. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 

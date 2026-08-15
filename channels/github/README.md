@@ -30,14 +30,17 @@ without treating GitHub content as authorization for implementation.
   assignment creates only its local monitoring session.
 - Fetches a bounded title, body, labels, and recent comments as untrusted
   context, plus summary-only changed-file metadata for a pull request, then runs
-  one tool-free private planning turn. Patch content is never included.
-- Publishes only the planning response's separate one-sentence acknowledgment
-  through the channel's authorization, safety, and durable delivery path.
+  one tool-free private planning turn with hidden instructions. Patch content is
+  never included.
+- Publishes one deterministic assignment receipt through the channel's
+  authorization, safety, and durable delivery path as soon as the private
+  session is recorded; planning does not author or delay that receipt.
 - Establishes a complete bounded top-level comment baseline for each admitted
   issue or pull request, then admits only later exact standalone mentions from
   approved immutable human identities.
-- Rechecks the exact current comment revision before a tool-free private reply
-  turn and again before publishing its separate GitHub reply candidate.
+- Rechecks the exact current comment revision, passes its bounded text directly
+  into the private session, and injects response instructions separately. It
+  rechecks again before publishing the quoted `To GitHub` response.
 - Publishes a locally selected progress update only from the exact active
   assignment session through an authorized Gateway operator command that
   bypasses the model.
@@ -205,9 +208,10 @@ phase.
   access.
 - GitHub prose and changed-file metadata remain bounded untrusted data.
   Planning and admitted-comment turns cannot use tools. Admitted comments and
-  status evidence use ephemeral current-turn structured context. Public
-  delivery accepts only the planning turn's separate acknowledgment, an
-  admitted comment's visibly quoted reply, or explicitly selected progress.
+  status evidence use ephemeral current-turn structured context, while trusted
+  response instructions stay out of visible chat. Public delivery accepts only
+  a deterministic assignment receipt, an admitted comment's quoted `To GitHub`
+  response, or explicitly selected progress.
 - Comment mentions do not authorize inspection or implementation. Status replies
   use only recorded evidence; fresh inspection remains a local tool-enabled turn
   whose result stays private unless an operator invokes

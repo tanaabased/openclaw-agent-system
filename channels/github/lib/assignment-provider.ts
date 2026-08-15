@@ -251,7 +251,10 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
       if (
         admission.disposition !== 'approved' ||
         admission.event?.nodeId !== input.delivery.assignmentEventId ||
-        admission.event.actor.nodeId !== input.item.assignmentActorNodeId
+        admission.event.actor.nodeId !== input.item.assignmentActorNodeId ||
+        (input.item.assignmentActorLogin !== undefined &&
+          admission.event.actor.login.toLowerCase() !==
+            input.item.assignmentActorLogin.toLowerCase())
       ) {
         return {
           authorized: false,

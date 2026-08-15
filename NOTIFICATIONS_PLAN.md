@@ -322,7 +322,7 @@ Issue Work will reuse the same investigation and clarification loop before it:
 6. publishes a concise trusted pull-request completion reference.
 
 Work mode is a separate implementation wave and configuration decision. This
-plan does not treat approval of the architecture refactor as approval to ship
+plan does not treat authorization of the architecture refactor as authorization to ship
 automatic implementation.
 
 ## Direct Pull-request Assignment Lifecycle
@@ -504,16 +504,19 @@ publication concern.
 
 ### Wave 4: Mode-preserving Comments
 
-- Pass admitted comment text directly as the model-facing message.
+- Preserve the direct admitted-comment input established by the message
+  foundation.
 - Classify pending clarification replies without creating a second comment
   transport.
-- Inherit the assignment mode and capability on every comment turn.
+- Apply the planned capability for every comment turn from its inherited
+  assignment mode.
 - Verify that comment prose cannot elevate or alter mode.
 - Reuse the private plus `To GitHub` response envelope.
 
 ### Wave 5: Partial PR Alignment
 
-- Add separate PR assignment presentation, context, and instructions.
+- Reuse the separate PR assignment presentation, context, and instructions
+  established by the message foundation.
 - Apply Plan outcomes, clarification, comment inheritance, and deterministic
   receipt within the currently supported PR monitoring boundary.
 - Preserve verified-head and retirement behavior.

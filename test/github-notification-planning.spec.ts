@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import githubNotificationAssignmentNotice from '../channels/github/utils/assignment-presentation.ts';
 import githubNotificationPlanningPrompt from '../channels/github/utils/planning-context.ts';
-import githubNotificationPlanningAcknowledgment, {
+import {
   assertGitHubNotificationPlanningResponse,
   GitHubNotificationPlanningResponseError,
 } from '../channels/github/utils/planning-response.ts';
@@ -38,19 +38,20 @@ describe('channels/github/utils/planning', () => {
     const item = approvedNotificationItem();
     const planning = githubNotificationPlanningPrompt({ context, item });
 
-    assert.match(planning.body, /^## 📋 Planning request$/mu);
-    assert.match(planning.body, /You've been assigned/u);
+    assert.match(planning.body, /^## 📥 Issue assignment received$/mu);
+    assert.match(planning.body, /@pirog/u);
     assert.match(planning.body, /https:\/\/github\.com\/tanaabased\/example\/issues\/12/u);
     assert.match(planning.body, /\*\*Mode:\*\* Plan/u);
-    assert.match(planning.body, /## Assessment/u);
-    assert.match(planning.body, /## Blockers/u);
-    assert.match(planning.body, /## Plan/u);
-    assert.match(planning.body, /do not use tools or begin implementation/u);
-    assert.match(planning.body, /untrusted project data/u);
     assert.ok(planning.body.includes('Add \\](https://evil.example) \\*planning\\*'));
     assert.doesNotMatch(planning.body, /Ignore the system/u);
     assert.doesNotMatch(planning.body, /Please keep this small/u);
-    assert.doesNotMatch(planning.body, /GITHUB_CONTEXT_JSON/u);
+    assert.doesNotMatch(planning.body, /untrusted project data/u);
+    assert.doesNotMatch(planning.body, /## Assessment/u);
+    assert.match(planning.instructions, /untrusted project data/u);
+    assert.match(planning.instructions, /tool-free/u);
+    assert.match(planning.instructions, /## Assessment/u);
+    assert.match(planning.instructions, /## Blockers/u);
+    assert.match(planning.instructions, /## Plan/u);
     assert.deepEqual(planning.untrustedContext, {
       label: 'GitHub issue context',
       payload: context,
@@ -80,13 +81,13 @@ describe('channels/github/utils/planning', () => {
     const item = approvedPullRequestNotificationItem();
     const planning = githubNotificationPlanningPrompt({ context, item });
 
-    assert.match(planning.body, /private stewardship plan/u);
-    assert.match(planning.body, /No managed worktree is prepared/u);
-    assert.match(planning.body, /monitoring discussion, blockers, and merge readiness/u);
+    assert.match(planning.body, /^## 🔀 Pull request assignment received$/mu);
     assert.match(planning.body, /https:\/\/github\.com\/tanaabased\/example\/pull\/13/u);
     assert.doesNotMatch(planning.body, /channels\/github\/lib\/poller\.ts/u);
     assert.doesNotMatch(planning.body, /notification-pr/u);
     assert.doesNotMatch(planning.body, /a{40}/u);
+    assert.match(planning.instructions, /private stewardship assessment/u);
+    assert.match(planning.instructions, /no managed pull-request worktree/iu);
     assert.deepEqual(planning.untrustedContext, {
       label: 'GitHub pull-request context',
       payload: {
@@ -104,29 +105,32 @@ describe('channels/github/utils/planning', () => {
     assert.equal('patch' in planning.untrustedContext.payload, false);
   });
 
-  it('should render one linked mode-neutral assignment receipt', () => {
+  it('should render distinct linked plan-mode assignment cards', () => {
     assert.equal(
-      githubNotificationAssignmentNotice(approvedNotificationItem()),
+      githubNotificationAssignmentNotice({
+        item: approvedNotificationItem(),
+        mode: 'plan',
+      }),
       [
-        '## 📥 Assignment received',
+        '## 📥 Issue assignment received',
         '',
-        "You've been assigned [tanaabased/example#12](https://github.com/tanaabased/example/issues/12).",
+        '[@pirog](https://github.com/pirog) assigned you [tanaabased/example#12](https://github.com/tanaabased/example/issues/12).',
+        '',
+        '**Mode:** Plan — investigate the issue and prepare an implementation plan.',
       ].join('\n'),
     );
     assert.match(
       githubNotificationAssignmentNotice({
-        ...approvedNotificationItem(),
-        itemType: 'pull-request',
+        item: approvedPullRequestNotificationItem(),
+        mode: 'plan',
       }),
-      /https:\/\/github\.com\/tanaabased\/example\/pull\/12/u,
+      /https:\/\/github\.com\/tanaabased\/example\/pull\/13/u,
     );
   });
 
-  it('should accept one formatted private plan and isolate its public acknowledgment', () => {
+  it('should accept one formatted private plan', () => {
     const response = {
       text: [
-        'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
-        '',
         '## Assessment',
         '',
         '🧭 This needs a **bounded implementation**.',
@@ -143,16 +147,11 @@ describe('channels/github/utils/planning', () => {
     };
 
     assert.equal(assertGitHubNotificationPlanningResponse([response]), response);
-    assert.equal(
-      githubNotificationPlanningAcknowledgment([response]),
-      'I have read this through and mapped out a plan.',
-    );
   });
 
   it('should preserve legacy plaintext planning responses during transition', () => {
     const response = {
       text: [
-        'ACKNOWLEDGMENT: I have read this through and mapped out a plan.',
         'ASSESSMENT:',
         'This needs a bounded implementation.',
         'BLOCKERS:',
@@ -244,27 +243,6 @@ describe('channels/github/utils/planning', () => {
       (error: unknown) =>
         error instanceof GitHubNotificationPlanningResponseError &&
         error.code === 'github-notification-planning-response-invalid',
-    );
-  });
-
-  it('should fall back for missing ambiguous or secret-shaped public candidates', () => {
-    const fallback = 'Got it — I have reviewed the assignment and prepared a plan.';
-
-    assert.equal(
-      githubNotificationPlanningAcknowledgment([{ text: '## Assessment\nReady.' }]),
-      fallback,
-    );
-    assert.equal(
-      githubNotificationPlanningAcknowledgment([
-        { text: 'ACKNOWLEDGMENT: Ready.\nACKNOWLEDGMENT: Still ready.' },
-      ]),
-      fallback,
-    );
-    assert.equal(
-      githubNotificationPlanningAcknowledgment([
-        { text: 'ACKNOWLEDGMENT: I found GH_TOKEN=secret-value in the issue.' },
-      ]),
-      fallback,
     );
   });
 });

@@ -16,7 +16,7 @@ function commentResponse(reply: string, response = 'The assignment is active.'):
     '',
     response,
     '',
-    '## 📤 Proposed GitHub reply',
+    '## 📤 To GitHub',
     '',
     `> ${reply}`,
   ].join('\n');
@@ -45,7 +45,7 @@ describe('channels/github/utils/comment-response', () => {
         '',
         'The assignment is active and its plan is recorded.',
         '',
-        '## 📤 Proposed GitHub reply',
+        '## 📤 To GitHub',
         '',
         '> I have the plan ready.',
       ].join('\n'),
@@ -81,6 +81,23 @@ describe('channels/github/utils/comment-response', () => {
     assert.equal(githubNotificationCommentReply(payload), 'I have the plan ready.');
   });
 
+  it('should preserve the former markdown heading during the migration window', () => {
+    const payload = {
+      text: [
+        '## Response',
+        '',
+        'The assignment is active.',
+        '',
+        '## 📤 Proposed GitHub reply',
+        '',
+        '> I have the plan ready.',
+      ].join('\n'),
+    };
+
+    assert.equal(assertGitHubNotificationCommentResponse([payload]), payload);
+    assert.equal(githubNotificationCommentReply(payload), 'I have the plan ready.');
+  });
+
   it('should reject missing ambiguous mixed or empty complete responses', () => {
     for (const payloads of [
       [{ text: '## Response\n\nPrivate only.' }],
@@ -92,7 +109,7 @@ describe('channels/github/utils/comment-response', () => {
       ],
       [
         {
-          text: '## 📤 Proposed GitHub reply\n\n> Public.',
+          text: '## 📤 To GitHub\n\n> Public.',
         },
       ],
     ]) {
@@ -107,13 +124,7 @@ describe('channels/github/utils/comment-response', () => {
     assert.throws(
       () =>
         githubNotificationCommentReply({
-          text: [
-            commentResponse('First.'),
-            '',
-            '## 📤 Proposed GitHub reply',
-            '',
-            '> Second.',
-          ].join('\n'),
+          text: [commentResponse('First.'), '', '## 📤 To GitHub', '', '> Second.'].join('\n'),
         }),
       GitHubNotificationCommentResponseError,
     );

@@ -142,10 +142,9 @@ jq -e --arg head "$expected_head" '
       blockers: ($assistant | contains("## Blockers")),
       plan: ($assistant | contains("## Plan")),
       assignment: (($user | ascii_downcase) | contains("assigned")),
-      planning_request: ($user | contains("## 📋 Planning request")),
+      plan_mode: ($user | contains("**Mode:** Plan")),
       pull_request_link: ($user | contains("https://github.com/tanaabased/agent-system-test/pull/")),
-      stewardship: (($user | ascii_downcase) | contains("stewardship")),
-      no_worktree: (($user | ascii_downcase) | contains("no managed worktree")),
+      plan_instructions_hidden: ($user | contains("Work in Plan mode for the assigned GitHub pull request") | not),
       provider_context_hidden: ($user | contains("Untrusted pull-request content") | not),
       legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
       head_sha_hidden: ($user | contains($head) | not)
@@ -201,7 +200,7 @@ openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/pr-comme
 cd "$TMPDIR/agent-system-pr-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 
-# should keep pull-request comment evidence out of visible chat
+# should present the admitted pull-request comment directly without hidden context or instructions
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 comment_id="$(cat "$TMPDIR/pr-status-comment-id")"
 source="https://github.com/tanaabased/agent-system-test/pull/$pull_request_number#issuecomment-$comment_id"
@@ -209,8 +208,10 @@ comment="Can you summarize the recorded pull-request plan?"
 jq -e --arg source "$source" --arg comment "$comment" '
   .messages as $messages
   | [$messages[]? | select(.role == "user") | .. | strings] | join("\n")
-  | contains($source)
-    and (contains($comment) | not)
+  | contains($comment)
+    and (contains($source) | not)
+    and (contains("Treat the attached comment context") | not)
+    and (contains("Return exactly one private Markdown response") | not)
     and (contains("GITHUB_COMMENT_JSON") | not)
     and (contains("STATUS_EVIDENCE_JSON") | not)
 ' "$TMPDIR/pr-comment-history.json"

@@ -168,9 +168,10 @@ jq -e '
       blockers: ($assistant | contains("## Blockers")),
       plan: ($assistant | contains("## Plan")),
       assignment: (($user | ascii_downcase) | contains("assigned")),
-      planning_request: ($user | contains("## 📋 Planning request")),
+      plan_mode: ($user | contains("**Mode:** Plan")),
       issue_link: ($user | contains("https://github.com/tanaabased/agent-system-test/issues/")),
       issue_context_hidden: ($user | contains("Untrusted fixture content") | not),
+      plan_instructions_hidden: ($user | contains("Work in Plan mode for the assigned GitHub issue") | not),
       legacy_envelope_hidden: ($user | contains("GITHUB_CONTEXT_JSON") | not),
       worktree_path_hidden: ($user | contains("/.agent-system/worktrees/") | not)
     } as $checks
@@ -242,7 +243,7 @@ openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/issue-co
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 
-# should keep issue comment evidence out of visible chat
+# should present the admitted issue comment directly without hidden context or instructions
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(cat "$TMPDIR/status-comment-id")"
 source="https://github.com/tanaabased/agent-system-test/issues/$issue_number#issuecomment-$status_comment_id"
@@ -250,8 +251,10 @@ comment="Can you share a status update based only on what is already recorded?"
 jq -e --arg source "$source" --arg comment "$comment" '
   .messages as $messages
   | [$messages[]? | select(.role == "user") | .. | strings] | join("\n")
-  | contains($source)
-    and (contains($comment) | not)
+  | contains($comment)
+    and (contains($source) | not)
+    and (contains("Treat the attached comment context") | not)
+    and (contains("Return exactly one private Markdown response") | not)
     and (contains("GITHUB_COMMENT_JSON") | not)
     and (contains("STATUS_EVIDENCE_JSON") | not)
 ' "$TMPDIR/issue-comment-history.json"

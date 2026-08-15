@@ -65,4 +65,43 @@ describe('lib/register-hooks', () => {
       appendSystemContext: `${agentCommandSecurityGuidance}\nPrefer the configured Agent System tool.`,
     });
   });
+
+  it('should inject github notification instructions only for the matching channel turn', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] } as const;
+        },
+      },
+      { guidance: () => [] },
+    );
+    const channelContext = {
+      agentSystemGitHubNotification: {
+        assignmentKind: 'issue',
+        event: 'comment-received',
+        mode: 'plan',
+      },
+    };
+
+    const injected = await handlers.get('before_prompt_build')?.(
+      {},
+      { channelContext, messageProvider: 'agent-system-github' },
+    );
+    const ignored = await handlers.get('before_prompt_build')?.(
+      {},
+      { channelContext, messageProvider: 'imessage' },
+    );
+
+    assert.match(
+      String((injected as { appendSystemContext?: string })?.appendSystemContext),
+      /Continue the assigned GitHub issue conversation in Plan mode/u,
+    );
+    assert.equal(ignored, undefined);
+  });
 });

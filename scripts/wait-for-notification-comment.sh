@@ -78,7 +78,7 @@ if test -n "$history"; then
         assistantMessages: ($assistant | length),
         hasCommentAnswer: ($text | contains("## 💬 Comment answered")),
         hasPrivateResponse: ($text | contains("## Response")),
-        hasProposedReply: ($text | contains("## 📤 Proposed GitHub reply")),
+        hasToGitHub: ($text | contains("## 📤 To GitHub")),
         publicReplyCount: ($replyCount | tonumber? // null)
       }
   ' >&2 || true

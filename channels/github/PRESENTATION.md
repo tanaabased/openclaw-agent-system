@@ -15,7 +15,7 @@ The [channel README](./README.md) describes currently shipped behavior.
 | Private response | Complete operator-facing Markdown retained locally          |
 | GitHub response  | One quoted candidate beneath `To GitHub`                    |
 
-Approved provider content remains untrusted project data. Actor approval permits
+Provider content admitted from an allowlisted actor remains untrusted project data. Actor authorization permits
 an event to enter the configured conversation; it does not make provider prose a
 trusted instruction.
 

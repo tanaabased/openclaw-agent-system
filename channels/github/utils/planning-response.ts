@@ -1,11 +1,5 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
-import {
-  GitHubNotificationPublicationError,
-  githubNotificationPublicationText,
-} from './publication.ts';
-
-const fallbackAcknowledgment = 'Got it — I have reviewed the assignment and prepared a plan.';
 const requiredSections = ['ASSESSMENT', 'BLOCKERS', 'PLAN'] as const;
 
 type PlanningResponseFormat = 'legacy' | 'markdown';
@@ -140,25 +134,4 @@ export function assertGitHubNotificationPlanningResponse(
     );
   }
   return candidates[0];
-}
-
-/** Extract only the explicit public candidate from an otherwise private planning response. */
-export default function githubNotificationPlanningAcknowledgment(
-  payloads: readonly ReplyPayload[],
-): string {
-  const response = payloads.map(planningResponseText).filter(Boolean).join('\n');
-  const matches = [...response.matchAll(/^ACKNOWLEDGMENT:[ \t]*(.+?)[ \t]*$/gmu)];
-  if (matches.length !== 1 || !matches[0]?.[1]) {
-    return githubNotificationPublicationText('initial-acknowledgment', [
-      { text: fallbackAcknowledgment },
-    ]);
-  }
-  try {
-    return githubNotificationPublicationText('initial-acknowledgment', [{ text: matches[0][1] }]);
-  } catch (error) {
-    if (!(error instanceof GitHubNotificationPublicationError)) throw error;
-    return githubNotificationPublicationText('initial-acknowledgment', [
-      { text: fallbackAcknowledgment },
-    ]);
-  }
 }

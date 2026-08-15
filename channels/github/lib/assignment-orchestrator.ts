@@ -386,9 +386,10 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const delivery = state.items[itemKey]?.delivery;
     if (!delivery) return;
     await this.#checkpointDelivery(state, itemKey, {
-      acknowledgment: { status: 'pending' },
+      acknowledgment: session.acknowledgment ?? { status: 'pending' },
       activation: { status: 'pending' },
       ...withoutFailure(delivery),
+      mode: session.mode ?? delivery.mode ?? 'plan',
       sessionId: session.id,
       sessionKey: session.key,
       stage: 'active',

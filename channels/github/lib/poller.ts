@@ -136,11 +136,12 @@ function itemState(
   repository: Awaited<ReturnType<GitHubWorkEventClient['getRepository']>>,
   item: Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
   permission: Awaited<ReturnType<GitHubWorkEventClient['getPermission']>>,
-  assignment?: { actor: { nodeId: string }; nodeId: string },
+  assignment?: { actor: { login: string; nodeId: string }; nodeId: string },
 ): GitHubNotificationItemState {
   return {
     ...(assignment
       ? {
+          assignmentActorLogin: assignment.actor.login,
           assignmentActorNodeId: assignment.actor.nodeId,
           assignmentEventNodeId: assignment.nodeId,
         }
@@ -150,6 +151,7 @@ function itemState(
       ? {
           delivery: {
             assignmentEventId: assignment.nodeId,
+            mode: 'plan' as const,
             schemaVersion: 1 as const,
             stage: 'admitted' as const,
             workId: `${item.itemType}-${item.databaseId}`,
