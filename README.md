@@ -39,7 +39,7 @@ Today, Agent System:
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, deduplicates provider events, and prepares managed issue worktrees.
+- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, prepares managed issue worktrees, and relays approved issue comments through lifecycle sessions.
 
 ### Skills
 

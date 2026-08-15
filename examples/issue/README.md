@@ -1,12 +1,11 @@
 # GitHub Issue Notification Intake Example
 
 This macOS-only scenario runs the prepared Agent System package in the default
-Gateway and proves the Wave 1 issue-assignment intake lifecycle. It establishes
-the polling baseline, rejects a self-authored assignment, classifies an approved
-issue assignment, prepares its managed worktree, preserves the durable checkpoint
-across restart, and retires the assignment without deleting the worktree. It does
-not invoke a model or assert later messaging, session, presentation, or publication
-behavior.
+Gateway and proves the issue-assignment intake lifecycle plus one short comment
+exchange. It establishes the polling baseline, rejects a self-authored assignment,
+prepares an approved issue worktree, preserves the checkpoint across restart,
+delivers one approved comment to the lifecycle session, publishes one reply, and
+retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
 `tanaabased/agent-system-test`.
@@ -14,10 +13,12 @@ Scenario setup creates and updates uniquely named issues in
 ## Setup
 
 ```bash
-# should configure an unauthenticated default openclaw profile
+# should configure the default profile with the ci model
 openclaw onboard --non-interactive --accept-risk \
   --mode local \
-  --auth-choice skip \
+  --auth-choice openai-api-key \
+  --openai-api-key "$OPENAI_API_KEY" \
+  --secret-input-mode plaintext \
   --workspace "$TMPDIR/main" \
   --gateway-bind loopback \
   --skip-daemon \
@@ -29,6 +30,7 @@ openclaw onboard --non-interactive --accept-risk \
   --skip-skills \
   --skip-ui \
   --suppress-gateway-token-output
+openclaw models set "openai/$OPENAI_MODEL"
 
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
@@ -57,6 +59,12 @@ openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == 
 cd "$TMPDIR/agent-system-notification-actor"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install
+
+# should configure the notification agent for short unattended work turns
+notification_index="$(openclaw config get agents.list --json | jq -er 'map(.id) | index("notification-data")')"
+openclaw config set "agents.list[$notification_index].model" "openai/$OPENAI_MODEL"
+openclaw config set "agents.list[$notification_index].tools.profile" coding
+openclaw exec-policy preset yolo
 ```
 
 ## Testing
@@ -129,6 +137,22 @@ openclaw agent-system notifications wait \
   --for worktree-ready \
   --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
+
+# should answer one approved issue comment without a long model task
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Put $reply_token in the To GitHub quote. Reply briefly and do not use tools or inspect files."
+cd "$TMPDIR/agent-system-notifications"
+gtimeout 180 openclaw agent-system notifications refresh \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --json | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+cd "$TMPDIR/agent-system-notification-actor"
+reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq ".[] | select(.user.login == \"tanaabot\" and (.body | contains(\"$reply_token\")) and (.body | contains(\"agent-system-github-publication:github-reply\"))) | .id")"
+test -n "$reply_id"
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

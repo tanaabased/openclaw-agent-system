@@ -97,17 +97,45 @@ export interface GitHubNotificationPublicationTarget {
   intent: GitHubNotificationPublicationIntent;
 }
 
-/** Build an opaque durable target for exactly one canonical GitHub publication. */
-export function githubNotificationPublicationTarget(input: {
-  intent: GitHubNotificationPublicationIntent;
+export interface GitHubNotificationPublicationSource {
+  commentDatabaseId: number;
+  revisionId: string;
+}
+
+type GitHubNotificationPublicationTargetInput = {
   item: Pick<GitHubNotificationItemState, 'lifecycleId' | 'number' | 'repositoryNodeId'>;
-  publicationId: string;
-}): string {
-  const publicationId = input.publicationId.trim();
-  if (!publicationId || publicationId.length > 255 || /[\s\0]/u.test(publicationId)) {
-    throw new Error('GitHub notification publication ids are invalid.');
+} & (
+  | {
+      intent: 'github-reply';
+      source: GitHubNotificationPublicationSource;
+    }
+  | {
+      intent: 'initial-acknowledgment' | 'planning-outcome';
+      publicationId: string;
+    }
+);
+
+/** Build an opaque durable target for exactly one canonical GitHub publication. */
+export function githubNotificationPublicationTarget(
+  input: GitHubNotificationPublicationTargetInput,
+): string {
+  let identity: string;
+  if (input.intent === 'github-reply') {
+    if (
+      !Number.isSafeInteger(input.source.commentDatabaseId) ||
+      input.source.commentDatabaseId < 1 ||
+      !/^[a-f0-9]{64}$/u.test(input.source.revisionId)
+    ) {
+      throw new Error('GitHub notification publication sources are invalid.');
+    }
+    identity = `${input.source.commentDatabaseId}\0${input.source.revisionId}`;
+  } else {
+    identity = input.publicationId.trim();
+    if (!identity || identity.length > 255 || /[\s\0]/u.test(identity)) {
+      throw new Error('GitHub notification publication ids are invalid.');
+    }
   }
-  const digest = createHash('sha256').update(publicationId).digest('hex').slice(0, 32);
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 32);
   return `${githubNotificationConversationId({
     itemNumber: input.item.number,
     lifecycleId: input.item.lifecycleId,

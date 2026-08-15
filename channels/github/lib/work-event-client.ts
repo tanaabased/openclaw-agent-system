@@ -16,6 +16,7 @@ const maximumSearchPages = 10;
 const maximumEventPages = 3;
 const maximumCommentPages = 10;
 const maximumCommentBodyLength = 1_000;
+const maximumPublicationBodyLength = 1_200;
 const maximumTrackedCommentPages = 3;
 const maximumItemContextComments = 50;
 const maximumItemContextFiles = 100;
@@ -67,6 +68,10 @@ export interface GitHubAssignedItemDiscovery {
 export interface GitHubIssueCommentReceipt {
   databaseId: number;
   nodeId: string;
+}
+
+export interface GitHubIssueCommentReconciliationReceipt extends GitHubIssueCommentReceipt {
+  body: string;
 }
 
 export interface GitHubIssueCommentPage {
@@ -674,7 +679,7 @@ export default class GitHubWorkEventClient {
     name: string,
     number: number,
     marker: string,
-  ): Promise<GitHubIssueCommentReceipt | undefined> {
+  ): Promise<GitHubIssueCommentReconciliationReceipt | undefined> {
     if (
       !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|planning-outcome):[a-f0-9]{32} -->$/u.test(
         marker,
@@ -694,7 +699,7 @@ export default class GitHubWorkEventClient {
           '-F',
           `page=${page}`,
           '--jq',
-          `[.[]|select(.body|contains(${JSON.stringify(marker)}))|{databaseId:.id,nodeId:.node_id,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}]`,
+          `[.[]|select(.body|contains(${JSON.stringify(marker)}))|{databaseId:.id,nodeId:.node_id,body:.body,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}]`,
         ],
         'issue comments',
       );
@@ -706,6 +711,7 @@ export default class GitHubWorkEventClient {
         const author = identity(value.user, 'issue-comment author');
         if (author.nodeId !== this.identity.nodeId) continue;
         return {
+          body: boundedProse(value.body, 'issue-comment body', maximumPublicationBodyLength).text,
           databaseId: positiveInteger(value.databaseId, 'issue-comment database id'),
           nodeId: nodeId(value.nodeId, 'issue-comment node id'),
         };

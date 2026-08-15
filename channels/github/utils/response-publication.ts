@@ -40,12 +40,12 @@ function completeResponse(payload: ReplyPayload): boolean {
 
 /** Select one complete private/public response, preferring an ordinary final. */
 export function assertGitHubNotificationResponse(payloads: readonly ReplyPayload[]): ReplyPayload {
+  const ordinary = payloads.filter(({ isCommentary }) => isCommentary !== true);
   const complete = payloads.filter(completeResponse);
-  const ordinary = complete.filter(({ isCommentary }) => isCommentary !== true);
-  const candidates = ordinary.length > 0 ? ordinary : complete;
+  const candidates = ordinary.length > 0 ? ordinary.filter(completeResponse) : complete;
   if (candidates.length !== 1 || !candidates[0]) {
     throw new GitHubNotificationResponsePublicationError(
-      complete.length === 0
+      candidates.length === 0
         ? 'github-notification-response-publication-missing'
         : 'github-notification-response-publication-invalid',
     );

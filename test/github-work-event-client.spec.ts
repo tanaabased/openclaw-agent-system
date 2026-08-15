@@ -359,13 +359,20 @@ describe('channels/github/lib/work-event-client', () => {
             user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
           });
         }
-        return response([]);
+        return response([
+          {
+            body,
+            databaseId: 90,
+            nodeId: 'IC_existing',
+            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
+          },
+        ]);
       },
     });
 
-    assert.equal(
+    assert.deepEqual(
       await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
-      undefined,
+      { body, databaseId: 90, nodeId: 'IC_existing' },
     );
     assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
       databaseId: 91,

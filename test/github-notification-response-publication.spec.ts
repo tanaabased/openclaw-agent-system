@@ -34,6 +34,20 @@ describe('channels/github/utils/response-publication', () => {
     );
   });
 
+  it('should not fall back to commentary when an ordinary response is incomplete', () => {
+    assert.throws(
+      () =>
+        assertGitHubNotificationResponse([
+          { ...completeResponse, isCommentary: true },
+          { text: 'An incomplete ordinary response.' },
+        ]),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'github-notification-response-publication-missing',
+    );
+  });
+
   it('should reject missing private content, duplicate headings, and unsafe candidates', () => {
     const cases = [
       { text: '## 📤 To GitHub\n\n> Public only.' },

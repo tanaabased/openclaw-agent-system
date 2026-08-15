@@ -6,7 +6,7 @@ import {
   githubNotificationPublicationMarker,
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
-  type GitHubNotificationPublicationIntent,
+  type GitHubNotificationPublicationSource,
 } from '../utils/publication.ts';
 
 type PublicationItem = Pick<
@@ -15,9 +15,9 @@ type PublicationItem = Pick<
 >;
 
 export interface GitHubNotificationCommentPublicationInput {
-  intent: GitHubNotificationPublicationIntent;
+  intent: 'github-reply';
   item: PublicationItem;
-  publicationId: string;
+  source: GitHubNotificationPublicationSource;
   text: string;
 }
 
@@ -63,13 +63,38 @@ export default class GitHubNotificationCommentPublisher {
   async publish(
     input: GitHubNotificationCommentPublicationInput,
   ): Promise<GitHubNotificationCommentPublicationResult> {
+    const result = await this.#execute(input, true);
+    if (!result) {
+      throw new GitHubNotificationCommentPublisherError(
+        'github-notification-publication-not-confirmed',
+      );
+    }
+    return result;
+  }
+
+  async reconcile(
+    input: GitHubNotificationCommentPublicationInput,
+  ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
+    return this.#execute(input, false);
+  }
+
+  async #execute(
+    input: GitHubNotificationCommentPublicationInput,
+    create: boolean,
+  ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
     const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
-    const target = githubNotificationPublicationTarget(input);
+    const target = githubNotificationPublicationTarget({
+      intent: input.intent,
+      item: input.item,
+      source: input.source,
+    });
+    const marker = githubNotificationPublicationMarker(target);
+    const expectedBody = githubNotificationPublicationComment(text, marker);
     return this.#dependencies.exclusive(target, async () => {
       const authorization = await this.#dependencies.authorize({
         intent: input.intent,
         item: input.item,
-        publicationId: input.publicationId,
+        source: input.source,
         target,
       });
       if (!authorization.authorized) {
@@ -78,19 +103,26 @@ export default class GitHubNotificationCommentPublisher {
         );
       }
       const client = await this.#dependencies.connect();
-      const marker = githubNotificationPublicationMarker(target);
       const existing = await client.findOwnIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,
         input.item.number,
         marker,
       );
-      if (existing) return { receipt: existing, status: 'reconciled', target };
+      if (existing) {
+        if (existing.body !== expectedBody) {
+          throw new GitHubNotificationCommentPublisherError(
+            'github-notification-publication-reconciliation-conflict',
+          );
+        }
+        return { receipt: existing, status: 'reconciled', target };
+      }
+      if (!create) return undefined;
       const receipt = await client.createIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,
         input.item.number,
-        githubNotificationPublicationComment(text, marker),
+        expectedBody,
       );
       return { receipt, status: 'published', target };
     });

@@ -316,8 +316,10 @@ The command uses the same provider client, baseline, private state, trust gates,
 and cross-process lease as scheduled polling. The optional repository, kind,
 and number selector is all-or-nothing and limits the cycle to that exact item
 without advancing account-wide discovery. It may prepare a managed worktree for
-an accepted issue. It does not dispatch a model turn or publish a GitHub
-comment. Deferred and failed cycles return nonzero.
+an accepted issue. For a prepared issue, it also establishes the bounded comment
+baseline or dispatches one new approved exact-mention comment through the issue
+session and waits for the accepted GitHub response publication. Deferred and
+failed cycles return nonzero.
 
 ### `openclaw agent-system notifications status`
 

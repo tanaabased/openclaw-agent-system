@@ -7,18 +7,26 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
+import GitHubNotificationCapabilityRegistry from '../channels/github/capabilities/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
+import GitHubNotificationCommentOrchestrator from '../channels/github/lib/comment-orchestrator.ts';
+import GitHubNotificationCommentPublicationService from '../channels/github/lib/comment-publication-service.ts';
+import GitHubNotificationCommentTurnService from '../channels/github/lib/comment-turn-service.ts';
+import GitHubNotificationConversationStateStore from '../channels/github/lib/conversation-state-store.ts';
 import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
 import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
+import createGitHubNotificationMessageAdapter from '../channels/github/lib/message-adapter.ts';
 import GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
+import GitHubNotificationPromptInstructionService from '../channels/github/lib/prompt-instruction-service.ts';
+import GitHubNotificationPublicationLeaseStore from '../channels/github/lib/publication-lease.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../utils/resolve-codex-command-agent-id.ts';
@@ -170,6 +178,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(currentUid === undefined ? {} : { currentUid }),
     ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
   });
+  const notificationConversationStateStore = new GitHubNotificationConversationStateStore({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+  });
+  const notificationPublicationLeaseStore = new GitHubNotificationPublicationLeaseStore({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+  });
+  const notificationPromptInstructions = new GitHubNotificationPromptInstructionService();
   const notificationMonitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
@@ -269,9 +286,39 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     lifecycles: notificationLifecycleRegistry,
     stateStore: notificationMonitorStateStore,
   });
+  const notificationCapabilities = new GitHubNotificationCapabilityRegistry();
+  const notificationCommentTurnService = new GitHubNotificationCommentTurnService({
+    capabilities: notificationCapabilities,
+    dispatchReplyWithBufferedBlockDispatcher:
+      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    logger,
+    promptInstructions: notificationPromptInstructions,
+    readConfig: readRuntimeConfig,
+    recordInboundSession: api.runtime.channel.session.recordInboundSession,
+  });
+  const notificationCommentPublicationService = new GitHubNotificationCommentPublicationService({
+    assignmentAuthority: notificationAssignmentProvider,
+    conversationStateStore: notificationConversationStateStore,
+    manifestService,
+    monitorStateStore: notificationMonitorStateStore,
+    publicationLeaseStore: notificationPublicationLeaseStore,
+    readConfig: readRuntimeConfig,
+  });
+  const notificationMessageAdapter = createGitHubNotificationMessageAdapter({
+    publications: notificationCommentPublicationService,
+  });
+  const notificationCommentOrchestrator = new GitHubNotificationCommentOrchestrator({
+    assignmentAuthority: notificationAssignmentProvider,
+    conversationStateStore: notificationConversationStateStore,
+    logger,
+    monitorStateStore: notificationMonitorStateStore,
+    publications: notificationCommentPublicationService,
+    turns: notificationCommentTurnService,
+  });
   const notificationMonitorService = new GitHubNotificationMonitorService({
     accountClient: githubCapability.accountClient,
     assignmentOrchestrator: notificationAssignmentOrchestrator,
+    commentOrchestrator: notificationCommentOrchestrator,
     cycleLeaseStore: notificationMonitorCycleLeaseStore,
     logger,
     manifestService,
@@ -287,6 +334,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
 
   api.registerChannel({
     plugin: createGitHubNotificationChannel({
+      message: notificationMessageAdapter,
       monitorService: notificationMonitorService,
       stateStore: notificationMonitorStateStore,
     }),
@@ -303,7 +351,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationPromptInstructions);
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {

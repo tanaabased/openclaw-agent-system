@@ -17,7 +17,7 @@ export interface GitHubNotificationAssignmentProviderDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
 
-type GitHubNotificationAssignmentInspection =
+export type GitHubNotificationAssignmentInspection =
   | { authorized: false; reasonCode?: string }
   | {
       authorized: true;
@@ -36,7 +36,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   async inspect(
     input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<{ authorized: boolean; reasonCode?: string }> {
-    const inspection = await this.#inspect(input);
+    const inspection = await this.open(input);
     return inspection.authorized
       ? { authorized: true }
       : {
@@ -45,7 +45,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         };
   }
 
-  async #inspect(
+  async open(
     input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<GitHubNotificationAssignmentInspection> {
     const lifecycleMatchesItem =

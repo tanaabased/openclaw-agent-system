@@ -28,6 +28,9 @@ export interface GitHubNotificationMonitorServiceDependencies {
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
   };
+  commentOrchestrator?: {
+    reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
+  };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
   logger: Logger;
@@ -108,6 +111,23 @@ function pendingIntakeItemKeys(
         item.intake !== undefined &&
         ((item.disposition === 'approved' && item.intake.stage === 'admitted') ||
           (item.disposition === 'retired' && item.intake.stage !== 'retired')),
+    )
+    .map(([itemKey]) => itemKey)
+    .sort();
+}
+
+function preparedIssueItemKeys(
+  state: GitHubNotificationMonitorState | undefined,
+  selector?: GitHubNotificationItemSelector,
+): string[] {
+  if (!state) return [];
+  return Object.entries(state.items)
+    .filter(
+      ([, item]) =>
+        (selector === undefined || matchesSelector(item, selector)) &&
+        item.disposition === 'approved' &&
+        item.lifecycleId === 'issue' &&
+        item.intake?.stage === 'prepared',
     )
     .map(([itemKey]) => itemKey)
     .sort();
@@ -381,6 +401,7 @@ export default class GitHubNotificationMonitorService {
         pendingIntakeItemKeys(result.state, options.selector),
         signal,
       );
+      await this.#reconcileComments(agentId, options.selector, signal);
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';
@@ -458,6 +479,19 @@ export default class GitHubNotificationMonitorService {
     for (const itemKey of itemKeys) {
       if (signal?.aborted) return;
       await this.#dependencies.assignmentOrchestrator.reconcile(agentId, itemKey, signal);
+    }
+  }
+
+  async #reconcileComments(
+    agentId: string,
+    selector: GitHubNotificationItemSelector | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.#dependencies.commentOrchestrator) return;
+    const state = await this.#dependencies.stateStore.read(agentId);
+    for (const itemKey of preparedIssueItemKeys(state, selector)) {
+      if (signal?.aborted) return;
+      await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, signal);
     }
   }
 

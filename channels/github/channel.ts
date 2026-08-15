@@ -1,4 +1,5 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
+import type { ChannelMessageAdapterShape } from 'openclaw/plugin-sdk/channel-outbound';
 import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-lifecycle';
 import {
   createAsyncComputedAccountStatusAdapter,
@@ -17,6 +18,7 @@ interface ResolvedNotificationChannelAccount {
 
 export interface GitHubNotificationChannelDependencies {
   clock?: () => number;
+  message?: ChannelMessageAdapterShape;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
 }
@@ -84,11 +86,12 @@ export function createGitHubNotificationChannel(
       selectionLabel: 'Agent System GitHub Notifications',
       docsPath:
         'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
-      blurb: 'Admits authorized GitHub assignments and prepares managed issue worktrees.',
+      blurb: 'Admits authorized GitHub assignments and relays approved issue comments.',
       exposure: { configured: true, docs: true, setup: false },
       forceAccountBinding: true,
     },
     capabilities: { chatTypes: ['direct'], blockStreaming: true },
+    ...(dependencies.message === undefined ? {} : { message: dependencies.message }),
     reload: { configPrefixes: [`channels.${githubNotificationChannelId}`] },
     config: {
       listAccountIds(config) {

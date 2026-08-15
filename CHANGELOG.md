@@ -7,9 +7,9 @@
 - Added direct GitHub pull-request assignment intake with verified head metadata and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification intake inspection and tests.
-- Restored bounded GitHub item and comment reads plus reauthorized, idempotent
-  comment publication as lifecycle-neutral provider primitives for the next
-  messaging wave. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Added one Work-mode issue comment loop with bounded comment admission,
+  OpenClaw-owned inbound session dispatch, hidden run instructions, and
+  reauthorized idempotent GitHub publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added manifest-selected GitHub assignment discovery and exact-item notification
   refreshes for isolated lifecycle automation.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
@@ -34,13 +34,13 @@
 - Removed the unfinished GitHub notification turn, planning, and publication
   runtime so the channel is again bounded to polling, admission, routing, and
   worktree intake while lifecycle messaging is rebuilt. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Kept restored provider reads, comment admission, response-candidate parsing,
-  and publication disconnected from intake state rather than reviving the
-  removed session, mode, prompt, or comment-tracking runtime.
+- Kept comment revisions and publication receipts in separate private
+  conversation state rather than adding prompt or messaging progress back to
+  provider intake state.
 - Removed the standalone pull-request and presentation Leia scenarios while the
   notification messaging refactor focuses on the installed issue lifecycle.
-- Reduced the issue Leia scenario to the Wave 1 intake contract: admission,
-  lifecycle-owned worktree preparation, restart durability, and retirement.
+- Extended the issue Leia scenario from intake and worktree durability to one
+  short approved comment response and GitHub publication.
 - Migrated private notification state to lifecycle-aware schema 4 and removed
   unreachable session, publication, mode, and comment-tracking checkpoints.
 

@@ -6,8 +6,8 @@
 
 The GitHub notifications channel currently owns trusted polling, assignment
 admission, durable deduplication, routing, and managed issue-worktree intake.
-Model turns, chat presentation, and GitHub publication are intentionally
-disconnected while they are rebuilt on the [target design](./DESIGN.md).
+For prepared issues, it also admits new approved comments into one OpenClaw
+lifecycle session and publishes the accepted public part of the response.
 
 ## Current Behavior
 
@@ -21,13 +21,21 @@ disconnected while they are rebuilt on the [target design](./DESIGN.md).
 - Accepted assignments converge on the lifecycle-neutral `prepared` intake
   checkpoint. Issues create or reuse one deterministic managed worktree;
   pull-request assignments retain bounded head metadata without creating one.
-- Assignment observations remain bounded and private. Comment observation is
-  deferred until lifecycle sessions are implemented. Intake does not currently
-  dispatch a model turn, create a chat message, or publish a GitHub comment.
-- The channel retains tested provider primitives for bounded item context,
-  canonical comment reads, comment admission, and safe idempotent comment
-  publication. They are not scheduled by intake until lifecycle sessions own
-  continuation and publication authority.
+- Each prepared issue establishes a bounded comment baseline without replaying
+  history. A later new or edited exact-mention comment from an approved human is
+  re-read canonically and admitted as a direct message in the issue session.
+- The visible inbound message is the normalized author-written comment. Bounded
+  source and worktree facts are model-only context, and Work instructions are
+  injected behind the scenes for that run.
+- The current comment slice requires the configured agent's `coding` profile.
+  It preserves that configured native coding surface across the built-in
+  OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.
+- A comment turn accepts one complete private response with one quoted
+  `To GitHub` candidate. Only the bounded candidate is persisted, reauthorized,
+  reconciled by exact body and hidden marker, and published to GitHub.
+- Pull-request comments, assignment cards and acknowledgments, initial planning
+  turns, Plan and Auto modes, mode transitions, and chat-originated publication
+  remain intentionally dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -44,6 +52,8 @@ The target lifecycle, modes, states, and response boundary are documented in
 - `git.worktrees`, `github.username`, `github.token`, and
   `github.notifications` configured
 - the named GitHub token available in the completed Agent System environment
+- an OpenClaw model configured for the notification agent
+- the notification agent's effective OpenClaw tool profile set to `coding`
 
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
@@ -111,7 +121,7 @@ openclaw agent-system validate
 # reconcile routing and establish the first safe baseline.
 openclaw agent-system install
 
-# run assignment intake immediately.
+# run intake and prepared-issue comment reconciliation immediately.
 openclaw agent-system notifications refresh
 
 # inspect redacted intake state.
@@ -145,6 +155,11 @@ only baseline readiness, lifecycle id, admission disposition, intake stage,
 issue-worktree readiness, and bounded pull-request head metadata; it omits
 provider prose, credentials, session identifiers, and local paths.
 
+For a prepared issue, a refresh may also run one admitted comment turn and wait
+for its GitHub response publication. The monitor status schema remains limited
+to provider intake; comment revisions and publication receipts live in separate
+private conversation state.
+
 `wait` supports these stable intake checkpoints:
 
 | Target                | Meaning                                       |
@@ -169,11 +184,15 @@ reference.
 - Admission requires the authenticated assigned account, an approved immutable
   assigning actor, an eligible repository owner, and sufficient repository
   access.
-- The current intake path does not fetch or persist GitHub prose or comments and
-  never passes provider content to a model or publication path.
-- Provider prose reads are bounded, and publication reauthorizes before
-  credentials are connected, reconciles a hidden idempotency marker, and sends
-  the exact accepted body through standard input instead of process arguments.
+- Comment listings and canonical re-reads are bounded. Conversation state keeps
+  revision digests and the accepted public response but does not persist the
+  incoming provider prose.
+- An approved actor may enter the conversation but cannot select capabilities;
+  the trusted Work policy requires the configured `coding` profile.
+- Publication checks accepted conversation state before credentials are
+  connected, reauthorizes the exact source revision and destination, serializes
+  each target across processes, and reconciles both the hidden idempotency marker
+  and exact accepted body.
 - Private monitor state contains no tokens. Deterministic assignment and
   worktree identities make intake retry-safe.
 - Removing `github.notifications` and reinstalling retires tracked assignments,

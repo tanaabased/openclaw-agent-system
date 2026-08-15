@@ -7,7 +7,7 @@ function input() {
   return {
     intent: 'github-reply' as const,
     item: approvedNotificationItem(),
-    publicationId: 'IC_source:revision-1',
+    source: { commentDatabaseId: 89, revisionId: 'a'.repeat(64) },
     text: 'I checked this and the current behavior is understood.',
   };
 }
@@ -57,7 +57,11 @@ describe('channels/github/lib/comment-publisher', () => {
     const publisher = new GitHubNotificationCommentPublisher({
       authorize: () => ({ authorized: true }),
       connect: () => ({
-        findOwnIssueComment: async () => ({ databaseId: 90, nodeId: 'IC_existing' }),
+        findOwnIssueComment: async (_owner, _name, _number, marker) => ({
+          body: `I checked this and the current behavior is understood.\n\n${marker}`,
+          databaseId: 90,
+          nodeId: 'IC_existing',
+        }),
         createIssueComment: async () => {
           created = true;
           return { databaseId: 91, nodeId: 'IC_created' };
@@ -70,6 +74,34 @@ describe('channels/github/lib/comment-publisher', () => {
 
     assert.equal(result.status, 'reconciled');
     assert.equal(result.receipt.nodeId, 'IC_existing');
+    assert.equal(created, false);
+  });
+
+  it('should reject an existing marker whose accepted body differs', async () => {
+    let created = false;
+    const publisher = new GitHubNotificationCommentPublisher({
+      authorize: () => ({ authorized: true }),
+      connect: () => ({
+        findOwnIssueComment: async () => ({
+          body: 'Different accepted text.',
+          databaseId: 90,
+          nodeId: 'IC_existing',
+        }),
+        createIssueComment: async () => {
+          created = true;
+          return { databaseId: 91, nodeId: 'IC_created' };
+        },
+      }),
+      exclusive: async (_key, run) => run(),
+    });
+
+    await assert.rejects(publisher.publish(input()), (error: unknown) => {
+      return (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'github-notification-publication-reconciliation-conflict'
+      );
+    });
     assert.equal(created, false);
   });
 
