@@ -1,46 +1,9 @@
 import type { GitHubRepositoryPermission } from './work-item.ts';
-import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
+import type { GitHubNotificationLifecycleId } from '../lifecycles/types.ts';
 
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
-export type GitHubNotificationDeliveryStage =
-  'active' | 'admitted' | 'received' | 'retired' | 'session-recording' | 'worktree-ready';
-
-export type GitHubNotificationPublicationState =
-  | { failureCode: string; status: 'failed' }
-  | { status: 'pending' }
-  | { commentId: number; status: 'published' };
-
-export interface GitHubNotificationActivationState {
-  failureCode?: string;
-  reply?: GitHubNotificationPublicationState;
-  status: 'adopted' | 'failed' | 'ineligible' | 'pending' | 'planned';
-}
-
-export interface GitHubNotificationCommentTurnState {
-  failureCode?: string;
-  status: 'adopted' | 'failed' | 'pending' | 'responded';
-}
-
-export interface GitHubNotificationCommentRevisionState {
-  actorNodeId?: string;
-  bodyDigest: string;
-  commentDatabaseId: number;
-  commentNodeId: string;
-  createdAt: number;
-  disposition: 'approved' | 'baseline' | 'rejected';
-  reasonCode: string;
-  reply?: GitHubNotificationPublicationState;
-  revisionId: string;
-  turn?: GitHubNotificationCommentTurnState;
-  updatedAt: number;
-}
-
-export interface GitHubNotificationCommentTrackingState {
-  baselineAt?: number;
-  diagnosticCode?: string;
-  revisions: Record<string, GitHubNotificationCommentRevisionState>;
-}
+export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
 
 export interface GitHubNotificationPullRequestState {
   authorNodeId?: string;
@@ -52,17 +15,10 @@ export interface GitHubNotificationPullRequestState {
   headSha: string;
 }
 
-export interface GitHubNotificationDeliveryState {
-  activation?: GitHubNotificationActivationState;
-  acknowledgment?: GitHubNotificationPublicationState;
+export interface GitHubNotificationIntakeState {
   assignmentEventId: string;
   failureCode?: string;
-  mode?: GitHubNotificationExecutionMode;
-  schemaVersion: 1;
-  sessionId?: string;
-  sessionKey?: string;
-  stage: GitHubNotificationDeliveryStage;
-  workId: string;
+  stage: GitHubNotificationIntakeStage;
   worktreeBranch?: string;
   worktreePath?: string;
 }
@@ -71,13 +27,13 @@ export interface GitHubNotificationItemState {
   assignmentActorLogin?: string;
   assignmentActorNodeId?: string;
   assignmentEventNodeId?: string;
-  commentTracking?: GitHubNotificationCommentTrackingState;
-  delivery?: GitHubNotificationDeliveryState;
   disposition: GitHubNotificationItemDisposition;
+  intake?: GitHubNotificationIntakeState;
   itemDatabaseId: number;
   itemNodeId: string;
   itemType: 'issue' | 'pull-request';
   lastObservedAt: number;
+  lifecycleId: GitHubNotificationLifecycleId;
   number: number;
   pullRequest?: GitHubNotificationPullRequestState;
   reasonCode: string;
@@ -103,7 +59,7 @@ export interface GitHubNotificationMonitorState {
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
   processedEventNodeIds: string[];
-  schemaVersion: 3;
+  schemaVersion: 4;
   searchBoundary?: string;
   workspaceDir: string;
 }
@@ -117,18 +73,18 @@ export function createGitHubNotificationMonitorState(
     failureCount: 0,
     items: {},
     processedEventNodeIds: [],
-    schemaVersion: 3,
+    schemaVersion: 4,
     workspaceDir,
   };
 }
 
-/** List delivery records that still require local retirement. */
+/** List intake records that still require local retirement. */
 export function githubNotificationRetirementItemKeys(
   state: GitHubNotificationMonitorState | undefined,
 ): string[] {
   if (!state) return [];
   return Object.entries(state.items)
-    .filter(([, item]) => item.delivery !== undefined && item.delivery.stage !== 'retired')
+    .filter(([, item]) => item.intake !== undefined && item.intake.stage !== 'retired')
     .map(([itemKey]) => itemKey)
     .sort();
 }

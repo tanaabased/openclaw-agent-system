@@ -1,11 +1,9 @@
 import { isAbsolute } from 'node:path';
 
-import {
-  type GitHubNotificationCommentRevisionState,
-  type GitHubNotificationCommentTrackingState,
-  type GitHubNotificationDeliveryState,
-  type GitHubNotificationItemState,
-  type GitHubNotificationMonitorState,
+import type {
+  GitHubNotificationIntakeState,
+  GitHubNotificationItemState,
+  GitHubNotificationMonitorState,
 } from './monitor-state.ts';
 
 export type GitHubNotificationMonitorStateDecodeResult = {
@@ -30,12 +28,12 @@ const stateKeys = new Set([
   'workspaceDir',
 ]);
 
-const itemBaseKeys = new Set([
+const sharedItemKeys = [
   'assignmentActorLogin',
   'assignmentActorNodeId',
   'assignmentEventNodeId',
-  'commentTracking',
   'disposition',
+  'itemDatabaseId',
   'itemNodeId',
   'itemType',
   'lastObservedAt',
@@ -50,42 +48,16 @@ const itemBaseKeys = new Set([
   'repositoryOwner',
   'repositoryOwnerNodeId',
   'repositoryPermission',
-]);
+] as const;
 
-const itemKeys = new Set([...itemBaseKeys, 'delivery', 'itemDatabaseId']);
-
-const deliveryKeys = new Set([
-  'activation',
-  'acknowledgment',
+const itemKeys = new Set([...sharedItemKeys, 'intake', 'lifecycleId']);
+const intakeKeys = new Set([
   'assignmentEventId',
   'failureCode',
-  'mode',
-  'schemaVersion',
-  'sessionId',
-  'sessionKey',
   'stage',
-  'workId',
   'worktreeBranch',
   'worktreePath',
 ]);
-
-const publicationKeys = new Set(['commentId', 'failureCode', 'status']);
-const activationKeys = new Set(['failureCode', 'reply', 'status']);
-const commentTrackingKeys = new Set(['baselineAt', 'diagnosticCode', 'revisions']);
-const commentRevisionKeys = new Set([
-  'actorNodeId',
-  'bodyDigest',
-  'commentDatabaseId',
-  'commentNodeId',
-  'createdAt',
-  'disposition',
-  'reasonCode',
-  'reply',
-  'revisionId',
-  'turn',
-  'updatedAt',
-]);
-const commentTurnKeys = new Set(['failureCode', 'status']);
 const pullRequestKeys = new Set([
   'authorNodeId',
   'baseRef',
@@ -96,7 +68,41 @@ const pullRequestKeys = new Set([
   'headSha',
 ]);
 
-function hasOnlyKeys(value: object, allowedKeys: Set<string>): boolean {
+const legacyItemKeys = new Set([...sharedItemKeys, 'commentTracking', 'delivery']);
+const legacyDeliveryKeys = new Set([
+  'activation',
+  'acknowledgment',
+  'assignmentEventId',
+  'failureCode',
+  'mode',
+  'progress',
+  'schemaVersion',
+  'sessionId',
+  'sessionKey',
+  'stage',
+  'workId',
+  'worktreeBranch',
+  'worktreePath',
+]);
+const legacyStages = new Set([
+  'active',
+  'admitted',
+  'received',
+  'retired',
+  'session-recording',
+  'worktree-ready',
+]);
+
+function record(value: unknown): value is Record<string, unknown> {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype,
+  );
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowedKeys: Set<string>): boolean {
   return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
@@ -121,16 +127,53 @@ function hasControlCharacter(value: string): boolean {
   });
 }
 
-function validItemFields(
-  value: Record<string, unknown>,
-  item: Partial<GitHubNotificationItemState>,
-): boolean {
+function optionalBoundedString(value: unknown, maximumLength: number): boolean {
   return (
-    ['approved', 'baseline', 'rejected', 'retired'].includes(item.disposition ?? '') &&
+    value === undefined ||
+    (typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= maximumLength &&
+      !hasControlCharacter(value))
+  );
+}
+
+function validDiagnosticCode(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (optionalBoundedString(value, 255) && /^[a-z0-9][a-z0-9-]*$/u.test(String(value)))
+  );
+}
+
+function validPullRequest(value: unknown): boolean {
+  if (!record(value) || !hasOnlyKeys(value, pullRequestKeys)) return false;
+  const hasHeadRepositoryDatabaseId = value.headRepositoryDatabaseId !== undefined;
+  const hasHeadRepositoryNodeId = value.headRepositoryNodeId !== undefined;
+  return (
+    (value.authorNodeId === undefined || validNodeId(value.authorNodeId)) &&
+    optionalBoundedString(value.baseRef, 255) &&
+    typeof value.baseRef === 'string' &&
+    typeof value.draft === 'boolean' &&
+    optionalBoundedString(value.headRef, 255) &&
+    typeof value.headRef === 'string' &&
+    hasHeadRepositoryDatabaseId === hasHeadRepositoryNodeId &&
+    (value.headRepositoryDatabaseId === undefined ||
+      (Number.isSafeInteger(value.headRepositoryDatabaseId) &&
+        Number(value.headRepositoryDatabaseId) > 0)) &&
+    (value.headRepositoryNodeId === undefined || validNodeId(value.headRepositoryNodeId)) &&
+    typeof value.headSha === 'string' &&
+    /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(value.headSha)
+  );
+}
+
+function validItemFields(item: Record<string, unknown>): boolean {
+  return (
+    ['approved', 'baseline', 'rejected', 'retired'].includes(String(item.disposition)) &&
     validNodeId(item.itemNodeId) &&
     (item.itemType === 'issue' || item.itemType === 'pull-request') &&
     typeof item.lastObservedAt === 'number' &&
     Number.isFinite(item.lastObservedAt) &&
+    Number.isSafeInteger(item.itemDatabaseId) &&
+    Number(item.itemDatabaseId) > 0 &&
     Number.isSafeInteger(item.number) &&
     Number(item.number) > 0 &&
     typeof item.reasonCode === 'string' &&
@@ -152,366 +195,209 @@ function validItemFields(
       `https://github.com/${item.repositoryOwner}/${item.repositoryName}.git`.toLowerCase() &&
     validNodeId(item.repositoryOwnerNodeId) &&
     ['admin', 'maintain', 'none', 'read', 'triage', 'write'].includes(
-      item.repositoryPermission ?? '',
+      String(item.repositoryPermission),
     ) &&
     (item.assignmentActorNodeId === undefined || validNodeId(item.assignmentActorNodeId)) &&
     (item.assignmentActorLogin === undefined ||
       (typeof item.assignmentActorLogin === 'string' &&
         /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(item.assignmentActorLogin))) &&
     (item.assignmentEventNodeId === undefined || validNodeId(item.assignmentEventNodeId)) &&
-    Object.getPrototypeOf(value) === Object.prototype
+    (item.itemType === 'issue'
+      ? item.pullRequest === undefined
+      : item.pullRequest === undefined || validPullRequest(item.pullRequest))
   );
 }
 
-function optionalBoundedString(value: unknown, maximumLength: number): boolean {
+function validWorktree(value: Record<string, unknown>): boolean {
+  const hasBranch = typeof value.worktreeBranch === 'string';
+  const hasPath = typeof value.worktreePath === 'string';
   return (
-    value === undefined ||
-    (typeof value === 'string' &&
-      value.length > 0 &&
-      value.length <= maximumLength &&
-      !hasControlCharacter(value))
+    hasBranch === hasPath &&
+    (!hasPath ||
+      (optionalBoundedString(value.worktreeBranch, 255) &&
+        optionalBoundedString(value.worktreePath, 4_096) &&
+        isAbsolute(String(value.worktreePath))))
   );
 }
 
-function validPullRequest(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const pullRequest = value as {
-    authorNodeId?: unknown;
-    baseRef?: unknown;
-    draft?: unknown;
-    headRef?: unknown;
-    headRepositoryDatabaseId?: unknown;
-    headRepositoryNodeId?: unknown;
-    headSha?: unknown;
-  };
-  const hasHeadRepositoryDatabaseId = pullRequest.headRepositoryDatabaseId !== undefined;
-  const hasHeadRepositoryNodeId = pullRequest.headRepositoryNodeId !== undefined;
-  return (
-    hasOnlyKeys(value, pullRequestKeys) &&
-    (pullRequest.authorNodeId === undefined || validNodeId(pullRequest.authorNodeId)) &&
-    optionalBoundedString(pullRequest.baseRef, 255) &&
-    typeof pullRequest.baseRef === 'string' &&
-    typeof pullRequest.draft === 'boolean' &&
-    optionalBoundedString(pullRequest.headRef, 255) &&
-    typeof pullRequest.headRef === 'string' &&
-    hasHeadRepositoryDatabaseId === hasHeadRepositoryNodeId &&
-    (pullRequest.headRepositoryDatabaseId === undefined ||
-      (Number.isSafeInteger(pullRequest.headRepositoryDatabaseId) &&
-        Number(pullRequest.headRepositoryDatabaseId) > 0)) &&
-    (pullRequest.headRepositoryNodeId === undefined ||
-      validNodeId(pullRequest.headRepositoryNodeId)) &&
-    typeof pullRequest.headSha === 'string' &&
-    /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(pullRequest.headSha)
-  );
-}
-
-function validPublication(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const acknowledgment = value as {
-    commentId?: unknown;
-    failureCode?: unknown;
-    status?: unknown;
-  };
-  if (!hasOnlyKeys(value, publicationKeys)) return false;
-  if (acknowledgment.status === 'pending') {
-    return acknowledgment.commentId === undefined && acknowledgment.failureCode === undefined;
-  }
-  if (acknowledgment.status === 'failed') {
-    return (
-      acknowledgment.commentId === undefined &&
-      optionalBoundedString(acknowledgment.failureCode, 255) &&
-      typeof acknowledgment.failureCode === 'string' &&
-      /^[a-z0-9][a-z0-9-]*$/u.test(acknowledgment.failureCode)
-    );
-  }
-  return (
-    acknowledgment.status === 'published' &&
-    acknowledgment.failureCode === undefined &&
-    Number.isSafeInteger(acknowledgment.commentId) &&
-    Number(acknowledgment.commentId) > 0
-  );
-}
-
-function validDeprecatedDeliveryCheckpoints(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const checkpoints = value as Record<string, unknown>;
-  return (
-    Object.getPrototypeOf(value) === Object.prototype &&
-    Object.keys(checkpoints).length <= 100 &&
-    Object.entries(checkpoints).every(
-      ([publicationId, checkpoint]) =>
-        /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
-          publicationId,
-        ) && validPublication(checkpoint),
-    )
-  );
-}
-
-function validActivation(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const activation = value as { failureCode?: unknown; reply?: unknown; status?: unknown };
-  return (
-    hasOnlyKeys(value, activationKeys) &&
-    ['adopted', 'failed', 'ineligible', 'pending', 'planned'].includes(String(activation.status)) &&
-    optionalBoundedString(activation.failureCode, 255) &&
-    (activation.failureCode === undefined ||
-      /^[a-z0-9][a-z0-9-]*$/u.test(String(activation.failureCode))) &&
-    (activation.reply === undefined ||
-      (activation.status === 'planned' && validPublication(activation.reply)))
-  );
-}
-
-function validCommentTurn(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const turn = value as { failureCode?: unknown; status?: unknown };
-  return (
-    hasOnlyKeys(value, commentTurnKeys) &&
-    ['adopted', 'failed', 'pending', 'responded'].includes(String(turn.status)) &&
-    optionalBoundedString(turn.failureCode, 255) &&
-    (turn.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(String(turn.failureCode)))
-  );
-}
-
-function validCommentRevision(value: unknown): value is GitHubNotificationCommentRevisionState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const revision = value as Partial<GitHubNotificationCommentRevisionState>;
-  const base =
-    hasOnlyKeys(value, commentRevisionKeys) &&
-    (revision.actorNodeId === undefined || validNodeId(revision.actorNodeId)) &&
-    typeof revision.bodyDigest === 'string' &&
-    /^[a-f0-9]{64}$/u.test(revision.bodyDigest) &&
-    Number.isSafeInteger(revision.commentDatabaseId) &&
-    Number(revision.commentDatabaseId) > 0 &&
-    validNodeId(revision.commentNodeId) &&
-    optionalFiniteNumber(revision.createdAt) &&
-    typeof revision.createdAt === 'number' &&
-    ['approved', 'baseline', 'rejected'].includes(revision.disposition ?? '') &&
-    typeof revision.reasonCode === 'string' &&
-    /^[a-z0-9][a-z0-9-]*$/u.test(revision.reasonCode) &&
-    typeof revision.revisionId === 'string' &&
-    /^[a-f0-9]{64}$/u.test(revision.revisionId) &&
-    optionalFiniteNumber(revision.updatedAt) &&
-    typeof revision.updatedAt === 'number' &&
-    revision.updatedAt >= revision.createdAt;
-  if (!base) return false;
-  if (revision.disposition !== 'approved') {
-    return revision.turn === undefined && revision.reply === undefined;
-  }
-  const turn = revision.turn;
-  if (!turn || !validCommentTurn(turn)) return false;
-  if (turn.status === 'responded') {
-    return validPublication(revision.reply);
-  }
-  return revision.reply === undefined;
-}
-
-function validCommentTracking(value: unknown): value is GitHubNotificationCommentTrackingState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const tracking = value as Partial<GitHubNotificationCommentTrackingState>;
+function validIntake(
+  value: unknown,
+  item: Record<string, unknown>,
+): value is GitHubNotificationIntakeState {
+  if (!record(value) || !hasOnlyKeys(value, intakeKeys)) return false;
   if (
-    !hasOnlyKeys(value, commentTrackingKeys) ||
-    !optionalFiniteNumber(tracking.baselineAt) ||
-    (tracking.diagnosticCode !== undefined &&
-      (typeof tracking.diagnosticCode !== 'string' ||
-        !/^[a-z0-9][a-z0-9-]*$/u.test(tracking.diagnosticCode))) ||
-    !tracking.revisions ||
-    Array.isArray(tracking.revisions) ||
-    Object.keys(tracking.revisions).length > 1_000
+    !validNodeId(value.assignmentEventId) ||
+    !validDiagnosticCode(value.failureCode) ||
+    !['admitted', 'prepared', 'retired'].includes(String(value.stage)) ||
+    !validWorktree(value)
   ) {
     return false;
   }
-  if (tracking.baselineAt === undefined && Object.keys(tracking.revisions).length > 0) return false;
-  return Object.entries(tracking.revisions).every(
-    ([key, revision]) => validCommentRevision(revision) && key === revision.commentNodeId,
-  );
+  const hasWorktree = typeof value.worktreePath === 'string';
+  if (value.stage === 'admitted') return !hasWorktree;
+  if (value.stage === 'prepared' && item.lifecycleId === 'issue') return hasWorktree;
+  if (value.stage === 'prepared') return !hasWorktree;
+  return true;
 }
 
-function validDelivery(
-  value: unknown,
-  itemType: GitHubNotificationItemState['itemType'],
-): value is GitHubNotificationDeliveryState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const delivery = value as Partial<GitHubNotificationDeliveryState>;
-  const validBase =
-    hasOnlyKeys(value, deliveryKeys) &&
-    delivery.schemaVersion === 1 &&
-    (delivery.activation === undefined || validActivation(delivery.activation)) &&
-    (delivery.acknowledgment === undefined || validPublication(delivery.acknowledgment)) &&
-    validNodeId(delivery.assignmentEventId) &&
-    ['active', 'admitted', 'received', 'retired', 'session-recording', 'worktree-ready'].includes(
-      delivery.stage ?? '',
-    ) &&
-    optionalBoundedString(delivery.failureCode, 255) &&
-    (delivery.mode === undefined || ['auto', 'plan', 'work'].includes(delivery.mode)) &&
-    (delivery.failureCode === undefined || /^[a-z0-9][a-z0-9-]*$/u.test(delivery.failureCode)) &&
-    optionalBoundedString(delivery.sessionId, 255) &&
-    optionalBoundedString(delivery.sessionKey, 1_024) &&
-    optionalBoundedString(delivery.workId, 256) &&
-    optionalBoundedString(delivery.worktreeBranch, 255) &&
-    optionalBoundedString(delivery.worktreePath, 4_096) &&
-    typeof delivery.workId === 'string' &&
-    !delivery.workId.startsWith('-');
-  if (!validBase) return false;
-  const hasWorktreeBranch = typeof delivery.worktreeBranch === 'string';
-  const hasWorktreePath = typeof delivery.worktreePath === 'string';
-  if (hasWorktreeBranch !== hasWorktreePath) return false;
-  const hasWorktree =
-    typeof delivery.worktreeBranch === 'string' &&
-    typeof delivery.worktreePath === 'string' &&
-    isAbsolute(delivery.worktreePath);
-  if (hasWorktreePath && !hasWorktree) return false;
-  const hasSession = typeof delivery.sessionKey === 'string';
-  if (delivery.stage === 'admitted') {
-    return (
-      delivery.activation === undefined &&
-      delivery.acknowledgment === undefined &&
-      delivery.worktreeBranch === undefined &&
-      delivery.worktreePath === undefined &&
-      !hasSession &&
-      delivery.sessionId === undefined
-    );
-  }
-  if (delivery.stage === 'worktree-ready') {
-    return (
-      delivery.activation === undefined &&
-      delivery.acknowledgment === undefined &&
-      hasWorktree &&
-      !hasSession &&
-      delivery.sessionId === undefined
-    );
-  }
-  if (delivery.stage === 'session-recording') {
-    return (
-      delivery.activation === undefined &&
-      delivery.acknowledgment === undefined &&
-      (itemType === 'pull-request' || hasWorktree) &&
-      !hasSession &&
-      delivery.sessionId === undefined
-    );
-  }
-  if (delivery.stage === 'received') {
-    return (
-      (itemType === 'pull-request' || hasWorktree) &&
-      hasSession &&
-      delivery.activation === undefined &&
-      (delivery.acknowledgment === undefined || delivery.acknowledgment.status === 'pending')
-    );
-  }
-  if (delivery.stage === 'active') {
-    return (
-      (itemType === 'pull-request' || hasWorktree) &&
-      hasSession &&
-      delivery.activation !== undefined
-    );
-  }
-  return (
-    (delivery.worktreeBranch === undefined) === (delivery.worktreePath === undefined) &&
-    (delivery.worktreePath === undefined || isAbsolute(delivery.worktreePath)) &&
-    (delivery.sessionId === undefined || hasSession)
-  );
+function lifecycleMatchesItem(item: Record<string, unknown>): boolean {
+  return item.lifecycleId === 'issue'
+    ? item.itemType === 'issue'
+    : (item.lifecycleId === 'pull-request' || item.lifecycleId === 'pull-request-review') &&
+        item.itemType === 'pull-request';
 }
 
 function validItem(value: unknown): value is GitHubNotificationItemState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const item = value as Partial<GitHubNotificationItemState>;
+  if (!record(value) || !hasOnlyKeys(value, itemKeys) || !validItemFields(value)) return false;
+  if (!lifecycleMatchesItem(value)) return false;
+  const intakeValid = value.intake === undefined || validIntake(value.intake, value);
+  if (!intakeValid) return false;
+  if (value.disposition === 'approved') {
+    if (!record(value.intake) || value.intake.stage === 'retired') return false;
+  } else if (value.disposition !== 'retired' && value.intake !== undefined) {
+    return false;
+  }
   return (
-    hasOnlyKeys(value, itemKeys) &&
-    validItemFields(value as Record<string, unknown>, item) &&
-    Number.isSafeInteger(item.itemDatabaseId) &&
-    Number(item.itemDatabaseId) > 0 &&
-    (item.commentTracking === undefined || validCommentTracking(item.commentTracking)) &&
-    (item.itemType === 'issue'
-      ? item.pullRequest === undefined
-      : item.pullRequest === undefined || validPullRequest(item.pullRequest)) &&
-    (item.delivery === undefined || validDelivery(item.delivery, item.itemType!)) &&
-    (item.disposition === 'approved'
-      ? item.delivery !== undefined && item.delivery.stage !== 'retired'
-      : item.disposition === 'retired'
-        ? true
-        : item.delivery === undefined) &&
-    (item.delivery === undefined ||
-      (item.assignmentEventNodeId === item.delivery.assignmentEventId &&
-        item.delivery.workId === `${item.itemType}-${item.itemDatabaseId}`)) &&
-    (item.commentTracking === undefined ||
-      item.disposition === 'approved' ||
-      item.disposition === 'retired')
+    value.intake === undefined ||
+    (record(value.intake) && value.assignmentEventNodeId === value.intake.assignmentEventId)
   );
 }
 
-function validStateFields(value: object): boolean {
-  const state = value as Partial<GitHubNotificationMonitorState>;
+function validStateFields(value: Record<string, unknown>): boolean {
   return (
-    ((state.accountLogin === undefined && state.accountNodeId === undefined) ||
-      (typeof state.accountLogin === 'string' &&
-        /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(state.accountLogin) &&
-        validNodeId(state.accountNodeId))) &&
-    typeof state.agentId === 'string' &&
-    /^[a-z0-9][a-z0-9-]*$/u.test(state.agentId) &&
-    typeof state.workspaceDir === 'string' &&
-    state.workspaceDir.length > 0 &&
-    Number.isSafeInteger(state.failureCount) &&
-    Number(state.failureCount) >= 0 &&
-    optionalFiniteNumber(state.baselineAt) &&
-    optionalFiniteNumber(state.lastPollAt) &&
-    optionalFiniteNumber(state.lastSuccessfulPollAt) &&
-    optionalFiniteNumber(state.nextPollAt) &&
-    (state.diagnosticCode === undefined || typeof state.diagnosticCode === 'string') &&
-    (state.searchBoundary === undefined || !Number.isNaN(Date.parse(state.searchBoundary))) &&
-    Array.isArray(state.processedEventNodeIds) &&
-    state.processedEventNodeIds.length <= 2_000 &&
-    state.processedEventNodeIds.every(validNodeId) &&
-    new Set(state.processedEventNodeIds).size === state.processedEventNodeIds.length &&
-    state.items !== undefined &&
-    !Array.isArray(state.items)
+    ((value.accountLogin === undefined && value.accountNodeId === undefined) ||
+      (typeof value.accountLogin === 'string' &&
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(value.accountLogin) &&
+        validNodeId(value.accountNodeId))) &&
+    typeof value.agentId === 'string' &&
+    /^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) &&
+    typeof value.workspaceDir === 'string' &&
+    value.workspaceDir.length > 0 &&
+    Number.isSafeInteger(value.failureCount) &&
+    Number(value.failureCount) >= 0 &&
+    optionalFiniteNumber(value.baselineAt) &&
+    optionalFiniteNumber(value.lastPollAt) &&
+    optionalFiniteNumber(value.lastSuccessfulPollAt) &&
+    optionalFiniteNumber(value.nextPollAt) &&
+    (value.diagnosticCode === undefined || typeof value.diagnosticCode === 'string') &&
+    (value.searchBoundary === undefined ||
+      (typeof value.searchBoundary === 'string' &&
+        !Number.isNaN(Date.parse(value.searchBoundary)))) &&
+    Array.isArray(value.processedEventNodeIds) &&
+    value.processedEventNodeIds.length <= 2_000 &&
+    value.processedEventNodeIds.every(validNodeId) &&
+    new Set(value.processedEventNodeIds).size === value.processedEventNodeIds.length &&
+    record(value.items)
   );
 }
 
-function validState(value: unknown): value is GitHubNotificationMonitorState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const state = value as Partial<GitHubNotificationMonitorState>;
+function validCurrentState(value: unknown): value is GitHubNotificationMonitorState {
+  if (!record(value) || !hasOnlyKeys(value, stateKeys) || value.schemaVersion !== 4) return false;
   return (
-    hasOnlyKeys(value, stateKeys) &&
-    state.schemaVersion === 3 &&
     validStateFields(value) &&
-    state.items !== undefined &&
-    Object.entries(state.items).every(
+    record(value.items) &&
+    Object.entries(value.items).every(
       ([key, item]) => validItem(item) && key === `github:${item.repositoryNodeId}:${item.number}`,
     )
   );
 }
 
-/** Drop the removed publication checkpoint map from otherwise valid current state. */
-function withoutDeprecatedDeliveryCheckpoints(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const state = value as Record<string, unknown>;
-  const items = state.items;
-  if (!items || typeof items !== 'object' || Array.isArray(items)) return value;
-  let changed = false;
-  const normalizedItems: Record<string, unknown> = { ...items };
-  for (const [key, candidate] of Object.entries(items)) {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
-    const item = candidate as Record<string, unknown>;
-    const delivery = item.delivery;
-    if (!delivery || typeof delivery !== 'object' || Array.isArray(delivery)) continue;
-    if (!Object.hasOwn(delivery, 'progress')) continue;
-    const record = delivery as Record<string, unknown>;
-    if (!validDeprecatedDeliveryCheckpoints(record.progress)) return value;
-    const normalizedDelivery = { ...record };
-    delete normalizedDelivery.progress;
-    normalizedItems[key] = { ...item, delivery: normalizedDelivery };
-    changed = true;
-  }
-  return changed ? { ...state, items: normalizedItems } : value;
+function validLegacyDelivery(value: unknown): value is Record<string, unknown> {
+  return (
+    record(value) &&
+    hasOnlyKeys(value, legacyDeliveryKeys) &&
+    value.schemaVersion === 1 &&
+    validNodeId(value.assignmentEventId) &&
+    validDiagnosticCode(value.failureCode) &&
+    legacyStages.has(String(value.stage)) &&
+    validWorktree(value)
+  );
 }
 
-/** Validate only the current value-free monitor state contract. */
+function legacyIntake(
+  item: Record<string, unknown>,
+  delivery: Record<string, unknown>,
+): GitHubNotificationIntakeState {
+  const hasWorktree =
+    typeof delivery.worktreeBranch === 'string' && typeof delivery.worktreePath === 'string';
+  const stage =
+    item.disposition === 'retired' || delivery.stage === 'retired'
+      ? 'retired'
+      : item.itemType === 'issue' && !hasWorktree
+        ? 'admitted'
+        : 'prepared';
+  return {
+    assignmentEventId: String(delivery.assignmentEventId),
+    ...(delivery.failureCode === undefined ? {} : { failureCode: String(delivery.failureCode) }),
+    stage,
+    ...(hasWorktree
+      ? {
+          worktreeBranch: String(delivery.worktreeBranch),
+          worktreePath: String(delivery.worktreePath),
+        }
+      : {}),
+  };
+}
+
+function migrateLegacyItem(value: unknown): GitHubNotificationItemState | undefined {
+  if (!record(value) || !hasOnlyKeys(value, legacyItemKeys) || !validItemFields(value)) {
+    return undefined;
+  }
+  const delivery = value.delivery;
+  if (delivery !== undefined && !validLegacyDelivery(delivery)) return undefined;
+  if (value.disposition === 'approved' && !record(delivery)) return undefined;
+  if (
+    value.disposition !== 'approved' &&
+    value.disposition !== 'retired' &&
+    delivery !== undefined
+  ) {
+    return undefined;
+  }
+  if (record(delivery) && value.assignmentEventNodeId !== delivery.assignmentEventId) {
+    return undefined;
+  }
+  const item = Object.fromEntries(
+    sharedItemKeys.map((key) => [key, value[key]]).filter(([, field]) => field !== undefined),
+  ) as unknown as GitHubNotificationItemState;
+  item.lifecycleId = item.itemType;
+  if (record(delivery)) item.intake = legacyIntake(value, delivery);
+  return validItem(item) ? item : undefined;
+}
+
+function migrateSchemaThree(value: unknown): GitHubNotificationMonitorState | undefined {
+  if (
+    !record(value) ||
+    !hasOnlyKeys(value, stateKeys) ||
+    value.schemaVersion !== 3 ||
+    !validStateFields(value) ||
+    !record(value.items)
+  ) {
+    return undefined;
+  }
+  const items: Record<string, GitHubNotificationItemState> = {};
+  for (const [key, candidate] of Object.entries(value.items)) {
+    const item = migrateLegacyItem(candidate);
+    if (!item || key !== `github:${item.repositoryNodeId}:${item.number}`) return undefined;
+    items[key] = item;
+  }
+  const state = {
+    ...Object.fromEntries(
+      [...stateKeys]
+        .filter((key) => key !== 'items' && key !== 'schemaVersion')
+        .map((key) => [key, value[key]])
+        .filter(([, field]) => field !== undefined),
+    ),
+    items,
+    schemaVersion: 4,
+  };
+  return validCurrentState(state) ? state : undefined;
+}
+
+/** Validate current state or project supported schema-three intake facts into schema four. */
 export default function decodeGitHubNotificationMonitorState(
   value: unknown,
   agentId: string,
 ): GitHubNotificationMonitorStateDecodeResult | undefined {
-  const normalized = withoutDeprecatedDeliveryCheckpoints(value);
-  if (validState(normalized) && normalized.agentId === agentId) {
-    return { state: normalized, status: 'ready' };
-  }
-  return undefined;
+  const state = validCurrentState(value) ? value : migrateSchemaThree(value);
+  return state?.agentId === agentId ? { state, status: 'ready' } : undefined;
 }

@@ -115,7 +115,7 @@ describe('channels/github/lib/lifecycle', () => {
       items: {},
       lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
-      schemaVersion: 3,
+      schemaVersion: 4,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [
@@ -368,14 +368,11 @@ describe('channels/github/lib/lifecycle', () => {
   it('should retain disabled monitor state while assignment retirement is pending', async () => {
     let removals = 0;
     const state = notificationMonitorState();
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:data:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
@@ -436,14 +433,11 @@ describe('channels/github/lib/lifecycle', () => {
 
   it('should retire disabled assignments before removing private monitor state', async () => {
     const state = notificationMonitorState();
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:data:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };

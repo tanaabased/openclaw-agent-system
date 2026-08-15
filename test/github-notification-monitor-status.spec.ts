@@ -7,13 +7,13 @@ import {
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/monitor-status', () => {
-  it('should project intake checkpoints without private delivery values', () => {
+  it('should project prepared intake without private worktree values', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;
     const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      stage: 'worktree-ready',
+    item.intake = {
+      ...item.intake!,
+      stage: 'prepared',
       worktreeBranch: 'agent/tanaabot/issue-7',
       worktreePath: '/workspace/worktrees/issue-7',
     };
@@ -29,15 +29,20 @@ describe('channels/github/utils/monitor-status', () => {
     assert.deepEqual(result.items[0], {
       disposition: 'approved',
       itemType: 'issue',
+      lifecycleId: 'issue',
       number: 12,
       reasonCode: 'assignment-approved',
       repository: 'tanaabased/example',
-      stage: 'worktree-ready',
+      stage: 'prepared',
       worktree: 'ready',
     });
     assert.equal(JSON.stringify(result).includes('/workspace/worktrees'), false);
     assert.deepEqual(evaluateGitHubNotificationWait(result, 'worktree-ready', selector), {
       code: 'github-notification-worktree-ready',
+      status: 'reached',
+    });
+    assert.deepEqual(evaluateGitHubNotificationWait(result, 'prepared', selector), {
+      code: 'github-notification-prepared',
       status: 'reached',
     });
   });
@@ -46,10 +51,9 @@ describe('channels/github/utils/monitor-status', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;
     const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
+    item.intake = {
+      ...item.intake!,
       failureCode: 'github-notification-worktree-failed',
-      stage: 'received',
     };
     const selector = {
       itemType: 'issue' as const,
@@ -70,7 +74,7 @@ describe('channels/github/utils/monitor-status', () => {
     const item = state.items[notificationItemKey]!;
     item.disposition = 'rejected';
     item.reasonCode = 'assignment-actor-not-approved';
-    delete item.delivery;
+    delete item.intake;
     const selector = {
       itemType: 'issue' as const,
       number: 12,

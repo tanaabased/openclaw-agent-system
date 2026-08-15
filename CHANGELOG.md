@@ -14,6 +14,8 @@
 
 ### Bug Fixes
 
+- Fixed lifecycle intake to converge on a neutral `prepared` checkpoint instead
+  of repeatedly reconciling admitted pull requests and worktree-ready issues. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed Agent System lifecycle logs to preserve clean CLI command output.
 - Fixed GitHub notification deliveries to complete logical retirement while preserving managed worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
@@ -33,6 +35,8 @@
   notification messaging refactor focuses on the installed issue lifecycle.
 - Reduced the issue Leia scenario to the Wave 1 intake contract: admission,
   lifecycle-owned worktree preparation, restart durability, and retirement.
+- Migrated private notification state to lifecycle-aware schema 4 and removed
+  unreachable session, publication, mode, and comment-tracking checkpoints.
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 

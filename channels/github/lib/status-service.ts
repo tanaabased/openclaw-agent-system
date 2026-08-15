@@ -30,7 +30,7 @@ export interface GitHubNotificationWaitResult {
   agentId: string;
   code: string;
   observation: GitHubNotificationStatusResult;
-  schemaVersion: 1;
+  schemaVersion: 2;
   status: 'completed' | 'failed' | 'timed-out';
   target: GitHubNotificationWaitTarget;
 }
@@ -68,7 +68,7 @@ export default class GitHubNotificationStatusService {
           agentId: input.agentId,
           code: 'github-notification-wait-timeout',
           observation: await this.inspect(input.agentId, input.selector),
-          schemaVersion: 1,
+          schemaVersion: 2,
           status: 'timed-out',
           target: input.target,
         };
@@ -94,7 +94,7 @@ export default class GitHubNotificationStatusService {
             agentId: input.agentId,
             code: refresh?.code ?? 'github-notification-refresh-missing',
             observation: await this.inspect(input.agentId, input.selector),
-            schemaVersion: 1,
+            schemaVersion: 2,
             status: 'failed',
             target: input.target,
           };
@@ -108,7 +108,7 @@ export default class GitHubNotificationStatusService {
           agentId: input.agentId,
           code: evaluated.code,
           observation,
-          schemaVersion: 1,
+          schemaVersion: 2,
           status: evaluated.status === 'reached' ? 'completed' : 'failed',
           target: input.target,
         };
@@ -119,7 +119,7 @@ export default class GitHubNotificationStatusService {
           agentId: input.agentId,
           code: 'github-notification-wait-timeout',
           observation,
-          schemaVersion: 1,
+          schemaVersion: 2,
           status: 'timed-out',
           target: input.target,
         };

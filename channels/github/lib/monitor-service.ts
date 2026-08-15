@@ -54,10 +54,6 @@ export interface GitHubNotificationMonitorRunResult {
   baselineAt?: number;
   baselineEstablished?: boolean;
   code: string;
-  commentApproved?: number;
-  commentBaseline?: number;
-  commentRejected?: number;
-  commentTrackingDeferred?: number;
   diagnosticCode?: string;
   duplicates?: number;
   lastSuccessfulPollAt?: number;
@@ -100,7 +96,7 @@ function matchesSelector(
   );
 }
 
-function pendingDeliveryItemKeys(
+function pendingIntakeItemKeys(
   state: GitHubNotificationMonitorState | undefined,
   selector?: GitHubNotificationItemSelector,
 ): string[] {
@@ -109,11 +105,9 @@ function pendingDeliveryItemKeys(
     .filter(
       ([, item]) =>
         (selector === undefined || matchesSelector(item, selector)) &&
-        item.delivery !== undefined &&
-        ((item.disposition === 'approved' &&
-          item.delivery.stage !== 'active' &&
-          item.delivery.stage !== 'retired') ||
-          (item.disposition === 'retired' && item.delivery.stage !== 'retired')),
+        item.intake !== undefined &&
+        ((item.disposition === 'approved' && item.intake.stage === 'admitted') ||
+          (item.disposition === 'retired' && item.intake.stage !== 'retired')),
     )
     .map(([itemKey]) => itemKey)
     .sort();
@@ -135,7 +129,7 @@ function isRoutingDiagnostic(code: string | undefined): boolean {
   return code?.startsWith('notification-routing-') === true;
 }
 
-/** Schedule route-gated GitHub assignment polls and recoverable local delivery. */
+/** Schedule route-gated GitHub assignment polls and recoverable local intake. */
 export default class GitHubNotificationMonitorService {
   readonly #dependencies: GitHubNotificationMonitorServiceDependencies;
   readonly #inFlight = new Map<string, Promise<GitHubNotificationMonitorRunResult>>();
@@ -280,7 +274,7 @@ export default class GitHubNotificationMonitorService {
         await this.#retireDisabledAssignments(agentId, current, now, signal);
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
-      const pendingItemKeys = pendingDeliveryItemKeys(current, options.selector);
+      const pendingItemKeys = pendingIntakeItemKeys(current, options.selector);
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       const pollDeferred =
         intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
@@ -384,14 +378,14 @@ export default class GitHubNotificationMonitorService {
       await this.#dependencies.stateStore.write(result.state);
       await this.#reconcileAssignments(
         agentId,
-        pendingDeliveryItemKeys(result.state, options.selector),
+        pendingIntakeItemKeys(result.state, options.selector),
         signal,
       );
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';
       this.#dependencies.logger.info(
-        `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired} commentBaseline=${result.commentBaseline} commentApproved=${result.commentApproved} commentRejected=${result.commentRejected} commentDeferred=${result.commentTrackingDeferred}`,
+        `github-notifications: poll complete agent=${agentId} code=${code} baselineEstablished=${result.baselineEstablished} baselineItems=${result.baseline} approved=${result.approved} rejected=${result.rejected} duplicate=${result.duplicates} retired=${result.retired}`,
       );
       return {
         agentId,
@@ -400,10 +394,6 @@ export default class GitHubNotificationMonitorService {
         baselineAt: result.state.baselineAt,
         baselineEstablished: result.baselineEstablished,
         code,
-        commentApproved: result.commentApproved,
-        commentBaseline: result.commentBaseline,
-        commentRejected: result.commentRejected,
-        commentTrackingDeferred: result.commentTrackingDeferred,
         duplicates: result.duplicates,
         lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
         nextPollAt: result.state.nextPollAt,
@@ -485,7 +475,7 @@ export default class GitHubNotificationMonitorService {
     const retryDeferred =
       current?.nextPollAt !== undefined &&
       current.nextPollAt > now &&
-      itemKeys.some((itemKey) => current.items[itemKey]?.delivery?.failureCode !== undefined);
+      itemKeys.some((itemKey) => current.items[itemKey]?.intake?.failureCode !== undefined);
     if (retryDeferred) return;
 
     await this.#reconcileAssignments(agentId, itemKeys, signal);

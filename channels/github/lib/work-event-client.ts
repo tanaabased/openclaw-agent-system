@@ -1,6 +1,5 @@
 import type { ConnectedGitHubAccountClient } from '../../../lib/github-account-client.ts';
 import { parseGitHubApiResponse, type GitHubRateLimit } from '../utils/api-response.ts';
-import type { GitHubCanonicalIssueComment } from '../utils/comment-admission.ts';
 import {
   githubRepositoryPath,
   type GitHubAssignedItemCandidate,
@@ -14,8 +13,6 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
-const maximumCommentBodyLength = 1_000;
-const maximumTrackedCommentPages = 3;
 
 export class GitHubWorkEventClientError extends Error {
   override name = 'GitHubWorkEventClientError';
@@ -34,11 +31,6 @@ export interface GitHubAssignedItemDiscovery {
   candidates: GitHubAssignedItemCandidate[];
   incomplete: boolean;
   totalCount: number;
-  truncated: boolean;
-}
-
-export interface GitHubIssueCommentPage {
-  comments: GitHubCanonicalIssueComment[];
   truncated: boolean;
 }
 
@@ -98,21 +90,6 @@ function hasControlCharacter(value: string): boolean {
   });
 }
 
-function boundedProse(
-  value: unknown,
-  label: string,
-  maximumLength: number,
-): { text: string; truncated: boolean } {
-  if (value === null) return { text: '', truncated: false };
-  if (typeof value !== 'string' || value.includes('\0')) {
-    throw new Error(`GitHub returned invalid ${label}.`);
-  }
-  return {
-    text: value.slice(0, maximumLength),
-    truncated: value.length > maximumLength,
-  };
-}
-
 function identity(value: unknown, label: string): GitHubIdentity {
   const item = record(value, label);
   const login = string(item.login, `${label} login`);
@@ -163,21 +140,6 @@ function optionalRepositoryReference(
   label: string,
 ): { databaseId: number; nodeId: string } | undefined {
   return value === null || value === undefined ? undefined : repositoryReference(value, label);
-}
-
-function issueComment(value: unknown): GitHubCanonicalIssueComment {
-  const item = record(value, 'issue comment');
-  const body = boundedProse(item.body, 'issue-comment body', maximumCommentBodyLength);
-  const bodyLength = integer(item.bodyLength, 'issue-comment body length');
-  return {
-    author: optionalIdentity(item.author, 'issue-comment author'),
-    body: body.text,
-    bodyTruncated: body.truncated || bodyLength > maximumCommentBodyLength,
-    createdAt: timestamp(item.createdAt, 'issue-comment creation time'),
-    databaseId: positiveInteger(item.databaseId, 'issue-comment database id'),
-    nodeId: nodeId(item.nodeId, 'issue-comment node id'),
-    updatedAt: timestamp(item.updatedAt, 'issue-comment update time'),
-  };
 }
 
 function repositoryEndpoint(owner: string, name: string): string {
@@ -431,39 +393,6 @@ export default class GitHubWorkEventClient {
       if (!hasNextPage) break;
     }
     return { events, truncated: hasNextPage };
-  }
-
-  /** List a complete bounded projection of top-level comments through GitHub's issue API. */
-  async listIssueComments(
-    owner: string,
-    name: string,
-    number: number,
-  ): Promise<GitHubIssueCommentPage> {
-    const comments: GitHubCanonicalIssueComment[] = [];
-    let hasNextPage = false;
-    for (let page = 1; page <= maximumTrackedCommentPages; page += 1) {
-      const response = await this.#api(
-        [
-          '--method',
-          'GET',
-          `${this.#itemEndpoint(owner, name, number)}/comments`,
-          '-F',
-          `per_page=${pageSize}`,
-          '-F',
-          `page=${page}`,
-          '--jq',
-          `[.[]|{databaseId:.id,nodeId:.node_id,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${maximumCommentBodyLength + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}]`,
-        ],
-        'issue comments',
-      );
-      if (!Array.isArray(response.value)) {
-        throw new Error('GitHub returned invalid issue comments.');
-      }
-      comments.push(...response.value.map(issueComment));
-      hasNextPage = response.hasNextPage;
-      if (!hasNextPage) break;
-    }
-    return { comments, truncated: hasNextPage };
   }
 
   #itemEndpoint(owner: string, name: string, number: number): string {

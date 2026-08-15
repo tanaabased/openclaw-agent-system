@@ -168,18 +168,22 @@ export interface GitHubNotificationAssignmentEvent {
   id: string;
   itemNumber: number;
   itemType: 'issue' | 'pull-request';
+  lifecycleId: 'issue' | 'pull-request' | 'pull-request-review';
   repositoryId: string;
   timestamp?: number;
   title: string;
 }
 
 export function githubNotificationConversationId(
-  event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'repositoryId'>,
+  event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'lifecycleId' | 'repositoryId'>,
 ): string {
   if (!Number.isSafeInteger(event.itemNumber) || event.itemNumber < 1) {
     throw new Error('GitHub notification item numbers must be positive safe integers.');
   }
+  if (!['issue', 'pull-request', 'pull-request-review'].includes(event.lifecycleId)) {
+    throw new Error('GitHub notification lifecycle ids are invalid.');
+  }
   const repositoryId = event.repositoryId.trim();
   if (!repositoryId) throw new Error('GitHub notification repository ids must not be empty.');
-  return `github:${encodeURIComponent(repositoryId)}:${event.itemNumber}`;
+  return `github:${event.lifecycleId}:${encodeURIComponent(repositoryId)}:${event.itemNumber}`;
 }

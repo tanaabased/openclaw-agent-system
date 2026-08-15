@@ -29,18 +29,16 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
     assignmentActorLogin: notificationActor.login,
     assignmentActorNodeId: notificationActor.nodeId,
     assignmentEventNodeId: 'EV_assignment',
-    delivery: {
+    intake: {
       assignmentEventId: 'EV_assignment',
-      mode: 'plan',
-      schemaVersion: 1,
       stage: 'admitted',
-      workId: 'issue-7',
     },
     disposition: 'approved',
     itemDatabaseId: 7,
     itemNodeId: 'I_item',
     itemType: 'issue',
     lastObservedAt: 2,
+    lifecycleId: 'issue',
     number: 12,
     reasonCode: 'assignment-approved',
     repositoryCloneUrl: notificationRepository.cloneUrl,
@@ -59,18 +57,16 @@ export function approvedPullRequestNotificationItem(): GitHubNotificationItemSta
     assignmentActorLogin: notificationActor.login,
     assignmentActorNodeId: notificationActor.nodeId,
     assignmentEventNodeId: 'EV_pull_request_assignment',
-    delivery: {
+    intake: {
       assignmentEventId: 'EV_pull_request_assignment',
-      mode: 'plan',
-      schemaVersion: 1,
       stage: 'admitted',
-      workId: 'pull-request-8',
     },
     disposition: 'approved',
     itemDatabaseId: 8,
     itemNodeId: 'PR_item',
     itemType: 'pull-request',
     lastObservedAt: 2,
+    lifecycleId: 'pull-request',
     number: 13,
     pullRequest: {
       authorNodeId: notificationActor.nodeId,
@@ -102,7 +98,7 @@ export function notificationMonitorState(): GitHubNotificationMonitorState {
     failureCount: 0,
     items: { [notificationItemKey]: approvedNotificationItem() },
     processedEventNodeIds: ['EV_assignment'],
-    schemaVersion: 3,
+    schemaVersion: 4,
     workspaceDir: '/workspace',
   };
 }

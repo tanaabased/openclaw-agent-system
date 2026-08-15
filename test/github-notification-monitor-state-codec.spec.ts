@@ -9,7 +9,7 @@ import {
 } from './github-notification-fixtures.ts';
 
 describe('channels/github/utils/monitor-state-codec', () => {
-  it('should accept current value-free state and reject unknown fields', () => {
+  it('should accept strict schema-four intake state', () => {
     const state = notificationMonitorState();
 
     assert.deepEqual(decodeGitHubNotificationMonitorState(state, state.agentId), {
@@ -22,261 +22,87 @@ describe('channels/github/utils/monitor-state-codec', () => {
     );
   });
 
-  it('should accept retirement while its prior delivery stage is still being reconciled', () => {
+  it('should validate prepared and retired lifecycle checkpoints', () => {
     const state = notificationMonitorState();
-    state.items[Object.keys(state.items)[0]!]!.disposition = 'retired';
-    state.items[Object.keys(state.items)[0]!]!.reasonCode = 'item-unassigned';
-
+    const item = state.items[notificationItemKey]!;
+    item.intake = {
+      ...item.intake!,
+      stage: 'prepared',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-  });
 
-  it('should retain activation history when an active assignment retires', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
     item.disposition = 'retired';
-    item.reasonCode = 'item-unassigned';
-    item.delivery = {
-      ...item.delivery!,
-      activation: { reply: { commentId: 91, status: 'published' }, status: 'planned' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'retired',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-
+    item.intake.stage = 'retired';
+    item.reasonCode = 'item-closed';
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
-  it('should accept a terminal activation failure', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      activation: {
-        failureCode: 'github-notification-planning-response-invalid',
-        status: 'failed',
-      },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
+  it('should reject mismatched lifecycle and worktree facts', () => {
+    const issue = notificationMonitorState();
+    issue.items[notificationItemKey]!.lifecycleId = 'pull-request';
+    assert.equal(decodeGitHubNotificationMonitorState(issue, issue.agentId), undefined);
 
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    const pullRequest = notificationMonitorState();
+    pullRequest.items = {
+      [notificationPullRequestItemKey]: approvedPullRequestNotificationItem(),
+    };
+    pullRequest.items[notificationPullRequestItemKey]!.intake = {
+      assignmentEventId: 'EV_pull_request_assignment',
+      stage: 'prepared',
+      worktreeBranch: 'unexpected',
+      worktreePath: '/workspace/unexpected',
+    };
+    assert.equal(decodeGitHubNotificationMonitorState(pullRequest, pullRequest.agentId), undefined);
   });
 
-  it('should accept only value-free planning reply checkpoints after private planning', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      activation: {
-        reply: { commentId: 91, status: 'published' },
-        status: 'planned',
-      },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    item.delivery.activation = {
-      reply: { status: 'pending' },
-      status: 'adopted',
-    };
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-    item.delivery.activation = {
-      reply: {
-        failureCode: 'provider failure with prose',
-        status: 'failed',
-      },
-      status: 'planned',
-    };
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-  });
-
-  it('should retain only value-free legacy acknowledgment failures', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: {
-        failureCode: 'github-notification-acknowledgment-not-confirmed',
-        status: 'failed',
-      },
-      activation: { status: 'planned' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    item.delivery.acknowledgment = {
-      failureCode: 'provider failure with prose',
-      status: 'failed',
-    };
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-  });
-
-  it('should accept a session-recording checkpoint', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      stage: 'session-recording',
-      worktreeBranch: 'issue-7-branch',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-  });
-
-  it('should accept only pending acknowledgment metadata at the received checkpoint', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: { status: 'pending' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'received',
-      worktreeBranch: 'issue-7-branch',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    item.delivery.activation = { status: 'pending' };
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-    delete item.delivery.activation;
-    item.delivery.acknowledgment = { commentId: 91, status: 'published' };
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-  });
-
-  it('should reject acknowledgment metadata before the active checkpoint', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery!.acknowledgment = { commentId: 91, status: 'published' };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-  });
-
-  it('should accept bounded value-free comment checkpoints and reject persisted prose', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
-      ...item.delivery!,
-      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
+  it('should project schema-three delivery facts into compact intake state', () => {
+    const current = notificationMonitorState();
+    const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = 3;
+    const items = legacy.items as Record<string, Record<string, unknown>>;
+    const item = items[notificationItemKey]!;
+    delete item.lifecycleId;
+    delete item.intake;
     item.commentTracking = {
       baselineAt: 2,
-      revisions: {
-        IC_comment: {
-          actorNodeId: 'U_actor',
-          bodyDigest: 'a'.repeat(64),
-          commentDatabaseId: 92,
-          commentNodeId: 'IC_comment',
-          createdAt: 2,
-          disposition: 'approved',
-          reasonCode: 'comment-approved',
-          reply: { commentId: 93, status: 'published' },
-          revisionId: 'b'.repeat(64),
-          turn: { status: 'responded' },
-          updatedAt: 3,
-        },
-      },
+      revisions: { ignored: { body: 'legacy provider data is not projected' } },
     };
-
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    const unsafe = structuredClone(state) as unknown as {
-      items: Record<string, { commentTracking: { revisions: Record<string, object> } }>;
-    };
-    unsafe.items[Object.keys(unsafe.items)[0]!]!.commentTracking.revisions.IC_comment = {
-      ...unsafe.items[Object.keys(unsafe.items)[0]!]!.commentTracking.revisions.IC_comment,
-      body: '@tanaabot private prose',
-    };
-    assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
-  });
-
-  it('should accept pull-request identity and comment state without changing schema three', () => {
-    const state = notificationMonitorState();
-    const item = approvedPullRequestNotificationItem();
     item.delivery = {
-      ...item.delivery!,
-      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
+      activation: { status: 'planned' },
+      assignmentEventId: 'EV_assignment',
+      mode: 'plan',
+      schemaVersion: 1,
+      sessionKey: 'agent:tanaabot:legacy',
       stage: 'active',
-    };
-    item.commentTracking = { baselineAt: 2, revisions: {} };
-    state.items = { [notificationPullRequestItemKey]: item };
-
-    assert.equal(state.schemaVersion, 3);
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    const legacy = structuredClone(state);
-    delete legacy.items[notificationPullRequestItemKey]!.pullRequest;
-    assert.equal(decodeGitHubNotificationMonitorState(legacy, state.agentId)?.status, 'ready');
-    state.items[notificationPullRequestItemKey]!.pullRequest!.headSha = 'not-a-sha';
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
-
-    const issueWithoutWorktree = notificationMonitorState();
-    const issueDelivery = issueWithoutWorktree.items[notificationItemKey]!.delivery!;
-    issueWithoutWorktree.items[notificationItemKey]!.delivery = {
-      ...issueDelivery,
-      activation: { status: 'pending' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-    };
-    assert.equal(
-      decodeGitHubNotificationMonitorState(issueWithoutWorktree, issueWithoutWorktree.agentId),
-      undefined,
-    );
-  });
-
-  it('should discard valid checkpoints from the removed progress feature', () => {
-    const state = notificationMonitorState();
-    const item = state.items[Object.keys(state.items)[0]!]!;
-    const legacy = structuredClone(state) as unknown as {
-      items: Record<string, { delivery: Record<string, unknown> }>;
-    };
-    legacy.items[Object.keys(legacy.items)[0]!]!.delivery = {
-      ...item.delivery!,
-      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
-      progress: {
-        '123e4567-e89b-42d3-a456-426614174000': { commentId: 94, status: 'published' },
-      },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
+      workId: 'issue-7',
       worktreeBranch: 'agent/tanaabot/issue-7',
       worktreePath: '/workspace/worktrees/issue-7',
     };
 
-    const decoded = decodeGitHubNotificationMonitorState(legacy, state.agentId);
-    assert.equal(decoded?.status, 'ready');
-    assert.equal(
-      Object.hasOwn(decoded?.state.items[Object.keys(state.items)[0]!]!.delivery ?? {}, 'progress'),
-      false,
-    );
-    const unsafe = structuredClone(legacy) as unknown as {
-      items: Record<string, { delivery: { progress: Record<string, object> } }>;
-    };
-    unsafe.items[Object.keys(unsafe.items)[0]!]!.delivery.progress[
-      '123e4567-e89b-42d3-a456-426614174000'
-    ] = { body: 'private progress prose', status: 'published' };
-    assert.equal(decodeGitHubNotificationMonitorState(unsafe, state.agentId), undefined);
+    const decoded = decodeGitHubNotificationMonitorState(legacy, current.agentId)?.state;
+
+    assert.equal(decoded?.schemaVersion, 4);
+    assert.deepEqual(decoded?.items[notificationItemKey]?.intake, {
+      assignmentEventId: 'EV_assignment',
+      stage: 'prepared',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    });
+    assert.equal(decoded?.items[notificationItemKey]?.lifecycleId, 'issue');
+    assert.equal('commentTracking' in (decoded?.items[notificationItemKey] ?? {}), false);
   });
 
-  it('should reject older state shapes instead of migrating them', () => {
-    const state = notificationMonitorState();
+  it('should reject unsupported and malformed persisted state', () => {
+    const schemaTwo = { ...notificationMonitorState(), schemaVersion: 2 };
+    assert.equal(decodeGitHubNotificationMonitorState(schemaTwo, 'tanaabot'), undefined);
 
+    const invalid = notificationMonitorState();
+    invalid.items[notificationItemKey]!.intake!.failureCode = 'provider failure with prose';
+    assert.equal(decodeGitHubNotificationMonitorState(invalid, invalid.agentId), undefined);
     assert.equal(
-      decodeGitHubNotificationMonitorState(
-        { ...state, baselineItemNodeIds: [], schemaVersion: 2 },
-        state.agentId,
-      ),
+      decodeGitHubNotificationMonitorState(notificationMonitorState(), 'other'),
       undefined,
     );
   });

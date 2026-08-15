@@ -1,5 +1,5 @@
 import type {
-  GitHubNotificationDeliveryState,
+  GitHubNotificationIntakeState,
   GitHubNotificationItemState,
 } from '../utils/monitor-state.ts';
 
@@ -7,7 +7,7 @@ export type GitHubNotificationLifecycleId = 'issue' | 'pull-request' | 'pull-req
 
 export interface GitHubNotificationLifecycleBoundaryInput {
   agentId: string;
-  delivery: GitHubNotificationDeliveryState;
+  intake: GitHubNotificationIntakeState;
   item: GitHubNotificationItemState;
   signal?: AbortSignal;
   workspaceDir: string;

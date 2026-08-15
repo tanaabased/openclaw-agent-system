@@ -7,12 +7,11 @@ import type {
   GitHubNotificationLifecycleWorktree,
 } from '../lifecycles/types.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
-import {
-  planGitHubNotificationDelivery,
-  type GitHubNotificationDeliveryObservation,
-} from '../utils/delivery-plan.ts';
+import planGitHubNotificationIntake, {
+  type GitHubNotificationIntakeObservation,
+} from '../utils/intake-plan.ts';
 import type {
-  GitHubNotificationDeliveryState,
+  GitHubNotificationIntakeState,
   GitHubNotificationItemState,
   GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
@@ -41,10 +40,8 @@ export class GitHubNotificationAssignmentOrchestratorError extends Error {
   }
 }
 
-function withoutFailure(
-  delivery: GitHubNotificationDeliveryState,
-): GitHubNotificationDeliveryState {
-  const next = { ...delivery };
+function withoutFailure(intake: GitHubNotificationIntakeState): GitHubNotificationIntakeState {
+  const next = { ...intake };
   Reflect.deleteProperty(next, 'failureCode');
   return next;
 }
@@ -73,7 +70,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
           ? error.code
-          : 'github-notification-delivery-failed';
+          : 'github-notification-intake-failed';
       await this.#recordFailure(agentId, itemKey, code).catch(() => undefined);
       throw error instanceof GitHubNotificationAssignmentOrchestratorError
         ? error
@@ -89,44 +86,34 @@ export default class GitHubNotificationAssignmentOrchestrator {
     for (let step = 0; step < 12; step += 1) {
       if (signal?.aborted) {
         throw new GitHubNotificationAssignmentOrchestratorError(
-          'github-notification-delivery-aborted',
+          'github-notification-intake-aborted',
           'The GitHub notification assignment reconciliation was aborted.',
         );
       }
       const loaded = await this.#loadItem(agentId, itemKey);
       if (!loaded) return;
-      const { delivery, item, state } = loaded;
-      const lifecycle = this.#dependencies.lifecycles.resolve(item.itemType);
+      const { intake, item, state } = loaded;
+      const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
 
       const observation = await this.#observe(
         lifecycle,
         agentId,
         state.workspaceDir,
         item,
-        delivery,
+        intake,
         signal,
       );
-      const action = planGitHubNotificationDelivery(
-        delivery,
-        observation,
-        lifecycle.worktree.required,
-      );
+      const action = planGitHubNotificationIntake(intake, observation, lifecycle.worktree.required);
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
         await this.#retire(state, itemKey, action.reasonCode);
         return;
       }
-      if (action.kind === 'checkpoint-worktree') {
-        await this.#checkpointWorktree(state, itemKey, action.worktree);
-        continue;
+      if (action.kind === 'mark-prepared') {
+        await this.#checkpointPrepared(state, itemKey, action.worktree);
+        return;
       }
       if (action.kind === 'prepare-worktree') {
-        await this.#checkpointDelivery(state, itemKey, {
-          assignmentEventId: delivery.assignmentEventId,
-          schemaVersion: 1,
-          stage: 'admitted',
-          workId: delivery.workId,
-        });
         const checkpoint = this.#boundary(state, itemKey);
         if (!checkpoint) return;
         if (
@@ -134,7 +121,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
             agentId,
             state.workspaceDir,
             checkpoint.item,
-            checkpoint.delivery,
+            checkpoint.intake,
             signal,
             state,
             itemKey,
@@ -159,13 +146,13 @@ export default class GitHubNotificationAssignmentOrchestrator {
               workspaceDir: state.workspaceDir,
             }),
         );
-        await this.#checkpointWorktree(state, itemKey, worktree);
-        continue;
+        await this.#checkpointPrepared(state, itemKey, worktree);
+        return;
       }
       continue;
     }
     throw new GitHubNotificationAssignmentOrchestratorError(
-      'github-notification-delivery-step-limit',
+      'github-notification-intake-step-limit',
       'The GitHub notification assignment exceeded its reconciliation step limit.',
     );
   }
@@ -175,27 +162,24 @@ export default class GitHubNotificationAssignmentOrchestrator {
     agentId: string,
     workspaceDir: string,
     item: GitHubNotificationItemState,
-    delivery: GitHubNotificationDeliveryState,
+    intake: GitHubNotificationIntakeState,
     signal?: AbortSignal,
-  ): Promise<GitHubNotificationDeliveryObservation> {
+  ): Promise<GitHubNotificationIntakeObservation> {
     const authority = await this.#diagnosticBoundary(
       'github-notification-authority-inspection-failed',
       'The notification assignment authority could not be inspected.',
       () =>
         this.#dependencies.authority.inspect({
           agentId,
-          delivery,
+          intake,
           item,
           signal,
           workspaceDir,
         }),
     );
-    if (authority.authorized && item.disposition !== 'retired' && delivery.stage === 'active') {
-      return { authority };
-    }
     const checkpointedWorktree =
-      delivery.worktreeBranch && delivery.worktreePath
-        ? { branch: delivery.worktreeBranch, path: delivery.worktreePath }
+      intake.worktreeBranch && intake.worktreePath
+        ? { branch: intake.worktreeBranch, path: intake.worktreePath }
         : undefined;
     const worktreeOwner = lifecycle.worktree;
     const worktree =
@@ -209,7 +193,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
               () =>
                 worktreeOwner.inspect({
                   agentId,
-                  delivery,
+                  intake,
                   item,
                   signal,
                   workspaceDir,
@@ -236,7 +220,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     agentId: string,
     workspaceDir: string,
     item: GitHubNotificationItemState,
-    delivery: GitHubNotificationDeliveryState,
+    intake: GitHubNotificationIntakeState,
     signal: AbortSignal | undefined,
     state: GitHubNotificationMonitorState,
     itemKey: string,
@@ -247,7 +231,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       () =>
         this.#dependencies.authority.inspect({
           agentId,
-          delivery,
+          intake,
           item,
           signal,
           workspaceDir,
@@ -281,7 +265,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     reasonCode: string,
   ): Promise<void> {
     const item = state.items[itemKey];
-    if (!item?.delivery) return;
+    if (!item?.intake) return;
     if (item.disposition === 'retired' && item.reasonCode === reasonCode) return;
     state.items[itemKey] = { ...item, disposition: 'retired', reasonCode };
     await this.#writeState(state);
@@ -292,7 +276,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     itemKey: string,
   ): Promise<
     | {
-        delivery: GitHubNotificationDeliveryState;
+        intake: GitHubNotificationIntakeState;
         item: GitHubNotificationItemState;
         state: GitHubNotificationMonitorState;
       }
@@ -306,45 +290,41 @@ export default class GitHubNotificationAssignmentOrchestrator {
     if (!current) return undefined;
     const state = structuredClone(current);
     const item = state.items[itemKey];
-    return item?.delivery ? { delivery: item.delivery, item, state } : undefined;
+    return item?.intake ? { intake: item.intake, item, state } : undefined;
   }
 
   #boundary(
     state: GitHubNotificationMonitorState,
     itemKey: string,
-  ): { delivery: GitHubNotificationDeliveryState; item: GitHubNotificationItemState } | undefined {
+  ): { intake: GitHubNotificationIntakeState; item: GitHubNotificationItemState } | undefined {
     const item = state.items[itemKey];
-    return item?.delivery ? { delivery: item.delivery, item } : undefined;
+    return item?.intake ? { intake: item.intake, item } : undefined;
   }
 
-  async #checkpointWorktree(
+  async #checkpointPrepared(
     state: GitHubNotificationMonitorState,
     itemKey: string,
-    worktree: GitHubNotificationLifecycleWorktree,
+    worktree?: GitHubNotificationLifecycleWorktree,
   ): Promise<void> {
-    const delivery = state.items[itemKey]?.delivery;
-    if (!delivery) return;
-    const withoutSession = {
-      ...withoutFailure(delivery),
-      sessionId: undefined,
-      sessionKey: undefined,
-    };
-    await this.#checkpointDelivery(state, itemKey, {
-      ...withoutSession,
-      stage: 'worktree-ready',
-      worktreeBranch: worktree.branch,
-      worktreePath: worktree.path,
+    const intake = state.items[itemKey]?.intake;
+    if (!intake) return;
+    await this.#checkpointIntake(state, itemKey, {
+      ...withoutFailure(intake),
+      stage: 'prepared',
+      ...(worktree === undefined
+        ? {}
+        : { worktreeBranch: worktree.branch, worktreePath: worktree.path }),
     });
   }
 
-  async #checkpointDelivery(
+  async #checkpointIntake(
     state: GitHubNotificationMonitorState,
     itemKey: string,
-    delivery: GitHubNotificationDeliveryState,
+    intake: GitHubNotificationIntakeState,
   ): Promise<void> {
     const item = state.items[itemKey];
     if (!item) return;
-    state.items[itemKey] = { ...item, delivery: withoutFailure(delivery) };
+    state.items[itemKey] = { ...item, intake: withoutFailure(intake) };
     await this.#writeState(state);
   }
 
@@ -354,10 +334,10 @@ export default class GitHubNotificationAssignmentOrchestrator {
     reasonCode: string,
   ): Promise<void> {
     const item = state.items[itemKey];
-    if (!item?.delivery) return;
+    if (!item?.intake) return;
     state.items[itemKey] = {
       ...item,
-      delivery: { ...withoutFailure(item.delivery), stage: 'retired' },
+      intake: { ...withoutFailure(item.intake), stage: 'retired' },
       disposition: 'retired',
       reasonCode,
     };
@@ -369,7 +349,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     if (!loaded) return;
     loaded.state.items[itemKey] = {
       ...loaded.item,
-      delivery: { ...loaded.delivery, failureCode: code },
+      intake: { ...loaded.intake, failureCode: code },
     };
     await this.#dependencies.stateStore.write(loaded.state);
   }

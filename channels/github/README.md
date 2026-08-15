@@ -18,12 +18,12 @@ disconnected while they are rebuilt on the [target design](./DESIGN.md).
   repository access, and exact assignment event.
 - Each admitted assignment resolves through its lifecycle machine id before
   lifecycle-specific local resources are reconciled.
-- Accepted issue assignments create or reuse one deterministic managed
-  worktree. Pull-request assignments retain bounded head metadata without
-  creating a worktree.
-- Assignment and comment observations remain bounded, private, and
-  revision-aware. They do not currently dispatch a model turn, create a chat
-  message, or publish a GitHub comment.
+- Accepted assignments converge on the lifecycle-neutral `prepared` intake
+  checkpoint. Issues create or reuse one deterministic managed worktree;
+  pull-request assignments retain bounded head metadata without creating one.
+- Assignment observations remain bounded and private. Comment observation is
+  deferred until lifecycle sessions are implemented. Intake does not currently
+  dispatch a model turn, create a chat message, or publish a GitHub comment.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -137,9 +137,9 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 
 A repository, kind, and number selector is all-or-nothing. `refresh` runs the
 same bounded, lease-protected intake cycle as the scheduler. `status` projects
-only baseline readiness, admission disposition, delivery stage, issue-worktree
-readiness, and bounded pull-request head metadata; it omits provider prose,
-credentials, session identifiers, and local paths.
+only baseline readiness, lifecycle id, admission disposition, intake stage,
+issue-worktree readiness, and bounded pull-request head metadata; it omits
+provider prose, credentials, session identifiers, and local paths.
 
 `wait` supports these stable intake checkpoints:
 
@@ -147,6 +147,7 @@ credentials, session identifiers, and local paths.
 | --------------------- | --------------------------------------------- |
 | `baseline-ready`      | The first safe provider observation completed |
 | `assignment-rejected` | The selected assignment failed admission      |
+| `prepared`            | Lifecycle-owned intake resources are ready    |
 | `worktree-ready`      | The selected issue worktree is ready          |
 | `retired`             | The selected assignment retired logically     |
 
@@ -164,9 +165,8 @@ reference.
 - Admission requires the authenticated assigned account, an approved immutable
   assigning actor, an eligible repository owner, and sufficient repository
   access.
-- GitHub prose and comment text remain bounded untrusted data in private state.
-  The current intake-only implementation never passes them to a model or public
-  delivery path.
+- The current intake path does not fetch or persist GitHub prose or comments and
+  never passes provider content to a model or publication path.
 - Private monitor state contains no tokens. Deterministic assignment and
   worktree identities make intake retry-safe.
 - Removing `github.notifications` and reinstalling retires tracked assignments,

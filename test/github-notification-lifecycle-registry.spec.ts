@@ -25,14 +25,14 @@ describe('channels/github/lifecycles', () => {
       lifecycle,
       new GitHubPullRequestLifecycle(),
     ]);
-    const selected = registry.resolve(issue.itemType);
+    const selected = registry.resolve(issue.lifecycleId);
 
     assert.equal(selected.id, 'issue');
     assert.equal(selected.worktree.required, true);
     if (!selected.worktree.required) assert.fail('expected an issue worktree owner');
     await selected.worktree.inspect({
       agentId: 'tanaabot',
-      delivery: issue.delivery!,
+      intake: issue.intake!,
       item: issue,
       workspaceDir: '/workspace',
     });
@@ -51,7 +51,7 @@ describe('channels/github/lifecycles', () => {
   it('should classify a direct pull request without assigning worktree ownership', () => {
     const registry = new GitHubNotificationLifecycleRegistry([new GitHubPullRequestLifecycle()]);
 
-    const selected = registry.resolve(approvedPullRequestNotificationItem().itemType);
+    const selected = registry.resolve(approvedPullRequestNotificationItem().lifecycleId);
 
     assert.equal(selected.id, 'pull-request');
     assert.deepEqual(selected.worktree, { required: false });

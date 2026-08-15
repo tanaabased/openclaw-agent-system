@@ -56,7 +56,6 @@ function provider(
   assigned = true,
   routeReady = true,
   onConnect = () => undefined,
-  commentBody = '@tanaabot status?',
   pullRequest = false,
 ) {
   const itemNumber = pullRequest ? 13 : 12;
@@ -69,19 +68,6 @@ function provider(
           async execute(argv: string[]) {
             const endpoint = argv.find((value) => value.startsWith('/repos/')) ?? '';
             if (endpoint.endsWith('/permission')) return response({ permission: 'write' });
-            if (endpoint.endsWith('/issues/comments/91')) {
-              return response({
-                author: notificationActor,
-                body: commentBody,
-                bodyLength: commentBody.length,
-                createdAt: '2026-08-14T12:00:00.000Z',
-                databaseId: 91,
-                issueUrl: `https://api.github.com/repos/tanaabased/example/issues/${itemNumber}`,
-                nodeId: 'IC_comment',
-                updatedAt: '2026-08-14T12:00:00.000Z',
-              });
-            }
-            if (endpoint.endsWith('/comments')) return response([]);
             if (endpoint.endsWith('/events')) {
               return response([
                 {
@@ -175,7 +161,7 @@ function input() {
   const item = approvedNotificationItem();
   return {
     agentId: 'tanaabot',
-    delivery: item.delivery!,
+    intake: item.intake!,
     item,
     workspaceDir,
   };
@@ -186,14 +172,14 @@ describe('channels/github/lib/assignment-provider', () => {
     assert.deepEqual(await provider().inspect(input()), { authorized: true });
   });
 
-  it('should revoke delivery when the account is no longer assigned', async () => {
+  it('should revoke intake when the account is no longer assigned', async () => {
     assert.deepEqual(await provider(false).inspect(input()), {
       authorized: false,
       reasonCode: 'item-unassigned',
     });
   });
 
-  it('should revoke delivery before remote access when the exact route drifts', async () => {
+  it('should revoke intake before remote access when the exact route drifts', async () => {
     let connections = 0;
     assert.deepEqual(
       await provider(true, false, () => {

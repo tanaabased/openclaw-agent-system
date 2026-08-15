@@ -25,7 +25,7 @@ type GitHubNotificationAssignmentInspection =
       configuration: GitHubNotificationsConfiguration;
     };
 
-/** Read current GitHub authority for assignment delivery. */
+/** Read current GitHub authority for assignment intake. */
 export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
   readonly #dependencies: GitHubNotificationAssignmentProviderDependencies;
 
@@ -48,11 +48,15 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
   async #inspect(
     input: GitHubNotificationLifecycleBoundaryInput,
   ): Promise<GitHubNotificationAssignmentInspection> {
+    const lifecycleMatchesItem =
+      input.item.lifecycleId === 'issue'
+        ? input.item.itemType === 'issue'
+        : input.item.itemType === 'pull-request';
     if (
-      input.delivery.assignmentEventId !== input.item.assignmentEventNodeId ||
-      input.delivery.workId !== `${input.item.itemType}-${input.item.itemDatabaseId}`
+      input.intake.assignmentEventId !== input.item.assignmentEventNodeId ||
+      !lifecycleMatchesItem
     ) {
-      return { authorized: false, reasonCode: 'github-notification-delivery-state-invalid' };
+      return { authorized: false, reasonCode: 'github-notification-intake-state-invalid' };
     }
     try {
       resolveNotificationRoute(
@@ -60,6 +64,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
         githubNotificationConversationId({
           itemNumber: input.item.number,
+          lifecycleId: input.item.lifecycleId,
           repositoryId: input.item.repositoryNodeId,
         }),
       );
@@ -114,7 +119,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
         input.item.number,
       );
       if (eventPage.truncated) {
-        throw new Error('GitHub assignment history exceeded its delivery boundary.');
+        throw new Error('GitHub assignment history exceeded its intake boundary.');
       }
       const admission = admitGitHubAssignment({
         account: context.client.identity,
@@ -128,7 +133,7 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
       });
       if (
         admission.disposition !== 'approved' ||
-        admission.event?.nodeId !== input.delivery.assignmentEventId ||
+        admission.event?.nodeId !== input.intake.assignmentEventId ||
         admission.event.actor.nodeId !== input.item.assignmentActorNodeId ||
         (input.item.assignmentActorLogin !== undefined &&
           admission.event.actor.login.toLowerCase() !==

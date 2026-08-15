@@ -115,7 +115,7 @@ openclaw agent-system notifications wait \
   --for worktree-ready \
   --refresh \
   --timeout 180 \
-  --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/agent-system-test" and .itemType == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "worktree-ready" and .worktree == "ready")'
+  --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/agent-system-test" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
@@ -128,7 +128,7 @@ openclaw agent-system notifications wait \
   --number "$issue_number" \
   --for worktree-ready \
   --timeout 30 \
-  --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "worktree-ready" and .observation.items[0].worktree == "ready"'
+  --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

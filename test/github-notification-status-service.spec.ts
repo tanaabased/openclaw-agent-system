@@ -18,9 +18,9 @@ describe('channels/github/lib/status-service', () => {
       sleep: async (milliseconds) => {
         now += milliseconds;
         const item = state.items[notificationItemKey]!;
-        item.delivery = {
-          ...item.delivery!,
-          stage: 'worktree-ready',
+        item.intake = {
+          ...item.intake!,
+          stage: 'prepared',
           worktreeBranch: 'agent/tanaabot/issue-7',
           worktreePath: '/workspace/worktrees/issue-7',
         };
@@ -61,7 +61,7 @@ describe('channels/github/lib/status-service', () => {
           const item = state.items[notificationItemKey]!;
           item.disposition = 'rejected';
           item.reasonCode = 'assignment-actor-not-approved';
-          delete item.delivery;
+          delete item.intake;
           return [
             {
               agentId:

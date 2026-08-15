@@ -39,7 +39,7 @@ describe('channels/github/lib/monitor-state-store', () => {
             ...state.items,
             [notificationItemKey]: {
               ...approvedNotificationItem(),
-              delivery: { ...approvedNotificationItem().delivery!, workId: 'issue-8' },
+              lifecycleId: 'pull-request',
             },
           },
         }),

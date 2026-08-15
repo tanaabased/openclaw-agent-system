@@ -327,10 +327,11 @@ Reads private monitor state and returns a redacted intake projection.
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 ```
 
-Results report baseline readiness, assignment disposition and stage, issue
-worktree readiness, and bounded pull-request head metadata. The schema omits
-provider prose, credentials, session identifiers, and local paths. A durable
-monitor diagnostic returns `degraded` and sets a nonzero exit code.
+Results report baseline readiness, lifecycle id, assignment disposition and
+intake stage, issue worktree readiness, and bounded pull-request head metadata.
+The schema omits provider prose, credentials, session identifiers, and local
+paths. A durable monitor diagnostic returns `degraded` and sets a nonzero exit
+code.
 
 ### `openclaw agent-system notifications wait`
 
@@ -341,7 +342,7 @@ presentation.
 openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
-Supported targets are `baseline-ready`, `assignment-rejected`,
+Supported targets are `baseline-ready`, `assignment-rejected`, `prepared`,
 `worktree-ready`, and `retired`. Every non-baseline target requires the full
 item selector. `--refresh` explicitly advances provider-owned intake while
 waiting. The default timeout is 300 seconds. Terminal diagnostics fail

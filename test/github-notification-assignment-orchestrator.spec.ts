@@ -70,14 +70,12 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       orchestrator.reconcile('tanaabot', itemKey),
     ]);
 
-    const delivery = store.state().items[itemKey]?.delivery;
+    const intake = store.state().items[itemKey]?.intake;
     assert.equal(worktreePreparations, 1);
-    assert.equal(delivery?.stage, 'worktree-ready');
-    assert.equal(delivery?.sessionKey, undefined);
-    assert.equal(delivery?.activation, undefined);
+    assert.equal(intake?.stage, 'prepared');
     assert.deepEqual(
-      store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
-      ['admitted', 'worktree-ready'],
+      store.writes.map((state) => state.items[itemKey]?.intake?.stage),
+      ['prepared'],
     );
   });
 
@@ -106,12 +104,11 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
     await orchestrator.reconcile('tanaabot', notificationPullRequestItemKey);
 
-    const delivery = store.state().items[notificationPullRequestItemKey]?.delivery;
+    const intake = store.state().items[notificationPullRequestItemKey]?.intake;
     assert.equal(worktreeInspections, 0);
     assert.equal(worktreePreparations, 0);
-    assert.equal(delivery?.stage, 'admitted');
-    assert.equal(delivery?.sessionKey, undefined);
-    assert.equal(store.writes.length, 0);
+    assert.equal(intake?.stage, 'prepared');
+    assert.equal(store.writes.length, 1);
   });
 
   it('should adopt an observed worktree after its first checkpoint fails', async () => {
@@ -132,7 +129,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       stateStore: {
         read: store.read,
         async write(next) {
-          if (failWorktreeCheckpoint && next.items[itemKey]?.delivery?.stage === 'worktree-ready') {
+          if (failWorktreeCheckpoint && next.items[itemKey]?.intake?.stage === 'prepared') {
             failWorktreeCheckpoint = false;
             throw new Error('state write failed');
           }
@@ -145,8 +142,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     await orchestrator.reconcile('tanaabot', itemKey);
 
     assert.equal(worktreePreparations, 1);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'worktree-ready');
-    assert.equal(store.state().items[itemKey]?.delivery?.failureCode, undefined);
+    assert.equal(store.state().items[itemKey]?.intake?.stage, 'prepared');
+    assert.equal(store.state().items[itemKey]?.intake?.failureCode, undefined);
   });
 
   it('should retire an assignment when provider authority is revoked', async () => {
@@ -162,26 +159,23 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     await orchestrator.reconcile('tanaabot', itemKey);
 
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
+    assert.equal(store.state().items[itemKey]?.intake?.stage, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
   });
 
-  it('should preserve local proof while retiring an active delivery', async () => {
+  it('should preserve worktree proof while retiring prepared intake', async () => {
     const state = monitorState();
     const item = state.items[itemKey];
-    assert.ok(item?.delivery);
+    assert.ok(item?.intake);
     item.disposition = 'retired';
     item.reasonCode = 'item-closed';
-    item.delivery = {
-      ...item.delivery,
-      activation: { reply: { commentId: 42, status: 'published' }, status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
-      stage: 'active',
+    item.intake = {
+      ...item.intake,
+      stage: 'prepared',
       worktreeBranch: worktree.branch,
       worktreePath: worktree.path,
     };
-    const activeDelivery = structuredClone(item.delivery);
+    const preparedIntake = structuredClone(item.intake);
     const store = memoryStore(state);
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
@@ -194,7 +188,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const retired = store.state().items[itemKey];
     assert.equal(retired?.disposition, 'retired');
     assert.equal(retired?.reasonCode, 'item-closed');
-    assert.deepEqual(retired?.delivery, { ...activeDelivery, stage: 'retired' });
+    assert.deepEqual(retired?.intake, { ...preparedIntake, stage: 'retired' });
   });
 
   it('should classify value-free intake boundary failures', async () => {
@@ -257,7 +251,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           error.code === scenario.code &&
           !error.message.includes('restricted'),
       );
-      assert.equal(store.state().items[itemKey]?.delivery?.failureCode, scenario.code);
+      assert.equal(store.state().items[itemKey]?.intake?.failureCode, scenario.code);
     }
   });
 });

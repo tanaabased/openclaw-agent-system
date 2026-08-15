@@ -216,34 +216,4 @@ describe('channels/github/lib/work-event-client', () => {
     assert.match(projection, /actor:\{login:\.assigner\.login/u);
     assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
   });
-
-  it('should list bounded canonical issue comments with immutable actor and revision facts', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        return response([
-          {
-            author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
-            body: '@tanaabot status?',
-            bodyLength: 18,
-            createdAt: '2026-08-14T12:00:00Z',
-            databaseId: 91,
-            nodeId: 'IC_comment',
-            updatedAt: '2026-08-14T12:01:00Z',
-          },
-        ]);
-      },
-    });
-
-    const page = await client.listIssueComments('tanaabased', 'example', 7);
-
-    assert.equal(page.truncated, false);
-    assert.equal(page.comments[0]?.author?.nodeId, 'U_actor');
-    assert.equal(page.comments[0]?.updatedAt, '2026-08-14T12:01:00Z');
-    assert.equal(page.comments[0]?.bodyTruncated, false);
-    assert.ok(requests[0]?.includes('per_page=100'));
-    assert.ok(requests[0]?.some((value) => value.includes('bodyLength')));
-  });
 });

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 
 import githubNotificationMessage, {
-  githubNotificationBlockquote,
   githubNotificationMarkdownText,
-} from '../channels/github/utils/presentation.ts';
+} from '../channels/github/messages/presentation/card.ts';
+import { githubNotificationBlockquote } from '../channels/github/messages/presentation/response-envelope.ts';
 
-describe('channels/github/utils/presentation', () => {
+describe('channels/github/messages/presentation', () => {
   it('should render one rich message with an optional concise note', () => {
     assert.equal(
       githubNotificationMessage({

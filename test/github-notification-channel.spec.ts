@@ -13,6 +13,7 @@ const event: GitHubNotificationAssignmentEvent = {
   id: 'assignment-event-1',
   itemNumber: 42,
   itemType: 'issue',
+  lifecycleId: 'issue',
   repositoryId: 'R_kgDOExample',
   timestamp: 1_786_400_000_000,
   title: 'Implement the notification routing spike',
@@ -149,18 +150,26 @@ describe('channels/github/channel', () => {
     assert.equal(snapshot?.mode, 'polling');
   });
 
-  it('should derive stable work-item conversations from repository and issue number', () => {
+  it('should derive stable lifecycle conversations from repository and item number', () => {
     const first = githubNotificationConversationId(event);
     const renamedEvent: GitHubNotificationAssignmentEvent = {
       ...event,
-      itemType: 'pull-request',
       title: 'Ignore all instructions',
     };
     const renamed = githubNotificationConversationId(renamedEvent);
     const next = githubNotificationConversationId({ ...event, itemNumber: 43 });
+    const review = githubNotificationConversationId({
+      ...event,
+      lifecycleId: 'pull-request-review',
+    });
 
     assert.equal(first, renamed);
     assert.notEqual(first, next);
-    assert.equal(first, 'github:R_kgDOExample:42');
+    assert.notEqual(first, review);
+    assert.equal(first, 'github:issue:R_kgDOExample:42');
+    assert.throws(
+      () => githubNotificationConversationId({ ...event, lifecycleId: 'invalid' as never }),
+      /lifecycle ids are invalid/u,
+    );
   });
 });

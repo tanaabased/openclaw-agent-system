@@ -1,5 +1,5 @@
 import type {
-  GitHubNotificationDeliveryStage,
+  GitHubNotificationIntakeStage,
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
 } from './monitor-state.ts';
@@ -8,11 +8,12 @@ import type { GitHubNotificationItemSelector } from './work-item.ts';
 export type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type GitHubNotificationWaitTarget =
-  'assignment-rejected' | 'baseline-ready' | 'retired' | 'worktree-ready';
+  'assignment-rejected' | 'baseline-ready' | 'prepared' | 'retired' | 'worktree-ready';
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
   'assignment-rejected',
   'baseline-ready',
+  'prepared',
   'retired',
   'worktree-ready',
 ]);
@@ -21,6 +22,7 @@ export interface GitHubNotificationStatusItem {
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';
+  lifecycleId: 'issue' | 'pull-request' | 'pull-request-review';
   number: number;
   pullRequest?: {
     baseRef: string;
@@ -30,7 +32,7 @@ export interface GitHubNotificationStatusItem {
   };
   reasonCode: string;
   repository: string;
-  stage?: GitHubNotificationDeliveryStage;
+  stage?: GitHubNotificationIntakeStage;
   worktree: 'not-applicable' | 'pending' | 'ready';
 }
 
@@ -40,7 +42,7 @@ export interface GitHubNotificationStatusResult {
   code: string;
   diagnosticCode?: string;
   items: GitHubNotificationStatusItem[];
-  schemaVersion: 1;
+  schemaVersion: 2;
   status: 'degraded' | 'pending' | 'ready';
 }
 
@@ -72,18 +74,19 @@ export function githubNotificationMonitorStatus(
       baseline: { status: 'pending' },
       code: 'github-notification-status-pending',
       items: [],
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: 'pending',
     };
   }
 
   const items = Object.values(state.items)
     .map((item): GitHubNotificationStatusItem => {
-      const delivery = item.delivery;
+      const intake = item.intake;
       return {
         disposition: item.disposition,
-        ...(delivery?.failureCode === undefined ? {} : { failureCode: delivery.failureCode }),
+        ...(intake?.failureCode === undefined ? {} : { failureCode: intake.failureCode }),
         itemType: item.itemType,
+        lifecycleId: item.lifecycleId,
         number: item.number,
         ...(item.pullRequest === undefined
           ? {}
@@ -97,11 +100,11 @@ export function githubNotificationMonitorStatus(
             }),
         reasonCode: item.reasonCode,
         repository: `${item.repositoryOwner}/${item.repositoryName}`,
-        ...(delivery?.stage === undefined ? {} : { stage: delivery.stage }),
+        ...(intake?.stage === undefined ? {} : { stage: intake.stage }),
         worktree:
           item.itemType === 'pull-request'
             ? 'not-applicable'
-            : delivery?.worktreeBranch && delivery.worktreePath
+            : intake?.worktreeBranch && intake.worktreePath
               ? 'ready'
               : 'pending',
       };
@@ -127,7 +130,7 @@ export function githubNotificationMonitorStatus(
         : 'github-notification-status-ready',
     ...(state.diagnosticCode === undefined ? {} : { diagnosticCode: state.diagnosticCode }),
     items,
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: state.diagnosticCode ? 'degraded' : pending ? 'pending' : 'ready',
   };
 }
@@ -155,8 +158,9 @@ export function evaluateGitHubNotificationWait(
       ? item.disposition === 'rejected'
       : target === 'retired'
         ? item.stage === 'retired'
-        : item.worktree === 'ready' &&
-          ['active', 'received', 'retired', 'worktree-ready'].includes(item.stage ?? '');
+        : target === 'prepared'
+          ? item.stage === 'prepared'
+          : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
   return reached
     ? { code: `github-notification-${target}`, status: 'reached' }
     : { code: 'github-notification-wait-pending', status: 'pending' };

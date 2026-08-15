@@ -187,7 +187,7 @@ function createProgram(input?: Readable) {
           baseline: { observedAt: 1_000, status: 'ready' as const },
           code: 'github-notification-status-ready',
           items: [],
-          schemaVersion: 1 as const,
+          schemaVersion: 2 as const,
           status: 'ready' as const,
         };
       },
@@ -201,10 +201,10 @@ function createProgram(input?: Readable) {
             baseline: { observedAt: 1_000, status: 'ready' as const },
             code: 'github-notification-status-ready',
             items: [],
-            schemaVersion: 1 as const,
+            schemaVersion: 2 as const,
             status: 'ready' as const,
           },
-          schemaVersion: 1 as const,
+          schemaVersion: 2 as const,
           status: 'completed' as const,
           target: input.target,
         };
@@ -507,7 +507,7 @@ describe('lib/register-cli', () => {
     assert.equal(JSON.parse(output.join('')).status, 'ready');
   });
 
-  it('should wait for one worktree with explicit refresh and timeout options', async () => {
+  it('should wait for prepared intake with explicit refresh and timeout options', async () => {
     const { calls, output, program } = createProgram();
 
     await program.parseAsync([
@@ -523,7 +523,7 @@ describe('lib/register-cli', () => {
       '--number',
       '13',
       '--for',
-      'worktree-ready',
+      'prepared',
       '--refresh',
       '--timeout',
       '45',
@@ -539,7 +539,7 @@ describe('lib/register-cli', () => {
           number: 13,
           repository: 'tanaabased/example',
         },
-        target: 'worktree-ready',
+        target: 'prepared',
         timeoutMs: 45_000,
       },
     ]);

@@ -1,11 +1,8 @@
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
-import { admitGitHubComment, githubCommentRevision } from '../utils/comment-admission.ts';
 import {
   createGitHubNotificationMonitorState,
   rememberProcessedEvent,
-  type GitHubNotificationCommentRevisionState,
-  type GitHubNotificationCommentTrackingState,
   type GitHubNotificationItemState,
   type GitHubNotificationMonitorState,
   type GitHubNotificationPullRequestState,
@@ -51,22 +48,10 @@ export interface GitHubNotificationPollResult {
   approved: number;
   baseline: number;
   baselineEstablished: boolean;
-  commentApproved: number;
-  commentBaseline: number;
-  commentRejected: number;
-  commentTrackingDeferred: number;
   duplicates: number;
   rejected: number;
   retired: number;
   state: GitHubNotificationMonitorState;
-}
-
-interface CommentTrackingResult {
-  approved: number;
-  baseline: number;
-  rejected: number;
-  state: GitHubNotificationCommentTrackingState;
-  trackingDeferred: number;
 }
 
 type GitHubNotificationPollCounts = Omit<GitHubNotificationPollResult, 'state'>;
@@ -158,12 +143,9 @@ function itemState(
     disposition,
     ...(disposition === 'approved' && assignment
       ? {
-          delivery: {
+          intake: {
             assignmentEventId: assignment.nodeId,
-            mode: 'plan' as const,
-            schemaVersion: 1 as const,
             stage: 'admitted' as const,
-            workId: `${item.itemType}-${item.databaseId}`,
           },
         }
       : {}),
@@ -171,6 +153,7 @@ function itemState(
     itemNodeId: item.nodeId,
     itemType: item.itemType,
     lastObservedAt: now,
+    lifecycleId: item.itemType,
     number: item.number,
     ...(item.itemType === 'pull-request'
       ? { pullRequest: pullRequestState(item.pullRequest) }
@@ -216,87 +199,6 @@ function closedReason(
     return item.pullRequest.merged ? 'pull-request-merged' : 'pull-request-closed';
   }
   return 'item-closed';
-}
-
-function commentState(
-  comment: Awaited<ReturnType<GitHubWorkEventClient['listIssueComments']>>['comments'][number],
-  disposition: GitHubNotificationCommentRevisionState['disposition'],
-  reasonCode: string,
-): GitHubNotificationCommentRevisionState {
-  const revision = githubCommentRevision(comment);
-  return {
-    ...(comment.author ? { actorNodeId: comment.author.nodeId } : {}),
-    bodyDigest: revision.bodyDigest,
-    commentDatabaseId: comment.databaseId,
-    commentNodeId: comment.nodeId,
-    createdAt: Date.parse(comment.createdAt),
-    disposition,
-    reasonCode,
-    revisionId: revision.revisionId,
-    ...(disposition === 'approved' ? { turn: { status: 'pending' as const } } : {}),
-    updatedAt: Date.parse(comment.updatedAt),
-  };
-}
-
-async function trackComments(input: {
-  account: GitHubWorkEventClient['identity'];
-  client: GitHubWorkEventClient;
-  configuration: GitHubNotificationsConfiguration;
-  item: GitHubNotificationItemState;
-  now: number;
-}): Promise<CommentTrackingResult> {
-  const current = input.item.commentTracking;
-  const page = await input.client.listIssueComments(
-    input.item.repositoryOwner,
-    input.item.repositoryName,
-    input.item.number,
-  );
-  if (page.truncated) {
-    return {
-      approved: 0,
-      baseline: 0,
-      rejected: 0,
-      state: {
-        ...(current?.baselineAt === undefined ? {} : { baselineAt: current.baselineAt }),
-        diagnosticCode: 'github-notification-comments-truncated',
-        revisions: current?.revisions ?? {},
-      },
-      trackingDeferred: 1,
-    };
-  }
-  const baseline = current?.baselineAt === undefined;
-  let approved = 0;
-  let baselineCount = 0;
-  let rejected = 0;
-  const revisions = Object.fromEntries(
-    page.comments.map((comment) => {
-      const revision = githubCommentRevision(comment);
-      const previous = current?.revisions[comment.nodeId];
-      if (previous?.revisionId === revision.revisionId) return [comment.nodeId, previous];
-      if (baseline) {
-        baselineCount += 1;
-        return [comment.nodeId, commentState(comment, 'baseline', 'comment-baseline')];
-      }
-      const admission = admitGitHubComment({
-        account: input.account,
-        comment,
-        configuration: input.configuration,
-      });
-      if (admission.disposition === 'approved') approved += 1;
-      else rejected += 1;
-      return [comment.nodeId, commentState(comment, admission.disposition, admission.code)];
-    }),
-  );
-  return {
-    approved,
-    baseline: baselineCount,
-    rejected,
-    state: {
-      baselineAt: current?.baselineAt ?? input.now,
-      revisions,
-    },
-    trackingDeferred: 0,
-  };
 }
 
 function matchesSelector(
@@ -382,20 +284,6 @@ async function observeCandidate(input: {
     permission,
     assignment,
   );
-  if (admission.disposition === 'approved') {
-    const comments = await trackComments({
-      account: input.client.identity,
-      client: input.client,
-      configuration: input.configuration,
-      item: nextItem,
-      now: input.now,
-    });
-    nextItem.commentTracking = comments.state;
-    input.counts.commentApproved += comments.approved;
-    input.counts.commentBaseline += comments.baseline;
-    input.counts.commentRejected += comments.rejected;
-    input.counts.commentTrackingDeferred += comments.trackingDeferred;
-  }
   input.state.items[key] = nextItem;
   input.counts[admission.disposition] += 1;
 }
@@ -409,10 +297,6 @@ export async function pollGitHubNotifications(
     approved: 0,
     baseline: 0,
     baselineEstablished: false,
-    commentApproved: 0,
-    commentBaseline: 0,
-    commentRejected: 0,
-    commentTrackingDeferred: 0,
     duplicates: 0,
     rejected: 0,
     retired: 0,
@@ -504,20 +388,6 @@ export async function pollGitHubNotifications(
               ? { pullRequest: pullRequestState(item.pullRequest) }
               : {}),
           };
-          if (current.delivery?.stage === 'active') {
-            const comments = await trackComments({
-              account: input.client.identity,
-              client: input.client,
-              configuration: input.configuration,
-              item: next,
-              now: input.now,
-            });
-            next.commentTracking = comments.state;
-            counts.commentApproved += comments.approved;
-            counts.commentBaseline += comments.baseline;
-            counts.commentRejected += comments.rejected;
-            counts.commentTrackingDeferred += comments.trackingDeferred;
-          }
           state.items[key] = next;
         }
       } catch (error) {
