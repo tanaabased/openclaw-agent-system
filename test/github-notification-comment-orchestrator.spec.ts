@@ -23,6 +23,7 @@ import {
   type GitHubNotificationConversationState,
 } from '../channels/github/utils/conversation-state.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
+import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 import {
   notificationAccount,
   notificationActor,
@@ -169,6 +170,17 @@ describe('channels/github/lib/comment-orchestrator', () => {
     const store = memoryStateStore(state);
     const observedBodies: string[] = [];
     const publishedTexts: string[] = [];
+    const adapterReceipt = createMessageReceiptFromOutboundResults({
+      kind: 'text',
+      results: [
+        {
+          channel: githubNotificationChannelId,
+          conversationId: id,
+          messageId: '101',
+          meta: { nodeId: 'IC_reply' },
+        },
+      ],
+    });
     const deliveryResult: DurableInboundReplyDeliveryResult = {
       delivery: {
         messageIds: ['101'],
@@ -176,10 +188,8 @@ describe('channels/github/lib/comment-orchestrator', () => {
           kind: 'text',
           results: [
             {
-              channel: 'github-notifications',
-              conversationId: id,
               messageId: '101',
-              meta: { nodeId: 'IC_reply' },
+              receipt: adapterReceipt,
             },
           ],
         }),
@@ -187,6 +197,8 @@ describe('channels/github/lib/comment-orchestrator', () => {
       },
       status: 'handled_visible',
     };
+    assert.equal(deliveryResult.delivery.receipt?.raw?.[0]?.meta, undefined);
+    assert.equal(deliveryResult.delivery.receipt?.parts[0]?.raw?.meta?.nodeId, 'IC_reply');
     const deliver: DeliverInboundReply = async (input) => {
       publishedTexts.push(input.payload.text ?? '');
       return deliveryResult;
@@ -227,6 +239,62 @@ describe('channels/github/lib/comment-orchestrator', () => {
       status: 'published',
       target: revision?.publication?.target,
     });
+  });
+
+  it('should fail closed when a publication receipt omits the github node id', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const incoming = comment();
+    const store = memoryStateStore(state);
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([incoming]),
+      conversationStateStore: store,
+      deliver: async () => ({
+        delivery: {
+          messageIds: ['101'],
+          receipt: createMessageReceiptFromOutboundResults({
+            kind: 'text',
+            results: [{ messageId: '101' }],
+          }),
+          visibleReplySent: true,
+        },
+        status: 'handled_visible',
+      }),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: { read: async () => structuredClone(monitor) },
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turns: {
+        async respond() {
+          return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
+            publicText: 'ready',
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile(agentId, notificationItemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentOrchestratorError &&
+        error.code === 'github-notification-publication-receipt-invalid',
+    );
+    const revision = store.snapshot()?.conversations[id]?.revisions[incoming.nodeId];
+    assert.equal(revision?.status, 'responded');
+    assert.equal(revision?.publication?.status, 'pending');
+    assert.equal(revision?.publication?.commentDatabaseId, undefined);
+    assert.equal(revision?.publication?.commentNodeId, undefined);
   });
 
   it('should reject a truncated listing without accepting a partial baseline', async () => {

@@ -36,6 +36,10 @@ openclaw models set "openai/$OPENAI_MODEL"
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 
+# should explicitly allow the agent system and codex plugins
+openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
+openclaw config get plugins.allow --json | jq -e '. == ["agent-system", "codex"]'
+
 # should prepare notification and approved-actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"

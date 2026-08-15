@@ -1,5 +1,6 @@
 import {
   deliverInboundReplyWithMessageSendContext,
+  resolveMessageReceiptPrimaryId,
   type DurableInboundReplyDeliveryResult,
 } from 'openclaw/plugin-sdk/channel-outbound';
 
@@ -71,11 +72,13 @@ function publicationReceipt(result: DurableInboundReplyDeliveryResult): {
       result.status === 'failed' ? { cause: result.error } : undefined,
     );
   }
-  const raw = result.delivery.receipt?.raw?.[0];
+  const receipt = result.delivery.receipt;
   const databaseIdText =
-    result.delivery.messageIds?.[0] ?? result.delivery.receipt?.primaryPlatformMessageId;
+    (receipt ? resolveMessageReceiptPrimaryId(receipt) : undefined) ??
+    result.delivery.messageIds?.[0];
+  const nodeId = receipt?.parts.find((part) => part.platformMessageId === databaseIdText)?.raw?.meta
+    ?.nodeId;
   const databaseId = Number(databaseIdText);
-  const nodeId = raw?.meta?.nodeId;
   if (!Number.isSafeInteger(databaseId) || databaseId < 1 || typeof nodeId !== 'string') {
     throw new GitHubNotificationCommentOrchestratorError(
       'github-notification-publication-receipt-invalid',
