@@ -7,14 +7,33 @@ import { parseGitHubNotificationPublicationTarget } from './publication.ts';
 export type GitHubNotificationCommentTurnStatus =
   'admitted' | 'baseline' | 'rejected' | 'responded';
 
-export interface GitHubNotificationCommentPublicationState {
+export interface GitHubNotificationCommentPublicationPendingState {
   commentDatabaseId?: number;
   commentNodeId?: string;
   publicText: string;
   publicTextDigest: string;
-  status: 'pending' | 'published';
+  status: 'pending';
   target: string;
 }
+
+export interface GitHubNotificationCommentPublicationPublishedState {
+  commentDatabaseId: number;
+  commentNodeId: string;
+  publicText: string;
+  publicTextDigest: string;
+  status: 'published';
+  target: string;
+}
+
+export interface GitHubNotificationCommentPublicationWithheldState {
+  reasonCode: string;
+  status: 'withheld';
+}
+
+export type GitHubNotificationCommentPublicationState =
+  | GitHubNotificationCommentPublicationPendingState
+  | GitHubNotificationCommentPublicationPublishedState
+  | GitHubNotificationCommentPublicationWithheldState;
 
 export interface GitHubNotificationCommentRevisionState {
   bodyDigest: string;
@@ -78,6 +97,9 @@ export function githubNotificationPublicTextDigest(value: string): string {
 }
 
 function validPublication(value: unknown, conversationId: string): boolean {
+  if (record(value) && value.status === 'withheld' && onlyKeys(value, ['reasonCode', 'status'])) {
+    return diagnosticCode(value.reasonCode) && value.reasonCode !== undefined;
+  }
   if (
     !record(value) ||
     !onlyKeys(value, [

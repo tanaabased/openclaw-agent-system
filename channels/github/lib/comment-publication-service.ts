@@ -5,6 +5,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
 import { admitGitHubComment, githubCommentRevision } from '../utils/comment-admission.ts';
 import type {
+  GitHubNotificationCommentPublicationState,
   GitHubNotificationCommentRevisionState,
   GitHubNotificationConversationState,
 } from '../utils/conversation-state.ts';
@@ -23,12 +24,17 @@ import type GitHubNotificationConversationStateStore from './conversation-state-
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import type GitHubNotificationPublicationLeaseStore from './publication-lease.ts';
 
+type PublishablePublication = Exclude<
+  GitHubNotificationCommentPublicationState,
+  { status: 'withheld' }
+>;
+
 interface PublicationMatch {
   commentNodeId: string;
   conversationId: string;
   item: GitHubNotificationItemState;
   itemKey: string;
-  revision: GitHubNotificationCommentRevisionState;
+  revision: GitHubNotificationCommentRevisionState & { publication: PublishablePublication };
   state: GitHubNotificationConversationState;
 }
 
@@ -75,13 +81,24 @@ function publicationMatches(
   commentNodeId: string;
   conversationId: string;
   itemKey: string;
-  revision: GitHubNotificationCommentRevisionState;
+  revision: GitHubNotificationCommentRevisionState & { publication: PublishablePublication };
 }> {
   const matches = [];
   for (const [conversationId, conversation] of Object.entries(state.conversations)) {
     for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
-      if (revision.status === 'responded' && revision.publication?.target === target) {
-        matches.push({ commentNodeId, conversationId, itemKey: conversation.itemKey, revision });
+      const publication = revision.publication;
+      if (
+        revision.status === 'responded' &&
+        publication &&
+        publication.status !== 'withheld' &&
+        publication.target === target
+      ) {
+        matches.push({
+          commentNodeId,
+          conversationId,
+          itemKey: conversation.itemKey,
+          revision: { ...revision, publication },
+        });
       }
     }
   }
@@ -174,7 +191,7 @@ export default class GitHubNotificationCommentPublicationService {
         commentDatabaseId: match.revision.commentDatabaseId,
         revisionId: match.revision.revisionId,
       },
-      text: match.revision.publication!.publicText,
+      text: match.revision.publication.publicText,
     };
   }
 

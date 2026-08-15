@@ -183,6 +183,7 @@ export interface AgentSystemCliToolDefinition<
     ): Promise<string | undefined> | string | undefined;
   };
   tool: {
+    available?(context: OpenClawPluginToolContext): boolean;
     classify(
       input: Static<TParameters>,
       configuration: TDeclaredConfiguration,
@@ -232,6 +233,7 @@ export interface AgentSystemSemanticToolDefinition<
   guidance?: AgentSystemToolGuidance;
   id: string;
   tool: {
+    available?(context: OpenClawPluginToolContext): boolean;
     classify(
       input: Static<TParameters>,
       configuration: TDeclaredConfiguration,

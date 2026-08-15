@@ -20,7 +20,7 @@ GitHub notification
         |
      model turn <---------------------------+
         |                                   |
- private response + To GitHub               |
+ private response + typed GitHub candidate  |
         |                                   |
  validate and publish GitHub response       |
         |                                   |
@@ -147,25 +147,25 @@ publication, or conversation progress back to monitor state.
 
 Each model-backed turn keeps these layers separate:
 
-| Layer              | Purpose                                                      | Visibility                                    |
-| ------------------ | ------------------------------------------------------------ | --------------------------------------------- |
-| Presentation       | Assignment card, direct message, and response components     | Visible in the session                        |
-| Structured context | Bounded GitHub content, provenance, and recorded state       | Model-only current-turn context               |
-| Instructions       | Trusted guidance selected by lifecycle type, mode, and event | Hidden from the conversation                  |
-| Capability         | Tool and mutation boundary selected from trusted mode state  | Runtime-enforced                              |
-| Private response   | Complete local response                                      | Private session only                          |
-| GitHub response    | Concise candidate beneath `To GitHub`                        | Visible locally; publishable after validation |
+| Layer              | Purpose                                                      | Visibility                                      |
+| ------------------ | ------------------------------------------------------------ | ----------------------------------------------- |
+| Presentation       | Assignment card, direct message, and response components     | Visible in the session                          |
+| Structured context | Bounded GitHub content, provenance, and recorded state       | Model-only current-turn context                 |
+| Instructions       | Trusted guidance selected by lifecycle type, mode, and event | Hidden from the conversation                    |
+| Capability         | Tool and mutation boundary selected from trusted mode state  | Runtime-enforced                                |
+| Private response   | Complete local response                                      | Private session only                            |
+| GitHub response    | Concise typed candidate, separate from response Markdown     | Channel-owned; optionally rendered or published |
 
 This contract must work through both the built-in OpenClaw agent harness and
 the native Codex app-server harness. Their prompt, context, hook, and tool
 projections may differ, but they must preserve the same visible presentation,
 hidden instruction, capability, response, and publication boundaries.
 
-Every agent-authored response printed in the chat must use the
-[complete response](./PRESENTATION.md#complete-response) composition: the full
-private response followed by an isolated, sanitized `To GitHub` summary. A
-visible response is incomplete without both parts, even when GitHub publication
-later fails.
+The model writes the private response as ordinary Markdown. It supplies the
+GitHub-facing candidate through a typed channel-owned interface rather than
+recreating a Markdown envelope for the host to parse. A host may render the two
+parts with the [private and public composition](./PRESENTATION.md#private-and-public-composition),
+but publication never depends on that rendering.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
@@ -177,8 +177,8 @@ GitHub prose trusted instructions or grant capabilities beyond the active mode.
   The acknowledgment may be deterministic and does not wait for the main turn.
 - **Turn:** Bounded provider context, hidden instructions, and enforced
   capability start the mode-specific model turn.
-- **Response:** Every agent-authored outcome uses the complete private and
-  `To GitHub` response composition.
+- **Response:** Every agent-authored outcome keeps its complete private response
+  separate from one typed GitHub-facing candidate.
 - **Plan:** The agent investigates the item, discussion, code, and documentation.
   It returns a plan or enters `clarification-needed` with a concise public
   question. An admitted answer resumes the same Plan session.
@@ -187,7 +187,7 @@ GitHub prose trusted instructions or grant capabilities beyond the active mode.
   result privately and publicly.
 - **Comments:** An admitted comment enters as a direct message in the existing
   session and inherits its lifecycle type, mode, state, and capability.
-- **Publication:** Only the isolated `To GitHub` candidate or a trusted
+- **Publication:** Only the typed GitHub candidate or a trusted
   provider-constructed message may be published. Publication validates the
   payload, reauthorizes the destination, records a durable receipt, and retries
   the accepted text without model regeneration.

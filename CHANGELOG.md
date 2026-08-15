@@ -17,10 +17,11 @@
 
 ### Bug Fixes
 
-- Fixed issue-comment dispatch to require the assignment-created session and
+- Fixed issue-comment dispatch to require the assignment-created session,
   select hidden response instructions by the canonical channel id across both
-  OpenClaw and Codex harnesses. Comment-turn failures remain outside provider
-  polling backoff. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+  OpenClaw and Codex harnesses, and stage public replies through a typed tool
+  instead of parsing the private Markdown response. Comment-turn failures remain
+  outside provider polling backoff. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed lifecycle intake to converge on a neutral `prepared` checkpoint instead
   of repeatedly reconciling admitted pull requests and worktree-ready issues. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed Agent System lifecycle logs to preserve clean CLI command output.

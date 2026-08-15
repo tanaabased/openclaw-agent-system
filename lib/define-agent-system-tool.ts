@@ -1,4 +1,7 @@
-import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
+import type {
+  OpenClawPluginToolContext,
+  OpenClawPluginToolFactory,
+} from 'openclaw/plugin-sdk/plugin-entry';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -36,6 +39,7 @@ interface ToolDefinition<TParameters extends TSchema, TDeclaredConfiguration> {
   guidance?: AgentSystemToolGuidance;
   id: string;
   tool: {
+    available?(context: OpenClawPluginToolContext): boolean;
     classify(
       input: Static<TParameters>,
       configuration: TDeclaredConfiguration,
@@ -70,21 +74,24 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
 ): RegisteredAgentSystemTool {
   const factory =
     (runtime: AgentSystemToolRuntime): OpenClawPluginToolFactory =>
-    (toolContext) => ({
-      name: definition.tool.name,
-      label: definition.tool.label,
-      description: definition.tool.description,
-      parameters: definition.tool.parameters,
-      async execute(toolCallId, input: Static<TParameters>, signal) {
-        const result = await execute(
-          runtime,
-          input,
-          { source: 'tool', toolCallId, toolContext },
-          signal,
-        );
-        return toolResult(result.output, result.auditId);
-      },
-    });
+    (toolContext) => {
+      if (definition.tool.available?.(toolContext) === false) return null;
+      return {
+        name: definition.tool.name,
+        label: definition.tool.label,
+        description: definition.tool.description,
+        parameters: definition.tool.parameters,
+        async execute(toolCallId, input: Static<TParameters>, signal) {
+          const result = await execute(
+            runtime,
+            input,
+            { source: 'tool', toolCallId, toolContext },
+            signal,
+          );
+          return toolResult(result.output, result.auditId);
+        },
+      };
+    };
 
   const registerTrustedPolicy =
     definition.authorization?.authorize && definition.authorization.policyId

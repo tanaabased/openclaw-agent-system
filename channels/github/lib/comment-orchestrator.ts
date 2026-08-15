@@ -292,6 +292,26 @@ export default class GitHubNotificationCommentOrchestrator {
       });
       throw error;
     }
+    if (response.publication.status === 'withheld') {
+      await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
+        bodyDigest: revision.bodyDigest,
+        commentDatabaseId: comment.databaseId,
+        publication: { reasonCode: response.publication.code, status: 'withheld' },
+        reasonCode: 'comment-approved',
+        revisionId: revision.revisionId,
+        status: 'responded',
+      });
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: comment publication withheld',
+          `agent=${agentId}`,
+          `item=${item.repositoryOwner}/${item.repositoryName}#${item.number}`,
+          `revision=${revision.revisionId}`,
+          `code=${response.publication.code}`,
+        ].join(' '),
+      );
+      return;
+    }
     const source = { commentDatabaseId: comment.databaseId, revisionId: revision.revisionId };
     const target = githubNotificationPublicationTarget({
       intent: 'github-reply',
@@ -302,8 +322,8 @@ export default class GitHubNotificationCommentOrchestrator {
       bodyDigest: revision.bodyDigest,
       commentDatabaseId: comment.databaseId,
       publication: {
-        publicText: response.publicText,
-        publicTextDigest: githubNotificationPublicTextDigest(response.publicText),
+        publicText: response.publication.publicText,
+        publicTextDigest: githubNotificationPublicTextDigest(response.publication.publicText),
         status: 'pending',
         target,
       },
@@ -318,7 +338,7 @@ export default class GitHubNotificationCommentOrchestrator {
       channel: githubNotificationChannelId,
       ctxPayload: response.ctxPayload,
       info: { kind: 'final' },
-      payload: { text: response.publicText },
+      payload: { text: response.publication.publicText },
       requiredCapabilities: { reconcileUnknownSend: true, text: true },
       to: target,
     });
@@ -340,7 +360,7 @@ export default class GitHubNotificationCommentOrchestrator {
     signal?: AbortSignal,
   ): Promise<void> {
     const publication = revision.publication;
-    if (!publication) return;
+    if (!publication || publication.status !== 'pending') return;
     const result = await this.#dependencies.publications.publish({
       accountId: agentId,
       ...(signal === undefined ? {} : { signal }),
@@ -365,7 +385,14 @@ export default class GitHubNotificationCommentOrchestrator {
   ): Promise<void> {
     const current = await this.#dependencies.conversationStateStore.read(agentId);
     const revision = current?.conversations[conversationId]?.revisions[commentNodeId];
-    if (!current || revision?.revisionId !== revisionId || !revision.publication) return;
+    if (
+      !current ||
+      revision?.revisionId !== revisionId ||
+      !revision.publication ||
+      revision.publication.status !== 'pending'
+    ) {
+      return;
+    }
     const state = structuredClone(current);
     state.conversations[conversationId]!.revisions[commentNodeId] = {
       ...revision,

@@ -60,6 +60,31 @@ describe('channels/github/utils/conversation-state', () => {
     );
   });
 
+  it('should retain a withheld publication without storing private response text', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    state.conversations['github:issue:R_repo:12'] = {
+      baselineEstablished: true,
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {
+        IC_comment: {
+          bodyDigest: 'b'.repeat(64),
+          commentDatabaseId: 91,
+          publication: {
+            reasonCode: 'github-notification-publication-synthesis-invalid',
+            status: 'withheld',
+          },
+          reasonCode: 'comment-approved',
+          revisionId: 'a'.repeat(64),
+          status: 'responded',
+        },
+      },
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
   it('should reject mismatched public text digests and provider prose fields', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     state.conversations['github:issue:R_repo:12'] = {

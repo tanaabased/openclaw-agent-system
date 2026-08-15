@@ -218,7 +218,8 @@ describe('channels/github/lib/comment-orchestrator', () => {
             agentId,
             config: {},
             ctxPayload: {} as AssembledInboundReply['ctxPayload'],
-            publicText: 'ready',
+            privateText: 'Private ready response.',
+            publication: { status: 'candidate', publicText: 'ready' },
           };
         },
       },
@@ -231,13 +232,72 @@ describe('channels/github/lib/comment-orchestrator', () => {
     const revision = store.snapshot()?.conversations[id]?.revisions[incoming.nodeId];
     assert.equal(revision?.revisionId, githubCommentRevision(incoming).revisionId);
     assert.equal(revision?.status, 'responded');
-    assert.deepEqual(revision?.publication, {
+    const publication = revision?.publication;
+    assert.ok(publication && publication.status === 'published');
+    assert.deepEqual(publication, {
       commentDatabaseId: 101,
       commentNodeId: 'IC_reply',
       publicText: 'ready',
       publicTextDigest: githubNotificationPublicTextDigest('ready'),
       status: 'published',
-      target: revision?.publication?.target,
+      target: publication.target,
+    });
+  });
+
+  it('should retain the private response and checkpoint a withheld publication', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const incoming = comment();
+    const store = memoryStateStore(state);
+    let deliveries = 0;
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([incoming]),
+      conversationStateStore: store,
+      deliver: async () => {
+        deliveries += 1;
+        throw new Error('unexpected delivery');
+      },
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: { read: async () => structuredClone(monitor) },
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turns: {
+        async respond() {
+          return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
+            privateText: 'The successful private response.',
+            publication: {
+              status: 'withheld',
+              code: 'github-notification-publication-candidate-missing',
+            },
+          };
+        },
+      },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.equal(deliveries, 0);
+    assert.deepEqual(store.snapshot()?.conversations[id]?.revisions[incoming.nodeId], {
+      bodyDigest: githubCommentRevision(incoming).bodyDigest,
+      commentDatabaseId: incoming.databaseId,
+      publication: {
+        reasonCode: 'github-notification-publication-candidate-missing',
+        status: 'withheld',
+      },
+      reasonCode: 'comment-approved',
+      revisionId: githubCommentRevision(incoming).revisionId,
+      status: 'responded',
     });
   });
 
@@ -278,7 +338,8 @@ describe('channels/github/lib/comment-orchestrator', () => {
             agentId,
             config: {},
             ctxPayload: {} as AssembledInboundReply['ctxPayload'],
-            publicText: 'ready',
+            privateText: 'Private ready response.',
+            publication: { status: 'candidate', publicText: 'ready' },
           };
         },
       },

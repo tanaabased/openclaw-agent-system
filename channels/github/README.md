@@ -33,9 +33,13 @@ lifecycle session and publishes the accepted public part of the response.
 - The current comment slice requires the configured agent's `coding` profile.
   It preserves that configured native coding surface across the built-in
   OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.
-- A comment turn accepts one complete private response with one quoted
-  `To GitHub` candidate. Only the bounded candidate is persisted, reauthorized,
-  reconciled by exact body and hidden marker, and published to GitHub.
+- A comment turn accepts one ordinary private Markdown response and one typed
+  `agent_system_github_reply` tool candidate. It never parses the private
+  response for publication. Only the bounded tool candidate is persisted,
+  reauthorized, reconciled by exact body and hidden marker, and published.
+- If the turn omits the candidate, calls the staging tool more than once, or
+  produces a candidate that fails validation, the private response remains in
+  the lifecycle session and GitHub publication is withheld with a stable code.
 - Pull-request comments, GitHub assignment acknowledgments, initial planning
   turns, Plan and Auto modes, mode transitions, and chat-originated publication
   remain intentionally dormant.
@@ -190,6 +194,11 @@ reference.
 - Comment listings and canonical re-reads are bounded. Conversation state keeps
   revision digests and the accepted public response but does not persist the
   incoming provider prose.
+- The reply staging tool exists only during an active GitHub lifecycle turn and
+  does not publish, load GitHub credentials, or grant publication authority.
+- `install` projects the staging tool through the existing Agent System tool
+  access lifecycle. No plugin LLM override or conversation-access hook
+  permission is required.
 - An approved actor may enter the conversation but cannot select capabilities;
   the trusted Work policy requires the configured `coding` profile.
 - Publication checks accepted conversation state before credentials are

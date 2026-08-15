@@ -90,7 +90,12 @@ const manifest: PluginManifest = {
     },
   },
   contracts: {
-    tools: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
+    tools: [
+      'agent_system_git',
+      'agent_system_git_worktree',
+      'agent_system_github',
+      'agent_system_github_reply',
+    ],
     trustedToolPolicies: ['agent-system.git', 'agent-system.git-worktree', 'agent-system.github'],
   },
   skills: ['./skills'],

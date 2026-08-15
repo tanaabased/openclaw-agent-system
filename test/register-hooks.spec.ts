@@ -22,6 +22,7 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => [] },
+      { hasActive: () => false },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
@@ -56,6 +57,7 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => ['Prefer the configured Agent System tool.'] },
+      { hasActive: () => false },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
@@ -82,18 +84,32 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => [] },
+      { hasActive: (sessionKey) => sessionKey === 'one' },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
       {},
-      { messageProvider: githubNotificationChannelId, sessionId: 'one' },
+      {
+        messageProvider: githubNotificationChannelId,
+        sessionId: 'one',
+        sessionKey: 'one',
+      },
     );
     const unrelated = await handlers.get('before_prompt_build')?.(
       {},
-      { messageProvider: 'github', sessionId: 'two' },
+      { messageProvider: 'github', sessionId: 'two', sessionKey: 'one' },
+    );
+    const inactive = await handlers.get('before_prompt_build')?.(
+      {},
+      {
+        messageProvider: githubNotificationChannelId,
+        sessionId: 'two',
+        sessionKey: 'two',
+      },
     );
 
     assert.deepEqual(result, { appendSystemContext: githubNotificationWorkCommentInstructions });
     assert.equal(unrelated, undefined);
+    assert.equal(inactive, undefined);
   });
 });

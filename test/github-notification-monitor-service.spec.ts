@@ -352,7 +352,7 @@ describe('channels/github/lib/monitor-service', () => {
       commentOrchestrator: {
         async reconcile() {
           throw Object.assign(new Error('private response detail'), {
-            code: 'github-notification-response-publication-missing',
+            code: 'github-notification-publication-candidate-missing',
           });
         },
       },
@@ -379,7 +379,7 @@ describe('channels/github/lib/monitor-service', () => {
 
     const [failed] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
 
-    assert.equal(failed?.code, 'github-notification-response-publication-missing');
+    assert.equal(failed?.code, 'github-notification-publication-candidate-missing');
     assert.equal(failed?.status, 'failed');
     assert.equal(state.diagnosticCode, undefined);
     assert.equal(state.failureCount, 0);

@@ -110,6 +110,7 @@ describe('index', () => {
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'agent_system_github_reply',
     ]);
     assert.deepEqual(policyIds, [
       'agent-system.git',

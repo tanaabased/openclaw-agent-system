@@ -11,6 +11,7 @@ import GitHubNotificationCapabilityRegistry from '../channels/github/capabilitie
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import createGitHubNotificationReplyTool from '../channels/github/reply-tool.ts';
 import GitHubNotificationAssignmentOrchestrator from '../channels/github/lib/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
 import GitHubNotificationAssignmentSessionService from '../channels/github/lib/assignment-session-service.ts';
@@ -27,6 +28,7 @@ import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import GitHubNotificationPublicationLeaseStore from '../channels/github/lib/publication-lease.ts';
+import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../utils/resolve-codex-command-agent-id.ts';
@@ -156,9 +158,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
+  const notificationReplyCandidateStore = new GitHubNotificationReplyCandidateStore();
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,
+    createGitHubNotificationReplyTool(notificationReplyCandidateStore),
   ]);
   const notificationRoutingService = new NotificationRoutingService({
     mutateConfigFile(params) {
@@ -294,6 +298,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationCapabilities = new GitHubNotificationCapabilityRegistry();
   const notificationCommentTurnService = new GitHubNotificationCommentTurnService({
     capabilities: notificationCapabilities,
+    candidates: notificationReplyCandidateStore,
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
     logger,
@@ -355,7 +360,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationReplyCandidateStore);
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {

@@ -104,7 +104,9 @@ Can you confirm whether this also covers comments received while planning?
 Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
 responses repeat the blockquote marker for each paragraph.
 
-## Complete Response
+## Private and Public Composition
+
+When a surface presents both response parts together, use this composition:
 
 ```markdown
 ## 💬 Comment answered

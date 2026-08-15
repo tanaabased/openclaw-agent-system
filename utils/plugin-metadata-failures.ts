@@ -243,6 +243,7 @@ export default function pluginMetadataFailures(
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'agent_system_github_reply',
     ]),
     'tool-contract',
     'plugin must declare exactly the registered Agent System tools',

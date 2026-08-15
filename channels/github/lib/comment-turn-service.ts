@@ -15,15 +15,18 @@ import type {
   GitHubCommentRevision,
 } from '../utils/comment-admission.ts';
 import type { GitHubNotificationItemState } from '../utils/monitor-state.ts';
+import { githubNotificationPrivateResponse } from '../utils/private-response.ts';
+import type GitHubNotificationReplyCandidateStore from './reply-candidate-store.ts';
 import {
-  assertGitHubNotificationResponse,
-  githubNotificationResponsePublication,
-} from '../utils/response-publication.ts';
+  GitHubNotificationPublicationError,
+  githubNotificationPublicationText,
+} from '../utils/publication.ts';
 import { resolveNotificationRoute, githubNotificationChannelId } from '../utils/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
   capabilities: Pick<GitHubNotificationCapabilityRegistry, 'resolve'>;
+  candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
@@ -44,7 +47,8 @@ export interface GitHubNotificationCommentTurnResult {
   agentId: string;
   config: OpenClawConfig;
   ctxPayload: AssembledInboundReply['ctxPayload'];
-  publicText: string;
+  privateText: string;
+  publication: { status: 'candidate'; publicText: string } | { status: 'withheld'; code: string };
 }
 
 export class GitHubNotificationCommentTurnError extends Error {
@@ -149,6 +153,7 @@ export default class GitHubNotificationCommentTurnService {
       timestamp: Date.parse(input.comment.updatedAt),
     });
     const finalPayloads: ReplyPayload[] = [];
+    const candidateTurn = this.#dependencies.candidates.begin(route.sessionKey);
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
@@ -206,6 +211,7 @@ export default class GitHubNotificationCommentTurnService {
         ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
       });
     } catch (error) {
+      this.#dependencies.candidates.cancel(route.sessionKey, candidateTurn);
       const classified =
         error instanceof GitHubNotificationCommentTurnError
           ? error
@@ -225,6 +231,7 @@ export default class GitHubNotificationCommentTurnService {
       throw classified;
     }
     if (!result.dispatched || result.routeSessionKey !== route.sessionKey) {
+      this.#dependencies.candidates.cancel(route.sessionKey, candidateTurn);
       throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
     }
     const dispatch = result.dispatchResult;
@@ -239,13 +246,44 @@ export default class GitHubNotificationCommentTurnService {
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    const response = assertGitHubNotificationResponse(finalPayloads);
+    const publicCandidates = this.#dependencies.candidates.finish(route.sessionKey, candidateTurn);
+    const privateText = githubNotificationPrivateResponse(finalPayloads);
+    let publication: GitHubNotificationCommentTurnResult['publication'];
+    if (publicCandidates.length === 0) {
+      publication = {
+        status: 'withheld',
+        code: 'github-notification-publication-candidate-missing',
+      };
+    } else if (publicCandidates.length !== 1) {
+      publication = {
+        status: 'withheld',
+        code: 'github-notification-publication-candidate-invalid',
+      };
+    } else {
+      try {
+        publication = {
+          status: 'candidate',
+          publicText: githubNotificationPublicationText('github-reply', [
+            { text: publicCandidates[0] },
+          ]),
+        };
+      } catch (error) {
+        publication = {
+          status: 'withheld',
+          code:
+            error instanceof GitHubNotificationPublicationError
+              ? error.code
+              : 'github-notification-publication-validation-failed',
+        };
+      }
+    }
     return {
       accountId: route.accountId,
       agentId: route.agentId,
       config,
       ctxPayload,
-      publicText: githubNotificationResponsePublication(response, 'github-reply'),
+      privateText,
+      publication,
     };
   }
 }
