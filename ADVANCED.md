@@ -10,6 +10,8 @@ Capability-specific configuration, CLI, and routing documentation:
 - [`git`](./tools/git/README.md)
 - [`gh`](./tools/github/README.md)
 - [GitHub notifications channel](./channels/github/README.md)
+- [GitHub notification target design](./channels/github/DESIGN.md)
+- [GitHub notification presentation components](./channels/github/PRESENTATION.md)
 
 ## Manifest
 
@@ -359,6 +361,8 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 Supported targets are `baseline-ready`, `assignment-rejected`, `received`,
 `active`, `assignment-acknowledged`, `planning-complete`, `planning-replied`,
 `comment-rejected`, `comment-received`, `comment-replied`, and `retired`.
+These are current CLI checkpoint identifiers, not the target lifecycle-state
+vocabulary in the [channel design](./channels/github/DESIGN.md#states).
 Comment targets require `--comment`; every non-baseline target requires the full
 item selector. `--refresh` explicitly runs intake cycles while waiting and
 retains the monitor's lease and backoff rules. Without it, the command only

@@ -4,12 +4,11 @@
   <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub notifications" width="180" />
 </p>
 
-The GitHub notifications channel is a local
-[OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
-approved GitHub issue and pull-request assignments into agent-scoped private
-sessions, with a managed worktree for each issue. It supports private planning
-and bounded replies to approved mentions without letting GitHub content expand
-the active assignment mode.
+The GitHub notifications channel turns approved GitHub issue and pull-request
+assignments into agent-scoped private OpenClaw sessions, with a managed worktree
+for each issue. It supports tool-free private planning and bounded replies to
+approved mentions. The [target design](./DESIGN.md) describes the intended
+capability and lifecycle expansion beyond this current implementation.
 
 > [!IMPORTANT]
 > GitHub comments inherit the active assignment mode and never expand its
@@ -233,6 +232,9 @@ Comment targets require `--comment`. Every target except `baseline-ready`
 requires a complete item selector. Failed and timed-out waits return nonzero and
 include the last redacted observation in JSON for diagnostics.
 
+These targets are current CLI checkpoint identifiers. They are not the target
+lifecycle-state vocabulary defined in [Design](./DESIGN.md#states).
+
 See the complete CLI reference for
 [`refresh`](../../ADVANCED.md#openclaw-agent-system-notifications-refresh),
 [`status`](../../ADVANCED.md#openclaw-agent-system-notifications-status), and
@@ -251,9 +253,8 @@ See the complete CLI reference for
   status evidence use ephemeral current-turn structured context, while trusted
   response instructions stay out of visible chat. Public delivery accepts only
   a planning turn's or admitted comment's quoted `To GitHub` response.
-- Comment mentions inherit the current assignment mode. In Plan mode they cannot
-  begin implementation; future modes may retain capabilities already granted by
-  that assignment.
+- Every current assignment session uses tool-free Plan mode. Comment mentions
+  inherit that mode and cannot begin implementation.
 - Each enabled account owns its Gateway polling lifecycle. Manual refresh uses
   the same deterministic intake path without starting a model, while the single
   assignment turn, comment turns, and durable sends remain Gateway-owned.
@@ -272,7 +273,10 @@ See the complete CLI reference for
 
 ## Further Reading
 
-- [Presentation](./PRESENTATION.md): private session formatting, untrusted context, and public publication boundaries
+- [Design](./DESIGN.md): target message flow, lifecycle types, modes, states,
+  and response boundaries
+- [Presentation](./PRESENTATION.md): reusable visible cards, responses, plans,
+  questions, and GitHub quotes
 - [Agent System README](../../README.md): installation and the common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest and CLI reference
 - [Git tools](../../tools/git/README.md): managed worktree configuration and behavior

@@ -31,7 +31,8 @@
 
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
-- Keep the GitHub notification presentation, structured-context, private-response, and public-publication boundary in `channels/github/PRESENTATION.md`.
+- Keep the target GitHub notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior in `channels/github/DESIGN.md`.
+- Keep reusable human-visible GitHub notification components and styling in `channels/github/PRESENTATION.md`; do not put lifecycle or feature behavior there.
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put each first-party channel's common configuration, routing, lifecycle, and security guide in `channels/<provider>/README.md`; keep focused companion guides beside it when a distinct channel-owned contract would overload the common path.
 - Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
@@ -61,8 +62,9 @@
 
 ## GitHub notification messages
 
-- Apply `channels/github/PRESENTATION.md` as the component contract for visible assignment and outcome cards, direct admitted-comment inputs, private planning and comment responses, and quoted `To GitHub` publication candidates.
-- Apply `NOTIFICATIONS_PLAN.md` as the lifecycle contract for assignment kinds, execution modes, state transitions, structured context, hidden instructions, capability inheritance, clarification, and publication behavior.
+- Apply `channels/github/DESIGN.md` as the target contract for lifecycle types, execution modes, state transitions, structured context, hidden instructions, capability inheritance, clarification, and publication behavior.
+- Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
+- Keep `channels/github/README.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
 - Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
 
@@ -74,7 +76,7 @@
 
 ## Optimization
 
-- Audit every session-facing inbound and outbound path against both notification authorities: `channels/github/PRESENTATION.md` for visible components and private/public response grammar, and `NOTIFICATIONS_PLAN.md` for context, instructions, capability, mode inheritance, state, and publication lifecycle.
+- Audit every session-facing inbound and outbound path against `channels/github/DESIGN.md` for target lifecycle and message boundaries and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` aligned with the implementation.
 - Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
 - Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
 - Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.
@@ -86,7 +88,7 @@
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
 - Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
 - Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, `github`, `issue`, `pull-request`, `presentation`, and `security` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, `routing`, `issue`, `pull-request`, `presentation`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, routing, GitHub notification, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
+- Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, `github`, `issue`, and `security` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, `routing`, `issue`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, routing, GitHub notification, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 - Keep the synthetic Leia SSH-key preparation shared across the `pr-examples-tests.yml` matrix. It creates an isolated per-job fixture rather than exposing a shared credential, and preserving one uniform workflow path is preferred over conditionally gating it to the Git scenario. Do not recommend narrowing this setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
 
 ## Validation

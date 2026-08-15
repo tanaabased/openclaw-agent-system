@@ -13,7 +13,7 @@
 - Added manifest-selected GitHub assignment discovery and exact-item notification
   refreshes for isolated lifecycle automation.
 - Added semantic installed issue-lifecycle checks while carrying hidden turn
-  instructions through OpenClaw's provider-specific chat context.
+  instructions through a plugin-owned broker resolved during prompt assembly.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Added plan-first GitHub notification activation with private issue assessment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)
@@ -35,7 +35,8 @@
 
 ### Notes
 
-- Moved the GitHub notification presentation contract into the packaged channel documentation and tightened the channel entrypoint.
+- Split the packaged GitHub notification target design from its reusable visual
+  presentation components and current-behavior channel guide.
 - Refactored GitHub notification message plumbing into separate presentation, context, instruction, capability, and turn owners. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Removed the standalone pull-request and presentation Leia scenarios while the
   notification messaging refactor focuses on the installed issue lifecycle.

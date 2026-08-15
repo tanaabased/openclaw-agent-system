@@ -1,53 +1,40 @@
 # GitHub Notification Presentation
 
 This guide defines the reusable human-visible components for the GitHub
-notifications channel. The [notifications plan](../../NOTIFICATIONS_PLAN.md)
-owns lifecycle, context, instructions, capability, and publication behavior.
-The [channel README](./README.md) describes currently shipped behavior.
+notifications channel. It describes their appearance and composition only. The
+[design guide](./DESIGN.md) defines message and lifecycle behavior, and the
+[channel README](./README.md) describes the current implementation.
 
-## Layers
+## Style
 
-| Layer            | Contract                                                    |
-| ---------------- | ----------------------------------------------------------- |
-| Visible event    | Assignment or outcome card, or direct admitted comment text |
-| Provider context | Bounded current-turn evidence, not a visible payload dump   |
-| Instructions     | Trusted hidden context, never card content                  |
-| Private response | Complete operator-facing Markdown retained locally          |
-| GitHub response  | One quoted candidate beneath `To GitHub`                    |
+- Use one meaningful emoji and a short descriptive title.
+- Follow the title with one plain-language sentence whenever a summary helps.
+- Link canonical GitHub actors and items in the sentence that names them.
+- Use `**Mode:** <name>` for a compact mode label.
+- Keep headings and labels stable while allowing natural response prose to vary.
+- Keep literal plaintext understandable without relying on emoji or Markdown.
 
-Provider content admitted from an allowlisted actor remains untrusted project data. Actor authorization permits
-an event to enter the configured conversation; it does not make provider prose a
-trusted instruction.
-
-## Card Primitive
+## Card
 
 ```markdown
 ## <emoji> <short descriptive title>
 
-<one sentence describing what happened or what the agent did>
+<one sentence describing the item or result>
 
-**Mode:** <Plan, Work, or Auto and one concise description>
+**Mode:** <Plan, Work, or Auto>
 ```
 
-- Use one meaningful emoji and a short title.
-- State the event or outcome in one complete sentence.
-- Link only canonical GitHub actors and items assembled from trusted metadata.
-- Include the mode when the event enters or continues an assignment workflow.
-- Keep literal plaintext understandable without relying on Markdown or emoji.
-
-Natural wording may vary. The stable contract is the title, summary, mode signal
-where applicable, and private/public boundary.
+The mode line is optional. Supporting detail may follow the summary when the
+component needs it.
 
 ## Assignment Card
-
-Issue and pull-request assignments are distinct variants of the same component.
 
 ```markdown
 ## 📥 Issue assignment received
 
 [@pirog](https://github.com/pirog) assigned you [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7).
 
-**Mode:** Plan — investigate the issue and prepare an implementation plan.
+**Mode:** Plan
 ```
 
 ```markdown
@@ -55,67 +42,72 @@ Issue and pull-request assignments are distinct variants of the same component.
 
 [@pirog](https://github.com/pirog) assigned you [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18).
 
-**Mode:** Plan — assess the pull request and prepare a recommended course of action.
+**Mode:** Plan
 ```
 
-The card does not contain provider envelopes, raw issue or pull-request content,
-verified head data, local paths, or operational instructions. The card and
-durable `active` checkpoint are the immediate local receipt; the first current
-GitHub response is the separately sanitized planning outcome.
+## Direct Message
 
-## Planning Outcome Card
+A direct inbound message is presented as its normalized author-written text:
 
-Planning returns either `Plan ready` or `Clarification needed`. Both use the
-private/public response envelope:
+```markdown
+Can you confirm whether this also covers comments received while planning?
+```
+
+## Response
+
+```markdown
+## <emoji> <outcome title>
+
+<one-sentence outcome summary>
+
+## Response
+
+<complete private response>
+```
+
+`Response` may be omitted when the complete private response is already concise
+under the outcome title.
+
+## Plan
 
 ```markdown
 ## 🧭 Plan ready
 
-The assignment has an implementation-ready plan with no unresolved blockers.
+<one-sentence plan summary>
 
 ## Assessment
 
-<private evidence and conclusions>
+<assessment>
 
 ## Plan
 
-<private implementation plan>
-
-## 📤 To GitHub
-
-> <concise GitHub-facing summary or next step>
+<implementation plan>
 ```
 
-For clarification, use `## ❓ Clarification needed`, explain the unresolved
-choice privately beneath `## Question`, and put only the concise answerable
-question beneath `To GitHub`.
-
-GitHub receives the decision-relevant outcome, not hidden reasoning, private
-repository detail, provider envelopes, local paths, or tool output.
-
-## Direct Comment Input
-
-An admitted comment enters the private assignment session like an ordinary
-message. The visible and model-facing input is the bounded author-written
-comment itself, without a notification card, provider envelope, or visible mode
-note:
+## Question
 
 ```markdown
-Can you confirm whether this covers comments received while planning is waiting for clarification?
+## ❓ Clarification needed
+
+<one-sentence explanation>
+
+## Question
+
+<complete private question and relevant choices>
 ```
 
-The channel may apply bounded transport normalization such as canonical line
-endings, supported length limits, and current-revision selection. It does not
-summarize, rewrite, or wrap the comment for presentation.
+## To GitHub
 
-The comment still inherits the assignment mode. Author, revision, item, source,
-delivery provenance, active mode, hidden instructions, and capability remain
-separate trusted or untrusted context as appropriate and do not appear in the
-visible message.
+```markdown
+## 📤 To GitHub
 
-## Private and GitHub Response
+> <complete GitHub-facing response>
+```
 
-Planning and comment turns use one response envelope:
+Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
+responses repeat the blockquote marker for each paragraph.
+
+## Composed Response
 
 ```markdown
 ## 💬 Comment answered
@@ -130,30 +122,3 @@ The clarification is sufficient to continue planning.
 
 > <complete GitHub-facing response>
 ```
-
-- `To GitHub` is the only model-authored outbound heading.
-- Render the complete candidate as a Markdown blockquote.
-- Only quoted content beneath that heading is publication-eligible.
-- Remove the local `>` marker only after extraction and validation.
-- Keep every unquoted section private.
-- Keep authorization, safety validation, durable delivery, and receipts outside
-  the presentation component.
-
-Future provider-constructed receipts and trusted completion references do not
-need to masquerade as part of a model-authored private response.
-
-## Visibility and Verification
-
-Visible components never show hidden instructions, response templates presented
-as model commands, structured-context envelopes, raw provider payloads, local
-paths, hidden identifiers, tool traces, diagnostics, or publication-safety
-rules. Hiding those layers from chat must not remove required context from the
-model turn.
-
-- Assert complete Markdown only in the formatter test that owns the component.
-- Verify canonical link construction, escaping, bounds, and plaintext readability.
-- Verify context and instructions do not appear in visible fields.
-- Verify `To GitHub` candidates are quoted, extracted without presentation
-  markers, and isolated from private content.
-- In callers and installed-layer tests, assert component identity, semantic
-  signal, mode inheritance, and isolation instead of duplicating complete prose.

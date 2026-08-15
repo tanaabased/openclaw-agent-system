@@ -134,6 +134,7 @@ try {
     'bin/agent-system-tool',
     'bin/git',
     'bin/gh',
+    'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
     'skills/git-cli/agents/openai.yaml',
