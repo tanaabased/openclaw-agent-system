@@ -1,5 +1,6 @@
 import type { ConnectedGitHubAccountClient } from '../../../lib/github-account-client.ts';
 import { parseGitHubApiResponse, type GitHubRateLimit } from '../utils/api-response.ts';
+import type { GitHubCanonicalIssueComment } from '../utils/comment-admission.ts';
 import {
   githubRepositoryPath,
   type GitHubAssignedItemCandidate,
@@ -13,6 +14,35 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
+const maximumCommentPages = 10;
+const maximumCommentBodyLength = 1_000;
+const maximumTrackedCommentPages = 3;
+const maximumItemContextComments = 50;
+const maximumItemContextFiles = 100;
+
+export interface GitHubNotificationItemContextComment {
+  authorLogin: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface GitHubNotificationItemContextFile {
+  additions: number;
+  changes: number;
+  deletions: number;
+  filename: string;
+  previousFilename?: string;
+  status: string;
+}
+
+export interface GitHubNotificationItemContext {
+  body: string;
+  comments: GitHubNotificationItemContextComment[];
+  files?: GitHubNotificationItemContextFile[];
+  labels: string[];
+  title: string;
+  truncated: boolean;
+}
 
 export class GitHubWorkEventClientError extends Error {
   override name = 'GitHubWorkEventClientError';
@@ -31,6 +61,16 @@ export interface GitHubAssignedItemDiscovery {
   candidates: GitHubAssignedItemCandidate[];
   incomplete: boolean;
   totalCount: number;
+  truncated: boolean;
+}
+
+export interface GitHubIssueCommentReceipt {
+  databaseId: number;
+  nodeId: string;
+}
+
+export interface GitHubIssueCommentPage {
+  comments: GitHubCanonicalIssueComment[];
   truncated: boolean;
 }
 
@@ -90,6 +130,21 @@ function hasControlCharacter(value: string): boolean {
   });
 }
 
+function boundedProse(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): { text: string; truncated: boolean } {
+  if (value === null) return { text: '', truncated: false };
+  if (typeof value !== 'string' || value.includes('\0')) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  return {
+    text: value.slice(0, maximumLength),
+    truncated: value.length > maximumLength,
+  };
+}
+
 function identity(value: unknown, label: string): GitHubIdentity {
   const item = record(value, label);
   const login = string(item.login, `${label} login`);
@@ -140,6 +195,21 @@ function optionalRepositoryReference(
   label: string,
 ): { databaseId: number; nodeId: string } | undefined {
   return value === null || value === undefined ? undefined : repositoryReference(value, label);
+}
+
+function issueComment(value: unknown): GitHubCanonicalIssueComment {
+  const item = record(value, 'issue comment');
+  const body = boundedProse(item.body, 'issue-comment body', maximumCommentBodyLength);
+  const bodyLength = integer(item.bodyLength, 'issue-comment body length');
+  return {
+    author: optionalIdentity(item.author, 'issue-comment author'),
+    body: body.text,
+    bodyTruncated: body.truncated || bodyLength > maximumCommentBodyLength,
+    createdAt: timestamp(item.createdAt, 'issue-comment creation time'),
+    databaseId: positiveInteger(item.databaseId, 'issue-comment database id'),
+    nodeId: nodeId(item.nodeId, 'issue-comment node id'),
+    updatedAt: timestamp(item.updatedAt, 'issue-comment update time'),
+  };
 }
 
 function repositoryEndpoint(owner: string, name: string): string {
@@ -352,6 +422,140 @@ export default class GitHubWorkEventClient {
     };
   }
 
+  /** Fetch a bounded, prose-only projection for a later lifecycle turn. */
+  async getItemContext(
+    owner: string,
+    name: string,
+    number: number,
+    itemType: 'issue' | 'pull-request' = 'issue',
+  ): Promise<GitHubNotificationItemContext> {
+    const endpoint = this.#itemEndpoint(owner, name, number);
+    const response = await this.#api(
+      [
+        endpoint,
+        '--jq',
+        '{title,body,commentCount:.comments,labels:[.labels[]|(if type=="string" then . else .name end)]}',
+      ],
+      'item context',
+    );
+    const value = record(response.value, 'item context');
+    const title = boundedProse(value.title, 'item-context title', 512);
+    if (!title.text.trim()) throw new Error('GitHub returned an invalid item-context title.');
+    const body = boundedProse(value.body, 'item-context body', 24_000);
+    const commentCount = integer(value.commentCount, 'item-context comment count');
+    if (!Array.isArray(value.labels)) throw new Error('GitHub returned invalid issue labels.');
+    const labels = value.labels.slice(0, 100).map((label) => {
+      const parsed = string(label, 'issue label');
+      if (parsed.length > 100 || hasControlCharacter(parsed)) {
+        throw new Error('GitHub returned an invalid issue label.');
+      }
+      return parsed;
+    });
+    const comments: GitHubNotificationItemContextComment[] = [];
+    let commentsTruncated = commentCount > maximumItemContextComments;
+    if (commentCount > 0) {
+      const commentValues: unknown[] = [];
+      const firstPage = Math.max(1, Math.ceil(commentCount / maximumItemContextComments) - 1);
+      let page = firstPage;
+      let hasNextPage: boolean;
+      do {
+        const commentsResponse = await this.#api(
+          [
+            '--method',
+            'GET',
+            `${endpoint}/comments`,
+            '-F',
+            `per_page=${maximumItemContextComments}`,
+            '-F',
+            `page=${page}`,
+            '--jq',
+            '[.[]|{authorLogin:(.user.login//"unknown"),body,createdAt:.created_at}]',
+          ],
+          'item-context comments',
+        );
+        if (!Array.isArray(commentsResponse.value)) {
+          throw new Error('GitHub returned invalid item-context comments.');
+        }
+        commentValues.push(...commentsResponse.value);
+        hasNextPage = commentsResponse.hasNextPage;
+        page += 1;
+      } while (hasNextPage && page < firstPage + 2);
+      commentsTruncated ||=
+        firstPage > 1 || hasNextPage || commentValues.length > maximumItemContextComments;
+      for (const item of commentValues.slice(-maximumItemContextComments)) {
+        const comment = record(item, 'item-context comment');
+        const authorLogin = boundedProse(comment.authorLogin, 'item-context comment author', 100);
+        if (!authorLogin.text) {
+          throw new Error('GitHub returned an invalid item-context comment author.');
+        }
+        const commentBody = boundedProse(comment.body, 'item-context comment body', 2_000);
+        commentsTruncated ||= authorLogin.truncated || commentBody.truncated;
+        comments.push({
+          authorLogin: authorLogin.text,
+          body: commentBody.text,
+          createdAt: timestamp(comment.createdAt, 'item-context comment time'),
+        });
+      }
+    }
+    const files: GitHubNotificationItemContextFile[] = [];
+    let filesTruncated = false;
+    if (itemType === 'pull-request') {
+      const filesResponse = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${repositoryEndpoint(owner, name)}/pulls/${number}/files`,
+          '-F',
+          `per_page=${maximumItemContextFiles}`,
+          '-F',
+          'page=1',
+          '--jq',
+          '[.[]|{additions,changes,deletions,filename,previousFilename:.previous_filename,status}]',
+        ],
+        'pull-request files',
+      );
+      if (!Array.isArray(filesResponse.value)) {
+        throw new Error('GitHub returned invalid pull-request files.');
+      }
+      filesTruncated = filesResponse.hasNextPage;
+      for (const entry of filesResponse.value.slice(0, maximumItemContextFiles)) {
+        const file = record(entry, 'pull-request file');
+        const filename = boundedProse(file.filename, 'pull-request filename', 1_024);
+        const previousFilename =
+          file.previousFilename === null || file.previousFilename === undefined
+            ? undefined
+            : boundedProse(file.previousFilename, 'pull-request previous filename', 1_024);
+        const status = boundedProse(file.status, 'pull-request file status', 32);
+        if (!filename.text || !status.text) {
+          throw new Error('GitHub returned an invalid pull-request file.');
+        }
+        filesTruncated ||=
+          filename.truncated || previousFilename?.truncated === true || status.truncated;
+        files.push({
+          additions: integer(file.additions, 'pull-request file additions'),
+          changes: integer(file.changes, 'pull-request file changes'),
+          deletions: integer(file.deletions, 'pull-request file deletions'),
+          filename: filename.text,
+          ...(previousFilename === undefined ? {} : { previousFilename: previousFilename.text }),
+          status: status.text,
+        });
+      }
+    }
+    return {
+      body: body.text,
+      comments,
+      ...(itemType === 'pull-request' ? { files } : {}),
+      labels,
+      title: title.text,
+      truncated:
+        title.truncated ||
+        body.truncated ||
+        commentsTruncated ||
+        filesTruncated ||
+        value.labels.length > labels.length,
+    };
+  }
+
   async listAssignmentEvents(
     owner: string,
     name: string,
@@ -393,6 +597,166 @@ export default class GitHubWorkEventClient {
       if (!hasNextPage) break;
     }
     return { events, truncated: hasNextPage };
+  }
+
+  /** List a complete bounded projection of top-level comments through GitHub's issue API. */
+  async listIssueComments(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<GitHubIssueCommentPage> {
+    const comments: GitHubCanonicalIssueComment[] = [];
+    let hasNextPage = false;
+    for (let page = 1; page <= maximumTrackedCommentPages; page += 1) {
+      const response = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${this.#itemEndpoint(owner, name, number)}/comments`,
+          '-F',
+          `per_page=${pageSize}`,
+          '-F',
+          `page=${page}`,
+          '--jq',
+          `[.[]|{databaseId:.id,nodeId:.node_id,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${maximumCommentBodyLength + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}]`,
+        ],
+        'issue comments',
+      );
+      if (!Array.isArray(response.value)) {
+        throw new Error('GitHub returned invalid issue comments.');
+      }
+      comments.push(...response.value.map(issueComment));
+      hasNextPage = response.hasNextPage;
+      if (!hasNextPage) break;
+    }
+    return { comments, truncated: hasNextPage };
+  }
+
+  /** Re-read one exact canonical top-level comment before dispatch or publication. */
+  async getIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentDatabaseId: number,
+  ): Promise<GitHubCanonicalIssueComment> {
+    if (!Number.isSafeInteger(commentDatabaseId) || commentDatabaseId < 1) {
+      throw new Error('GitHub issue-comment database ids must be positive safe integers.');
+    }
+    const response = await this.#api(
+      [
+        '--method',
+        'GET',
+        `${repositoryEndpoint(owner, name)}/issues/comments/${commentDatabaseId}`,
+        '--jq',
+        `{databaseId:.id,nodeId:.node_id,issueUrl:.issue_url,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${maximumCommentBodyLength + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}`,
+      ],
+      'issue comment',
+    );
+    const value = record(response.value, 'issue comment');
+    let issueUrl: URL;
+    try {
+      issueUrl = new URL(string(value.issueUrl, 'issue-comment issue url'));
+    } catch {
+      throw new Error('GitHub returned an invalid issue-comment issue url.');
+    }
+    if (
+      issueUrl.origin !== 'https://api.github.com' ||
+      issueUrl.pathname.toLowerCase() !==
+        `${repositoryEndpoint(owner, name)}/issues/${number}`.toLowerCase()
+    ) {
+      throw new Error('GitHub returned an issue comment for another work item.');
+    }
+    return issueComment(value);
+  }
+
+  async findOwnIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    marker: string,
+  ): Promise<GitHubIssueCommentReceipt | undefined> {
+    if (
+      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|planning-outcome):[a-f0-9]{32} -->$/u.test(
+        marker,
+      )
+    ) {
+      throw new Error('GitHub notification publication markers are invalid.');
+    }
+    let hasNextPage = false;
+    for (let page = 1; page <= maximumCommentPages; page += 1) {
+      const response = await this.#api(
+        [
+          '--method',
+          'GET',
+          `${this.#itemEndpoint(owner, name, number)}/comments`,
+          '-F',
+          `per_page=${pageSize}`,
+          '-F',
+          `page=${page}`,
+          '--jq',
+          `[.[]|select(.body|contains(${JSON.stringify(marker)}))|{databaseId:.id,nodeId:.node_id,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}]`,
+        ],
+        'issue comments',
+      );
+      if (!Array.isArray(response.value)) {
+        throw new Error('GitHub returned invalid issue comments.');
+      }
+      for (const item of response.value) {
+        const value = record(item, 'issue comment');
+        const author = identity(value.user, 'issue-comment author');
+        if (author.nodeId !== this.identity.nodeId) continue;
+        return {
+          databaseId: positiveInteger(value.databaseId, 'issue-comment database id'),
+          nodeId: nodeId(value.nodeId, 'issue-comment node id'),
+        };
+      }
+      hasNextPage = response.hasNextPage;
+      if (!hasNextPage) return undefined;
+    }
+    if (hasNextPage) {
+      throw new GitHubWorkEventClientError(
+        'github-notification-comments-truncated',
+        'GitHub issue comments exceeded the publication reconciliation boundary.',
+        this.rateLimit,
+      );
+    }
+    return undefined;
+  }
+
+  async createIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): Promise<GitHubIssueCommentReceipt> {
+    if (!body || body.length > 1_024 || /\0/u.test(body)) {
+      throw new Error('GitHub notification publication comments are invalid.');
+    }
+    const response = await this.#api(
+      [
+        '--method',
+        'POST',
+        `${this.#itemEndpoint(owner, name, number)}/comments`,
+        '--input',
+        '-',
+        '--jq',
+        '{databaseId:.id,nodeId:.node_id,body,user:{login:.user.login,nodeId:.user.node_id,type:.user.type}}',
+      ],
+      'issue-comment publication',
+      JSON.stringify({ body }),
+    );
+    const value = record(response.value, 'published issue comment');
+    const author = identity(value.user, 'published issue-comment author');
+    if (
+      author.nodeId !== this.identity.nodeId ||
+      string(value.body, 'published issue-comment body') !== body
+    ) {
+      throw new Error('GitHub returned a conflicting published issue comment.');
+    }
+    return {
+      databaseId: positiveInteger(value.databaseId, 'published issue-comment database id'),
+      nodeId: nodeId(value.nodeId, 'published issue-comment node id'),
+    };
   }
 
   #itemEndpoint(owner: string, name: string, number: number): string {

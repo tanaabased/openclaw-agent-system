@@ -24,6 +24,10 @@ disconnected while they are rebuilt on the [target design](./DESIGN.md).
 - Assignment observations remain bounded and private. Comment observation is
   deferred until lifecycle sessions are implemented. Intake does not currently
   dispatch a model turn, create a chat message, or publish a GitHub comment.
+- The channel retains tested provider primitives for bounded item context,
+  canonical comment reads, comment admission, and safe idempotent comment
+  publication. They are not scheduled by intake until lifecycle sessions own
+  continuation and publication authority.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -167,6 +171,9 @@ reference.
   access.
 - The current intake path does not fetch or persist GitHub prose or comments and
   never passes provider content to a model or publication path.
+- Provider prose reads are bounded, and publication reauthorizes before
+  credentials are connected, reconciles a hidden idempotency marker, and sends
+  the exact accepted body through standard input instead of process arguments.
 - Private monitor state contains no tokens. Deterministic assignment and
   worktree identities make intake retry-safe.
 - Removing `github.notifications` and reinstalling retires tracked assignments,

@@ -92,6 +92,10 @@
   worktree, failure, and retirement facts while dropping its removed session,
   publication, mode, and comment-tracking fields. Do not restore those fields to
   the active intake schema for compatibility.
+- Keep bounded item/comment reads, comment admission, public-candidate parsing,
+  and idempotent comment publication as lifecycle-neutral provider primitives.
+  Do not wire them into intake state or restore legacy comment tracking; a
+  lifecycle session must own scheduling, continuation, and publication authority.
 - Keep one `pr-examples-tests.yml` matrix and scope shared test credentials to the final Leia execution step even though every matrix entry receives that step environment. Only the `agent`, `path`, `github`, `issue`, and `security` scenarios may consume OpenAI credentials and model selection; only the `env`, `credentials`, `git`, `github`, `routing`, `issue`, and `tool` scenarios may consume `OP_SERVICE_ACCOUNT_TOKEN`. The Git, GitHub, routing, GitHub notification, and tool scenarios must load account tokens from their declared 1Password Environments rather than workflow environment variables. Do not recommend separate jobs or per-entry environment injection solely to narrow those credentials; still report workflow- or job-level exposure, logged or tracked credentials, or consumption by a non-owning scenario.
 - Keep the synthetic Leia SSH-key preparation shared across the `pr-examples-tests.yml` matrix. It creates an isolated per-job fixture rather than exposing a shared credential, and preserving one uniform workflow path is preferred over conditionally gating it to the Git scenario. Do not recommend narrowing this setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
 
