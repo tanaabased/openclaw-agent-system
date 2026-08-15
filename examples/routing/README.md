@@ -80,7 +80,11 @@ cd "$TMPDIR/agent-system-notifications"
 tool_stdout="$TMPDIR/agent-system-tool.stdout"
 tool_stderr="$TMPDIR/agent-system-tool.stderr"
 OPENCLAW_LOG_LEVEL=debug openclaw agent-system tool worktree --agent notification-data -- list >"$tool_stdout" 2>"$tool_stderr"
-jq -e 'length == 0' "$tool_stdout"
+if ! jq -e 'length == 0' "$tool_stdout"; then
+  printf '%s\n' 'captured tool stdout:' >&2
+  sed -n '1,20p' "$tool_stdout" >&2
+  exit 1
+fi
 grep -F 'tool_call_completed' "$tool_stderr"
 
 # should keep baseline assignments free of local sessions
