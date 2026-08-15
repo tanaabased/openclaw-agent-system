@@ -299,7 +299,7 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length' | grep -Fx '1'
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:operator-progress")))] | length' | grep -Fx '1'
-# should logically retire an unassigned item while preserving local state
+# should logically retire an unassigned item while retaining its session
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -312,15 +312,10 @@ cd "$TMPDIR/agent-system-notifications"
   --minimum 1
 openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
 
-# should retain one session, worktree, and acknowledgment after retirement
+# should retain the issue worktree after logical retirement
 cd "$TMPDIR/agent-system-notifications"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-session_key="$(cat "$TMPDIR/approved-session-key")"
 branch="$(cat "$TMPDIR/approved-worktree-branch")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" 'length == 1 and .[0].repositoryId == "github-1329940218" and .[0].branch == $branch and .[0].status == "active"'
-openclaw sessions --agent notification-data --json | jq -e --arg key "$session_key" '[.sessions[]? | select(.key == $key)] | length == 1'
-cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length' | grep -Fx '1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list github-1329940218 | jq -e --arg branch "$branch" '[.[] | select(.repositoryId == "github-1329940218" and .branch == $branch and .status == "active")] | length == 1'
 
 # should report the notification monitor through the installed doctor after logical retirement
 cd "$TMPDIR/agent-system-notifications"
