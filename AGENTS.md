@@ -59,10 +59,12 @@
 - Keep the Node-targeted build's package dependencies external.
 - Do not run direct OpenClaw installation, plugin, or Gateway commands as routine repository validation; the GitHub Actions-only Leia scenarios under `examples/` are the operational exception.
 
-## GitHub notification presentation
+## GitHub notification messages
 
-- Apply the complete cross-mode contract in `channels/github/PRESENTATION.md` to notification prompts, current-turn structured context, private responses, and public publication candidates.
-- Reuse mode-neutral presentation helpers while allowing planning, comment-response, work, and future modes to supply their own actions and response sections.
+- Apply `channels/github/PRESENTATION.md` as the component contract for visible assignment and outcome cards, direct admitted-comment inputs, private planning and comment responses, and quoted `To GitHub` publication candidates.
+- Apply `NOTIFICATIONS_PLAN.md` as the lifecycle contract for assignment kinds, execution modes, state transitions, structured context, hidden instructions, capability inheritance, clarification, and publication behavior.
+- Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
+- Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
 
 ## Test design
 
@@ -72,7 +74,7 @@
 
 ## Optimization
 
-- Audit every session-facing inbound and outbound path against `channels/github/PRESENTATION.md`, including visible request content, current-turn structured context, private response structure, public candidate isolation, plaintext fallback, and mode-neutral shared helpers.
+- Audit every session-facing inbound and outbound path against both notification authorities: `channels/github/PRESENTATION.md` for visible components and private/public response grammar, and `NOTIFICATIONS_PLAN.md` for context, instructions, capability, mode inheritance, state, and publication lifecycle.
 - Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
 - Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
 - Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.
