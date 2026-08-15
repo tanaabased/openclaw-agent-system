@@ -78,9 +78,7 @@ export default async function runAgentSystemTool(
       return;
     }
     if (result.commandResult.stdout) options.output.writeStdout(result.commandResult.stdout);
-    if (result.commandResult.stderr) {
-      (options.output.writeStderr ?? options.output.writeStdout)(result.commandResult.stderr);
-    }
+    if (result.commandResult.stderr) options.output.writeStderr(result.commandResult.stderr);
     if (result.commandResult.exitCode !== 0) {
       options.setExitCode(result.commandResult.exitCode ?? 1);
     }

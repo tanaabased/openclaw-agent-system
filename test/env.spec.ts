@@ -74,7 +74,7 @@ function createHarness(
           info: (message) => logs.info.push(message),
           warn: (message) => logs.warn.push(message),
         },
-        output: { writeStdout: (message) => output.push(message) },
+        output: { writeStderr() {}, writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',

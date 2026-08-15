@@ -70,7 +70,7 @@ grep -F 'github-notification-poll-complete' "$refresh_stderr"
 cd "$TMPDIR/agent-system-notifications"
 validate_stdout="$TMPDIR/agent-system-validate.stdout"
 validate_stderr="$TMPDIR/agent-system-validate.stderr"
-OPENCLAW_LOG_LEVEL=trace openclaw agent-system validate --agent notification-data >"$validate_stdout" 2>"$validate_stderr"
+OPENCLAW_LOG_LEVEL=trace openclaw as validate --agent notification-data >"$validate_stdout" 2>"$validate_stderr"
 grep -F 'valid' "$validate_stdout"
 grep -F 'manifest_loaded' "$validate_stderr"
 if grep -F '[agent-system]' "$validate_stdout"; then exit 1; fi

@@ -172,7 +172,7 @@ function createProgram(input?: Readable) {
         ];
       },
     },
-    output: { writeStdout: (message) => output.push(message) },
+    output: { writeStderr() {}, writeStdout: (message) => output.push(message) },
     toolRegistry: {
       async invoke(command, _runtime, argv, scope, stdin) {
         calls.tool.push({
@@ -222,6 +222,26 @@ describe('lib/register-cli', () => {
         ?.commands.map((subcommand) => subcommand.name()),
       ['refresh'],
     );
+  });
+
+  it('should write one json document for every structured output mode', async () => {
+    const commands = [
+      ['validate', '--json'],
+      ['env', '--json'],
+      ['doctor', '--json'],
+      ['notifications', 'refresh', '--json'],
+      ['install', '--json'],
+    ];
+
+    for (const args of commands) {
+      const { output, program } = createProgram();
+
+      await program.parseAsync(['node', 'openclaw', 'agent-system', ...args]);
+
+      const result = output.join('');
+      assert.equal(result.endsWith('\n'), true, args.join(' '));
+      assert.doesNotThrow(() => JSON.parse(result), args.join(' '));
+    }
   });
 
   it('should delegate tool arguments from the current workspace', async () => {

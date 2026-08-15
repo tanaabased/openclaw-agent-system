@@ -13,7 +13,7 @@
 
 ### Bug Fixes
 
-- Fixed Agent System lifecycle logs to preserve clean CLI command output.
+- Fixed Agent System logs to use OpenClaw-native routing without contaminating CLI `stdout`. [#38](https://github.com/tanaabased/openclaw-agent-system/issues/38)
 - Fixed GitHub notification doctor activation-failure counts to ignore logically retired items while retaining historical state. [#20](https://github.com/tanaabased/openclaw-agent-system/issues/20)
 - Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)

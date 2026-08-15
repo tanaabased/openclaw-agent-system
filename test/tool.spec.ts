@@ -10,7 +10,7 @@ describe('cli/tool', () => {
       argv: ['api', 'user'],
       command: 'gh',
       logger: { error() {}, info() {}, warn() {} },
-      output: { writeStdout() {} },
+      output: { writeStderr() {}, writeStdout() {} },
       async resolveCommandBinding() {
         return {
           admittedWorkingDirectories: ['/workspace/data', '/repos/canon'],
@@ -60,7 +60,7 @@ describe('cli/tool', () => {
       argv: ['status'],
       command: 'git',
       logger: { error: (message) => errors.push(message), info() {}, warn() {} },
-      output: { writeStdout() {} },
+      output: { writeStderr() {}, writeStdout() {} },
       async resolveCommandBinding() {
         return {
           admittedWorkingDirectories: ['/workspace/data'],
@@ -136,7 +136,7 @@ describe('cli/tool', () => {
       argv: ['list'],
       command: 'worktree',
       logger: { error() {}, info() {}, warn() {} },
-      output: { writeStdout: (value) => stdout.push(value) },
+      output: { writeStderr() {}, writeStdout: (value) => stdout.push(value) },
       setExitCode() {},
       toolRegistry: {
         async invoke() {

@@ -157,11 +157,13 @@ alias. Bare `agent-system` or `as` prints help.
 | `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`             | Writes undecorated structured output.                                    |
 
 Human and machine-readable command results use standard output and honor
-`NO_COLOR` and `FORCE_COLOR=0`. Routine Agent System lifecycle metadata remains
-in OpenClaw's file logs so it cannot corrupt command results. Warnings and
-failures use the OpenClaw plugin logger on standard error, and explicit debug
-logging also mirrors lifecycle metadata to the console. A failed operation sets
-a nonzero exit code.
+`NO_COLOR` and `FORCE_COLOR=0`. Every `--json` mode writes exactly one JSON
+document followed by a newline. Agent System sends all logs through OpenClaw's
+`plugins/agent-system` subsystem logger, so OpenClaw retains ownership of log
+levels, redaction, formatting, and file or console transports. During an
+`agent-system` or `as` CLI invocation, OpenClaw routes console logs, including
+debug and trace records, to standard error so they cannot corrupt the command
+result. A failed operation sets a nonzero exit code.
 
 ### Trust Boundary
 

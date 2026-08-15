@@ -5,6 +5,7 @@ import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
 import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
+import { createSubsystemLogger, routeLogsToStderr } from 'openclaw/plugin-sdk/runtime';
 
 import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
 import GitHubNotificationActivationService from '../channels/github/lib/activation-service.ts';
@@ -39,7 +40,7 @@ import CodexPathConfigService from './codex-path-config-service.ts';
 import createCredentialStores from './credential-store-registry.ts';
 import { resolveFileCredentialStoreRoot } from './file-credential-store.ts';
 import AgentSystemLifecycleRegistry from './lifecycle-registry.ts';
-import { createAgentSystemLifecycleLogger, createAgentSystemLogger } from './logger.ts';
+import type { Logger } from './logger.ts';
 import OpCredentialInput from './op-credential-input.ts';
 import OpCredentialManager from './op-credential-manager.ts';
 import OpCredentialService from './op-credential-service.ts';
@@ -55,12 +56,26 @@ import createToolAccessLifecycleContribution from './tool-access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from './tool-security-lifecycle.ts';
 import WorkspaceGitignoreService from './workspace-gitignore-service.ts';
 
+/** OpenClaw-owned logging operations injected to verify runtime assembly. */
+export interface OpenClawLogging {
+  createSubsystemLogger(subsystem: string): Logger;
+  routeLogsToStderr(): void;
+}
+
+const openClawLogging: OpenClawLogging = {
+  createSubsystemLogger,
+  routeLogsToStderr,
+};
+
 /** Assemble and register the complete Agent System runtime. */
-export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
+export default function registerAgentSystem(
+  api: OpenClawPluginApi,
+  runtimeUrl: string,
+  logging: OpenClawLogging = openClawLogging,
+): void {
   const runtimeDir = dirname(fileURLToPath(runtimeUrl));
   const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
-  const logger = createAgentSystemLogger(api.logger, api.id);
-  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id);
+  const logger = logging.createSubsystemLogger(`plugins/${api.id}`);
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
   const readConfig = () => {
     // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
@@ -215,7 +230,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   ]);
   const manifestService = new AgentManifestService({
     getConfig: () => api.runtime.config.current(),
-    logger: lifecycleLogger,
+    logger,
     parseSessionAgentId(sessionKey) {
       return parseAgentSessionKey(sessionKey)?.agentId;
     },
@@ -229,7 +244,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   manifestServiceRef.current = manifestService;
   const environmentService = new AgentEnvironmentService({
     hostEnvironment: process.env,
-    logger: lifecycleLogger,
+    logger,
     manifestService,
     opEnvironmentService,
   });
@@ -253,7 +268,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     baseEnvironment: process.env,
     environmentService,
     excludedExecutableDirectories: excludedToolExecutableDirectories,
-    logger: lifecycleLogger,
+    logger,
     manifestService,
   });
   const installService = new AgentInstallService({
@@ -359,7 +374,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(
-    ({ logger: cliLogger, program }) => {
+    ({ program }) => {
+      logging.routeLogsToStderr();
       registerAgentSystemCli(program, {
         commandAuthority,
         credentialInput: opCredentialInput,
@@ -368,7 +384,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         environmentService,
         input: process.stdin,
         installService,
-        logger: createAgentSystemLogger(cliLogger, api.id),
+        logger,
         manifestService,
         notificationMonitorService,
         toolRegistry,

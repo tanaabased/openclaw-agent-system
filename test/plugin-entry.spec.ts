@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 
+import { Command } from 'commander';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
+import registerAgentSystem from '../lib/register-agent-system.ts';
 import type { CommandLike } from '../lib/register-cli.ts';
 
 describe('index', () => {
@@ -15,7 +17,7 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should register startup hooks and both cli roots', () => {
+  it('should register startup hooks and both cli roots', async () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
@@ -30,7 +32,9 @@ describe('index', () => {
     const commandNames: string[] = [];
     const policyIds: string[] = [];
     const serviceIds: string[] = [];
+    const subsystems: string[] = [];
     const toolNames: string[] = [];
+    let stderrRoutes = 0;
     const logger = {
       debug() {},
       error() {},
@@ -94,7 +98,15 @@ describe('index', () => {
       },
     };
 
-    plugin.register(api as never);
+    registerAgentSystem(api as never, new URL('../index.ts', import.meta.url).href, {
+      createSubsystemLogger(subsystem) {
+        subsystems.push(subsystem);
+        return logger;
+      },
+      routeLogsToStderr() {
+        stderrRoutes += 1;
+      },
+    });
 
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
@@ -117,6 +129,8 @@ describe('index', () => {
       'agent-system.github',
     ]);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
+    assert.deepEqual(subsystems, ['plugins/agent-system']);
+    assert.equal(stderrRoutes, 0);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),
       [
@@ -124,5 +138,8 @@ describe('index', () => {
         { hasSubcommands: true, name: 'as' },
       ],
     );
+    if (!registrar) assert.fail('Agent System CLI registrar was not captured.');
+    await registrar({ logger, program: new Command() });
+    assert.equal(stderrRoutes, 1);
   });
 });

@@ -77,7 +77,7 @@ function createHarness(
             return options.manifest ?? validResult;
           },
         },
-        output: { writeStdout: (message) => output.push(message) },
+        output: { writeStderr() {}, writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',

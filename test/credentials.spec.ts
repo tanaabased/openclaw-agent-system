@@ -47,7 +47,7 @@ function harness() {
         logs.warn.push(message);
       },
     },
-    output: { writeStdout: (message: string) => output.push(message) },
+    output: { writeStderr() {}, writeStdout: (message: string) => output.push(message) },
     records: { logs, manifestDirectories, output },
     setExitCode(code: number) {
       exitCodes.push(code);
