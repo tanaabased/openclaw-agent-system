@@ -159,16 +159,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         await this.#checkpointWorktree(state, itemKey, worktree);
         continue;
       }
-      if (action.kind !== 'dispatch-assignment') continue;
-      if (item.itemType === 'issue' && !observation.worktree) {
-        throw new GitHubNotificationAssignmentOrchestratorError(
-          'github-notification-worktree-reconciliation-failed',
-          'The GitHub notification worktree could not be reconciled.',
-        );
-      }
-      // The Gateway dispatcher owns session creation and the model turn after this monitor
-      // reconciliation releases its cycle lease.
-      return;
+      continue;
     }
     throw new GitHubNotificationAssignmentOrchestratorError(
       'github-notification-delivery-step-limit',

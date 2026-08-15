@@ -21,7 +21,6 @@ const defaultWaitSeconds = 300;
 
 export interface WaitNotificationsAgentSystemOptions {
   agentId?: string;
-  commentId?: unknown;
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
@@ -58,23 +57,11 @@ function waitOptions(options: WaitNotificationsAgentSystemOptions) {
       'repository, kind, and number are required for item wait targets.',
     );
   }
-  const commentTarget = target.startsWith('comment-');
-  const commentId =
-    options.commentId === undefined
-      ? undefined
-      : notificationPositiveInteger(options.commentId, 'comment');
-  if (commentTarget !== (commentId !== undefined)) {
-    throw new NotificationCliOptionError(
-      commentTarget
-        ? 'comment is required for comment wait targets.'
-        : 'comment is only valid for comment wait targets.',
-    );
-  }
   const timeoutSeconds =
     options.timeoutSeconds === undefined
       ? defaultWaitSeconds
       : notificationPositiveInteger(options.timeoutSeconds, 'timeout');
-  return { commentId, selector, target, timeoutMs: timeoutSeconds * 1_000 };
+  return { selector, target, timeoutMs: timeoutSeconds * 1_000 };
 }
 
 /** Wait for one semantic notification checkpoint with optional intake refresh. */
@@ -102,7 +89,6 @@ export default async function waitNotificationsAgentSystem(
 
   const result = await options.statusService.wait({
     agentId: manifest.manifest.agent.id,
-    ...(parsed.commentId === undefined ? {} : { commentId: parsed.commentId }),
     refresh: options.refresh,
     ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
     target: parsed.target,

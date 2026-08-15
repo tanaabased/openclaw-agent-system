@@ -20,9 +20,7 @@ describe('channels/github/lib/status-service', () => {
         const item = state.items[notificationItemKey]!;
         item.delivery = {
           ...item.delivery!,
-          activation: { reply: { commentId: 92, status: 'published' }, status: 'planned' },
-          sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-          stage: 'active',
+          stage: 'worktree-ready',
           worktreeBranch: 'agent/tanaabot/issue-7',
           worktreePath: '/workspace/worktrees/issue-7',
         };
@@ -38,12 +36,12 @@ describe('channels/github/lib/status-service', () => {
       agentId: 'tanaabot',
       refresh: false,
       selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
-      target: 'planning-complete',
+      target: 'worktree-ready',
       timeoutMs: 5_000,
     });
 
     assert.equal(result.status, 'completed');
-    assert.equal(result.code, 'github-notification-planning-complete');
+    assert.equal(result.code, 'github-notification-worktree-ready');
   });
 
   it('should drive refresh-owned transitions only when explicitly selected', async () => {
@@ -116,7 +114,7 @@ describe('channels/github/lib/status-service', () => {
       agentId: 'tanaabot',
       refresh: false,
       selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
-      target: 'active',
+      target: 'worktree-ready',
       timeoutMs: 2_000,
     });
 
@@ -156,7 +154,7 @@ describe('channels/github/lib/status-service', () => {
       agentId: 'tanaabot',
       refresh: true,
       selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
-      target: 'active',
+      target: 'worktree-ready',
       timeoutMs: 1_000,
     });
 

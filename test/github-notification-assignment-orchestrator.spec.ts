@@ -63,7 +63,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     );
   });
 
-  it('should leave a pull request ready for the gateway dispatcher without a worktree', async () => {
+  it('should complete pull-request intake without a worktree', async () => {
     const state = monitorState();
     state.items = {
       [notificationPullRequestItemKey]: approvedPullRequestNotificationItem(),

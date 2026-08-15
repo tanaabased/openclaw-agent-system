@@ -1,23 +1,8 @@
-import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
 import type { GitHubNotificationDeliveryState } from './monitor-state.ts';
 
 export interface GitHubNotificationObservedWorktree {
   branch: string;
   path: string;
-}
-
-export interface GitHubNotificationObservedSession {
-  id?: string;
-  key: string;
-  mode?: GitHubNotificationExecutionMode;
-  status: 'active';
-}
-
-export interface GitHubNotificationRecordedSession {
-  id?: string;
-  key: string;
-  mode?: GitHubNotificationExecutionMode;
-  status: 'received';
 }
 
 export interface GitHubNotificationDeliveryObservation {
@@ -31,7 +16,6 @@ export type GitHubNotificationDeliveryAction =
   | { kind: 'checkpoint-worktree'; worktree: GitHubNotificationObservedWorktree }
   | { kind: 'none' }
   | { kind: 'prepare-worktree' }
-  | { kind: 'dispatch-assignment' }
   | { kind: 'retire'; reasonCode: string };
 
 /** Plan one delivery step from freshly observed side effects instead of trusting its saved stage. */
@@ -49,8 +33,8 @@ export function planGitHubNotificationDelivery(
     return { kind: 'retire', reasonCode };
   }
   if (delivery.stage === 'active') return { kind: 'none' };
-  if (delivery.stage === 'received') return { kind: 'dispatch-assignment' };
-  if (!worktreeRequired) return { kind: 'dispatch-assignment' };
+  if (delivery.stage === 'received') return { kind: 'none' };
+  if (!worktreeRequired) return { kind: 'none' };
   if (!observation.worktree) return { kind: 'prepare-worktree' };
   if (
     delivery.worktreeBranch !== observation.worktree.branch ||
@@ -58,5 +42,5 @@ export function planGitHubNotificationDelivery(
   ) {
     return { kind: 'checkpoint-worktree', worktree: observation.worktree };
   }
-  return { kind: 'dispatch-assignment' };
+  return { kind: 'none' };
 }

@@ -1,5 +1,4 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
-import type { ChannelMessageAdapter } from 'openclaw/plugin-sdk/channel-outbound';
 import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-lifecycle';
 import {
   createAsyncComputedAccountStatusAdapter,
@@ -8,8 +7,6 @@ import {
 
 import type GitHubNotificationMonitorService from './lib/monitor-service.ts';
 import type GitHubNotificationMonitorStateStore from './lib/monitor-state-store.ts';
-import type GitHubNotificationAssignmentDispatchService from './lib/assignment-dispatch-service.ts';
-import type GitHubNotificationCommentService from './lib/comment-service.ts';
 import type { GitHubNotificationMonitorState } from './utils/monitor-state.ts';
 import { githubNotificationChannelId } from './utils/routing.ts';
 
@@ -19,10 +16,7 @@ interface ResolvedNotificationChannelAccount {
 }
 
 export interface GitHubNotificationChannelDependencies {
-  assignmentService: Pick<GitHubNotificationAssignmentDispatchService, 'schedule' | 'settle'>;
-  commentService: Pick<GitHubNotificationCommentService, 'schedule' | 'settle'>;
   clock?: () => number;
-  message: ChannelMessageAdapter;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
 }
@@ -90,12 +84,11 @@ export function createGitHubNotificationChannel(
       selectionLabel: 'Agent System GitHub Notifications',
       docsPath:
         'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
-      blurb: 'Routes authorized GitHub work assignments into agent-scoped local sessions.',
+      blurb: 'Admits authorized GitHub assignments and prepares managed issue worktrees.',
       exposure: { configured: true, docs: true, setup: false },
       forceAccountBinding: true,
     },
     capabilities: { chatTypes: ['direct'], blockStreaming: true },
-    message: dependencies.message,
     reload: { configPrefixes: [`channels.${githubNotificationChannelId}`] },
     config: {
       listAccountIds(config) {
@@ -154,23 +147,11 @@ export function createGitHubNotificationChannel(
           });
         };
         await publish(clock());
-        dependencies.assignmentService.schedule(context.accountId, context.abortSignal);
-        dependencies.commentService.schedule(context.accountId, context.abortSignal);
         try {
-          await dependencies.monitorService.runAccount(
-            context.accountId,
-            context.abortSignal,
-            async () => {
-              dependencies.assignmentService.schedule(context.accountId, context.abortSignal);
-              dependencies.commentService.schedule(context.accountId, context.abortSignal);
-              await publish();
-            },
+          await dependencies.monitorService.runAccount(context.accountId, context.abortSignal, () =>
+            publish(),
           );
         } finally {
-          await Promise.all([
-            dependencies.assignmentService.settle(context.accountId),
-            dependencies.commentService.settle(context.accountId),
-          ]);
           status({
             connected: false,
             healthState: 'stopped',

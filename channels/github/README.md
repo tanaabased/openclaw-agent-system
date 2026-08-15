@@ -4,43 +4,30 @@
   <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub notifications" width="180" />
 </p>
 
-The GitHub notifications channel turns approved GitHub issue and pull-request
-assignments into agent-scoped private OpenClaw sessions, with a managed worktree
-for each issue. It supports tool-free private planning and bounded replies to
-approved mentions. The [target design](./DESIGN.md) describes the intended
-capability and lifecycle expansion beyond this current implementation.
+The GitHub notifications channel currently owns trusted polling, assignment
+admission, durable deduplication, routing, and managed issue-worktree intake.
+Model turns, chat presentation, and GitHub publication are intentionally
+disconnected while they are rebuilt on the [target design](./DESIGN.md).
 
-> [!IMPORTANT]
-> GitHub comments inherit the active assignment mode and never expand its
-> authority. Direct pull requests have their own conversation; the channel does
-> not correlate them with issue conversations or participate in inline review
-> threads.
+## Current Behavior
 
-## Overview
+- `install` records the agent's currently assigned open work items as a safe
+  baseline without creating local work. An empty result is valid.
+- Later polling or `notifications refresh` discovers new issue and pull-request
+  assignments and verifies the agent account, assigning actor, repository owner,
+  repository access, and exact assignment event.
+- Accepted issue assignments create or reuse one deterministic managed
+  worktree. Pull-request assignments retain bounded head metadata without
+  creating a worktree.
+- Assignment and comment observations remain bounded, private, and
+  revision-aware. They do not currently dispatch a model turn, create a chat
+  message, or publish a GitHub comment.
+- Closing, merging, unassigning, or otherwise losing authority retires the
+  tracked item logically without deleting an existing issue worktree.
 
-- During `install`, records the agent's currently assigned open work items as a
-  safe baseline without creating local work. An empty result is a valid,
-  persisted baseline.
-- On later cycles, discovers new assignments and rechecks the agent account,
-  assigning actor, repository owner, and repository access.
-- For each accepted issue assignment, creates or reuses one deterministic
-  managed worktree and one local OpenClaw session. A direct pull-request
-  assignment creates only its local monitoring session.
-- Fetches a bounded title, body, labels, and recent comments as untrusted
-  context, plus summary-only changed-file metadata for a pull request, then runs
-  one tool-free private planning turn with hidden instructions. Patch content is
-  never included.
-- Starts one normal inbound assignment turn after intake releases its monitor
-  lease. That turn records the assignment card, checkpoints `active`, publishes
-  a deterministic acknowledgment, and then publishes the planning turn's
-  sanitized quoted `To GitHub` outcome through the authorized durable delivery
-  path.
-- Establishes a complete bounded top-level comment baseline for each admitted
-  issue or pull request, then admits only later exact standalone mentions from
-  approved immutable human identities.
-- Rechecks the exact current comment revision, passes its bounded text directly
-  into the private session, and injects response instructions separately. It
-  rechecks again before publishing the quoted `To GitHub` response.
+The target lifecycle, modes, states, and response boundary are documented in
+[Design](./DESIGN.md). Visible component definitions live in
+[Presentation](./PRESENTATION.md).
 
 ## Requirements
 
@@ -51,16 +38,14 @@ capability and lifecycle expansion beyond this current implementation.
 - `git.worktrees`, `github.username`, `github.token`, and
   `github.notifications` configured
 - the named GitHub token available in the completed Agent System environment
-- an authenticated default OpenClaw model for private planning and comment turns
 
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
-## Installation and Usage
+## Configuration
 
 Add the notification channel to `.agent-system/agent.yaml` or the root
-`agent.yaml`. See [Configuration Reference](#configuration-reference) for every
-field.
+`agent.yaml`:
 
 ```yaml
 schema-version: 1
@@ -82,50 +67,8 @@ github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   notifications:
-    approved-actors:
-      - login: pirog
-        node-id: U_kgDOB9x7Qw
-```
-
-From the agent workspace:
-
-```sh
-# check the manifest without changing installed state.
-openclaw agent-system validate
-
-# reconcile the route and establish the first baseline, including an empty one.
-openclaw agent-system install
-
-# inspect the installed route and the last successful observation.
-openclaw agent-system doctor
-
-# process later assignments immediately.
-openclaw agent-system notifications refresh
-
-# inspect redacted assignment, planning, comment, and publication checkpoints.
-openclaw agent-system notifications status --json
-
-# inspect the live gateway scheduler and connection health.
-openclaw channels status --channel agent-system-github --json
-```
-
-`install` fails with `github-notification-baseline-failed` if it cannot establish
-the initial baseline. Only assignments observed after a successful installation
-baseline create local work.
-
-## Configuration Reference
-
-Notifications share the surrounding GitHub host, account, and credential:
-
-```yaml
-github:
-  host: github.com
-  username: tanaabot
-  token: GH_TOKEN_TANAABOT
-  notifications:
     assignment-types:
       - issue
-      - pull-request
     interval-minutes: 5
     approved-actors:
       - login: pirog
@@ -135,149 +78,105 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-| Field                       | Required | Default                    | Purpose                                  |
-| --------------------------- | -------- | -------------------------- | ---------------------------------------- |
-| `assignment-types`          | no       | `issue` and `pull-request` | Selects assignment kinds to discover     |
-| `approved-actors`           | yes      | none                       | GitHub users allowed to assign work      |
-| `allowed-repository-owners` | no       | any                        | Filters assignments by repository owner  |
-| `interval-minutes`          | no       | `5`                        | Sets the polling interval from 1 to 1440 |
+| Field                       | Required | Default                    | Purpose                                 |
+| --------------------------- | -------- | -------------------------- | --------------------------------------- |
+| `assignment-types`          | no       | `issue` and `pull-request` | Selects assignment kinds to discover    |
+| `approved-actors`           | yes      | none                       | GitHub users allowed to assign work     |
+| `allowed-repository-owners` | no       | any                        | Filters assignments by repository owner |
+| `interval-minutes`          | no       | `5`                        | Sets polling from 1 to 1440 minutes     |
 
 Every approved actor and allowed owner requires a GitHub login and immutable
-GitHub node id. Node ids must be unique within each list.
-
-`assignment-types` accepts one or both of `issue` and `pull-request`. It narrows
-provider discovery for the agent; it does not change the authorization or
-lifecycle rules for the selected kind.
-
-`allowed-repository-owners` is an optional filter. When present, the channel
-rejects assignments from repositories whose owner is not listed. It does not
-grant repository access or approve that owner's members to assign work; the
-agent account still needs sufficient repository access and the assigning actor
-must still appear in `approved-actors`.
+GitHub node id. Node ids must be unique within each list. The optional owner
+filter does not grant repository access or approve that owner's members.
 
 `github.token` names an environment variable and never accepts a literal token.
 For private repositories, configure
-[`git.ssh`](../../tools/git/README.md#gitsshprivate-keys) so the Git capability
-can prepare the worktree without embedding a token in its clone URL.
+[`git.ssh`](../../tools/git/README.md#gitsshprivate-keys) so worktree
+preparation does not embed a token in a clone URL.
 
-## CLI
+## Usage
+
+From the agent workspace:
+
+```sh
+# validate desired state without changing installed state.
+openclaw agent-system validate
+
+# reconcile routing and establish the first safe baseline.
+openclaw agent-system install
+
+# run assignment intake immediately.
+openclaw agent-system notifications refresh
+
+# inspect redacted intake state.
+openclaw agent-system notifications status --json
+
+# wait for one issue worktree.
+openclaw agent-system notifications wait \
+  --repository tanaabased/example \
+  --kind issue \
+  --number 12 \
+  --for worktree-ready \
+  --refresh \
+  --json
+```
+
+`install` fails with `github-notification-baseline-failed` when the first
+baseline cannot be established. Only assignments observed after that baseline
+create local work.
+
+### CLI Reference
 
 ```text
 openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--comment <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
-| Option                      | Commands                    | Purpose                                                                |
-| --------------------------- | --------------------------- | ---------------------------------------------------------------------- |
-| `--agent <id>`              | all                         | Selects an installed agent instead of workspace discovery              |
-| `--repository <owner/name>` | `refresh`, `status`, `wait` | Selects one repository; requires `--kind` and `--number`               |
-| `--kind <kind>`             | `refresh`, `status`, `wait` | Selects `issue` or `pull-request`; requires the complete item selector |
-| `--number <number>`         | `refresh`, `status`, `wait` | Selects one positive GitHub item number                                |
-| `--comment <number>`        | `wait`                      | Selects one positive comment id for a comment target                   |
-| `--for <target>`            | `wait`                      | Selects the durable semantic checkpoint                                |
-| `--refresh`                 | `wait`                      | Runs bounded intake cycles while waiting                               |
-| `--timeout <seconds>`       | `wait`                      | Sets the positive wait timeout; defaults to `300`                      |
-| `--json`                    | all                         | Returns one undecorated machine-readable result                        |
+A repository, kind, and number selector is all-or-nothing. `refresh` runs the
+same bounded, lease-protected intake cycle as the scheduler. `status` projects
+only baseline readiness, admission disposition, delivery stage, issue-worktree
+readiness, and bounded pull-request head metadata; it omits provider prose,
+credentials, session identifiers, and local paths.
 
-### Refresh
+`wait` supports these stable intake checkpoints:
 
-`notifications refresh` runs the same intake lifecycle immediately. It reports
-baseline readiness, diagnostics, and retry timing, and it can prepare a managed
-worktree for an accepted issue. A complete item selector limits the cycle to
-that exact item and does not advance account-wide discovery. This is useful for
-deterministic automation while the regular scheduler retains responsibility for
-broad discovery. It does not start or wait for a model turn; the running Gateway
-picks up the ready assignment asynchronously. Deferred and failed cycles return
-a nonzero exit code.
+| Target                | Meaning                                       |
+| --------------------- | --------------------------------------------- |
+| `baseline-ready`      | The first safe provider observation completed |
+| `assignment-rejected` | The selected assignment failed admission      |
+| `worktree-ready`      | The selected issue worktree is ready          |
+| `retired`             | The selected assignment retired logically     |
 
-### Status
+Every target except `baseline-ready` requires a complete item selector.
+`--refresh` advances provider-owned intake while waiting. Failed and timed-out
+waits return nonzero and include the last redacted observation in JSON.
 
-`notifications status` reads the channel's durable private control state and
-returns a redacted semantic projection. Without an item selector it lists every
-tracked item. A selector must provide repository, kind, and number together.
-The result reports baseline readiness, disposition, delivery stage, mode,
-session and worktree readiness, assignment acknowledgment, private planning and
-public planning-response checkpoints, bounded pull-request head metadata, and
-value-free comment turn and reply status.
-
-The projection never includes issue or comment bodies, structured provider
-context, hidden instructions, session keys, worktree paths, credentials, or raw
-provider payloads. A monitor diagnostic reports `degraded` and returns nonzero;
-missing or not-yet-observed state reports `pending` without inventing a failure.
-
-### Wait
-
-`notifications wait` polls that semantic projection until one checkpoint is
-reached, a durable failure appears, or the timeout expires. Use `--refresh` only
-for provider-observation transitions such as assignment admission, comment
-admission, or retirement. Omit it while waiting for Gateway-owned asynchronous
-planning and replies.
-
-| Target                    | Meaning                                                      |
-| ------------------------- | ------------------------------------------------------------ |
-| `baseline-ready`          | The first safe provider observation completed                |
-| `assignment-rejected`     | The selected assignment failed admission                     |
-| `received`                | Deterministic local receipt completed or advanced further    |
-| `active`                  | The selected assignment can run or accept continuations      |
-| `assignment-acknowledged` | The immediate GitHub acknowledgment has a durable receipt    |
-| `planning-complete`       | The current private planning turn completed                  |
-| `planning-replied`        | The public planning outcome has a durable provider receipt   |
-| `comment-rejected`        | The selected comment revision failed admission               |
-| `comment-received`        | The selected comment revision entered the private lifecycle  |
-| `comment-replied`         | Its private turn and public reply both completed             |
-| `retired`                 | The selected assignment retired without deleting local proof |
-
-Comment targets require `--comment`. Every target except `baseline-ready`
-requires a complete item selector. Failed and timed-out waits return nonzero and
-include the last redacted observation in JSON for diagnostics.
-
-These targets are current CLI checkpoint identifiers. They are not the target
-lifecycle-state vocabulary defined in [Design](./DESIGN.md#states).
-
-See the complete CLI reference for
-[`refresh`](../../ADVANCED.md#openclaw-agent-system-notifications-refresh),
-[`status`](../../ADVANCED.md#openclaw-agent-system-notifications-status), and
-[`wait`](../../ADVANCED.md#openclaw-agent-system-notifications-wait).
+See [Advanced](../../ADVANCED.md) for the complete shared CLI and manifest
+reference.
 
 ## Security and Lifecycle
 
-- The installed account and binding must match the manifest's agent and
-  workspace. Missing, duplicate, conflicting, or cross-agent routing fails
-  closed.
-- Intake requires the authenticated assigned account, an approved immutable
+- Installed account and workspace routing must match the manifest. Missing,
+  duplicate, conflicting, or cross-agent routing fails closed.
+- Admission requires the authenticated assigned account, an approved immutable
   assigning actor, an eligible repository owner, and sufficient repository
   access.
-- GitHub prose and changed-file metadata remain bounded untrusted data.
-  Planning and admitted-comment turns cannot use tools. Admitted comments and
-  status evidence use ephemeral current-turn structured context, while trusted
-  response instructions stay out of visible chat. Public delivery accepts only
-  a planning turn's or admitted comment's quoted `To GitHub` response.
-- Every current assignment session uses tool-free Plan mode. Comment mentions
-  inherit that mode and cannot begin implementation.
-- Each enabled account owns its Gateway polling lifecycle. Manual refresh uses
-  the same deterministic intake path without starting a model, while the single
-  assignment turn, comment turns, and durable sends remain Gateway-owned.
-  `doctor` reports incomplete planning and comment replies separately from
-  monitor read health.
-- Private monitor state contains no tokens, GitHub prose, or generated content.
-  Deterministic worktree, session, activation, and publication identities keep
-  delivery retry-safe.
-- Direct pull-request assignments retain the verified head without preparing a
-  worktree. Closing or merging retires the route logically while preserving the
-  session; issue correlation, review requests, and inline review threads remain
-  unsupported.
-- Removing `github.notifications` and reinstalling retires active assignments,
+- GitHub prose and comment text remain bounded untrusted data in private state.
+  The current intake-only implementation never passes them to a model or public
+  delivery path.
+- Private monitor state contains no tokens. Deterministic assignment and
+  worktree identities make intake retry-safe.
+- Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without
-  deleting existing sessions or issue worktrees.
+  deleting existing issue worktrees.
 
 ## Further Reading
 
 - [Design](./DESIGN.md): target message flow, lifecycle types, modes, states,
   and response boundaries
-- [Presentation](./PRESENTATION.md): reusable visible cards, responses, plans,
-  questions, and GitHub quotes
-- [Agent System README](../../README.md): installation and the common manifest workflow
+- [Presentation](./PRESENTATION.md): reusable visible component definitions
+- [Agent System README](../../README.md): installation and common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest and CLI reference
-- [Git tools](../../tools/git/README.md): managed worktree configuration and behavior
-- [GitHub CLI tool](../../tools/github/README.md): shared GitHub identity and credential configuration
+- [Git tools](../../tools/git/README.md): managed worktree configuration
+- [GitHub CLI tool](../../tools/github/README.md): shared GitHub identity and credentials

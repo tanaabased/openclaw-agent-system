@@ -29,7 +29,6 @@ export interface GitHubNotificationMonitorCycleLeaseStoreDependencies {
 }
 
 export interface GitHubNotificationMonitorCycleLeaseAcquireOptions {
-  scope?: 'cycle' | 'publication';
   signal?: AbortSignal;
   waitMs?: number;
 }
@@ -77,7 +76,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     if (!Number.isSafeInteger(waitMs) || waitMs < 0) {
       throw new Error('GitHub notification cycle lease waits must be non-negative integers.');
     }
-    const targetPath = await this.#targetPath(agentId, options.scope ?? 'cycle');
+    const targetPath = await this.#targetPath(agentId);
     const deadline = Date.now() + waitMs;
     while (true) {
       if (options.signal?.aborted) return { status: 'aborted' };
@@ -112,7 +111,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     return { release: handle.release };
   }
 
-  async #targetPath(agentId: string, scope: 'cycle' | 'publication'): Promise<string> {
+  async #targetPath(agentId: string): Promise<string> {
     if (!this.#rootDir || !validAgentId(agentId)) {
       throw new Error('The GitHub notification cycle lease store is unavailable.');
     }
@@ -123,9 +122,6 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
       directories: [this.#rootDir, agentDir, stateDir],
       label: 'GitHub notification cycle lease',
     });
-    return join(
-      stateDir,
-      scope === 'cycle' ? 'github-notifications' : 'github-notifications-publication',
-    );
+    return join(stateDir, 'github-notifications');
   }
 }

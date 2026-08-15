@@ -22,7 +22,7 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should reconcile the worktree before dispatching the assignment', () => {
+  it('should reconcile the worktree and stop at the intake boundary', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }), {
       kind: 'prepare-worktree',
     });
@@ -37,13 +37,13 @@ describe('channels/github/utils/delivery-plan', () => {
       worktreePath: worktree.path,
     };
     assert.deepEqual(planGitHubNotificationDelivery(worktreeReady, { authority, worktree }), {
-      kind: 'dispatch-assignment',
+      kind: 'none',
     });
   });
 
-  it('should dispatch a pull-request assignment without preparing a worktree', () => {
+  it('should stop pull-request intake without preparing a worktree', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }, false), {
-      kind: 'dispatch-assignment',
+      kind: 'none',
     });
   });
 
@@ -68,7 +68,7 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should resume a legacy pre-dispatch checkpoint', () => {
+  it('should accept legacy post-intake checkpoints as complete', () => {
     for (const stage of ['session-recording', 'received'] as const) {
       assert.deepEqual(
         planGitHubNotificationDelivery(
@@ -80,7 +80,7 @@ describe('channels/github/utils/delivery-plan', () => {
           },
           { authority, worktree },
         ),
-        { kind: 'dispatch-assignment' },
+        { kind: 'none' },
       );
     }
   });

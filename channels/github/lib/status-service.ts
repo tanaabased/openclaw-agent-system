@@ -20,7 +20,6 @@ export interface GitHubNotificationStatusServiceDependencies {
 
 export interface GitHubNotificationWaitInput {
   agentId: string;
-  commentId?: number;
   refresh: boolean;
   selector?: GitHubNotificationItemSelector;
   target: GitHubNotificationWaitTarget;
@@ -103,12 +102,7 @@ export default class GitHubNotificationStatusService {
       }
 
       const observation = await this.inspect(input.agentId, input.selector);
-      const evaluated = evaluateGitHubNotificationWait(
-        observation,
-        input.target,
-        input.selector,
-        input.commentId,
-      );
+      const evaluated = evaluateGitHubNotificationWait(observation, input.target, input.selector);
       if (evaluated.status !== 'pending') {
         return {
           agentId: input.agentId,

@@ -305,70 +305,48 @@ backend isolation.
 
 ### `openclaw agent-system notifications refresh`
 
-Runs one GitHub notification monitor cycle for the current workspace agent or
-an explicitly selected installed agent.
+Runs one GitHub notification intake cycle for the current workspace agent or an
+explicitly selected installed agent.
 
 ```text
 openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 ```
 
-The command uses the channel account scheduler's provider client, baseline,
-private state, trust gates, assignment delivery path, and cross-process
-per-agent lease.
-The optional repository, kind, and number selector is all-or-nothing. A selected
-cycle reads and reconciles only that canonical item and preserves the global
-search boundary so normal polling cannot skip unrelated assignments.
-It runs one complete intake cycle, not a read-only fetch or a request to enable
-the scheduler. It waits up to two minutes for an active cycle, bypasses the
-ordinary interval deadline, and preserves active failure and provider backoff.
-Human output includes baseline readiness, a stable diagnostic, and the next poll
-or retry time when available. JSON exposes `baselineAt`,
-`baselineEstablished`, `diagnosticCode`, `lastSuccessfulPollAt`, `nextPollAt`,
-`retryAt`, and assignment plus comment baseline, admission, rejection, and
-deferred counts when applicable. The command may checkpoint an admitted comment,
-but it does not wait for the Gateway-owned model turn or public reply. Deferred
-and failed cycles return a nonzero exit code. See the
-[GitHub notifications channel](./channels/github/README.md) for
-configuration, security, lifecycle, and result semantics.
+The command uses the same provider client, baseline, private state, trust gates,
+and cross-process lease as scheduled polling. The optional repository, kind,
+and number selector is all-or-nothing and limits the cycle to that exact item
+without advancing account-wide discovery. It may prepare a managed worktree for
+an accepted issue. It does not dispatch a model turn or publish a GitHub
+comment. Deferred and failed cycles return nonzero.
 
 ### `openclaw agent-system notifications status`
 
-Reads the private GitHub notification monitor state and returns a redacted
-semantic projection for the current workspace agent or one explicitly selected
-installed agent.
+Reads private monitor state and returns a redacted intake projection.
 
 ```text
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 ```
 
-The optional item selector is all-or-nothing. Results report baseline readiness,
-assignment disposition and stage, session and worktree readiness, assignment
-acknowledgment, private planning and public planning-response checkpoints,
-bounded pull-request head metadata, and value-free comment admission, turn, and
-reply status. The schema omits raw
-provider content, hidden prompt layers, session keys, and local paths. A durable
+Results report baseline readiness, assignment disposition and stage, issue
+worktree readiness, and bounded pull-request head metadata. The schema omits
+provider prose, credentials, session identifiers, and local paths. A durable
 monitor diagnostic returns `degraded` and sets a nonzero exit code.
 
 ### `openclaw agent-system notifications wait`
 
-Waits for one durable semantic checkpoint without parsing chat history or human
+Waits for one durable intake checkpoint without parsing chat history or
 presentation.
 
 ```text
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--comment <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
-Supported targets are `baseline-ready`, `assignment-rejected`, `received`,
-`active`, `assignment-acknowledged`, `planning-complete`, `planning-replied`,
-`comment-rejected`, `comment-received`, `comment-replied`, and `retired`.
-These are current CLI checkpoint identifiers, not the target lifecycle-state
-vocabulary in the [channel design](./channels/github/DESIGN.md#states).
-Comment targets require `--comment`; every non-baseline target requires the full
-item selector. `--refresh` explicitly runs intake cycles while waiting and
-retains the monitor's lease and backoff rules. Without it, the command only
-observes Gateway-owned asynchronous progress. The default timeout is 300
-seconds. Terminal diagnostics fail immediately, and failed or timed-out JSON
-results include the last redacted observation.
+Supported targets are `baseline-ready`, `assignment-rejected`,
+`worktree-ready`, and `retired`. Every non-baseline target requires the full
+item selector. `--refresh` explicitly advances provider-owned intake while
+waiting. The default timeout is 300 seconds. Terminal diagnostics fail
+immediately, and failed or timed-out JSON results include the last redacted
+observation.
 
 ### `openclaw agent-system tool`
 

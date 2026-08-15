@@ -3,9 +3,6 @@ import assert from 'node:assert/strict';
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
 
-const publicationMarker =
-  '<!-- agent-system-github-publication:planning-outcome:0123456789abcdef0123456789abcdef -->';
-
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
     exitCode: 0,
@@ -220,99 +217,6 @@ describe('channels/github/lib/work-event-client', () => {
     assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
   });
 
-  it('should fetch a bounded issue projection with the newest comment page', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        if (requests.length === 1) {
-          return response({
-            body: 'Please add the thing.',
-            commentCount: 51,
-            labels: ['feature'],
-            title: 'Implement the thing',
-          });
-        }
-        if (requests.length === 2) {
-          return response(
-            Array.from({ length: 50 }, (_, index) => ({
-              authorLogin: 'pirog',
-              body: `Earlier comment ${index + 1}.`,
-              createdAt: '2026-08-11T12:04:00Z',
-            })),
-            '<https://api.github.com/repos/tanaabased/example/issues/7/comments?page=2>; rel="next"',
-          );
-        }
-        return response([
-          {
-            authorLogin: 'pirog',
-            body: 'The latest requirement.',
-            createdAt: '2026-08-11T12:05:00Z',
-          },
-        ]);
-      },
-    });
-
-    const context = await client.getPlanningContext('tanaabased', 'example', 7);
-
-    assert.equal(context.title, 'Implement the thing');
-    assert.equal(context.truncated, true);
-    assert.equal(context.comments.length, 50);
-    assert.equal(context.comments[0]?.body, 'Earlier comment 2.');
-    assert.equal(context.comments.at(-1)?.body, 'The latest requirement.');
-    assert.ok(requests[1]?.includes('page=1'));
-    assert.ok(requests[2]?.includes('page=2'));
-    assert.ok(requests[1]?.includes('per_page=50'));
-  });
-
-  it('should include bounded pull-request file summaries without patches', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        if (requests.length === 1) {
-          return response({
-            body: 'Please review the pull request.',
-            commentCount: 0,
-            labels: ['review'],
-            title: 'Update notifications',
-          });
-        }
-        return response(
-          [
-            {
-              additions: 12,
-              changes: 15,
-              deletions: 3,
-              filename: 'channels/github/lib/poller.ts',
-              previousFilename: null,
-              status: 'modified',
-            },
-          ],
-          '<https://api.github.com/repos/tanaabased/example/pulls/8/files?page=2>; rel="next"',
-        );
-      },
-    });
-
-    const context = await client.getPlanningContext('tanaabased', 'example', 8, 'pull-request');
-
-    assert.equal(context.truncated, true);
-    assert.deepEqual(context.files, [
-      {
-        additions: 12,
-        changes: 15,
-        deletions: 3,
-        filename: 'channels/github/lib/poller.ts',
-        status: 'modified',
-      },
-    ]);
-    assert.ok(requests[1]?.includes('/repos/tanaabased/example/pulls/8/files'));
-    assert.ok(requests[1]?.some((value) => value.includes('additions')));
-    assert.ok(requests[1]?.every((value) => !value.includes('patch')));
-  });
-
   it('should list bounded canonical issue comments with immutable actor and revision facts', async () => {
     const requests: string[][] = [];
     const client = new GitHubWorkEventClient({
@@ -341,88 +245,5 @@ describe('channels/github/lib/work-event-client', () => {
     assert.equal(page.comments[0]?.bodyTruncated, false);
     assert.ok(requests[0]?.includes('per_page=100'));
     assert.ok(requests[0]?.some((value) => value.includes('bodyLength')));
-  });
-
-  it('should re-read an exact comment only when it belongs to the expected issue', async () => {
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute() {
-        return response({
-          author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
-          body: '@tanaabot status?',
-          bodyLength: 18,
-          createdAt: '2026-08-14T12:00:00Z',
-          databaseId: 91,
-          issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
-          nodeId: 'IC_comment',
-          updatedAt: '2026-08-14T12:01:00Z',
-        });
-      },
-    });
-
-    assert.equal(
-      (await client.getIssueComment('tanaabased', 'example', 7, 91)).nodeId,
-      'IC_comment',
-    );
-    await assert.rejects(
-      client.getIssueComment('tanaabased', 'example', 8, 91),
-      /another work item/u,
-    );
-  });
-
-  it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
-    const marker = publicationMarker;
-    const body = `On it.\n\n${marker}`;
-    const requests: Array<{ argv: string[]; stdin?: string }> = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv, stdin) {
-        requests.push({ argv, ...(stdin === undefined ? {} : { stdin }) });
-        if (argv.includes('POST')) {
-          return response({
-            body,
-            databaseId: 91,
-            nodeId: 'IC_published',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-          });
-        }
-        return response([]);
-      },
-    });
-
-    assert.equal(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), undefined);
-    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
-      databaseId: 91,
-      nodeId: 'IC_published',
-    });
-    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
-    assert.equal(requests[1]?.argv.includes(body), false);
-    assert.ok(requests[1]?.argv.includes('--input'));
-  });
-
-  it('should adopt only the authenticated account marker receipt', async () => {
-    const marker = publicationMarker;
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute() {
-        return response([
-          {
-            databaseId: 90,
-            nodeId: 'IC_other',
-            user: { login: 'someone', nodeId: 'U_other', type: 'User' },
-          },
-          {
-            databaseId: 91,
-            nodeId: 'IC_own',
-            user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
-          },
-        ]);
-      },
-    });
-
-    assert.deepEqual(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), {
-      databaseId: 91,
-      nodeId: 'IC_own',
-    });
   });
 });

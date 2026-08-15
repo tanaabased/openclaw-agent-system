@@ -1,60 +1,27 @@
 import type {
-  GitHubNotificationActivationState,
-  GitHubNotificationCommentTurnState,
   GitHubNotificationDeliveryStage,
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
-  GitHubNotificationPublicationState,
 } from './monitor-state.ts';
 import type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type GitHubNotificationWaitTarget =
-  | 'active'
-  | 'assignment-acknowledged'
-  | 'assignment-rejected'
-  | 'baseline-ready'
-  | 'comment-received'
-  | 'comment-rejected'
-  | 'comment-replied'
-  | 'planning-complete'
-  | 'planning-replied'
-  | 'received'
-  | 'retired';
+  'assignment-rejected' | 'baseline-ready' | 'retired' | 'worktree-ready';
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
-  'active',
-  'assignment-acknowledged',
   'assignment-rejected',
   'baseline-ready',
-  'comment-received',
-  'comment-rejected',
-  'comment-replied',
-  'planning-complete',
-  'planning-replied',
-  'received',
   'retired',
+  'worktree-ready',
 ]);
 
-export interface GitHubNotificationStatusComment {
-  commentId: number;
-  disposition: 'approved' | 'baseline' | 'rejected';
-  reasonCode: string;
-  reply?: GitHubNotificationPublicationState;
-  turn?: GitHubNotificationCommentTurnState;
-}
-
 export interface GitHubNotificationStatusItem {
-  acknowledgment?: GitHubNotificationPublicationState;
-  commentDiagnosticCode?: string;
-  comments: GitHubNotificationStatusComment[];
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';
-  mode?: 'auto' | 'plan' | 'work';
   number: number;
-  planning?: GitHubNotificationActivationState;
   pullRequest?: {
     baseRef: string;
     draft: boolean;
@@ -63,7 +30,6 @@ export interface GitHubNotificationStatusItem {
   };
   reasonCode: string;
   repository: string;
-  session: 'pending' | 'recorded';
   stage?: GitHubNotificationDeliveryStage;
   worktree: 'not-applicable' | 'pending' | 'ready';
 }
@@ -114,33 +80,11 @@ export function githubNotificationMonitorStatus(
   const items = Object.values(state.items)
     .map((item): GitHubNotificationStatusItem => {
       const delivery = item.delivery;
-      const repository = `${item.repositoryOwner}/${item.repositoryName}`;
-      const comments = Object.values(item.commentTracking?.revisions ?? {})
-        .sort(
-          (left, right) =>
-            left.commentDatabaseId - right.commentDatabaseId || left.updatedAt - right.updatedAt,
-        )
-        .map((comment) => ({
-          commentId: comment.commentDatabaseId,
-          disposition: comment.disposition,
-          reasonCode: comment.reasonCode,
-          ...(comment.reply === undefined ? {} : { reply: comment.reply }),
-          ...(comment.turn === undefined ? {} : { turn: comment.turn }),
-        }));
       return {
-        ...(delivery?.acknowledgment === undefined
-          ? {}
-          : { acknowledgment: delivery.acknowledgment }),
-        ...(item.commentTracking?.diagnosticCode === undefined
-          ? {}
-          : { commentDiagnosticCode: item.commentTracking.diagnosticCode }),
-        comments,
         disposition: item.disposition,
         ...(delivery?.failureCode === undefined ? {} : { failureCode: delivery.failureCode }),
         itemType: item.itemType,
-        ...(delivery?.mode === undefined ? {} : { mode: delivery.mode }),
         number: item.number,
-        ...(delivery?.activation === undefined ? {} : { planning: delivery.activation }),
         ...(item.pullRequest === undefined
           ? {}
           : {
@@ -152,8 +96,7 @@ export function githubNotificationMonitorStatus(
               },
             }),
         reasonCode: item.reasonCode,
-        repository,
-        session: delivery?.sessionKey ? 'recorded' : 'pending',
+        repository: `${item.repositoryOwner}/${item.repositoryName}`,
         ...(delivery?.stage === undefined ? {} : { stage: delivery.stage }),
         worktree:
           item.itemType === 'pull-request'
@@ -189,55 +132,11 @@ export function githubNotificationMonitorStatus(
   };
 }
 
-function selectedItem(
-  result: GitHubNotificationStatusResult,
-  selector: GitHubNotificationItemSelector | undefined,
-): GitHubNotificationStatusItem | undefined {
-  if (!selector) return undefined;
-  return result.items.find((item) => matchesSelector(item, selector));
-}
-
-function itemFailure(
-  item: GitHubNotificationStatusItem,
-  target: GitHubNotificationWaitTarget,
-  commentId?: number,
-): string | undefined {
-  if (item.failureCode) return item.failureCode;
-  if (target === 'assignment-acknowledged' && item.acknowledgment?.status === 'failed') {
-    return item.acknowledgment.failureCode;
-  }
-  if (target.startsWith('comment-') && item.commentDiagnosticCode) {
-    return item.commentDiagnosticCode;
-  }
-  if (
-    item.planning?.failureCode &&
-    (target === 'active' ||
-      target === 'assignment-acknowledged' ||
-      target === 'planning-complete' ||
-      target === 'planning-replied' ||
-      target === 'received')
-  ) {
-    return item.planning.failureCode;
-  }
-  if (item.planning?.reply?.status === 'failed' && target === 'planning-replied') {
-    return item.planning.reply.failureCode;
-  }
-  if (target.startsWith('comment-') && commentId !== undefined) {
-    const comment = item.comments.find((candidate) => candidate.commentId === commentId);
-    if (comment?.turn?.status === 'failed') {
-      return comment.turn.failureCode ?? 'github-notification-comment-dispatch-failed';
-    }
-    if (comment?.reply?.status === 'failed') return comment.reply.failureCode;
-  }
-  return undefined;
-}
-
-/** Evaluate one semantic wait target without parsing chat presentation or provider prose. */
+/** Evaluate one intake checkpoint without parsing chat presentation or provider prose. */
 export function evaluateGitHubNotificationWait(
   result: GitHubNotificationStatusResult,
   target: GitHubNotificationWaitTarget,
   selector?: GitHubNotificationItemSelector,
-  commentId?: number,
 ): GitHubNotificationWaitObservation {
   if (result.diagnosticCode) return { code: result.diagnosticCode, status: 'failed' };
   if (target === 'baseline-ready') {
@@ -245,33 +144,19 @@ export function evaluateGitHubNotificationWait(
       ? { code: 'github-notification-baseline-ready', status: 'reached' }
       : { code: 'github-notification-wait-pending', status: 'pending' };
   }
-  const item = selectedItem(result, selector);
+  const item = selector
+    ? result.items.find((candidate) => matchesSelector(candidate, selector))
+    : undefined;
   if (!item) return { code: 'github-notification-wait-pending', status: 'pending' };
-  const failureCode = itemFailure(item, target, commentId);
-  if (failureCode) return { code: failureCode, status: 'failed' };
+  if (item.failureCode) return { code: item.failureCode, status: 'failed' };
 
-  let reached = false;
-  if (target === 'assignment-rejected') reached = item.disposition === 'rejected';
-  if (target === 'assignment-acknowledged') {
-    reached = item.acknowledgment?.status === 'published';
-  }
-  if (target === 'received') {
-    reached = item.stage === 'received' || item.stage === 'active' || item.stage === 'retired';
-  }
-  if (target === 'active') reached = item.stage === 'active';
-  if (target === 'planning-complete') reached = item.planning?.status === 'planned';
-  if (target === 'planning-replied') reached = item.planning?.reply?.status === 'published';
-  if (target === 'retired') reached = item.stage === 'retired';
-  if (target.startsWith('comment-') && commentId !== undefined) {
-    const comment = item.comments.find((candidate) => candidate.commentId === commentId);
-    if (target === 'comment-rejected') reached = comment?.disposition === 'rejected';
-    if (target === 'comment-received') {
-      reached = comment?.disposition === 'approved' && comment.turn !== undefined;
-    }
-    if (target === 'comment-replied') {
-      reached = comment?.turn?.status === 'responded' && comment.reply?.status === 'published';
-    }
-  }
+  const reached =
+    target === 'assignment-rejected'
+      ? item.disposition === 'rejected'
+      : target === 'retired'
+        ? item.stage === 'retired'
+        : item.worktree === 'ready' &&
+          ['active', 'received', 'retired', 'worktree-ready'].includes(item.stage ?? '');
   return reached
     ? { code: `github-notification-${target}`, status: 'reached' }
     : { code: 'github-notification-wait-pending', status: 'pending' };

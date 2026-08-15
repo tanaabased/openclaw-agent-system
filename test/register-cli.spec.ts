@@ -507,7 +507,7 @@ describe('lib/register-cli', () => {
     assert.equal(JSON.parse(output.join('')).status, 'ready');
   });
 
-  it('should wait for one comment reply with explicit refresh and timeout options', async () => {
+  it('should wait for one worktree with explicit refresh and timeout options', async () => {
     const { calls, output, program } = createProgram();
 
     await program.parseAsync([
@@ -522,10 +522,8 @@ describe('lib/register-cli', () => {
       'pull-request',
       '--number',
       '13',
-      '--comment',
-      '91',
       '--for',
-      'comment-replied',
+      'worktree-ready',
       '--refresh',
       '--timeout',
       '45',
@@ -535,14 +533,13 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.notificationWait, [
       {
         agentId: 'tanaabot',
-        commentId: 91,
         refresh: true,
         selector: {
           itemType: 'pull-request',
           number: 13,
           repository: 'tanaabased/example',
         },
-        target: 'comment-replied',
+        target: 'worktree-ready',
         timeoutMs: 45_000,
       },
     ]);

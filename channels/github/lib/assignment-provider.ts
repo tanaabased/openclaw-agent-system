@@ -10,27 +10,14 @@ import type GitHubAccountClient from '../../../lib/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from '../utils/admit-assignment.ts';
-import {
-  admitGitHubComment,
-  githubCommentRevision,
-  type GitHubCanonicalIssueComment,
-} from '../utils/comment-admission.ts';
-import type { GitHubNotificationCommentRevisionState } from '../utils/monitor-state.ts';
 import { resolveNotificationRoute } from '../utils/routing.ts';
-import GitHubWorkEventClient, {
-  GitHubWorkEventClientError,
-  type GitHubNotificationPlanningContext,
-} from './work-event-client.ts';
+import GitHubWorkEventClient, { GitHubWorkEventClientError } from './work-event-client.ts';
 
 export interface GitHubNotificationAssignmentProviderDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
-
-export type GitHubNotificationPlanningContextResult =
-  | { authorized: false; reasonCode: string }
-  | { authorized: true; context: GitHubNotificationPlanningContext };
 
 type GitHubNotificationAssignmentInspection =
   | { authorized: false; reasonCode?: string }
@@ -39,14 +26,6 @@ type GitHubNotificationAssignmentInspection =
       client: GitHubWorkEventClient;
       configuration: GitHubNotificationsConfiguration;
     };
-
-export interface GitHubNotificationCommentBoundaryInput extends GitHubNotificationAssignmentBoundaryInput {
-  comment: GitHubNotificationCommentRevisionState;
-}
-
-export type GitHubNotificationCommentContextResult =
-  | { authorized: false; reasonCode: string }
-  | { authorized: true; context: GitHubCanonicalIssueComment };
 
 /** Read current GitHub authority for assignment delivery. */
 export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
@@ -66,105 +45,6 @@ export default class GitHubNotificationAssignmentProvider implements GitHubNotif
           authorized: false,
           ...(inspection.reasonCode === undefined ? {} : { reasonCode: inspection.reasonCode }),
         };
-  }
-
-  async loadPlanningContext(
-    input: GitHubNotificationAssignmentBoundaryInput,
-  ): Promise<GitHubNotificationPlanningContextResult> {
-    if (input.item.itemType === 'pull-request' && input.item.pullRequest === undefined) {
-      return {
-        authorized: false,
-        reasonCode: 'github-notification-pull-request-state-missing',
-      };
-    }
-    const inspection = await this.#inspect(input);
-    if (!inspection.authorized) {
-      return {
-        authorized: false,
-        reasonCode: inspection.reasonCode ?? 'github-notification-authority-revoked',
-      };
-    }
-    return {
-      authorized: true,
-      context: await inspection.client.getPlanningContext(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-        input.item.itemType,
-      ),
-    };
-  }
-
-  async inspectComment(
-    input: GitHubNotificationCommentBoundaryInput,
-  ): Promise<{ authorized: boolean; reasonCode?: string }> {
-    const result = await this.#loadComment(input);
-    return result.authorized
-      ? { authorized: true }
-      : { authorized: false, reasonCode: result.reasonCode };
-  }
-
-  async loadCommentContext(
-    input: GitHubNotificationCommentBoundaryInput,
-  ): Promise<GitHubNotificationCommentContextResult> {
-    return this.#loadComment(input);
-  }
-
-  async #loadComment(
-    input: GitHubNotificationCommentBoundaryInput,
-  ): Promise<GitHubNotificationCommentContextResult> {
-    if (input.comment.disposition !== 'approved') {
-      return {
-        authorized: false,
-        reasonCode: 'github-notification-comment-ineligible',
-      };
-    }
-    const inspection = await this.#inspect(input);
-    if (!inspection.authorized) {
-      return {
-        authorized: false,
-        reasonCode: inspection.reasonCode ?? 'github-notification-authority-revoked',
-      };
-    }
-    try {
-      const comment = await inspection.client.getIssueComment(
-        input.item.repositoryOwner,
-        input.item.repositoryName,
-        input.item.number,
-        input.comment.commentDatabaseId,
-      );
-      const revision = githubCommentRevision(comment);
-      if (
-        comment.nodeId !== input.comment.commentNodeId ||
-        revision.revisionId !== input.comment.revisionId ||
-        revision.bodyDigest !== input.comment.bodyDigest ||
-        comment.author?.nodeId !== input.comment.actorNodeId
-      ) {
-        return {
-          authorized: false,
-          reasonCode: 'github-notification-comment-revision-stale',
-        };
-      }
-      const admission = admitGitHubComment({
-        account: inspection.client.identity,
-        comment,
-        configuration: inspection.configuration,
-      });
-      return admission.disposition === 'approved'
-        ? { authorized: true, context: comment }
-        : {
-            authorized: false,
-            reasonCode: `github-notification-${admission.code}`,
-          };
-    } catch (error) {
-      if (
-        error instanceof GitHubWorkEventClientError &&
-        error.code === 'github-notification-resource-missing'
-      ) {
-        return { authorized: false, reasonCode: error.code };
-      }
-      throw error;
-    }
   }
 
   async #inspect(

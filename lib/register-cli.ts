@@ -197,7 +197,6 @@ export default function registerAgentSystemCli(
     .option('--repository <owner/name>', 'Select one GitHub repository.')
     .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
     .option('--number <number>', 'Select one GitHub item number.')
-    .option('--comment <number>', 'Select one GitHub comment.')
     .option('--for <target>', 'Select the semantic lifecycle checkpoint.')
     .option('--refresh', 'Run intake refresh cycles while waiting.')
     .option('--timeout <seconds>', 'Set the bounded wait timeout in seconds.')
@@ -207,7 +206,6 @@ export default function registerAgentSystemCli(
       const agentId = commandOptions.agent;
       await waitNotificationsAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
-        commentId: commandOptions.comment,
         itemKind: commandOptions.kind,
         itemNumber: commandOptions.number,
         json: commandOptions.json === true,
