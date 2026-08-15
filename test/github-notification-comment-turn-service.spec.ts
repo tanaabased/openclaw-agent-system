@@ -58,8 +58,10 @@ describe('channels/github/lib/comment-turn-service', () => {
       worktreePath: '/workspace/worktrees/issue-12',
     };
     const comment = incomingComment();
-    let instructionsPrepared = false;
-    let instructionsCleared = false;
+    const revision = githubCommentRevision(comment);
+    const injections: Parameters<
+      GitHubNotificationCommentTurnServiceDependencies['enqueueNextTurnInjection']
+    >[0][] = [];
     let recorded = false;
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
@@ -71,14 +73,14 @@ describe('channels/github/lib/comment-turn-service', () => {
     const service = new GitHubNotificationCommentTurnService({
       capabilities: new GitHubNotificationCapabilityRegistry(),
       async dispatchReplyWithBufferedBlockDispatcher(input) {
-        assert.equal(instructionsPrepared, true);
         assert.equal(recorded, true);
+        assert.equal(injections.length, 1);
         assert.equal(input.ctx.Body, comment.body);
         assert.equal(input.ctx.BodyForAgent, comment.body);
         assert.equal(input.ctx.RawBody, comment.body);
         assert.equal(input.ctx.Provider, githubNotificationChannelId);
         assert.equal(input.replyOptions?.disableTools, false);
-        assert.equal(input.replyOptions?.runId, 'github-comment-run');
+        assert.equal(input.replyOptions?.runId, undefined);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
@@ -102,19 +104,16 @@ describe('channels/github/lib/comment-turn-service', () => {
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
-      logger: { error() {}, info() {}, warn() {} },
-      promptInstructions: {
-        prepare(instructions) {
-          instructionsPrepared = true;
-          assert.match(instructions, /Work mode/u);
-          return {
-            clear() {
-              instructionsCleared = true;
-            },
-            runId: 'github-comment-run',
-          };
-        },
+      async enqueueNextTurnInjection(injection) {
+        assert.equal(recorded, true);
+        injections.push(injection);
+        return {
+          enqueued: true,
+          id: injection.idempotencyKey ?? 'unexpected-injection',
+          sessionKey: injection.sessionKey,
+        };
       },
+      logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       recordInboundSession,
     });
@@ -123,19 +122,27 @@ describe('channels/github/lib/comment-turn-service', () => {
       agentId,
       comment,
       item,
-      revision: githubCommentRevision(comment),
+      revision,
       workspaceDir,
     });
 
     assert.equal(result.publicText, 'ready');
     assert.equal(result.accountId, agentId);
-    assert.equal(instructionsCleared, true);
+    assert.deepEqual(injections, [
+      {
+        idempotencyKey: `github-comment:${revision.revisionId}`,
+        placement: 'append_context',
+        sessionKey: result.ctxPayload.SessionKey,
+        text: injections[0]?.text,
+      },
+    ]);
+    assert.match(injections[0]?.text ?? '', /Work mode/u);
     assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
       {
         comment: {
           databaseId: 91,
           nodeId: 'IC_comment',
-          revisionId: githubCommentRevision(comment).revisionId,
+          revisionId: revision.revisionId,
         },
         item: {
           lifecycleId: 'issue',

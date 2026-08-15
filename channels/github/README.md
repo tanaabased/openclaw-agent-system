@@ -26,7 +26,7 @@ lifecycle session and publishes the accepted public part of the response.
   re-read canonically and admitted as a direct message in the issue session.
 - The visible inbound message is the normalized author-written comment. Bounded
   source and worktree facts are model-only context, and Work instructions are
-  injected behind the scenes for that run.
+  queued behind the scenes for exactly the next session turn.
 - The current comment slice requires the configured agent's `coding` profile.
   It preserves that configured native coding surface across the built-in
   OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.

@@ -25,7 +25,6 @@ import GitHubNotificationStatusService from '../channels/github/lib/status-servi
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
-import GitHubNotificationPromptInstructionService from '../channels/github/lib/prompt-instruction-service.ts';
 import GitHubNotificationPublicationLeaseStore from '../channels/github/lib/publication-lease.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
@@ -186,7 +185,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(currentUid === undefined ? {} : { currentUid }),
     ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
   });
-  const notificationPromptInstructions = new GitHubNotificationPromptInstructionService();
   const notificationMonitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
@@ -291,8 +289,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     capabilities: notificationCapabilities,
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    enqueueNextTurnInjection: api.session.workflow.enqueueNextTurnInjection,
     logger,
-    promptInstructions: notificationPromptInstructions,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });
@@ -351,7 +349,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationPromptInstructions);
+  registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {

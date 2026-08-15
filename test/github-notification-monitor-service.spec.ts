@@ -47,6 +47,16 @@ function availableCycleLeaseStore(release = async () => undefined) {
   };
 }
 
+function githubResponse(body: unknown) {
+  return {
+    exitCode: 0,
+    stderr: '',
+    stdout: ['HTTP/2 200 OK', 'x-ratelimit-remaining: 100', '', JSON.stringify(body)].join('\n'),
+    timedOut: false,
+    truncated: false,
+  };
+}
+
 describe('channels/github/lib/monitor-service', () => {
   it('should stop an account scheduler without surfacing the host abort', async () => {
     const service = new GitHubNotificationMonitorService({
@@ -279,6 +289,111 @@ describe('channels/github/lib/monitor-service', () => {
       status: 'failed',
     });
     assert.equal(state?.diagnosticCode, 'github-notification-worktree-preparation-failed');
+  });
+
+  it('should report comment failure without poisoning provider health or retirement', async () => {
+    let state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    let connections = 0;
+    const warnings: string[] = [];
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connections += 1;
+          return {
+            identity: { login: 'tanaabot', nodeId: 'U_agent' },
+            async execute(argv) {
+              if (argv.includes('/repos/tanaabased/example')) {
+                return githubResponse({
+                  archived: false,
+                  cloneUrl: 'https://github.com/tanaabased/example.git',
+                  databaseId: 3,
+                  defaultBranch: 'main',
+                  disabled: false,
+                  name: 'example',
+                  nodeId: 'R_repo',
+                  owner: { login: 'tanaabased', nodeId: 'O_owner', type: 'Organization' },
+                });
+              }
+              if (argv.includes('/repos/tanaabased/example/collaborators/tanaabot/permission')) {
+                return githubResponse({ permission: 'write' });
+              }
+              if (argv.includes('/repos/tanaabased/example/issues/12')) {
+                return githubResponse({
+                  assignees: [{ login: 'tanaabot', nodeId: 'U_agent', type: 'User' }],
+                  databaseId: 7,
+                  isPullRequest: false,
+                  nodeId: 'I_item',
+                  number: 12,
+                  state: 'open',
+                  updatedAt: '2026-08-15T12:00:00.000Z',
+                });
+              }
+              return githubResponse({ incomplete: false, items: [], totalCount: 0 });
+            },
+          };
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          const item = state.items[itemKey];
+          if (item?.disposition === 'retired' && item.intake) item.intake.stage = 'retired';
+        },
+      },
+      commentOrchestrator: {
+        async reconcile() {
+          throw Object.assign(new Error('private response detail'), {
+            code: 'github-notification-response-publication-missing',
+          });
+        },
+      },
+      clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      random: () => 0.5,
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async (next) => {
+          state = structuredClone(next);
+        },
+      },
+    });
+
+    const [failed] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
+
+    assert.equal(failed?.code, 'github-notification-response-publication-missing');
+    assert.equal(failed?.status, 'failed');
+    assert.equal(state.diagnosticCode, undefined);
+    assert.equal(state.failureCount, 0);
+    assert.equal(state.lastSuccessfulPollAt, 1_000);
+    assert.ok(warnings.every((message) => !message.includes('private response detail')));
+
+    state.items[notificationItemKey]!.disposition = 'retired';
+    state.items[notificationItemKey]!.reasonCode = 'item-closed';
+    const [retired] = await service.runOnce({ agentId: 'tanaabot' });
+
+    assert.equal(retired?.code, 'github-notification-pending-reconciled');
+    assert.equal(retired?.status, 'completed');
+    assert.equal(state.items[notificationItemKey]?.intake?.stage, 'retired');
+    assert.equal(connections, 1);
   });
 
   it('should reconcile transitional retirement before the next remote poll', async () => {

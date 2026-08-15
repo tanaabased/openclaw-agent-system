@@ -63,6 +63,13 @@ describe('index', () => {
           },
         },
       },
+      session: {
+        workflow: {
+          async enqueueNextTurnInjection(injection: { sessionKey: string }) {
+            return { enqueued: true, id: 'injection', sessionKey: injection.sessionKey };
+          },
+        },
+      },
       registerCli(
         nextRegistrar: (context: {
           logger: PluginLogger;
@@ -102,7 +109,6 @@ describe('index', () => {
       'before_tool_call',
       'session_start',
       'before_prompt_build',
-      'agent_end',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);

@@ -401,7 +401,29 @@ export default class GitHubNotificationMonitorService {
         pendingIntakeItemKeys(result.state, options.selector),
         signal,
       );
-      await this.#reconcileComments(agentId, options.selector, signal);
+      try {
+        await this.#reconcileComments(agentId, options.selector, signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        const diagnostic = diagnosticCode(error);
+        this.#dependencies.logger.warn(
+          `github-notifications: comment reconciliation failed agent=${agentId} code=${diagnostic.code}`,
+        );
+        return {
+          agentId,
+          approved: result.approved,
+          baseline: result.baseline,
+          baselineAt: result.state.baselineAt,
+          baselineEstablished: result.baselineEstablished,
+          code: diagnostic.code,
+          duplicates: result.duplicates,
+          lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
+          nextPollAt: result.state.nextPollAt,
+          rejected: result.rejected,
+          retired: result.retired,
+          status: 'failed',
+        };
+      }
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';
