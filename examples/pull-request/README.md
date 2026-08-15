@@ -191,12 +191,10 @@ session_key="$(cat "$TMPDIR/assigned-pull-request-session-key")"
 "$GITHUB_WORKSPACE/scripts/wait-for-notification-comment.sh" \
   --actor-agent notification-actor \
   --item-number "$pull_request_number" \
+  --history-output "$TMPDIR/pr-comment-history.json" \
   --notification-agent notification-data \
   --repository tanaabased/agent-system-test \
   --session-key "$session_key"
-cd "$TMPDIR/agent-system-pr-notifications"
-params="$(jq -cn --arg sessionKey "$session_key" '{sessionKey:$sessionKey,limit:30,maxChars:120000}')"
-openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/pr-comment-history.json"
 cd "$TMPDIR/agent-system-pr-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length == 1 and (.[0].body | contains("GITHUB_COMMENT_JSON") | not) and (.[0].body | contains("STATUS_EVIDENCE_JSON") | not) and (.[0].body | contains("/workspace/") | not)' | grep -Fx 'true'
 

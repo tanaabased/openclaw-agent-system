@@ -25,7 +25,10 @@ import githubNotificationAssignmentCard, {
   githubNotificationAssignmentReceipt,
 } from '../messages/presentation/assignment-card.ts';
 import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
-import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
+import type {
+  GitHubNotificationObservedSession,
+  GitHubNotificationRecordedSession,
+} from '../utils/delivery-plan.ts';
 import type { GitHubNotificationPullRequestState } from '../utils/monitor-state.ts';
 import {
   githubNotificationChannelId,
@@ -166,6 +169,12 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
       throw new Error('OpenClaw did not record the expected notification session.');
     }
     if (!recordedContext) throw new Error('OpenClaw did not prepare the notification context.');
+    const recorded: GitHubNotificationRecordedSession = {
+      key: result.routeSessionKey,
+      mode: assignment.mode,
+      status: 'received',
+    };
+    await input.onSessionRecorded?.(recorded);
     const acknowledgment = await this.#publishAcknowledgment(assignment, input, recordedContext);
     return {
       acknowledgment,

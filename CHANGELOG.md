@@ -20,10 +20,12 @@
 - Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Fixed GitHub assignment receipts to use deterministic channel text instead of model output. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Fixed deterministic GitHub assignment receipts to publish from a durable received-session checkpoint before private activation. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed managed Codex config to set `allow_login_shell = false` and warn when user-managed config omits it. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
 - Fixed managed command launchers to preserve bounded redirected standard input.
 - Fixed managed `gh` launchers to accept root `--help`, `-h`, and `--version` flags used by repository helpers. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
 - Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
+- Fixed notification example failures to stop at terminal delivery state while retaining compact session and doctor diagnostics.
 - Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
 
 ### Notes

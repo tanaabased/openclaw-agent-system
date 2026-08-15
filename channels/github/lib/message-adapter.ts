@@ -99,7 +99,7 @@ export function createGitHubNotificationMessageAdapter(
       const delivery = item.delivery;
       if (
         item.disposition !== 'approved' ||
-        delivery?.stage !== 'active' ||
+        !delivery ||
         githubNotificationConversationId({
           itemNumber: item.number,
           repositoryId: item.repositoryNodeId,
@@ -108,6 +108,7 @@ export function createGitHubNotificationMessageAdapter(
         continue;
       }
       if (parsed.intent === 'initial-acknowledgment') {
+        if (delivery.stage !== 'received' && delivery.stage !== 'active') continue;
         if (
           githubNotificationPublicationTarget({
             intent: parsed.intent,
@@ -119,6 +120,7 @@ export function createGitHubNotificationMessageAdapter(
         }
         continue;
       }
+      if (delivery.stage !== 'active') continue;
       if (parsed.intent === 'operator-progress') {
         for (const publicationId of Object.keys(delivery.progress ?? {})) {
           if (

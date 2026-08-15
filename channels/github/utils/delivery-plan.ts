@@ -17,6 +17,13 @@ export interface GitHubNotificationObservedSession {
   status: 'active';
 }
 
+export interface GitHubNotificationRecordedSession {
+  id?: string;
+  key: string;
+  mode?: GitHubNotificationExecutionMode;
+  status: 'received';
+}
+
 export interface GitHubNotificationDeliveryObservation {
   authority: { authorized: boolean; reasonCode?: string };
   retirementReasonCode?: string;
@@ -46,6 +53,7 @@ export function planGitHubNotificationDelivery(
     return { kind: 'retire', reasonCode };
   }
   if (delivery.stage === 'active') return { kind: 'none' };
+  if (delivery.stage === 'received') return { kind: 'record-session' };
   if (!worktreeRequired) return { kind: 'record-session' };
   if (!observation.worktree) return { kind: 'prepare-worktree' };
   if (

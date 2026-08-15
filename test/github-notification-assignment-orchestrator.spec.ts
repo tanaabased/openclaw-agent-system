@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
+  type GitHubNotificationAssignmentSessionInput,
 } from '../channels/github/lib/assignment-orchestrator.ts';
 import {
   approvedPullRequestNotificationItem,
@@ -16,6 +17,15 @@ const activeSession = {
   key: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
   status: 'active' as const,
 };
+
+async function recordActiveSession(input: GitHubNotificationAssignmentSessionInput) {
+  await input.onSessionRecorded?.({
+    key: activeSession.key,
+    mode: input.delivery.mode,
+    status: 'received',
+  });
+  return activeSession;
+}
 
 function memoryStore(initial = monitorState()) {
   let state = structuredClone(initial);
@@ -42,9 +52,9 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       sessions: {
-        async recordSession() {
+        async recordSession(input) {
           sessionRecords += 1;
-          return activeSession;
+          return recordActiveSession(input);
         },
       },
       stateStore: store,
@@ -72,7 +82,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     });
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
-      ['admitted', 'worktree-ready', 'session-recording', 'active'],
+      ['admitted', 'worktree-ready', 'session-recording', 'received', 'active'],
     );
   });
 
@@ -91,7 +101,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
         async recordSession(input) {
           recordedWorktree = input.worktree;
           assert.equal(input.item.pullRequest?.headSha, 'a'.repeat(40));
-          return activeSession;
+          return recordActiveSession(input);
         },
       },
       stateStore: store,
@@ -120,7 +130,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       store.writes.map(
         (checkpoint) => checkpoint.items[notificationPullRequestItemKey]?.delivery?.stage,
       ),
-      ['session-recording', 'active'],
+      ['session-recording', 'received', 'active'],
     );
   });
 
@@ -137,10 +147,10 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
       sessions: {
-        async recordSession() {
+        async recordSession(input) {
           sessionRecords += 1;
           if (sessionRecords === 1) throw new Error('interrupted session record');
-          return activeSession;
+          return recordActiveSession(input);
         },
       },
       stateStore: store,
@@ -167,7 +177,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: { recordSession: async () => activeSession },
+      sessions: { recordSession: recordActiveSession },
       stateStore: {
         read: store.read,
         async write(next) {

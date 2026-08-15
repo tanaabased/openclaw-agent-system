@@ -338,7 +338,7 @@ function validDelivery(
     (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
     (delivery.progress === undefined || validProgress(delivery.progress)) &&
     validNodeId(delivery.assignmentEventId) &&
-    ['active', 'admitted', 'retired', 'session-recording', 'worktree-ready'].includes(
+    ['active', 'admitted', 'received', 'retired', 'session-recording', 'worktree-ready'].includes(
       delivery.stage ?? '',
     ) &&
     optionalBoundedString(delivery.failureCode, 255) &&
@@ -390,6 +390,15 @@ function validDelivery(
       (itemType === 'pull-request' || hasWorktree) &&
       !hasSession &&
       delivery.sessionId === undefined
+    );
+  }
+  if (delivery.stage === 'received') {
+    return (
+      (itemType === 'pull-request' || hasWorktree) &&
+      hasSession &&
+      delivery.activation === undefined &&
+      delivery.acknowledgment?.status === 'pending' &&
+      delivery.progress === undefined
     );
   }
   if (delivery.stage === 'active') {

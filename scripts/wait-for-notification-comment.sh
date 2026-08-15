@@ -3,6 +3,7 @@
 set -euo pipefail
 
 actor_agent=''
+history_output=''
 item_number=''
 notification_agent=''
 repository=''
@@ -16,6 +17,10 @@ while test "$#" -gt 0; do
       ;;
     --item-number)
       item_number="$2"
+      shift 2
+      ;;
+    --history-output)
+      history_output="$2"
       shift 2
       ;;
     --notification-agent)
@@ -54,7 +59,60 @@ if ! command -v "$timeout_command" > /dev/null 2>&1; then
 fi
 
 deadline=$((SECONDS + timeout_seconds))
+doctor=''
+history=''
 reply_count='0'
+
+capture_history() {
+  history="$("$timeout_command" --kill-after=5 10 openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
+  if test -z "$history"; then
+    return 1
+  fi
+  if test -n "$history_output"; then
+    printf '%s\n' "$history" > "$history_output"
+  fi
+}
+
+print_history_summary() {
+  if test -n "$history"; then
+    printf '%s\n' "$history" | jq -c --arg replyCount "$reply_count" '
+      [.messages[]? | select(.role == "assistant")] as $assistant
+      | [$assistant[]? | .. | strings] | join("\n") as $text
+      | {
+          assistantMessages: ($assistant | length),
+          hasCommentAnswer: ($text | contains("## 💬 Comment answered")),
+          hasPrivateResponse: ($text | contains("## Response")),
+          hasToGitHub: ($text | contains("## 📤 To GitHub")),
+          publicReplyCount: ($replyCount | tonumber? // null)
+        }
+    ' >&2 || true
+  fi
+}
+
+print_doctor_summary() {
+  if test -n "$doctor"; then
+    printf '%s\n' "$doctor" | jq -c '
+      {
+        status,
+        notificationFindings: [
+          .findings[]?
+          | select(.component == "github-notifications")
+          | {code, status}
+        ]
+      }
+    ' >&2 || true
+  fi
+}
+
+fail_with_diagnostics() {
+  printf '%s\n' "$1" >&2
+  capture_history || true
+  print_history_summary
+  print_doctor_summary
+  "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+  exit 1
+}
+
 while ((SECONDS < deadline)); do
   remaining_seconds=$((deadline - SECONDS))
   command_timeout="$remaining_seconds"
@@ -62,39 +120,27 @@ while ((SECONDS < deadline)); do
     command_timeout=10
   fi
   reply_count="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system tool gh --agent "$actor_agent" -- api "repos/$repository/issues/$item_number/comments" --jq '[.[] | select(.body | contains("agent-system-github-publication:github-reply"))] | length' 2>/dev/null || true)"
-  if test "$reply_count" = '1'; then
+  if test "$reply_count" = '1' && capture_history; then
     exit 0
+  fi
+  doctor="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
+  if test -n "$doctor" && printf '%s\n' "$doctor" | jq -e '
+    any(
+      .findings[]?;
+      .component == "github-notifications"
+        and (
+          .code == "github-notification-comment-response-invalid"
+          or .code == "github-notification-comment-response-missing"
+          or .code == "github-notification-comment-dispatch-failed"
+          or .code == "github-notification-reply-not-confirmed"
+          or .code == "github-notification-reply-publication-failed"
+        )
+    )
+  ' >/dev/null 2>&1; then
+    fail_with_diagnostics 'notification comment response reached a terminal failure'
   fi
   sleep 2
 done
 
-printf 'notification comment response did not complete within %s seconds\n' "$timeout_seconds" >&2
-history="$("$timeout_command" --kill-after=5 10 openclaw gateway call chat.history --params "$params" --json --timeout 5000 2>/dev/null || true)"
-if test -n "$history"; then
-  printf '%s\n' "$history" | jq -c --arg replyCount "$reply_count" '
-    [.messages[]? | select(.role == "assistant")] as $assistant
-    | [$assistant[]? | .. | strings] | join("\n") as $text
-    | {
-        assistantMessages: ($assistant | length),
-        hasCommentAnswer: ($text | contains("## 💬 Comment answered")),
-        hasPrivateResponse: ($text | contains("## Response")),
-        hasToGitHub: ($text | contains("## 📤 To GitHub")),
-        publicReplyCount: ($replyCount | tonumber? // null)
-      }
-  ' >&2 || true
-fi
 doctor="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 10 openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
-if test -n "$doctor"; then
-  printf '%s\n' "$doctor" | jq -c '
-    {
-      status,
-      notificationFindings: [
-        .findings[]?
-        | select(.component == "github-notifications")
-        | {code, status}
-      ]
-    }
-  ' >&2 || true
-fi
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
-exit 1
+fail_with_diagnostics "notification comment response did not complete within $timeout_seconds seconds"

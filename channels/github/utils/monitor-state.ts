@@ -4,7 +4,7 @@ import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
 export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejected' | 'retired';
 
 export type GitHubNotificationDeliveryStage =
-  'active' | 'admitted' | 'retired' | 'session-recording' | 'worktree-ready';
+  'active' | 'admitted' | 'received' | 'retired' | 'session-recording' | 'worktree-ready';
 
 export type GitHubNotificationAcknowledgmentState =
   | { failureCode: string; status: 'failed' }

@@ -136,6 +136,7 @@ function createService(
 
 describe('channels/github/lib/session-service', () => {
   it('should await the routed session record without dispatching an agent turn', async () => {
+    const order: string[] = [];
     let completeRecord: (() => void) | undefined;
     const recordTask = new Promise<void>((resolveRecord) => {
       completeRecord = resolveRecord;
@@ -145,6 +146,7 @@ describe('channels/github/lib/session-service', () => {
     let published: Record<string, unknown> | undefined;
     const service = createService({
       async publish(input) {
+        order.push('publish');
         published = input as unknown as Record<string, unknown>;
         return {
           delivery: { messageIds: ['91'], visibleReplySent: true },
@@ -159,10 +161,22 @@ describe('channels/github/lib/session-service', () => {
     });
 
     let settled = false;
-    const pending = service.recordSession(assignmentInput).then((observed) => {
-      settled = true;
-      return observed;
-    });
+    const pending = service
+      .recordSession({
+        ...assignmentInput,
+        onSessionRecorded(recorded) {
+          order.push('received');
+          assert.deepEqual(recorded, {
+            key: route.sessionKey,
+            mode: 'plan',
+            status: 'received',
+          });
+        },
+      })
+      .then((observed) => {
+        settled = true;
+        return observed;
+      });
     await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
 
     assert.equal(settled, false);
@@ -171,6 +185,7 @@ describe('channels/github/lib/session-service', () => {
     const observed = await pending;
 
     assert.equal(records, 1);
+    assert.deepEqual(order, ['received', 'publish']);
     assert.equal(
       recordedContext?.ConversationLabel,
       'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
@@ -247,6 +262,7 @@ describe('channels/github/lib/session-service', () => {
     let adopted = 0;
     const service = createService({
       async dispatch(input) {
+        assert.equal(input.ctx.AccountId, 'data');
         assert.equal(input.ctx.Provider, 'agent-system-github');
         assert.equal(input.ctx.Surface, 'agent-system-github');
         assert.equal(input.ctx.OriginatingChannel, 'agent-system-github');
@@ -435,6 +451,8 @@ describe('channels/github/lib/session-service', () => {
     let adopted = 0;
     const service = createService({
       async dispatch(input) {
+        assert.equal(input.ctx.AccountId, 'data');
+        assert.equal(input.ctx.Provider, 'agent-system-github');
         assert.equal(input.replyOptions?.disableTools, true);
         assert.deepEqual(input.toolsAllow, []);
         assert.equal(input.ctx.SenderId, 'U_actor');

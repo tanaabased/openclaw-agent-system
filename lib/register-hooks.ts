@@ -8,7 +8,9 @@ import resolveGitHubNotificationMessage, {
 } from '../channels/github/lib/message-registry.ts';
 import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 
-type HookApi = Pick<OpenClawPluginApi, 'on'>;
+type HookApi = Pick<OpenClawPluginApi, 'on'> & {
+  logger?: Pick<OpenClawPluginApi['logger'], 'info' | 'warn'>;
+};
 type HookManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
 
 /** Register passive agent-aware manifest loading. */
@@ -26,15 +28,29 @@ export default function registerAgentSystemHooks(
       result.status === 'loaded'
         ? [agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest)].join('\n')
         : undefined;
-    const request =
-      context.messageProvider === githubNotificationChannelId
-        ? parseGitHubNotificationMessageRequest(
-            context.channelContext?.agentSystemGitHubNotification,
-          )
-        : undefined;
+    const notificationTurn = context.messageProvider === githubNotificationChannelId;
+    const request = notificationTurn
+      ? parseGitHubNotificationMessageRequest(context.channelContext?.agentSystemGitHubNotification)
+      : undefined;
+    if (notificationTurn && !request) {
+      api.logger?.warn(
+        'github-notifications: prompt instructions unresolved code=github-notification-instructions-unresolved',
+      );
+    }
     const instructions = request
       ? resolveGitHubNotificationMessage(request).instructions
       : undefined;
+    if (request && instructions) {
+      api.logger?.info(
+        [
+          'github-notifications: prompt instructions applied',
+          'code=github-notification-instructions-applied',
+          `assignment=${request.assignmentKind}`,
+          `event=${request.event}`,
+          `mode=${request.mode}`,
+        ].join(' '),
+      );
+    }
     const appendSystemContext = [guidance, instructions].filter(Boolean).join('\n\n');
     return appendSystemContext ? { appendSystemContext } : undefined;
   });

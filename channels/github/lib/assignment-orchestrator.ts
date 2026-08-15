@@ -4,6 +4,7 @@ import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import {
   planGitHubNotificationDelivery,
   type GitHubNotificationDeliveryObservation,
+  type GitHubNotificationRecordedSession,
   type GitHubNotificationObservedSession,
   type GitHubNotificationObservedWorktree,
 } from '../utils/delivery-plan.ts';
@@ -37,6 +38,7 @@ export interface GitHubNotificationAssignmentWorktrees {
 }
 
 export interface GitHubNotificationAssignmentSessionInput extends GitHubNotificationAssignmentBoundaryInput {
+  onSessionRecorded?(session: GitHubNotificationRecordedSession): Promise<void> | void;
   worktree?: GitHubNotificationObservedWorktree;
 }
 
@@ -200,6 +202,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
           this.#dependencies.sessions.recordSession({
             agentId,
             ...checkpoint,
+            onSessionRecorded: (recorded) => this.#checkpointReceived(state, itemKey, recorded),
             signal,
             ...(worktree === undefined ? {} : { worktree }),
             workspaceDir: state.workspaceDir,
@@ -393,6 +396,23 @@ export default class GitHubNotificationAssignmentOrchestrator {
       sessionId: session.id,
       sessionKey: session.key,
       stage: 'active',
+    });
+  }
+
+  async #checkpointReceived(
+    state: GitHubNotificationMonitorState,
+    itemKey: string,
+    session: GitHubNotificationRecordedSession,
+  ): Promise<void> {
+    const delivery = state.items[itemKey]?.delivery;
+    if (!delivery) return;
+    await this.#checkpointDelivery(state, itemKey, {
+      ...withoutFailure(delivery),
+      acknowledgment: { status: 'pending' },
+      mode: session.mode ?? delivery.mode ?? 'plan',
+      sessionId: session.id,
+      sessionKey: session.key,
+      stage: 'received',
     });
   }
 

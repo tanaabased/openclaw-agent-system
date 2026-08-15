@@ -65,6 +65,20 @@ function activeState(): GitHubNotificationMonitorState {
   return state;
 }
 
+function receivedState(): GitHubNotificationMonitorState {
+  const state = notificationMonitorState();
+  const item = state.items[notificationItemKey]!;
+  item.delivery = {
+    ...item.delivery!,
+    acknowledgment: { status: 'pending' },
+    sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
+    stage: 'received',
+    worktreeBranch: 'agent/tanaabot/issue-7',
+    worktreePath: '/workspace/.agent-system/worktrees/issue-7',
+  };
+  return state;
+}
+
 function target(state = activeState()): string {
   const item = state.items[notificationItemKey]!;
   return githubNotificationPublicationTarget({
@@ -182,7 +196,7 @@ describe('channels/github/lib/message-adapter', () => {
   });
 
   it('should reauthorize and publish one marked comment through the exact account target', async () => {
-    const state = activeState();
+    const state = receivedState();
     const order: string[] = [];
     const requests: Array<{ argv: string[]; stdin?: string }> = [];
     const adapter = createGitHubNotificationMessageAdapter({

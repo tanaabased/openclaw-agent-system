@@ -69,18 +69,20 @@ describe('channels/github/utils/delivery-plan', () => {
   });
 
   it('should retry a deterministic session record', () => {
-    assert.deepEqual(
-      planGitHubNotificationDelivery(
-        {
-          ...admitted,
-          stage: 'session-recording',
-          worktreeBranch: worktree.branch,
-          worktreePath: worktree.path,
-        },
-        { authority, worktree },
-      ),
-      { kind: 'record-session' },
-    );
+    for (const stage of ['session-recording', 'received'] as const) {
+      assert.deepEqual(
+        planGitHubNotificationDelivery(
+          {
+            ...admitted,
+            stage,
+            worktreeBranch: worktree.branch,
+            worktreePath: worktree.path,
+          },
+          { authority, worktree },
+        ),
+        { kind: 'record-session' },
+      );
+    }
   });
 
   it('should preserve the retired terminal state', () => {

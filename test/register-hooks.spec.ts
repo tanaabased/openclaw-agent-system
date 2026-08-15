@@ -68,8 +68,18 @@ describe('lib/register-hooks', () => {
 
   it('should inject github notification instructions only for the matching channel turn', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const logs: string[] = [];
+    const warnings: string[] = [];
     registerAgentSystemHooks(
       {
+        logger: {
+          info(message: string) {
+            logs.push(message);
+          },
+          warn(message: string) {
+            warnings.push(message);
+          },
+        },
         on(name: string, handler: (...args: unknown[]) => unknown) {
           handlers.set(name, handler);
         },
@@ -97,11 +107,27 @@ describe('lib/register-hooks', () => {
       {},
       { channelContext, messageProvider: 'imessage' },
     );
+    const mismatchedProvider = await handlers.get('before_prompt_build')?.(
+      {},
+      {
+        channel: 'agent-system-github',
+        channelContext,
+        messageProvider: 'github',
+      },
+    );
+    await handlers.get('before_prompt_build')?.({}, { messageProvider: 'agent-system-github' });
 
     assert.match(
       String((injected as { appendSystemContext?: string })?.appendSystemContext),
       /Continue the assigned GitHub issue conversation in Plan mode/u,
     );
     assert.equal(ignored, undefined);
+    assert.equal(mismatchedProvider, undefined);
+    assert.deepEqual(logs, [
+      'github-notifications: prompt instructions applied code=github-notification-instructions-applied assignment=issue event=comment-received mode=plan',
+    ]);
+    assert.deepEqual(warnings, [
+      'github-notifications: prompt instructions unresolved code=github-notification-instructions-unresolved',
+    ]);
   });
 });

@@ -104,6 +104,26 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
+  it('should accept only pending acknowledgment metadata at the received checkpoint', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      acknowledgment: { status: 'pending' },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'received',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    item.delivery.activation = { status: 'pending' };
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+    delete item.delivery.activation;
+    item.delivery.acknowledgment = { commentId: 91, status: 'published' };
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+  });
+
   it('should reject acknowledgment metadata before the active checkpoint', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;

@@ -54,6 +54,46 @@ if ! command -v "$timeout_command" > /dev/null 2>&1; then
 fi
 deadline=$((SECONDS + timeout_seconds))
 history=''
+doctor=''
+
+print_history_summary() {
+  if test -n "$history"; then
+    printf '%s\n' "$history" | jq -c '
+      [.messages[]? | select(.role == "assistant")] as $assistant
+      | [$assistant[]? | .. | strings] | join("\n") as $text
+      | {
+          assistantMessages: ($assistant | length),
+          hasAssessment: ($text | contains("## Assessment")),
+          hasBlockers: ($text | contains("## Blockers")),
+          hasPlan: ($text | contains("## Plan"))
+        }
+    ' >&2 || true
+  fi
+}
+
+print_doctor_summary() {
+  if test -n "$doctor"; then
+    printf '%s\n' "$doctor" | jq -c '
+      {
+        status,
+        notificationFindings: [
+          .findings[]?
+          | select(.component == "github-notifications")
+          | {code, status}
+        ]
+      }
+    ' >&2 || true
+  fi
+}
+
+fail_with_diagnostics() {
+  printf '%s\n' "$1" >&2
+  print_history_summary
+  print_doctor_summary
+  "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+  exit 1
+}
+
 while ((SECONDS < deadline)); do
   remaining_seconds=$((deadline - SECONDS))
   command_timeout="$remaining_seconds"
@@ -67,34 +107,23 @@ while ((SECONDS < deadline)); do
       exit 0
     fi
   fi
+  doctor="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 "$command_timeout" openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
+  if test -n "$doctor" && printf '%s\n' "$doctor" | jq -e '
+    any(
+      .findings[]?;
+      .component == "github-notifications"
+        and (
+          .code == "github-notification-planning-response-invalid"
+          or .code == "github-notification-planning-response-missing"
+          or .code == "github-notification-acknowledgment-not-confirmed"
+          or .code == "github-notification-acknowledgment-publication-failed"
+        )
+    )
+  ' >/dev/null 2>&1; then
+    fail_with_diagnostics 'notification planning reached a terminal failure'
+  fi
   sleep 2
 done
 
-printf 'notification planning did not complete within %s seconds\n' "$timeout_seconds" >&2
-if test -n "$history"; then
-  printf '%s\n' "$history" | jq -c '
-    [.messages[]? | select(.role == "assistant")] as $assistant
-    | [$assistant[]? | .. | strings] | join("\n") as $text
-    | {
-        assistantMessages: ($assistant | length),
-        hasAssessment: ($text | contains("## Assessment")),
-        hasBlockers: ($text | contains("## Blockers")),
-        hasPlan: ($text | contains("## Plan"))
-      }
-  ' >&2 || true
-fi
 doctor="$(OPENCLAW_LOG_LEVEL=error "$timeout_command" --kill-after=5 10 openclaw agent-system doctor --agent "$notification_agent" --json 2>/dev/null || true)"
-if test -n "$doctor"; then
-  printf '%s\n' "$doctor" | jq -c '
-    {
-      status,
-      notificationFindings: [
-        .findings[]?
-        | select(.component == "github-notifications")
-        | {code, status}
-      ]
-    }
-  ' >&2 || true
-fi
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
-exit 1
+fail_with_diagnostics "notification planning did not complete within $timeout_seconds seconds"
