@@ -30,6 +30,7 @@ openclaw onboard --non-interactive --accept-risk \
   --skip-ui \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
+openclaw config set agents.defaults.thinkingDefault low
 openclaw config set agents.defaults.heartbeat.every "0m"
 
 # should install and enable the packed plugin
@@ -141,24 +142,36 @@ fi
 # should complete private planning independently from public delivery
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw agent-system notifications wait \
+if ! planning_wait="$(openclaw agent-system notifications wait \
   --agent notification-data \
   --repository tanaabased/agent-system-test \
   --kind issue \
   --number "$issue_number" \
   --for planning-complete \
-  --timeout 300 \
-  --json | jq -e '.status == "completed" and .observation.items[0].planning.status == "planned"'
+  --timeout 150 \
+  --json)"; then
+  printf '%s\n' "$planning_wait" | jq . >&2
+  "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+  exit 1
+fi
+printf '%s\n' "$planning_wait" | jq -e '.status == "completed" and .observation.items[0].planning.status == "planned"'
 
 # should publish one safe planning outcome through the channel adapter
-openclaw agent-system notifications wait \
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+if ! planning_reply_wait="$(openclaw agent-system notifications wait \
   --agent notification-data \
   --repository tanaabased/agent-system-test \
   --kind issue \
   --number "$issue_number" \
   --for planning-replied \
-  --timeout 300 \
-  --json | jq -e '.status == "completed" and .observation.items[0].planning.reply.status == "published"'
+  --timeout 150 \
+  --json)"; then
+  printf '%s\n' "$planning_reply_wait" | jq . >&2
+  "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+  exit 1
+fi
+printf '%s\n' "$planning_reply_wait" | jq -e '.status == "completed" and .observation.items[0].planning.reply.status == "published"'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:planning-outcome")))] as $outcomes | ($outcomes | length) >= 1 and all($outcomes[]; (.body | contains("Untrusted fixture content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 
@@ -204,17 +217,23 @@ openclaw agent-system notifications wait \
 OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
 
 # should publish one safe github reply from the existing private issue session
+cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 status_comment_id="$(cat "$TMPDIR/status-comment-id")"
-openclaw agent-system notifications wait \
+if ! comment_reply_wait="$(openclaw agent-system notifications wait \
   --agent notification-data \
   --repository tanaabased/agent-system-test \
   --kind issue \
   --number "$issue_number" \
   --comment "$status_comment_id" \
   --for comment-replied \
-  --timeout 300 \
-  --json | jq -e --argjson comment "$status_comment_id" '.status == "completed" and any(.observation.items[0].comments[]; .commentId == $comment and .reply.status == "published")'
+  --timeout 150 \
+  --json)"; then
+  printf '%s\n' "$comment_reply_wait" | jq . >&2
+  "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+  exit 1
+fi
+printf '%s\n' "$comment_reply_wait" | jq -e --argjson comment "$status_comment_id" '.status == "completed" and any(.observation.items[0].comments[]; .commentId == $comment and .reply.status == "published")'
 cd "$TMPDIR/agent-system-notification-actor"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] as $replies | ($replies | length) >= 1 and all($replies[]; (.body | contains("GITHUB_COMMENT_JSON") | not) and (.body | contains("STATUS_EVIDENCE_JSON") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 

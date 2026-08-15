@@ -24,6 +24,7 @@ tail_diagnostics() {
     tail -n 40 "$call_log_path" >&2
   fi
   if [[ -f "$log_path" ]]; then
+    grep -F 'github-notifications:' "$log_path" | tail -n 80 >&2 || true
     tail -n 120 "$log_path" >&2
   fi
 }
