@@ -666,7 +666,7 @@ export default class GitHubWorkEventClient {
     marker: string,
   ): Promise<GitHubIssueCommentReceipt | undefined> {
     if (
-      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|operator-progress):[a-f0-9]{32} -->$/u.test(
+      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment):[a-f0-9]{32} -->$/u.test(
         marker,
       )
     ) {

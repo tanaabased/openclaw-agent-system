@@ -39,7 +39,6 @@ const manifest: AgentManifest = {
     username: 'tanaabot',
   },
 };
-const progressPublicationId = '123e4567-e89b-42d3-a456-426614174000';
 
 function response(body: unknown): AgentSystemCliResult {
   return {
@@ -128,15 +127,6 @@ function replyTarget(state = activeReplyState()): string {
     intent: 'github-reply',
     item,
     publicationId: comment.revisionId,
-  });
-}
-
-function progressTarget(state = activeState()): string {
-  const item = state.items[notificationItemKey]!;
-  return githubNotificationPublicationTarget({
-    intent: 'operator-progress',
-    item,
-    publicationId: progressPublicationId,
   });
 }
 
@@ -366,68 +356,6 @@ describe('channels/github/lib/message-adapter', () => {
 
     assert.equal(result.messageId, '93');
     assert.deepEqual(order, ['lease', 'state', 'manifest', 'comment-authority', 'credentials']);
-  });
-
-  it('should publish operator progress only after its private checkpoint is admitted', async () => {
-    const state = activeState();
-    let credentials = 0;
-    let authority = 0;
-    const adapter = createGitHubNotificationMessageAdapter({
-      accountClient: {
-        async connect() {
-          credentials += 1;
-          return {
-            identity: notificationAccount,
-            async execute(argv, stdin) {
-              if (!argv.includes('POST')) return response([]);
-              return response({
-                body: String(JSON.parse(stdin ?? '{}').body),
-                databaseId: 94,
-                nodeId: 'IC_progress',
-                user: notificationAccount,
-              });
-            },
-          };
-        },
-      },
-      authority: {
-        async inspect() {
-          authority += 1;
-          return { authorized: true };
-        },
-        inspectComment: async () => Promise.reject(new Error('comment authority must not run')),
-      },
-      leaseStore: {
-        acquire: async () => ({ lease: { async release() {} }, status: 'acquired' as const }),
-      },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      stateStore: { read: async () => structuredClone(state) },
-    });
-
-    await assert.rejects(
-      adapter.send!.text!({
-        accountId: 'tanaabot',
-        cfg: config,
-        text: 'Implementation is underway.',
-        to: progressTarget(state),
-      }),
-      /could not be delivered/u,
-    );
-    assert.equal(credentials, 0);
-    state.items[notificationItemKey]!.delivery!.progress = {
-      [progressPublicationId]: { status: 'pending' },
-    };
-
-    const result = await adapter.send!.text!({
-      accountId: 'tanaabot',
-      cfg: config,
-      text: 'Implementation is underway.',
-      to: progressTarget(state),
-    });
-
-    assert.equal(result.messageId, '94');
-    assert.equal(authority, 1);
-    assert.equal(credentials, 1);
   });
 
   it('should reject a stale comment revision before resolving credentials', async () => {

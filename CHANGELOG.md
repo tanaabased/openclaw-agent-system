@@ -5,8 +5,7 @@
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
 - Added deterministic GitHub assignment receipts that publish before private planning begins. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub comment input with hidden instructions, structured evidence, and quoted `To GitHub` publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, progress, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
-- Added explicit operator-scoped progress publication from active local GitHub notification sessions.
+- Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification lifecycle inspection and tests.
 - Separated installed GitHub lifecycle checks from a dedicated notification

@@ -60,7 +60,6 @@ const deliveryKeys = new Set([
   'assignmentEventId',
   'failureCode',
   'mode',
-  'progress',
   'schemaVersion',
   'sessionId',
   'sessionKey',
@@ -233,13 +232,13 @@ function validAcknowledgment(value: unknown): boolean {
   );
 }
 
-function validProgress(value: unknown): boolean {
+function validDeprecatedDeliveryCheckpoints(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const progress = value as Record<string, unknown>;
+  const checkpoints = value as Record<string, unknown>;
   return (
     Object.getPrototypeOf(value) === Object.prototype &&
-    Object.keys(progress).length <= 100 &&
-    Object.entries(progress).every(
+    Object.keys(checkpoints).length <= 100 &&
+    Object.entries(checkpoints).every(
       ([publicationId, checkpoint]) =>
         /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
           publicationId,
@@ -336,7 +335,6 @@ function validDelivery(
     delivery.schemaVersion === 1 &&
     (delivery.activation === undefined || validActivation(delivery.activation)) &&
     (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
-    (delivery.progress === undefined || validProgress(delivery.progress)) &&
     validNodeId(delivery.assignmentEventId) &&
     ['active', 'admitted', 'received', 'retired', 'session-recording', 'worktree-ready'].includes(
       delivery.stage ?? '',
@@ -365,7 +363,6 @@ function validDelivery(
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
-      delivery.progress === undefined &&
       delivery.worktreeBranch === undefined &&
       delivery.worktreePath === undefined &&
       !hasSession &&
@@ -376,7 +373,6 @@ function validDelivery(
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
-      delivery.progress === undefined &&
       hasWorktree &&
       !hasSession &&
       delivery.sessionId === undefined
@@ -386,7 +382,6 @@ function validDelivery(
     return (
       delivery.activation === undefined &&
       delivery.acknowledgment === undefined &&
-      delivery.progress === undefined &&
       (itemType === 'pull-request' || hasWorktree) &&
       !hasSession &&
       delivery.sessionId === undefined
@@ -397,8 +392,7 @@ function validDelivery(
       (itemType === 'pull-request' || hasWorktree) &&
       hasSession &&
       delivery.activation === undefined &&
-      delivery.acknowledgment?.status === 'pending' &&
-      delivery.progress === undefined
+      delivery.acknowledgment?.status === 'pending'
     );
   }
   if (delivery.stage === 'active') {
@@ -485,13 +479,38 @@ function validState(value: unknown): value is GitHubNotificationMonitorState {
   );
 }
 
+/** Drop the removed publication checkpoint map from otherwise valid current state. */
+function withoutDeprecatedDeliveryCheckpoints(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const state = value as Record<string, unknown>;
+  const items = state.items;
+  if (!items || typeof items !== 'object' || Array.isArray(items)) return value;
+  let changed = false;
+  const normalizedItems: Record<string, unknown> = { ...items };
+  for (const [key, candidate] of Object.entries(items)) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const item = candidate as Record<string, unknown>;
+    const delivery = item.delivery;
+    if (!delivery || typeof delivery !== 'object' || Array.isArray(delivery)) continue;
+    if (!Object.hasOwn(delivery, 'progress')) continue;
+    const record = delivery as Record<string, unknown>;
+    if (!validDeprecatedDeliveryCheckpoints(record.progress)) return value;
+    const normalizedDelivery = { ...record };
+    delete normalizedDelivery.progress;
+    normalizedItems[key] = { ...item, delivery: normalizedDelivery };
+    changed = true;
+  }
+  return changed ? { ...state, items: normalizedItems } : value;
+}
+
 /** Validate only the current value-free monitor state contract. */
 export default function decodeGitHubNotificationMonitorState(
   value: unknown,
   agentId: string,
 ): GitHubNotificationMonitorStateDecodeResult | undefined {
-  if (validState(value) && value.agentId === agentId) {
-    return { state: value, status: 'ready' };
+  const normalized = withoutDeprecatedDeliveryCheckpoints(value);
+  if (validState(normalized) && normalized.agentId === agentId) {
+    return { state: normalized, status: 'ready' };
   }
   return undefined;
 }

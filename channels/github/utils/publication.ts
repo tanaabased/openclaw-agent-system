@@ -10,13 +10,11 @@ const maximumPublicationLength = 800;
 const maximumAcknowledgmentLength = 200;
 const markerPrefix = 'agent-system-github-publication';
 
-export type GitHubNotificationPublicationIntent =
-  'github-reply' | 'initial-acknowledgment' | 'operator-progress';
+export type GitHubNotificationPublicationIntent = 'github-reply' | 'initial-acknowledgment';
 
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'github-reply',
   'initial-acknowledgment',
-  'operator-progress',
 ]);
 
 export class GitHubNotificationPublicationError extends Error {
@@ -136,7 +134,7 @@ export function githubNotificationPublicationMarker(target: string): string {
 export function githubNotificationPublicationComment(text: string, marker: string): string {
   if (
     !new RegExp(
-      `^<!-- ${markerPrefix}:(?:github-reply|initial-acknowledgment|operator-progress):[a-f0-9]{32} -->$`,
+      `^<!-- ${markerPrefix}:(?:github-reply|initial-acknowledgment):[a-f0-9]{32} -->$`,
       'u',
     ).test(marker)
   ) {

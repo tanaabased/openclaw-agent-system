@@ -210,10 +210,13 @@ describe('channels/github/utils/monitor-state-codec', () => {
     );
   });
 
-  it('should accept bounded value-free progress checkpoints and reject persisted prose', () => {
+  it('should discard valid checkpoints from the removed progress feature', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
-    item.delivery = {
+    const legacy = structuredClone(state) as unknown as {
+      items: Record<string, { delivery: Record<string, unknown> }>;
+    };
+    legacy.items[Object.keys(legacy.items)[0]!]!.delivery = {
       ...item.delivery!,
       acknowledgment: { commentId: 90, status: 'published' },
       activation: { status: 'planned' },
@@ -226,8 +229,13 @@ describe('channels/github/utils/monitor-state-codec', () => {
       worktreePath: '/workspace/worktrees/issue-7',
     };
 
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    const unsafe = structuredClone(state) as unknown as {
+    const decoded = decodeGitHubNotificationMonitorState(legacy, state.agentId);
+    assert.equal(decoded?.status, 'ready');
+    assert.equal(
+      Object.hasOwn(decoded?.state.items[Object.keys(state.items)[0]!]!.delivery ?? {}, 'progress'),
+      false,
+    );
+    const unsafe = structuredClone(legacy) as unknown as {
       items: Record<string, { delivery: { progress: Record<string, object> } }>;
     };
     unsafe.items[Object.keys(unsafe.items)[0]!]!.delivery.progress[

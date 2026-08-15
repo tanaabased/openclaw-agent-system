@@ -16,17 +16,17 @@ describe('channels/github/utils/presentation', () => {
         emoji: '📣',
         note: {
           label: 'Delivery',
-          text: 'Ready for the explicit GitHub publication path.',
+          text: 'Ready for the private response path.',
         },
-        summary: 'The operator selected one bounded progress update.',
-        title: 'Progress selected',
+        summary: 'The approved comment entered the assignment session.',
+        title: 'Comment received',
       }),
       [
-        '## 📣 Progress selected',
+        '## 📣 Comment received',
         '',
-        'The operator selected one bounded progress update.',
+        'The approved comment entered the assignment session.',
         '',
-        '**Delivery:** Ready for the explicit GitHub publication path.',
+        '**Delivery:** Ready for the private response path.',
       ].join('\n'),
     );
   });

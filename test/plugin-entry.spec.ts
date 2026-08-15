@@ -104,7 +104,7 @@ describe('index', () => {
       'before_prompt_build',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
-    assert.deepEqual(commandNames, ['agent-system-progress']);
+    assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-command-authority']);
     assert.deepEqual(toolNames, [
       'agent_system_git',

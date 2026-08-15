@@ -16,7 +16,6 @@ export type GitHubNotificationWaitTarget =
   | 'comment-rejected'
   | 'comment-replied'
   | 'planning-complete'
-  | 'progress-published'
   | 'received'
   | 'retired';
 
@@ -29,7 +28,6 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
   'comment-rejected',
   'comment-replied',
   'planning-complete',
-  'progress-published',
   'received',
   'retired',
 ]);
@@ -58,8 +56,6 @@ export interface GitHubNotificationStatusItem {
   mode?: 'auto' | 'plan' | 'work';
   number: number;
   planning?: GitHubNotificationActivationState;
-  progress: { failed: number; pending: number; published: number };
-  progressFailureCode?: string;
   pullRequest?: {
     baseRef: string;
     draft: boolean;
@@ -86,21 +82,6 @@ export interface GitHubNotificationStatusResult {
 export interface GitHubNotificationWaitObservation {
   code: string;
   status: 'failed' | 'pending' | 'reached';
-}
-
-function progressCounts(
-  progress: Record<string, GitHubNotificationAcknowledgmentState> | undefined,
-): GitHubNotificationStatusItem['progress'] {
-  const counts = { failed: 0, pending: 0, published: 0 };
-  for (const checkpoint of Object.values(progress ?? {})) counts[checkpoint.status] += 1;
-  return counts;
-}
-
-function progressFailureCode(
-  progress: Record<string, GitHubNotificationAcknowledgmentState> | undefined,
-): string | undefined {
-  return Object.values(progress ?? {}).find((checkpoint) => checkpoint.status === 'failed')
-    ?.failureCode;
 }
 
 function matchesSelector(
@@ -135,7 +116,6 @@ export function githubNotificationMonitorStatus(
     .map((item): GitHubNotificationStatusItem => {
       const delivery = item.delivery;
       const repository = `${item.repositoryOwner}/${item.repositoryName}`;
-      const progressFailure = progressFailureCode(delivery?.progress);
       const comments = Object.values(item.commentTracking?.revisions ?? {})
         .sort(
           (left, right) =>
@@ -162,8 +142,6 @@ export function githubNotificationMonitorStatus(
         ...(delivery?.mode === undefined ? {} : { mode: delivery.mode }),
         number: item.number,
         ...(delivery?.activation === undefined ? {} : { planning: delivery.activation }),
-        progress: progressCounts(delivery?.progress),
-        ...(progressFailure === undefined ? {} : { progressFailureCode: progressFailure }),
         ...(item.pullRequest === undefined
           ? {}
           : {
@@ -235,9 +213,6 @@ function itemFailure(
   if (item.acknowledgment?.status === 'failed' && target === 'acknowledgment-published') {
     return item.acknowledgment.failureCode;
   }
-  if (target === 'progress-published' && item.progressFailureCode) {
-    return item.progressFailureCode;
-  }
   if (target.startsWith('comment-') && commentId !== undefined) {
     const comment = item.comments.find((candidate) => candidate.commentId === commentId);
     if (comment?.turn?.status === 'failed') {
@@ -276,7 +251,6 @@ export function evaluateGitHubNotificationWait(
   if (target === 'acknowledgment-published') {
     reached = item.acknowledgment?.status === 'published';
   }
-  if (target === 'progress-published') reached = item.progress.published > 0;
   if (target === 'retired') reached = item.stage === 'retired';
   if (target.startsWith('comment-') && commentId !== undefined) {
     const comment = item.comments.find((candidate) => candidate.commentId === commentId);

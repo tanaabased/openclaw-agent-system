@@ -7,16 +7,15 @@
 The GitHub notifications channel is a local
 [OpenClaw messaging channel](https://docs.openclaw.ai/channels) that turns
 approved GitHub issue and pull-request assignments into agent-scoped private
-sessions, with a managed worktree for each issue. It supports private planning,
-bounded replies to approved mentions, and explicitly selected progress updates
-without treating GitHub content as authorization for implementation.
+sessions, with a managed worktree for each issue. It supports private planning
+and bounded replies to approved mentions without letting GitHub content expand
+the active assignment mode.
 
 > [!IMPORTANT]
-> GitHub comments never authorize implementation or local tool use. The channel
-> publishes local progress only through an authorized `/agent-system-progress`
-> action in the exact assignment session. Direct pull requests have their own
-> conversation; the channel does not correlate them with issue conversations or
-> participate in inline review threads.
+> GitHub comments inherit the active assignment mode and never expand its
+> authority. Direct pull requests have their own conversation; the channel does
+> not correlate them with issue conversations or participate in inline review
+> threads.
 
 ## Overview
 
@@ -41,9 +40,6 @@ without treating GitHub content as authorization for implementation.
 - Rechecks the exact current comment revision, passes its bounded text directly
   into the private session, and injects response instructions separately. It
   rechecks again before publishing the quoted `To GitHub` response.
-- Publishes a locally selected progress update only from the exact active
-  assignment session through an authorized Gateway operator command that
-  bypasses the model.
 
 ## Requirements
 
@@ -191,8 +187,8 @@ returns a redacted semantic projection. Without an item selector it lists every
 tracked item. A selector must provide repository, kind, and number together.
 The result reports baseline readiness, disposition, delivery stage, mode,
 session and worktree readiness, planning and acknowledgment checkpoints,
-progress counts, bounded pull-request head metadata, and value-free comment turn
-and reply status.
+bounded pull-request head metadata, and value-free comment turn and reply
+status.
 
 The projection never includes issue or comment bodies, structured provider
 context, hidden instructions, session keys, worktree paths, credentials, or raw
@@ -205,7 +201,7 @@ missing or not-yet-observed state reports `pending` without inventing a failure.
 reached, a durable failure appears, or the timeout expires. Use `--refresh` only
 for provider-observation transitions such as assignment admission, comment
 admission, or retirement. Omit it while waiting for Gateway-owned asynchronous
-planning, replies, and explicit progress publication.
+planning and replies.
 
 | Target                     | Meaning                                                      |
 | -------------------------- | ------------------------------------------------------------ |
@@ -218,7 +214,6 @@ planning, replies, and explicit progress publication.
 | `comment-rejected`         | The selected comment revision failed admission               |
 | `comment-received`         | The selected comment revision entered the private lifecycle  |
 | `comment-replied`          | Its private turn and public reply both completed             |
-| `progress-published`       | At least one explicit progress update has a durable receipt  |
 | `retired`                  | The selected assignment retired without deleting local proof |
 
 Comment targets require `--comment`. Every target except `baseline-ready`
@@ -229,31 +224,6 @@ See the complete CLI reference for
 [`refresh`](../../ADVANCED.md#openclaw-agent-system-notifications-refresh),
 [`status`](../../ADVANCED.md#openclaw-agent-system-notifications-status), and
 [`wait`](../../ADVANCED.md#openclaw-agent-system-notifications-wait).
-
-## Explicit Progress Publication
-
-Open the active local notification session for an issue or pull request,
-complete any desired tool-enabled inspection in an ordinary local turn, then
-explicitly select the public update with:
-
-```text
-/agent-system-progress Implementation is underway and the current checks are passing.
-```
-
-The slash command bypasses the model. It publishes the selected text only after
-the common bounded-content safety gate and the same send-time assignment,
-manifest, GitHub policy, repository permission, account identity, durable
-delivery, and unknown-send reconciliation used by other notification replies.
-The command requires an authorized Gateway client with `operator.write` scope
-in the exact active assignment session. GitHub-originated messages and ordinary
-local chat cannot trigger it, and owner status on a remote chat surface does not
-substitute for Gateway operator scope.
-
-The selected update is trimmed, limited to 800 characters, and rejected if it
-contains secrets, links, mentions, local paths, structured tool output, or
-unsupported formatting. A failed or pending publication remains visible through
-`doctor`; automatic replay is deferred to the notification state-management
-phase.
 
 ## Security and Lifecycle
 
@@ -268,15 +238,14 @@ phase.
   status evidence use ephemeral current-turn structured context, while trusted
   response instructions stay out of visible chat. Public delivery accepts only
   a deterministic assignment receipt, an admitted comment's quoted `To GitHub`
-  response, or explicitly selected progress.
-- Comment mentions do not authorize inspection or implementation. Status replies
-  use only recorded evidence; fresh inspection remains a local tool-enabled turn
-  whose result stays private unless an operator invokes
-  `/agent-system-progress`.
+  response.
+- Comment mentions inherit the current assignment mode. In Plan mode they cannot
+  begin implementation; future modes may retain capabilities already granted by
+  that assignment.
 - Each enabled account owns its Gateway polling lifecycle. Manual refresh uses
   the same deterministic intake path without waiting for a model, while
   asynchronous turns and durable sends remain Gateway-owned. `doctor` reports
-  incomplete publications separately from monitor read health.
+  incomplete acknowledgments and replies separately from monitor read health.
 - Private monitor state contains no tokens, GitHub prose, or generated content.
   Deterministic worktree, session, activation, and publication identities keep
   delivery retry-safe.

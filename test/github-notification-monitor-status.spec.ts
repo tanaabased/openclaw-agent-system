@@ -15,9 +15,6 @@ describe('channels/github/utils/monitor-status', () => {
       ...item.delivery!,
       acknowledgment: { commentId: 92, status: 'published' },
       activation: { status: 'planned' },
-      progress: {
-        '123e4567-e89b-42d3-a456-426614174000': { commentId: 93, status: 'published' },
-      },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/tanaabot/issue-7',
@@ -65,7 +62,6 @@ describe('channels/github/utils/monitor-status', () => {
       mode: 'plan',
       number: 12,
       planning: { status: 'planned' },
-      progress: { failed: 0, pending: 0, published: 1 },
       reasonCode: 'assignment-approved',
       repository: 'tanaabased/example',
       session: 'recorded',
@@ -132,34 +128,6 @@ describe('channels/github/utils/monitor-status', () => {
 
     assert.deepEqual(evaluateGitHubNotificationWait(result, 'planning-complete', selector), {
       code: 'github-notification-planning-response-invalid',
-      status: 'failed',
-    });
-  });
-
-  it('should surface progress publication failures without exposing publication keys', () => {
-    const state = notificationMonitorState();
-    state.lastSuccessfulPollAt = 2;
-    const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      progress: {
-        'private-publication-key': {
-          failureCode: 'github-notification-progress-publication-not-confirmed',
-          status: 'failed',
-        },
-      },
-      stage: 'active',
-    };
-    const selector = {
-      itemType: 'issue' as const,
-      number: 12,
-      repository: 'tanaabased/example',
-    };
-    const result = githubNotificationMonitorStatus('tanaabot', state, selector);
-
-    assert.equal(JSON.stringify(result).includes('private-publication-key'), false);
-    assert.deepEqual(evaluateGitHubNotificationWait(result, 'progress-published', selector), {
-      code: 'github-notification-progress-publication-not-confirmed',
       status: 'failed',
     });
   });

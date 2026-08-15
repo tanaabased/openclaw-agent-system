@@ -44,10 +44,6 @@ describe('channels/github/utils/publication', () => {
       githubNotificationPublicationText('github-reply', [{ text: 'The first pass is ready.' }]),
       'The first pass is ready.',
     );
-    assert.equal(
-      githubNotificationPublicationText('operator-progress', [{ text: 'Tests are now green.' }]),
-      'Tests are now green.',
-    );
   });
 
   it('should reject unsupported shapes and secret-sensitive text', () => {

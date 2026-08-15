@@ -57,7 +57,6 @@ export interface GitHubNotificationDeliveryState {
   assignmentEventId: string;
   failureCode?: string;
   mode?: GitHubNotificationExecutionMode;
-  progress?: Record<string, GitHubNotificationAcknowledgmentState>;
   schemaVersion: 1;
   sessionId?: string;
   sessionKey?: string;

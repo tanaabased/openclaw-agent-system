@@ -44,7 +44,6 @@ The current implementation remains the baseline for the refactor:
 | Direct pull-request assignment | Approved intake, verified head metadata, private monitoring session without an eager worktree |
 | Initial acknowledgment         | Model-authored candidate published after the planning turn                                    |
 | Approved top-level comments    | Mention-gated, revision-aware, tool-free private reply with a bounded GitHub candidate        |
-| Explicit progress              | Operator-selected publication from the exact active assignment session                        |
 | Retirement                     | Logical preservation of sessions and existing worktrees                                       |
 
 The refactor intentionally changes the planning, acknowledgment, comment, and
@@ -623,7 +622,6 @@ The refactor preserves these implemented owners rather than rebuilding them:
 - one public-SDK message adapter and durable outbound delivery path;
 - fail-closed publication validation and send-time reauthorization;
 - revision-aware approved comment admission;
-- explicit operator progress publication;
 - value-free private state and stable diagnostics;
 - cross-process locking, restart deduplication, and ambiguous-delivery handling;
   and

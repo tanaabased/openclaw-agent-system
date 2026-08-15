@@ -121,20 +121,6 @@ export function createGitHubNotificationMessageAdapter(
         continue;
       }
       if (delivery.stage !== 'active') continue;
-      if (parsed.intent === 'operator-progress') {
-        for (const publicationId of Object.keys(delivery.progress ?? {})) {
-          if (
-            githubNotificationPublicationTarget({
-              intent: parsed.intent,
-              item,
-              publicationId,
-            }) === input.to
-          ) {
-            matches.push({ item });
-          }
-        }
-        continue;
-      }
       for (const comment of Object.values(item.commentTracking?.revisions ?? {})) {
         if (
           comment.disposition === 'approved' &&

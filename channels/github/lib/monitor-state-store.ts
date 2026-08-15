@@ -44,12 +44,13 @@ export default class GitHubNotificationMonitorStateStore {
   }
 
   async write(state: GitHubNotificationMonitorState): Promise<void> {
-    if (decodeGitHubNotificationMonitorState(state, state.agentId)?.status !== 'ready') {
+    const decoded = decodeGitHubNotificationMonitorState(state, state.agentId);
+    if (decoded?.status !== 'ready') {
       throw new Error('The GitHub notification monitor state is invalid.');
     }
     const file = this.#file(state.agentId);
     if (!file) throw new Error('The GitHub notification monitor state store is unavailable.');
-    await file.write(`${JSON.stringify(state, undefined, 2)}\n`);
+    await file.write(`${JSON.stringify(decoded.state, undefined, 2)}\n`);
   }
 
   async remove(agentId: string): Promise<boolean> {
