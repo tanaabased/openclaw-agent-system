@@ -142,17 +142,23 @@ export default function registerAgentSystemCli(
     .command('refresh')
     .description('Run one GitHub notification intake cycle now.')
     .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
+    .option('--repository <owner/name>', 'Select one GitHub repository.')
+    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
+    .option('--number <number>', 'Select one GitHub item number.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
       const commandOptions = notificationsRefresh.opts();
       const agentId = commandOptions.agent;
       await refreshNotificationsAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
+        itemKind: commandOptions.kind,
+        itemNumber: commandOptions.number,
         json: commandOptions.json === true,
         logger: options.logger,
         manifestService: options.manifestService,
         monitorService: options.notificationMonitorService,
         output,
+        repository: commandOptions.repository,
         setExitCode,
         styles: options.styles,
         workspaceDir: cwd(),

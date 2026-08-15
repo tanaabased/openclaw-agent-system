@@ -10,7 +10,13 @@ import {
   type GitHubNotificationMonitorState,
   type GitHubNotificationPullRequestState,
 } from '../utils/monitor-state.ts';
-import { githubRepositoryPath, githubWorkItemKey } from '../utils/work-item.ts';
+import {
+  githubRepositoryPath,
+  githubWorkItemKey,
+  type GitHubAssignedItemCandidate,
+  type GitHubCanonicalWorkItem,
+  type GitHubNotificationItemSelector,
+} from '../utils/work-item.ts';
 import {
   GitHubWorkEventClientError,
   type default as GitHubWorkEventClient,
@@ -36,6 +42,7 @@ export interface GitHubNotificationPollInput {
   client: GitHubWorkEventClient;
   configuration: GitHubNotificationsConfiguration;
   now: number;
+  selector?: GitHubNotificationItemSelector;
   state?: GitHubNotificationMonitorState;
   workspaceDir: string;
 }
@@ -61,6 +68,8 @@ interface CommentTrackingResult {
   state: GitHubNotificationCommentTrackingState;
   trackingDeferred: number;
 }
+
+type GitHubNotificationPollCounts = Omit<GitHubNotificationPollResult, 'state'>;
 
 function pollError(error: unknown, now: number): GitHubNotificationPollError {
   if (error instanceof GitHubNotificationPollError) return error;
@@ -290,6 +299,107 @@ async function trackComments(input: {
   };
 }
 
+function matchesSelector(
+  item: Pick<
+    GitHubNotificationItemState,
+    'itemType' | 'number' | 'repositoryName' | 'repositoryOwner'
+  >,
+  selector: GitHubNotificationItemSelector,
+): boolean {
+  return (
+    item.itemType === selector.itemType &&
+    item.number === selector.number &&
+    `${item.repositoryOwner}/${item.repositoryName}`.toLowerCase() ===
+      selector.repository.toLowerCase()
+  );
+}
+
+async function observeCandidate(input: {
+  candidate: GitHubAssignedItemCandidate;
+  canonicalItem?: GitHubCanonicalWorkItem;
+  client: GitHubWorkEventClient;
+  configuration: GitHubNotificationsConfiguration;
+  counts: GitHubNotificationPollCounts;
+  now: number;
+  state: GitHubNotificationMonitorState;
+}): Promise<void> {
+  const { name, owner } = githubRepositoryPath(input.candidate.repositoryPath);
+  const repository = await input.client.getRepository(owner, name);
+  const permission = await input.client.getPermission(owner, name, input.client.identity.login);
+  const item =
+    input.canonicalItem ?? (await input.client.getItem(owner, name, input.candidate.number));
+  if (
+    item.databaseId !== input.candidate.databaseId ||
+    item.nodeId !== input.candidate.nodeId ||
+    item.number !== input.candidate.number ||
+    item.itemType !== input.candidate.itemType ||
+    (item.itemType === 'pull-request' &&
+      (item.pullRequest.baseRepositoryDatabaseId !== repository.databaseId ||
+        item.pullRequest.baseRepositoryNodeId !== repository.nodeId))
+  ) {
+    throw new GitHubNotificationPollError(
+      'github-notification-item-identity-mismatch',
+      'GitHub returned conflicting work-item identity facts.',
+    );
+  }
+  const eventPage = await input.client.listAssignmentEvents(owner, name, input.candidate.number);
+  if (eventPage.truncated) {
+    throw new GitHubNotificationPollError(
+      'github-notification-events-truncated',
+      'GitHub assignment event history exceeded its pagination boundary.',
+    );
+  }
+  const admission = admitGitHubAssignment({
+    account: input.client.identity,
+    baselineAt: input.state.baselineAt!,
+    configuration: input.configuration,
+    events: eventPage.events,
+    item,
+    permission,
+    processedEventNodeIds: new Set(input.state.processedEventNodeIds),
+    repository,
+  });
+  const assignment =
+    admission.event ??
+    eventPage.events
+      .filter(
+        ({ assignee, event }) =>
+          event === 'assigned' && assignee.nodeId === input.client.identity.nodeId,
+      )
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  if (assignment) rememberProcessedEvent(input.state, assignment.nodeId);
+  const key = githubWorkItemKey(repository.nodeId, item.number);
+  if (admission.disposition === 'duplicate') {
+    input.counts.duplicates += 1;
+    return;
+  }
+  const nextItem = itemState(
+    admission.disposition,
+    admission.code,
+    input.now,
+    repository,
+    item,
+    permission,
+    assignment,
+  );
+  if (admission.disposition === 'approved') {
+    const comments = await trackComments({
+      account: input.client.identity,
+      client: input.client,
+      configuration: input.configuration,
+      item: nextItem,
+      now: input.now,
+    });
+    nextItem.commentTracking = comments.state;
+    input.counts.commentApproved += comments.approved;
+    input.counts.commentBaseline += comments.baseline;
+    input.counts.commentRejected += comments.rejected;
+    input.counts.commentTrackingDeferred += comments.trackingDeferred;
+  }
+  input.state.items[key] = nextItem;
+  input.counts[admission.disposition] += 1;
+}
+
 /** Observe one agent's assignment control plane without creating local work. */
 export async function pollGitHubNotifications(
   input: GitHubNotificationPollInput,
@@ -309,8 +419,17 @@ export async function pollGitHubNotifications(
   };
 
   try {
+    if (input.selector && !input.configuration.assignmentTypes.includes(input.selector.itemType)) {
+      throw new GitHubNotificationPollError(
+        'github-notification-assignment-type-disabled',
+        'The selected GitHub assignment type is disabled for this agent.',
+      );
+    }
     if (state.baselineAt === undefined) {
-      const discovery = await input.client.discoverAssigned('1970-01-01T00:00:00.000Z');
+      const discovery = await input.client.discoverAssigned(
+        '1970-01-01T00:00:00.000Z',
+        input.configuration.assignmentTypes,
+      );
       if (discovery.truncated) {
         throw new GitHubNotificationPollError(
           'github-notification-search-truncated',
@@ -324,8 +443,11 @@ export async function pollGitHubNotifications(
       return { ...counts, state };
     }
 
+    let selectedExistingItem = false;
     for (const [key, current] of Object.entries(state.items)) {
       if (current.disposition !== 'approved') continue;
+      if (input.selector && !matchesSelector(current, input.selector)) continue;
+      if (input.selector) selectedExistingItem = true;
       try {
         const repository = await input.client.getRepository(
           current.repositoryOwner,
@@ -416,95 +538,55 @@ export async function pollGitHubNotifications(
       }
     }
 
-    const boundary = Date.parse(state.searchBoundary ?? new Date(state.baselineAt).toISOString());
-    const updatedSince = new Date(Math.max(0, boundary - discoveryOverlapMs)).toISOString();
-    const discovery = await input.client.discoverAssigned(updatedSince);
-    if (discovery.truncated) {
-      throw new GitHubNotificationPollError(
-        'github-notification-search-truncated',
-        'GitHub assignment discovery was incomplete, so the search boundary was retained.',
-      );
-    }
-    const seenCandidates = new Set<string>();
-    for (const candidate of discovery.candidates) {
-      if (seenCandidates.has(candidate.nodeId)) continue;
-      seenCandidates.add(candidate.nodeId);
-      const { name, owner } = githubRepositoryPath(candidate.repositoryPath);
-      const repository = await input.client.getRepository(owner, name);
-      const permission = await input.client.getPermission(owner, name, input.client.identity.login);
-      const item = await input.client.getItem(owner, name, candidate.number);
-      if (
-        item.databaseId !== candidate.databaseId ||
-        item.nodeId !== candidate.nodeId ||
-        item.number !== candidate.number ||
-        item.itemType !== candidate.itemType ||
-        (item.itemType === 'pull-request' &&
-          (item.pullRequest.baseRepositoryDatabaseId !== repository.databaseId ||
-            item.pullRequest.baseRepositoryNodeId !== repository.nodeId))
-      ) {
-        throw new GitHubNotificationPollError(
-          'github-notification-item-identity-mismatch',
-          'GitHub returned conflicting work-item identity facts.',
-        );
-      }
-      const eventPage = await input.client.listAssignmentEvents(owner, name, candidate.number);
-      if (eventPage.truncated) {
-        throw new GitHubNotificationPollError(
-          'github-notification-events-truncated',
-          'GitHub assignment event history exceeded its pagination boundary.',
-        );
-      }
-      const admission = admitGitHubAssignment({
-        account: input.client.identity,
-        baselineAt: state.baselineAt,
-        configuration: input.configuration,
-        events: eventPage.events,
-        item,
-        permission,
-        processedEventNodeIds: new Set(state.processedEventNodeIds),
-        repository,
-      });
-      const assignment =
-        admission.event ??
-        eventPage.events
-          .filter(
-            ({ assignee, event }) =>
-              event === 'assigned' && assignee.nodeId === input.client.identity.nodeId,
-          )
-          .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
-      if (assignment) rememberProcessedEvent(state, assignment.nodeId);
-      const key = githubWorkItemKey(repository.nodeId, item.number);
-      if (admission.disposition === 'duplicate') {
-        counts.duplicates += 1;
-        continue;
-      }
-      const nextItem = itemState(
-        admission.disposition,
-        admission.code,
-        input.now,
-        repository,
-        item,
-        permission,
-        assignment,
-      );
-      if (admission.disposition === 'approved') {
-        const comments = await trackComments({
-          account: input.client.identity,
+    if (input.selector) {
+      if (!selectedExistingItem) {
+        const { name, owner } = githubRepositoryPath(`/repos/${input.selector.repository}`);
+        const item = await input.client.getItem(owner, name, input.selector.number);
+        await observeCandidate({
+          candidate: {
+            databaseId: item.databaseId,
+            itemType: input.selector.itemType,
+            nodeId: item.nodeId,
+            number: input.selector.number,
+            repositoryPath: `/repos/${owner}/${name}`,
+            updatedAt: item.updatedAt,
+          },
+          canonicalItem: item,
           client: input.client,
           configuration: input.configuration,
-          item: nextItem,
+          counts,
           now: input.now,
+          state,
         });
-        nextItem.commentTracking = comments.state;
-        counts.commentApproved += comments.approved;
-        counts.commentBaseline += comments.baseline;
-        counts.commentRejected += comments.rejected;
-        counts.commentTrackingDeferred += comments.trackingDeferred;
       }
-      state.items[key] = nextItem;
-      counts[admission.disposition] += 1;
+    } else {
+      const boundary = Date.parse(state.searchBoundary ?? new Date(state.baselineAt).toISOString());
+      const updatedSince = new Date(Math.max(0, boundary - discoveryOverlapMs)).toISOString();
+      const discovery = await input.client.discoverAssigned(
+        updatedSince,
+        input.configuration.assignmentTypes,
+      );
+      if (discovery.truncated) {
+        throw new GitHubNotificationPollError(
+          'github-notification-search-truncated',
+          'GitHub assignment discovery was incomplete, so the search boundary was retained.',
+        );
+      }
+      const seenCandidates = new Set<string>();
+      for (const candidate of discovery.candidates) {
+        if (seenCandidates.has(candidate.nodeId)) continue;
+        seenCandidates.add(candidate.nodeId);
+        await observeCandidate({
+          candidate,
+          client: input.client,
+          configuration: input.configuration,
+          counts,
+          now: input.now,
+          state,
+        });
+      }
+      state.searchBoundary = new Date(input.now).toISOString();
     }
-    state.searchBoundary = new Date(input.now).toISOString();
     return { ...counts, state };
   } catch (error) {
     throw pollError(error, input.now);

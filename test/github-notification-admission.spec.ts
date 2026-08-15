@@ -20,6 +20,7 @@ const base = {
   account,
   baselineAt: Date.parse('2026-08-11T12:00:00.000Z'),
   configuration: {
+    assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
     approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
     allowedRepositoryOwners: [{ login: owner.login, nodeId: owner.nodeId }],
     intervalMinutes: 5,

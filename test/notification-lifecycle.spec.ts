@@ -15,6 +15,7 @@ const manifest: AgentManifest = {
     username: 'data',
     token: 'GH_TOKEN_DATA',
     notifications: {
+      assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
       intervalMinutes: 5,
     },
@@ -62,6 +63,7 @@ describe('channels/github/lib/lifecycle', () => {
       git: undefined,
       github: {
         notifications: {
+          assignmentTypes: ['issue', 'pull-request'],
           approvedActors: [
             { login: 'pirog', nodeId: 'U_1' },
             { login: 'renamed', nodeId: 'U_1' },

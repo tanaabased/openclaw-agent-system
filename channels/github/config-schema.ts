@@ -18,6 +18,12 @@ const externalGitHubIdentitySchema = Type.Object(
 
 export const externalGitHubNotificationsSchema = Type.Object(
   {
+    'assignment-types': Type.Optional(
+      Type.Array(Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]), {
+        minItems: 1,
+        uniqueItems: true,
+      }),
+    ),
     'approved-actors': Type.Array(externalGitHubIdentitySchema, {
       minItems: 1,
       uniqueItems: true,
@@ -41,6 +47,7 @@ export interface GitHubIdentityPin {
 }
 
 export interface GitHubNotificationsConfiguration {
+  assignmentTypes: Array<'issue' | 'pull-request'>;
   approvedActors: GitHubIdentityPin[];
   allowedRepositoryOwners?: GitHubIdentityPin[];
   intervalMinutes: number;
@@ -58,6 +65,7 @@ export function decodeGitHubNotifications(
   });
 
   return {
+    assignmentTypes: value['assignment-types'] ?? ['issue', 'pull-request'],
     approvedActors: value['approved-actors'].map(decodeIdentity),
     ...(value['allowed-repository-owners'] === undefined
       ? {}

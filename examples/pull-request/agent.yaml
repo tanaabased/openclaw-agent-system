@@ -16,6 +16,8 @@ github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   notifications:
+    assignment-types:
+      - pull-request
     interval-minutes: 60
     approved-actors:
       - login: emoriwan

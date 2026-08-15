@@ -8,6 +8,8 @@
 - Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification lifecycle inspection and tests.
+- Added manifest-selected GitHub assignment discovery and exact-item notification
+  refreshes for isolated lifecycle automation.
 - Separated installed GitHub lifecycle checks from a dedicated notification
   presentation scenario, and carried hidden turn instructions through OpenClaw's
   provider-specific chat context.

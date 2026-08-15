@@ -13,6 +13,12 @@ export interface GitHubAssignedItemCandidate {
   updatedAt: string;
 }
 
+export interface GitHubNotificationItemSelector {
+  itemType: 'issue' | 'pull-request';
+  number: number;
+  repository: string;
+}
+
 export interface GitHubRepositoryIdentity {
   archived: boolean;
   cloneUrl: string;

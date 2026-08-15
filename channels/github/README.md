@@ -122,6 +122,9 @@ github:
   username: tanaabot
   token: GH_TOKEN_TANAABOT
   notifications:
+    assignment-types:
+      - issue
+      - pull-request
     interval-minutes: 5
     approved-actors:
       - login: pirog
@@ -131,14 +134,19 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-| Field                       | Required | Default | Purpose                                  |
-| --------------------------- | -------- | ------- | ---------------------------------------- |
-| `approved-actors`           | yes      | none    | GitHub users allowed to assign work      |
-| `allowed-repository-owners` | no       | any     | Filters assignments by repository owner  |
-| `interval-minutes`          | no       | `5`     | Sets the polling interval from 1 to 1440 |
+| Field                       | Required | Default                    | Purpose                                  |
+| --------------------------- | -------- | -------------------------- | ---------------------------------------- |
+| `assignment-types`          | no       | `issue` and `pull-request` | Selects assignment kinds to discover     |
+| `approved-actors`           | yes      | none                       | GitHub users allowed to assign work      |
+| `allowed-repository-owners` | no       | any                        | Filters assignments by repository owner  |
+| `interval-minutes`          | no       | `5`                        | Sets the polling interval from 1 to 1440 |
 
 Every approved actor and allowed owner requires a GitHub login and immutable
 GitHub node id. Node ids must be unique within each list.
+
+`assignment-types` accepts one or both of `issue` and `pull-request`. It narrows
+provider discovery for the agent; it does not change the authorization or
+lifecycle rules for the selected kind.
 
 `allowed-repository-owners` is an optional filter. When present, the channel
 rejects assignments from repositories whose owner is not listed. It does not
@@ -154,31 +162,34 @@ can prepare the worktree without embedding a token in its clone URL.
 ## CLI
 
 ```text
-openclaw agent-system notifications refresh [--agent <id>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--comment <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
-| Option                      | Commands         | Purpose                                                                |
-| --------------------------- | ---------------- | ---------------------------------------------------------------------- |
-| `--agent <id>`              | all              | Selects an installed agent instead of workspace discovery              |
-| `--repository <owner/name>` | `status`, `wait` | Selects one repository; requires `--kind` and `--number`               |
-| `--kind <kind>`             | `status`, `wait` | Selects `issue` or `pull-request`; requires the complete item selector |
-| `--number <number>`         | `status`, `wait` | Selects one positive GitHub item number                                |
-| `--comment <number>`        | `wait`           | Selects one positive comment id for a comment target                   |
-| `--for <target>`            | `wait`           | Selects the durable semantic checkpoint                                |
-| `--refresh`                 | `wait`           | Runs bounded intake cycles while waiting                               |
-| `--timeout <seconds>`       | `wait`           | Sets the positive wait timeout; defaults to `300`                      |
-| `--json`                    | all              | Returns one undecorated machine-readable result                        |
+| Option                      | Commands                    | Purpose                                                                |
+| --------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `--agent <id>`              | all                         | Selects an installed agent instead of workspace discovery              |
+| `--repository <owner/name>` | `refresh`, `status`, `wait` | Selects one repository; requires `--kind` and `--number`               |
+| `--kind <kind>`             | `refresh`, `status`, `wait` | Selects `issue` or `pull-request`; requires the complete item selector |
+| `--number <number>`         | `refresh`, `status`, `wait` | Selects one positive GitHub item number                                |
+| `--comment <number>`        | `wait`                      | Selects one positive comment id for a comment target                   |
+| `--for <target>`            | `wait`                      | Selects the durable semantic checkpoint                                |
+| `--refresh`                 | `wait`                      | Runs bounded intake cycles while waiting                               |
+| `--timeout <seconds>`       | `wait`                      | Sets the positive wait timeout; defaults to `300`                      |
+| `--json`                    | all                         | Returns one undecorated machine-readable result                        |
 
 ### Refresh
 
-`notifications refresh` runs the same intake lifecycle immediately. It reports baseline
-readiness, diagnostics, and retry timing, and it can create a managed worktree
-and local session for an accepted issue or a session for an accepted pull
-request. It does not wait for planning;
-the running Gateway picks up that checkpoint asynchronously. Deferred and failed
-cycles return a nonzero exit code.
+`notifications refresh` runs the same intake lifecycle immediately. It reports
+baseline readiness, diagnostics, and retry timing, and it can create a managed
+worktree and local session for an accepted issue or a session for an accepted
+pull request. A complete item selector limits the cycle to that exact item and
+does not advance account-wide discovery. This is useful for deterministic
+automation while the regular scheduler retains responsibility for broad
+discovery. It does not wait for planning; the running Gateway picks up that
+checkpoint asynchronously. Deferred and failed cycles return a nonzero exit
+code.
 
 ### Status
 

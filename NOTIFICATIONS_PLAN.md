@@ -560,6 +560,8 @@ Keep unit coverage strong while reducing duplicated prose assertions:
   private.
 - Wait-service tests assert bounded semantic checkpoints, explicit refresh
   ownership, durable failure codes, and last-observation diagnostics.
+- Discovery tests assert manifest-selected assignment kinds, while targeted
+  refresh tests assert exact item isolation without advancing broad discovery.
 - Orchestration tests assert adopted turns, state transitions, resumption,
   publication intent, and stable diagnostic codes without duplicating complete
   Markdown owned by formatters.
@@ -614,7 +616,8 @@ The initial refactor is complete when:
 
 The refactor preserves these implemented owners rather than rebuilding them:
 
-- account-wide assigned-item discovery plus canonical targeted reads;
+- manifest-filtered account-wide assigned-item discovery plus canonical
+  exact-item refreshes that preserve the broad discovery cursor;
 - safe installation baseline and overlap-window polling;
 - immutable actor and repository-owner admission;
 - deterministic issue worktrees and assignment conversations;

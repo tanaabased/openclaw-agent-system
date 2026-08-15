@@ -74,6 +74,7 @@ const assignment = {
   nodeId: 'EV_assignment',
 };
 const configuration = {
+  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
   allowedRepositoryOwners: [{ login: repository.owner.login, nodeId: repository.owner.nodeId }],
   intervalMinutes: 5,
@@ -91,13 +92,21 @@ function client(
     repository?: typeof repository;
     resourceMissing?: boolean;
     truncated?: boolean;
+    onDiscoverAssigned?: (
+      updatedSince: string,
+      assignmentTypes: readonly ('issue' | 'pull-request')[],
+    ) => void;
   } = {},
 ) {
   const clientIdentity = options.identity ?? account;
   return {
     identity: clientIdentity,
     rateLimit: {},
-    async discoverAssigned() {
+    async discoverAssigned(
+      updatedSince: string,
+      assignmentTypes: readonly ('issue' | 'pull-request')[],
+    ) {
+      options.onDiscoverAssigned?.(updatedSince, assignmentTypes);
       const candidates = options.candidates ?? [];
       return {
         candidates,
@@ -191,6 +200,58 @@ describe('channels/github/lib/poller', () => {
     assert.equal(restarted.duplicates, 1);
     assert.deepEqual(restarted.state.processedEventNodeIds, [assignment.nodeId]);
     assert.equal(Object.values(restarted.state.items)[0]?.disposition, 'approved');
+  });
+
+  it('should target one assignment without advancing broad discovery', async () => {
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    const searchBoundary = baseline.state.searchBoundary;
+    const targeted = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({
+        onDiscoverAssigned() {
+          throw new Error('targeted refresh must not run broad discovery');
+        },
+      }),
+      configuration,
+      now: baselineAt + 300_000,
+      selector: {
+        itemType: 'issue',
+        number: candidate.number,
+        repository: 'tanaabased/example',
+      },
+      state: baseline.state,
+      workspaceDir: '/workspace',
+    });
+
+    assert.equal(targeted.approved, 1);
+    assert.equal(targeted.state.searchBoundary, searchBoundary);
+    assert.equal(Object.values(targeted.state.items)[0]?.itemNodeId, candidate.nodeId);
+  });
+
+  it('should reject a targeted assignment type disabled by the manifest', async () => {
+    await assert.rejects(
+      pollGitHubNotifications({
+        agentId: 'tanaabot',
+        client: client(),
+        configuration: { ...configuration, assignmentTypes: ['pull-request'] },
+        now: baselineAt,
+        selector: {
+          itemType: 'issue',
+          number: candidate.number,
+          repository: 'tanaabased/example',
+        },
+        workspaceDir: '/workspace',
+      }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPollError &&
+        error.code === 'github-notification-assignment-type-disabled',
+    );
   });
 
   it('should admit a direct pull request with a fixed head snapshot and comment baseline', async () => {

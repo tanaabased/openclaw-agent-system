@@ -8,6 +8,7 @@ import {
 import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
 
 const configuration = {
+  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
   intervalMinutes: 5,
 };

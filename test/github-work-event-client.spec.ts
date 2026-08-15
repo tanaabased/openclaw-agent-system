@@ -66,7 +66,10 @@ describe('channels/github/lib/work-event-client', () => {
       },
     });
 
-    const discovery = await client.discoverAssigned('2026-08-11T11:55:00.000Z');
+    const discovery = await client.discoverAssigned('2026-08-11T11:55:00.000Z', [
+      'issue',
+      'pull-request',
+    ]);
 
     assert.equal(discovery.truncated, false);
     assert.deepEqual(
@@ -108,6 +111,31 @@ describe('channels/github/lib/work-event-client', () => {
     assert.equal(item.databaseId, 42);
     assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
+  });
+
+  it('should constrain discovery to one configured assignment type', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response({ totalCount: 0, incomplete: false, items: [] });
+      },
+    });
+
+    await client.discoverAssigned('2026-08-11T11:55:00.000Z', ['issue']);
+    await client.discoverAssigned('2026-08-11T11:55:00.000Z', ['pull-request']);
+
+    assert.ok(
+      requests[0]?.includes(
+        'q=assignee:tanaabot state:open updated:>=2026-08-11T11:55:00.000Z is:issue',
+      ),
+    );
+    assert.ok(
+      requests[1]?.includes(
+        'q=assignee:tanaabot state:open updated:>=2026-08-11T11:55:00.000Z is:pr',
+      ),
+    );
   });
 
   it('should load canonical pull-request head and lifecycle facts separately', async () => {

@@ -15,6 +15,7 @@ const manifest: AgentManifest = {
   agent: { id: 'tanaabot' },
   github: {
     notifications: {
+      assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_actor' }],
       intervalMinutes: 5,
     },

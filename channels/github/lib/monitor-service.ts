@@ -13,6 +13,7 @@ import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
+import type { GitHubNotificationItemSelector } from '../utils/work-item.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
@@ -41,6 +42,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
 export interface GitHubNotificationMonitorRunOptions {
   agentId?: string;
   bypassInterval?: boolean;
+  selector?: GitHubNotificationItemSelector;
   signal?: AbortSignal;
   waitForLeaseMs?: number;
 }
@@ -86,11 +88,27 @@ function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
   return { code: 'github-notification-monitor-failed' };
 }
 
-function pendingDeliveryItemKeys(state: GitHubNotificationMonitorState | undefined): string[] {
+function matchesSelector(
+  item: GitHubNotificationMonitorState['items'][string],
+  selector: GitHubNotificationItemSelector,
+): boolean {
+  return (
+    item.itemType === selector.itemType &&
+    item.number === selector.number &&
+    `${item.repositoryOwner}/${item.repositoryName}`.toLowerCase() ===
+      selector.repository.toLowerCase()
+  );
+}
+
+function pendingDeliveryItemKeys(
+  state: GitHubNotificationMonitorState | undefined,
+  selector?: GitHubNotificationItemSelector,
+): string[] {
   if (!state) return [];
   return Object.entries(state.items)
     .filter(
       ([, item]) =>
+        (selector === undefined || matchesSelector(item, selector)) &&
         item.delivery !== undefined &&
         ((item.disposition === 'approved' &&
           item.delivery.stage !== 'active' &&
@@ -168,12 +186,15 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
   ): Promise<GitHubNotificationMonitorRunResult> {
-    const existing = this.#inFlight.get(agentId);
+    const runKey = options.selector
+      ? `${agentId}:${options.selector.repository.toLowerCase()}:${options.selector.itemType}:${options.selector.number}`
+      : agentId;
+    const existing = this.#inFlight.get(runKey);
     if (existing) return existing;
     const current = this.#runAgentWithLease(agentId, options).finally(() => {
-      if (this.#inFlight.get(agentId) === current) this.#inFlight.delete(agentId);
+      if (this.#inFlight.get(runKey) === current) this.#inFlight.delete(runKey);
     });
-    this.#inFlight.set(agentId, current);
+    this.#inFlight.set(runKey, current);
     return current;
   }
 
@@ -259,7 +280,7 @@ export default class GitHubNotificationMonitorService {
         await this.#retireDisabledAssignments(agentId, current, now, signal);
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
-      const pendingItemKeys = pendingDeliveryItemKeys(current);
+      const pendingItemKeys = pendingDeliveryItemKeys(current, options.selector);
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       const pollDeferred =
         intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
@@ -348,6 +369,7 @@ export default class GitHubNotificationMonitorService {
         client,
         configuration: notifications,
         now,
+        ...(options.selector === undefined ? {} : { selector: options.selector }),
         ...(current === undefined ? {} : { state: current }),
         workspaceDir,
       });
@@ -360,7 +382,11 @@ export default class GitHubNotificationMonitorService {
       result.state.lastSuccessfulPollAt = now;
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
       await this.#dependencies.stateStore.write(result.state);
-      await this.#reconcileAssignments(agentId, pendingDeliveryItemKeys(result.state), signal);
+      await this.#reconcileAssignments(
+        agentId,
+        pendingDeliveryItemKeys(result.state, options.selector),
+        signal,
+      );
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';

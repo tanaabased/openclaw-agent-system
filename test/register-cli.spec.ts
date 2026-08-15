@@ -55,6 +55,7 @@ function createProgram(input?: Readable) {
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
+      selector?: { itemType: string; number: number; repository: string };
       waitForLeaseMs?: number;
     }>,
     notificationStatus: [] as Array<{
@@ -450,6 +451,31 @@ describe('lib/register-cli', () => {
       output.join(''),
       /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
     );
+  });
+
+  it('should target one notification item during refresh', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'refresh',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationRefresh[0]?.selector, {
+      itemType: 'issue',
+      number: 12,
+      repository: 'tanaabased/example',
+    });
   });
 
   it('should inspect one notification item through the status command', async () => {

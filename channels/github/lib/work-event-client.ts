@@ -237,7 +237,10 @@ export default class GitHubWorkEventClient {
     return { ...this.#rateLimit };
   }
 
-  async discoverAssigned(updatedSince: string): Promise<GitHubAssignedItemDiscovery> {
+  async discoverAssigned(
+    updatedSince: string,
+    assignmentTypes: readonly ('issue' | 'pull-request')[],
+  ): Promise<GitHubAssignedItemDiscovery> {
     const candidates: GitHubAssignedItemCandidate[] = [];
     let incomplete = false;
     let totalCount = 0;
@@ -249,7 +252,13 @@ export default class GitHubWorkEventClient {
           'GET',
           '/search/issues',
           '-f',
-          `q=assignee:${this.identity.login} state:open updated:>=${updatedSince}`,
+          `q=assignee:${this.identity.login} state:open updated:>=${updatedSince}${
+            assignmentTypes.length === 1
+              ? assignmentTypes[0] === 'issue'
+                ? ' is:issue'
+                : ' is:pr'
+              : ''
+          }`,
           '-F',
           `per_page=${pageSize}`,
           '-F',

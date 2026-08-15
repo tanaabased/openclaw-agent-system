@@ -307,12 +307,15 @@ Runs one GitHub notification monitor cycle for the current workspace agent or
 an explicitly selected installed agent.
 
 ```text
-openclaw agent-system notifications refresh [--agent <id>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 ```
 
 The command uses the channel account scheduler's provider client, baseline,
 private state, trust gates, assignment delivery path, and cross-process
 per-agent lease.
+The optional repository, kind, and number selector is all-or-nothing. A selected
+cycle reads and reconciles only that canonical item and preserves the global
+search boundary so normal polling cannot skip unrelated assignments.
 It runs one complete intake cycle, not a read-only fetch or a request to enable
 the scheduler. It waits up to two minutes for an active cycle, bypasses the
 ordinary interval deadline, and preserves active failure and provider backoff.

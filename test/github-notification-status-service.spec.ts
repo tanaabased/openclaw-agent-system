@@ -56,6 +56,11 @@ describe('channels/github/lib/status-service', () => {
         async runOnce(options) {
           refreshes += 1;
           assert.equal(options && !('aborted' in options) && options.signal?.aborted, false);
+          assert.deepEqual(options && !('aborted' in options) ? options.selector : undefined, {
+            itemType: 'issue',
+            number: 12,
+            repository: 'tanaabased/example',
+          });
           const item = state.items[notificationItemKey]!;
           item.disposition = 'rejected';
           item.reasonCode = 'assignment-actor-not-approved';

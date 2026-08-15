@@ -6,6 +6,9 @@ import type {
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
 } from './monitor-state.ts';
+import type { GitHubNotificationItemSelector } from './work-item.ts';
+
+export type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type GitHubNotificationWaitTarget =
   | 'acknowledgment-published'
@@ -31,12 +34,6 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
   'received',
   'retired',
 ]);
-
-export interface GitHubNotificationItemSelector {
-  itemType: 'issue' | 'pull-request';
-  number: number;
-  repository: string;
-}
 
 export interface GitHubNotificationStatusComment {
   commentId: number;

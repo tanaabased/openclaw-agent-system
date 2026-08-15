@@ -7,16 +7,20 @@ import {
   writeCliSummary,
 } from '../lib/cli-output.ts';
 import { type Logger, reportManifestFailure } from '../lib/logger.ts';
+import { NotificationCliOptionError, notificationItemSelector } from './notifications-options.ts';
 
 const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
   agentId?: string;
+  itemKind?: unknown;
+  itemNumber?: unknown;
   json: boolean;
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
+  repository?: unknown;
   setExitCode(code: number): void;
   styles?: CliStyles;
   workspaceDir: string;
@@ -26,6 +30,20 @@ export interface RefreshNotificationsAgentSystemOptions {
 export default async function refreshNotificationsAgentSystem(
   options: RefreshNotificationsAgentSystemOptions,
 ): Promise<void> {
+  let selector;
+  try {
+    selector = notificationItemSelector({
+      kind: options.itemKind,
+      number: options.itemNumber,
+      repository: options.repository,
+    });
+  } catch (error) {
+    options.logger.error(
+      `github-notifications: invalid refresh options code=github-notification-refresh-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
+    );
+    options.setExitCode(2);
+    return;
+  }
   const manifest = options.agentId
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
@@ -38,6 +56,7 @@ export default async function refreshNotificationsAgentSystem(
   const [result] = await options.monitorService.runOnce({
     agentId: manifest.manifest.agent.id,
     bypassInterval: true,
+    ...(selector === undefined ? {} : { selector }),
     waitForLeaseMs: notificationRefreshLeaseWaitMs,
   });
   if (!result) {
