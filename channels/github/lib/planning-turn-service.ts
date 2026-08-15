@@ -166,7 +166,6 @@ export default class GitHubNotificationPlanningTurnService {
           this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
         messageId,
         onTurnAdopted: async () => {
-          instructionRun.adopt();
           await input.onTurnAdopted({
             key: assignment.route.sessionKey,
             mode: assignment.mode,

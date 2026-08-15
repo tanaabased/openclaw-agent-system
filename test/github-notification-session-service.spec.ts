@@ -123,7 +123,7 @@ function createService(
       overrides.dispatch ?? (async () => ({ counts: {} }) as never),
     logger: { error() {}, info() {}, warn() {} },
     promptInstructions: overrides.promptInstructions ?? {
-      prepare: () => ({ adopt() {}, clear() {}, runId: 'notification-run' }),
+      prepare: () => ({ clear() {}, runId: 'notification-run' }),
     },
     publicationService: {
       publish:
@@ -143,12 +143,13 @@ describe('channels/github/lib/session-service', () => {
     let adopted = 0;
     let acknowledged = 0;
     let completed = 0;
-    let instructionAdopted = 0;
+    let instructionPrepared = false;
     let instructionRequest: unknown;
     let published: Record<string, unknown> | undefined;
     const publicationIntents: string[] = [];
     const service = createService({
       async dispatch(input) {
+        assert.equal(instructionPrepared, true);
         assert.equal(input.ctx.AccountId, 'data');
         assert.equal(input.ctx.Provider, 'agent-system-github');
         assert.equal(input.ctx.Surface, 'agent-system-github');
@@ -185,7 +186,6 @@ describe('channels/github/lib/session-service', () => {
           },
         ]);
         await input.replyOptions?.onTurnAdopted?.();
-        assert.equal(instructionAdopted, 1);
         await input.dispatcherOptions.deliver(
           {
             isCommentary: true,
@@ -213,11 +213,9 @@ describe('channels/github/lib/session-service', () => {
       },
       promptInstructions: {
         prepare(request) {
+          instructionPrepared = true;
           instructionRequest = request;
           return {
-            adopt() {
-              instructionAdopted += 1;
-            },
             clear() {
               assert.fail('successful dispatch should retain instructions until run cleanup');
             },
@@ -295,7 +293,7 @@ describe('channels/github/lib/session-service', () => {
     });
   });
 
-  it('should clear adopted prompt instructions when planning dispatch fails', async () => {
+  it('should clear staged prompt instructions when planning dispatch fails', async () => {
     let cleared = 0;
     const service = createService({
       async dispatch(input) {
@@ -305,7 +303,6 @@ describe('channels/github/lib/session-service', () => {
       promptInstructions: {
         prepare() {
           return {
-            adopt() {},
             clear() {
               cleared += 1;
             },

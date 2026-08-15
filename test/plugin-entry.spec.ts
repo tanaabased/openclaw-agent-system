@@ -102,6 +102,7 @@ describe('index', () => {
       'before_tool_call',
       'session_start',
       'before_prompt_build',
+      'agent_end',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);

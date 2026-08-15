@@ -20,13 +20,13 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => [] },
-      { resolve: () => undefined },
+      { clear() {}, resolve: () => undefined },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
     await handlers.get('before_prompt_build')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
 
-    assert.deepEqual([...handlers.keys()], ['session_start', 'before_prompt_build']);
+    assert.deepEqual([...handlers.keys()], ['session_start', 'before_prompt_build', 'agent_end']);
     assert.deepEqual(calls, [
       { agentId: 'tanaabot', trigger: 'session_start' },
       { agentId: 'tanaabot', trigger: 'before_prompt_build' },
@@ -55,7 +55,7 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => ['Prefer the configured Agent System tool.'] },
-      { resolve: () => undefined },
+      { clear() {}, resolve: () => undefined },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
@@ -72,6 +72,7 @@ describe('lib/register-hooks', () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const logs: string[] = [];
     const warnings: string[] = [];
+    const cleared: Array<string | undefined> = [];
     registerAgentSystemHooks(
       {
         logger: {
@@ -93,6 +94,9 @@ describe('lib/register-hooks', () => {
       },
       { guidance: () => [] },
       {
+        clear(runId) {
+          cleared.push(runId);
+        },
         resolve(runId) {
           return runId === 'notification-run'
             ? {
@@ -122,6 +126,7 @@ describe('lib/register-hooks', () => {
       },
     );
     await handlers.get('before_prompt_build')?.({}, { messageProvider: 'agent-system-github' });
+    await handlers.get('agent_end')?.({}, { runId: 'notification-run' });
 
     assert.match(
       String((injected as { appendSystemContext?: string })?.appendSystemContext),
@@ -135,5 +140,6 @@ describe('lib/register-hooks', () => {
     assert.deepEqual(warnings, [
       'github-notifications: prompt instructions unresolved code=github-notification-instructions-unresolved',
     ]);
+    assert.deepEqual(cleared, ['notification-run']);
   });
 });

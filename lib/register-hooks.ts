@@ -17,7 +17,7 @@ export default function registerAgentSystemHooks(
   api: HookApi,
   manifestService: HookManifestService,
   toolRegistry: Pick<AgentSystemToolRegistry, 'guidance'>,
-  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'resolve'>,
+  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'clear' | 'resolve'>,
 ): void {
   api.on('session_start', async (_event, context) => {
     await manifestService.loadForRuntimeContext(context, 'session_start');
@@ -51,5 +51,8 @@ export default function registerAgentSystemHooks(
     }
     const appendSystemContext = [guidance, instructions].filter(Boolean).join('\n\n');
     return appendSystemContext ? { appendSystemContext } : undefined;
+  });
+  api.on('agent_end', (_event, context) => {
+    promptInstructions.clear(context.runId);
   });
 }

@@ -169,7 +169,6 @@ export default class GitHubNotificationCommentTurnService {
           this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
         messageId,
         onTurnAdopted: async () => {
-          instructionRun.adopt();
           await input.onTurnAdopted();
         },
         record: {
