@@ -14,6 +14,7 @@ import GitHubNotificationPlanningTurnService, {
   type GitHubNotificationPlanningTurnInput,
   type GitHubNotificationPlanningTurnResult,
 } from './planning-turn-service.ts';
+import type GitHubNotificationPromptInstructionService from './prompt-instruction-service.ts';
 import type { GitHubNotificationPublications } from './publication-service.ts';
 
 export type {
@@ -26,6 +27,7 @@ export type {
 export interface GitHubNotificationSessionServiceDependencies {
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
+  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'prepare'>;
   publicationService: GitHubNotificationPublications;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
@@ -46,6 +48,7 @@ export default class GitHubNotificationSessionService {
       dispatchReplyWithBufferedBlockDispatcher:
         dependencies.dispatchReplyWithBufferedBlockDispatcher,
       logger: dependencies.logger,
+      promptInstructions: dependencies.promptInstructions,
       publicationService: dependencies.publicationService,
       recordInboundSession: dependencies.recordInboundSession,
     });
@@ -54,6 +57,7 @@ export default class GitHubNotificationSessionService {
       dispatchReplyWithBufferedBlockDispatcher:
         dependencies.dispatchReplyWithBufferedBlockDispatcher,
       logger: dependencies.logger,
+      promptInstructions: dependencies.promptInstructions,
       publicationService: dependencies.publicationService,
       recordInboundSession: dependencies.recordInboundSession,
     });

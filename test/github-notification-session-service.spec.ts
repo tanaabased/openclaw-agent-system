@@ -105,6 +105,7 @@ function createService(
   overrides: {
     config?: OpenClawConfig;
     dispatch?: GitHubNotificationSessionServiceDependencies['dispatchReplyWithBufferedBlockDispatcher'];
+    promptInstructions?: GitHubNotificationSessionServiceDependencies['promptInstructions'];
     publish?: GitHubNotificationSessionServiceDependencies['publicationService']['publish'];
     record?: (params: InboundSessionRecord) => void | Promise<void>;
     recordTask?: Promise<void>;
@@ -121,6 +122,9 @@ function createService(
     dispatchReplyWithBufferedBlockDispatcher:
       overrides.dispatch ?? (async () => ({ counts: {} }) as never),
     logger: { error() {}, info() {}, warn() {} },
+    promptInstructions: overrides.promptInstructions ?? {
+      prepare: () => ({ adopt() {}, clear() {}, runId: 'notification-run' }),
+    },
     publicationService: {
       publish:
         overrides.publish ??
@@ -139,6 +143,8 @@ describe('channels/github/lib/session-service', () => {
     let adopted = 0;
     let acknowledged = 0;
     let completed = 0;
+    let instructionAdopted = 0;
+    let instructionRequest: unknown;
     let published: Record<string, unknown> | undefined;
     const publicationIntents: string[] = [];
     const service = createService({
@@ -149,6 +155,7 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.ctx.OriginatingChannel, 'agent-system-github');
         assert.equal(input.replyOptions?.disableTools, true);
         assert.equal(input.replyOptions?.commentaryPayloadsEnabled, true);
+        assert.equal(input.replyOptions?.runId, 'planning-run');
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.deepEqual(input.toolsAllow, []);
         assert.match(String(input.ctx.BodyForAgent), /^## 📥 Issue assignment received$/mu);
@@ -162,11 +169,7 @@ describe('channels/github/lib/session-service', () => {
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /untrusted project data/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Please implement the behavior/u);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /\/workspace\/data/u);
-        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
-          assignmentKind: 'issue',
-          event: 'planning-request',
-          mode: 'plan',
-        });
+        assert.deepEqual(input.ctx.ChannelContext?.chat, { id: route.conversationId });
         assert.deepEqual(input.ctx.UntrustedStructuredContext, [
           {
             label: 'GitHub issue context',
@@ -182,6 +185,7 @@ describe('channels/github/lib/session-service', () => {
           },
         ]);
         await input.replyOptions?.onTurnAdopted?.();
+        assert.equal(instructionAdopted, 1);
         await input.dispatcherOptions.deliver(
           {
             isCommentary: true,
@@ -206,6 +210,20 @@ describe('channels/github/lib/session-service', () => {
           { kind: 'final' },
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      promptInstructions: {
+        prepare(request) {
+          instructionRequest = request;
+          return {
+            adopt() {
+              instructionAdopted += 1;
+            },
+            clear() {
+              assert.fail('successful dispatch should retain instructions until run cleanup');
+            },
+            runId: 'planning-run',
+          };
+        },
       },
       async publish(input) {
         publicationIntents.push(input.intent);
@@ -261,6 +279,11 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(adopted, 1);
     assert.equal(acknowledged, 1);
     assert.equal(completed, 1);
+    assert.deepEqual(instructionRequest, {
+      assignmentKind: 'issue',
+      event: 'planning-request',
+      mode: 'plan',
+    });
     assert.deepEqual(publicationIntents, ['initial-acknowledgment', 'planning-outcome']);
     assert.deepEqual(result, {
       reply: { commentId: 91, status: 'published' },
@@ -270,6 +293,51 @@ describe('channels/github/lib/session-service', () => {
     assert.deepEqual(published?.payload, {
       text: 'I reviewed the assignment and have a plan ready.',
     });
+  });
+
+  it('should clear adopted prompt instructions when planning dispatch fails', async () => {
+    let cleared = 0;
+    const service = createService({
+      async dispatch(input) {
+        await input.replyOptions?.onTurnAdopted?.();
+        throw new Error('notification dispatch failed');
+      },
+      promptInstructions: {
+        prepare() {
+          return {
+            adopt() {},
+            clear() {
+              cleared += 1;
+            },
+            runId: 'failed-planning-run',
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.planAssignment({
+        ...assignmentInput,
+        context: {
+          body: 'Please implement the behavior.',
+          comments: [],
+          labels: ['feature'],
+          title: 'Implement the behavior',
+          truncated: false,
+        },
+        delivery: {
+          ...assignmentInput.delivery,
+          activation: { status: 'pending' },
+          sessionKey: route.sessionKey,
+          stage: 'active',
+        },
+        onAcknowledgmentCompleted: () => undefined,
+        onPlanningCompleted: () => undefined,
+        onTurnAdopted: () => undefined,
+      }),
+      /notification dispatch failed/u,
+    );
+    assert.equal(cleared, 1);
   });
 
   it('should plan a direct pull request from observed head context without a worktree', async () => {
@@ -298,11 +366,7 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(context.githubWorktreePath, undefined);
         assert.match(String(input.ctx.BodyForAgent), /^## 🔀 Pull request assignment received$/mu);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /stewardship assessment/u);
-        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
-          assignmentKind: 'pull-request',
-          event: 'planning-request',
-          mode: 'plan',
-        });
+        assert.deepEqual(input.ctx.ChannelContext?.chat, { id: route.conversationId });
         assert.deepEqual(context.UntrustedStructuredContext, [
           {
             label: 'GitHub pull-request context',
@@ -458,11 +522,8 @@ describe('channels/github/lib/session-service', () => {
         assert.equal(input.ctx.Body, context.body);
         assert.equal(input.ctx.RawBody, context.body);
         assert.equal(input.ctx.BodyForAgent, context.body);
-        assert.deepEqual(input.ctx.ChannelContext?.chat?.agentSystemGitHubNotification, {
-          assignmentKind: 'issue',
-          event: 'comment-received',
-          mode: 'plan',
-        });
+        assert.equal(input.replyOptions?.runId, 'notification-run');
+        assert.deepEqual(input.ctx.ChannelContext?.chat, { id: route.conversationId });
         assert.deepEqual(input.ctx.UntrustedStructuredContext, [
           {
             label: 'GitHub issue comment context',

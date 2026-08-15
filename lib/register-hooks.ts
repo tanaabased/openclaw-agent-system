@@ -3,9 +3,8 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import type AgentManifestService from './agent-manifest-service.ts';
 import { agentCommandSecurityGuidance } from './agent-command-security.ts';
 import type AgentSystemToolRegistry from './tool-registry.ts';
-import resolveGitHubNotificationMessage, {
-  parseGitHubNotificationMessageRequest,
-} from '../channels/github/lib/message-registry.ts';
+import resolveGitHubNotificationMessage from '../channels/github/lib/message-registry.ts';
+import type GitHubNotificationPromptInstructionService from '../channels/github/lib/prompt-instruction-service.ts';
 import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'> & {
@@ -18,6 +17,7 @@ export default function registerAgentSystemHooks(
   api: HookApi,
   manifestService: HookManifestService,
   toolRegistry: Pick<AgentSystemToolRegistry, 'guidance'>,
+  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'resolve'>,
 ): void {
   api.on('session_start', async (_event, context) => {
     await manifestService.loadForRuntimeContext(context, 'session_start');
@@ -29,11 +29,7 @@ export default function registerAgentSystemHooks(
         ? [agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest)].join('\n')
         : undefined;
     const notificationTurn = context.messageProvider === githubNotificationChannelId;
-    const request = notificationTurn
-      ? parseGitHubNotificationMessageRequest(
-          context.channelContext?.chat?.agentSystemGitHubNotification,
-        )
-      : undefined;
+    const request = notificationTurn ? promptInstructions.resolve(context.runId) : undefined;
     if (notificationTurn && !request) {
       api.logger?.warn(
         'github-notifications: prompt instructions unresolved code=github-notification-instructions-unresolved',

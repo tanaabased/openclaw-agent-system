@@ -20,6 +20,7 @@ import GitHubNotificationStatusService from '../channels/github/lib/status-servi
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
 import GitHubNotificationPublicationService from '../channels/github/lib/publication-service.ts';
+import GitHubNotificationPromptInstructionService from '../channels/github/lib/prompt-instruction-service.ts';
 import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
 import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
 import GitHubNotificationSessionService from '../channels/github/lib/session-service.ts';
@@ -265,10 +266,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     readConfig: readRuntimeConfig,
   });
   const notificationPublicationService = new GitHubNotificationPublicationService();
+  const notificationPromptInstructionService = new GitHubNotificationPromptInstructionService({
+    runContext: api.runContext,
+  });
   const notificationSessionService = new GitHubNotificationSessionService({
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
     logger,
+    promptInstructions: notificationPromptInstructionService,
     publicationService: notificationPublicationService,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
@@ -349,7 +354,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(
+    api,
+    manifestService,
+    toolRegistry,
+    notificationPromptInstructionService,
+  );
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {

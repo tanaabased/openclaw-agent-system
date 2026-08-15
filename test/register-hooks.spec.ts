@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
 
 import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
@@ -21,6 +20,7 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => [] },
+      { resolve: () => undefined },
     );
 
     await handlers.get('session_start')?.({}, { agentId: 'tanaabot', sessionId: 'one' });
@@ -55,6 +55,7 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => ['Prefer the configured Agent System tool.'] },
+      { resolve: () => undefined },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
@@ -91,47 +92,33 @@ describe('lib/register-hooks', () => {
         },
       },
       { guidance: () => [] },
-    );
-    const inbound = buildChannelInboundEventContext({
-      channel: 'agent-system-github',
-      channelContext: {
-        chat: {
-          agentSystemGitHubNotification: {
-            assignmentKind: 'issue',
-            event: 'comment-received',
-            mode: 'plan',
-          },
-          id: 'github-issue',
+      {
+        resolve(runId) {
+          return runId === 'notification-run'
+            ? {
+                assignmentKind: 'issue',
+                event: 'comment-received',
+                mode: 'plan',
+              }
+            : undefined;
         },
-        sender: { id: 'github-actor' },
       },
-      conversation: {
-        id: 'github-issue',
-        kind: 'direct',
-        routePeer: { id: 'github-issue', kind: 'direct' },
-      },
-      from: 'github:github-actor',
-      message: { body: 'status?', rawBody: 'status?' },
-      reply: { to: 'github-issue' },
-      route: { agentId: 'data', routeSessionKey: 'agent:data:github-issue' },
-      sender: { id: 'github-actor' },
-    });
-    const channelContext = inbound.ChannelContext;
+    );
 
     const injected = await handlers.get('before_prompt_build')?.(
       {},
-      { channelContext, messageProvider: 'agent-system-github' },
+      { messageProvider: 'agent-system-github', runId: 'notification-run' },
     );
     const ignored = await handlers.get('before_prompt_build')?.(
       {},
-      { channelContext, messageProvider: 'imessage' },
+      { messageProvider: 'imessage', runId: 'notification-run' },
     );
     const mismatchedProvider = await handlers.get('before_prompt_build')?.(
       {},
       {
         channel: 'agent-system-github',
-        channelContext,
         messageProvider: 'github',
+        runId: 'notification-run',
       },
     );
     await handlers.get('before_prompt_build')?.({}, { messageProvider: 'agent-system-github' });

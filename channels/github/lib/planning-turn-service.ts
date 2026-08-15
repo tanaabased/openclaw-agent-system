@@ -15,6 +15,7 @@ import {
 } from './assignment-session-service.ts';
 import githubNotificationCapabilityPolicy from './message-capability-policy.ts';
 import resolveGitHubNotificationMessage from './message-registry.ts';
+import type GitHubNotificationPromptInstructionService from './prompt-instruction-service.ts';
 import {
   githubNotificationPublishedCommentId,
   type GitHubNotificationPublications,
@@ -34,6 +35,7 @@ export interface GitHubNotificationPlanningTurnServiceDependencies {
   assignmentSessions: Pick<GitHubNotificationAssignmentSessionService, 'resolve'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
+  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'prepare'>;
   publicationService: GitHubNotificationPublications;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
@@ -88,6 +90,7 @@ export default class GitHubNotificationPlanningTurnService {
       context: input.context,
       item: input.item,
     });
+    const instructionRun = this.#dependencies.promptInstructions.prepare(planning.request);
     const definition = resolveGitHubNotificationMessage(planning.request);
     const capability = githubNotificationCapabilityPolicy(definition.capability);
     const ctxPayload = buildChannelInboundEventContext({
@@ -95,7 +98,6 @@ export default class GitHubNotificationPlanningTurnService {
       channel: githubNotificationChannelId,
       channelContext: {
         chat: {
-          agentSystemGitHubNotification: planning.request,
           id: assignment.route.conversationId,
         },
         sender: { id: 'github-notifications' },
@@ -140,96 +142,104 @@ export default class GitHubNotificationPlanningTurnService {
       },
       surface: githubNotificationChannelId,
     });
-    const result = await dispatchChannelInboundReply({
-      accountId: assignment.route.accountId,
-      agentId: assignment.route.agentId,
-      afterRecord: async () => {
-        if (!sessionRecordTask) {
-          throw new Error('OpenClaw did not expose the notification session record task.');
-        }
-        await sessionRecordTask;
-      },
-      cfg: assignment.config,
-      channel: githubNotificationChannelId,
-      ctxPayload,
-      delivery: {
-        async deliver(payload, info) {
-          if (info.kind === 'final') finalPayloads.push(payload);
-          return { visibleReplySent: false };
-        },
-      },
-      dispatchReplyWithBufferedBlockDispatcher:
-        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
-      messageId,
-      onTurnAdopted: async () => {
-        await input.onTurnAdopted({
-          key: assignment.route.sessionKey,
-          mode: assignment.mode,
-          status: 'received',
-        });
-        let acknowledgment: GitHubNotificationPublicationState;
-        try {
-          const publication = await this.#dependencies.publicationService.publish({
-            accountId: assignment.route.accountId,
-            agentId: assignment.route.agentId,
-            cfg: assignment.config,
-            ctxPayload,
-            info: { kind: 'final' },
-            intent: 'initial-acknowledgment',
-            item: input.item,
-            payload: { text: githubNotificationAssignmentAcknowledgment(assignment.mode) },
-            publicationId: input.delivery.assignmentEventId,
-          });
-          const commentId = githubNotificationPublishedCommentId(publication);
-          acknowledgment =
-            commentId === undefined
-              ? {
-                  failureCode:
-                    publication.status === 'failed'
-                      ? publicationErrorCode(
-                          publication.error,
-                          'github-notification-acknowledgment-publication-failed',
-                        )
-                      : 'github-notification-acknowledgment-not-confirmed',
-                  status: 'failed',
-                }
-              : { commentId, status: 'published' };
-        } catch (error) {
-          acknowledgment = {
-            failureCode: publicationErrorCode(
-              error,
-              'github-notification-acknowledgment-publication-failed',
-            ),
-            status: 'failed',
-          };
-        }
-        await input.onAcknowledgmentCompleted(acknowledgment);
-      },
-      record: {
-        createIfMissing: true,
-        onRecordError(error) {
-          throw error;
-        },
-        trackSessionMetaTask(task) {
-          sessionRecordTask = task;
-        },
-      },
-      recordInboundSession: this.#dependencies.recordInboundSession,
-      replyOptions: {
-        ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-        commentaryPayloadsEnabled: true,
-        disableTools: capability.disableTools,
-        sourceReplyDeliveryMode: 'automatic',
-        suppressDefaultToolProgressMessages: true,
-        suppressTyping: true,
-        toolsAllow: capability.toolsAllow,
-      },
-      routeSessionKey: assignment.route.sessionKey,
-      storePath: resolveStorePath(assignment.config.session?.store, {
+    let result;
+    try {
+      result = await dispatchChannelInboundReply({
+        accountId: assignment.route.accountId,
         agentId: assignment.route.agentId,
-      }),
-      toolsAllow: capability.toolsAllow,
-    });
+        afterRecord: async () => {
+          if (!sessionRecordTask) {
+            throw new Error('OpenClaw did not expose the notification session record task.');
+          }
+          await sessionRecordTask;
+        },
+        cfg: assignment.config,
+        channel: githubNotificationChannelId,
+        ctxPayload,
+        delivery: {
+          async deliver(payload, info) {
+            if (info.kind === 'final') finalPayloads.push(payload);
+            return { visibleReplySent: false };
+          },
+        },
+        dispatchReplyWithBufferedBlockDispatcher:
+          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        messageId,
+        onTurnAdopted: async () => {
+          instructionRun.adopt();
+          await input.onTurnAdopted({
+            key: assignment.route.sessionKey,
+            mode: assignment.mode,
+            status: 'received',
+          });
+          let acknowledgment: GitHubNotificationPublicationState;
+          try {
+            const publication = await this.#dependencies.publicationService.publish({
+              accountId: assignment.route.accountId,
+              agentId: assignment.route.agentId,
+              cfg: assignment.config,
+              ctxPayload,
+              info: { kind: 'final' },
+              intent: 'initial-acknowledgment',
+              item: input.item,
+              payload: { text: githubNotificationAssignmentAcknowledgment(assignment.mode) },
+              publicationId: input.delivery.assignmentEventId,
+            });
+            const commentId = githubNotificationPublishedCommentId(publication);
+            acknowledgment =
+              commentId === undefined
+                ? {
+                    failureCode:
+                      publication.status === 'failed'
+                        ? publicationErrorCode(
+                            publication.error,
+                            'github-notification-acknowledgment-publication-failed',
+                          )
+                        : 'github-notification-acknowledgment-not-confirmed',
+                    status: 'failed',
+                  }
+                : { commentId, status: 'published' };
+          } catch (error) {
+            acknowledgment = {
+              failureCode: publicationErrorCode(
+                error,
+                'github-notification-acknowledgment-publication-failed',
+              ),
+              status: 'failed',
+            };
+          }
+          await input.onAcknowledgmentCompleted(acknowledgment);
+        },
+        record: {
+          createIfMissing: true,
+          onRecordError(error) {
+            throw error;
+          },
+          trackSessionMetaTask(task) {
+            sessionRecordTask = task;
+          },
+        },
+        recordInboundSession: this.#dependencies.recordInboundSession,
+        replyOptions: {
+          ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+          commentaryPayloadsEnabled: true,
+          disableTools: capability.disableTools,
+          runId: instructionRun.runId,
+          sourceReplyDeliveryMode: 'automatic',
+          suppressDefaultToolProgressMessages: true,
+          suppressTyping: true,
+          toolsAllow: capability.toolsAllow,
+        },
+        routeSessionKey: assignment.route.sessionKey,
+        storePath: resolveStorePath(assignment.config.session?.store, {
+          agentId: assignment.route.agentId,
+        }),
+        toolsAllow: capability.toolsAllow,
+      });
+    } catch (error) {
+      instructionRun.clear();
+      throw error;
+    }
     if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
       throw new Error('OpenClaw did not dispatch the expected notification planning turn.');
     }

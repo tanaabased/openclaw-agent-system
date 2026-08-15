@@ -13,9 +13,3 @@ export interface GitHubNotificationMessageRequest {
   event: GitHubNotificationMessageEvent;
   mode: GitHubNotificationExecutionMode;
 }
-
-declare module 'openclaw/plugin-sdk/channel-inbound' {
-  interface PluginHookChannelChatContext {
-    agentSystemGitHubNotification?: GitHubNotificationMessageRequest;
-  }
-}

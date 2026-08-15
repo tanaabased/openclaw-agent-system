@@ -427,6 +427,11 @@ The message registry is the single semantic selector for instructions and
 capability, while prompt injection and tool enforcement remain separate
 technical sinks.
 
+Each model-backed dispatch correlates that selector through one explicit run ID.
+The channel stores the trusted request in plugin-owned run context when the turn
+is adopted, and `before_prompt_build` resolves it by run ID. Channel context
+remains routing metadata and is never an instruction transport.
+
 ## Target Module Ownership
 
 All new notification message material remains inside `channels/github/` and is

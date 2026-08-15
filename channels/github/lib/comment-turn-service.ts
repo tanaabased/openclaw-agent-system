@@ -15,6 +15,7 @@ import {
 } from './assignment-session-service.ts';
 import githubNotificationCapabilityPolicy from './message-capability-policy.ts';
 import resolveGitHubNotificationMessage from './message-registry.ts';
+import type GitHubNotificationPromptInstructionService from './prompt-instruction-service.ts';
 import {
   githubNotificationPublishedCommentId,
   type GitHubNotificationPublications,
@@ -34,6 +35,7 @@ export interface GitHubNotificationCommentTurnServiceDependencies {
   assignmentSessions: Pick<GitHubNotificationAssignmentSessionService, 'resolve'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
+  promptInstructions: Pick<GitHubNotificationPromptInstructionService, 'prepare'>;
   publicationService: GitHubNotificationPublications;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
@@ -88,6 +90,7 @@ export default class GitHubNotificationCommentTurnService {
       item: { ...input.item, delivery: input.delivery },
       revision: input.comment,
     });
+    const instructionRun = this.#dependencies.promptInstructions.prepare(comment.request);
     const definition = resolveGitHubNotificationMessage(comment.request);
     const capability = githubNotificationCapabilityPolicy(definition.capability);
     const ctxPayload = buildChannelInboundEventContext({
@@ -95,7 +98,6 @@ export default class GitHubNotificationCommentTurnService {
       channel: githubNotificationChannelId,
       channelContext: {
         chat: {
-          agentSystemGitHubNotification: comment.request,
           id: assignment.route.conversationId,
         },
         sender: { id: author.nodeId },
@@ -143,53 +145,63 @@ export default class GitHubNotificationCommentTurnService {
       surface: githubNotificationChannelId,
       timestamp: Date.parse(input.context.updatedAt),
     });
-    const result = await dispatchChannelInboundReply({
-      accountId: assignment.route.accountId,
-      agentId: assignment.route.agentId,
-      afterRecord: async () => {
-        if (!sessionRecordTask) {
-          throw new Error('OpenClaw did not expose the notification session record task.');
-        }
-        await sessionRecordTask;
-      },
-      cfg: assignment.config,
-      channel: githubNotificationChannelId,
-      ctxPayload,
-      delivery: {
-        async deliver(payload, info) {
-          if (info.kind === 'final') finalPayloads.push(payload);
-          return { visibleReplySent: false };
-        },
-      },
-      dispatchReplyWithBufferedBlockDispatcher:
-        this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
-      messageId,
-      onTurnAdopted: input.onTurnAdopted,
-      record: {
-        createIfMissing: false,
-        onRecordError(error) {
-          throw error;
-        },
-        trackSessionMetaTask(task) {
-          sessionRecordTask = task;
-        },
-      },
-      recordInboundSession: this.#dependencies.recordInboundSession,
-      replyOptions: {
-        ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-        commentaryPayloadsEnabled: true,
-        disableTools: capability.disableTools,
-        sourceReplyDeliveryMode: 'automatic',
-        suppressDefaultToolProgressMessages: true,
-        suppressTyping: true,
-        toolsAllow: capability.toolsAllow,
-      },
-      routeSessionKey: assignment.route.sessionKey,
-      storePath: resolveStorePath(assignment.config.session?.store, {
+    let result;
+    try {
+      result = await dispatchChannelInboundReply({
+        accountId: assignment.route.accountId,
         agentId: assignment.route.agentId,
-      }),
-      toolsAllow: capability.toolsAllow,
-    });
+        afterRecord: async () => {
+          if (!sessionRecordTask) {
+            throw new Error('OpenClaw did not expose the notification session record task.');
+          }
+          await sessionRecordTask;
+        },
+        cfg: assignment.config,
+        channel: githubNotificationChannelId,
+        ctxPayload,
+        delivery: {
+          async deliver(payload, info) {
+            if (info.kind === 'final') finalPayloads.push(payload);
+            return { visibleReplySent: false };
+          },
+        },
+        dispatchReplyWithBufferedBlockDispatcher:
+          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        messageId,
+        onTurnAdopted: async () => {
+          instructionRun.adopt();
+          await input.onTurnAdopted();
+        },
+        record: {
+          createIfMissing: false,
+          onRecordError(error) {
+            throw error;
+          },
+          trackSessionMetaTask(task) {
+            sessionRecordTask = task;
+          },
+        },
+        recordInboundSession: this.#dependencies.recordInboundSession,
+        replyOptions: {
+          ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+          commentaryPayloadsEnabled: true,
+          disableTools: capability.disableTools,
+          runId: instructionRun.runId,
+          sourceReplyDeliveryMode: 'automatic',
+          suppressDefaultToolProgressMessages: true,
+          suppressTyping: true,
+          toolsAllow: capability.toolsAllow,
+        },
+        routeSessionKey: assignment.route.sessionKey,
+        storePath: resolveStorePath(assignment.config.session?.store, {
+          agentId: assignment.route.agentId,
+        }),
+        toolsAllow: capability.toolsAllow,
+      });
+    } catch (error) {
+      instructionRun.clear();
+      throw error;
+    }
     if (!result.dispatched || result.routeSessionKey !== assignment.route.sessionKey) {
       throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
     }
