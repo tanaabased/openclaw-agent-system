@@ -15,25 +15,48 @@ import {
 } from './assignment-session-service.ts';
 import githubNotificationCapabilityPolicy from './message-capability-policy.ts';
 import resolveGitHubNotificationMessage from './message-registry.ts';
+import {
+  githubNotificationPublishedCommentId,
+  type GitHubNotificationPublications,
+} from './publication-service.ts';
 import type { GitHubNotificationPlanningContext } from './work-event-client.ts';
 import githubNotificationPlanningPrompt from '../utils/planning-context.ts';
-import { assertGitHubNotificationPlanningResponse } from '../utils/planning-response.ts';
+import {
+  assertGitHubNotificationPlanningResponse,
+  githubNotificationPlanningReply,
+} from '../utils/planning-response.ts';
+import type { GitHubNotificationPublicationState } from '../utils/monitor-state.ts';
 import { githubNotificationChannelId } from '../utils/routing.ts';
 
 export interface GitHubNotificationPlanningTurnServiceDependencies {
   assignmentSessions: Pick<GitHubNotificationAssignmentSessionService, 'resolve'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
+  publicationService: GitHubNotificationPublications;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
 
 export interface GitHubNotificationPlanningTurnInput extends GitHubNotificationAssignmentSessionInput {
   context: GitHubNotificationPlanningContext;
+  onPlanningCompleted(): Promise<void> | void;
   onTurnAdopted(): Promise<void> | void;
 }
 
 export interface GitHubNotificationPlanningTurnResult {
+  reply: Exclude<GitHubNotificationPublicationState, { status: 'pending' }>;
   status: 'planned';
+}
+
+function planningReplyErrorCode(error: unknown): string {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.startsWith('github-notification-')
+  ) {
+    return error.code;
+  }
+  return 'github-notification-planning-reply-publication-failed';
 }
 
 /** Dispatch one planning turn with presentation, context, instructions, and capability separated. */
@@ -179,7 +202,40 @@ export default class GitHubNotificationPlanningTurnService {
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    assertGitHubNotificationPlanningResponse(finalPayloads);
-    return { status: 'planned' };
+    const response = assertGitHubNotificationPlanningResponse(finalPayloads);
+    await input.onPlanningCompleted();
+    try {
+      const reply = githubNotificationPlanningReply(response);
+      const publication = await this.#dependencies.publicationService.publish({
+        accountId: assignment.route.accountId,
+        agentId: assignment.route.agentId,
+        cfg: assignment.config,
+        ctxPayload,
+        info: { kind: 'final' },
+        intent: 'planning-outcome',
+        item: input.item,
+        payload: { text: reply },
+        publicationId: input.delivery.assignmentEventId,
+      });
+      const commentId = githubNotificationPublishedCommentId(publication);
+      if (commentId !== undefined) {
+        return { reply: { commentId, status: 'published' }, status: 'planned' };
+      }
+      return {
+        reply: {
+          failureCode:
+            publication.status === 'failed'
+              ? planningReplyErrorCode(publication.error)
+              : 'github-notification-planning-reply-not-confirmed',
+          status: 'failed',
+        },
+        status: 'planned',
+      };
+    } catch (error) {
+      return {
+        reply: { failureCode: planningReplyErrorCode(error), status: 'failed' },
+        status: 'planned',
+      };
+    }
   }
 }

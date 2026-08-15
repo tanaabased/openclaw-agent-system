@@ -51,18 +51,6 @@ function modeDescription(
     : 'Plan — assess the pull request and prepare a recommended course of action.';
 }
 
-export function githubNotificationAssignmentReceipt(
-  itemType: GitHubNotificationPresentationItem['itemType'],
-  mode: GitHubNotificationExecutionMode,
-): string {
-  if (mode !== 'plan') {
-    throw new Error(`GitHub notification ${mode} receipts are not implemented.`);
-  }
-  return itemType === 'issue'
-    ? 'Got it — I received this issue assignment and I am preparing an implementation plan.'
-    : 'Got it — I received this pull request assignment and I am preparing an assessment.';
-}
-
 /** Render the visible assignment card without provider context or instructions. */
 export default function githubNotificationAssignmentCard(input: {
   item: GitHubNotificationPresentationItem;

@@ -1,5 +1,14 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
+import { githubNotificationToGitHubHeading } from '../messages/presentation/response-envelope.ts';
+import {
+  GitHubNotificationPublicationError,
+  githubNotificationPublicationText,
+} from './publication.ts';
+import githubNotificationQuotedCandidate, {
+  githubNotificationMarkdownHeadings,
+} from './quoted-candidate.ts';
+
 const requiredSections = ['ASSESSMENT', 'BLOCKERS', 'PLAN'] as const;
 
 type PlanningResponseFormat = 'legacy' | 'markdown';
@@ -80,8 +89,15 @@ function assertPlanningSections(response: string): void {
       'github-notification-planning-response-invalid',
     );
   }
+  const planSection = sections[sections.length - 1]!;
+  const publicHeading = githubNotificationMarkdownHeadings(lines).find(
+    ({ line, text }) =>
+      text === githubNotificationToGitHubHeading &&
+      format === 'markdown' &&
+      planSection.line < line,
+  );
   for (const [index, section] of sections.entries()) {
-    const end = sections[index + 1]?.line ?? lines.length;
+    const end = sections[index + 1]?.line ?? publicHeading?.line ?? lines.length;
     const content = lines
       .slice(section.line + 1, end)
       .join('\n')
@@ -100,6 +116,32 @@ function assertPlanningSections(response: string): void {
         'github-notification-planning-response-invalid',
       );
     }
+  }
+}
+
+function assertPlanningPublicReply(response: string): string {
+  const { format, lines, sections } = planningSections(response);
+  const publicHeadings = githubNotificationMarkdownHeadings(lines).filter(
+    ({ text }) => text === githubNotificationToGitHubHeading,
+  );
+  const publicHeading = publicHeadings[0];
+  if (
+    format !== 'markdown' ||
+    publicHeadings.length !== 1 ||
+    !publicHeading ||
+    publicHeading.line <= sections[sections.length - 1]!.line
+  ) {
+    throw new GitHubNotificationPlanningResponseError('github-notification-planning-reply-invalid');
+  }
+  try {
+    return githubNotificationPublicationText('planning-outcome', [
+      {
+        text: githubNotificationQuotedCandidate(response, githubNotificationToGitHubHeading),
+      },
+    ]);
+  } catch (error) {
+    if (error instanceof GitHubNotificationPublicationError) throw error;
+    throw new GitHubNotificationPlanningResponseError('github-notification-planning-reply-invalid');
   }
 }
 
@@ -134,4 +176,11 @@ export function assertGitHubNotificationPlanningResponse(
     );
   }
   return candidates[0];
+}
+
+/** Extract the one safe quoted GitHub planning outcome from a validated private response. */
+export function githubNotificationPlanningReply(payload: ReplyPayload): string {
+  const response = planningResponseText(payload);
+  assertPlanningSections(response);
+  return assertPlanningPublicReply(response);
 }

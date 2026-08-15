@@ -4,7 +4,7 @@ import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
 
 const publicationMarker =
-  '<!-- agent-system-github-publication:initial-acknowledgment:0123456789abcdef0123456789abcdef -->';
+  '<!-- agent-system-github-publication:planning-outcome:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {

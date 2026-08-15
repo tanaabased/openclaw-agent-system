@@ -27,8 +27,7 @@ function activeState(): GitHubNotificationMonitorState {
   const revision = githubCommentRevision(context);
   item.delivery = {
     ...item.delivery!,
-    acknowledgment: { commentId: 90, status: 'published' },
-    activation: { status: 'planned' },
+    activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
     sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
     stage: 'active',
     worktreeBranch: 'agent/tanaabot/issue-7',

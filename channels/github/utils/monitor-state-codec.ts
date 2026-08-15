@@ -69,8 +69,8 @@ const deliveryKeys = new Set([
   'worktreePath',
 ]);
 
-const acknowledgmentKeys = new Set(['commentId', 'failureCode', 'status']);
-const activationKeys = new Set(['failureCode', 'status']);
+const publicationKeys = new Set(['commentId', 'failureCode', 'status']);
+const activationKeys = new Set(['failureCode', 'reply', 'status']);
 const commentTrackingKeys = new Set(['baselineAt', 'diagnosticCode', 'revisions']);
 const commentRevisionKeys = new Set([
   'actorNodeId',
@@ -205,14 +205,14 @@ function validPullRequest(value: unknown): boolean {
   );
 }
 
-function validAcknowledgment(value: unknown): boolean {
+function validPublication(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const acknowledgment = value as {
     commentId?: unknown;
     failureCode?: unknown;
     status?: unknown;
   };
-  if (!hasOnlyKeys(value, acknowledgmentKeys)) return false;
+  if (!hasOnlyKeys(value, publicationKeys)) return false;
   if (acknowledgment.status === 'pending') {
     return acknowledgment.commentId === undefined && acknowledgment.failureCode === undefined;
   }
@@ -242,20 +242,22 @@ function validDeprecatedDeliveryCheckpoints(value: unknown): boolean {
       ([publicationId, checkpoint]) =>
         /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
           publicationId,
-        ) && validAcknowledgment(checkpoint),
+        ) && validPublication(checkpoint),
     )
   );
 }
 
 function validActivation(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const activation = value as { failureCode?: unknown; status?: unknown };
+  const activation = value as { failureCode?: unknown; reply?: unknown; status?: unknown };
   return (
     hasOnlyKeys(value, activationKeys) &&
     ['adopted', 'failed', 'ineligible', 'pending', 'planned'].includes(String(activation.status)) &&
     optionalBoundedString(activation.failureCode, 255) &&
     (activation.failureCode === undefined ||
-      /^[a-z0-9][a-z0-9-]*$/u.test(String(activation.failureCode)))
+      /^[a-z0-9][a-z0-9-]*$/u.test(String(activation.failureCode))) &&
+    (activation.reply === undefined ||
+      (activation.status === 'planned' && validPublication(activation.reply)))
   );
 }
 
@@ -298,7 +300,7 @@ function validCommentRevision(value: unknown): value is GitHubNotificationCommen
   const turn = revision.turn;
   if (!turn || !validCommentTurn(turn)) return false;
   if (turn.status === 'responded') {
-    return validAcknowledgment(revision.reply);
+    return validPublication(revision.reply);
   }
   return revision.reply === undefined;
 }
@@ -334,7 +336,7 @@ function validDelivery(
     hasOnlyKeys(value, deliveryKeys) &&
     delivery.schemaVersion === 1 &&
     (delivery.activation === undefined || validActivation(delivery.activation)) &&
-    (delivery.acknowledgment === undefined || validAcknowledgment(delivery.acknowledgment)) &&
+    (delivery.acknowledgment === undefined || validPublication(delivery.acknowledgment)) &&
     validNodeId(delivery.assignmentEventId) &&
     ['active', 'admitted', 'received', 'retired', 'session-recording', 'worktree-ready'].includes(
       delivery.stage ?? '',
@@ -392,15 +394,14 @@ function validDelivery(
       (itemType === 'pull-request' || hasWorktree) &&
       hasSession &&
       delivery.activation === undefined &&
-      delivery.acknowledgment?.status === 'pending'
+      (delivery.acknowledgment === undefined || delivery.acknowledgment.status === 'pending')
     );
   }
   if (delivery.stage === 'active') {
     return (
       (itemType === 'pull-request' || hasWorktree) &&
       hasSession &&
-      delivery.activation !== undefined &&
-      delivery.acknowledgment !== undefined
+      delivery.activation !== undefined
     );
   }
   return (

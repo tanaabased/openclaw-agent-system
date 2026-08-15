@@ -82,7 +82,7 @@ export default async function statusNotificationsAgentSystem(
             `session=${item.session}`,
             `worktree=${item.worktree}`,
             `planning=${item.planning?.status ?? 'none'}`,
-            `acknowledgment=${item.acknowledgment?.status ?? 'none'}`,
+            `planning-reply=${item.planning?.reply?.status ?? 'none'}`,
             `comments=${item.comments.length}`,
           ].join(' '),
         })),

@@ -44,6 +44,12 @@ describe('channels/github/utils/publication', () => {
       githubNotificationPublicationText('github-reply', [{ text: 'The first pass is ready.' }]),
       'The first pass is ready.',
     );
+    assert.equal(
+      githubNotificationPublicationText('planning-outcome', [
+        { text: 'I reviewed the assignment and have a plan ready.' },
+      ]),
+      'I reviewed the assignment and have a plan ready.',
+    );
   });
 
   it('should reject unsupported shapes and secret-sensitive text', () => {

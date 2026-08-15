@@ -205,11 +205,11 @@ export default function createNotificationLifecycleContribution(
         ];
       }
       const activationFailureCounts = new Map<string, number>();
-      const acknowledgmentFailureCounts = new Map<string, number>();
+      const planningReplyFailureCounts = new Map<string, number>();
       const commentDiagnosticCounts = new Map<string, number>();
       const commentDispatchFailureCounts = new Map<string, number>();
       const commentReplyFailureCounts = new Map<string, number>();
-      let acknowledgmentPendingCount = 0;
+      let planningReplyPendingCount = 0;
       let commentBaselinePendingCount = 0;
       let commentResponsePendingCount = 0;
       for (const item of Object.values(state.items)) {
@@ -222,13 +222,14 @@ export default function createNotificationLifecycleContribution(
       for (const item of Object.values(state.items)) {
         const delivery = item.delivery;
         if (item.disposition !== 'approved' || delivery?.stage !== 'active') continue;
-        const acknowledgment = delivery.acknowledgment;
-        if (acknowledgment?.status === 'pending') {
-          acknowledgmentPendingCount += 1;
-        } else if (acknowledgment?.status === 'failed') {
-          acknowledgmentFailureCounts.set(
-            acknowledgment.failureCode,
-            (acknowledgmentFailureCounts.get(acknowledgment.failureCode) ?? 0) + 1,
+        const reply =
+          delivery.activation?.status === 'planned' ? delivery.activation.reply : undefined;
+        if (reply?.status === 'pending') {
+          planningReplyPendingCount += 1;
+        } else if (reply?.status === 'failed') {
+          planningReplyFailureCounts.set(
+            reply.failureCode,
+            (planningReplyFailureCounts.get(reply.failureCode) ?? 0) + 1,
           );
         }
       }
@@ -271,24 +272,24 @@ export default function createNotificationLifecycleContribution(
           remediation: 'Resolve the named diagnostic, then use a fresh assignment.',
           status: 'warning' as const,
         }));
-      const acknowledgmentFindings = [...acknowledgmentFailureCounts.entries()]
+      const planningReplyFindings = [...planningReplyFailureCounts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([code, count]) => ({
           code,
-          message: `${count} GitHub notification acknowledgment${count === 1 ? '' : 's'} failed after the private planning turn completed.`,
+          message: `${count} GitHub planning response${count === 1 ? '' : 's'} remained private because public delivery failed.`,
           remediation:
-            'The private plan remains available. Resolve the named diagnostic; automatic acknowledgment replay is not currently supported.',
+            'The private plan remains available. Resolve the named diagnostic, then request a fresh public update through the assigned conversation.',
           status: 'warning' as const,
         }));
-      const acknowledgmentPendingFindings =
-        acknowledgmentPendingCount === 0
+      const planningReplyPendingFindings =
+        planningReplyPendingCount === 0
           ? []
           : [
               {
-                code: 'github-notification-acknowledgment-pending',
-                message: `${acknowledgmentPendingCount} GitHub notification acknowledgment${acknowledgmentPendingCount === 1 ? ' is waiting for its' : 's are waiting for their'} planning or publication checkpoint.`,
+                code: 'github-notification-planning-reply-pending',
+                message: `${planningReplyPendingCount} completed private plan${planningReplyPendingCount === 1 ? ' is' : 's are'} waiting for public delivery.`,
                 remediation:
-                  'Wait for Gateway activation to settle; if this persists, inspect the Gateway logs and use a fresh assignment.',
+                  'Keep the OpenClaw Gateway running; if this persists, request a fresh public update through the assigned conversation.',
                 status: 'warning' as const,
               },
             ];
@@ -343,8 +344,8 @@ export default function createNotificationLifecycleContribution(
       return [
         ...routingFinding,
         ...activationFindings,
-        ...acknowledgmentFindings,
-        ...acknowledgmentPendingFindings,
+        ...planningReplyFindings,
+        ...planningReplyPendingFindings,
         ...commentDiagnosticFindings,
         ...commentDispatchFindings,
         ...commentReplyFindings,

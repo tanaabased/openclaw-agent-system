@@ -143,11 +143,10 @@ describe('channels/github/lib/session-service', () => {
     });
     let records = 0;
     let recordedContext: InboundSessionRecord['ctx'] | undefined;
-    let published: Record<string, unknown> | undefined;
+    let publications = 0;
     const service = createService({
-      async publish(input) {
-        order.push('publish');
-        published = input as unknown as Record<string, unknown>;
+      async publish() {
+        publications += 1;
         return {
           delivery: { messageIds: ['91'], visibleReplySent: true },
           status: 'handled_visible',
@@ -180,12 +179,12 @@ describe('channels/github/lib/session-service', () => {
     await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
 
     assert.equal(settled, false);
-    assert.equal(published, undefined);
+    assert.equal(publications, 0);
     completeRecord?.();
     const observed = await pending;
 
     assert.equal(records, 1);
-    assert.deepEqual(order, ['received', 'publish']);
+    assert.deepEqual(order, ['received']);
     assert.equal(
       recordedContext?.ConversationLabel,
       'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
@@ -201,17 +200,11 @@ describe('channels/github/lib/session-service', () => {
       ].join('\n'),
     );
     assert.deepEqual(observed, {
-      acknowledgment: { commentId: 91, status: 'published' },
       key: route.sessionKey,
       mode: 'plan',
       status: 'active',
     });
-    const publication = published as Record<string, unknown> | undefined;
-    assert.ok(publication);
-    assert.equal(publication.intent, 'initial-acknowledgment');
-    assert.deepEqual(publication.payload, {
-      text: 'Got it — I received this issue assignment and I am preparing an implementation plan.',
-    });
+    assert.equal(publications, 0);
   });
 
   it('should propagate notification session record failures', async () => {
@@ -251,15 +244,16 @@ describe('channels/github/lib/session-service', () => {
     assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
     assert.equal(context.githubWorktreePath, undefined);
     assert.deepEqual(observed, {
-      acknowledgment: { commentId: 91, status: 'published' },
       key: route.sessionKey,
       mode: 'plan',
       status: 'active',
     });
   });
 
-  it('should run one tool-free private plan with hidden instructions', async () => {
+  it('should run one tool-free private plan and publish only its quoted github outcome', async () => {
     let adopted = 0;
+    let completed = 0;
+    let published: Record<string, unknown> | undefined;
     const service = createService({
       async dispatch(input) {
         assert.equal(input.ctx.AccountId, 'data');
@@ -316,16 +310,26 @@ describe('channels/github/lib/session-service', () => {
               '## Plan',
               '',
               '1. Implement it.',
+              '',
+              '## 📤 To GitHub',
+              '',
+              '> I reviewed the assignment and have a plan ready.',
             ].join('\n'),
           },
           { kind: 'final' },
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
+      async publish(input) {
+        published = input as unknown as Record<string, unknown>;
+        return {
+          delivery: { messageIds: ['91'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
+      },
     });
     const delivery = {
       ...assignmentInput.delivery,
-      acknowledgment: { commentId: 91, status: 'published' as const },
       activation: { status: 'pending' as const },
       sessionKey: route.sessionKey,
       stage: 'active' as const,
@@ -341,13 +345,24 @@ describe('channels/github/lib/session-service', () => {
         truncated: false,
       },
       delivery,
+      async onPlanningCompleted() {
+        completed += 1;
+      },
       async onTurnAdopted() {
         adopted += 1;
       },
     });
 
     assert.equal(adopted, 1);
-    assert.deepEqual(result, { status: 'planned' });
+    assert.equal(completed, 1);
+    assert.deepEqual(result, {
+      reply: { commentId: 91, status: 'published' },
+      status: 'planned',
+    });
+    assert.equal(published?.intent, 'planning-outcome');
+    assert.deepEqual(published?.payload, {
+      text: 'I reviewed the assignment and have a plan ready.',
+    });
   });
 
   it('should plan a direct pull request from observed head context without a worktree', async () => {
@@ -412,6 +427,10 @@ describe('channels/github/lib/session-service', () => {
               '## Plan',
               '',
               '1. Monitor discussion and merge readiness.',
+              '',
+              '## 📤 To GitHub',
+              '',
+              '> I reviewed the pull request and have a recommended next action.',
             ].join('\n'),
           },
           { kind: 'final' },
@@ -425,15 +444,82 @@ describe('channels/github/lib/session-service', () => {
       context: planningContext,
       delivery: {
         ...pullRequestAssignmentInput.delivery,
-        acknowledgment: { commentId: 91, status: 'published' as const },
         activation: { status: 'pending' as const },
         sessionKey: route.sessionKey,
         stage: 'active' as const,
       },
+      onPlanningCompleted: () => undefined,
       onTurnAdopted: () => undefined,
     });
 
-    assert.deepEqual(result, { status: 'planned' });
+    assert.deepEqual(result, {
+      reply: { commentId: 91, status: 'published' },
+      status: 'planned',
+    });
+  });
+
+  it('should retain a valid private plan when its public outcome is invalid', async () => {
+    let completed = 0;
+    let publications = 0;
+    const service = createService({
+      async dispatch(input) {
+        await input.replyOptions?.onTurnAdopted?.();
+        await input.dispatcherOptions.deliver(
+          {
+            text: [
+              '## Assessment',
+              '',
+              'The assignment is bounded.',
+              '',
+              '## Blockers',
+              '',
+              'None.',
+              '',
+              '## Plan',
+              '',
+              '1. Implement the contract.',
+            ].join('\n'),
+          },
+          { kind: 'final' },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async publish() {
+        publications += 1;
+        throw new Error('must not publish an invalid candidate');
+      },
+    });
+
+    const result = await service.planAssignment({
+      ...assignmentInput,
+      context: {
+        body: 'Please implement the behavior.',
+        comments: [],
+        labels: ['feature'],
+        title: 'Implement the behavior',
+        truncated: false,
+      },
+      delivery: {
+        ...assignmentInput.delivery,
+        activation: { status: 'pending' },
+        sessionKey: route.sessionKey,
+        stage: 'active',
+      },
+      async onPlanningCompleted() {
+        completed += 1;
+      },
+      onTurnAdopted: () => undefined,
+    });
+
+    assert.equal(completed, 1);
+    assert.equal(publications, 0);
+    assert.deepEqual(result, {
+      reply: {
+        failureCode: 'github-notification-planning-reply-invalid',
+        status: 'failed',
+      },
+      status: 'planned',
+    });
   });
 
   it('should run one tool-free rich comment turn and publish only its quoted github reply', async () => {
@@ -484,8 +570,8 @@ describe('channels/github/lib/session-service', () => {
                 id: revision.revisionId,
               },
               statusEvidence: {
-                acknowledgmentStatus: 'published',
                 assignmentActive: true,
+                planningReplyStatus: 'published',
                 planningStatus: 'planned',
               },
             },
@@ -524,8 +610,10 @@ describe('channels/github/lib/session-service', () => {
     });
     const delivery = {
       ...assignmentInput.delivery,
-      acknowledgment: { commentId: 91, status: 'published' as const },
-      activation: { status: 'planned' as const },
+      activation: {
+        reply: { commentId: 91, status: 'published' as const },
+        status: 'planned' as const,
+      },
       sessionKey: route.sessionKey,
       stage: 'active' as const,
     };

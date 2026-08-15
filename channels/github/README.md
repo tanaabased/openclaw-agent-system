@@ -31,9 +31,9 @@ the active assignment mode.
   context, plus summary-only changed-file metadata for a pull request, then runs
   one tool-free private planning turn with hidden instructions. Patch content is
   never included.
-- Publishes one deterministic assignment receipt through the channel's
-  authorization, safety, and durable delivery path as soon as the private
-  session is recorded; planning does not author or delay that receipt.
+- Records the assignment card and `active` checkpoint as the immediate local
+  receipt, then publishes only the planning turn's sanitized quoted `To GitHub`
+  outcome through the channel's authorized durable delivery path.
 - Establishes a complete bounded top-level comment baseline for each admitted
   issue or pull request, then admits only later exact standalone mentions from
   approved immutable human identities.
@@ -197,7 +197,7 @@ code.
 returns a redacted semantic projection. Without an item selector it lists every
 tracked item. A selector must provide repository, kind, and number together.
 The result reports baseline readiness, disposition, delivery stage, mode,
-session and worktree readiness, planning and acknowledgment checkpoints,
+session and worktree readiness, private planning and public planning-response checkpoints,
 bounded pull-request head metadata, and value-free comment turn and reply
 status.
 
@@ -214,18 +214,18 @@ for provider-observation transitions such as assignment admission, comment
 admission, or retirement. Omit it while waiting for Gateway-owned asynchronous
 planning and replies.
 
-| Target                     | Meaning                                                      |
-| -------------------------- | ------------------------------------------------------------ |
-| `baseline-ready`           | The first safe provider observation completed                |
-| `assignment-rejected`      | The selected assignment failed admission                     |
-| `received`                 | Deterministic local receipt completed or advanced further    |
-| `active`                   | The selected assignment can run or accept continuations      |
-| `planning-complete`        | The current private planning turn completed                  |
-| `acknowledgment-published` | The assignment acknowledgment has a durable provider receipt |
-| `comment-rejected`         | The selected comment revision failed admission               |
-| `comment-received`         | The selected comment revision entered the private lifecycle  |
-| `comment-replied`          | Its private turn and public reply both completed             |
-| `retired`                  | The selected assignment retired without deleting local proof |
+| Target                | Meaning                                                      |
+| --------------------- | ------------------------------------------------------------ |
+| `baseline-ready`      | The first safe provider observation completed                |
+| `assignment-rejected` | The selected assignment failed admission                     |
+| `received`            | Deterministic local receipt completed or advanced further    |
+| `active`              | The selected assignment can run or accept continuations      |
+| `planning-complete`   | The current private planning turn completed                  |
+| `planning-replied`    | The public planning outcome has a durable provider receipt   |
+| `comment-rejected`    | The selected comment revision failed admission               |
+| `comment-received`    | The selected comment revision entered the private lifecycle  |
+| `comment-replied`     | Its private turn and public reply both completed             |
+| `retired`             | The selected assignment retired without deleting local proof |
 
 Comment targets require `--comment`. Every target except `baseline-ready`
 requires a complete item selector. Failed and timed-out waits return nonzero and
@@ -248,15 +248,14 @@ See the complete CLI reference for
   Planning and admitted-comment turns cannot use tools. Admitted comments and
   status evidence use ephemeral current-turn structured context, while trusted
   response instructions stay out of visible chat. Public delivery accepts only
-  a deterministic assignment receipt, an admitted comment's quoted `To GitHub`
-  response.
+  a planning turn's or admitted comment's quoted `To GitHub` response.
 - Comment mentions inherit the current assignment mode. In Plan mode they cannot
   begin implementation; future modes may retain capabilities already granted by
   that assignment.
 - Each enabled account owns its Gateway polling lifecycle. Manual refresh uses
   the same deterministic intake path without waiting for a model, while
   asynchronous turns and durable sends remain Gateway-owned. `doctor` reports
-  incomplete acknowledgments and replies separately from monitor read health.
+  incomplete planning and comment replies separately from monitor read health.
 - Private monitor state contains no tokens, GitHub prose, or generated content.
   Deterministic worktree, session, activation, and publication identities keep
   delivery retry-safe.

@@ -12,7 +12,6 @@ import {
 function activeState(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
   state.items[notificationItemKey]!.delivery = {
-    acknowledgment: { commentId: 91, status: 'published' },
     activation: { status: 'pending' },
     assignmentEventId: 'EV_assignment',
     mode: 'plan',
@@ -30,7 +29,6 @@ function activePullRequestState(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
   const item = approvedPullRequestNotificationItem();
   item.delivery = {
-    acknowledgment: { commentId: 93, status: 'published' },
     activation: { status: 'pending' },
     assignmentEventId: item.assignmentEventNodeId!,
     mode: 'plan',
@@ -72,7 +70,7 @@ const planningContext = {
 };
 
 describe('channels/github/lib/activation-service', () => {
-  it('should checkpoint adoption and planning without changing the assignment receipt', async () => {
+  it('should checkpoint private planning before its public response', async () => {
     const store = memoryStore();
     let plans = 0;
     const service = new GitHubNotificationActivationService({
@@ -89,7 +87,15 @@ describe('channels/github/lib/activation-service', () => {
             store.state().items[notificationItemKey]?.delivery?.activation?.status,
             'adopted',
           );
-          return { status: 'planned' };
+          await input.onPlanningCompleted();
+          assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
+            reply: { status: 'pending' },
+            status: 'planned',
+          });
+          return {
+            reply: { commentId: 91, status: 'published' },
+            status: 'planned',
+          };
         },
       },
       stateStore: store,
@@ -102,11 +108,8 @@ describe('channels/github/lib/activation-service', () => {
 
     assert.equal(plans, 1);
     assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
+      reply: { commentId: 91, status: 'published' },
       status: 'planned',
-    });
-    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
-      commentId: 91,
-      status: 'published',
     });
   });
 
@@ -125,7 +128,11 @@ describe('channels/github/lib/activation-service', () => {
           assert.equal(input.item.itemType, 'pull-request');
           assert.equal(input.worktree, undefined);
           await input.onTurnAdopted();
-          return { status: 'planned' };
+          await input.onPlanningCompleted();
+          return {
+            reply: { commentId: 93, status: 'published' },
+            status: 'planned',
+          };
         },
       },
       stateStore: store,
@@ -136,17 +143,13 @@ describe('channels/github/lib/activation-service', () => {
 
     assert.equal(plans, 1);
     assert.deepEqual(store.state().items[notificationPullRequestItemKey]?.delivery?.activation, {
+      reply: { commentId: 93, status: 'published' },
       status: 'planned',
     });
   });
 
-  it('should preserve a failed deterministic receipt without failing planning', async () => {
-    const initial = activeState();
-    initial.items[notificationItemKey]!.delivery!.acknowledgment = {
-      failureCode: 'github-notification-acknowledgment-not-confirmed',
-      status: 'failed',
-    };
-    const store = memoryStore(initial);
+  it('should preserve a private plan when its public response fails', async () => {
+    const store = memoryStore();
     const info: string[] = [];
     const warnings: string[] = [];
     const service = new GitHubNotificationActivationService({
@@ -166,7 +169,14 @@ describe('channels/github/lib/activation-service', () => {
       sessions: {
         async planAssignment(input) {
           await input.onTurnAdopted();
-          return { status: 'planned' };
+          await input.onPlanningCompleted();
+          return {
+            reply: {
+              failureCode: 'github-notification-planning-reply-not-confirmed',
+              status: 'failed',
+            },
+            status: 'planned',
+          };
         },
       },
       stateStore: store,
@@ -177,17 +187,67 @@ describe('channels/github/lib/activation-service', () => {
     await service.settle('tanaabot');
 
     assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
+      reply: {
+        failureCode: 'github-notification-planning-reply-not-confirmed',
+        status: 'failed',
+      },
       status: 'planned',
     });
-    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.acknowledgment, {
-      failureCode: 'github-notification-acknowledgment-not-confirmed',
-      status: 'failed',
-    });
     assert.equal(
-      info.some((message) => message.includes('planning complete') && message.includes('planned')),
+      info.some(
+        (message) => message.includes('planning complete') && message.includes('reply=failed'),
+      ),
       true,
     );
     assert.deepEqual(warnings, []);
+  });
+
+  it('should not downgrade a private plan when its final reply checkpoint fails', async () => {
+    const store = memoryStore();
+    const warnings: string[] = [];
+    const service = new GitHubNotificationActivationService({
+      authority: {
+        loadPlanningContext: async () => ({ authorized: true, context: planningContext }),
+      },
+      leaseStore: leaseStore(),
+      logger: {
+        error() {},
+        info() {},
+        warn(message) {
+          warnings.push(message);
+        },
+      },
+      sessions: {
+        async planAssignment(input) {
+          await input.onTurnAdopted();
+          await input.onPlanningCompleted();
+          return {
+            reply: { commentId: 91, status: 'published' },
+            status: 'planned',
+          };
+        },
+      },
+      stateStore: {
+        read: store.read,
+        async write(next) {
+          const reply = next.items[notificationItemKey]?.delivery?.activation?.reply;
+          if (reply?.status === 'published') throw new Error('checkpoint unavailable');
+          await store.write(next);
+        },
+      },
+    });
+
+    service.schedule('tanaabot', new AbortController().signal);
+    await service.settle('tanaabot');
+
+    assert.deepEqual(store.state().items[notificationItemKey]?.delivery?.activation, {
+      reply: { status: 'pending' },
+      status: 'planned',
+    });
+    assert.equal(
+      warnings.some((message) => message.includes('planning reply checkpoint deferred')),
+      true,
+    );
   });
 
   it('should retry only failures that happen before the host adopts the turn', async () => {

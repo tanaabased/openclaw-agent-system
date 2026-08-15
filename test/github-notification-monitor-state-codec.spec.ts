@@ -37,8 +37,7 @@ describe('channels/github/utils/monitor-state-codec', () => {
     item.reasonCode = 'item-unassigned';
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 91, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 91, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'retired',
       worktreeBranch: 'agent/tanaabot/issue-7',
@@ -53,7 +52,6 @@ describe('channels/github/utils/monitor-state-codec', () => {
     const item = state.items[Object.keys(state.items)[0]!]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
       activation: {
         failureCode: 'github-notification-planning-response-invalid',
         status: 'failed',
@@ -67,7 +65,38 @@ describe('channels/github/utils/monitor-state-codec', () => {
     assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
   });
 
-  it('should accept only value-free terminal acknowledgment failures', () => {
+  it('should accept only value-free planning reply checkpoints after private planning', () => {
+    const state = notificationMonitorState();
+    const item = state.items[Object.keys(state.items)[0]!]!;
+    item.delivery = {
+      ...item.delivery!,
+      activation: {
+        reply: { commentId: 91, status: 'published' },
+        status: 'planned',
+      },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
+    item.delivery.activation = {
+      reply: { status: 'pending' },
+      status: 'adopted',
+    };
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+    item.delivery.activation = {
+      reply: {
+        failureCode: 'provider failure with prose',
+        status: 'failed',
+      },
+      status: 'planned',
+    };
+    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId), undefined);
+  });
+
+  it('should retain only value-free legacy acknowledgment failures', () => {
     const state = notificationMonitorState();
     const item = state.items[Object.keys(state.items)[0]!]!;
     item.delivery = {
@@ -137,8 +166,7 @@ describe('channels/github/utils/monitor-state-codec', () => {
     const item = state.items[Object.keys(state.items)[0]!]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 90, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/tanaabot/issue-7',
@@ -179,8 +207,7 @@ describe('channels/github/utils/monitor-state-codec', () => {
     const item = approvedPullRequestNotificationItem();
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 90, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
       stage: 'active',
     };
@@ -199,7 +226,6 @@ describe('channels/github/utils/monitor-state-codec', () => {
     const issueDelivery = issueWithoutWorktree.items[notificationItemKey]!.delivery!;
     issueWithoutWorktree.items[notificationItemKey]!.delivery = {
       ...issueDelivery,
-      acknowledgment: { status: 'pending' },
       activation: { status: 'pending' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
@@ -218,8 +244,7 @@ describe('channels/github/utils/monitor-state-codec', () => {
     };
     legacy.items[Object.keys(legacy.items)[0]!]!.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 90, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       progress: {
         '123e4567-e89b-42d3-a456-426614174000': { commentId: 94, status: 'published' },
       },

@@ -249,8 +249,7 @@ describe('channels/github/lib/monitor-service', () => {
       ...state.items[notificationItemKey]!,
       delivery: {
         ...delivery,
-        acknowledgment: { commentId: 42, status: 'published' },
-        activation: { status: 'planned' },
+        activation: { reply: { commentId: 42, status: 'published' }, status: 'planned' },
         sessionId: 'session-1',
         sessionKey,
         stage: 'active',

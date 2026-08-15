@@ -4,9 +4,9 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
 worktree and one local session, runs tool-free private planning and approved-comment
-turns, publishes one safe acknowledgment and one revision-bound reply through the
-channel message adapter, preserves local state after restart, and retires without
-deleting it. Scenario setup creates and updates uniquely named issues in
+turns, publishes one safe planning outcome and one revision-bound reply through
+the channel message adapter, preserves local state after restart, and retires
+without deleting it. Scenario setup creates and updates uniquely named issues in
 `tanaabased/agent-system-test`.
 
 ## Setup
@@ -126,7 +126,7 @@ if OPENCLAW_LOG_LEVEL=error openclaw message send \
   exit 1
 fi
 
-# should complete private planning and publish one safe acknowledgment
+# should complete private planning independently from public delivery
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
@@ -137,8 +137,18 @@ openclaw agent-system notifications wait \
   --for planning-complete \
   --timeout 300 \
   --json | jq -e '.status == "completed" and .observation.items[0].planning.status == "planned"'
+
+# should publish one safe planning outcome through the channel adapter
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --for planning-replied \
+  --timeout 300 \
+  --json | jq -e '.status == "completed" and .observation.items[0].planning.reply.status == "published"'
 cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] as $receipts | ($receipts | length) >= 1 and all($receipts[]; (.body | contains("Untrusted fixture content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:planning-outcome")))] as $outcomes | ($outcomes | length) >= 1 and all($outcomes[]; (.body | contains("Untrusted fixture content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 
 # should reject a quote-only mention without starting a comment turn
 cd "$TMPDIR/agent-system-notification-actor"
@@ -234,9 +244,9 @@ openclaw agent-system notifications status \
   --repository tanaabased/agent-system-test \
   --kind issue \
   --number "$issue_number" \
-  --json | jq -e '.items[0].stage == "active" and .items[0].session == "recorded" and .items[0].worktree == "ready" and .items[0].planning.status == "planned" and .items[0].acknowledgment.status == "published"'
+  --json | jq -e '.items[0].stage == "active" and .items[0].session == "recorded" and .items[0].worktree == "ready" and .items[0].planning.status == "planned" and .items[0].planning.reply.status == "published"'
 cd "$TMPDIR/agent-system-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '{acknowledgment: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] | length, reply: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length}' | jq -e '.acknowledgment >= 1 and .reply >= 1'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '{planning: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:planning-outcome")))] | length, reply: [.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length}' | jq -e '.planning >= 1 and .reply >= 1'
 
 # should logically retire an unassigned item while retaining its session
 cd "$TMPDIR/agent-system-notification-actor"

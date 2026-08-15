@@ -20,8 +20,7 @@ describe('channels/github/lib/status-service', () => {
         const item = state.items[notificationItemKey]!;
         item.delivery = {
           ...item.delivery!,
-          acknowledgment: { commentId: 92, status: 'published' },
-          activation: { status: 'planned' },
+          activation: { reply: { commentId: 92, status: 'published' }, status: 'planned' },
           sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
           stage: 'active',
           worktreeBranch: 'agent/tanaabot/issue-7',

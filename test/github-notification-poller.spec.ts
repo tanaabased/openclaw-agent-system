@@ -321,8 +321,10 @@ describe('channels/github/lib/poller', () => {
         stage: 'active' as const,
         workId: 'pull-request-8',
         sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
-        activation: { status: 'planned' as const },
-        acknowledgment: { commentId: 90, status: 'published' as const },
+        activation: {
+          reply: { commentId: 90, status: 'published' as const },
+          status: 'planned' as const,
+        },
       },
       itemDatabaseId: pullRequestItem.databaseId,
       itemNodeId: pullRequestItem.nodeId,
@@ -538,8 +540,7 @@ describe('channels/github/lib/poller', () => {
     const activeItem = Object.values(active.items)[0]!;
     activeItem.delivery = {
       ...activeItem.delivery!,
-      activation: { status: 'planned' },
-      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/tanaabot/issue-7',
@@ -591,8 +592,7 @@ describe('channels/github/lib/poller', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      activation: { status: 'planned' },
-      acknowledgment: { commentId: 90, status: 'published' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/tanaabot/issue-7',

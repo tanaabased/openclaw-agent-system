@@ -59,8 +59,9 @@ Issue and pull-request assignments are distinct variants of the same component.
 ```
 
 The card does not contain provider envelopes, raw issue or pull-request content,
-verified head data, local paths, or operational instructions. Assignment receipt
-on GitHub is a separate deterministic lifecycle effect.
+verified head data, local paths, or operational instructions. The card and
+durable `active` checkpoint are the immediate local receipt; the first current
+GitHub response is the separately sanitized planning outcome.
 
 ## Planning Outcome Card
 
@@ -138,8 +139,8 @@ The clarification is sufficient to continue planning.
 - Keep authorization, safety validation, durable delivery, and receipts outside
   the presentation component.
 
-Provider-constructed assignment receipts and trusted completion references do
-not need to masquerade as part of a model-authored private response.
+Future provider-constructed receipts and trusted completion references do not
+need to masquerade as part of a model-authored private response.
 
 ## Visibility and Verification
 

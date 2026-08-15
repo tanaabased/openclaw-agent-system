@@ -121,6 +121,19 @@ export function createGitHubNotificationMessageAdapter(
         continue;
       }
       if (delivery.stage !== 'active') continue;
+      if (parsed.intent === 'planning-outcome') {
+        if (
+          delivery.activation?.status === 'planned' &&
+          githubNotificationPublicationTarget({
+            intent: parsed.intent,
+            item,
+            publicationId: delivery.assignmentEventId,
+          }) === input.to
+        ) {
+          matches.push({ item });
+        }
+        continue;
+      }
       for (const comment of Object.values(item.commentTracking?.revisions ?? {})) {
         if (
           comment.disposition === 'approved' &&

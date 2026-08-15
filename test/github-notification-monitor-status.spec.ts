@@ -13,8 +13,7 @@ describe('channels/github/utils/monitor-status', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 92, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 92, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/tanaabot/issue-7',
@@ -47,7 +46,6 @@ describe('channels/github/utils/monitor-status', () => {
 
     assert.equal(result.status, 'ready');
     assert.deepEqual(result.items[0], {
-      acknowledgment: { commentId: 92, status: 'published' },
       comments: [
         {
           commentId: 91,
@@ -61,7 +59,7 @@ describe('channels/github/utils/monitor-status', () => {
       itemType: 'issue',
       mode: 'plan',
       number: 12,
-      planning: { status: 'planned' },
+      planning: { reply: { commentId: 92, status: 'published' }, status: 'planned' },
       reasonCode: 'assignment-approved',
       repository: 'tanaabased/example',
       session: 'recorded',
@@ -81,6 +79,17 @@ describe('channels/github/utils/monitor-status', () => {
       ),
       { code: 'github-notification-comment-replied', status: 'reached' },
     );
+    assert.deepEqual(
+      evaluateGitHubNotificationWait(result, 'planning-replied', {
+        itemType: 'issue',
+        number: 12,
+        repository: 'tanaabased/example',
+      }),
+      {
+        code: 'github-notification-planning-replied',
+        status: 'reached',
+      },
+    );
   });
 
   it('should treat later delivery stages as proof that receipt completed', () => {
@@ -89,7 +98,6 @@ describe('channels/github/utils/monitor-status', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
       activation: { status: 'pending' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
@@ -113,7 +121,6 @@ describe('channels/github/utils/monitor-status', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
       activation: {
         failureCode: 'github-notification-planning-response-invalid',
         status: 'failed',
@@ -128,6 +135,37 @@ describe('channels/github/utils/monitor-status', () => {
 
     assert.deepEqual(evaluateGitHubNotificationWait(result, 'planning-complete', selector), {
       code: 'github-notification-planning-response-invalid',
+      status: 'failed',
+    });
+  });
+
+  it('should report a public planning reply failure without invalidating the private plan', () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const item = state.items[notificationItemKey]!;
+    item.delivery = {
+      ...item.delivery!,
+      activation: {
+        reply: {
+          failureCode: 'github-notification-planning-reply-not-confirmed',
+          status: 'failed',
+        },
+        status: 'planned',
+      },
+      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
+      stage: 'active',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const selector = { itemType: 'issue' as const, number: 12, repository: 'tanaabased/example' };
+    const result = githubNotificationMonitorStatus('tanaabot', state, selector);
+
+    assert.equal(
+      evaluateGitHubNotificationWait(result, 'planning-complete', selector).status,
+      'reached',
+    );
+    assert.deepEqual(evaluateGitHubNotificationWait(result, 'planning-replied', selector), {
+      code: 'github-notification-planning-reply-not-confirmed',
       status: 'failed',
     });
   });

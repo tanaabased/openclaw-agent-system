@@ -6,13 +6,14 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 export type GitHubNotificationDeliveryStage =
   'active' | 'admitted' | 'received' | 'retired' | 'session-recording' | 'worktree-ready';
 
-export type GitHubNotificationAcknowledgmentState =
+export type GitHubNotificationPublicationState =
   | { failureCode: string; status: 'failed' }
   | { status: 'pending' }
   | { commentId: number; status: 'published' };
 
 export interface GitHubNotificationActivationState {
   failureCode?: string;
+  reply?: GitHubNotificationPublicationState;
   status: 'adopted' | 'failed' | 'ineligible' | 'pending' | 'planned';
 }
 
@@ -29,7 +30,7 @@ export interface GitHubNotificationCommentRevisionState {
   createdAt: number;
   disposition: 'approved' | 'baseline' | 'rejected';
   reasonCode: string;
-  reply?: GitHubNotificationAcknowledgmentState;
+  reply?: GitHubNotificationPublicationState;
   revisionId: string;
   turn?: GitHubNotificationCommentTurnState;
   updatedAt: number;
@@ -53,7 +54,7 @@ export interface GitHubNotificationPullRequestState {
 
 export interface GitHubNotificationDeliveryState {
   activation?: GitHubNotificationActivationState;
-  acknowledgment?: GitHubNotificationAcknowledgmentState;
+  acknowledgment?: GitHubNotificationPublicationState;
   assignmentEventId: string;
   failureCode?: string;
   mode?: GitHubNotificationExecutionMode;

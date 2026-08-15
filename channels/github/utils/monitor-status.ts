@@ -1,17 +1,16 @@
 import type {
-  GitHubNotificationAcknowledgmentState,
   GitHubNotificationActivationState,
   GitHubNotificationCommentTurnState,
   GitHubNotificationDeliveryStage,
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
+  GitHubNotificationPublicationState,
 } from './monitor-state.ts';
 import type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type GitHubNotificationWaitTarget =
-  | 'acknowledgment-published'
   | 'active'
   | 'assignment-rejected'
   | 'baseline-ready'
@@ -19,11 +18,11 @@ export type GitHubNotificationWaitTarget =
   | 'comment-rejected'
   | 'comment-replied'
   | 'planning-complete'
+  | 'planning-replied'
   | 'received'
   | 'retired';
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
-  'acknowledgment-published',
   'active',
   'assignment-rejected',
   'baseline-ready',
@@ -31,6 +30,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
   'comment-rejected',
   'comment-replied',
   'planning-complete',
+  'planning-replied',
   'received',
   'retired',
 ]);
@@ -39,12 +39,11 @@ export interface GitHubNotificationStatusComment {
   commentId: number;
   disposition: 'approved' | 'baseline' | 'rejected';
   reasonCode: string;
-  reply?: GitHubNotificationAcknowledgmentState;
+  reply?: GitHubNotificationPublicationState;
   turn?: GitHubNotificationCommentTurnState;
 }
 
 export interface GitHubNotificationStatusItem {
-  acknowledgment?: GitHubNotificationAcknowledgmentState;
   commentDiagnosticCode?: string;
   comments: GitHubNotificationStatusComment[];
   disposition: GitHubNotificationItemDisposition;
@@ -126,9 +125,6 @@ export function githubNotificationMonitorStatus(
           ...(comment.turn === undefined ? {} : { turn: comment.turn }),
         }));
       return {
-        ...(delivery?.acknowledgment === undefined
-          ? {}
-          : { acknowledgment: delivery.acknowledgment }),
         ...(item.commentTracking?.diagnosticCode === undefined
           ? {}
           : { commentDiagnosticCode: item.commentTracking.diagnosticCode }),
@@ -207,8 +203,8 @@ function itemFailure(
   if (item.planning?.status === 'failed' && target === 'planning-complete') {
     return item.planning.failureCode ?? 'github-notification-activation-failed';
   }
-  if (item.acknowledgment?.status === 'failed' && target === 'acknowledgment-published') {
-    return item.acknowledgment.failureCode;
+  if (item.planning?.reply?.status === 'failed' && target === 'planning-replied') {
+    return item.planning.reply.failureCode;
   }
   if (target.startsWith('comment-') && commentId !== undefined) {
     const comment = item.comments.find((candidate) => candidate.commentId === commentId);
@@ -245,9 +241,7 @@ export function evaluateGitHubNotificationWait(
   }
   if (target === 'active') reached = item.stage === 'active';
   if (target === 'planning-complete') reached = item.planning?.status === 'planned';
-  if (target === 'acknowledgment-published') {
-    reached = item.acknowledgment?.status === 'published';
-  }
+  if (target === 'planning-replied') reached = item.planning?.reply?.status === 'published';
   if (target === 'retired') reached = item.stage === 'retired';
   if (target.startsWith('comment-') && commentId !== undefined) {
     const comment = item.comments.find((candidate) => candidate.commentId === commentId);

@@ -77,9 +77,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     assert.equal(sessionRecords, 1);
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
     assert.deepEqual(store.state().items[itemKey]?.delivery?.activation, { status: 'pending' });
-    assert.deepEqual(store.state().items[itemKey]?.delivery?.acknowledgment, {
-      status: 'pending',
-    });
+    assert.equal(store.state().items[itemKey]?.delivery?.acknowledgment, undefined);
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
       ['admitted', 'worktree-ready', 'session-recording', 'received', 'active'],
@@ -238,8 +236,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     item.reasonCode = 'item-closed';
     item.delivery = {
       ...item.delivery,
-      acknowledgment: { commentId: 42, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 42, status: 'published' }, status: 'planned' },
       sessionId: 'session-1',
       sessionKey: activeSession.key,
       stage: 'active',

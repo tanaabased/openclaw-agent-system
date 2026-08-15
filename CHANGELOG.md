@@ -3,7 +3,7 @@
 ### New Features
 
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
-- Added deterministic GitHub assignment receipts that publish before private planning begins. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Added immediate private assignment receipt checkpoints and separately sanitized public planning outcomes. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub comment input with hidden instructions, structured evidence, and quoted `To GitHub` publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
@@ -25,12 +25,10 @@
 - Fixed GitHub notification doctor activation-failure counts to ignore logically retired items while retaining historical state. [#20](https://github.com/tanaabased/openclaw-agent-system/issues/20)
 - Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
-- Fixed GitHub assignment receipts to use deterministic channel text instead of model output. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Fixed deterministic GitHub assignment receipts to publish from a durable received-session checkpoint before private activation. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Fixed managed Codex config to set `allow_login_shell = false` and warn when user-managed config omits it. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
 - Fixed managed command launchers to preserve bounded redirected standard input.
 - Fixed managed `gh` launchers to accept root `--help`, `-h`, and `--version` flags used by repository helpers. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
-- Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
+- Fixed public planning-response failures to persist independently from successful private plans and appear in `doctor`.
 - Fixed notification example failures to stop at terminal delivery state while retaining compact session and doctor diagnostics.
 - Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
 

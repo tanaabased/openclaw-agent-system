@@ -49,8 +49,8 @@ export default function githubNotificationCommentContext(
         id: input.revision.revisionId,
       },
       statusEvidence: {
-        acknowledgmentStatus: input.item.delivery?.acknowledgment?.status ?? 'unknown',
         assignmentActive: input.item.delivery?.stage === 'active',
+        planningReplyStatus: input.item.delivery?.activation?.reply?.status ?? 'unknown',
         planningStatus: input.item.delivery?.activation?.status ?? 'unknown',
       },
     },

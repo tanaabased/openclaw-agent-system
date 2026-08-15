@@ -162,7 +162,6 @@ describe('channels/github/lib/lifecycle', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
       activation: {
         failureCode: 'github-notification-planning-response-invalid',
         status: 'failed',
@@ -254,7 +253,6 @@ describe('channels/github/lib/lifecycle', () => {
     item.assignmentEventNodeId = 'EV_assignment_live_1';
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
       activation: {
         failureCode: 'github-notification-planning-response-invalid',
         status: 'failed',
@@ -314,7 +312,6 @@ describe('channels/github/lib/lifecycle', () => {
       reasonCode: 'assignment-no-longer-authorized',
       delivery: {
         ...item.delivery!,
-        acknowledgment: { status: 'pending' },
         activation: {
           failureCode: 'github-notification-planning-response-missing',
           status: 'failed',
@@ -360,7 +357,7 @@ describe('channels/github/lib/lifecycle', () => {
     assert.deepEqual(state, before);
   });
 
-  it('should report pending and failed acknowledgments without hiding monitor health', async () => {
+  it('should report pending and failed planning replies without hiding monitor health', async () => {
     const state = notificationMonitorState();
     state.agentId = 'data';
     state.workspaceDir = context.workspaceDir;
@@ -368,8 +365,7 @@ describe('channels/github/lib/lifecycle', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { status: 'pending' },
-      activation: { status: 'adopted' },
+      activation: { reply: { status: 'pending' }, status: 'planned' },
       sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/data/issue-7',
@@ -394,17 +390,19 @@ describe('channels/github/lib/lifecycle', () => {
     let findings = await contribution.inspect?.(context);
 
     assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-acknowledgment-pending')?.status,
+      findings?.find(({ code }) => code === 'github-notification-planning-reply-pending')?.status,
       'warning',
     );
-    item.delivery.acknowledgment = {
-      failureCode: 'github-notification-acknowledgment-not-confirmed',
-      status: 'failed',
+    item.delivery.activation = {
+      reply: {
+        failureCode: 'github-notification-planning-reply-not-confirmed',
+        status: 'failed',
+      },
+      status: 'planned',
     };
-    item.delivery.activation = { status: 'planned' };
     findings = await contribution.inspect?.(context);
     assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-acknowledgment-not-confirmed')
+      findings?.find(({ code }) => code === 'github-notification-planning-reply-not-confirmed')
         ?.status,
       'warning',
     );
@@ -419,8 +417,7 @@ describe('channels/github/lib/lifecycle', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 90, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 90, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
       worktreeBranch: 'agent/data/issue-7',

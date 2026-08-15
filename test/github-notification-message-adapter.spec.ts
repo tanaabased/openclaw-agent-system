@@ -88,6 +88,15 @@ function target(state = activeState()): string {
   });
 }
 
+function planningTarget(state = activeState()): string {
+  const item = state.items[notificationItemKey]!;
+  return githubNotificationPublicationTarget({
+    intent: 'planning-outcome',
+    item,
+    publicationId: item.delivery!.assignmentEventId,
+  });
+}
+
 function activeReplyState(): GitHubNotificationMonitorState {
   const state = activeState();
   const item = state.items[notificationItemKey]!;
@@ -255,7 +264,7 @@ describe('channels/github/lib/message-adapter', () => {
     );
   });
 
-  it('should adopt an existing own marker instead of posting twice', async () => {
+  it('should adopt an existing planning outcome marker instead of posting twice', async () => {
     let posts = 0;
     const state = activeState();
     const adapter = createGitHubNotificationMessageAdapter({
@@ -290,8 +299,8 @@ describe('channels/github/lib/message-adapter', () => {
     const result = await adapter.send!.text!({
       accountId: 'tanaabot',
       cfg: config,
-      text: 'I have this one.',
-      to: target(state),
+      text: 'I reviewed the assignment and have a plan ready.',
+      to: planningTarget(state),
     });
 
     assert.equal(result.messageId, '91');

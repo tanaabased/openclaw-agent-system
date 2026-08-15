@@ -4,6 +4,7 @@ import githubNotificationAssignmentNotice from '../channels/github/utils/assignm
 import githubNotificationPlanningPrompt from '../channels/github/utils/planning-context.ts';
 import {
   assertGitHubNotificationPlanningResponse,
+  githubNotificationPlanningReply,
   GitHubNotificationPlanningResponseError,
 } from '../channels/github/utils/planning-response.ts';
 import {
@@ -52,6 +53,7 @@ describe('channels/github/utils/planning', () => {
     assert.match(planning.instructions, /## Assessment/u);
     assert.match(planning.instructions, /## Blockers/u);
     assert.match(planning.instructions, /## Plan/u);
+    assert.match(planning.instructions, /## 📤 To GitHub/u);
     assert.deepEqual(planning.untrustedContext, {
       label: 'GitHub issue context',
       payload: context,
@@ -88,6 +90,7 @@ describe('channels/github/utils/planning', () => {
     assert.doesNotMatch(planning.body, /a{40}/u);
     assert.match(planning.instructions, /private stewardship assessment/u);
     assert.match(planning.instructions, /no managed pull-request worktree/iu);
+    assert.match(planning.instructions, /## 📤 To GitHub/u);
     assert.deepEqual(planning.untrustedContext, {
       label: 'GitHub pull-request context',
       payload: {
@@ -147,6 +150,40 @@ describe('channels/github/utils/planning', () => {
     };
 
     assert.equal(assertGitHubNotificationPlanningResponse([response]), response);
+  });
+
+  it('should extract one safe public outcome independently from the private plan', () => {
+    const response = {
+      text: [
+        '## Assessment',
+        '',
+        'The assignment is bounded.',
+        '',
+        '## Blockers',
+        '',
+        'None.',
+        '',
+        '## Plan',
+        '',
+        '1. Implement the contract.',
+        '',
+        '## 📤 To GitHub',
+        '',
+        '> I reviewed the assignment and have a plan ready.',
+      ].join('\n'),
+    };
+
+    assert.equal(
+      githubNotificationPlanningReply(response),
+      'I reviewed the assignment and have a plan ready.',
+    );
+    assert.throws(
+      () =>
+        githubNotificationPlanningReply({
+          text: '## Assessment\nReady.\n## Blockers\nNone.\n## Plan\n1. Implement it.',
+        }),
+      /did not contain one complete supported plan/u,
+    );
   });
 
   it('should preserve legacy plaintext planning responses during transition', () => {

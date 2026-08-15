@@ -1,8 +1,5 @@
 import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
-import type {
-  GitHubNotificationAcknowledgmentState,
-  GitHubNotificationDeliveryState,
-} from './monitor-state.ts';
+import type { GitHubNotificationDeliveryState } from './monitor-state.ts';
 
 export interface GitHubNotificationObservedWorktree {
   branch: string;
@@ -10,7 +7,6 @@ export interface GitHubNotificationObservedWorktree {
 }
 
 export interface GitHubNotificationObservedSession {
-  acknowledgment?: Exclude<GitHubNotificationAcknowledgmentState, { status: 'pending' }>;
   id?: string;
   key: string;
   mode?: GitHubNotificationExecutionMode;

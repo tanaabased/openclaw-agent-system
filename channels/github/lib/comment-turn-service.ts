@@ -25,8 +25,8 @@ import githubNotificationCommentReply, {
   assertGitHubNotificationCommentResponse,
 } from '../utils/comment-response.ts';
 import type {
-  GitHubNotificationAcknowledgmentState,
   GitHubNotificationCommentRevisionState,
+  GitHubNotificationPublicationState,
 } from '../utils/monitor-state.ts';
 import { githubNotificationChannelId } from '../utils/routing.ts';
 
@@ -45,7 +45,7 @@ export interface GitHubNotificationCommentTurnInput extends GitHubNotificationAs
 }
 
 export type GitHubNotificationCommentTurnResult = {
-  reply: Exclude<GitHubNotificationAcknowledgmentState, { status: 'pending' }>;
+  reply: Exclude<GitHubNotificationPublicationState, { status: 'pending' }>;
 };
 
 function commentErrorCode(error: unknown): string {

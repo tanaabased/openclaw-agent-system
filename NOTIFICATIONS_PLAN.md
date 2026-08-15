@@ -2,8 +2,9 @@
 
 Status: the existing GitHub notifications channel is shipped through the public
 OpenClaw channel SDK. This document defines the approved target architecture for
-the next notification refactor. Wave 1 changes documentation only; the channel
-README continues to describe current runtime behavior until later waves ship.
+the notification refactor. Wave 2 establishes the message boundaries and durable
+planning-response checkpoints; later waves expand planning capability and
+resumable outcomes.
 
 The refactor separates five concerns that the current implementation partially
 conflates:
@@ -42,11 +43,11 @@ The current implementation remains the baseline for the refactor:
 | ------------------------------ | --------------------------------------------------------------------------------------------- |
 | Issue assignment               | Approved intake, managed worktree, private session, tool-free planning turn                   |
 | Direct pull-request assignment | Approved intake, verified head metadata, private monitoring session without an eager worktree |
-| Initial acknowledgment         | Model-authored candidate published after the planning turn                                    |
+| Planning response              | Model-authored candidate published separately after the private planning turn                 |
 | Approved top-level comments    | Mention-gated, revision-aware, tool-free private reply with a bounded GitHub candidate        |
 | Retirement                     | Logical preservation of sessions and existing worktrees                                       |
 
-The refactor intentionally changes the planning, acknowledgment, comment, and
+The refactor intentionally changes the planning, publication, comment, and
 presentation boundaries. It preserves the existing admission, routing,
 authorization, publication-safety, receipt, and non-destructive lifecycle
 foundations.
@@ -217,27 +218,28 @@ reauthorizes the target, and publishes the accepted text exactly. Sanitization
 means fail-closed rejection, not best-effort rewriting that might change the
 message's meaning.
 
-Trusted provider-constructed acknowledgments and completion references may use
+Future provider-constructed acknowledgments and trusted completion references may use
 canonical actor, issue, pull-request, or comment links assembled from verified
 metadata. Free-form model output does not gain permission to publish arbitrary
 links, mentions, local paths, credentials, or tool traces.
 
-## Assignment Receipt
+## Assignment Receipt and First Public Response
 
-Assignment admission produces two independent effects:
+Assignment admission produces one immediate local receipt:
 
 1. a private assignment card is recorded in the exact assignment session; and
-2. a deterministic mode-specific receipt is published to GitHub.
+2. the durable assignment lifecycle advances to `active`.
 
-The receipt does not wait for planning and does not invoke the model. Initial
-Plan wording communicates that the assignment was received and planning is
-beginning. Future Work and Auto wording must accurately reflect their
-implemented behavior.
+Those checkpoints confirm intake without waiting for planning and are the
+immediate automation surface. Wave 2 does not publish a ceremonial GitHub comment
+at assignment time. Its first public provider response is the model-authored,
+sanitized `To GitHub` outcome produced after private planning completes.
 
-Personality-varied acknowledgments, randomized curated variants, and
-model-authored receipt wording are explicitly deferred. They may later replace
-the fixed copy before the deterministic publication gate without coupling
-assignment receipt to completion of another model turn.
+Legacy schema-3 acknowledgment state and `initial-acknowledgment` publication
+markers remain readable for restart and deduplication compatibility, but new
+assignments do not create them. An immediate provider-visible receipt may return
+later only after the channel has a supported, independently testable transport
+that does not couple intake to planning completion.
 
 ## Issue Assignment Lifecycle
 
@@ -250,8 +252,8 @@ assignment receipt to completion of another model turn.
 3. Prepare or reuse the deterministic managed issue worktree.
 4. Record or reuse the deterministic issue conversation through OpenClaw's
    channel inbound lifecycle.
-5. Record the issue assignment card and publish the deterministic receipt.
-6. Checkpoint the active assignment mode as Plan.
+5. Record the issue assignment card.
+6. Checkpoint the active assignment mode as Plan; planning runs asynchronously.
 
 ### Planning Investigation
 
@@ -335,7 +337,7 @@ This refactor will align only the currently owned boundary:
 - retain verified base ref, head ref, head SHA, draft state, author identity,
   canonical links, and bounded summary metadata as PR-specific context;
 - use PR-specific hidden planning instructions;
-- publish a deterministic PR-assignment receipt;
+- publish only the sanitized public outcome after private PR planning;
 - support Plan outcomes and clarification through approved top-level comments;
 - preserve mode inheritance for every admitted PR comment; and
 - keep current logical retirement on close, merge, unassignment, or authority
@@ -489,7 +491,8 @@ publication concern.
   session service without expanding product behavior accidentally.
 - Move operational instructions out of visible chat.
 - Change the outbound component heading to `To GitHub`.
-- Publish immediate deterministic assignment receipts.
+- Record the assignment card and `active` checkpoint as the immediate local receipt.
+- Publish the sanitized planning outcome independently from private plan completion.
 - Keep legacy response parsing only as a bounded transition input where needed.
 
 ### Wave 3: Resumable Issue Plan
@@ -516,8 +519,8 @@ publication concern.
 
 - Reuse the separate PR assignment presentation, context, and instructions
   established by the message foundation.
-- Apply Plan outcomes, clarification, comment inheritance, and deterministic
-  receipt within the currently supported PR monitoring boundary.
+- Apply Plan outcomes, clarification, and comment inheritance within the
+  currently supported PR monitoring boundary.
 - Preserve verified-head and retirement behavior.
 - Do not implement correlated delivery, review requests, inline reviews, head
   mutation, or PR Work.
@@ -535,7 +538,8 @@ publication concern.
 
 - complexity-based model routing: [#31](https://github.com/tanaabased/openclaw-agent-system/issues/31);
 - Auto-mode selection: [#32](https://github.com/tanaabased/openclaw-agent-system/issues/32);
-- personality-varied or model-authored receipt acknowledgments;
+- an immediate provider-visible assignment acknowledgment and any
+  personality-varied receipt wording;
 - correlated issue-to-PR delivery and review handoff;
 - complete direct-PR Work and review lifecycles; and
 - replay, retention, archival, and explicit cleanup controls.
@@ -593,7 +597,10 @@ The initial refactor is complete when:
 - issue and pull-request assignments use distinct presentation and context;
 - hidden instructions and hard capabilities are selected independently through
   one trusted semantic registry;
-- assignment receipts publish immediately and deterministically;
+- assignment cards and the durable `active` checkpoint provide immediate local
+  receipt without waiting for planning;
+- private plan completion and public planning-response delivery have independent
+  durable checkpoints;
 - issue Plan performs supported investigation and returns a real plan or
   clarification request;
 - every planning outcome contains a private response and, when GitHub
@@ -647,8 +654,9 @@ The refactor preserves these implemented owners rather than rebuilding them:
 
 The approved target contract replaces these earlier planning assumptions:
 
-- Initial acknowledgment no longer waits for or comes from the planning model
-  turn.
+- The provisional deterministic GitHub assignment comment is removed from the
+  active Wave 2 flow; the private assignment card and `active` checkpoint are the
+  immediate receipt, and the planning outcome is the first public response.
 - Planning and admitted comments are no longer categorically tool-free; they use
   the bounded capability inherited from the active mode.
 - Planning may inspect code, documentation, provider evidence, and disposable

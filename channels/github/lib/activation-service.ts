@@ -119,6 +119,7 @@ export default class GitHubNotificationActivationService {
 
   async #activate(agentId: string, pending: PendingActivation, signal: AbortSignal): Promise<void> {
     let adopted = false;
+    let planningCompleted = false;
     try {
       const planning = await this.#dependencies.authority.loadPlanningContext({
         agentId,
@@ -142,6 +143,16 @@ export default class GitHubNotificationActivationService {
         context: planning.context,
         delivery: pending.delivery,
         item: pending.item,
+        onPlanningCompleted: async () => {
+          await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
+            ...delivery,
+            activation: { reply: { status: 'pending' }, status: 'planned' },
+          }));
+          planningCompleted = true;
+          this.#dependencies.logger.info(
+            `github-notifications: private planning complete agent=${agentId} reply=pending`,
+          );
+        },
         onTurnAdopted: async () => {
           adopted = true;
           await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
@@ -166,14 +177,22 @@ export default class GitHubNotificationActivationService {
       });
       await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
         ...delivery,
-        activation: { status: 'planned' },
+        activation: { reply: result.reply, status: 'planned' },
       }));
       this.#dependencies.logger.info(
-        `github-notifications: planning complete agent=${agentId} status=${result.status}`,
+        result.reply.status === 'published'
+          ? `github-notifications: planning complete agent=${agentId} reply=published code=github-notification-planning-complete`
+          : `github-notifications: planning complete agent=${agentId} reply=failed code=${result.reply.failureCode}`,
       );
     } catch (error) {
       if (signal.aborted) return;
       const code = errorCode(error);
+      if (planningCompleted) {
+        this.#dependencies.logger.warn(
+          `github-notifications: planning reply checkpoint deferred agent=${agentId} code=${code}`,
+        );
+        return;
+      }
       const status = adopted ? 'failed' : 'pending';
       await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
         ...delivery,

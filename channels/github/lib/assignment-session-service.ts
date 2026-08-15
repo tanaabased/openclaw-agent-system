@@ -12,18 +12,12 @@ import type {
   GitHubNotificationAssignmentSessionInput,
 } from './assignment-orchestrator.ts';
 import {
-  githubNotificationPublishedCommentId,
-  type GitHubNotificationPublications,
-} from './publication-service.ts';
-import {
   githubNotificationConversationId,
   runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channel.ts';
 import resolveGitHubNotificationMessage from './message-registry.ts';
-import githubNotificationAssignmentCard, {
-  githubNotificationAssignmentReceipt,
-} from '../messages/presentation/assignment-card.ts';
+import githubNotificationAssignmentCard from '../messages/presentation/assignment-card.ts';
 import type { GitHubNotificationExecutionMode } from '../messages/types.ts';
 import type {
   GitHubNotificationObservedSession,
@@ -38,7 +32,6 @@ import {
 } from '../utils/routing.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
-  publicationService: GitHubNotificationPublications;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
@@ -119,19 +112,7 @@ function assignmentContext(input: {
   };
 }
 
-function acknowledgmentErrorCode(error: unknown): string {
-  if (
-    error instanceof Error &&
-    'code' in error &&
-    typeof error.code === 'string' &&
-    error.code.startsWith('github-notification-')
-  ) {
-    return error.code;
-  }
-  return 'github-notification-acknowledgment-publication-failed';
-}
-
-/** Own assignment-session recording and deterministic assignment acknowledgment. */
+/** Own assignment-card recording in the assignment's private OpenClaw session. */
 export default class GitHubNotificationAssignmentSessionService implements GitHubNotificationAssignmentSessions {
   readonly #dependencies: GitHubNotificationAssignmentSessionServiceDependencies;
 
@@ -143,12 +124,11 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
     input: GitHubNotificationAssignmentSessionInput,
   ): Promise<GitHubNotificationObservedSession> {
     const assignment = await this.resolve(input);
-    let recordedContext: PreparedInboundReply<void>['ctxPayload'] | undefined;
     const result = await runGitHubNotificationAssignment(assignment.event, {
       config: assignment.config,
       desired: assignment.desired,
-      prepareTurn: (event, route) => {
-        const turn = this.prepareTurn({
+      prepareTurn: (event, route) =>
+        this.prepareTurn({
           config: assignment.config,
           event,
           label: assignment.label,
@@ -156,10 +136,7 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
           ...(input.item.pullRequest === undefined ? {} : { pullRequest: input.item.pullRequest }),
           route,
           ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
-        });
-        recordedContext = turn.ctxPayload;
-        return turn;
-      },
+        }),
     });
     if (
       !result.dispatched ||
@@ -168,16 +145,13 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
     ) {
       throw new Error('OpenClaw did not record the expected notification session.');
     }
-    if (!recordedContext) throw new Error('OpenClaw did not prepare the notification context.');
     const recorded: GitHubNotificationRecordedSession = {
       key: result.routeSessionKey,
       mode: assignment.mode,
       status: 'received',
     };
     await input.onSessionRecorded?.(recorded);
-    const acknowledgment = await this.#publishAcknowledgment(assignment, input, recordedContext);
     return {
-      acknowledgment,
       key: result.routeSessionKey,
       mode: assignment.mode,
       status: 'active',
@@ -348,38 +322,5 @@ export default class GitHubNotificationAssignmentSessionService implements GitHu
       ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
     });
     return { config, desired, event, label, mode, route, workContext };
-  }
-
-  async #publishAcknowledgment(
-    assignment: ResolvedGitHubNotificationAssignmentSession,
-    input: GitHubNotificationAssignmentSessionInput,
-    ctxPayload: PreparedInboundReply<void>['ctxPayload'],
-  ): Promise<GitHubNotificationObservedSession['acknowledgment']> {
-    try {
-      const publication = await this.#dependencies.publicationService.publish({
-        accountId: assignment.route.accountId,
-        agentId: assignment.route.agentId,
-        cfg: assignment.config,
-        ctxPayload,
-        info: { kind: 'final' },
-        intent: 'initial-acknowledgment',
-        item: input.item,
-        payload: {
-          text: githubNotificationAssignmentReceipt(input.item.itemType, assignment.mode),
-        },
-        publicationId: input.delivery.assignmentEventId,
-      });
-      const commentId = githubNotificationPublishedCommentId(publication);
-      if (commentId !== undefined) return { commentId, status: 'published' };
-      return {
-        failureCode:
-          publication.status === 'failed'
-            ? acknowledgmentErrorCode(publication.error)
-            : 'github-notification-acknowledgment-not-confirmed',
-        status: 'failed',
-      };
-    } catch (error) {
-      return { failureCode: acknowledgmentErrorCode(error), status: 'failed' };
-    }
   }
 }

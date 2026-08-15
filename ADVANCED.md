@@ -340,8 +340,8 @@ openclaw agent-system notifications status [--agent <id>] [--repository <owner/n
 ```
 
 The optional item selector is all-or-nothing. Results report baseline readiness,
-assignment disposition and stage, session and worktree readiness, planning and
-acknowledgment checkpoints, bounded pull-request head metadata, and value-free
+assignment disposition and stage, session and worktree readiness, private
+planning and public planning-response checkpoints, bounded pull-request head metadata, and value-free
 comment admission, turn, and reply status. The schema omits raw
 provider content, hidden prompt layers, session keys, and local paths. A durable
 monitor diagnostic returns `degraded` and sets a nonzero exit code.
@@ -356,7 +356,7 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 ```
 
 Supported targets are `baseline-ready`, `assignment-rejected`, `received`,
-`active`, `planning-complete`, `acknowledgment-published`, `comment-rejected`,
+`active`, `planning-complete`, `planning-replied`, `comment-rejected`,
 `comment-received`, `comment-replied`, and `retired`.
 Comment targets require `--comment`; every non-baseline target requires the full
 item selector. `--refresh` explicitly runs intake cycles while waiting and

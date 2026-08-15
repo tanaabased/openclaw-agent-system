@@ -22,9 +22,9 @@ describe('channels/github/lib/publication-service', () => {
       cfg: {},
       ctxPayload: {} as never,
       info: { kind: 'final' },
-      intent: 'initial-acknowledgment',
+      intent: 'planning-outcome',
       item: approvedNotificationItem(),
-      payload: { text: 'I have this one.' },
+      payload: { text: 'I reviewed the assignment and have a plan ready.' },
       publicationId: 'EV_assignment',
     });
 
@@ -34,8 +34,10 @@ describe('channels/github/lib/publication-service', () => {
       reconcileUnknownSend: true,
       text: true,
     });
-    assert.match(String(delivered?.to), /:publication:initial-acknowledgment:/u);
-    assert.deepEqual(delivered?.payload, { text: 'I have this one.' });
+    assert.match(String(delivered?.to), /:publication:planning-outcome:/u);
+    assert.deepEqual(delivered?.payload, {
+      text: 'I reviewed the assignment and have a plan ready.',
+    });
   });
 
   it('should reject unsafe content before durable delivery', async () => {

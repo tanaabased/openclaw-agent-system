@@ -107,7 +107,7 @@ openclaw agent-system notifications status \
   --number "$pull_request_number" \
   --json | jq -e --arg head "$expected_head" '.items[0].pullRequest.headSha == $head and .items[0].worktree == "not-applicable"'
 
-# should complete private pull-request planning and publish one safe acknowledgment
+# should complete private pull-request planning independently from public delivery
 cd "$TMPDIR/agent-system-pr-notifications"
 pull_request_number="$(cat "$TMPDIR/assigned-pull-request-number")"
 openclaw agent-system notifications wait \
@@ -118,8 +118,18 @@ openclaw agent-system notifications wait \
   --for planning-complete \
   --timeout 300 \
   --json | jq -e '.status == "completed" and .observation.items[0].planning.status == "planned"'
+
+# should publish one safe pull-request planning outcome through the channel adapter
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind pull-request \
+  --number "$pull_request_number" \
+  --for planning-replied \
+  --timeout 300 \
+  --json | jq -e '.status == "completed" and .observation.items[0].planning.reply.status == "published"'
 cd "$TMPDIR/agent-system-pr-notification-actor"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment")))] as $receipts | ($receipts | length) >= 1 and all($receipts[]; (.body | contains("Untrusted pull-request content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api "repos/tanaabased/agent-system-test/issues/$pull_request_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:planning-outcome")))] as $outcomes | ($outcomes | length) >= 1 and all($outcomes[]; (.body | contains("Untrusted pull-request content") | not) and (.body | contains("/workspace/") | not))' | grep -Fx 'true'
 
 # should admit one approved top-level pull-request comment across a gateway restart
 cd "$TMPDIR/agent-system-pr-notification-actor"

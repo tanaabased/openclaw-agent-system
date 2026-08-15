@@ -19,8 +19,7 @@ describe('channels/github/utils/comment-context', () => {
     const item = approvedPullRequestNotificationItem();
     item.delivery = {
       ...item.delivery!,
-      acknowledgment: { commentId: 91, status: 'published' },
-      activation: { status: 'planned' },
+      activation: { reply: { commentId: 91, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:comment',
       stage: 'active',
     };
@@ -62,8 +61,8 @@ describe('channels/github/utils/comment-context', () => {
           id: revision.revisionId,
         },
         statusEvidence: {
-          acknowledgmentStatus: 'published',
           assignmentActive: true,
+          planningReplyStatus: 'published',
           planningStatus: 'planned',
         },
       },

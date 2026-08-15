@@ -47,7 +47,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
 
   public constructor(dependencies: GitHubNotificationSessionServiceDependencies) {
     this.#assignmentSessions = new GitHubNotificationAssignmentSessionService({
-      publicationService: dependencies.publicationService,
       readConfig: dependencies.readConfig,
       recordInboundSession: dependencies.recordInboundSession,
     });
@@ -56,6 +55,7 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
       dispatchReplyWithBufferedBlockDispatcher:
         dependencies.dispatchReplyWithBufferedBlockDispatcher,
       logger: dependencies.logger,
+      publicationService: dependencies.publicationService,
       recordInboundSession: dependencies.recordInboundSession,
     });
     this.#commentTurns = new GitHubNotificationCommentTurnService({
