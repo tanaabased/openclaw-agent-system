@@ -267,16 +267,9 @@ describe('channels/github/lib/monitor-service', () => {
         state = structuredClone(next);
       },
     };
-    let sessionRecords = 0;
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession() {
-          sessionRecords += 1;
-          return { key: sessionKey, status: 'active' };
-        },
-      },
       stateStore,
       worktrees: {
         async inspect() {
@@ -315,7 +308,6 @@ describe('channels/github/lib/monitor-service', () => {
     assert.equal(state.items[notificationItemKey]?.delivery?.sessionKey, sessionKey);
     assert.equal(state.items[notificationItemKey]?.delivery?.worktreeBranch, worktree.branch);
     assert.equal(state.items[notificationItemKey]?.delivery?.worktreePath, worktree.path);
-    assert.equal(sessionRecords, 0);
     assert.equal(worktreeOperations, 0);
   });
 

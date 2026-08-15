@@ -12,6 +12,7 @@ export type { GitHubNotificationItemSelector } from './work-item.ts';
 
 export type GitHubNotificationWaitTarget =
   | 'active'
+  | 'assignment-acknowledged'
   | 'assignment-rejected'
   | 'baseline-ready'
   | 'comment-received'
@@ -24,6 +25,7 @@ export type GitHubNotificationWaitTarget =
 
 export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarget>([
   'active',
+  'assignment-acknowledged',
   'assignment-rejected',
   'baseline-ready',
   'comment-received',
@@ -44,6 +46,7 @@ export interface GitHubNotificationStatusComment {
 }
 
 export interface GitHubNotificationStatusItem {
+  acknowledgment?: GitHubNotificationPublicationState;
   commentDiagnosticCode?: string;
   comments: GitHubNotificationStatusComment[];
   disposition: GitHubNotificationItemDisposition;
@@ -125,6 +128,9 @@ export function githubNotificationMonitorStatus(
           ...(comment.turn === undefined ? {} : { turn: comment.turn }),
         }));
       return {
+        ...(delivery?.acknowledgment === undefined
+          ? {}
+          : { acknowledgment: delivery.acknowledgment }),
         ...(item.commentTracking?.diagnosticCode === undefined
           ? {}
           : { commentDiagnosticCode: item.commentTracking.diagnosticCode }),
@@ -197,11 +203,21 @@ function itemFailure(
   commentId?: number,
 ): string | undefined {
   if (item.failureCode) return item.failureCode;
+  if (target === 'assignment-acknowledged' && item.acknowledgment?.status === 'failed') {
+    return item.acknowledgment.failureCode;
+  }
   if (target.startsWith('comment-') && item.commentDiagnosticCode) {
     return item.commentDiagnosticCode;
   }
-  if (item.planning?.status === 'failed' && target === 'planning-complete') {
-    return item.planning.failureCode ?? 'github-notification-activation-failed';
+  if (
+    item.planning?.failureCode &&
+    (target === 'active' ||
+      target === 'assignment-acknowledged' ||
+      target === 'planning-complete' ||
+      target === 'planning-replied' ||
+      target === 'received')
+  ) {
+    return item.planning.failureCode;
   }
   if (item.planning?.reply?.status === 'failed' && target === 'planning-replied') {
     return item.planning.reply.failureCode;
@@ -236,6 +252,9 @@ export function evaluateGitHubNotificationWait(
 
   let reached = false;
   if (target === 'assignment-rejected') reached = item.disposition === 'rejected';
+  if (target === 'assignment-acknowledged') {
+    reached = item.acknowledgment?.status === 'published';
+  }
   if (target === 'received') {
     reached = item.stage === 'received' || item.stage === 'active' || item.stage === 'retired';
   }

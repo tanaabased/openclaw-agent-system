@@ -7,7 +7,7 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
-import GitHubNotificationActivationService from '../channels/github/lib/activation-service.ts';
+import GitHubNotificationAssignmentDispatchService from '../channels/github/lib/assignment-dispatch-service.ts';
 import GitHubNotificationCommentService from '../channels/github/lib/comment-service.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   type GitHubNotificationAssignmentBoundaryInput,
@@ -284,7 +284,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const notificationAssignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
     authority: notificationAssignmentProvider,
-    sessions: notificationSessionService,
     stateStore: notificationMonitorStateStore,
     worktrees: {
       inspect: (input) =>
@@ -303,7 +302,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     routingService: notificationRoutingService,
     stateStore: notificationMonitorStateStore,
   });
-  const notificationActivationService = new GitHubNotificationActivationService({
+  const notificationAssignmentDispatchService = new GitHubNotificationAssignmentDispatchService({
     authority: notificationAssignmentProvider,
     leaseStore: notificationMonitorCycleLeaseStore,
     logger,
@@ -325,7 +324,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
 
   api.registerChannel({
     plugin: createGitHubNotificationChannel({
-      activationService: notificationActivationService,
+      assignmentService: notificationAssignmentDispatchService,
       commentService: notificationCommentService,
       message: createGitHubNotificationMessageAdapter({
         accountClient: githubCapability.accountClient,

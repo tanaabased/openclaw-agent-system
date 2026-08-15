@@ -225,21 +225,17 @@ links, mentions, local paths, credentials, or tool traces.
 
 ## Assignment Receipt and First Public Response
 
-Assignment admission produces one immediate local receipt:
+Assignment admission produces one immediate local receipt and one immediate
+provider receipt:
 
 1. a private assignment card is recorded in the exact assignment session; and
-2. the durable assignment lifecycle advances to `active`.
+2. the durable assignment lifecycle advances to `active`; and
+3. a deterministic, sanitized acknowledgment is published to GitHub as soon as
+   OpenClaw adopts the turn.
 
-Those checkpoints confirm intake without waiting for planning and are the
-immediate automation surface. Wave 2 does not publish a ceremonial GitHub comment
-at assignment time. Its first public provider response is the model-authored,
-sanitized `To GitHub` outcome produced after private planning completes.
-
-Legacy schema-3 acknowledgment state and `initial-acknowledgment` publication
-markers remain readable for restart and deduplication compatibility, but new
-assignments do not create them. An immediate provider-visible receipt may return
-later only after the channel has a supported, independently testable transport
-that does not couple intake to planning completion.
+The acknowledgment shares the normal assignment dispatch but does not wait for
+planning completion. The same model turn continues after adoption and later
+publishes its model-authored, sanitized `To GitHub` planning outcome.
 
 ## Issue Assignment Lifecycle
 
@@ -250,10 +246,13 @@ that does not couple intake to planning completion.
 2. Admit only an approved assignment event after identity, repository, owner,
    permission, baseline, and deduplication checks.
 3. Prepare or reuse the deterministic managed issue worktree.
-4. Record or reuse the deterministic issue conversation through OpenClaw's
-   channel inbound lifecycle.
-5. Record the issue assignment card.
-6. Checkpoint the active assignment mode as Plan; planning runs asynchronously.
+4. Release the monitor cycle lease without creating a session or starting a
+   model.
+5. Let the Gateway dispatch one normal inbound assignment turn with
+   `createIfMissing` for the deterministic issue conversation.
+6. Record the issue assignment card, checkpoint Plan as `active`, and publish
+   the deterministic acknowledgment when OpenClaw adopts that turn.
+7. Continue planning in the same turn.
 
 ### Planning Investigation
 
@@ -441,6 +440,7 @@ channels/github/
   lib/
     message-registry.ts
     message-capability-policy.ts
+    assignment-dispatch-service.ts
     assignment-session-service.ts
     planning-turn-service.ts
     comment-turn-service.ts
@@ -460,6 +460,8 @@ channels/github/
       issue-plan.ts
       pull-request-plan.ts
       comment.ts
+    publication/
+      assignment-acknowledgment.ts
 ```
 
 Create only modules used by the current implementation wave. Do not add empty
@@ -491,7 +493,10 @@ publication concern.
   session service without expanding product behavior accidentally.
 - Move operational instructions out of visible chat.
 - Change the outbound component heading to `To GitHub`.
-- Record the assignment card and `active` checkpoint as the immediate local receipt.
+- Dispatch session creation, the assignment card, hidden instructions, and
+  planning as one normal inbound turn after monitor intake releases its lease.
+- Record the assignment card and `active` checkpoint as the immediate local
+  receipt, then publish the deterministic acknowledgment on turn adoption.
 - Publish the sanitized planning outcome independently from private plan completion.
 - Keep legacy response parsing only as a bounded transition input where needed.
 
@@ -538,8 +543,7 @@ publication concern.
 
 - complexity-based model routing: [#31](https://github.com/tanaabased/openclaw-agent-system/issues/31);
 - Auto-mode selection: [#32](https://github.com/tanaabased/openclaw-agent-system/issues/32);
-- an immediate provider-visible assignment acknowledgment and any
-  personality-varied receipt wording;
+- personality-varied assignment acknowledgment wording;
 - correlated issue-to-PR delivery and review handoff;
 - complete direct-PR Work and review lifecycles; and
 - replay, retention, archival, and explicit cleanup controls.
@@ -569,10 +573,10 @@ Keep unit coverage strong while reducing duplicated prose assertions:
 - Orchestration tests assert adopted turns, state transitions, resumption,
   publication intent, and stable diagnostic codes without duplicating complete
   Markdown owned by formatters.
-- Installed layer scenarios use `notifications status` and `notifications wait`
-  for lifecycle coordination, retain independent provider and local-state
-  readbacks, and leave chat-history and response-envelope assertions to the
-  dedicated presentation scenario.
+- The installed issue scenario uses `notifications status` and `notifications
+wait` for lifecycle coordination and retains independent provider and
+  local-state readbacks. Presentation component output remains owned by focused
+  unit tests while the messaging refactor is in progress.
 
 Run the narrowest owning tests during each wave, then for implementation changes:
 
@@ -654,9 +658,8 @@ The refactor preserves these implemented owners rather than rebuilding them:
 
 The approved target contract replaces these earlier planning assumptions:
 
-- The provisional deterministic GitHub assignment comment is removed from the
-  active Wave 2 flow; the private assignment card and `active` checkpoint are the
-  immediate receipt, and the planning outcome is the first public response.
+- The deterministic GitHub assignment acknowledgment is published on adoption
+  of the single assignment turn, before that same turn completes planning.
 - Planning and admitted comments are no longer categorically tool-free; they use
   the bounded capability inherited from the active mode.
 - Planning may inspect code, documentation, provider evidence, and disposable

@@ -22,7 +22,7 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should reconcile the worktree before recording the channel session', () => {
+  it('should reconcile the worktree before dispatching the assignment', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }), {
       kind: 'prepare-worktree',
     });
@@ -37,13 +37,13 @@ describe('channels/github/utils/delivery-plan', () => {
       worktreePath: worktree.path,
     };
     assert.deepEqual(planGitHubNotificationDelivery(worktreeReady, { authority, worktree }), {
-      kind: 'record-session',
+      kind: 'dispatch-assignment',
     });
   });
 
-  it('should record a pull-request session without preparing a worktree', () => {
+  it('should dispatch a pull-request assignment without preparing a worktree', () => {
     assert.deepEqual(planGitHubNotificationDelivery(admitted, { authority }, false), {
-      kind: 'record-session',
+      kind: 'dispatch-assignment',
     });
   });
 
@@ -68,7 +68,7 @@ describe('channels/github/utils/delivery-plan', () => {
     );
   });
 
-  it('should retry a deterministic session record', () => {
+  it('should resume a legacy pre-dispatch checkpoint', () => {
     for (const stage of ['session-recording', 'received'] as const) {
       assert.deepEqual(
         planGitHubNotificationDelivery(
@@ -80,7 +80,7 @@ describe('channels/github/utils/delivery-plan', () => {
           },
           { authority, worktree },
         ),
-        { kind: 'record-session' },
+        { kind: 'dispatch-assignment' },
       );
     }
   });

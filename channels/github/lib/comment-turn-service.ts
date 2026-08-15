@@ -8,9 +8,9 @@ import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../lib/logger.ts';
-import type { GitHubNotificationAssignmentSessionInput } from './assignment-orchestrator.ts';
 import {
   githubNotificationRequiredText,
+  type GitHubNotificationAssignmentSessionInput,
   type default as GitHubNotificationAssignmentSessionService,
 } from './assignment-session-service.ts';
 import githubNotificationCapabilityPolicy from './message-capability-policy.ts';

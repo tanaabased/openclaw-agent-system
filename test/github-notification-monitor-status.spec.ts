@@ -13,6 +13,7 @@ describe('channels/github/utils/monitor-status', () => {
     const item = state.items[notificationItemKey]!;
     item.delivery = {
       ...item.delivery!,
+      acknowledgment: { commentId: 90, status: 'published' },
       activation: { reply: { commentId: 92, status: 'published' }, status: 'planned' },
       sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
       stage: 'active',
@@ -46,6 +47,7 @@ describe('channels/github/utils/monitor-status', () => {
 
     assert.equal(result.status, 'ready');
     assert.deepEqual(result.items[0], {
+      acknowledgment: { commentId: 90, status: 'published' },
       comments: [
         {
           commentId: 91,
@@ -78,6 +80,17 @@ describe('channels/github/utils/monitor-status', () => {
         91,
       ),
       { code: 'github-notification-comment-replied', status: 'reached' },
+    );
+    assert.deepEqual(
+      evaluateGitHubNotificationWait(result, 'assignment-acknowledged', {
+        itemType: 'issue',
+        number: 12,
+        repository: 'tanaabased/example',
+      }),
+      {
+        code: 'github-notification-assignment-acknowledged',
+        status: 'reached',
+      },
     );
     assert.deepEqual(
       evaluateGitHubNotificationWait(result, 'planning-replied', {

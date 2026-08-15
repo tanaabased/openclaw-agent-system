@@ -3,16 +3,17 @@
 ### New Features
 
 - Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
-- Added immediate private assignment receipt checkpoints and separately sanitized public planning outcomes. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Added one normal inbound assignment turn with an immediate private receipt, a
+  deterministic GitHub acknowledgment, and a separately sanitized public
+  planning outcome. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub comment input with hidden instructions, structured evidence, and quoted `To GitHub` publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
 - Added redacted `notifications status` and bounded semantic `notifications wait`
   commands for durable GitHub notification lifecycle inspection and tests.
 - Added manifest-selected GitHub assignment discovery and exact-item notification
   refreshes for isolated lifecycle automation.
-- Separated installed GitHub lifecycle checks from a dedicated notification
-  presentation scenario, and carried hidden turn instructions through OpenClaw's
-  provider-specific chat context.
+- Added semantic installed issue-lifecycle checks while carrying hidden turn
+  instructions through OpenClaw's provider-specific chat context.
 - Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
 - Added plan-first GitHub notification activation with private issue assessment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
 - Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)
@@ -36,6 +37,8 @@
 
 - Moved the GitHub notification presentation contract into the packaged channel documentation and tightened the channel entrypoint.
 - Refactored GitHub notification message plumbing into separate presentation, context, instruction, capability, and turn owners. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
+- Removed the standalone pull-request and presentation Leia scenarios while the
+  notification messaging refactor focuses on the installed issue lifecycle.
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 

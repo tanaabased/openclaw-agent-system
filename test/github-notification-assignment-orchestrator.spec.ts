@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
-  type GitHubNotificationAssignmentSessionInput,
 } from '../channels/github/lib/assignment-orchestrator.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
 import {
   approvedPullRequestNotificationItem,
   notificationItemKey as itemKey,
@@ -13,19 +12,6 @@ import {
 } from './github-notification-fixtures.ts';
 
 const worktree = { branch: 'issue-7-branch', path: '/workspace/worktrees/issue-7' };
-const activeSession = {
-  key: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
-  status: 'active' as const,
-};
-
-async function recordActiveSession(input: GitHubNotificationAssignmentSessionInput) {
-  await input.onSessionRecorded?.({
-    key: activeSession.key,
-    mode: input.delivery.mode,
-    status: 'received',
-  });
-  return activeSession;
-}
 
 function memoryStore(initial = monitorState()) {
   let state = structuredClone(initial);
@@ -44,19 +30,12 @@ function memoryStore(initial = monitorState()) {
 }
 
 describe('channels/github/lib/assignment-orchestrator', () => {
-  it('should serialize duplicate reconciliation around one channel-owned session record', async () => {
+  it('should prepare one issue worktree without creating a session or model turn', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
     let worktreePreparations = 0;
-    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession(input) {
-          sessionRecords += 1;
-          return recordActiveSession(input);
-        },
-      },
       stateStore: store,
       worktrees: {
         inspect: async () => observedWorktree,
@@ -73,18 +52,18 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       orchestrator.reconcile('tanaabot', itemKey),
     ]);
 
+    const delivery = store.state().items[itemKey]?.delivery;
     assert.equal(worktreePreparations, 1);
-    assert.equal(sessionRecords, 1);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
-    assert.deepEqual(store.state().items[itemKey]?.delivery?.activation, { status: 'pending' });
-    assert.equal(store.state().items[itemKey]?.delivery?.acknowledgment, undefined);
+    assert.equal(delivery?.stage, 'worktree-ready');
+    assert.equal(delivery?.sessionKey, undefined);
+    assert.equal(delivery?.activation, undefined);
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.delivery?.stage),
-      ['admitted', 'worktree-ready', 'session-recording', 'received', 'active'],
+      ['admitted', 'worktree-ready'],
     );
   });
 
-  it('should record a pull-request session without inspecting or preparing a worktree', async () => {
+  it('should leave a pull request ready for the gateway dispatcher without a worktree', async () => {
     const state = monitorState();
     state.items = {
       [notificationPullRequestItemKey]: approvedPullRequestNotificationItem(),
@@ -92,16 +71,8 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     const store = memoryStore(state);
     let worktreeInspections = 0;
     let worktreePreparations = 0;
-    let recordedWorktree: unknown = 'not-recorded';
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession(input) {
-          recordedWorktree = input.worktree;
-          assert.equal(input.item.pullRequest?.headSha, 'a'.repeat(40));
-          return recordActiveSession(input);
-        },
-      },
       stateStore: store,
       worktrees: {
         async inspect() {
@@ -118,64 +89,20 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     await orchestrator.reconcile('tanaabot', notificationPullRequestItemKey);
 
     const delivery = store.state().items[notificationPullRequestItemKey]?.delivery;
-    assert.equal(recordedWorktree, undefined);
     assert.equal(worktreeInspections, 0);
     assert.equal(worktreePreparations, 0);
-    assert.equal(delivery?.stage, 'active');
-    assert.equal(delivery?.worktreeBranch, undefined);
-    assert.equal(delivery?.worktreePath, undefined);
-    assert.deepEqual(
-      store.writes.map(
-        (checkpoint) => checkpoint.items[notificationPullRequestItemKey]?.delivery?.stage,
-      ),
-      ['session-recording', 'received', 'active'],
-    );
+    assert.equal(delivery?.stage, 'admitted');
+    assert.equal(delivery?.sessionKey, undefined);
+    assert.equal(store.writes.length, 0);
   });
 
-  it('should retry an idempotent session record after an interrupted attempt', async () => {
-    const state = monitorState();
-    state.items[itemKey]!.delivery = {
-      ...state.items[itemKey]!.delivery!,
-      stage: 'worktree-ready',
-      worktreeBranch: worktree.branch,
-      worktreePath: worktree.path,
-    };
-    const store = memoryStore(state);
-    let sessionRecords = 0;
-    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession(input) {
-          sessionRecords += 1;
-          if (sessionRecords === 1) throw new Error('interrupted session record');
-          return recordActiveSession(input);
-        },
-      },
-      stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
-    });
-
-    await assert.rejects(
-      orchestrator.reconcile('tanaabot', itemKey),
-      (error: unknown) =>
-        error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-session-recording-failed',
-    );
-    await orchestrator.reconcile('tanaabot', itemKey);
-
-    assert.equal(sessionRecords, 2);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
-    assert.equal(store.state().items[itemKey]?.delivery?.failureCode, undefined);
-  });
-
-  it('should adopt a prepared worktree after its checkpoint write failed', async () => {
+  it('should adopt an observed worktree after its first checkpoint fails', async () => {
     const store = memoryStore();
     let failWorktreeCheckpoint = true;
     let observedWorktree: typeof worktree | undefined;
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: { recordSession: recordActiveSession },
       stateStore: {
         read: store.read,
         async write(next) {
@@ -200,21 +127,15 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     await orchestrator.reconcile('tanaabot', itemKey);
 
     assert.equal(worktreePreparations, 1);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'active');
+    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'worktree-ready');
+    assert.equal(store.state().items[itemKey]?.delivery?.failureCode, undefined);
   });
 
-  it('should retire locally without trying to manage the openclaw session', async () => {
+  it('should retire an assignment when provider authority is revoked', async () => {
     const store = memoryStore();
-    let sessionRecords = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
-      },
-      sessions: {
-        async recordSession() {
-          sessionRecords += 1;
-          return activeSession;
-        },
       },
       stateStore: store,
       worktrees: { inspect: async () => worktree, prepare: async () => worktree },
@@ -222,13 +143,12 @@ describe('channels/github/lib/assignment-orchestrator', () => {
 
     await orchestrator.reconcile('tanaabot', itemKey);
 
-    assert.equal(sessionRecords, 0);
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
   });
 
-  it('should complete local retirement for an active delivery', async () => {
+  it('should preserve local proof while retiring an active delivery', async () => {
     const state = monitorState();
     const item = state.items[itemKey];
     assert.ok(item?.delivery);
@@ -238,35 +158,17 @@ describe('channels/github/lib/assignment-orchestrator', () => {
       ...item.delivery,
       activation: { reply: { commentId: 42, status: 'published' }, status: 'planned' },
       sessionId: 'session-1',
-      sessionKey: activeSession.key,
+      sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item',
       stage: 'active',
       worktreeBranch: worktree.branch,
       worktreePath: worktree.path,
     };
     const activeDelivery = structuredClone(item.delivery);
     const store = memoryStore(state);
-    let sessionRecords = 0;
-    let worktreeInspections = 0;
-    let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession() {
-          sessionRecords += 1;
-          return activeSession;
-        },
-      },
       stateStore: store,
-      worktrees: {
-        async inspect() {
-          worktreeInspections += 1;
-          return worktree;
-        },
-        async prepare() {
-          worktreePreparations += 1;
-          return worktree;
-        },
-      },
+      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
     });
 
     await orchestrator.reconcile('tanaabot', itemKey);
@@ -275,82 +177,9 @@ describe('channels/github/lib/assignment-orchestrator', () => {
     assert.equal(retired?.disposition, 'retired');
     assert.equal(retired?.reasonCode, 'item-closed');
     assert.deepEqual(retired?.delivery, { ...activeDelivery, stage: 'retired' });
-    assert.equal(sessionRecords, 0);
-    assert.equal(worktreeInspections, 0);
-    assert.equal(worktreePreparations, 0);
   });
 
-  it('should recheck authority immediately before recording the session', async () => {
-    const state = monitorState();
-    state.items[itemKey]!.delivery = {
-      ...state.items[itemKey]!.delivery!,
-      stage: 'worktree-ready',
-      worktreeBranch: worktree.branch,
-      worktreePath: worktree.path,
-    };
-    const store = memoryStore(state);
-    let inspections = 0;
-    let sessionRecords = 0;
-    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      authority: {
-        inspect: async () => {
-          inspections += 1;
-          return inspections === 1
-            ? { authorized: true }
-            : { authorized: false, reasonCode: 'actor-access-revoked' };
-        },
-      },
-      sessions: {
-        async recordSession() {
-          sessionRecords += 1;
-          return activeSession;
-        },
-      },
-      stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
-    });
-
-    await orchestrator.reconcile('tanaabot', itemKey);
-
-    assert.equal(sessionRecords, 0);
-    assert.equal(store.state().items[itemKey]?.delivery?.stage, 'retired');
-    assert.equal(store.state().items[itemKey]?.reasonCode, 'actor-access-revoked');
-  });
-
-  it('should retain a value-free session-recording diagnostic', async () => {
-    const state = monitorState();
-    state.items[itemKey]!.delivery = {
-      ...state.items[itemKey]!.delivery!,
-      stage: 'worktree-ready',
-      worktreeBranch: worktree.branch,
-      worktreePath: worktree.path,
-    };
-    const store = memoryStore(state);
-    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession() {
-          throw new Error('restricted host detail');
-        },
-      },
-      stateStore: store,
-      worktrees: { inspect: async () => worktree, prepare: async () => worktree },
-    });
-
-    await assert.rejects(
-      orchestrator.reconcile('tanaabot', itemKey),
-      (error: unknown) =>
-        error instanceof GitHubNotificationAssignmentOrchestratorError &&
-        error.code === 'github-notification-session-recording-failed' &&
-        error.message === 'The notification session could not be recorded.',
-    );
-    assert.equal(
-      store.state().items[itemKey]?.delivery?.failureCode,
-      'github-notification-session-recording-failed',
-    );
-  });
-
-  it('should classify value-free pre-record boundary failures', async () => {
+  it('should classify value-free intake boundary failures', async () => {
     const scenarios = [
       {
         code: 'github-notification-authority-inspection-failed',
@@ -361,19 +190,16 @@ describe('channels/github/lib/assignment-orchestrator', () => {
                 throw new Error('restricted authority detail');
               },
             },
-            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: { inspect: async () => worktree, prepare: async () => worktree },
           });
         },
-        persisted: true,
       },
       {
         code: 'github-notification-worktree-inspection-failed',
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: {
               inspect: async () => {
@@ -383,14 +209,12 @@ describe('channels/github/lib/assignment-orchestrator', () => {
             },
           });
         },
-        persisted: true,
       },
       {
         code: 'github-notification-worktree-preparation-failed',
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { recordSession: async () => activeSession },
             stateStore: store,
             worktrees: {
               inspect: async () => undefined,
@@ -400,41 +224,6 @@ describe('channels/github/lib/assignment-orchestrator', () => {
             },
           });
         },
-        persisted: true,
-      },
-      {
-        code: 'github-notification-state-checkpoint-failed',
-        create(store: ReturnType<typeof memoryStore>) {
-          return new GitHubNotificationAssignmentOrchestrator({
-            authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { recordSession: async () => activeSession },
-            stateStore: {
-              read: store.read,
-              write: async () => {
-                throw new Error('restricted checkpoint detail');
-              },
-            },
-            worktrees: { inspect: async () => undefined, prepare: async () => worktree },
-          });
-        },
-        persisted: false,
-      },
-      {
-        code: 'github-notification-state-read-failed',
-        create(store: ReturnType<typeof memoryStore>) {
-          return new GitHubNotificationAssignmentOrchestrator({
-            authority: { inspect: async () => ({ authorized: true }) },
-            sessions: { recordSession: async () => activeSession },
-            stateStore: {
-              read: async () => {
-                throw new Error('restricted state detail');
-              },
-              write: store.write,
-            },
-            worktrees: { inspect: async () => worktree, prepare: async () => worktree },
-          });
-        },
-        persisted: false,
       },
     ];
 
@@ -447,10 +236,7 @@ describe('channels/github/lib/assignment-orchestrator', () => {
           error.code === scenario.code &&
           !error.message.includes('restricted'),
       );
-      assert.equal(
-        store.state().items[itemKey]?.delivery?.failureCode,
-        scenario.persisted ? scenario.code : undefined,
-      );
+      assert.equal(store.state().items[itemKey]?.delivery?.failureCode, scenario.code);
     }
   });
 });

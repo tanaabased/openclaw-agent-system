@@ -5,13 +5,7 @@ import type {
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import type { Logger } from '../../../lib/logger.ts';
-import type {
-  GitHubNotificationAssignmentSessions,
-  GitHubNotificationAssignmentSessionInput,
-} from './assignment-orchestrator.ts';
-import GitHubNotificationAssignmentSessionService, {
-  type GitHubNotificationSessionTurnInput,
-} from './assignment-session-service.ts';
+import GitHubNotificationAssignmentSessionService from './assignment-session-service.ts';
 import GitHubNotificationCommentTurnService, {
   type GitHubNotificationCommentTurnInput,
   type GitHubNotificationCommentTurnResult,
@@ -21,14 +15,12 @@ import GitHubNotificationPlanningTurnService, {
   type GitHubNotificationPlanningTurnResult,
 } from './planning-turn-service.ts';
 import type { GitHubNotificationPublications } from './publication-service.ts';
-import type { GitHubNotificationObservedSession } from '../utils/delivery-plan.ts';
 
 export type {
   GitHubNotificationCommentTurnInput,
   GitHubNotificationCommentTurnResult,
   GitHubNotificationPlanningTurnInput,
   GitHubNotificationPlanningTurnResult,
-  GitHubNotificationSessionTurnInput,
 };
 
 export interface GitHubNotificationSessionServiceDependencies {
@@ -39,8 +31,8 @@ export interface GitHubNotificationSessionServiceDependencies {
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
 }
 
-/** Keep the legacy session-service surface as a thin composition boundary. */
-export default class GitHubNotificationSessionService implements GitHubNotificationAssignmentSessions {
+/** Compose the normal assignment and comment turns that share one routed issue session. */
+export default class GitHubNotificationSessionService {
   readonly #assignmentSessions: GitHubNotificationAssignmentSessionService;
   readonly #commentTurns: GitHubNotificationCommentTurnService;
   readonly #planningTurns: GitHubNotificationPlanningTurnService;
@@ -48,7 +40,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
   public constructor(dependencies: GitHubNotificationSessionServiceDependencies) {
     this.#assignmentSessions = new GitHubNotificationAssignmentSessionService({
       readConfig: dependencies.readConfig,
-      recordInboundSession: dependencies.recordInboundSession,
     });
     this.#planningTurns = new GitHubNotificationPlanningTurnService({
       assignmentSessions: this.#assignmentSessions,
@@ -68,12 +59,6 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     });
   }
 
-  public recordSession(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession> {
-    return this.#assignmentSessions.recordSession(input);
-  }
-
   public planAssignment(
     input: GitHubNotificationPlanningTurnInput,
   ): Promise<GitHubNotificationPlanningTurnResult> {
@@ -84,9 +69,5 @@ export default class GitHubNotificationSessionService implements GitHubNotificat
     input: GitHubNotificationCommentTurnInput,
   ): Promise<GitHubNotificationCommentTurnResult> {
     return this.#commentTurns.respondToComment(input);
-  }
-
-  public prepareTurn(input: GitHubNotificationSessionTurnInput): PreparedInboundReply<void> {
-    return this.#assignmentSessions.prepareTurn(input);
   }
 }

@@ -4,10 +4,10 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the installed GitHub notifications flow. It rejects a
 self-authored assignment, admits an approved human assignment, creates one managed
 worktree and one local session, runs tool-free private planning and approved-comment
-turns, publishes one safe planning outcome and one revision-bound reply through
-the channel message adapter, preserves local state after restart, and retires
-without deleting it. Scenario setup creates and updates uniquely named issues in
-`tanaabased/agent-system-test`.
+turns, publishes one deterministic assignment acknowledgment, one safe planning
+outcome, and one revision-bound reply through the channel message adapter,
+preserves local state after restart, and retires without deleting it. Scenario
+setup creates and updates uniquely named issues in `tanaabased/agent-system-test`.
 
 ## Setup
 
@@ -116,6 +116,18 @@ openclaw agent-system notifications wait \
   --refresh \
   --timeout 180 \
   --json | jq -e '.status == "completed" and .observation.items[0].stage == "active" and .observation.items[0].session == "recorded" and .observation.items[0].worktree == "ready"'
+
+# should publish the assignment acknowledgment as soon as openclaw adopts the turn
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/agent-system-test \
+  --kind issue \
+  --number "$issue_number" \
+  --for assignment-acknowledged \
+  --timeout 180 \
+  --json | jq -e '.status == "completed" and .observation.items[0].acknowledgment.status == "published"'
 
 # should reject a direct channel write without an internal publication target
 if OPENCLAW_LOG_LEVEL=error openclaw message send \

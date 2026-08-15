@@ -135,125 +135,12 @@ function createService(
 }
 
 describe('channels/github/lib/session-service', () => {
-  it('should await the routed session record without dispatching an agent turn', async () => {
-    const order: string[] = [];
-    let completeRecord: (() => void) | undefined;
-    const recordTask = new Promise<void>((resolveRecord) => {
-      completeRecord = resolveRecord;
-    });
-    let records = 0;
-    let recordedContext: InboundSessionRecord['ctx'] | undefined;
-    let publications = 0;
-    const service = createService({
-      async publish() {
-        publications += 1;
-        return {
-          delivery: { messageIds: ['91'], visibleReplySent: true },
-          status: 'handled_visible',
-        };
-      },
-      record: ({ ctx }) => {
-        records += 1;
-        recordedContext = ctx;
-      },
-      recordTask,
-    });
-
-    let settled = false;
-    const pending = service
-      .recordSession({
-        ...assignmentInput,
-        onSessionRecorded(recorded) {
-          order.push('received');
-          assert.deepEqual(recorded, {
-            key: route.sessionKey,
-            mode: 'plan',
-            status: 'received',
-          });
-        },
-      })
-      .then((observed) => {
-        settled = true;
-        return observed;
-      });
-    await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
-
-    assert.equal(settled, false);
-    assert.equal(publications, 0);
-    completeRecord?.();
-    const observed = await pending;
-
-    assert.equal(records, 1);
-    assert.deepEqual(order, ['received']);
-    assert.equal(
-      recordedContext?.ConversationLabel,
-      'tanaabased/openclaw-agent-system#42 · agent/data/github-42',
-    );
-    assert.equal(
-      recordedContext?.BodyForAgent,
-      [
-        '## 📥 Issue assignment received',
-        '',
-        '[@pirog](https://github.com/pirog) assigned you [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/issues/42).',
-        '',
-        '**Mode:** Plan — investigate the issue and prepare an implementation plan.',
-      ].join('\n'),
-    );
-    assert.deepEqual(observed, {
-      key: route.sessionKey,
-      mode: 'plan',
-      status: 'active',
-    });
-    assert.equal(publications, 0);
-  });
-
-  it('should propagate notification session record failures', async () => {
-    const service = createService({
-      record: () => {
-        throw new Error('session record failed');
-      },
-    });
-
-    await assert.rejects(service.recordSession(assignmentInput), /session record failed/u);
-  });
-
-  it('should label a pull-request session by its observed head without a worktree', async () => {
-    let recordedContext: InboundSessionRecord['ctx'] | undefined;
-    const service = createService({
-      record: ({ ctx }) => {
-        recordedContext = ctx;
-      },
-    });
-    const observed = await service.recordSession(pullRequestAssignmentInput);
-
-    assert.equal(
-      recordedContext?.ConversationLabel,
-      'tanaabased/openclaw-agent-system#42 · head@aaaaaaaaaaaa',
-    );
-    assert.equal(
-      recordedContext?.BodyForAgent,
-      [
-        '## 🔀 Pull request assignment received',
-        '',
-        '[@pirog](https://github.com/pirog) assigned you [tanaabased/openclaw-agent-system#42](https://github.com/tanaabased/openclaw-agent-system/pull/42).',
-        '',
-        '**Mode:** Plan — assess the pull request and prepare a recommended course of action.',
-      ].join('\n'),
-    );
-    const context = recordedContext as unknown as Record<string, unknown>;
-    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
-    assert.equal(context.githubWorktreePath, undefined);
-    assert.deepEqual(observed, {
-      key: route.sessionKey,
-      mode: 'plan',
-      status: 'active',
-    });
-  });
-
   it('should run one tool-free private plan and publish only its quoted github outcome', async () => {
     let adopted = 0;
+    let acknowledged = 0;
     let completed = 0;
     let published: Record<string, unknown> | undefined;
+    const publicationIntents: string[] = [];
     const service = createService({
       async dispatch(input) {
         assert.equal(input.ctx.AccountId, 'data');
@@ -321,11 +208,20 @@ describe('channels/github/lib/session-service', () => {
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
       async publish(input) {
+        publicationIntents.push(input.intent);
+        if (input.intent === 'initial-acknowledgment') {
+          assert.deepEqual(input.payload, {
+            text: 'I received this assignment and started planning it.',
+          });
+        }
         published = input as unknown as Record<string, unknown>;
         return {
           delivery: { messageIds: ['91'], visibleReplySent: true },
           status: 'handled_visible',
         };
+      },
+      record: (params) => {
+        assert.equal(params.createIfMissing, true);
       },
     });
     const delivery = {
@@ -345,16 +241,27 @@ describe('channels/github/lib/session-service', () => {
         truncated: false,
       },
       delivery,
+      async onAcknowledgmentCompleted(acknowledgment) {
+        acknowledged += 1;
+        assert.deepEqual(acknowledgment, { commentId: 91, status: 'published' });
+      },
       async onPlanningCompleted() {
         completed += 1;
       },
-      async onTurnAdopted() {
+      async onTurnAdopted(session) {
         adopted += 1;
+        assert.deepEqual(session, {
+          key: route.sessionKey,
+          mode: 'plan',
+          status: 'received',
+        });
       },
     });
 
     assert.equal(adopted, 1);
+    assert.equal(acknowledged, 1);
     assert.equal(completed, 1);
+    assert.deepEqual(publicationIntents, ['initial-acknowledgment', 'planning-outcome']);
     assert.deepEqual(result, {
       reply: { commentId: 91, status: 'published' },
       status: 'planned',
@@ -448,6 +355,7 @@ describe('channels/github/lib/session-service', () => {
         sessionKey: route.sessionKey,
         stage: 'active' as const,
       },
+      onAcknowledgmentCompleted: () => undefined,
       onPlanningCompleted: () => undefined,
       onTurnAdopted: () => undefined,
     });
@@ -484,9 +392,13 @@ describe('channels/github/lib/session-service', () => {
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
-      async publish() {
+      async publish(input) {
         publications += 1;
-        throw new Error('must not publish an invalid candidate');
+        assert.equal(input.intent, 'initial-acknowledgment');
+        return {
+          delivery: { messageIds: ['91'], visibleReplySent: true },
+          status: 'handled_visible',
+        };
       },
     });
 
@@ -505,6 +417,7 @@ describe('channels/github/lib/session-service', () => {
         sessionKey: route.sessionKey,
         stage: 'active',
       },
+      onAcknowledgmentCompleted: () => undefined,
       async onPlanningCompleted() {
         completed += 1;
       },
@@ -512,7 +425,7 @@ describe('channels/github/lib/session-service', () => {
     });
 
     assert.equal(completed, 1);
-    assert.equal(publications, 0);
+    assert.equal(publications, 1);
     assert.deepEqual(result, {
       reply: {
         failureCode: 'github-notification-planning-reply-invalid',
@@ -646,107 +559,5 @@ describe('channels/github/lib/session-service', () => {
     assert.deepEqual(published?.payload, {
       text: 'I have the plan ready, but I do not have a newly verified implementation update yet.',
     });
-  });
-
-  it('should prepare a deterministic observe-only session record', async () => {
-    const service = createService();
-    const turn = service.prepareTurn({
-      config,
-      event,
-      label: 'tanaabased/openclaw-agent-system#42',
-      mode: 'plan',
-      route,
-      worktree: assignmentInput.worktree,
-    });
-
-    assert.equal(turn.channel, 'agent-system-github');
-    assert.equal(turn.accountId, 'data');
-    assert.equal(turn.routeSessionKey, route.sessionKey);
-    assert.equal(turn.ctxPayload.SessionKey, route.sessionKey);
-    assert.equal(turn.ctxPayload.ConversationLabel, 'tanaabased/openclaw-agent-system#42');
-    assert.equal(turn.ctxPayload.InboundEventKind, 'user_request');
-    assert.equal(turn.ctxPayload.BodyForAgent, event.title);
-    assert.equal(turn.ctxPayload.Provider, 'agent-system-github');
-    assert.equal(turn.ctxPayload.Surface, 'agent-system-github');
-    assert.equal(turn.ctxPayload.OriginatingChannel, 'agent-system-github');
-    const context = turn.ctxPayload as unknown as Record<string, unknown>;
-    assert.equal(context.githubItemNumber, event.itemNumber);
-    assert.equal(context.githubItemType, event.itemType);
-    assert.equal(context.githubRepositoryId, event.repositoryId);
-    assert.equal(context.githubWorktreeBranch, assignmentInput.worktree.branch);
-    assert.equal(context.githubWorktreePath, assignmentInput.worktree.path);
-    assert.equal(turn.record?.createIfMissing, true);
-    assert.equal(typeof turn.record?.onRecordError, 'function');
-    assert.equal(typeof turn.record?.trackSessionMetaTask, 'function');
-    assert.equal(typeof turn.afterRecord, 'function');
-    await assert.rejects(turn.runDispatch(), /must not dispatch an agent turn/u);
-  });
-
-  it('should identify a directly assigned pull request in its observe-only session', () => {
-    const service = createService();
-    const pullRequestEvent = {
-      ...event,
-      itemType: 'pull-request' as const,
-      title: 'GitHub pull request #42 assignment',
-    };
-    const turn = service.prepareTurn({
-      config,
-      event: pullRequestEvent,
-      label: 'tanaabased/openclaw-agent-system#42',
-      mode: 'plan',
-      pullRequest,
-      route,
-    });
-
-    assert.equal(turn.ctxPayload.BodyForAgent, pullRequestEvent.title);
-    assert.equal(
-      (turn.ctxPayload as unknown as Record<string, unknown>).githubItemType,
-      'pull-request',
-    );
-    const context = turn.ctxPayload as unknown as Record<string, unknown>;
-    assert.equal(context.githubPullRequestHeadRef, pullRequest.headRef);
-    assert.equal(context.githubPullRequestHeadSha, pullRequest.headSha);
-    assert.equal(context.githubWorktreeBranch, undefined);
-    assert.equal(context.githubWorktreePath, undefined);
-  });
-
-  it('should fail closed when the configured binding resolves another agent', async () => {
-    const service = createService({
-      config: {
-        ...config,
-        bindings: [
-          {
-            type: 'route',
-            agentId: 'other',
-            match: { channel: 'agent-system-github', accountId: 'data' },
-          },
-        ],
-      },
-    });
-
-    await assert.rejects(
-      service.recordSession(assignmentInput),
-      /does not select the expected agent/u,
-    );
-  });
-
-  it('should reject relative worktree paths', () => {
-    const service = createService();
-
-    assert.throws(
-      () =>
-        service.prepareTurn({
-          config,
-          event,
-          label: 'repository#42',
-          mode: 'plan',
-          route,
-          worktree: {
-            branch: assignmentInput.worktree.branch,
-            path: '.agent-system/worktrees/github-42',
-          },
-        }),
-      /worktree paths must be an absolute path/u,
-    );
   });
 });

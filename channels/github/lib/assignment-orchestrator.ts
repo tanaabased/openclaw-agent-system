@@ -4,8 +4,6 @@ import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import {
   planGitHubNotificationDelivery,
   type GitHubNotificationDeliveryObservation,
-  type GitHubNotificationRecordedSession,
-  type GitHubNotificationObservedSession,
   type GitHubNotificationObservedWorktree,
 } from '../utils/delivery-plan.ts';
 import type {
@@ -37,20 +35,8 @@ export interface GitHubNotificationAssignmentWorktrees {
   ): Promise<GitHubNotificationObservedWorktree>;
 }
 
-export interface GitHubNotificationAssignmentSessionInput extends GitHubNotificationAssignmentBoundaryInput {
-  onSessionRecorded?(session: GitHubNotificationRecordedSession): Promise<void> | void;
-  worktree?: GitHubNotificationObservedWorktree;
-}
-
-export interface GitHubNotificationAssignmentSessions {
-  recordSession(
-    input: GitHubNotificationAssignmentSessionInput,
-  ): Promise<GitHubNotificationObservedSession>;
-}
-
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
-  sessions: GitHubNotificationAssignmentSessions;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
   worktrees: GitHubNotificationAssignmentWorktrees;
 }
@@ -173,42 +159,16 @@ export default class GitHubNotificationAssignmentOrchestrator {
         await this.#checkpointWorktree(state, itemKey, worktree);
         continue;
       }
-      const worktree = observation.worktree;
-      if (item.itemType === 'issue' && !worktree) {
+      if (action.kind !== 'dispatch-assignment') continue;
+      if (item.itemType === 'issue' && !observation.worktree) {
         throw new GitHubNotificationAssignmentOrchestratorError(
           'github-notification-worktree-reconciliation-failed',
           'The GitHub notification worktree could not be reconciled.',
         );
       }
-      await this.#checkpointDelivery(state, itemKey, { ...delivery, stage: 'session-recording' });
-      const checkpoint = this.#boundary(state, itemKey);
-      if (!checkpoint) return;
-      if (
-        !(await this.#authorize(
-          agentId,
-          state.workspaceDir,
-          checkpoint.item,
-          checkpoint.delivery,
-          signal,
-          state,
-          itemKey,
-        ))
-      )
-        continue;
-      const session = await this.#diagnosticBoundary(
-        'github-notification-session-recording-failed',
-        'The notification session could not be recorded.',
-        () =>
-          this.#dependencies.sessions.recordSession({
-            agentId,
-            ...checkpoint,
-            onSessionRecorded: (recorded) => this.#checkpointReceived(state, itemKey, recorded),
-            signal,
-            ...(worktree === undefined ? {} : { worktree }),
-            workspaceDir: state.workspaceDir,
-          }),
-      );
-      await this.#checkpointSession(state, itemKey, session);
+      // The Gateway dispatcher owns session creation and the model turn after this monitor
+      // reconciliation releases its cycle lease.
+      return;
     }
     throw new GitHubNotificationAssignmentOrchestratorError(
       'github-notification-delivery-step-limit',
@@ -378,39 +338,6 @@ export default class GitHubNotificationAssignmentOrchestrator {
       stage: 'worktree-ready',
       worktreeBranch: worktree.branch,
       worktreePath: worktree.path,
-    });
-  }
-
-  async #checkpointSession(
-    state: GitHubNotificationMonitorState,
-    itemKey: string,
-    session: GitHubNotificationObservedSession,
-  ): Promise<void> {
-    const delivery = state.items[itemKey]?.delivery;
-    if (!delivery) return;
-    await this.#checkpointDelivery(state, itemKey, {
-      activation: { status: 'pending' },
-      ...withoutFailure(delivery),
-      mode: session.mode ?? delivery.mode ?? 'plan',
-      sessionId: session.id,
-      sessionKey: session.key,
-      stage: 'active',
-    });
-  }
-
-  async #checkpointReceived(
-    state: GitHubNotificationMonitorState,
-    itemKey: string,
-    session: GitHubNotificationRecordedSession,
-  ): Promise<void> {
-    const delivery = state.items[itemKey]?.delivery;
-    if (!delivery) return;
-    await this.#checkpointDelivery(state, itemKey, {
-      ...withoutFailure(delivery),
-      mode: session.mode ?? delivery.mode ?? 'plan',
-      sessionId: session.id,
-      sessionKey: session.key,
-      stage: 'received',
     });
   }
 

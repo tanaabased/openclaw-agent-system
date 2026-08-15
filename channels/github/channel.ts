@@ -1,11 +1,5 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
-import { recordChannelActivity } from 'openclaw/plugin-sdk/channel-activity-runtime';
 import type { ChannelMessageAdapter } from 'openclaw/plugin-sdk/channel-outbound';
-import {
-  runChannelInboundEvent,
-  type InboundReplyDispatchResult,
-  type PreparedInboundReply,
-} from 'openclaw/plugin-sdk/channel-inbound';
 import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-lifecycle';
 import {
   createAsyncComputedAccountStatusAdapter,
@@ -14,15 +8,10 @@ import {
 
 import type GitHubNotificationMonitorService from './lib/monitor-service.ts';
 import type GitHubNotificationMonitorStateStore from './lib/monitor-state-store.ts';
-import type GitHubNotificationActivationService from './lib/activation-service.ts';
+import type GitHubNotificationAssignmentDispatchService from './lib/assignment-dispatch-service.ts';
 import type GitHubNotificationCommentService from './lib/comment-service.ts';
 import type { GitHubNotificationMonitorState } from './utils/monitor-state.ts';
-import {
-  githubNotificationChannelId,
-  resolveNotificationRoute,
-  type NotificationRoutingDesiredState,
-  type ResolvedNotificationRoute,
-} from './utils/routing.ts';
+import { githubNotificationChannelId } from './utils/routing.ts';
 
 interface ResolvedNotificationChannelAccount {
   accountId: string;
@@ -30,7 +19,7 @@ interface ResolvedNotificationChannelAccount {
 }
 
 export interface GitHubNotificationChannelDependencies {
-  activationService: Pick<GitHubNotificationActivationService, 'schedule' | 'settle'>;
+  assignmentService: Pick<GitHubNotificationAssignmentDispatchService, 'schedule' | 'settle'>;
   commentService: Pick<GitHubNotificationCommentService, 'schedule' | 'settle'>;
   clock?: () => number;
   message: ChannelMessageAdapter;
@@ -165,21 +154,21 @@ export function createGitHubNotificationChannel(
           });
         };
         await publish(clock());
-        dependencies.activationService.schedule(context.accountId, context.abortSignal);
+        dependencies.assignmentService.schedule(context.accountId, context.abortSignal);
         dependencies.commentService.schedule(context.accountId, context.abortSignal);
         try {
           await dependencies.monitorService.runAccount(
             context.accountId,
             context.abortSignal,
             async () => {
-              dependencies.activationService.schedule(context.accountId, context.abortSignal);
+              dependencies.assignmentService.schedule(context.accountId, context.abortSignal);
               dependencies.commentService.schedule(context.accountId, context.abortSignal);
               await publish();
             },
           );
         } finally {
           await Promise.all([
-            dependencies.activationService.settle(context.accountId),
+            dependencies.assignmentService.settle(context.accountId),
             dependencies.commentService.settle(context.accountId),
           ]);
           status({
@@ -203,9 +192,6 @@ export interface GitHubNotificationAssignmentEvent {
   title: string;
 }
 
-export type GitHubNotificationInboundTurn<TDispatchResult = never> =
-  PreparedInboundReply<TDispatchResult>;
-
 export function githubNotificationConversationId(
   event: Pick<GitHubNotificationAssignmentEvent, 'itemNumber' | 'repositoryId'>,
 ): string {
@@ -215,61 +201,4 @@ export function githubNotificationConversationId(
   const repositoryId = event.repositoryId.trim();
   if (!repositoryId) throw new Error('GitHub notification repository ids must not be empty.');
   return `github:${encodeURIComponent(repositoryId)}:${event.itemNumber}`;
-}
-
-export interface GitHubNotificationInboundDependencies<TDispatchResult> {
-  config: OpenClawConfig;
-  desired: NotificationRoutingDesiredState;
-  recordActivity?: typeof recordChannelActivity;
-  prepareTurn(
-    event: GitHubNotificationAssignmentEvent,
-    route: ResolvedNotificationRoute,
-  ): GitHubNotificationInboundTurn<TDispatchResult>;
-}
-
-/** Record one authorized assignment through OpenClaw's channel inbound kernel. */
-export async function runGitHubNotificationAssignment<TDispatchResult>(
-  event: GitHubNotificationAssignmentEvent,
-  dependencies: GitHubNotificationInboundDependencies<TDispatchResult>,
-): Promise<InboundReplyDispatchResult<TDispatchResult>> {
-  const conversationId = githubNotificationConversationId(event);
-  const result = await runChannelInboundEvent({
-    channel: githubNotificationChannelId,
-    accountId: dependencies.desired.agentId,
-    raw: event,
-    adapter: {
-      ingest(raw) {
-        return {
-          id: raw.id,
-          timestamp: raw.timestamp,
-          rawText: raw.title,
-          textForAgent: raw.title,
-          raw,
-        };
-      },
-      classify: () => ({ kind: 'message', canStartAgentTurn: true }),
-      preflight: () => ({ kind: 'observeOnly', reason: 'authorized-github-assignment' }),
-      resolveTurn() {
-        const route = resolveNotificationRoute(
-          dependencies.config,
-          dependencies.desired,
-          conversationId,
-        );
-        return {
-          ...dependencies.prepareTurn(event, route),
-          channel: githubNotificationChannelId,
-          accountId: route.accountId,
-          routeSessionKey: route.sessionKey,
-        };
-      },
-    },
-  });
-  if (result.dispatched && result.admission.kind === 'observeOnly') {
-    (dependencies.recordActivity ?? recordChannelActivity)({
-      accountId: dependencies.desired.agentId,
-      channel: githubNotificationChannelId,
-      direction: 'inbound',
-    });
-  }
-  return result;
 }

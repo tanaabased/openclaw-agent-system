@@ -31,9 +31,11 @@ the active assignment mode.
   context, plus summary-only changed-file metadata for a pull request, then runs
   one tool-free private planning turn with hidden instructions. Patch content is
   never included.
-- Records the assignment card and `active` checkpoint as the immediate local
-  receipt, then publishes only the planning turn's sanitized quoted `To GitHub`
-  outcome through the channel's authorized durable delivery path.
+- Starts one normal inbound assignment turn after intake releases its monitor
+  lease. That turn records the assignment card, checkpoints `active`, publishes
+  a deterministic acknowledgment, and then publishes the planning turn's
+  sanitized quoted `To GitHub` outcome through the authorized durable delivery
+  path.
 - Establishes a complete bounded top-level comment baseline for each admitted
   issue or pull request, then admits only later exact standalone mentions from
   approved immutable human identities.
@@ -182,14 +184,13 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 ### Refresh
 
 `notifications refresh` runs the same intake lifecycle immediately. It reports
-baseline readiness, diagnostics, and retry timing, and it can create a managed
-worktree and local session for an accepted issue or a session for an accepted
-pull request. A complete item selector limits the cycle to that exact item and
-does not advance account-wide discovery. This is useful for deterministic
-automation while the regular scheduler retains responsibility for broad
-discovery. It does not wait for planning; the running Gateway picks up that
-checkpoint asynchronously. Deferred and failed cycles return a nonzero exit
-code.
+baseline readiness, diagnostics, and retry timing, and it can prepare a managed
+worktree for an accepted issue. A complete item selector limits the cycle to
+that exact item and does not advance account-wide discovery. This is useful for
+deterministic automation while the regular scheduler retains responsibility for
+broad discovery. It does not start or wait for a model turn; the running Gateway
+picks up the ready assignment asynchronously. Deferred and failed cycles return
+a nonzero exit code.
 
 ### Status
 
@@ -197,9 +198,9 @@ code.
 returns a redacted semantic projection. Without an item selector it lists every
 tracked item. A selector must provide repository, kind, and number together.
 The result reports baseline readiness, disposition, delivery stage, mode,
-session and worktree readiness, private planning and public planning-response checkpoints,
-bounded pull-request head metadata, and value-free comment turn and reply
-status.
+session and worktree readiness, assignment acknowledgment, private planning and
+public planning-response checkpoints, bounded pull-request head metadata, and
+value-free comment turn and reply status.
 
 The projection never includes issue or comment bodies, structured provider
 context, hidden instructions, session keys, worktree paths, credentials, or raw
@@ -214,18 +215,19 @@ for provider-observation transitions such as assignment admission, comment
 admission, or retirement. Omit it while waiting for Gateway-owned asynchronous
 planning and replies.
 
-| Target                | Meaning                                                      |
-| --------------------- | ------------------------------------------------------------ |
-| `baseline-ready`      | The first safe provider observation completed                |
-| `assignment-rejected` | The selected assignment failed admission                     |
-| `received`            | Deterministic local receipt completed or advanced further    |
-| `active`              | The selected assignment can run or accept continuations      |
-| `planning-complete`   | The current private planning turn completed                  |
-| `planning-replied`    | The public planning outcome has a durable provider receipt   |
-| `comment-rejected`    | The selected comment revision failed admission               |
-| `comment-received`    | The selected comment revision entered the private lifecycle  |
-| `comment-replied`     | Its private turn and public reply both completed             |
-| `retired`             | The selected assignment retired without deleting local proof |
+| Target                    | Meaning                                                      |
+| ------------------------- | ------------------------------------------------------------ |
+| `baseline-ready`          | The first safe provider observation completed                |
+| `assignment-rejected`     | The selected assignment failed admission                     |
+| `received`                | Deterministic local receipt completed or advanced further    |
+| `active`                  | The selected assignment can run or accept continuations      |
+| `assignment-acknowledged` | The immediate GitHub acknowledgment has a durable receipt    |
+| `planning-complete`       | The current private planning turn completed                  |
+| `planning-replied`        | The public planning outcome has a durable provider receipt   |
+| `comment-rejected`        | The selected comment revision failed admission               |
+| `comment-received`        | The selected comment revision entered the private lifecycle  |
+| `comment-replied`         | Its private turn and public reply both completed             |
+| `retired`                 | The selected assignment retired without deleting local proof |
 
 Comment targets require `--comment`. Every target except `baseline-ready`
 requires a complete item selector. Failed and timed-out waits return nonzero and
@@ -253,9 +255,10 @@ See the complete CLI reference for
   begin implementation; future modes may retain capabilities already granted by
   that assignment.
 - Each enabled account owns its Gateway polling lifecycle. Manual refresh uses
-  the same deterministic intake path without waiting for a model, while
-  asynchronous turns and durable sends remain Gateway-owned. `doctor` reports
-  incomplete planning and comment replies separately from monitor read health.
+  the same deterministic intake path without starting a model, while the single
+  assignment turn, comment turns, and durable sends remain Gateway-owned.
+  `doctor` reports incomplete planning and comment replies separately from
+  monitor read health.
 - Private monitor state contains no tokens, GitHub prose, or generated content.
   Deterministic worktree, session, activation, and publication identities keep
   delivery retry-safe.

@@ -1,4 +1,5 @@
 import type { Logger } from '../../../lib/logger.ts';
+import type { GitHubNotificationRecordedSession } from '../utils/delivery-plan.ts';
 import type {
   GitHubNotificationDeliveryState,
   GitHubNotificationItemState,
@@ -11,17 +12,14 @@ import type GitHubNotificationSessionService from './session-service.ts';
 
 const cycleLeaseWaitMs = 30_000;
 
-interface PendingActivation {
-  delivery: GitHubNotificationDeliveryState & {
-    activation: { failureCode?: string; status: 'pending' };
-    sessionKey: string;
-  };
+interface PendingAssignment {
+  delivery: GitHubNotificationDeliveryState;
   item: GitHubNotificationItemState;
   itemKey: string;
   workspaceDir: string;
 }
 
-export interface GitHubNotificationActivationServiceDependencies {
+export interface GitHubNotificationAssignmentDispatchServiceDependencies {
   authority: Pick<GitHubNotificationAssignmentProvider, 'loadPlanningContext'>;
   leaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
   logger: Logger;
@@ -29,13 +27,13 @@ export interface GitHubNotificationActivationServiceDependencies {
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
 }
 
-export type GitHubNotificationActivationScheduleStatus = 'already-scheduled' | 'scheduled';
+export type GitHubNotificationAssignmentDispatchScheduleStatus = 'already-scheduled' | 'scheduled';
 
-class GitHubNotificationActivationServiceError extends Error {
-  override name = 'GitHubNotificationActivationServiceError';
+class GitHubNotificationAssignmentDispatchServiceError extends Error {
+  override name = 'GitHubNotificationAssignmentDispatchServiceError';
 
   constructor(readonly code: string) {
-    super('The GitHub notification activation could not proceed.');
+    super('The GitHub notification assignment turn could not proceed.');
   }
 }
 
@@ -48,52 +46,63 @@ function errorCode(error: unknown): string {
   ) {
     return error.code;
   }
-  return 'github-notification-activation-failed';
+  return 'github-notification-assignment-dispatch-failed';
 }
 
-function pendingActivation(
+function pendingAssignment(
   state: GitHubNotificationMonitorState | undefined,
-): PendingActivation | undefined {
+): PendingAssignment | undefined {
   if (!state) return undefined;
   for (const [itemKey, item] of Object.entries(state.items).sort(([left], [right]) =>
     left.localeCompare(right),
   )) {
     const delivery = item.delivery;
+    const legacyPendingActivation =
+      delivery?.stage === 'active' && delivery.activation?.status === 'pending';
     if (
-      item.disposition === 'approved' &&
-      delivery?.stage === 'active' &&
-      delivery.activation?.status === 'pending' &&
-      delivery.sessionKey &&
-      (item.itemType === 'pull-request' ||
-        (delivery.worktreeBranch !== undefined && delivery.worktreePath !== undefined))
+      item.disposition !== 'approved' ||
+      !delivery ||
+      delivery.stage === 'retired' ||
+      (delivery.stage === 'active' && !legacyPendingActivation) ||
+      (delivery.activation !== undefined && delivery.activation.status !== 'pending')
     ) {
-      return {
-        delivery: delivery as PendingActivation['delivery'],
-        item,
-        itemKey,
-        workspaceDir: state.workspaceDir,
-      };
+      continue;
     }
+    const localContextReady =
+      item.itemType === 'pull-request' ||
+      (delivery.worktreeBranch !== undefined && delivery.worktreePath !== undefined);
+    if (localContextReady) return { delivery, item, itemKey, workspaceDir: state.workspaceDir };
   }
   return undefined;
 }
 
-/** Run new assignment planning turns only inside the long-lived Gateway lifecycle. */
-export default class GitHubNotificationActivationService {
-  readonly #dependencies: GitHubNotificationActivationServiceDependencies;
+function withoutFailure(
+  delivery: GitHubNotificationDeliveryState,
+): GitHubNotificationDeliveryState {
+  const next = { ...delivery };
+  Reflect.deleteProperty(next, 'failureCode');
+  return next;
+}
+
+/** Dispatch each ready assignment as one normal OpenClaw inbound turn. */
+export default class GitHubNotificationAssignmentDispatchService {
+  readonly #dependencies: GitHubNotificationAssignmentDispatchServiceDependencies;
   readonly #inFlight = new Map<string, Promise<void>>();
 
-  constructor(dependencies: GitHubNotificationActivationServiceDependencies) {
+  constructor(dependencies: GitHubNotificationAssignmentDispatchServiceDependencies) {
     this.#dependencies = dependencies;
   }
 
-  schedule(agentId: string, signal: AbortSignal): GitHubNotificationActivationScheduleStatus {
+  schedule(
+    agentId: string,
+    signal: AbortSignal,
+  ): GitHubNotificationAssignmentDispatchScheduleStatus {
     if (this.#inFlight.has(agentId)) return 'already-scheduled';
     const task = this.#drain(agentId, signal)
       .catch((error: unknown) => {
         if (!signal.aborted) {
           this.#dependencies.logger.warn(
-            `github-notifications: activation drain failed agent=${agentId} code=${errorCode(error)}`,
+            `github-notifications: assignment dispatch failed agent=${agentId} code=${errorCode(error)}`,
           );
         }
       })
@@ -111,13 +120,13 @@ export default class GitHubNotificationActivationService {
 
   async #drain(agentId: string, signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
-      const pending = pendingActivation(await this.#dependencies.stateStore.read(agentId));
+      const pending = pendingAssignment(await this.#dependencies.stateStore.read(agentId));
       if (!pending) return;
-      await this.#activate(agentId, pending, signal);
+      await this.#dispatch(agentId, pending, signal);
     }
   }
 
-  async #activate(agentId: string, pending: PendingActivation, signal: AbortSignal): Promise<void> {
+  async #dispatch(agentId: string, pending: PendingAssignment, signal: AbortSignal): Promise<void> {
     let adopted = false;
     let planningCompleted = false;
     try {
@@ -131,18 +140,20 @@ export default class GitHubNotificationActivationService {
       if (!planning.authorized) {
         await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
           ...delivery,
-          activation: {
-            failureCode: planning.reasonCode,
-            status: 'pending',
-          },
+          activation: { failureCode: planning.reasonCode, status: 'pending' },
         }));
-        throw new GitHubNotificationActivationServiceError(planning.reasonCode);
+        throw new GitHubNotificationAssignmentDispatchServiceError(planning.reasonCode);
       }
       const result = await this.#dependencies.sessions.planAssignment({
         agentId,
         context: planning.context,
         delivery: pending.delivery,
         item: pending.item,
+        onAcknowledgmentCompleted: (acknowledgment) =>
+          this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
+            ...delivery,
+            acknowledgment,
+          })),
         onPlanningCompleted: async () => {
           await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
             ...delivery,
@@ -153,14 +164,13 @@ export default class GitHubNotificationActivationService {
             `github-notifications: private planning complete agent=${agentId} reply=pending`,
           );
         },
-        onTurnAdopted: async () => {
+        onTurnAdopted: async (session) => {
           adopted = true;
-          await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) => ({
-            ...delivery,
-            activation: { status: 'adopted' },
-          }));
+          await this.#checkpoint(agentId, pending.itemKey, signal, (delivery) =>
+            this.#adoptedDelivery(delivery, session),
+          );
           this.#dependencies.logger.info(
-            `github-notifications: planning turn adopted agent=${agentId}`,
+            `github-notifications: assignment turn adopted agent=${agentId}`,
           );
         },
         signal,
@@ -199,10 +209,24 @@ export default class GitHubNotificationActivationService {
         activation: { failureCode: code, status },
       })).catch(() => undefined);
       this.#dependencies.logger.warn(
-        `github-notifications: activation ${status === 'failed' ? 'failed' : 'deferred'} agent=${agentId} code=${code} adopted=${adopted}`,
+        `github-notifications: assignment dispatch ${status === 'failed' ? 'failed' : 'deferred'} agent=${agentId} code=${code} adopted=${adopted}`,
       );
       throw error;
     }
+  }
+
+  #adoptedDelivery(
+    delivery: GitHubNotificationDeliveryState,
+    session: GitHubNotificationRecordedSession,
+  ): GitHubNotificationDeliveryState {
+    return {
+      ...withoutFailure(delivery),
+      activation: { status: 'adopted' },
+      mode: session.mode ?? delivery.mode ?? 'plan',
+      sessionId: session.id,
+      sessionKey: session.key,
+      stage: 'active',
+    };
   }
 
   async #checkpoint(
@@ -216,12 +240,12 @@ export default class GitHubNotificationActivationService {
       waitMs: cycleLeaseWaitMs,
     });
     if (acquisition.status !== 'acquired') {
-      throw new Error(`GitHub notification activation checkpoint ${acquisition.status}.`);
+      throw new Error(`GitHub notification assignment checkpoint ${acquisition.status}.`);
     }
     try {
       const current = await this.#dependencies.stateStore.read(agentId);
       const item = current?.items[itemKey];
-      if (!current || !item?.delivery || item.delivery.stage !== 'active') return;
+      if (!current || !item?.delivery || item.disposition !== 'approved') return;
       const state = structuredClone(current);
       state.items[itemKey] = { ...item, delivery: update(item.delivery) };
       await this.#dependencies.stateStore.write(state);

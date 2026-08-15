@@ -5,7 +5,6 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 import {
   createGitHubNotificationChannel,
   githubNotificationConversationId,
-  runGitHubNotificationAssignment,
   type GitHubNotificationAssignmentEvent,
 } from '../channels/github/channel.ts';
 import { createGitHubNotificationMessageAdapter } from '../channels/github/lib/message-adapter.ts';
@@ -19,12 +18,6 @@ const event: GitHubNotificationAssignmentEvent = {
   timestamp: 1_786_400_000_000,
   title: 'Implement the notification routing spike',
 };
-const desired = {
-  agentId: 'data',
-  enabled: true,
-  workspaceDir: '/workspace/data',
-};
-
 function configuredRoute(agentId = 'data'): OpenClawConfig {
   return {
     agents: { list: [{ id: 'data', workspace: '/workspace/data' }] },
@@ -55,7 +48,7 @@ function messageAdapter() {
   });
 }
 
-function activationService() {
+function assignmentService() {
   return {
     schedule: () => 'scheduled' as const,
     settle: async () => undefined,
@@ -72,7 +65,7 @@ function commentService() {
 describe('channels/github/channel', () => {
   const message = messageAdapter();
   const channel = createGitHubNotificationChannel({
-    activationService: activationService(),
+    assignmentService: assignmentService(),
     commentService: commentService(),
     message,
     monitorService: { runAccount: async () => undefined },
@@ -98,20 +91,20 @@ describe('channels/github/channel', () => {
 
   it('should expose scheduler lifecycle and live monitor status', async () => {
     const controller = new AbortController();
-    let activationSchedules = 0;
-    let activationSettles = 0;
+    let assignmentSchedules = 0;
+    let assignmentSettles = 0;
     let commentSchedules = 0;
     let commentSettles = 0;
     let state: ReturnType<typeof notificationMonitorState> | undefined;
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
-      activationService: {
+      assignmentService: {
         schedule() {
-          activationSchedules += 1;
+          assignmentSchedules += 1;
           return 'scheduled';
         },
         async settle() {
-          activationSettles += 1;
+          assignmentSettles += 1;
         },
       },
       commentService: {
@@ -176,8 +169,8 @@ describe('channels/github/channel', () => {
     );
     controller.abort();
     await running;
-    assert.equal(activationSchedules, 3);
-    assert.equal(activationSettles, 1);
+    assert.equal(assignmentSchedules, 3);
+    assert.equal(assignmentSettles, 1);
     assert.equal(commentSchedules, 3);
     assert.equal(commentSettles, 1);
     assert.deepEqual(
@@ -219,51 +212,6 @@ describe('channels/github/channel', () => {
     assert.equal(snapshot?.mode, 'polling');
   });
 
-  it('should record an observe-only assignment through the inbound kernel', async () => {
-    const activities: unknown[] = [];
-    let records = 0;
-    let dispatches = 0;
-    let routedSessionKey: string | undefined;
-
-    const result = await runGitHubNotificationAssignment(event, {
-      config: configuredRoute(),
-      desired,
-      recordActivity: (activity) => activities.push(activity),
-      prepareTurn(_assignment, route) {
-        routedSessionKey = route.sessionKey;
-        return {
-          channel: 'incorrect',
-          accountId: 'incorrect',
-          routeSessionKey: 'incorrect',
-          storePath: '/sessions.json',
-          ctxPayload: {} as never,
-          async recordInboundSession() {
-            records += 1;
-          },
-          observeOnlyDispatchResult: { localReply: 'skipped' },
-          async runDispatch() {
-            dispatches += 1;
-            return { localReply: 'ready' };
-          },
-        };
-      },
-    });
-
-    assert.equal(result.dispatched, true);
-    assert.equal(result.routeSessionKey, routedSessionKey);
-    assert.equal(records, 1);
-    assert.equal(dispatches, 0);
-    assert.equal(result.admission.kind, 'observeOnly');
-    assert.deepEqual(activities, [
-      {
-        accountId: 'data',
-        channel: 'agent-system-github',
-        direction: 'inbound',
-      },
-    ]);
-    if (result.dispatched) assert.deepEqual(result.dispatchResult, { localReply: 'skipped' });
-  });
-
   it('should derive stable work-item conversations from repository and issue number', () => {
     const first = githubNotificationConversationId(event);
     const renamedEvent: GitHubNotificationAssignmentEvent = {
@@ -277,23 +225,5 @@ describe('channels/github/channel', () => {
     assert.equal(first, renamed);
     assert.notEqual(first, next);
     assert.equal(first, 'github:R_kgDOExample:42');
-  });
-
-  it('should fail closed when the exact account binding selects another agent', async () => {
-    let activities = 0;
-    await assert.rejects(
-      runGitHubNotificationAssignment(event, {
-        config: configuredRoute('other'),
-        desired,
-        recordActivity: () => {
-          activities += 1;
-        },
-        prepareTurn() {
-          throw new Error('should not prepare an unauthorized turn');
-        },
-      }),
-      /exact agent-system-github:data binding/u,
-    );
-    assert.equal(activities, 0);
   });
 });

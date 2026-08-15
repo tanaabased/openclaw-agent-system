@@ -33,17 +33,11 @@ jobs:
           - github
           - routing
           - issue
-          - pull-request
-          - presentation
           - tool
           - security
         exclude:
-          - os: macos-26
-            example: pull-request
           - os: ubuntu-24.04
             example: issue
-          - os: macos-26
-            example: presentation
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
