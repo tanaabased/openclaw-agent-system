@@ -131,4 +131,6 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
+          openclaw config get plugins.entries.codex
           "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
+          openclaw config get plugins.entries.codex
