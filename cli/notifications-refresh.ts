@@ -13,6 +13,7 @@ const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
   agentId?: string;
+  disposeAgentHarnesses(): Promise<void>;
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
@@ -53,12 +54,17 @@ export default async function refreshNotificationsAgentSystem(
     return;
   }
 
-  const [result] = await options.monitorService.runOnce({
-    agentId: manifest.manifest.agent.id,
-    bypassInterval: true,
-    ...(selector === undefined ? {} : { selector }),
-    waitForLeaseMs: notificationRefreshLeaseWaitMs,
-  });
+  let result;
+  try {
+    [result] = await options.monitorService.runOnce({
+      agentId: manifest.manifest.agent.id,
+      bypassInterval: true,
+      ...(selector === undefined ? {} : { selector }),
+      waitForLeaseMs: notificationRefreshLeaseWaitMs,
+    });
+  } finally {
+    await options.disposeAgentHarnesses();
+  }
   if (!result) {
     options.logger.error('github-notifications: manual refresh returned no result');
     options.setExitCode(1);

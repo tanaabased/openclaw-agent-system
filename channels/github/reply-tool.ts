@@ -10,7 +10,7 @@ import {
   githubNotificationReplyToolName,
   githubNotificationReplyToolOutput,
 } from './utils/reply-tool-result.ts';
-import { githubNotificationChannelId } from './utils/routing.ts';
+import isGitHubNotificationReplyToolContext from './utils/reply-tool-context.ts';
 
 export { githubNotificationReplyToolName } from './utils/reply-tool-result.ts';
 
@@ -51,13 +51,13 @@ export default function createGitHubNotificationReplyTool(
     },
     commands: [],
     async execute(input: GitHubNotificationReplyToolInput, _configuration, scope) {
-      const agentId = scope.toolContext?.agentId?.trim();
-      if (scope.toolContext?.messageChannel !== githubNotificationChannelId || !agentId) {
+      if (!isGitHubNotificationReplyToolContext(scope.toolContext)) {
         throw new AgentSystemToolError(
           'tool_unavailable',
           'The GitHub reply staging tool is available only during a GitHub notification turn.',
         );
       }
+      const agentId = scope.toolContext.agentId.trim();
       try {
         await candidates.stage(agentId, input.body);
       } catch (error) {
@@ -84,9 +84,7 @@ export default function createGitHubNotificationReplyTool(
             `session-key-present=${Boolean(context.sessionKey?.trim())}`,
           ].join(' '),
         );
-        return (
-          context.messageChannel === githubNotificationChannelId && Boolean(context.agentId?.trim())
-        );
+        return isGitHubNotificationReplyToolContext(context);
       },
       classify() {
         return {

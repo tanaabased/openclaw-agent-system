@@ -15,7 +15,7 @@ import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-
 import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 
 describe('channels/github/reply-tool', () => {
-  it('should expose one typed staging tool only in the github notification channel', async () => {
+  it('should expose one typed staging tool only in authorized github notification turns', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-tool-'));
     const rootDir = join(temporaryDirectory, 'state');
     const parentCandidates = new GitHubNotificationReplyCandidateStore({ rootDir });
@@ -94,6 +94,11 @@ describe('channels/github/reply-tool', () => {
         'github-notifications: reply tool context code=github-notification-reply-tool-context agent-id-present=true message-channel=imessage delivery-channel=unset session-key-present=true',
       );
       assert.equal(factory({ messageChannel: githubNotificationChannelId }), null);
+      const codexTool = factory({
+        agentId: 'tanaabot',
+        sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:12',
+      });
+      assert.ok(codexTool && !Array.isArray(codexTool));
       const tool = factory({
         agentId: 'tanaabot',
         messageChannel: githubNotificationChannelId,
@@ -119,6 +124,25 @@ describe('channels/github/reply-tool', () => {
       if (result.content[0]?.type === 'text') {
         assert.match(result.content[0].text, /github-reply-candidate/u);
       }
+      const codexTurn = await parentCandidates.begin({
+        agentId: 'tanaabot',
+        conversationId: 'github:issue:repository:13',
+        revisionId: 'revision-2',
+      });
+      const codexResult = await codexTool.execute('call-2', { body: ' codex ready ' });
+      assert.deepEqual(codexResult.details, {
+        auditId: 'audit-1',
+        output: { body: 'codex ready', kind: 'github-reply-candidate', version: 1 },
+      });
+      assert.deepEqual(
+        await parentCandidates.finish({
+          agentId: 'tanaabot',
+          conversationId: 'github:issue:repository:13',
+          revisionId: 'revision-2',
+          turnId: codexTurn,
+        }),
+        ['codex ready'],
+      );
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

@@ -1,5 +1,7 @@
 import type { Readable } from 'node:stream';
 
+import { disposeRegisteredAgentHarnesses } from 'openclaw/plugin-sdk/agent-harness-runtime';
+
 import envAgentSystem from '../cli/env.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import runAgentSystemTool from '../cli/tool.ts';
@@ -42,6 +44,7 @@ export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
+  disposeAgentHarnesses?: () => Promise<void>;
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   installService: Pick<AgentInstallService, 'install'>;
@@ -151,6 +154,7 @@ export default function registerAgentSystemCli(
       const agentId = commandOptions.agent;
       await refreshNotificationsAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
+        disposeAgentHarnesses: options.disposeAgentHarnesses ?? disposeRegisteredAgentHarnesses,
         itemKind: commandOptions.kind,
         itemNumber: commandOptions.number,
         json: commandOptions.json === true,

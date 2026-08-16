@@ -49,6 +49,7 @@ function createProgram(input?: Readable) {
       storeId?: string;
     }>,
     doctor: [] as Array<{ agentId: string; workspaceDir: string }>,
+    harnessDisposals: 0,
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
@@ -112,6 +113,9 @@ function createProgram(input?: Readable) {
           source: options.storeId ? `store:${options.storeId}` : 'process-environment',
         };
       },
+    },
+    async disposeAgentHarnesses() {
+      calls.harnessDisposals += 1;
     },
     doctorService: {
       async inspect(input) {
@@ -439,6 +443,7 @@ describe('lib/register-cli', () => {
         waitForLeaseMs: 120_000,
       },
     ]);
+    assert.equal(calls.harnessDisposals, 1);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
   });
 
