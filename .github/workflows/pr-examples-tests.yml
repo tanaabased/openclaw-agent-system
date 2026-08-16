@@ -20,8 +20,8 @@ jobs:
           - macos-26
           # - ubuntu-24.04
         model:
-          # - gpt-5.4-nano
-          - gpt-5.6-sol
+          - gpt-5.4-nano
+          # - gpt-5.6-sol
         agent-runtime:
           - codex
           # - openclaw
@@ -116,7 +116,9 @@ jobs:
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           NO_COLOR: '1'
           # OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          # OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_LOG_LEVEL: 'debug'
+          OPENCLAW_DEBUG_MODEL_PAYLOAD: tools
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_AGENT_RUNTIME: ${{ matrix.agent-runtime }}
           # OPENAI_MODEL: gpt-5.4-nano
@@ -134,3 +136,4 @@ jobs:
           openclaw config get plugins.entries.codex
           "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
           openclaw config get plugins.entries.codex
+          openclaw doctor
