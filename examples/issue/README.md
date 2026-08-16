@@ -67,7 +67,9 @@ openclaw agent-system install
 # should configure the notification agent for short unattended work turns
 notification_index="$(openclaw config get agents.list --json | jq -er 'map(.id) | index("notification-data")')"
 openclaw config set "agents.list[$notification_index].model" "openai/$OPENAI_MODEL"
+openclaw config set "agents.list[$notification_index].models" "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"$OPENAI_AGENT_RUNTIME\"}}}" --strict-json
 openclaw config set "agents.list[$notification_index].tools.profile" coding
+openclaw config get "agents.list[$notification_index].models" --json | jq -e --arg model "openai/$OPENAI_MODEL" --arg runtime "$OPENAI_AGENT_RUNTIME" '.[$model].agentRuntime.id == $runtime'
 openclaw exec-policy preset yolo
 ```
 
@@ -157,6 +159,9 @@ gtimeout 180 openclaw agent-system notifications refresh \
 cd "$TMPDIR/agent-system-notification-actor"
 reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq ".[] | select(.user.login == \"tanaabot\" and (.body | contains(\"$reply_token\")) and (.body | contains(\"agent-system-github-publication:github-reply\"))) | .id")"
 test -n "$reply_id"
+
+# should report the selected runtime for the issue comment session
+openclaw sessions --agent notification-data --limit 1 --json | jq -e --arg runtime "$OPENAI_AGENT_RUNTIME" '.sessions[0].agentRuntime.id == $runtime'
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

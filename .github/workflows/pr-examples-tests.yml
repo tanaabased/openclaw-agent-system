@@ -11,7 +11,7 @@ env:
 
 jobs:
   examples:
-    name: ${{ matrix.example }} (${{ matrix.os }})
+    name: ${{ matrix.example }} (${{ matrix.os }}, ${{ matrix.agent-runtime }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -22,6 +22,9 @@ jobs:
         model:
           - gpt-5.4-nano
           # - gpt-5.6-sol
+        agent-runtime:
+          - codex
+          - openclaw
         example:
           # - install
           # - validate
@@ -115,6 +118,7 @@ jobs:
           # OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
           OPENCLAW_LOG_LEVEL: 'debug'
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+          OPENAI_AGENT_RUNTIME: ${{ matrix.agent-runtime }}
           # OPENAI_MODEL: gpt-5.4-nano
           OPENAI_MODEL: ${{ matrix.model }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
