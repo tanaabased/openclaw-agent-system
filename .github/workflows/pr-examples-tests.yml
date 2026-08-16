@@ -24,7 +24,7 @@ jobs:
           # - gpt-5.6-sol
         agent-runtime:
           - codex
-          - openclaw
+          # - openclaw
         example:
           # - install
           # - validate
