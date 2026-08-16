@@ -153,7 +153,12 @@ export default class GitHubNotificationCommentTurnService {
       timestamp: Date.parse(input.comment.updatedAt),
     });
     const finalPayloads: ReplyPayload[] = [];
-    const candidateTurn = this.#dependencies.candidates.begin(route.agentId);
+    const candidateIdentity = {
+      agentId: route.agentId,
+      conversationId: route.conversationId,
+      revisionId: input.revision.revisionId,
+    };
+    const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
@@ -211,7 +216,9 @@ export default class GitHubNotificationCommentTurnService {
         ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
       });
     } catch (error) {
-      this.#dependencies.candidates.cancel(route.agentId, candidateTurn);
+      await this.#dependencies.candidates
+        .cancel({ ...candidateIdentity, turnId: candidateTurn })
+        .catch(() => undefined);
       const classified =
         error instanceof GitHubNotificationCommentTurnError
           ? error
@@ -231,7 +238,7 @@ export default class GitHubNotificationCommentTurnService {
       throw classified;
     }
     if (!result.dispatched || result.routeSessionKey !== route.sessionKey) {
-      this.#dependencies.candidates.cancel(route.agentId, candidateTurn);
+      await this.#dependencies.candidates.cancel({ ...candidateIdentity, turnId: candidateTurn });
       throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
     }
     const dispatch = result.dispatchResult;
@@ -246,7 +253,10 @@ export default class GitHubNotificationCommentTurnService {
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    const publicCandidates = this.#dependencies.candidates.finish(route.agentId, candidateTurn);
+    const publicCandidates = await this.#dependencies.candidates.finish({
+      ...candidateIdentity,
+      turnId: candidateTurn,
+    });
     const privateText = githubNotificationPrivateResponse(finalPayloads);
     let publication: GitHubNotificationCommentTurnResult['publication'];
     if (publicCandidates.length === 0) {
@@ -257,7 +267,7 @@ export default class GitHubNotificationCommentTurnService {
     } else if (publicCandidates.length !== 1) {
       publication = {
         status: 'withheld',
-        code: 'github-notification-publication-candidate-invalid',
+        code: 'github-notification-publication-candidate-duplicate',
       };
     } else {
       try {

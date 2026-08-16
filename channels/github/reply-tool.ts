@@ -4,10 +4,14 @@ import { Value } from 'typebox/value';
 import defineAgentSystemSemanticTool from '../../lib/define-agent-system-semantic-tool.ts';
 import AgentSystemToolError from '../../lib/tool-error.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
-import type GitHubNotificationReplyCandidateStore from './lib/reply-candidate-store.ts';
+import { GitHubNotificationReplyCandidateStoreError } from './lib/reply-candidate-store.ts';
+import {
+  githubNotificationReplyToolName,
+  githubNotificationReplyToolOutput,
+} from './utils/reply-tool-result.ts';
 import { githubNotificationChannelId } from './utils/routing.ts';
 
-export const githubNotificationReplyToolName = 'agent_system_github_reply';
+export { githubNotificationReplyToolName } from './utils/reply-tool-result.ts';
 
 const githubNotificationReplyToolSchema = Type.Object(
   {
@@ -18,13 +22,17 @@ const githubNotificationReplyToolSchema = Type.Object(
 
 type GitHubNotificationReplyToolInput = Static<typeof githubNotificationReplyToolSchema>;
 
+interface GitHubNotificationReplyCandidateStager {
+  stage(agentId: string, candidate: string): Promise<void>;
+}
+
 function notifications(manifest: AgentManifest) {
   return manifest.github?.notifications;
 }
 
-/** Stage one typed public candidate during a GitHub notification turn. */
+/** Return one typed public candidate during a GitHub notification turn. */
 export default function createGitHubNotificationReplyTool(
-  candidates: GitHubNotificationReplyCandidateStore,
+  candidates: GitHubNotificationReplyCandidateStager,
 ) {
   return defineAgentSystemSemanticTool({
     apiVersion: 1,
@@ -42,18 +50,24 @@ export default function createGitHubNotificationReplyTool(
     commands: [],
     async execute(input: GitHubNotificationReplyToolInput, _configuration, scope) {
       const agentId = scope.toolContext?.agentId?.trim();
-      if (
-        scope.toolContext?.messageChannel !== githubNotificationChannelId ||
-        !agentId ||
-        !candidates.hasActive(agentId)
-      ) {
+      if (scope.toolContext?.messageChannel !== githubNotificationChannelId || !agentId) {
         throw new AgentSystemToolError(
           'tool_unavailable',
           'The GitHub reply staging tool is available only during a GitHub notification turn.',
         );
       }
-      candidates.stage(agentId, input.body.trim());
-      return { status: 'staged' as const };
+      try {
+        await candidates.stage(agentId, input.body);
+      } catch (error) {
+        if (error instanceof GitHubNotificationReplyCandidateStoreError) {
+          throw new AgentSystemToolError(
+            'tool_unavailable',
+            `The GitHub reply candidate could not be staged (${error.code}).`,
+          );
+        }
+        throw error;
+      }
+      return githubNotificationReplyToolOutput(input.body);
     },
     id: 'github-reply',
     tool: {

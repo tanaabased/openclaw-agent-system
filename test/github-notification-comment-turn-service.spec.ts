@@ -12,7 +12,6 @@ import {
   type GitHubCanonicalIssueComment,
 } from '../channels/github/utils/comment-admission.ts';
 import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
-import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
 import {
   notificationActor,
   notificationItemKey,
@@ -50,7 +49,35 @@ function incomingComment(): GitHubCanonicalIssueComment {
   };
 }
 
-async function respondWithCandidates(publicCandidates: readonly string[]) {
+function candidateStore(candidates: readonly string[]) {
+  let identity:
+    { agentId: string; conversationId: string; revisionId: string; turnId?: string } | undefined;
+  return {
+    async begin(input: { agentId: string; conversationId: string; revisionId: string }) {
+      identity = { ...input };
+      return 'turn-1';
+    },
+    async cancel(input: {
+      agentId: string;
+      conversationId: string;
+      revisionId: string;
+      turnId: string;
+    }) {
+      assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
+    },
+    async finish(input: {
+      agentId: string;
+      conversationId: string;
+      revisionId: string;
+      turnId: string;
+    }) {
+      assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
+      return [...candidates];
+    },
+  };
+}
+
+async function respondWithCandidates(candidates: readonly string[]) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
     ...item.intake!,
@@ -59,14 +86,10 @@ async function respondWithCandidates(publicCandidates: readonly string[]) {
     worktreePath: '/workspace/worktrees/issue-12',
   };
   const comment = incomingComment();
-  const candidates = new GitHubNotificationReplyCandidateStore();
   const service = new GitHubNotificationCommentTurnService({
     capabilities: new GitHubNotificationCapabilityRegistry(),
-    candidates,
+    candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
-      for (const candidate of publicCandidates) {
-        candidates.stage(agentId, candidate);
-      }
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
         {
@@ -103,7 +126,6 @@ describe('channels/github/lib/comment-turn-service', () => {
     const revision = githubCommentRevision(comment);
     let createIfMissing: boolean | undefined;
     let recorded = false;
-    const candidates = new GitHubNotificationReplyCandidateStore();
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
@@ -115,7 +137,7 @@ describe('channels/github/lib/comment-turn-service', () => {
       };
     const service = new GitHubNotificationCommentTurnService({
       capabilities: new GitHubNotificationCapabilityRegistry(),
-      candidates,
+      candidates: candidateStore(['ready']),
       async dispatchReplyWithBufferedBlockDispatcher(input) {
         assert.equal(recorded, true);
         assert.equal(createIfMissing, false);
@@ -128,7 +150,6 @@ describe('channels/github/lib/comment-turn-service', () => {
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-        candidates.stage(agentId, 'ready');
         await input.dispatcherOptions.deliver(
           {
             text: [
@@ -190,7 +211,7 @@ describe('channels/github/lib/comment-turn-service', () => {
     const comment = incomingComment();
     const service = new GitHubNotificationCommentTurnService({
       capabilities: new GitHubNotificationCapabilityRegistry(),
-      candidates: new GitHubNotificationReplyCandidateStore(),
+      candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {
         throw new Error('unexpected model dispatch');
       },
@@ -225,12 +246,12 @@ describe('channels/github/lib/comment-turn-service', () => {
     });
   });
 
-  it('should withhold publication when more than one typed candidate is staged', async () => {
+  it('should withhold publication when more than one typed candidate is returned', async () => {
     const result = await respondWithCandidates(['first', 'second']);
 
     assert.deepEqual(result.publication, {
       status: 'withheld',
-      code: 'github-notification-publication-candidate-invalid',
+      code: 'github-notification-publication-candidate-duplicate',
     });
   });
 

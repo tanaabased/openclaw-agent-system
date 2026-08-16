@@ -35,8 +35,10 @@ lifecycle session and publishes the accepted public part of the response.
   OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.
 - A comment turn accepts one ordinary private Markdown response and one typed
   `agent_system_github_reply` tool candidate. It never parses the private
-  response for publication. Only the bounded tool candidate is persisted,
-  reauthorized, reconciled by exact body and hidden marker, and published.
+  response for publication. The bounded candidate crosses native harness
+  runtimes through one private, atomic, expiring turn record; the parent then
+  reauthorizes it, reconciles it by exact body and hidden marker, and publishes
+  it.
 - If the turn omits the candidate, calls the staging tool more than once, or
   produces a candidate that fails validation, the private response remains in
   the lifecycle session and GitHub publication is withheld with a stable code.

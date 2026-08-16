@@ -158,7 +158,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
-  const notificationReplyCandidateStore = new GitHubNotificationReplyCandidateStore();
+  const notificationReplyCandidateStore = new GitHubNotificationReplyCandidateStore({
+    ...(currentUid === undefined ? {} : { currentUid }),
+    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+  });
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,
