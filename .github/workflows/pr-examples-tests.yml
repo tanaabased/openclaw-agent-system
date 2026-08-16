@@ -19,25 +19,28 @@ jobs:
         os:
           - macos-26
           - ubuntu-24.04
+        model:
+          - gpt-5.4-nano
+          - gpt-5.6-sol
         example:
-          - install
-          - validate
-          - doctor
-          - agent
-          - identity
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
+          # - install
+          # - validate
+          # - doctor
+          # - agent
+          # - identity
+          # - path
+          # - env
+          # - credentials
+          # - git
+          # - worktree
+          # - github
+          # - routing
           - issue
-          - tool
-          - security
-        exclude:
-          - os: ubuntu-24.04
-            example: issue
+          # - tool
+          # - security
+        # exclude:
+        #   - os: ubuntu-24.04
+        #     example: issue
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -109,9 +112,17 @@ jobs:
         env:
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           NO_COLOR: '1'
+          # OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_LOG_LEVEL: 'debug'
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
+          # OPENAI_MODEL: gpt-5.4-nano
+          OPENAI_MODEL: ${{ matrix.model }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
           TEST_SSH_KEY: ${{ steps.test-ssh-key.outputs.private-key }}
           TMPDIR: ${{ runner.temp }}
         run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: LEVEL THREE DIAGNOSTICS
+        if: failure()
+        shell: bash
+        run: |
+          "$GITHUB_WORKSPACE/scripts/gateway-process.sh" diagnostics
