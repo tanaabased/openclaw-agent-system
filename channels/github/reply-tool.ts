@@ -41,26 +41,25 @@ export default function createGitHubNotificationReplyTool(
     },
     commands: [],
     async execute(input: GitHubNotificationReplyToolInput, _configuration, scope) {
-      const sessionKey = scope.toolContext?.sessionKey;
+      const agentId = scope.toolContext?.agentId?.trim();
       if (
         scope.toolContext?.messageChannel !== githubNotificationChannelId ||
-        !sessionKey ||
-        !candidates.hasActive(sessionKey)
+        !agentId ||
+        !candidates.hasActive(agentId)
       ) {
         throw new AgentSystemToolError(
           'tool_unavailable',
           'The GitHub reply staging tool is available only during a GitHub notification turn.',
         );
       }
-      candidates.stage(sessionKey, input.body.trim());
+      candidates.stage(agentId, input.body.trim());
       return { status: 'staged' as const };
     },
     id: 'github-reply',
     tool: {
       available(context) {
         return (
-          context.messageChannel === githubNotificationChannelId &&
-          candidates.hasActive(context.sessionKey)
+          context.messageChannel === githubNotificationChannelId && Boolean(context.agentId?.trim())
         );
       },
       classify() {

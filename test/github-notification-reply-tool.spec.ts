@@ -15,7 +15,7 @@ describe('channels/github/reply-tool', () => {
   it('should expose one typed staging tool only in the github notification channel', async () => {
     let factory: OpenClawPluginToolFactory | undefined;
     const candidates = new GitHubNotificationReplyCandidateStore();
-    const token = candidates.begin('session-1');
+    const token = candidates.begin('tanaabot');
     const registered = createGitHubNotificationReplyTool(candidates);
     registered.registerTools(
       {
@@ -69,16 +69,20 @@ describe('channels/github/reply-tool', () => {
     );
 
     assert.ok(factory);
-    assert.equal(factory({ messageChannel: 'imessage', sessionKey: 'session-1' }), null);
+    assert.equal(
+      factory({ agentId: 'tanaabot', messageChannel: 'imessage', sessionKey: 'session-1' }),
+      null,
+    );
     assert.equal(factory({ messageChannel: githubNotificationChannelId }), null);
     const tool = factory({
+      agentId: 'tanaabot',
       messageChannel: githubNotificationChannelId,
-      sessionKey: 'session-1',
+      sessionKey: 'sandbox-session-that-does-not-match-the-lifecycle-route',
     });
     assert.ok(tool && !Array.isArray(tool));
     assert.equal(tool.name, githubNotificationReplyToolName);
     const result = await tool.execute('call-1', { body: 'ready' });
-    assert.deepEqual(candidates.finish('session-1', token), ['ready']);
+    assert.deepEqual(candidates.finish('tanaabot', token), ['ready']);
     assert.equal(result.content[0]?.type, 'text');
     if (result.content[0]?.type === 'text') assert.match(result.content[0].text, /staged/u);
   });

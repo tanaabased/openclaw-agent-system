@@ -153,7 +153,7 @@ export default class GitHubNotificationCommentTurnService {
       timestamp: Date.parse(input.comment.updatedAt),
     });
     const finalPayloads: ReplyPayload[] = [];
-    const candidateTurn = this.#dependencies.candidates.begin(route.sessionKey);
+    const candidateTurn = this.#dependencies.candidates.begin(route.agentId);
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
@@ -211,7 +211,7 @@ export default class GitHubNotificationCommentTurnService {
         ...(capability.toolsAllow === undefined ? {} : { toolsAllow: capability.toolsAllow }),
       });
     } catch (error) {
-      this.#dependencies.candidates.cancel(route.sessionKey, candidateTurn);
+      this.#dependencies.candidates.cancel(route.agentId, candidateTurn);
       const classified =
         error instanceof GitHubNotificationCommentTurnError
           ? error
@@ -231,7 +231,7 @@ export default class GitHubNotificationCommentTurnService {
       throw classified;
     }
     if (!result.dispatched || result.routeSessionKey !== route.sessionKey) {
-      this.#dependencies.candidates.cancel(route.sessionKey, candidateTurn);
+      this.#dependencies.candidates.cancel(route.agentId, candidateTurn);
       throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
     }
     const dispatch = result.dispatchResult;
@@ -246,7 +246,7 @@ export default class GitHubNotificationCommentTurnService {
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    const publicCandidates = this.#dependencies.candidates.finish(route.sessionKey, candidateTurn);
+    const publicCandidates = this.#dependencies.candidates.finish(route.agentId, candidateTurn);
     const privateText = githubNotificationPrivateResponse(finalPayloads);
     let publication: GitHubNotificationCommentTurnResult['publication'];
     if (publicCandidates.length === 0) {

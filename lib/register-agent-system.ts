@@ -360,7 +360,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationReplyCandidateStore);
+  registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(
     ({ logger: cliLogger, program }) => {
       registerAgentSystemCli(program, {

@@ -1,7 +1,6 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import githubNotificationWorkCommentInstructions from '../channels/github/messages/instructions/work-comment.ts';
-import type GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import { agentCommandSecurityGuidance } from './agent-command-security.ts';
@@ -17,7 +16,6 @@ export default function registerAgentSystemHooks(
   api: HookApi,
   manifestService: HookManifestService,
   toolRegistry: Pick<AgentSystemToolRegistry, 'guidance'>,
-  replyCandidates: Pick<GitHubNotificationReplyCandidateStore, 'hasActive'>,
 ): void {
   api.on('session_start', async (_event, context) => {
     await manifestService.loadForRuntimeContext(context, 'session_start');
@@ -28,10 +26,7 @@ export default function registerAgentSystemHooks(
     if (result.status === 'loaded') {
       guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
     }
-    if (
-      context.messageProvider === githubNotificationChannelId &&
-      replyCandidates.hasActive(context.sessionKey)
-    ) {
+    if (context.messageProvider === githubNotificationChannelId) {
       guidance.push(githubNotificationWorkCommentInstructions);
     }
     return guidance.length > 0 ? { appendSystemContext: guidance.join('\n\n') } : undefined;

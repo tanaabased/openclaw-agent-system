@@ -65,7 +65,7 @@ async function respondWithCandidates(publicCandidates: readonly string[]) {
     candidates,
     async dispatchReplyWithBufferedBlockDispatcher(input) {
       for (const candidate of publicCandidates) {
-        candidates.stage(String(input.ctx.SessionKey), candidate);
+        candidates.stage(agentId, candidate);
       }
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
@@ -128,7 +128,7 @@ describe('channels/github/lib/comment-turn-service', () => {
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-        candidates.stage(String(input.ctx.SessionKey), 'ready');
+        candidates.stage(agentId, 'ready');
         await input.dispatcherOptions.deliver(
           {
             text: [

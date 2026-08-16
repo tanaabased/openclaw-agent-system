@@ -3,24 +3,27 @@ import assert from 'node:assert/strict';
 import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
 
 describe('channels/github/lib/reply-candidate-store', () => {
-  it('should isolate candidates to one active session turn', () => {
+  it('should isolate candidates to one active agent turn', () => {
     const store = new GitHubNotificationReplyCandidateStore();
-    const token = store.begin('session-1');
+    const token = store.begin('tanaabot');
 
-    assert.equal(store.hasActive('session-1'), true);
-    assert.equal(store.hasActive('session-2'), false);
-    store.stage('session-1', 'ready');
-    assert.deepEqual(store.finish('session-1', token), ['ready']);
-    assert.equal(store.hasActive('session-1'), false);
+    assert.equal(store.hasActive('tanaabot'), true);
+    assert.equal(store.hasActive('other-agent'), false);
+    store.stage('tanaabot', 'ready');
+    assert.deepEqual(store.finish('tanaabot', token), ['ready']);
+    assert.equal(store.hasActive('tanaabot'), false);
   });
 
   it('should reject overlapping turns and stale tokens', () => {
     const store = new GitHubNotificationReplyCandidateStore();
-    const token = store.begin('session-1');
+    const token = store.begin('tanaabot');
 
-    assert.throws(() => store.begin('session-1'), /already active/u);
-    assert.throws(() => store.finish('session-1', Symbol('stale')), /no longer active/u);
-    store.cancel('session-1', token);
-    assert.throws(() => store.stage('session-1', 'late'), /No GitHub notification reply turn/u);
+    assert.throws(() => store.begin('tanaabot'), /already active/u);
+    assert.throws(() => store.finish('tanaabot', Symbol('stale')), /no longer active/u);
+    store.cancel('tanaabot', token);
+    assert.throws(
+      () => store.stage('tanaabot', 'late'),
+      /No matching GitHub notification reply turn/u,
+    );
   });
 });
