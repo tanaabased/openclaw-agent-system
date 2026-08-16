@@ -2,6 +2,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import defineAgentSystemSemanticTool from '../../lib/define-agent-system-semantic-tool.ts';
+import type { Logger } from '../../lib/logger.ts';
 import AgentSystemToolError from '../../lib/tool-error.ts';
 import type { AgentManifest } from '../../utils/manifest-types.ts';
 import { GitHubNotificationReplyCandidateStoreError } from './lib/reply-candidate-store.ts';
@@ -33,6 +34,7 @@ function notifications(manifest: AgentManifest) {
 /** Return one typed public candidate during a GitHub notification turn. */
 export default function createGitHubNotificationReplyTool(
   candidates: GitHubNotificationReplyCandidateStager,
+  logger?: Pick<Logger, 'debug'>,
 ) {
   return defineAgentSystemSemanticTool({
     apiVersion: 1,
@@ -72,6 +74,16 @@ export default function createGitHubNotificationReplyTool(
     id: 'github-reply',
     tool: {
       available(context) {
+        logger?.debug?.(
+          [
+            'github-notifications: reply tool context',
+            'code=github-notification-reply-tool-context',
+            `agent-id-present=${Boolean(context.agentId?.trim())}`,
+            `message-channel=${context.messageChannel?.trim() || 'unset'}`,
+            `delivery-channel=${context.deliveryContext?.channel?.trim() || 'unset'}`,
+            `session-key-present=${Boolean(context.sessionKey?.trim())}`,
+          ].join(' '),
+        );
         return (
           context.messageChannel === githubNotificationChannelId && Boolean(context.agentId?.trim())
         );

@@ -20,13 +20,18 @@ describe('channels/github/reply-tool', () => {
     const rootDir = join(temporaryDirectory, 'state');
     const parentCandidates = new GitHubNotificationReplyCandidateStore({ rootDir });
     const toolCandidates = new GitHubNotificationReplyCandidateStore({ rootDir });
+    const diagnostics: string[] = [];
     const turn = await parentCandidates.begin({
       agentId: 'tanaabot',
       conversationId: 'github:issue:repository:12',
       revisionId: 'revision-1',
     });
     let factory: OpenClawPluginToolFactory | undefined;
-    const registered = createGitHubNotificationReplyTool(toolCandidates);
+    const registered = createGitHubNotificationReplyTool(toolCandidates, {
+      debug(message) {
+        diagnostics.push(message);
+      },
+    });
     try {
       registered.registerTools(
         {
@@ -83,6 +88,10 @@ describe('channels/github/reply-tool', () => {
       assert.equal(
         factory({ agentId: 'tanaabot', messageChannel: 'imessage', sessionKey: 'session-1' }),
         null,
+      );
+      assert.equal(
+        diagnostics.at(-1),
+        'github-notifications: reply tool context code=github-notification-reply-tool-context agent-id-present=true message-channel=imessage delivery-channel=unset session-key-present=true',
       );
       assert.equal(factory({ messageChannel: githubNotificationChannelId }), null);
       const tool = factory({

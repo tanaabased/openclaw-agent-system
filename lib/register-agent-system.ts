@@ -165,7 +165,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,
-    createGitHubNotificationReplyTool(notificationReplyCandidateStore),
+    createGitHubNotificationReplyTool(notificationReplyCandidateStore, logger),
   ]);
   const notificationRoutingService = new NotificationRoutingService({
     mutateConfigFile(params) {
