@@ -41,6 +41,8 @@ openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 openclaw config get plugins.allow --json | jq -e '. == ["agent-system", "codex"]'
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["app-server","--listen","stdio://","-c","projects.\"/Users/runner/work/_temp/agent-system-notifications/.codex\".trust_level=\"trusted\""]' --strict-json
+openclaw doctor --fix --yes
+openclaw doctor --lint --all --severity-min warning
 openclaw config validate
 
 # should prepare notification and approved-actor workspaces
