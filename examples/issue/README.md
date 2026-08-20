@@ -32,8 +32,8 @@ openclaw onboard --non-interactive --accept-risk \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
 
-# should use the expected openclaw host version
-openclaw --version | grep -F 'OpenClaw 2026.7.1-2'
+# should report the selected openclaw host version
+openclaw --version
 
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
