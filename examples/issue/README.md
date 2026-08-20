@@ -52,7 +52,7 @@ skip
 openclaw plugins list --json | jq -e '.plugins[] | select(.id == "codex" and .version == "2026.7.1-1" and .enabled == true and .status == "loaded")'
 
 # should configure the codex runtime plugin
-openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+# openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 # temporarily disabled while the explicit codex runtime pin is isolated
 # openclaw doctor --fix --yes
 # openclaw doctor --lint --all --severity-min warning
