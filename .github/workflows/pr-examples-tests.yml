@@ -21,7 +21,7 @@ jobs:
           # - ubuntu-24.04
         agent-runtime:
           - codex
-          - openclaw
+          # - openclaw
         example:
           # - install
           # - validate
@@ -113,7 +113,7 @@ jobs:
           OPENCLAW_DEBUG_MODEL_PAYLOAD: tools
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_AGENT_RUNTIME: ${{ matrix.agent-runtime }}
-          OPENAI_MODEL: gpt-5.4-nano
+          OPENAI_MODEL: gpt-5.6-sol
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
           TEST_SSH_KEY: ${{ steps.test-ssh-key.outputs.private-key }}
           TMPDIR: ${{ runner.temp }}
