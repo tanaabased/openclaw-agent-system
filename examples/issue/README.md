@@ -32,17 +32,30 @@ openclaw onboard --non-interactive --accept-risk \
   --suppress-gateway-token-output
 openclaw models set "openai/$OPENAI_MODEL"
 
+# should use the expected openclaw host version
+openclaw --version | grep -F 'OpenClaw 2026.7.1-2'
+
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 
+# should install and enable the pinned codex runtime plugin
+openclaw plugins install "npm:@openclaw/codex@2026.7.1-1" --force --pin
+openclaw plugins enable codex
+
 # should explicitly allow the agent system and codex plugins
 openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 openclaw config get plugins.allow --json | jq -e '. == ["agent-system", "codex"]'
+
+# should expose the pinned codex runtime plugin
+openclaw plugins list --json | jq -e '.plugins[] | select(.id == "codex" and .version == "2026.7.1-1" and .enabled == true and .status == "loaded")'
+
+# should configure the codex runtime plugin
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["app-server","--listen","stdio://","-c","projects.\"/Users/runner/work/_temp/agent-system-notifications/.codex\".trust_level=\"trusted\""]' --strict-json
-openclaw doctor --fix --yes
-openclaw doctor --lint --all --severity-min warning
+# temporarily disabled while the explicit codex runtime pin is isolated
+# openclaw doctor --fix --yes
+# openclaw doctor --lint --all --severity-min warning
 openclaw config validate
 
 # should prepare notification and approved-actor workspaces

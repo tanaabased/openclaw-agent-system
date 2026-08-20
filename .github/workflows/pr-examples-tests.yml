@@ -122,7 +122,7 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
           TEST_SSH_KEY: ${{ steps.test-ssh-key.outputs.private-key }}
           TMPDIR: ${{ runner.temp }}
-        run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+        run: ./node_modules/.bin/leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
