@@ -9,10 +9,8 @@ This scenario runs the prepared Agent System package in the default Gateway with
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL"
-
-# should trust the packed plugin with codex
-openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
+  --model "openai/$OPENAI_MODEL" \
+  --yolo
 
 # should prepare scenario-owned generated public keys under the temporary workspace
 mkdir "$TMPDIR/agent-system-github-tanaabot"
@@ -40,9 +38,6 @@ openclaw agent-system install
 # should configure both installed agents with the ci model
 openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.list[1].model' "openai/$OPENAI_MODEL"
-
-# should allow unattended tool execution only on the isolated ci profile
-openclaw exec-policy preset yolo
 
 # should start the default gateway as a supervised background process
 openclaw-gateway start

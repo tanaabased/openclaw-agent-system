@@ -12,7 +12,7 @@ env:
 
 jobs:
   examples:
-    name: ${{ matrix.example }} (${{ matrix.os }}, ${{ matrix.agent-runtime }})
+    name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

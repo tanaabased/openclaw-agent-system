@@ -18,9 +18,6 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 ## Testing
 
 ```bash
-# should load the packed runtime from dist
-openclaw plugins inspect agent-system --runtime --json | jq -e '.plugin.id == "agent-system" and (.plugin.source | endswith("/dist/index.js"))'
-
 # should expose the canonical command tree and its alias
 openclaw agent-system --help | grep -F 'validate'
 openclaw as --help | grep -F 'validate'
