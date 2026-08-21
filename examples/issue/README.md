@@ -15,15 +15,9 @@ Scenario setup creates and updates uniquely named issues in
 ```bash
 # should configure the default profile with the ci model
 OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
+OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN="$AGENT_SYSTEM_PACKAGE" \
 OPENCLAW_SETUP_MODEL="openai/$OPENAI_MODEL" \
   openclaw-setup
-
-# should report the selected openclaw host version
-openclaw --version
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
 
 # temporarily disabled while the explicit codex runtime pin is isolated
 # openclaw doctor --fix --yes

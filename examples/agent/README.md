@@ -8,11 +8,8 @@ This scenario runs the prepared Agent System package in the default Gateway with
 # should configure the default profile with the ci model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL"
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
 
 # should install the scenario-owned data workspace through agent system
 cd "$GITHUB_WORKSPACE/examples/agent/data"

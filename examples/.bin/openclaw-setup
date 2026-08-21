@@ -8,22 +8,25 @@ source "$command_dir/openclaw-common.sh"
 
 workspace="${OPENCLAW_SETUP_WORKSPACE:-}"
 model="${OPENCLAW_SETUP_MODEL:-}"
+agent_system_plugin="${OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN:-}"
 
 usage() {
   cat <<EOF
-Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--model <provider/model>] [--debug]${tty_reset}
+Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--agent-system-plugin <path>] [--model <provider/model>] [--debug]${tty_reset}
 
 ${tty_tp}Options:${tty_reset}
-  --workspace <path>        sets the isolated OpenClaw workspace
-  --model <provider/model>  enables OpenAI authentication and selects the model
-  --debug                   shows diagnostic messages
-  -h, --help               displays this help message
+  --workspace <path>            sets the isolated OpenClaw workspace
+  --agent-system-plugin <path>  installs and enables an Agent System npm pack
+  --model <provider/model>      enables OpenAI authentication and selects the model
+  --debug                       shows diagnostic messages
+  -h, --help                   displays this help message
 
 ${tty_tp}Environment Variables:${tty_reset}
-  OPENCLAW_SETUP_WORKSPACE  same as --workspace
-  OPENCLAW_SETUP_MODEL      same as --model
-  OPENCLAW_DEBUG            enables helper-command debug output
-  OPENAI_API_KEY            required when a model is provided
+  OPENCLAW_SETUP_WORKSPACE            same as --workspace
+  OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN  same as --agent-system-plugin
+  OPENCLAW_SETUP_MODEL                same as --model
+  OPENCLAW_DEBUG                      enables helper-command debug output
+  OPENAI_API_KEY                      required when a model is provided
 EOF
 }
 
@@ -32,6 +35,11 @@ while (($# > 0)); do
     --workspace)
       (($# >= 2)) || error '--workspace requires a path' 2
       workspace="$2"
+      shift 2
+      ;;
+    --agent-system-plugin)
+      (($# >= 2)) || error '--agent-system-plugin requires a path' 2
+      agent_system_plugin="$2"
       shift 2
       ;;
     --model)
@@ -57,6 +65,11 @@ done
 [[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
 [[ -n "$workspace" ]] || error '--workspace or OPENCLAW_SETUP_WORKSPACE is required' 2
 [[ "$workspace" == /* ]] || error "workspace must be absolute: $workspace" 2
+
+if [[ -n "$agent_system_plugin" ]]; then
+  [[ "$agent_system_plugin" == /* ]] || error "Agent System plugin path must be absolute: $agent_system_plugin" 2
+  [[ -f "$agent_system_plugin" ]] || error "Agent System plugin pack is unavailable: $agent_system_plugin" 2
+fi
 
 if [[ -n "$model" ]]; then
   [[ "$model" == openai/* ]] || error "only openai model references are supported: $model" 2
@@ -104,3 +117,9 @@ case "$model" in
     openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
     ;;
 esac
+
+if [[ -n "$agent_system_plugin" ]]; then
+  debug "installing Agent System plugin pack=$agent_system_plugin"
+  openclaw plugins install "npm-pack:$agent_system_plugin" --force
+  openclaw plugins enable agent-system
+fi

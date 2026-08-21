@@ -9,12 +9,10 @@ state.
 ## Setup
 
 ```bash
-# should configure an unauthenticated local openclaw profile
-openclaw-setup --workspace "$TMPDIR/main"
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 
 # should prepare an isolated notification workspace
 mkdir "$TMPDIR/agent-system-notifications"

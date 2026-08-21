@@ -5,9 +5,10 @@ This scenario installs the prepared Agent System package and verifies manifest d
 ## Setup
 
 ```bash
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 ```
 
 ## Testing

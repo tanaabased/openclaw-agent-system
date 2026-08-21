@@ -8,11 +8,10 @@ This scenario runs the prepared Agent System package in the default Gateway with
 # should configure the default profile with the ci model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL"
 
-# should install, enable, and trust the packed plugin with codex
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+# should trust the packed plugin with codex
 openclaw plugins enable codex
 openclaw config set plugins.allow '["agent-system","codex"]' --strict-json
 

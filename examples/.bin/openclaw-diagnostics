@@ -61,6 +61,7 @@ collect_diagnostic() {
 }
 
 debug 'collecting OpenClaw example failure diagnostics'
+collect_diagnostic 'openclaw version' openclaw --version
 collect_diagnostic 'codex plugin configuration' openclaw config get plugins.entries.codex
 collect_diagnostic 'gateway logs' "$command_dir/openclaw-gateway" diagnostics --state-dir "$state_dir"
 collect_diagnostic 'doctor findings' openclaw doctor
