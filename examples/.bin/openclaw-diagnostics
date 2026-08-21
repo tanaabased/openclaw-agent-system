@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+state_dir="${OPENCLAW_DIAGNOSTICS_STATE_DIR:-${OPENCLAW_GATEWAY_STATE_DIR:-${TMPDIR:-}}}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-diagnostics${tty_reset} ${tty_dim}[--state-dir <path>] [--debug]${tty_reset}
+
+${tty_tp}Options:${tty_reset}
+  --state-dir <path>      locates isolated gateway process files ${tty_dim}[default: OPENCLAW_GATEWAY_STATE_DIR or TMPDIR]${tty_reset}
+  --debug                 shows diagnostic messages
+  -h, --help              displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_DIAGNOSTICS_STATE_DIR
+                          same as --state-dir
+  OPENCLAW_GATEWAY_STATE_DIR
+                          fallback gateway state directory
+  OPENCLAW_SCRIPT_DEBUG   enables helper-command debug output
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --state-dir)
+      (($# >= 2)) || error '--state-dir requires a path' 2
+      state_dir="$2"
+      shift 2
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+  esac
+done
+
+[[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
+
+collect_diagnostic() {
+  local label="$1"
+  shift
+
+  printf '%s%s%s\n' "$tty_tp" "$label" "$tty_reset" >&2
+  if ! "$@" >&2; then
+    error_message "diagnostic command failed: $label"
+  fi
+}
+
+debug 'collecting OpenClaw example failure diagnostics'
+collect_diagnostic 'codex plugin configuration' openclaw config get plugins.entries.codex
+collect_diagnostic 'gateway logs' "$command_dir/openclaw-gateway" diagnostics --state-dir "$state_dir"
+collect_diagnostic 'doctor findings' openclaw doctor
+collect_diagnostic 'agent configuration' openclaw config get agents

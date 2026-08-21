@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+workspace="${OPENCLAW_SETUP_WORKSPACE:-}"
+model="${OPENCLAW_SETUP_MODEL:-}"
+codex_dynamic_tools_loading="${OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING:-}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--model <provider/model>] [--codex-dynamic-tools-loading <mode>] [--debug]${tty_reset}
+
+${tty_tp}Options:${tty_reset}
+  --workspace <path>                    sets the isolated OpenClaw workspace
+  --model <provider/model>              enables OpenAI authentication and selects the model
+  --codex-dynamic-tools-loading <mode>  sets direct or searchable Codex dynamic-tool loading
+  --debug                               shows diagnostic messages
+  -h, --help                            displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_SETUP_WORKSPACE              same as --workspace
+  OPENCLAW_SETUP_MODEL                  same as --model
+  OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING
+                                       same as --codex-dynamic-tools-loading
+  OPENCLAW_SCRIPT_DEBUG                 enables helper-command debug output
+  OPENAI_API_KEY                        required when a model is provided
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --workspace)
+      (($# >= 2)) || error '--workspace requires a path' 2
+      workspace="$2"
+      shift 2
+      ;;
+    --model)
+      (($# >= 2)) || error '--model requires a provider/model value' 2
+      model="$2"
+      shift 2
+      ;;
+    --codex-dynamic-tools-loading)
+      (($# >= 2)) || error '--codex-dynamic-tools-loading requires a mode' 2
+      codex_dynamic_tools_loading="$2"
+      shift 2
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+  esac
+done
+
+[[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
+[[ -n "$workspace" ]] || error '--workspace or OPENCLAW_SETUP_WORKSPACE is required' 2
+[[ "$workspace" == /* ]] || error "workspace must be absolute: $workspace" 2
+
+if [[ -n "$model" ]]; then
+  [[ "$model" == openai/* ]] || error "only openai model references are supported: $model" 2
+  [[ -n "${OPENAI_API_KEY:-}" ]] || error 'OPENAI_API_KEY is required when a model is provided'
+fi
+
+if [[ -n "$codex_dynamic_tools_loading" && "$codex_dynamic_tools_loading" != 'direct' && "$codex_dynamic_tools_loading" != 'searchable' ]]; then
+  error "Codex dynamic tools loading must be direct or searchable: $codex_dynamic_tools_loading" 2
+fi
+
+onboard_args=(
+  --non-interactive
+  --accept-risk
+  --mode local
+  --workspace "$workspace"
+  --gateway-bind loopback
+  --skip-daemon
+  --skip-health
+  --skip-bootstrap
+  --skip-channels
+  --skip-hooks
+  --skip-search
+  --skip-skills
+  --skip-ui
+  --suppress-gateway-token-output
+)
+
+if [[ -n "$model" ]]; then
+  onboard_args+=(
+    --auth-choice openai-api-key
+    --openai-api-key "$OPENAI_API_KEY"
+    --secret-input-mode plaintext
+  )
+  debug "onboarding workspace=$workspace auth=openai model=$model"
+else
+  onboard_args+=(--auth-choice skip)
+  debug "onboarding workspace=$workspace auth=skip"
+fi
+
+openclaw onboard "${onboard_args[@]}"
+
+if [[ -n "$model" ]]; then
+  openclaw models set "$model"
+fi
+
+if [[ -n "$codex_dynamic_tools_loading" ]]; then
+  debug "configuring Codex dynamic-tools-loading=$codex_dynamic_tools_loading"
+  openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading "$codex_dynamic_tools_loading"
+fi

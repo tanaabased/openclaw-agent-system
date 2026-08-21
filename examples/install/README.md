@@ -6,20 +6,7 @@ This scenario installs the prepared Agent System package on a fresh GitHub Actio
 
 ```bash
 # should configure an unauthenticated local openclaw profile
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice skip \
-  --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
+OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" openclaw-setup
 
 # should install and enable the packed plugin through openclaw's managed npm package path
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force

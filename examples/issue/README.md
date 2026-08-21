@@ -14,23 +14,10 @@ Scenario setup creates and updates uniquely named issues in
 
 ```bash
 # should configure the default profile with the ci model
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice openai-api-key \
-  --openai-api-key "$OPENAI_API_KEY" \
-  --secret-input-mode plaintext \
-  --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
-openclaw models set "openai/$OPENAI_MODEL"
+OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
+OPENCLAW_SETUP_MODEL="openai/$OPENAI_MODEL" \
+OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING=direct \
+  openclaw-setup
 
 # should report the selected openclaw host version
 openclaw --version
@@ -39,8 +26,6 @@ openclaw --version
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
 openclaw plugins enable agent-system
 
-# should configure the codex runtime plugin
-openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading searchable
 # temporarily disabled while the explicit codex runtime pin is isolated
 # openclaw doctor --fix --yes
 # openclaw doctor --lint --all --severity-min warning
@@ -54,7 +39,7 @@ cp "$GITHUB_WORKSPACE/examples/issue/actor-agent.yaml" "$TMPDIR/agent-system-not
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -63,7 +48,9 @@ output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
-"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
+openclaw-github-notifications wait-route \
+  --route-state present \
+  --account-id notification-data
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
@@ -92,7 +79,7 @@ openclaw agent-system notifications wait \
 
 # should create a self-authored assignment fixture
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/scripts/create-and-assign-github-issue.sh" \
+openclaw-github-issue create-and-assign \
   --creator-agent notification-data \
   --repository tanaabased/agent-system-test \
   --title "agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -116,7 +103,7 @@ openclaw agent-system notifications wait \
 # should create an approved issue assignment fixture
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-"$GITHUB_WORKSPACE/scripts/create-and-assign-github-issue.sh" \
+openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/agent-system-test \
   --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
@@ -138,7 +125,7 @@ openclaw agent-system notifications wait \
   --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/agent-system-test" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
 
 # should preserve the durable issue worktree checkpoint across gateway restart
-OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" restart
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
@@ -156,12 +143,12 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
 cd "$TMPDIR/agent-system-notifications"
-gtimeout 180 openclaw agent-system notifications refresh \
+openclaw-github-notifications refresh-completed \
   --agent notification-data \
   --repository tanaabased/agent-system-test \
   --kind issue \
   --number "$issue_number" \
-  --json | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+  --timeout 180 | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
 cd "$TMPDIR/agent-system-notification-actor"
 reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq ".[] | select(.user.login == \"tanaabot\" and (.body | contains(\"$reply_token\")) and (.body | contains(\"agent-system-github-publication:github-reply\"))) | .id")"
 test -n "$reply_id"
@@ -203,5 +190,5 @@ if test -f "$TMPDIR/approved-issue-number"; then
 fi
 
 # should stop the background gateway cleanly
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
+openclaw-gateway stop
 ```

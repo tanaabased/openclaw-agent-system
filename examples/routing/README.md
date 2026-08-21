@@ -10,20 +10,7 @@ state.
 
 ```bash
 # should configure an unauthenticated local openclaw profile
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice skip \
-  --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
+openclaw-setup --workspace "$TMPDIR/main"
 
 # should install and enable the packed plugin
 openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
@@ -34,7 +21,7 @@ mkdir "$TMPDIR/agent-system-notifications"
 cp "$GITHUB_WORKSPACE/examples/routing/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
 # should install the route and establish the current baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -49,7 +36,9 @@ openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == 
 
 ```bash
 # should expose the running connected notification account through the gateway
-"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" present notification-data
+openclaw-github-notifications wait-route \
+  --route-state present \
+  --account-id notification-data
 openclaw channels status --channel agent-system-github --json | jq -e '(.channelAccounts["agent-system-github"] // []) | any(.accountId == "notification-data" and .configured == true and .enabled == true and .running == true and .connected == true and .healthState == "healthy")'
 
 # should persist one enabled channel account and exact account binding
@@ -77,7 +66,7 @@ cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "unchanged")'
 
 # should stop the gateway before deterministic routing removal
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
+openclaw-gateway stop
 
 # should remove the owned route and converged private monitor state
 cd "$TMPDIR/agent-system-notifications"
@@ -87,9 +76,11 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-monitor-state-removed")'
 
 # should start the gateway without the removed notification route
-OPENCLAW_NO_RESPAWN=1 "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 cd "$TMPDIR/agent-system-notifications"
-"$GITHUB_WORKSPACE/scripts/wait-for-agent-system-github-notification-route.sh" absent notification-data
+openclaw-github-notifications wait-route \
+  --route-state absent \
+  --account-id notification-data
 if openclaw config get 'channels.agent-system-github.accounts.notification-data.enabled'; then exit 1; fi
 openclaw agents bindings --json | jq -e '[.[] | select(.match.channel == "agent-system-github" and .match.accountId == "notification-data")] | length == 0'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
@@ -99,5 +90,5 @@ openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 
 ```bash
 # should stop the background gateway cleanly
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
+openclaw-gateway stop
 ```
