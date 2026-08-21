@@ -9,15 +9,17 @@ source "$command_dir/openclaw-common.sh"
 workspace="${OPENCLAW_SETUP_WORKSPACE:-}"
 model="${OPENCLAW_SETUP_MODEL:-}"
 agent_system_plugin="${OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN:-}"
+needs_secret_service="${OPENCLAW_SETUP_NEEDS_SECRET_SERVICE:-}"
 
 usage() {
   cat <<EOF
-Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--agent-system-plugin <path>] [--model <provider/model>] [--debug]${tty_reset}
+Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--agent-system-plugin <path>] [--model <provider/model>] [--needs-secret-service] [--debug]${tty_reset}
 
 ${tty_tp}Options:${tty_reset}
   --workspace <path>            sets the isolated OpenClaw workspace
   --agent-system-plugin <path>  installs and enables an Agent System npm pack
   --model <provider/model>      enables OpenAI authentication and selects the model
+  --needs-secret-service        prepares the Linux Secret Service test backend
   --debug                       shows diagnostic messages
   -h, --help                   displays this help message
 
@@ -25,6 +27,7 @@ ${tty_tp}Environment Variables:${tty_reset}
   OPENCLAW_SETUP_WORKSPACE            same as --workspace
   OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN  same as --agent-system-plugin
   OPENCLAW_SETUP_MODEL                same as --model
+  OPENCLAW_SETUP_NEEDS_SECRET_SERVICE same as --needs-secret-service when enabled
   OPENCLAW_DEBUG                      enables helper-command debug output
   OPENAI_API_KEY                      required when a model is provided
 EOF
@@ -46,6 +49,10 @@ while (($# > 0)); do
       (($# >= 2)) || error '--model requires a provider/model value' 2
       model="$2"
       shift 2
+      ;;
+    --needs-secret-service)
+      needs_secret_service=1
+      shift
       ;;
     --debug)
       enable_debug
@@ -74,6 +81,43 @@ fi
 if [[ -n "$model" ]]; then
   [[ "$model" == openai/* ]] || error "only openai model references are supported: $model" 2
   [[ -n "${OPENAI_API_KEY:-}" ]] || error 'OPENAI_API_KEY is required when a model is provided'
+fi
+
+prepare_secret_service() {
+  local platform
+  local dbus_address
+  local secret_service_home
+
+  platform="$(uname -s)"
+  if [[ "$platform" != 'Linux' ]]; then
+    if [[ "$platform" == 'Darwin' ]]; then
+      debug 'Secret Service setup skipped: platform=macos'
+    else
+      debug "Secret Service setup skipped: platform=$platform"
+    fi
+    return
+  fi
+
+  [[ -n "${TMPDIR:-}" ]] || error 'TMPDIR is required for Linux Secret Service setup'
+  [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] || error 'DBUS_SESSION_BUS_ADDRESS is required for Linux Secret Service setup'
+  [[ "$DBUS_SESSION_BUS_ADDRESS" == unix:path=* ]] || error "DBUS_SESSION_BUS_ADDRESS must use a unix path: $DBUS_SESSION_BUS_ADDRESS"
+
+  debug 'installing Linux Secret Service test dependencies'
+  sudo apt-get update
+  sudo apt-get install --no-install-recommends --yes dbus-x11 gnome-keyring libsecret-tools
+
+  secret_service_home="$TMPDIR/secret-service-home"
+  mkdir -p "$secret_service_home"
+  dbus_address="$(dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS" --print-address=1)"
+  [[ "$dbus_address" == "$DBUS_SESSION_BUS_ADDRESS"* ]] || error 'D-Bus session did not bind the configured Secret Service address'
+
+  printf '%s' 'test-keyring-password' \
+    | HOME="$secret_service_home" gnome-keyring-daemon --unlock --components=secrets >/dev/null
+  debug 'Linux Secret Service test backend is ready'
+}
+
+if value_enabled "$needs_secret_service"; then
+  prepare_secret_service
 fi
 
 onboard_args=(

@@ -8,7 +8,8 @@ This scenario verifies OP credential fallback, explicit environment validation, 
 # should configure an unauthenticated local openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --needs-secret-service
 ```
 
 ## Testing
