@@ -153,13 +153,15 @@ create local work.
 ### CLI Reference
 
 ```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
 ```
 
 A repository, kind, and number selector is all-or-nothing. `refresh` runs the
-same bounded, lease-protected intake cycle as the scheduler. `status` projects
+same bounded, lease-protected intake cycle as the scheduler and defaults to a
+300-second timeout. Its CLI-owned agent turns request one-shot harness cleanup
+before the command returns. `status` projects
 only baseline readiness, lifecycle id, admission disposition, intake stage,
 issue-worktree readiness, and bounded pull-request head metadata; it omits
 provider prose, credentials, session identifiers, and local paths.

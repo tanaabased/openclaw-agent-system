@@ -17,6 +17,9 @@
 
 ### Bug Fixes
 
+- Fixed manual notification refresh and refresh-backed waits to bound agent
+  turns, request one-shot harness cleanup, preserve exactly one JSON result on
+  standard output, and exit after completion.
 - Fixed issue-comment dispatch to require the assignment-created session,
   select hidden response instructions by the canonical channel id across both
   OpenClaw and Codex harnesses, and stage public replies through a typed tool
@@ -34,6 +37,7 @@
 
 ### Notes
 
+- Moved the GitHub notification CLI implementation into its owning channel.
 - Split the packaged GitHub notification target design from its reusable visual
   presentation components and current-behavior channel guide.
 - Removed the unfinished GitHub notification turn, planning, and publication

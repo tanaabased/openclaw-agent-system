@@ -14,6 +14,10 @@ import type {
   GitHubCanonicalIssueComment,
   GitHubCommentRevision,
 } from '../utils/comment-admission.ts';
+import {
+  githubNotificationReplyCleanupOptions,
+  type GitHubNotificationExecutionSurface,
+} from '../utils/execution.ts';
 import type { GitHubNotificationItemState } from '../utils/monitor-state.ts';
 import { githubNotificationPrivateResponse } from '../utils/private-response.ts';
 import type GitHubNotificationReplyCandidateStore from './reply-candidate-store.ts';
@@ -36,6 +40,7 @@ export interface GitHubNotificationCommentTurnServiceDependencies {
 export interface GitHubNotificationCommentTurnInput {
   agentId: string;
   comment: GitHubCanonicalIssueComment;
+  executionSurface: GitHubNotificationExecutionSurface;
   item: GitHubNotificationItemState;
   revision: GitHubCommentRevision;
   signal?: AbortSignal;
@@ -204,6 +209,7 @@ export default class GitHubNotificationCommentTurnService {
         recordInboundSession: this.#dependencies.recordInboundSession,
         replyOptions: {
           ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+          ...githubNotificationReplyCleanupOptions(input.executionSurface),
           commentaryPayloadsEnabled: true,
           disableTools: capability.disableTools,
           sourceReplyDeliveryMode: 'automatic',

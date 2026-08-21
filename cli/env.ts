@@ -2,17 +2,17 @@ import type AgentEnvironmentService from '../lib/agent-environment-service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
 } from '../lib/cli-output.ts';
-import { type Logger, reportManifestDiagnostics, reportManifestFailure } from '../lib/logger.ts';
+import { formatManifestDiagnostics, formatManifestFailure } from '../lib/logger.ts';
 import type { AgentEnvironmentVariable } from '../utils/resolve-agent-environment.ts';
 
 export interface EnvAgentSystemOptions {
   agentId?: string;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   json: boolean;
-  logger: Logger;
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
@@ -51,12 +51,18 @@ export default async function envAgentSystem(options: EnvAgentSystemOptions): Pr
     : await options.environmentService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
-    reportManifestFailure(result, options.logger);
+    writeCliDiagnostics(
+      options.output,
+      formatManifestFailure(result).map(({ message }) => message),
+    );
     options.setExitCode(1);
     return;
   }
 
-  reportManifestDiagnostics(result, options.logger);
+  writeCliDiagnostics(
+    options.output,
+    formatManifestDiagnostics(result).map(({ message }) => message),
+  );
   const view: EnvironmentView = {
     agentId: result.manifest.agent.id,
     manifestPath: result.path,

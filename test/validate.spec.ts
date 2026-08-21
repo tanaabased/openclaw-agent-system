@@ -22,25 +22,20 @@ function createHarness(
     workspace?: AgentManifestLoadResult;
   } = {},
 ) {
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = { agent: [] as string[], workspace: [] as string[] };
   const exitCodes: number[] = [];
 
   return {
     calls,
+    diagnostics,
     exitCodes,
-    logs,
     output,
     run: () =>
       validateAgentSystem({
         ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
         json: options.json ?? false,
-        logger: {
-          error: (message) => logs.error.push(message),
-          info: (message) => logs.info.push(message),
-          warn: (message) => logs.warn.push(message),
-        },
         manifestService: {
           async loadForAgentId(agentId) {
             calls.agent.push(agentId);
@@ -51,7 +46,10 @@ function createHarness(
             return options.workspace ?? validResult;
           },
         },
-        output: { writeStdout: (message) => output.push(message) },
+        output: {
+          writeStderr: (message) => diagnostics.push(message),
+          writeStdout: (message) => output.push(message),
+        },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
@@ -157,11 +155,12 @@ describe('cli/validate', () => {
       path: '/current/agent.yaml',
       diagnostics: [],
     };
-    const { exitCodes, logs, run } = createHarness({ workspace: invalid });
+    const { diagnostics, exitCodes, output, run } = createHarness({ workspace: invalid });
 
     await run();
 
     assert.deepEqual(exitCodes, [1]);
-    assert.equal(logs.error.length > 0, true);
+    assert.deepEqual(output, []);
+    assert.match(diagnostics.join(''), /invalid Agent System manifest/u);
   });
 });

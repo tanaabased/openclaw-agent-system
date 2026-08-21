@@ -159,11 +159,12 @@ alias. Bare `agent-system` or `as` prints help.
 | `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait`             | Writes undecorated structured output.                                    |
 
 Human and machine-readable command results use standard output and honor
-`NO_COLOR` and `FORCE_COLOR=0`. Routine Agent System lifecycle metadata remains
-in OpenClaw's file logs so it cannot corrupt command results. Warnings and
-failures use the OpenClaw plugin logger on standard error, and explicit debug
-logging also mirrors lifecycle metadata to the console. A failed operation sets
-a nonzero exit code.
+`NO_COLOR` and `FORCE_COLOR=0`. A successful `--json` command writes exactly one
+JSON document to standard output. Command-owned warnings, validation findings,
+and failures use standard error. Routine Agent System lifecycle metadata remains
+in OpenClaw's file logs at every console log level so it cannot corrupt command
+results; host-owned runtime logs continue to follow OpenClaw's logger routing. A
+failed operation sets a nonzero exit code.
 
 ### Trust Boundary
 
@@ -309,7 +310,7 @@ Runs one GitHub notification intake cycle for the current workspace agent or an
 explicitly selected installed agent.
 
 ```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
 ```
 
 The command uses the same provider client, baseline, private state, trust gates,
@@ -319,7 +320,9 @@ without advancing account-wide discovery. It may prepare a managed worktree for
 an accepted issue. For a prepared issue, it also establishes the bounded comment
 baseline or dispatches one new approved exact-mention comment through the issue
 session and waits for the accepted GitHub response publication. Deferred and
-failed cycles return nonzero.
+failed cycles return nonzero. The default timeout is 300 seconds. Manual refresh
+uses one-shot agent-run cleanup so a completed command releases its harness and
+exits after writing the result.
 
 ### `openclaw agent-system notifications status`
 

@@ -1,45 +1,62 @@
-import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnostics,
+  writeCliError,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import { type Logger, reportManifestFailure } from '../lib/logger.ts';
-import { NotificationCliOptionError, notificationItemSelector } from './notifications-options.ts';
+} from '../../../lib/cli-output.ts';
+import { formatErrorDiagnostic, formatManifestFailure } from '../../../lib/logger.ts';
+import type GitHubNotificationMonitorService from '../lib/monitor-service.ts';
+import {
+  NotificationCliOptionError,
+  notificationItemSelector,
+  notificationPositiveInteger,
+} from './options.ts';
 
+const defaultRefreshSeconds = 300;
 const notificationRefreshLeaseWaitMs = 120_000;
 
 export interface RefreshNotificationsAgentSystemOptions {
   agentId?: string;
-  disposeAgentHarnesses(): Promise<void>;
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
-  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   output: CliOutput;
   repository?: unknown;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  timeoutSeconds?: unknown;
   workspaceDir: string;
 }
 
-/** Run one notification intake cycle while retaining active failure backoff. */
-export default async function refreshNotificationsAgentSystem(
-  options: RefreshNotificationsAgentSystemOptions,
-): Promise<void> {
-  let selector;
-  try {
-    selector = notificationItemSelector({
+function refreshOptions(options: RefreshNotificationsAgentSystemOptions) {
+  return {
+    selector: notificationItemSelector({
       kind: options.itemKind,
       number: options.itemNumber,
       repository: options.repository,
-    });
+    }),
+    timeoutMs:
+      (options.timeoutSeconds === undefined
+        ? defaultRefreshSeconds
+        : notificationPositiveInteger(options.timeoutSeconds, 'timeout')) * 1_000,
+  };
+}
+
+/** Run one bounded notification intake cycle from a one-shot CLI process. */
+export default async function refreshNotificationsAgentSystem(
+  options: RefreshNotificationsAgentSystemOptions,
+): Promise<void> {
+  let parsed;
+  try {
+    parsed = refreshOptions(options);
   } catch (error) {
-    options.logger.error(
+    writeCliError(
+      options.output,
       `github-notifications: invalid refresh options code=github-notification-refresh-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
     );
     options.setExitCode(2);
@@ -49,24 +66,39 @@ export default async function refreshNotificationsAgentSystem(
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (manifest.status !== 'loaded') {
-    reportManifestFailure(manifest, options.logger);
+    writeCliDiagnostics(
+      options.output,
+      formatManifestFailure(manifest).map(({ message }) => message),
+    );
     options.setExitCode(1);
     return;
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), parsed.timeoutMs);
+  timeout.unref();
   let result;
   try {
     [result] = await options.monitorService.runOnce({
       agentId: manifest.manifest.agent.id,
       bypassInterval: true,
-      ...(selector === undefined ? {} : { selector }),
-      waitForLeaseMs: notificationRefreshLeaseWaitMs,
+      executionSurface: 'cli-one-shot',
+      ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
+      signal: controller.signal,
+      waitForLeaseMs: Math.min(notificationRefreshLeaseWaitMs, parsed.timeoutMs),
     });
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatErrorDiagnostic('github-notifications', error, 'github-notification-refresh-failed'),
+    );
+    options.setExitCode(1);
+    return;
   } finally {
-    await options.disposeAgentHarnesses();
+    clearTimeout(timeout);
   }
   if (!result) {
-    options.logger.error('github-notifications: manual refresh returned no result');
+    writeCliError(options.output, 'github-notifications: manual refresh returned no result');
     options.setExitCode(1);
     return;
   }

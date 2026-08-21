@@ -1,21 +1,23 @@
-import type GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
-import {
-  githubNotificationWaitTargets,
-  type GitHubNotificationWaitTarget,
-} from '../channels/github/utils/monitor-status.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnostics,
+  writeCliError,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import { type Logger, reportManifestFailure } from '../lib/logger.ts';
+} from '../../../lib/cli-output.ts';
+import { formatManifestFailure } from '../../../lib/logger.ts';
+import type GitHubNotificationStatusService from '../lib/status-service.ts';
+import {
+  githubNotificationWaitTargets,
+  type GitHubNotificationWaitTarget,
+} from '../utils/monitor-status.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,
   notificationPositiveInteger,
-} from './notifications-options.ts';
+} from './options.ts';
 
 const defaultWaitSeconds = 300;
 
@@ -24,7 +26,6 @@ export interface WaitNotificationsAgentSystemOptions {
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
-  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   refresh: boolean;
@@ -64,7 +65,7 @@ function waitOptions(options: WaitNotificationsAgentSystemOptions) {
   return { selector, target, timeoutMs: timeoutSeconds * 1_000 };
 }
 
-/** Wait for one semantic notification checkpoint with optional intake refresh. */
+/** Wait for one semantic notification checkpoint with optional one-shot intake refresh. */
 export default async function waitNotificationsAgentSystem(
   options: WaitNotificationsAgentSystemOptions,
 ): Promise<void> {
@@ -72,7 +73,8 @@ export default async function waitNotificationsAgentSystem(
   try {
     parsed = waitOptions(options);
   } catch (error) {
-    options.logger.error(
+    writeCliError(
+      options.output,
       `github-notifications: invalid wait options code=github-notification-wait-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
     );
     options.setExitCode(2);
@@ -82,13 +84,17 @@ export default async function waitNotificationsAgentSystem(
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (manifest.status !== 'loaded') {
-    reportManifestFailure(manifest, options.logger);
+    writeCliDiagnostics(
+      options.output,
+      formatManifestFailure(manifest).map(({ message }) => message),
+    );
     options.setExitCode(1);
     return;
   }
 
   const result = await options.statusService.wait({
     agentId: manifest.manifest.agent.id,
+    executionSurface: 'cli-one-shot',
     refresh: options.refresh,
     ...(parsed.selector === undefined ? {} : { selector: parsed.selector }),
     target: parsed.target,

@@ -1,20 +1,21 @@
-import type GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnostics,
+  writeCliError,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import { type Logger, reportManifestFailure } from '../lib/logger.ts';
-import { NotificationCliOptionError, notificationItemSelector } from './notifications-options.ts';
+} from '../../../lib/cli-output.ts';
+import { formatManifestFailure } from '../../../lib/logger.ts';
+import type GitHubNotificationStatusService from '../lib/status-service.ts';
+import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {
   agentId?: string;
   itemKind?: unknown;
   itemNumber?: unknown;
   json: boolean;
-  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   repository?: unknown;
@@ -36,7 +37,8 @@ export default async function statusNotificationsAgentSystem(
       repository: options.repository,
     });
   } catch (error) {
-    options.logger.error(
+    writeCliError(
+      options.output,
       `github-notifications: invalid status options code=github-notification-status-options-invalid message=${error instanceof NotificationCliOptionError ? error.message : 'unknown'}`,
     );
     options.setExitCode(2);
@@ -46,7 +48,10 @@ export default async function statusNotificationsAgentSystem(
     ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
   if (manifest.status !== 'loaded') {
-    reportManifestFailure(manifest, options.logger);
+    writeCliDiagnostics(
+      options.output,
+      formatManifestFailure(manifest).map(({ message }) => message),
+    );
     options.setExitCode(1);
     return;
   }

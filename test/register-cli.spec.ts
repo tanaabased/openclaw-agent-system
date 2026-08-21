@@ -36,7 +36,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
 };
 
 function createProgram(input?: Readable) {
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
     agent: [] as string[],
@@ -49,14 +49,15 @@ function createProgram(input?: Readable) {
       storeId?: string;
     }>,
     doctor: [] as Array<{ agentId: string; workspaceDir: string }>,
-    harnessDisposals: 0,
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
+      executionSurface?: string;
       selector?: { itemType: string; number: number; repository: string };
+      signalPresent: boolean;
       waitForLeaseMs?: number;
     }>,
     notificationStatus: [] as Array<{
@@ -114,9 +115,6 @@ function createProgram(input?: Readable) {
         };
       },
     },
-    async disposeAgentHarnesses() {
-      calls.harnessDisposals += 1;
-    },
     doctorService: {
       async inspect(input) {
         calls.doctor.push({
@@ -148,11 +146,6 @@ function createProgram(input?: Readable) {
       },
     },
     ...(input ? { input } : {}),
-    logger: {
-      error: (message) => logs.error.push(message),
-      info: (message) => logs.info.push(message),
-      warn: (message) => logs.warn.push(message),
-    },
     manifestService: {
       async loadForAgentId(agentId) {
         calls.agent.push(agentId);
@@ -166,7 +159,11 @@ function createProgram(input?: Readable) {
     notificationMonitorService: {
       async runOnce(options = {}) {
         const refreshOptions = 'aborted' in options ? {} : options;
-        calls.notificationRefresh.push(refreshOptions);
+        const { signal, ...recorded } = refreshOptions;
+        calls.notificationRefresh.push({
+          ...recorded,
+          signalPresent: signal instanceof AbortSignal,
+        });
         return [
           {
             agentId: refreshOptions.agentId ?? 'tanaabot',
@@ -214,7 +211,10 @@ function createProgram(input?: Readable) {
         };
       },
     },
-    output: { writeStdout: (message) => output.push(message) },
+    output: {
+      writeStderr: (message) => diagnostics.push(message),
+      writeStdout: (message) => output.push(message),
+    },
     toolRegistry: {
       async invoke(command, _runtime, argv, scope, stdin) {
         calls.tool.push({
@@ -245,7 +245,7 @@ function createProgram(input?: Readable) {
     toolRuntime: {} as never,
     styles: createCliStyles({ NO_COLOR: '1' }),
   });
-  return { calls, logs, output, program };
+  return { calls, diagnostics, output, program };
 }
 
 describe('lib/register-cli', () => {
@@ -440,10 +440,11 @@ describe('lib/register-cli', () => {
       {
         agentId: 'tanaabot',
         bypassInterval: true,
+        executionSurface: 'cli-one-shot',
+        signalPresent: true,
         waitForLeaseMs: 120_000,
       },
     ]);
-    assert.equal(calls.harnessDisposals, 1);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
   });
 
@@ -473,6 +474,8 @@ describe('lib/register-cli', () => {
       'issue',
       '--number',
       '12',
+      '--timeout',
+      '45',
       '--json',
     ]);
 
@@ -481,6 +484,7 @@ describe('lib/register-cli', () => {
       number: 12,
       repository: 'tanaabased/example',
     });
+    assert.equal(calls.notificationRefresh[0]?.waitForLeaseMs, 45_000);
   });
 
   it('should inspect one notification item through the status command', async () => {
@@ -538,6 +542,7 @@ describe('lib/register-cli', () => {
     assert.deepEqual(calls.notificationWait, [
       {
         agentId: 'tanaabot',
+        executionSurface: 'cli-one-shot',
         refresh: true,
         selector: {
           itemType: 'pull-request',

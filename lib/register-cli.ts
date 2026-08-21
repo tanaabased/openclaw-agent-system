@@ -1,7 +1,5 @@
 import type { Readable } from 'node:stream';
 
-import { disposeRegisteredAgentHarnesses } from 'openclaw/plugin-sdk/agent-harness-runtime';
-
 import envAgentSystem from '../cli/env.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import runAgentSystemTool from '../cli/tool.ts';
@@ -9,10 +7,8 @@ import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
 import installAgentSystem from '../cli/install.ts';
-import refreshNotificationsAgentSystem from '../cli/notifications-refresh.ts';
-import statusNotificationsAgentSystem from '../cli/notifications-status.ts';
-import waitNotificationsAgentSystem from '../cli/notifications-wait.ts';
 import validateAgentSystem from '../cli/validate.ts';
+import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
 import type GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
 import type AgentEnvironmentService from './agent-environment-service.ts';
@@ -21,7 +17,6 @@ import type AgentDoctorService from './agent-doctor-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
 import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from './cli-output.ts';
-import type { Logger } from './logger.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type OpCredentialInput from './op-credential-input.ts';
 import type AgentSystemToolRegistry from './tool-registry.ts';
@@ -44,12 +39,10 @@ export interface RegisterAgentSystemCliOptions {
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
-  disposeAgentHarnesses?: () => Promise<void>;
   doctorService: Pick<AgentDoctorService, 'inspect'>;
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   installService: Pick<AgentInstallService, 'install'>;
   input?: Readable;
-  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
@@ -90,7 +83,6 @@ export default function registerAgentSystemCli(
       await validateAgentSystem({
         ...(typeof agentId === 'string' ? { agentId } : {}),
         json: commandOptions.json === true,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
@@ -110,7 +102,6 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         environmentService: options.environmentService,
         json: commandOptions.json === true,
-        logger: options.logger,
         output,
         setExitCode,
         styles: options.styles,
@@ -129,7 +120,6 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         doctorService: options.doctorService,
         json: commandOptions.json === true,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
@@ -137,95 +127,15 @@ export default function registerAgentSystemCli(
         workspaceDir: cwd(),
       });
     });
-  const notifications = agentSystem
-    .command('notifications')
-    .description('Manage GitHub notification intake.')
-    .action(() => writeHelp(notifications, output));
-  const notificationsRefresh = notifications
-    .command('refresh')
-    .description('Run one GitHub notification intake cycle now.')
-    .option('--agent <id>', 'Refresh notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--json', 'Write structured JSON output.')
-    .action(async () => {
-      const commandOptions = notificationsRefresh.opts();
-      const agentId = commandOptions.agent;
-      await refreshNotificationsAgentSystem({
-        ...(typeof agentId === 'string' ? { agentId } : {}),
-        disposeAgentHarnesses: options.disposeAgentHarnesses ?? disposeRegisteredAgentHarnesses,
-        itemKind: commandOptions.kind,
-        itemNumber: commandOptions.number,
-        json: commandOptions.json === true,
-        logger: options.logger,
-        manifestService: options.manifestService,
-        monitorService: options.notificationMonitorService,
-        output,
-        repository: commandOptions.repository,
-        setExitCode,
-        styles: options.styles,
-        workspaceDir: cwd(),
-      });
-    });
-  const notificationsStatus = notifications
-    .command('status')
-    .description('Inspect redacted GitHub notification lifecycle state.')
-    .option('--agent <id>', 'Inspect notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--json', 'Write structured JSON output.')
-    .action(async () => {
-      const commandOptions = notificationsStatus.opts();
-      const agentId = commandOptions.agent;
-      await statusNotificationsAgentSystem({
-        ...(typeof agentId === 'string' ? { agentId } : {}),
-        itemKind: commandOptions.kind,
-        itemNumber: commandOptions.number,
-        json: commandOptions.json === true,
-        logger: options.logger,
-        manifestService: options.manifestService,
-        output,
-        repository: commandOptions.repository,
-        setExitCode,
-        statusService: options.notificationStatusService,
-        styles: options.styles,
-        workspaceDir: cwd(),
-      });
-    });
-  const notificationsWait = notifications
-    .command('wait')
-    .description('Wait for a durable GitHub notification lifecycle checkpoint.')
-    .option('--agent <id>', 'Wait on notifications for an OpenClaw agent.')
-    .option('--repository <owner/name>', 'Select one GitHub repository.')
-    .option('--kind <issue|pull-request>', 'Select one GitHub item kind.')
-    .option('--number <number>', 'Select one GitHub item number.')
-    .option('--for <target>', 'Select the semantic lifecycle checkpoint.')
-    .option('--refresh', 'Run intake refresh cycles while waiting.')
-    .option('--timeout <seconds>', 'Set the bounded wait timeout in seconds.')
-    .option('--json', 'Write structured JSON output.')
-    .action(async () => {
-      const commandOptions = notificationsWait.opts();
-      const agentId = commandOptions.agent;
-      await waitNotificationsAgentSystem({
-        ...(typeof agentId === 'string' ? { agentId } : {}),
-        itemKind: commandOptions.kind,
-        itemNumber: commandOptions.number,
-        json: commandOptions.json === true,
-        logger: options.logger,
-        manifestService: options.manifestService,
-        output,
-        refresh: commandOptions.refresh === true,
-        repository: commandOptions.repository,
-        setExitCode,
-        statusService: options.notificationStatusService,
-        styles: options.styles,
-        target: commandOptions.for,
-        timeoutSeconds: commandOptions.timeout,
-        workspaceDir: cwd(),
-      });
-    });
+  registerGitHubNotificationsCli(agentSystem, {
+    cwd,
+    manifestService: options.manifestService,
+    monitorService: options.notificationMonitorService,
+    output,
+    setExitCode,
+    statusService: options.notificationStatusService,
+    styles: options.styles,
+  });
   const tool = agentSystem
     .command('tool <command> [args...]')
     .description('Run one registered command through its Agent System tool.')
@@ -237,7 +147,6 @@ export default function registerAgentSystemCli(
         argv: Array.isArray(args) ? args.map(String) : [],
         command: String(command),
         ...(options.input ? { input: options.input } : {}),
-        logger: options.logger,
         output,
         ...(commandAuthority
           ? {
@@ -278,7 +187,6 @@ export default function registerAgentSystemCli(
         credentialManager: options.credentialManager,
         fromEnvironment: commandOptions.fromEnv === true,
         fromStdin: commandOptions.stdin === true,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
@@ -302,7 +210,6 @@ export default function registerAgentSystemCli(
         credential: String(credential),
         credentialManager: options.credentialManager,
         fromEnvironment: commandOptions.fromEnv === true,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
@@ -324,7 +231,6 @@ export default function registerAgentSystemCli(
         ...(typeof agentId === 'string' ? { agentId } : {}),
         credential: String(credential),
         credentialManager: options.credentialManager,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,
@@ -341,7 +247,6 @@ export default function registerAgentSystemCli(
       await installAgentSystem({
         installService: options.installService,
         json: install.opts().json === true,
-        logger: options.logger,
         manifestService: options.manifestService,
         output,
         setExitCode,

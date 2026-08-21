@@ -7,6 +7,7 @@ import {
   type GitHubNotificationStatusResult,
   type GitHubNotificationWaitTarget,
 } from '../utils/monitor-status.ts';
+import type { GitHubNotificationExecutionSurface } from '../utils/execution.ts';
 
 const defaultPollIntervalMs = 1_000;
 const maximumRefreshLeaseWaitMs = 30_000;
@@ -20,6 +21,7 @@ export interface GitHubNotificationStatusServiceDependencies {
 
 export interface GitHubNotificationWaitInput {
   agentId: string;
+  executionSurface?: GitHubNotificationExecutionSurface;
   refresh: boolean;
   selector?: GitHubNotificationItemSelector;
   target: GitHubNotificationWaitTarget;
@@ -82,6 +84,7 @@ export default class GitHubNotificationStatusService {
           [refresh] = await this.#monitorService.runOnce({
             agentId: input.agentId,
             bypassInterval: true,
+            executionSurface: input.executionSurface ?? 'gateway',
             ...(input.selector === undefined ? {} : { selector: input.selector }),
             signal: controller.signal,
             waitForLeaseMs: Math.min(remainingMs, maximumRefreshLeaseWaitMs),

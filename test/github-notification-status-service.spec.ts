@@ -48,10 +48,14 @@ describe('channels/github/lib/status-service', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;
     let refreshes = 0;
+    const executionSurfaces: Array<string | undefined> = [];
     const service = new GitHubNotificationStatusService({
       monitorService: {
         async runOnce(options) {
           refreshes += 1;
+          executionSurfaces.push(
+            options && !('aborted' in options) ? options.executionSurface : undefined,
+          );
           assert.equal(options && !('aborted' in options) && options.signal?.aborted, false);
           assert.deepEqual(options && !('aborted' in options) ? options.selector : undefined, {
             itemType: 'issue',
@@ -81,6 +85,7 @@ describe('channels/github/lib/status-service', () => {
 
     const result = await service.wait({
       agentId: 'tanaabot',
+      executionSurface: 'cli-one-shot',
       refresh: true,
       selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
       target: 'assignment-rejected',
@@ -88,6 +93,7 @@ describe('channels/github/lib/status-service', () => {
     });
 
     assert.equal(refreshes, 1);
+    assert.deepEqual(executionSurfaces, ['cli-one-shot']);
     assert.equal(result.status, 'completed');
   });
 

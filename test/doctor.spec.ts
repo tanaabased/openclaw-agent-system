@@ -40,7 +40,6 @@ describe('cli/doctor', () => {
         },
       },
       json: false,
-      logger: { error() {}, info() {}, warn() {} },
       manifestService: {
         async loadForAgentId() {
           return manifest;
@@ -50,7 +49,7 @@ describe('cli/doctor', () => {
           return manifest;
         },
       },
-      output: { writeStdout: (message) => output.push(message) },
+      output: { writeStderr() {}, writeStdout: (message) => output.push(message) },
       setExitCode: (code) => exitCodes.push(code),
       styles: createCliStyles({ NO_COLOR: '1' }),
       workspaceDir: '/workspace/project',
@@ -84,7 +83,6 @@ describe('cli/doctor', () => {
         },
       },
       json: true,
-      logger: { error() {}, info() {}, warn() {} },
       manifestService: {
         async loadForAgentId() {
           return manifest;
@@ -93,7 +91,7 @@ describe('cli/doctor', () => {
           return manifest;
         },
       },
-      output: { writeStdout: (message) => output.push(message) },
+      output: { writeStderr() {}, writeStdout: (message) => output.push(message) },
       setExitCode: (code) => exitCodes.push(code),
       styles: createCliStyles({ NO_COLOR: '1' }),
       workspaceDir: '/workspace',

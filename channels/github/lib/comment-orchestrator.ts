@@ -18,6 +18,7 @@ import {
   type GitHubNotificationCommentRevisionState,
   type GitHubNotificationConversationState,
 } from '../utils/conversation-state.ts';
+import type { GitHubNotificationExecutionSurface } from '../utils/execution.ts';
 import type { GitHubNotificationItemState } from '../utils/monitor-state.ts';
 import { githubNotificationPublicationTarget } from '../utils/publication.ts';
 import { githubNotificationChannelId } from '../utils/routing.ts';
@@ -46,6 +47,11 @@ export class GitHubNotificationCommentOrchestratorError extends Error {
   ) {
     super('The GitHub notification comment lifecycle could not be reconciled.', options);
   }
+}
+
+export interface GitHubNotificationCommentReconcileOptions {
+  executionSurface: GitHubNotificationExecutionSurface;
+  signal?: AbortSignal;
 }
 
 function errorCode(error: unknown): string {
@@ -105,9 +111,13 @@ export default class GitHubNotificationCommentOrchestrator {
     this.#deliver = dependencies.deliver ?? deliverInboundReplyWithMessageSendContext;
   }
 
-  async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
+  async reconcile(
+    agentId: string,
+    itemKey: string,
+    options: GitHubNotificationCommentReconcileOptions = { executionSurface: 'gateway' },
+  ): Promise<void> {
     try {
-      await this.#run(agentId, itemKey, signal);
+      await this.#run(agentId, itemKey, options);
     } catch (error) {
       throw error instanceof GitHubNotificationCommentOrchestratorError
         ? error
@@ -115,7 +125,12 @@ export default class GitHubNotificationCommentOrchestrator {
     }
   }
 
-  async #run(agentId: string, itemKey: string, signal: AbortSignal | undefined): Promise<void> {
+  async #run(
+    agentId: string,
+    itemKey: string,
+    options: GitHubNotificationCommentReconcileOptions,
+  ): Promise<void> {
+    const { executionSurface, signal } = options;
     const monitor = await this.#dependencies.monitorStateStore.read(agentId);
     const item = monitor?.items[itemKey];
     if (
@@ -252,6 +267,7 @@ export default class GitHubNotificationCommentOrchestrator {
       await this.#respond(
         agentId,
         conversationId,
+        executionSurface,
         exact,
         exactRevision,
         item,
@@ -265,6 +281,7 @@ export default class GitHubNotificationCommentOrchestrator {
   async #respond(
     agentId: string,
     conversationId: string,
+    executionSurface: GitHubNotificationExecutionSurface,
     comment: GitHubCanonicalIssueComment,
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
@@ -276,6 +293,7 @@ export default class GitHubNotificationCommentOrchestrator {
       response = await this.#dependencies.turns.respond({
         agentId,
         comment,
+        executionSurface,
         item,
         revision,
         ...(signal === undefined ? {} : { signal }),

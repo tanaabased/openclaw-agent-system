@@ -5,6 +5,7 @@ import ansis from 'ansis';
 import {
   createCliStyles,
   renderCliSummary,
+  writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
 } from '../lib/cli-output.ts';
@@ -92,7 +93,7 @@ describe('lib/cli-output', () => {
     const written: string[] = [];
 
     writeCliSummary(
-      { writeStdout: (value) => written.push(value) },
+      { writeStderr() {}, writeStdout: (value) => written.push(value) },
       [{ label: 'valid', style: 'status', value: 'Agent System manifest for data' }],
       plainStyles,
     );
@@ -103,8 +104,27 @@ describe('lib/cli-output', () => {
   it('should keep json output undecorated', () => {
     const written: string[] = [];
 
-    writeCliJson({ writeStdout: (value) => written.push(value) }, { agentId: 'data' });
+    writeCliJson(
+      { writeStderr() {}, writeStdout: (value) => written.push(value) },
+      { agentId: 'data' },
+    );
 
     assert.deepEqual(written, ['{\n  "agentId": "data"\n}\n']);
+  });
+
+  it('should write diagnostics only to stderr', () => {
+    const stderr: string[] = [];
+    const stdout: string[] = [];
+
+    writeCliDiagnostics(
+      {
+        writeStderr: (value) => stderr.push(value),
+        writeStdout: (value) => stdout.push(value),
+      },
+      ['first diagnostic', 'second diagnostic'],
+    );
+
+    assert.deepEqual(stderr, ['first diagnostic\nsecond diagnostic\n']);
+    assert.deepEqual(stdout, []);
   });
 });

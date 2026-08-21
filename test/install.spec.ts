@@ -23,7 +23,7 @@ function createHarness(
     manifest?: AgentManifestLoadResult;
   } = {},
 ) {
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
     install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
@@ -33,8 +33,8 @@ function createHarness(
 
   return {
     calls,
+    diagnostics,
     exitCodes,
-    logs,
     output,
     run: () =>
       installAgentSystem({
@@ -66,18 +66,16 @@ function createHarness(
           },
         },
         json: options.json ?? false,
-        logger: {
-          error: (message) => logs.error.push(message),
-          info: (message) => logs.info.push(message),
-          warn: (message) => logs.warn.push(message),
-        },
         manifestService: {
           async loadForCommandDirectory(workspaceDir) {
             calls.workspace.push(workspaceDir);
             return options.manifest ?? validResult;
           },
         },
-        output: { writeStdout: (message) => output.push(message) },
+        output: {
+          writeStderr: (message) => diagnostics.push(message),
+          writeStdout: (message) => output.push(message),
+        },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
@@ -151,7 +149,7 @@ describe('cli/install', () => {
   });
 
   it('should warn without styling a user-managed codex configuration', async () => {
-    const { logs, run } = createHarness({
+    const { diagnostics, run } = createHarness({
       install: {
         outcomes: [
           {
@@ -175,8 +173,8 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(logs.warn, [
-      'path: The existing .codex/config.toml is user-managed. code=codex-config-user-managed',
+    assert.deepEqual(diagnostics, [
+      'path: The existing .codex/config.toml is user-managed. code=codex-config-user-managed\n',
     ]);
   });
 
@@ -242,18 +240,19 @@ describe('cli/install', () => {
   });
 
   it('should report installation failures and set a failing exit code', async () => {
-    const { exitCodes, logs, run } = createHarness({
+    const { diagnostics, exitCodes, output, run } = createHarness({
       install: new Error('agent workspace conflict'),
     });
 
     await run();
 
     assert.deepEqual(exitCodes, [1]);
-    assert.deepEqual(logs.error, ['install: agent workspace conflict']);
+    assert.deepEqual(output, []);
+    assert.deepEqual(diagnostics, ['install: agent workspace conflict\n']);
   });
 
   it('should attribute lifecycle reconciliation failures to their component', async () => {
-    const { exitCodes, logs, run } = createHarness({
+    const { diagnostics, exitCodes, output, run } = createHarness({
       install: new AgentSystemLifecycleError(
         'github',
         'github-config-reconcile-failed',
@@ -264,8 +263,9 @@ describe('cli/install', () => {
     await run();
 
     assert.deepEqual(exitCodes, [1]);
-    assert.deepEqual(logs.error, [
-      'github: GitHub config reconciliation failed. code=github-config-reconcile-failed',
+    assert.deepEqual(output, []);
+    assert.deepEqual(diagnostics, [
+      'github: GitHub config reconciliation failed. code=github-config-reconcile-failed\n',
     ]);
   });
 

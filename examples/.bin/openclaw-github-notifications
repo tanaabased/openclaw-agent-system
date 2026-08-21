@@ -117,9 +117,13 @@ done
 require_positive_integer 'timeout' "$timeout_seconds"
 
 run_refresh() {
+  local output_path="$1"
+  local diagnostics_path="$2"
+  local guard_seconds=$((timeout_seconds + 15))
   local -a refresh_command=(
     openclaw agent-system notifications refresh
     --agent "$agent_id"
+    --timeout "$timeout_seconds"
   )
 
   if [[ -n "$repository" ]]; then
@@ -134,11 +138,11 @@ run_refresh() {
   refresh_command+=(--json)
 
   if command -v gtimeout > /dev/null 2>&1; then
-    gtimeout "$timeout_seconds" "${refresh_command[@]}"
+    gtimeout "$guard_seconds" "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
   elif command -v timeout > /dev/null 2>&1; then
-    timeout "$timeout_seconds" "${refresh_command[@]}"
+    timeout "$guard_seconds" "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
   else
-    "${refresh_command[@]}"
+    "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
   fi
 }
 
@@ -152,27 +156,33 @@ refresh_completed() {
   fi
 
   local deadline=$((SECONDS + timeout_seconds))
+  local output_path="${TMPDIR:?}/openclaw-github-notifications-refresh-$$.json"
+  local diagnostics_path="${TMPDIR:?}/openclaw-github-notifications-refresh-$$.log"
   local output=''
   local status=0
   debug "refreshing GitHub notifications agent=$agent_id timeout-seconds=$timeout_seconds"
 
   while true; do
-    if output="$(run_refresh)"; then
+    if run_refresh "$output_path" "$diagnostics_path"; then
       status=0
     else
       status="$?"
     fi
+    output="$(< "$output_path")"
+    if [[ -s "$diagnostics_path" ]]; then
+      cat "$diagnostics_path" >&2
+    fi
 
-    if ((status == 0)) && jq -e \
-      'type == "object" and .status == "completed" and .code == "github-notification-poll-complete"' \
-      <<< "$output" > /dev/null 2>&1; then
+    if ((status == 0)) && jq -se \
+      'length == 1 and (.[0] | type == "object" and .status == "completed" and .code == "github-notification-poll-complete")' \
+      "$output_path" > /dev/null 2>&1; then
       printf '%s\n' "$output"
       return 0
     fi
 
-    if jq -e \
-      'type == "object" and .status == "skipped" and .code == "github-notification-backoff-active"' \
-      <<< "$output" > /dev/null 2>&1; then
+    if jq -se \
+      'length == 1 and (.[0] | type == "object" and .status == "skipped" and .code == "github-notification-backoff-active")' \
+      "$output_path" > /dev/null 2>&1; then
       if ((SECONDS >= deadline)); then
         error_message "notification refresh backoff remained active for $timeout_seconds seconds for agent $agent_id"
         printf '%s\n' "$output" >&2

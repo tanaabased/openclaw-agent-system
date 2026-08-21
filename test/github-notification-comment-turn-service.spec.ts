@@ -77,7 +77,11 @@ function candidateStore(candidates: readonly string[]) {
   };
 }
 
-async function respondWithCandidates(candidates: readonly string[]) {
+async function respondWithCandidates(
+  candidates: readonly string[],
+  executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
+  inspectReplyOptions?: (options: Record<string, unknown>) => void,
+) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
     ...item.intake!,
@@ -90,6 +94,7 @@ async function respondWithCandidates(candidates: readonly string[]) {
     capabilities: new GitHubNotificationCapabilityRegistry(),
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
+      inspectReplyOptions?.(input.replyOptions ?? {});
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
         {
@@ -107,6 +112,7 @@ async function respondWithCandidates(candidates: readonly string[]) {
   return service.respond({
     agentId,
     comment,
+    executionSurface,
     item,
     revision: githubCommentRevision(comment),
     workspaceDir,
@@ -146,6 +152,10 @@ describe('channels/github/lib/comment-turn-service', () => {
         assert.equal(input.ctx.RawBody, comment.body);
         assert.equal(input.ctx.Provider, githubNotificationChannelId);
         assert.equal(input.replyOptions?.disableTools, false);
+        const replyOptions = input.replyOptions as Record<string, unknown>;
+        assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
+        assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
+        assert.equal(replyOptions.oneShotCliRun, true);
         assert.equal(input.replyOptions?.runId, undefined);
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
@@ -171,6 +181,7 @@ describe('channels/github/lib/comment-turn-service', () => {
     const result = await service.respond({
       agentId,
       comment,
+      executionSurface: 'cli-one-shot',
       item,
       revision,
       workspaceDir,
@@ -226,6 +237,7 @@ describe('channels/github/lib/comment-turn-service', () => {
       service.respond({
         agentId,
         comment,
+        executionSurface: 'gateway',
         item,
         revision: githubCommentRevision(comment),
         workspaceDir,
@@ -244,6 +256,18 @@ describe('channels/github/lib/comment-turn-service', () => {
       status: 'withheld',
       code: 'github-notification-publication-candidate-missing',
     });
+  });
+
+  it('should preserve long-lived host resources for gateway turns', async () => {
+    let replyOptions: Record<string, unknown> = {};
+
+    await respondWithCandidates(['ready'], 'gateway', (options) => {
+      replyOptions = options;
+    });
+
+    assert.equal(replyOptions.oneShotCliRun, undefined);
+    assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, undefined);
+    assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, undefined);
   });
 
   it('should withhold publication when more than one typed candidate is returned', async () => {

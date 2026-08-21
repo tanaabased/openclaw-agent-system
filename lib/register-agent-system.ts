@@ -288,7 +288,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     new GitHubPullRequestLifecycle(),
   ]);
   const notificationAssignmentSessionService = new GitHubNotificationAssignmentSessionService({
-    logger,
+    logger: lifecycleLogger,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });
@@ -304,7 +304,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     candidates: notificationReplyCandidateStore,
     dispatchReplyWithBufferedBlockDispatcher:
       api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    logger,
+    logger: lifecycleLogger,
     readConfig: readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
   });
@@ -322,7 +322,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationCommentOrchestrator = new GitHubNotificationCommentOrchestrator({
     assignmentAuthority: notificationAssignmentProvider,
     conversationStateStore: notificationConversationStateStore,
-    logger,
+    logger: lifecycleLogger,
     monitorStateStore: notificationMonitorStateStore,
     publications: notificationCommentPublicationService,
     turns: notificationCommentTurnService,
@@ -332,7 +332,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     assignmentOrchestrator: notificationAssignmentOrchestrator,
     commentOrchestrator: notificationCommentOrchestrator,
     cycleLeaseStore: notificationMonitorCycleLeaseStore,
-    logger,
+    logger: lifecycleLogger,
     manifestService,
     readConfig: readRuntimeConfig,
     routingService: notificationRoutingService,
@@ -365,7 +365,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry);
   api.registerCli(
-    ({ logger: cliLogger, program }) => {
+    ({ program }) => {
       registerAgentSystemCli(program, {
         commandAuthority,
         credentialInput: opCredentialInput,
@@ -374,7 +374,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         environmentService,
         input: process.stdin,
         installService,
-        logger: createAgentSystemLogger(cliLogger, api.id),
         manifestService,
         notificationMonitorService,
         notificationStatusService,

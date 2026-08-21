@@ -9,8 +9,7 @@ describe('cli/tool', () => {
     await runAgentSystemTool({
       argv: ['api', 'user'],
       command: 'gh',
-      logger: { error() {}, info() {}, warn() {} },
-      output: { writeStdout() {} },
+      output: { writeStderr() {}, writeStdout() {} },
       async resolveCommandBinding() {
         return {
           admittedWorkingDirectories: ['/workspace/data', '/repos/canon'],
@@ -59,8 +58,7 @@ describe('cli/tool', () => {
       agentId: 'emori',
       argv: ['status'],
       command: 'git',
-      logger: { error: (message) => errors.push(message), info() {}, warn() {} },
-      output: { writeStdout() {} },
+      output: { writeStderr: (message) => errors.push(message), writeStdout() {} },
       async resolveCommandBinding() {
         return {
           admittedWorkingDirectories: ['/workspace/data'],
@@ -93,7 +91,6 @@ describe('cli/tool', () => {
     await runAgentSystemTool({
       argv: ['repo', 'view', 'missing/repo'],
       command: 'gh',
-      logger: { error() {}, info() {}, warn() {} },
       output: {
         writeStderr: (value) => stderr.push(value),
         writeStdout: (value) => stdout.push(value),
@@ -135,8 +132,7 @@ describe('cli/tool', () => {
     await runAgentSystemTool({
       argv: ['list'],
       command: 'worktree',
-      logger: { error() {}, info() {}, warn() {} },
-      output: { writeStdout: (value) => stdout.push(value) },
+      output: { writeStderr() {}, writeStdout: (value) => stdout.push(value) },
       setExitCode() {},
       toolRegistry: {
         async invoke() {

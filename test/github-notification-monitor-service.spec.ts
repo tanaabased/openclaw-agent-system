@@ -304,6 +304,7 @@ describe('channels/github/lib/monitor-service', () => {
       worktreePath: '/workspace/worktrees/issue-7',
     };
     let connections = 0;
+    const commentExecutions: string[] = [];
     const warnings: string[] = [];
     const service = new GitHubNotificationMonitorService({
       accountClient: {
@@ -350,7 +351,8 @@ describe('channels/github/lib/monitor-service', () => {
         },
       },
       commentOrchestrator: {
-        async reconcile() {
+        async reconcile(_agentId, _itemKey, options) {
+          commentExecutions.push(options?.executionSurface ?? 'missing');
           throw Object.assign(new Error('private response detail'), {
             code: 'github-notification-publication-candidate-missing',
           });
@@ -377,13 +379,18 @@ describe('channels/github/lib/monitor-service', () => {
       },
     });
 
-    const [failed] = await service.runOnce({ agentId: 'tanaabot', bypassInterval: true });
+    const [failed] = await service.runOnce({
+      agentId: 'tanaabot',
+      bypassInterval: true,
+      executionSurface: 'cli-one-shot',
+    });
 
     assert.equal(failed?.code, 'github-notification-publication-candidate-missing');
     assert.equal(failed?.status, 'failed');
     assert.equal(state.diagnosticCode, undefined);
     assert.equal(state.failureCount, 0);
     assert.equal(state.lastSuccessfulPollAt, 1_000);
+    assert.deepEqual(commentExecutions, ['cli-one-shot']);
     assert.ok(warnings.every((message) => !message.includes('private response detail')));
 
     state.items[notificationItemKey]!.disposition = 'retired';

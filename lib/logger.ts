@@ -1,6 +1,6 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
-import { getChildLogger, getConsoleSettings } from 'openclaw/plugin-sdk/runtime';
+import { getChildLogger } from 'openclaw/plugin-sdk/runtime';
 
 import type { AgentManifestLoadResult } from './agent-manifest-service.ts';
 
@@ -13,12 +13,17 @@ export interface AgentSystemDiagnostic {
   message: string;
 }
 
+export interface AgentSystemFormattedDiagnostic {
+  level: 'error' | 'warning';
+  message: string;
+}
+
 export interface CreateAgentSystemLoggerOptions {
   hostAttributed?: boolean;
 }
 
 export interface CreateAgentSystemLifecycleLoggerOptions extends CreateAgentSystemLoggerOptions {
-  consoleDebugEnabled?: () => boolean;
+  writeFileDebug?: (message: string) => void;
   writeFileInfo?: (message: string) => void;
 }
 
@@ -50,19 +55,19 @@ export function createAgentSystemLogger(
   };
 }
 
-/** Keep routine lifecycle metadata in file logs unless console debugging is explicit. */
+/** Keep routine lifecycle metadata in file logs so it cannot become command output. */
 export function createAgentSystemLifecycleLogger(
   logger: PluginLogger,
   pluginId: string,
   options: CreateAgentSystemLifecycleLoggerOptions = {},
 ): Logger {
-  const consoleDebugEnabled =
-    options.consoleDebugEnabled ??
-    (() => {
-      const level = getConsoleSettings().level;
-      return level === 'debug' || level === 'trace';
-    });
   let fileLogger: ReturnType<typeof getChildLogger> | undefined;
+  const writeFileDebug =
+    options.writeFileDebug ??
+    ((message: string) => {
+      fileLogger ??= getChildLogger({ subsystem: 'plugins' });
+      fileLogger.debug(message);
+    });
   const writeFileInfo =
     options.writeFileInfo ??
     ((message: string) => {
@@ -72,12 +77,9 @@ export function createAgentSystemLifecycleLogger(
 
   return createAgentSystemLogger(
     {
-      ...(logger.debug ? { debug: logger.debug.bind(logger) } : {}),
+      debug: writeFileDebug,
       error: logger.error.bind(logger),
-      info(message) {
-        if (consoleDebugEnabled()) logger.info(message);
-        else writeFileInfo(message);
-      },
+      info: writeFileInfo,
       warn: logger.warn.bind(logger),
     },
     pluginId,
@@ -95,31 +97,53 @@ export function formatDiagnostic(diagnostic: AgentSystemDiagnostic): string {
     .join(' ');
 }
 
+export function formatErrorDiagnostic(component: string, error: unknown, code?: string): string {
+  return formatDiagnostic({
+    ...(code ? { code } : {}),
+    component,
+    message: formatErrorMessage(error),
+  });
+}
+
+export function formatManifestDiagnostics(
+  result: AgentManifestLoadResult,
+): AgentSystemFormattedDiagnostic[] {
+  return result.diagnostics.map((diagnostic) => ({
+    level: diagnostic.severity === 'warning' ? 'warning' : 'error',
+    message: formatDiagnostic({
+      code: diagnostic.code,
+      component: diagnostic.component ?? 'manifest',
+      ...(diagnostic.fieldPath ? { fieldPath: diagnostic.fieldPath } : {}),
+      message: diagnostic.message,
+    }),
+  }));
+}
+
+export function formatManifestFailure(
+  result: Exclude<AgentManifestLoadResult, { status: 'loaded' }>,
+): AgentSystemFormattedDiagnostic[] {
+  const summary =
+    result.status === 'unmanaged'
+      ? `manifest: no Agent System manifest found in ${result.scope.workspaceDir}`
+      : result.status === 'invalid'
+        ? `manifest: invalid Agent System manifest${result.path ? ` at ${result.path}` : ''}`
+        : 'manifest: an OpenClaw agent workspace could not be resolved';
+  return [{ level: 'error', message: summary }, ...formatManifestDiagnostics(result)];
+}
+
 export function reportError(
   logger: Logger,
   component: string,
   error: unknown,
   code?: string,
 ): void {
-  logger.error(
-    formatDiagnostic({
-      ...(code ? { code } : {}),
-      component,
-      message: formatErrorMessage(error),
-    }),
-  );
+  logger.error(formatErrorDiagnostic(component, error, code));
 }
 
 export function reportManifestDiagnostics(result: AgentManifestLoadResult, logger: Logger): void {
-  for (const diagnostic of result.diagnostics) {
-    const message = formatDiagnostic({
-      code: diagnostic.code,
-      component: diagnostic.component ?? 'manifest',
-      ...(diagnostic.fieldPath ? { fieldPath: diagnostic.fieldPath } : {}),
-      message: diagnostic.message,
-    });
-    if (diagnostic.severity === 'warning') logger.warn(message);
-    else logger.error(message);
+  for (const diagnostic of formatManifestDiagnostics(result)) {
+    if (diagnostic.level === 'warning') logger.warn(diagnostic.message);
+    else logger.error(diagnostic.message);
   }
 }
 
@@ -127,15 +151,8 @@ export function reportManifestFailure(
   result: Exclude<AgentManifestLoadResult, { status: 'loaded' }>,
   logger: Logger,
 ): void {
-  if (result.status === 'unmanaged') {
-    logger.error(`manifest: no Agent System manifest found in ${result.scope.workspaceDir}`);
-  } else if (result.status === 'invalid') {
-    logger.error(
-      `manifest: invalid Agent System manifest${result.path ? ` at ${result.path}` : ''}`,
-    );
-    reportManifestDiagnostics(result, logger);
-  } else {
-    logger.error('manifest: an OpenClaw agent workspace could not be resolved');
-    reportManifestDiagnostics(result, logger);
+  for (const diagnostic of formatManifestFailure(result)) {
+    if (diagnostic.level === 'warning') logger.warn(diagnostic.message);
+    else logger.error(diagnostic.message);
   }
 }

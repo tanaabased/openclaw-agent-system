@@ -14,6 +14,8 @@ import {
   type GitHubNotificationMonitorState,
 } from '../utils/monitor-state.ts';
 import type { GitHubNotificationItemSelector } from '../utils/work-item.ts';
+import type { GitHubNotificationExecutionSurface } from '../utils/execution.ts';
+import type { GitHubNotificationCommentReconcileOptions } from './comment-orchestrator.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './monitor-cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './monitor-state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
@@ -29,7 +31,11 @@ export interface GitHubNotificationMonitorServiceDependencies {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
   };
   commentOrchestrator?: {
-    reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
+    reconcile(
+      agentId: string,
+      itemKey: string,
+      options?: GitHubNotificationCommentReconcileOptions,
+    ): Promise<void>;
   };
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
@@ -45,6 +51,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
 export interface GitHubNotificationMonitorRunOptions {
   agentId?: string;
   bypassInterval?: boolean;
+  executionSurface?: GitHubNotificationExecutionSurface;
   selector?: GitHubNotificationItemSelector;
   signal?: AbortSignal;
   waitForLeaseMs?: number;
@@ -268,7 +275,7 @@ export default class GitHubNotificationMonitorService {
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
   ): Promise<GitHubNotificationMonitorRunResult> {
-    const { bypassInterval = false, signal } = options;
+    const { bypassInterval = false, executionSurface = 'gateway', signal } = options;
     let workspaceDir: string | undefined;
     try {
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
@@ -402,7 +409,7 @@ export default class GitHubNotificationMonitorService {
         signal,
       );
       try {
-        await this.#reconcileComments(agentId, options.selector, signal);
+        await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
       } catch (error) {
         if (signal?.aborted) throw error;
         const diagnostic = diagnosticCode(error);
@@ -507,13 +514,17 @@ export default class GitHubNotificationMonitorService {
   async #reconcileComments(
     agentId: string,
     selector: GitHubNotificationItemSelector | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
   ): Promise<void> {
     if (!this.#dependencies.commentOrchestrator) return;
     const state = await this.#dependencies.stateStore.read(agentId);
     for (const itemKey of preparedIssueItemKeys(state, selector)) {
       if (signal?.aborted) return;
-      await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, signal);
+      await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, {
+        executionSurface,
+        ...(signal === undefined ? {} : { signal }),
+      });
     }
   }
 

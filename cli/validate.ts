@@ -2,16 +2,16 @@ import type AgentManifestService from '../lib/agent-manifest-service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
 } from '../lib/cli-output.ts';
 import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
-import { type Logger, reportManifestDiagnostics, reportManifestFailure } from '../lib/logger.ts';
+import { formatManifestDiagnostics, formatManifestFailure } from '../lib/logger.ts';
 
 export interface ValidateAgentSystemOptions {
   agentId?: string;
   json: boolean;
-  logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   output: CliOutput;
   setExitCode(code: number): void;
@@ -28,7 +28,10 @@ export default async function validateAgentSystem(
     : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
 
   if (result.status !== 'loaded') {
-    reportManifestFailure(result, options.logger);
+    writeCliDiagnostics(
+      options.output,
+      formatManifestFailure(result).map(({ message }) => message),
+    );
     options.setExitCode(1);
     return;
   }
@@ -65,5 +68,8 @@ export default async function validateAgentSystem(
       options.styles,
     );
   }
-  reportManifestDiagnostics(result, options.logger);
+  writeCliDiagnostics(
+    options.output,
+    formatManifestDiagnostics(result).map(({ message }) => message),
+  );
 }
