@@ -34,20 +34,23 @@ openclaw agent \
 
 # should load the data manifest through a passive gateway lifecycle
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  openclaw logs --plain --limit 1000 --max-bytes 1000000 > "$TMPDIR/agent-lifecycle.log"
   if grep -Eq \
     '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
-    "$TMPDIR/gateway.log"; then
+    "$TMPDIR/agent-lifecycle.log"; then
     break
   fi
   if [ "$attempt" -eq 10 ]; then
-    grep -F '[agent-system]' "$TMPDIR/gateway.log" || true
+    grep -F '[agent-system]' "$TMPDIR/agent-lifecycle.log" || true
+    tail -n 100 "$TMPDIR/agent-lifecycle.log"
     tail -n 100 "$TMPDIR/gateway.log"
     exit 1
   fi
   sleep 1
 done
 
-# should keep manifest values out of gateway lifecycle logs
+# should keep manifest values out of lifecycle and gateway logs
+if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 ```
 

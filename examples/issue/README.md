@@ -124,12 +124,15 @@ issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
 cd "$TMPDIR/agent-system-notifications"
-openclaw-github-notifications refresh-completed \
-  --agent notification-data \
-  --repository tanaabased/agent-system-test \
-  --kind issue \
-  --number "$issue_number" \
-  --timeout 180 | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/agent-system-test \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 180
+)"
+jq -e '.status == "completed" and .code == "github-notification-poll-complete"' <<< "$refresh_result"
 cd "$TMPDIR/agent-system-notification-actor"
 reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq ".[] | select(.user.login == \"tanaabot\" and (.body | contains(\"$reply_token\")) and (.body | contains(\"agent-system-github-publication:github-reply\"))) | .id")"
 test -n "$reply_id"

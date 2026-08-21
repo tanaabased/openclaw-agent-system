@@ -65,6 +65,7 @@ function createProgram(input?: Readable) {
       selector?: { itemType: string; number: number; repository: string };
     }>,
     notificationWait: [] as GitHubNotificationWaitInput[],
+    oneShotCompletion: [] as number[],
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -76,6 +77,9 @@ function createProgram(input?: Readable) {
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    completeOneShot: async (code) => {
+      calls.oneShotCompletion.push(code);
+    },
     cwd: () => '/current',
     credentialInput: {
       async read(source) {
@@ -446,6 +450,7 @@ describe('lib/register-cli', () => {
       },
     ]);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
+    assert.deepEqual(calls.oneShotCompletion, [0]);
   });
 
   it('should report baseline readiness in human notification refresh output', async () => {
@@ -514,6 +519,7 @@ describe('lib/register-cli', () => {
       },
     ]);
     assert.equal(JSON.parse(output.join('')).status, 'ready');
+    assert.deepEqual(calls.oneShotCompletion, []);
   });
 
   it('should wait for prepared intake with explicit refresh and timeout options', async () => {
@@ -554,6 +560,7 @@ describe('lib/register-cli', () => {
       },
     ]);
     assert.equal(JSON.parse(output.join('')).status, 'completed');
+    assert.deepEqual(calls.oneShotCompletion, [0]);
   });
 
   it('should register structured json validation output', async () => {

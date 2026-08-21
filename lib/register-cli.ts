@@ -16,6 +16,7 @@ import type AgentCommandAuthority from './agent-command-authority.ts';
 import type AgentDoctorService from './agent-doctor-service.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import type AgentInstallService from './agent-install-service.ts';
+import { completeCliOneShot } from './cli-one-shot.ts';
 import { type CliOutput, type CliStyles, defaultCliOutput, writeCliLines } from './cli-output.ts';
 import type OpCredentialManager from './op-credential-manager.ts';
 import type OpCredentialInput from './op-credential-input.ts';
@@ -36,6 +37,7 @@ export interface CommandLike {
 
 export interface RegisterAgentSystemCliOptions {
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve'>;
+  completeOneShot?: (code: number) => Promise<void>;
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
   credentialManager: Pick<OpCredentialManager, 'set' | 'unset' | 'validate'>;
@@ -65,6 +67,7 @@ export default function registerAgentSystemCli(
 ): void {
   const cwd = options.cwd ?? process.cwd;
   const commandAuthority = options.commandAuthority;
+  const completeOneShot = options.completeOneShot ?? completeCliOneShot;
   const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
   const agentSystem = program
@@ -128,6 +131,7 @@ export default function registerAgentSystemCli(
       });
     });
   registerGitHubNotificationsCli(agentSystem, {
+    completeOneShot,
     cwd,
     manifestService: options.manifestService,
     monitorService: options.notificationMonitorService,

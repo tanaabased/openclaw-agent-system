@@ -8,6 +8,7 @@ import statusNotificationsAgentSystem from './status.ts';
 import waitNotificationsAgentSystem from './wait.ts';
 
 export interface RegisterGitHubNotificationsCliOptions {
+  completeOneShot(code: number): Promise<void>;
   cwd(): string;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
@@ -20,6 +21,18 @@ export interface RegisterGitHubNotificationsCliOptions {
 function writeHelp(command: CommandLike, output: CliOutput): void {
   const help = command.helpInformation();
   writeCliLines(output, [help.endsWith('\n') ? help.slice(0, -1) : help]);
+}
+
+async function runOneShot(
+  run: (setExitCode: (code: number) => void) => Promise<void>,
+  options: Pick<RegisterGitHubNotificationsCliOptions, 'completeOneShot' | 'setExitCode'>,
+): Promise<void> {
+  let exitCode = 0;
+  await run((code) => {
+    exitCode = Math.max(exitCode, code);
+    options.setExitCode(code);
+  });
+  await options.completeOneShot(exitCode);
 }
 
 /** Register the GitHub channel's notification command subtree. */
@@ -43,20 +56,24 @@ export default function registerGitHubNotificationsCli(
     .action(async () => {
       const commandOptions = refresh.opts();
       const agentId = commandOptions.agent;
-      await refreshNotificationsAgentSystem({
-        ...(typeof agentId === 'string' ? { agentId } : {}),
-        itemKind: commandOptions.kind,
-        itemNumber: commandOptions.number,
-        json: commandOptions.json === true,
-        manifestService: options.manifestService,
-        monitorService: options.monitorService,
-        output: options.output,
-        repository: commandOptions.repository,
-        setExitCode: options.setExitCode,
-        styles: options.styles,
-        timeoutSeconds: commandOptions.timeout,
-        workspaceDir: options.cwd(),
-      });
+      await runOneShot(
+        (setExitCode) =>
+          refreshNotificationsAgentSystem({
+            ...(typeof agentId === 'string' ? { agentId } : {}),
+            itemKind: commandOptions.kind,
+            itemNumber: commandOptions.number,
+            json: commandOptions.json === true,
+            manifestService: options.manifestService,
+            monitorService: options.monitorService,
+            output: options.output,
+            repository: commandOptions.repository,
+            setExitCode,
+            styles: options.styles,
+            timeoutSeconds: commandOptions.timeout,
+            workspaceDir: options.cwd(),
+          }),
+        options,
+      );
     });
   const status = notifications
     .command('status')
@@ -97,21 +114,25 @@ export default function registerGitHubNotificationsCli(
     .action(async () => {
       const commandOptions = wait.opts();
       const agentId = commandOptions.agent;
-      await waitNotificationsAgentSystem({
-        ...(typeof agentId === 'string' ? { agentId } : {}),
-        itemKind: commandOptions.kind,
-        itemNumber: commandOptions.number,
-        json: commandOptions.json === true,
-        manifestService: options.manifestService,
-        output: options.output,
-        refresh: commandOptions.refresh === true,
-        repository: commandOptions.repository,
-        setExitCode: options.setExitCode,
-        statusService: options.statusService,
-        styles: options.styles,
-        target: commandOptions.for,
-        timeoutSeconds: commandOptions.timeout,
-        workspaceDir: options.cwd(),
-      });
+      await runOneShot(
+        (setExitCode) =>
+          waitNotificationsAgentSystem({
+            ...(typeof agentId === 'string' ? { agentId } : {}),
+            itemKind: commandOptions.kind,
+            itemNumber: commandOptions.number,
+            json: commandOptions.json === true,
+            manifestService: options.manifestService,
+            output: options.output,
+            refresh: commandOptions.refresh === true,
+            repository: commandOptions.repository,
+            setExitCode,
+            statusService: options.statusService,
+            styles: options.styles,
+            target: commandOptions.for,
+            timeoutSeconds: commandOptions.timeout,
+            workspaceDir: options.cwd(),
+          }),
+        options,
+      );
     });
 }
