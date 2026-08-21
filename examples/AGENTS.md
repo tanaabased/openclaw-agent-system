@@ -16,7 +16,7 @@
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
 - When an unattended OpenClaw CI scenario invokes tools, run `openclaw exec-policy preset yolo` in that scenario's setup; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
-- Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_SCRIPT_DEBUG`, `DEBUG`, or runner debug mode for opt-in diagnostics.
+- Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_DEBUG`, `OPENCLAW_LOG_LEVEL=debug`, `DEBUG`, or runner debug mode for opt-in diagnostics.
 
 ## Assertions
 

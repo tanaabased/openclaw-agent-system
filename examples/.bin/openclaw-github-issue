@@ -45,7 +45,7 @@ ${tty_tp}Environment Variables:${tty_reset}
                           same as --assignee
   OPENCLAW_GITHUB_ISSUE_NUMBER_PATH
                           same as --issue-number-path
-  OPENCLAW_SCRIPT_DEBUG   enables helper-command debug output
+  OPENCLAW_DEBUG          enables helper-command debug output
 EOF
 }
 

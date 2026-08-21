@@ -16,7 +16,6 @@ Scenario setup creates and updates uniquely named issues in
 # should configure the default profile with the ci model
 OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
 OPENCLAW_SETUP_MODEL="openai/$OPENAI_MODEL" \
-OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING=direct \
   openclaw-setup
 
 # should report the selected openclaw host version

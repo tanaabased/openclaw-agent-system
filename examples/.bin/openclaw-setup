@@ -8,26 +8,22 @@ source "$command_dir/openclaw-common.sh"
 
 workspace="${OPENCLAW_SETUP_WORKSPACE:-}"
 model="${OPENCLAW_SETUP_MODEL:-}"
-codex_dynamic_tools_loading="${OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING:-}"
 
 usage() {
   cat <<EOF
-Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--model <provider/model>] [--codex-dynamic-tools-loading <mode>] [--debug]${tty_reset}
+Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--model <provider/model>] [--debug]${tty_reset}
 
 ${tty_tp}Options:${tty_reset}
-  --workspace <path>                    sets the isolated OpenClaw workspace
-  --model <provider/model>              enables OpenAI authentication and selects the model
-  --codex-dynamic-tools-loading <mode>  sets direct or searchable Codex dynamic-tool loading
-  --debug                               shows diagnostic messages
-  -h, --help                            displays this help message
+  --workspace <path>        sets the isolated OpenClaw workspace
+  --model <provider/model>  enables OpenAI authentication and selects the model
+  --debug                   shows diagnostic messages
+  -h, --help               displays this help message
 
 ${tty_tp}Environment Variables:${tty_reset}
-  OPENCLAW_SETUP_WORKSPACE              same as --workspace
-  OPENCLAW_SETUP_MODEL                  same as --model
-  OPENCLAW_SETUP_CODEX_DYNAMIC_TOOLS_LOADING
-                                       same as --codex-dynamic-tools-loading
-  OPENCLAW_SCRIPT_DEBUG                 enables helper-command debug output
-  OPENAI_API_KEY                        required when a model is provided
+  OPENCLAW_SETUP_WORKSPACE  same as --workspace
+  OPENCLAW_SETUP_MODEL      same as --model
+  OPENCLAW_DEBUG            enables helper-command debug output
+  OPENAI_API_KEY            required when a model is provided
 EOF
 }
 
@@ -41,11 +37,6 @@ while (($# > 0)); do
     --model)
       (($# >= 2)) || error '--model requires a provider/model value' 2
       model="$2"
-      shift 2
-      ;;
-    --codex-dynamic-tools-loading)
-      (($# >= 2)) || error '--codex-dynamic-tools-loading requires a mode' 2
-      codex_dynamic_tools_loading="$2"
       shift 2
       ;;
     --debug)
@@ -70,10 +61,6 @@ done
 if [[ -n "$model" ]]; then
   [[ "$model" == openai/* ]] || error "only openai model references are supported: $model" 2
   [[ -n "${OPENAI_API_KEY:-}" ]] || error 'OPENAI_API_KEY is required when a model is provided'
-fi
-
-if [[ -n "$codex_dynamic_tools_loading" && "$codex_dynamic_tools_loading" != 'direct' && "$codex_dynamic_tools_loading" != 'searchable' ]]; then
-  error "Codex dynamic tools loading must be direct or searchable: $codex_dynamic_tools_loading" 2
 fi
 
 onboard_args=(
@@ -111,7 +98,9 @@ if [[ -n "$model" ]]; then
   openclaw models set "$model"
 fi
 
-if [[ -n "$codex_dynamic_tools_loading" ]]; then
-  debug "configuring Codex dynamic-tools-loading=$codex_dynamic_tools_loading"
-  openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading "$codex_dynamic_tools_loading"
-fi
+case "$model" in
+  openai/gpt-5.4 | openai/gpt-5.4-*)
+    debug 'configuring Codex dynamic-tools-loading=direct for GPT-5.4'
+    openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+    ;;
+esac

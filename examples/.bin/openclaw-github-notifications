@@ -49,7 +49,7 @@ ${tty_tp}Environment Variables:${tty_reset}
                           same as --route-state
   OPENCLAW_GITHUB_NOTIFICATIONS_TIMEOUT
                           same as --timeout
-  OPENCLAW_SCRIPT_DEBUG   enables helper-command debug output
+  OPENCLAW_DEBUG          enables helper-command debug output
 EOF
 }
 

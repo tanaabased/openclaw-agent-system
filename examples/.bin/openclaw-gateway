@@ -32,7 +32,7 @@ ${tty_tp}Environment Variables:${tty_reset}
                           same as --timeout
   OPENCLAW_GATEWAY_STATE_DIR
                           same as --state-dir
-  OPENCLAW_SCRIPT_DEBUG   enables helper-command debug output
+  OPENCLAW_DEBUG          enables helper-command debug output
 EOF
 }
 

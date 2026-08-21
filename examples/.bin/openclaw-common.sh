@@ -11,13 +11,30 @@ value_enabled() {
   esac
 }
 
-if [[ -n "${OPENCLAW_SCRIPT_DEBUG+x}" ]]; then
-  debug_value="$OPENCLAW_SCRIPT_DEBUG"
+if [[ -n "${OPENCLAW_DEBUG:-}" ]]; then
+  debug_value="$OPENCLAW_DEBUG"
+elif [[ "${OPENCLAW_LOG_LEVEL:-}" == 'debug' ]]; then
+  debug_value=1
 elif [[ -n "${DEBUG+x}" ]]; then
   debug_value="$DEBUG"
 else
   debug_value="${RUNNER_DEBUG:-}"
 fi
+
+apply_debug_environment() {
+  if ! value_enabled "$debug_value"; then
+    return
+  fi
+
+  export OPENCLAW_DEBUG_CODE_MODE="${OPENCLAW_DEBUG_CODE_MODE:-1}"
+  export OPENCLAW_DEBUG_MODEL_PAYLOAD="${OPENCLAW_DEBUG_MODEL_PAYLOAD:-tools}"
+  export OPENCLAW_DEBUG_MODEL_TRANSPORT="${OPENCLAW_DEBUG_MODEL_TRANSPORT:-1}"
+  export OPENCLAW_DEBUG_SSE="${OPENCLAW_DEBUG_SSE:-events}"
+  export OPENCLAW_LOG_LEVEL="${OPENCLAW_LOG_LEVEL:-debug}"
+  export OPENCLAW_PLUGIN_LIFECYCLE_TRACE="${OPENCLAW_PLUGIN_LIFECYCLE_TRACE:-1}"
+}
+
+apply_debug_environment
 
 if { [[ -t 1 ]] || [[ -t 2 ]] || value_enabled "${FORCE_COLOR:-}"; } && [[ -z "${NO_COLOR-}" ]]; then
   escape() { printf '\033[%sm' "$1"; }
@@ -35,6 +52,7 @@ tty_tp="$(escape '38;2;0;200;138')"
 
 enable_debug() {
   debug_value=1
+  apply_debug_environment
 }
 
 debug() {

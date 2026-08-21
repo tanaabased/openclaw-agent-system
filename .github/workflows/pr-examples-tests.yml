@@ -106,8 +106,12 @@ jobs:
         shell: bash
         env:
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
-          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
+          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
+          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
