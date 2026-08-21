@@ -84,12 +84,6 @@ jobs:
           archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
           test -n "$archive_name"
           echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
-      - name: Prepare test SSH key
-        id: test-ssh-key
-        shell: bash
-        run: |
-          ssh-keygen -q -t ed25519 -N '' -C agent-system-leia -f "$RUNNER_TEMP/agent-system-test-ssh"
-          printf 'private-key<<EOF\n%s\nEOF\n' "$(cat "$RUNNER_TEMP/agent-system-test-ssh")" >> "$GITHUB_OUTPUT"
       - name: Run Leia-backed example
         shell: bash
         env:
@@ -104,7 +98,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-          TEST_SSH_KEY: ${{ steps.test-ssh-key.outputs.private-key }}
         run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()

@@ -10,7 +10,7 @@
 ## OpenClaw Runtime
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
-- Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, omit `--model` for model-free scenarios, and pass a complete provider/model reference only when the scenario invokes a live agent.
+- Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, omit `--model` for model-free scenarios, and pass a complete provider/model reference only when the scenario invokes a live agent.
 - Register named agents explicitly and bind them to scenario-owned workspaces; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
 - Keep static agent workspaces and message inputs checked in beside their owning README and use them in place on fresh GitHub Actions runners. Copy a fixture only when isolation from a tested mutation is part of the scenario contract.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.

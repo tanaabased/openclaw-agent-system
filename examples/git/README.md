@@ -12,7 +12,8 @@ allowed signers file. It does not start a Gateway or invoke a model.
 # should configure an unauthenticated local openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --needs-ssh-key
 
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
@@ -27,7 +28,7 @@ openclaw agent-system install
 
 # should register only the generated public key for tanaabot
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$TMPDIR/agent-system-test-ssh.pub")" --jq .id > "$TMPDIR/agent-system-test-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/agent-system-test-ssh.pub")" --jq .id > "$TMPDIR/agent-system-test-ssh.key-id"
 ```
 
 ## Testing
