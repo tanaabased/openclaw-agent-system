@@ -2,62 +2,26 @@
 
 ### New Features
 
-- Added explicit issue and direct pull-request lifecycle owners so admitted
-  work is classified before lifecycle-specific resources are reconciled. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
 - Added direct GitHub pull-request assignment intake with verified head metadata and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
-- Added redacted `notifications status` and bounded semantic `notifications wait`
-  commands for durable GitHub notification intake inspection and tests.
-- Added one Work-mode issue comment loop with bounded comment admission,
-  assignment-time OpenClaw session preparation, channel-scoped hidden instructions,
-  ordinary inbound dispatch, and reauthorized idempotent GitHub publication. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Added manifest-selected GitHub assignment discovery and exact-item notification
-  refreshes for isolated lifecycle automation.
-- Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
+- Added lifecycle-owned GitHub assignment intake with issue worktree preparation and neutral `prepared` checkpoints. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17) [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Added redacted `notifications status` and semantic `notifications wait` commands for durable intake inspection. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Added trusted issue-comment conversations with private session responses and reauthorized GitHub replies. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
 - Bound registered command-launcher descendants, including `git` and `gh`, to active OpenClaw and Codex agents with fail-closed admission. [#23](https://github.com/tanaabased/openclaw-agent-system/pull/23)
 
 ### Bug Fixes
 
-- Fixed manual notification refresh and refresh-backed waits to bound agent
-  turns, request one-shot harness cleanup, preserve exactly one JSON result on
-  standard output, and exit after completion.
-- Fixed issue-comment dispatch to require the assignment-created session,
-  select hidden response instructions by the canonical channel id across both
-  OpenClaw and Codex harnesses, and stage public replies through a typed tool
-  instead of parsing the private Markdown response. Comment-turn failures remain
-  outside provider polling backoff. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Fixed lifecycle intake to converge on a neutral `prepared` checkpoint instead
-  of repeatedly reconciling admitted pull requests and worktree-ready issues. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Fixed Agent System lifecycle logs to preserve clean CLI command output.
-- Fixed GitHub notification deliveries to complete logical retirement while preserving managed worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
-- Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
+- Fixed GitHub notification baselines, inbound status, and retirement without deleting managed worktrees. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17) [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19) [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed managed Codex config to set `allow_login_shell = false` and warn when user-managed config omits it. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
-- Fixed managed command launchers to preserve bounded redirected standard input.
-- Fixed managed `gh` launchers to accept root `--help`, `-h`, and `--version` flags used by repository helpers. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
-- Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
+- Fixed managed command launchers to preserve bounded redirected standard input. [#29](https://github.com/tanaabased/openclaw-agent-system/pull/29)
+- Fixed notification CLI and lifecycle logging so one-shot JSON commands terminate with clean stdout. [#28](https://github.com/tanaabased/openclaw-agent-system/pull/28) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
 
 ### Notes
 
-- Reorganized the GitHub channel around lifecycle, mode, intake, conversation,
-  publication, provider, routing, state, and runtime owners, with structured
-  context and hidden prompt composition in dedicated source files.
-- Reorganized root implementation around agent, API, core, credential,
-  environment, manifest, and path owners while retaining only cross-owner
-  function primitives in `utils/`.
-- Moved the GitHub notification CLI implementation into its owning channel.
-- Split the packaged GitHub notification target design from its reusable visual
-  presentation components and current-behavior channel guide.
-- Removed the unfinished GitHub notification turn, planning, and publication
-  runtime so the channel is again bounded to polling, admission, routing, and
-  worktree intake while lifecycle messaging is rebuilt. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37)
-- Kept comment revisions and publication receipts in separate private
-  conversation state rather than adding prompt or messaging progress back to
-  provider intake state.
-- Removed the standalone pull-request and presentation Leia scenarios while the
-  notification messaging refactor focuses on the installed issue lifecycle.
-- Extended the issue Leia scenario from intake and worktree durability to one
-  short approved comment response and GitHub publication.
-- Migrated private notification state to lifecycle-aware schema 4 and removed
-  unreachable session, publication, mode, and comment-tracking checkpoints.
+- Consolidated Leia setup and diagnostics under `examples/.bin` and focused installed coverage on the issue lifecycle. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Reorganized GitHub channel source around lifecycle, intake, conversation, publication, provider, routing, state, and runtime owners. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Reorganized root source around `agent`, `api`, `core`, `credentials`, `environment`, `manifest`, and `paths` owners. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Split GitHub target design, presentation components, and shipped behavior across focused channel documentation. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Updated notification state to schema 4, separating intake state from conversation and publication receipts. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 
