@@ -14,6 +14,9 @@ import GitHubNotificationCommentTurnService from '../conversation/comment-turn-s
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
+import GitHubNotificationTurnCatalog, {
+  githubNotificationSupportedTurnIdentities,
+} from '../conversation/turn-catalog.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
@@ -91,11 +94,17 @@ export default function createGitHubNotificationRuntime(
     githubNotificationAssignmentEvent,
     githubNotificationCommentEvent,
   ]);
+  const turnCatalog = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
+    events: eventRegistry,
+    lifecycles: lifecycleRegistry,
+    modes: modeRegistry,
+  });
   const initialMode = modeRegistry.resolve('work');
   const turnContracts = new GitHubNotificationTurnContractResolver({
     events: eventRegistry,
     lifecycles: lifecycleRegistry,
     modes: modeRegistry,
+    turns: turnCatalog,
   });
 
   return {

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
 import githubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
+import GitHubNotificationTurnCatalog, {
+  githubNotificationSupportedTurnIdentities,
+} from '../channels/github/conversation/turn-catalog.ts';
 import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
 import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
@@ -12,23 +15,27 @@ import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
 function resolver() {
-  return new GitHubNotificationTurnContractResolver({
-    events: new GitHubNotificationEventRegistry([
-      githubNotificationAssignmentEvent,
-      githubNotificationCommentEvent,
-    ]),
-    lifecycles: new GitHubNotificationLifecycleRegistry([
-      new GitHubIssueLifecycle({
-        async inspectGitHub() {
-          return undefined;
-        },
-        async prepareGitHub() {
-          throw new Error('not used');
-        },
-      }),
-    ]),
-    modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
+  const events = new GitHubNotificationEventRegistry([
+    githubNotificationAssignmentEvent,
+    githubNotificationCommentEvent,
+  ]);
+  const lifecycles = new GitHubNotificationLifecycleRegistry([
+    new GitHubIssueLifecycle({
+      async inspectGitHub() {
+        return undefined;
+      },
+      async prepareGitHub() {
+        throw new Error('not used');
+      },
+    }),
+  ]);
+  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
+  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
+    events,
+    lifecycles,
+    modes,
   });
+  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
 }
 
 describe('channels/github/conversation/prompt-guidance', () => {

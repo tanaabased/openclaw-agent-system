@@ -9,6 +9,7 @@ import resolveGitHubNotificationModeCapability from '../modes/capability.ts';
 import type GitHubNotificationModeRegistry from '../modes/registry.ts';
 import type { ResolvedGitHubNotificationMode } from '../modes/types.ts';
 import composeGitHubNotificationPrompt from './prompts/compose.ts';
+import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 
 export interface GitHubNotificationTurnContract {
@@ -32,6 +33,7 @@ export interface GitHubNotificationTurnContractResolverDependencies {
   events: Pick<GitHubNotificationEventRegistry, 'resolve'>;
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   modes: Pick<GitHubNotificationModeRegistry, 'resolve'>;
+  turns: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
 }
 
 export class GitHubNotificationTurnContractError extends Error {
@@ -67,11 +69,12 @@ export default class GitHubNotificationTurnContractResolver {
   }
 
   instructions(identity: GitHubNotificationTurnIdentity): string {
-    const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
-    const mode = this.#dependencies.modes.resolve(identity.modeId);
-    const support = resolveGitHubNotificationLifecycleModeSupport(lifecycle, identity.modeId);
-    resolveGitHubNotificationLifecycleEventSupport(lifecycle, identity.eventId);
-    const event = this.#dependencies.events.resolve(identity.eventId);
+    const turn = this.#dependencies.turns.resolve(identity);
+    const lifecycle = this.#dependencies.lifecycles.resolve(turn.lifecycleId);
+    const mode = this.#dependencies.modes.resolve(turn.modeId);
+    const support = resolveGitHubNotificationLifecycleModeSupport(lifecycle, turn.modeId);
+    resolveGitHubNotificationLifecycleEventSupport(lifecycle, turn.eventId);
+    const event = this.#dependencies.events.resolve(turn.eventId);
     if (event.turn.kind !== 'model') {
       throw new GitHubNotificationTurnContractError('github-notification-event-unimplemented');
     }
@@ -91,15 +94,16 @@ export default class GitHubNotificationTurnContractResolver {
     config: OpenClawConfig,
     agentId: string,
   ): GitHubNotificationTurnContract {
-    const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
+    const turn = this.#dependencies.turns.resolve(identity);
+    const lifecycle = this.#dependencies.lifecycles.resolve(turn.lifecycleId);
     const mode = resolveGitHubNotificationModeCapability(
-      this.#dependencies.modes.resolve(identity.modeId),
+      this.#dependencies.modes.resolve(turn.modeId),
       config,
       agentId,
     );
     return {
-      identity,
-      instructions: this.instructions(identity),
+      identity: turn,
+      instructions: this.instructions(turn),
       lifecycle,
       mode,
     };

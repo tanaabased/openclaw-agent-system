@@ -1,38 +1,44 @@
 import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnContractResolver, {
-  GitHubNotificationTurnContractError,
   githubNotificationTurnDispatchOptions,
 } from '../channels/github/conversation/turn-contract.ts';
+import GitHubNotificationTurnCatalog, {
+  GitHubNotificationTurnCatalogError,
+  githubNotificationSupportedTurnIdentities,
+} from '../channels/github/conversation/turn-catalog.ts';
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
 import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
 import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
-import { GitHubNotificationLifecycleModeSupportError } from '../channels/github/lifecycles/mode-support.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 function resolver() {
-  return new GitHubNotificationTurnContractResolver({
-    events: new GitHubNotificationEventRegistry([
-      githubNotificationAssignmentEvent,
-      githubNotificationCommentEvent,
-    ]),
-    lifecycles: new GitHubNotificationLifecycleRegistry([
-      new GitHubIssueLifecycle({
-        async inspectGitHub() {
-          return undefined;
-        },
-        async prepareGitHub() {
-          throw new Error('not used');
-        },
-      }),
-      new GitHubPullRequestLifecycle(),
-    ]),
-    modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
+  const events = new GitHubNotificationEventRegistry([
+    githubNotificationAssignmentEvent,
+    githubNotificationCommentEvent,
+  ]);
+  const lifecycles = new GitHubNotificationLifecycleRegistry([
+    new GitHubIssueLifecycle({
+      async inspectGitHub() {
+        return undefined;
+      },
+      async prepareGitHub() {
+        throw new Error('not used');
+      },
+    }),
+    new GitHubPullRequestLifecycle(),
+  ]);
+  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
+  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
+    events,
+    lifecycles,
+    modes,
   });
+  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
 }
 
 const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
@@ -79,7 +85,7 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.notEqual(options.toolsAllow, toolsAllow);
   });
 
-  it('should reject an unsupported lifecycle mode pair', () => {
+  it('should reject a tuple outside the supported turn catalog', () => {
     assert.throws(
       () =>
         resolver().instructions({
@@ -88,8 +94,8 @@ describe('channels/github/conversation/turn-contract', () => {
           modeId: 'work',
         }),
       (error: unknown) =>
-        error instanceof GitHubNotificationLifecycleModeSupportError &&
-        error.code === 'github-notification-lifecycle-mode-unsupported',
+        error instanceof GitHubNotificationTurnCatalogError &&
+        error.code === 'github-notification-turn-unsupported',
     );
   });
 
@@ -102,8 +108,8 @@ describe('channels/github/conversation/turn-contract', () => {
           modeId: 'work',
         }),
       (error: unknown) =>
-        error instanceof GitHubNotificationTurnContractError &&
-        error.code === 'github-notification-event-unimplemented',
+        error instanceof GitHubNotificationTurnCatalogError &&
+        error.code === 'github-notification-turn-unsupported',
     );
   });
 });

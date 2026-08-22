@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
+import GitHubNotificationTurnCatalog, {
+  githubNotificationSupportedTurnIdentities,
+} from '../channels/github/conversation/turn-catalog.ts';
 import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
 import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
@@ -53,14 +56,18 @@ function turnContracts() {
       throw new Error('not used');
     },
   });
-  return new GitHubNotificationTurnContractResolver({
-    events: new GitHubNotificationEventRegistry([
-      githubNotificationAssignmentEvent,
-      githubNotificationCommentEvent,
-    ]),
-    lifecycles: new GitHubNotificationLifecycleRegistry([lifecycle]),
-    modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
+  const events = new GitHubNotificationEventRegistry([
+    githubNotificationAssignmentEvent,
+    githubNotificationCommentEvent,
+  ]);
+  const lifecycles = new GitHubNotificationLifecycleRegistry([lifecycle]);
+  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
+  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
+    events,
+    lifecycles,
+    modes,
   });
+  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
 }
 
 function assertTurnContractOptions(options: Record<string, unknown>) {
