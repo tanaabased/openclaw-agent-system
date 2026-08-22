@@ -1,9 +1,9 @@
 import type { GitHubNotificationLifecycleId } from '../lifecycles/types.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
+import type { GitHubNotificationEventId } from '../events/types.ts';
 
-export const githubNotificationEventIds = ['assignment', 'comment'] as const;
-
-export type GitHubNotificationEventId = (typeof githubNotificationEventIds)[number];
+export { githubNotificationEventIds } from '../events/types.ts';
+export type { GitHubNotificationEventId } from '../events/types.ts';
 
 export interface GitHubNotificationTurnIdentity {
   eventId: GitHubNotificationEventId;

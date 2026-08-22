@@ -230,6 +230,7 @@ The channel source is organized by the behavior being changed:
 
 | Scope                        | Ownership                                                                                                                  |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `events/`                    | Trusted event definitions and explicit registration; lifecycle support and runtime orchestration remain separate           |
 | `lifecycles/`                | Lifecycle descriptors, supported-mode declarations, structured-context projection, and lifecycle-specific resources        |
 | `modes/`                     | Trusted mode instructions, policies, and runtime tool projection; register implemented definitions during runtime assembly |
 | `intake/`                    | Assignment admission, classification, preparation, and polling checkpoints                                                 |
