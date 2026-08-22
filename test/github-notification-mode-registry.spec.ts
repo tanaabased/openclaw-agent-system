@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
+import resolveGitHubNotificationModeCapability from '../channels/github/modes/capability.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
+import type { GitHubNotificationMode } from '../channels/github/modes/types.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 describe('channels/github/modes/registry', () => {
@@ -8,7 +10,8 @@ describe('channels/github/modes/registry', () => {
     const registry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
 
     assert.deepEqual(
-      registry.resolve('work').resolve(
+      resolveGitHubNotificationModeCapability(
+        registry.resolve('work'),
         {
           agents: { list: [{ id: 'notification-data', tools: { profile: 'coding' } }] },
           tools: { profile: 'minimal' },
@@ -24,7 +27,8 @@ describe('channels/github/modes/registry', () => {
 
     assert.throws(
       () =>
-        registry.resolve('work').resolve(
+        resolveGitHubNotificationModeCapability(
+          registry.resolve('work'),
           {
             agents: { list: [{ id: 'notification-data' }] },
             tools: { profile: 'minimal' },
@@ -36,6 +40,23 @@ describe('channels/github/modes/registry', () => {
         'code' in error &&
         error.code === 'github-notification-work-capability-profile-mismatch',
     );
+  });
+
+  it('should project a declared allowlist without reading configured tools', () => {
+    const planMode: GitHubNotificationMode = {
+      instructions: 'Plan the current request.',
+      policy: {
+        id: 'plan',
+        label: 'Plan',
+        toolProjection: { kind: 'allowlist', tools: ['agent_system_github_reply'] },
+      },
+    };
+
+    assert.deepEqual(resolveGitHubNotificationModeCapability(planMode, {}, 'notification-data'), {
+      disableTools: false,
+      id: 'plan',
+      toolsAllow: ['agent_system_github_reply'],
+    });
   });
 
   it('should leave dormant modes unwired', () => {

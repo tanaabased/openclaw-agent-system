@@ -5,6 +5,7 @@ import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
+import resolveGitHubNotificationModeCapability from '../modes/capability.ts';
 import type GitHubNotificationModeRegistry from '../modes/registry.ts';
 import type { ResolvedGitHubNotificationMode } from '../modes/types.ts';
 import composeGitHubNotificationPrompt from './prompts/compose.ts';
@@ -91,7 +92,11 @@ export default class GitHubNotificationTurnContractResolver {
     agentId: string,
   ): GitHubNotificationTurnContract {
     const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
-    const mode = this.#dependencies.modes.resolve(identity.modeId).resolve(config, agentId);
+    const mode = resolveGitHubNotificationModeCapability(
+      this.#dependencies.modes.resolve(identity.modeId),
+      config,
+      agentId,
+    );
     return {
       identity,
       instructions: this.instructions(identity),

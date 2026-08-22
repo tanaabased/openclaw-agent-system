@@ -1,5 +1,3 @@
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-
 export const githubNotificationModeIds = ['auto', 'plan', 'work'] as const;
 
 export type GitHubNotificationModeId = (typeof githubNotificationModeIds)[number];
@@ -33,5 +31,4 @@ export interface ResolvedGitHubNotificationMode {
 export interface GitHubNotificationMode {
   instructions: string;
   policy: GitHubNotificationModePolicy;
-  resolve(config: OpenClawConfig, agentId: string): ResolvedGitHubNotificationMode;
 }
