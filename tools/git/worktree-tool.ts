@@ -1,9 +1,6 @@
-import AgentSystemToolError from '../../lib/tool-error.ts';
-import type {
-  AgentSystemOperation,
-  AgentSystemSemanticToolDefinition,
-} from '../../lib/tool-types.ts';
-import type { AgentManifest } from '../../utils/manifest-types.ts';
+import AgentSystemToolError from '../../api/error.ts';
+import type { AgentSystemOperation, AgentSystemSemanticToolDefinition } from '../../api/types.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 import { Value } from 'typebox/value';
 
 import { authorizeGitOperation } from './policy.ts';

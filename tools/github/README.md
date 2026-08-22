@@ -23,14 +23,10 @@ One shared runtime provides three GitHub interfaces:
 | `openclaw agent-system tool gh` | Explicit operator command                                    |
 | `gh`                            | Packaged compatibility shim on supported agent command paths |
 
-The model-facing tool binds the request to trusted OpenClaw agent context.
-Direct CLI use is an operator interface that selects an agent by option or
-workspace. Inside a Gateway-hosted native agent command, the shim instead
-redeems a short-lived capability that fixes the active agent. An
-OpenClaw-hosted Codex `exec_command` descendant is fixed to the agent whose
-configured app-server home matches its `CODEX_HOME`. Every route applies policy
-before loading the bound credential and launching the real `gh` executable
-without a shell.
+The model-facing tool uses the trusted active agent. Direct CLI and shell use are
+operator interfaces unless OpenClaw supplies an active-agent binding. Every
+interface applies policy before loading the agent's credential and launching
+`gh`.
 
 ## Requirements
 
@@ -126,10 +122,8 @@ requests to `.../releases/generate-notes` also remain available.
 
 All other valid `gh` operations pass to GitHub, including repository and issue
 deletion, repository settings, branch and tag mutation, and pull-request merges.
-GitHub groups release mutation with broader repository permissions, so the
-`releases` field fills that narrower authorization gap. Control other operations
-through the agent's GitHub token, repository role, organization policy, and
-rulesets. Omit the GitHub `Administration` permission when an agent must not
+Control them through the agent's token, repository role, organization policy,
+and rulesets. Omit the GitHub `Administration` permission when an agent must not
 change repository settings or delete repositories. Use required reviews and
 branch or tag
 [rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
@@ -140,9 +134,8 @@ when published release tags and assets must remain fixed. See GitHub's
 for the current provider contract. A local `allow` cannot override a provider
 denial.
 
-A release denial identifies `github.policy.releases` and tells the operator how
-to opt in. Enforcement occurs before Agent System resolves the environment or
-token. Risk labels remain audit metadata and do not authorize operations.
+A release denial identifies `github.policy.releases`. Enforcement occurs before
+Agent System resolves the environment or token.
 
 ### `github.config`
 
@@ -209,12 +202,10 @@ openclaw as tool gh --agent tanaabot -- api user --jq .login
 
 ### Behavior
 
-Arguments after `--` pass to `gh` unchanged. Redirected standard input passes
-through up to 64 KiB; an interactive terminal is never read implicitly. Child
-standard output and error pass through directly, and the child exit code is
-preserved. The runtime blocks token display, authentication or generated-config
-mutation, aliases, extensions, and browser or editor launch paths. These are
-non-configurable Agent System invariants, not operation policy.
+Arguments after `--` pass to `gh` unchanged. The runtime blocks token display,
+authentication or generated-config mutation, aliases, extensions, and browser
+or editor launch paths. These are non-configurable Agent System invariants, not
+operation policy.
 
 ## Shim
 
@@ -228,19 +219,11 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-The shim delegates through the reusable packaged `agent-system-tool` launcher,
-which passes arguments to `openclaw agent-system tool gh`, exports the canonical
-launcher directory, and never receives a credential. The runtime resolves the
-real `gh` executable while excluding Agent System-managed command paths to
-prevent substitution and wrapper recursion.
-
-In direct shells the shim remains an operator-compatible routing convenience.
-As a descendant of a Gateway-hosted native or Codex agent command, it must prove
-the active-agent binding and may infer a repository only from that agent's
-workspace, declared local repositories, or managed worktree root. A later `cd`
-cannot switch agent identity. This is not universal interception: absolute
-binaries, replaced `PATH` values, direct HTTP, SDKs, MCP tools, and unrelated
-host processes can bypass it.
+The shim routes ordinary commands through `openclaw agent-system tool gh` and
+never receives a credential. In a direct shell it is an operator convenience;
+in a supported agent command it remains bound to the active agent and admitted
+directories. Absolute binaries, replaced `PATH` values, direct HTTP, SDKs, MCP
+tools, and unrelated host processes can bypass it.
 
 ## Further Reading
 

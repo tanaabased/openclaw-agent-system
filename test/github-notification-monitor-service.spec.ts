@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
-} from '../channels/github/lib/assignment-orchestrator.ts';
-import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
-import { GitHubAccountClientError } from '../lib/github-account-client.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+} from '../channels/github/intake/assignment-orchestrator.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const workspaceDir = '/workspace/tanaabot';
@@ -15,6 +18,7 @@ const manifest: AgentManifest = {
   agent: { id: 'tanaabot' },
   github: {
     notifications: {
+      assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_actor' }],
       intervalMinutes: 5,
     },
@@ -43,7 +47,17 @@ function availableCycleLeaseStore(release = async () => undefined) {
   };
 }
 
-describe('channels/github/lib/monitor-service', () => {
+function githubResponse(body: unknown) {
+  return {
+    exitCode: 0,
+    stderr: '',
+    stdout: ['HTTP/2 200 OK', 'x-ratelimit-remaining: 100', '', JSON.stringify(body)].join('\n'),
+    timedOut: false,
+    truncated: false,
+  };
+}
+
+describe('channels/github/intake/monitor/service', () => {
   it('should stop an account scheduler without surfacing the host abort', async () => {
     const service = new GitHubNotificationMonitorService({
       accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
@@ -132,20 +146,13 @@ describe('channels/github/lib/monitor-service', () => {
     assert.deepEqual(warnings, []);
   });
 
-  it('should reconcile persisted delivery backlog before the next remote poll', async () => {
+  it('should reconcile persisted intake backlog before the next remote poll', async () => {
     let connected = 0;
     const reconciled: string[] = [];
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
-    state.items[notificationItemKey]!.delivery = {
-      ...state.items[notificationItemKey]!.delivery!,
-      sessionKey: 'agent:tanaabot:github:item',
-      stage: 'session-recording',
-      worktreeBranch: 'issue-7-branch',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
     const service = new GitHubNotificationMonitorService({
       accountClient: {
         async connect() {
@@ -180,6 +187,58 @@ describe('channels/github/lib/monitor-service', () => {
 
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
+  });
+
+  it('should leave prepared intake idle until the next remote poll', async () => {
+    let connected = 0;
+    const reconciled: string[] = [];
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connected += 1;
+          throw new Error('the monitor poll should remain deferred');
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          reconciled.push(itemKey);
+        },
+      },
+      clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn() {} },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async () => undefined,
+      },
+    });
+
+    const [result] = await service.runOnce();
+
+    assert.equal(result?.code, 'github-notification-interval-active');
+    assert.equal(connected, 0);
+    assert.deepEqual(reconciled, []);
   });
 
   it('should surface the exact assignment boundary failure from a monitor cycle', async () => {
@@ -232,27 +291,134 @@ describe('channels/github/lib/monitor-service', () => {
     assert.equal(state?.diagnosticCode, 'github-notification-worktree-preparation-failed');
   });
 
+  it('should report comment failure without poisoning provider health or retirement', async () => {
+    let state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
+      worktreeBranch: 'issue-7-branch',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    let connections = 0;
+    const commentExecutions: string[] = [];
+    const warnings: string[] = [];
+    const service = new GitHubNotificationMonitorService({
+      accountClient: {
+        async connect() {
+          connections += 1;
+          return {
+            identity: { login: 'tanaabot', nodeId: 'U_agent' },
+            async execute(argv) {
+              if (argv.includes('/repos/tanaabased/example')) {
+                return githubResponse({
+                  archived: false,
+                  cloneUrl: 'https://github.com/tanaabased/example.git',
+                  databaseId: 3,
+                  defaultBranch: 'main',
+                  disabled: false,
+                  name: 'example',
+                  nodeId: 'R_repo',
+                  owner: { login: 'tanaabased', nodeId: 'O_owner', type: 'Organization' },
+                });
+              }
+              if (argv.includes('/repos/tanaabased/example/collaborators/tanaabot/permission')) {
+                return githubResponse({ permission: 'write' });
+              }
+              if (argv.includes('/repos/tanaabased/example/issues/12')) {
+                return githubResponse({
+                  assignees: [{ login: 'tanaabot', nodeId: 'U_agent', type: 'User' }],
+                  databaseId: 7,
+                  isPullRequest: false,
+                  nodeId: 'I_item',
+                  number: 12,
+                  state: 'open',
+                  updatedAt: '2026-08-15T12:00:00.000Z',
+                });
+              }
+              return githubResponse({ incomplete: false, items: [], totalCount: 0 });
+            },
+          };
+        },
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          const item = state.items[itemKey];
+          if (item?.disposition === 'retired' && item.intake) item.intake.stage = 'retired';
+        },
+      },
+      commentOrchestrator: {
+        async reconcile(_agentId, _itemKey, options) {
+          commentExecutions.push(options?.executionSurface ?? 'missing');
+          throw Object.assign(new Error('private response detail'), {
+            code: 'github-notification-publication-candidate-missing',
+          });
+        },
+      },
+      clock: () => 1_000,
+      cycleLeaseStore: availableCycleLeaseStore(),
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
+      manifestService: { loadForAgentId: async () => loadedManifest() },
+      random: () => 0.5,
+      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+      routingService: {
+        inspect: async () => ({
+          code: 'notification-routing-ready',
+          kind: 'noop',
+          message: 'ready',
+        }),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        write: async (next) => {
+          state = structuredClone(next);
+        },
+      },
+    });
+
+    const [failed] = await service.runOnce({
+      agentId: 'tanaabot',
+      bypassInterval: true,
+      executionSurface: 'cli-one-shot',
+    });
+
+    assert.equal(failed?.code, 'github-notification-publication-candidate-missing');
+    assert.equal(failed?.status, 'failed');
+    assert.equal(state.diagnosticCode, undefined);
+    assert.equal(state.failureCount, 0);
+    assert.equal(state.lastSuccessfulPollAt, 1_000);
+    assert.deepEqual(commentExecutions, ['cli-one-shot']);
+    assert.ok(warnings.every((message) => !message.includes('private response detail')));
+
+    state.items[notificationItemKey]!.disposition = 'retired';
+    state.items[notificationItemKey]!.reasonCode = 'item-closed';
+    const [retired] = await service.runOnce({ agentId: 'tanaabot' });
+
+    assert.equal(retired?.code, 'github-notification-pending-reconciled');
+    assert.equal(retired?.status, 'completed');
+    assert.equal(state.items[notificationItemKey]?.intake?.stage, 'retired');
+    assert.equal(connections, 1);
+  });
+
   it('should reconcile transitional retirement before the next remote poll', async () => {
     let state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    const sessionKey = 'agent:tanaabot:agent-system-github:tanaabot:direct:github:item';
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
     const worktree = {
       branch: 'issue-7-branch',
       path: '/workspace/worktrees/issue-7',
     };
     state.items[notificationItemKey] = {
       ...state.items[notificationItemKey]!,
-      delivery: {
-        ...delivery,
-        acknowledgment: { commentId: 42, status: 'published' },
-        activation: { status: 'planned' },
-        sessionId: 'session-1',
-        sessionKey,
-        stage: 'active',
+      intake: {
+        ...intake,
+        stage: 'prepared',
         worktreeBranch: worktree.branch,
         worktreePath: worktree.path,
       },
@@ -267,27 +433,24 @@ describe('channels/github/lib/monitor-service', () => {
         state = structuredClone(next);
       },
     };
-    let sessionRecords = 0;
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
-      sessions: {
-        async recordSession() {
-          sessionRecords += 1;
-          return { key: sessionKey, status: 'active' };
-        },
-      },
+      lifecycles: new GitHubNotificationLifecycleRegistry([
+        new GitHubIssueLifecycle({
+          async inspectGitHub() {
+            worktreeOperations += 1;
+            return worktree;
+          },
+          async prepareGitHub() {
+            worktreeOperations += 1;
+            return worktree;
+          },
+        }),
+        new GitHubPullRequestLifecycle(),
+      ]),
+      sessions: { prepare: async () => undefined },
       stateStore,
-      worktrees: {
-        async inspect() {
-          worktreeOperations += 1;
-          return worktree;
-        },
-        async prepare() {
-          worktreeOperations += 1;
-          return worktree;
-        },
-      },
     });
     const service = new GitHubNotificationMonitorService({
       accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
@@ -310,12 +473,9 @@ describe('channels/github/lib/monitor-service', () => {
     const [result] = await service.runOnce();
 
     assert.equal(result?.code, 'github-notification-pending-reconciled');
-    assert.equal(state.items[notificationItemKey]?.delivery?.stage, 'retired');
-    assert.equal(state.items[notificationItemKey]?.delivery?.sessionId, 'session-1');
-    assert.equal(state.items[notificationItemKey]?.delivery?.sessionKey, sessionKey);
-    assert.equal(state.items[notificationItemKey]?.delivery?.worktreeBranch, worktree.branch);
-    assert.equal(state.items[notificationItemKey]?.delivery?.worktreePath, worktree.path);
-    assert.equal(sessionRecords, 0);
+    assert.equal(state.items[notificationItemKey]?.intake?.stage, 'retired');
+    assert.equal(state.items[notificationItemKey]?.intake?.worktreeBranch, worktree.branch);
+    assert.equal(state.items[notificationItemKey]?.intake?.worktreePath, worktree.path);
     assert.equal(worktreeOperations, 0);
   });
 
@@ -325,14 +485,11 @@ describe('channels/github/lib/monitor-service', () => {
     let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:tanaabot:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
@@ -347,9 +504,9 @@ describe('channels/github/lib/monitor-service', () => {
         async reconcile(_agentId, itemKey) {
           reconciled.push(itemKey);
           const item = state?.items[itemKey];
-          if (item?.delivery) {
+          if (item?.intake) {
             item.disposition = 'retired';
-            item.delivery.stage = 'retired';
+            item.intake.stage = 'retired';
           }
         },
       },
@@ -378,7 +535,7 @@ describe('channels/github/lib/monitor-service', () => {
 
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
-    assert.equal(state?.items[notificationItemKey]?.delivery?.stage, 'retired');
+    assert.equal(state?.items[notificationItemKey]?.intake?.stage, 'retired');
     assert.equal(state?.diagnosticCode, 'notification-routing-repair-required');
     assert.equal(state?.failureCount, 1);
   });
@@ -390,14 +547,11 @@ describe('channels/github/lib/monitor-service', () => {
     let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:tanaabot:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
@@ -416,9 +570,9 @@ describe('channels/github/lib/monitor-service', () => {
         async reconcile(_agentId, itemKey) {
           reconciled.push(itemKey);
           const item = state?.items[itemKey];
-          if (item?.delivery) {
+          if (item?.intake) {
             item.disposition = 'retired';
-            item.delivery.stage = 'retired';
+            item.intake.stage = 'retired';
           }
         },
       },

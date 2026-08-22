@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { GitHubCliConfiguration } from './config-schema.ts';
 
 const maximumConfigBytes = 16 * 1024;
@@ -17,10 +18,6 @@ export interface GitHubConfigInspection {
 export interface GitHubConfigStoreDependencies {
   currentUid?: number;
   rootDir?: string;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 function hasPrivateMode(mode: number): boolean {
@@ -80,7 +77,9 @@ export default class GitHubConfigStore {
         throw new Error('The generated GitHub config must be a regular file.');
       }
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return { configDir: paths.configDir, status: 'missing' };
+      if (nodeErrorCode(error) === 'ENOENT') {
+        return { configDir: paths.configDir, status: 'missing' };
+      }
       throw error;
     }
 
@@ -88,8 +87,10 @@ export default class GitHubConfigStore {
     try {
       handle = await open(paths.configPath, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return { configDir: paths.configDir, status: 'missing' };
-      if (errorCode(error) === 'ELOOP') {
+      if (nodeErrorCode(error) === 'ENOENT') {
+        return { configDir: paths.configDir, status: 'missing' };
+      }
+      if (nodeErrorCode(error) === 'ELOOP') {
         throw new Error('The generated GitHub config may not be a symbolic link.', {
           cause: error,
         });
@@ -161,7 +162,7 @@ export default class GitHubConfigStore {
     try {
       await mkdir(path, { mode: 0o700, recursive: path === this.#rootDir });
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
+      if (nodeErrorCode(error) !== 'EEXIST') throw error;
     }
     await this.#inspectDirectory(path);
   }
@@ -171,7 +172,7 @@ export default class GitHubConfigStore {
     try {
       stats = await lstat(path);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return 'missing';
+      if (nodeErrorCode(error) === 'ENOENT') return 'missing';
       throw new Error('A GitHub config directory could not be inspected.', { cause: error });
     }
     if (!stats.isDirectory()) {

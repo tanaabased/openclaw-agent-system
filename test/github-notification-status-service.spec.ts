@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+
+import GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
+import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+
+describe('channels/github/intake/monitor/status-service', () => {
+  it('should wait for an asynchronous durable checkpoint without refreshing', async () => {
+    let now = 0;
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    const service = new GitHubNotificationStatusService({
+      clock: () => now,
+      monitorService: {
+        async runOnce() {
+          throw new Error('refresh must not run');
+        },
+      },
+      sleep: async (milliseconds) => {
+        now += milliseconds;
+        const item = state.items[notificationItemKey]!;
+        item.intake = {
+          ...item.intake!,
+          stage: 'prepared',
+          worktreeBranch: 'agent/tanaabot/issue-7',
+          worktreePath: '/workspace/worktrees/issue-7',
+        };
+      },
+      stateStore: {
+        async read() {
+          return structuredClone(state);
+        },
+      },
+    });
+
+    const result = await service.wait({
+      agentId: 'tanaabot',
+      refresh: false,
+      selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      target: 'worktree-ready',
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(result.status, 'completed');
+    assert.equal(result.code, 'github-notification-worktree-ready');
+  });
+
+  it('should drive refresh-owned transitions only when explicitly selected', async () => {
+    const state = notificationMonitorState();
+    state.lastSuccessfulPollAt = 2;
+    let refreshes = 0;
+    const executionSurfaces: Array<string | undefined> = [];
+    const service = new GitHubNotificationStatusService({
+      monitorService: {
+        async runOnce(options) {
+          refreshes += 1;
+          executionSurfaces.push(
+            options && !('aborted' in options) ? options.executionSurface : undefined,
+          );
+          assert.equal(options && !('aborted' in options) && options.signal?.aborted, false);
+          assert.deepEqual(options && !('aborted' in options) ? options.selector : undefined, {
+            itemType: 'issue',
+            number: 12,
+            repository: 'tanaabased/example',
+          });
+          const item = state.items[notificationItemKey]!;
+          item.disposition = 'rejected';
+          item.reasonCode = 'assignment-actor-not-approved';
+          delete item.intake;
+          return [
+            {
+              agentId:
+                options && !('aborted' in options) ? (options.agentId ?? 'tanaabot') : 'tanaabot',
+              code: 'github-notification-poll-complete',
+              status: 'completed' as const,
+            },
+          ];
+        },
+      },
+      stateStore: {
+        async read() {
+          return structuredClone(state);
+        },
+      },
+    });
+
+    const result = await service.wait({
+      agentId: 'tanaabot',
+      executionSurface: 'cli-one-shot',
+      refresh: true,
+      selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      target: 'assignment-rejected',
+      timeoutMs: 5_000,
+    });
+
+    assert.equal(refreshes, 1);
+    assert.deepEqual(executionSurfaces, ['cli-one-shot']);
+    assert.equal(result.status, 'completed');
+  });
+
+  it('should return the last redacted observation when a wait times out', async () => {
+    let now = 0;
+    const service = new GitHubNotificationStatusService({
+      clock: () => now,
+      monitorService: {
+        async runOnce() {
+          return [];
+        },
+      },
+      sleep: async (milliseconds) => {
+        now += milliseconds;
+      },
+      stateStore: {
+        async read() {
+          return undefined;
+        },
+      },
+    });
+
+    const result = await service.wait({
+      agentId: 'tanaabot',
+      refresh: false,
+      selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      target: 'worktree-ready',
+      timeoutMs: 2_000,
+    });
+
+    assert.equal(result.status, 'timed-out');
+    assert.equal(result.code, 'github-notification-wait-timeout');
+    assert.equal(result.observation.items.length, 0);
+  });
+
+  it('should not run another refresh after the wait deadline', async () => {
+    let now = 0;
+    let refreshes = 0;
+    const service = new GitHubNotificationStatusService({
+      clock: () => now,
+      monitorService: {
+        async runOnce() {
+          refreshes += 1;
+          return [
+            {
+              agentId: 'tanaabot',
+              code: 'github-notification-poll-complete',
+              status: 'completed' as const,
+            },
+          ];
+        },
+      },
+      sleep: async (milliseconds) => {
+        now += milliseconds;
+      },
+      stateStore: {
+        async read() {
+          return undefined;
+        },
+      },
+    });
+
+    const result = await service.wait({
+      agentId: 'tanaabot',
+      refresh: true,
+      selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      target: 'worktree-ready',
+      timeoutMs: 1_000,
+    });
+
+    assert.equal(result.status, 'timed-out');
+    assert.equal(refreshes, 1);
+  });
+});

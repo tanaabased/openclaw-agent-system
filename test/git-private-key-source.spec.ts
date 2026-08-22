@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolError from '../api/error.ts';
 import {
   isGitPrivateKeyFileSafe,
   loadGitPrivateKeySources,

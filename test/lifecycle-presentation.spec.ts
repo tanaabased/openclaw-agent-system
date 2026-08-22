@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
+import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
 
-describe('lib/lifecycle-presentation', () => {
+describe('core/lifecycle-presentation', () => {
   it('should map lifecycle statuses to semantic summary styles', () => {
     const statuses = [
       'blocked',

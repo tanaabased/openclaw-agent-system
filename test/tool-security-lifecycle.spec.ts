@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import createToolSecurityLifecycleContribution from '../lib/tool-security-lifecycle.ts';
+import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 
 const input = {
   manifest: {
@@ -18,7 +18,7 @@ async function inspect(config: OpenClawConfig) {
   return contribution.inspect?.(input);
 }
 
-describe('lib/tool-security-lifecycle', () => {
+describe('api/security-lifecycle', () => {
   it('should warn when default command execution can reach operator surfaces', async () => {
     const findings = await inspect({});
 

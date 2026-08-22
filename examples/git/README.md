@@ -9,25 +9,11 @@ allowed signers file. It does not start a Gateway or invoke a model.
 ## Setup
 
 ```bash
-# should configure an unauthenticated local openclaw profile
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice skip \
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --needs-ssh-key
 
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
@@ -42,7 +28,7 @@ openclaw agent-system install
 
 # should register only the generated public key for tanaabot
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$TMPDIR/agent-system-test-ssh.pub")" --jq .id > "$TMPDIR/agent-system-test-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/agent-system-test-ssh.pub")" --jq .id > "$TMPDIR/agent-system-test-ssh.key-id"
 ```
 
 ## Testing
@@ -54,15 +40,15 @@ openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") 
 
 ```bash
 # should identify the agent system git command
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git --agent-system | grep -Fx 'agent-system'
+"$GITHUB_WORKSPACE/bin/git" --agent-system | grep -Fx 'agent-system'
 
 # should run one explicitly allowed external git extension
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-PATH="$GITHUB_WORKSPACE/examples/git/tanaabot/bin:$GITHUB_WORKSPACE/bin:$PATH" git agent-system-test | grep -Fx 'agent-system-extension'
+PATH="$GITHUB_WORKSPACE/examples/git/tanaabot/bin:$PATH" "$GITHUB_WORKSPACE/bin/git" agent-system-test | grep -Fx 'agent-system-extension'
 
 # should deny an alternate force push before git execution
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-if output="$(PATH="$GITHUB_WORKSPACE/bin:$PATH" git push origin +main:main 2>&1)"; then
+if output="$("$GITHUB_WORKSPACE/bin/git" push origin +main:main 2>&1)"; then
   exit 1
 fi
 printf '%s\n' "$output" | grep -F 'git.policy.force-push'
@@ -75,18 +61,18 @@ openclaw agent-system validate | grep -F 'valid' | grep -F 'git' | grep -F 'Git 
 # should preserve a nested repository directory and create a trusted signed commit as tanaabot
 mkdir "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git init --quiet
+"$GITHUB_WORKSPACE/bin/git" init --quiet
 touch identity.txt
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git add identity.txt
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git commit --quiet --message 'verify managed identity'
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git log -1 --format='%G? %GS' | grep -Fx 'G tanaabot@tanaab.dev'
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git verify-commit HEAD
+"$GITHUB_WORKSPACE/bin/git" add identity.txt
+"$GITHUB_WORKSPACE/bin/git" commit --quiet --message 'verify managed identity'
+"$GITHUB_WORKSPACE/bin/git" log -1 --format='%an <%ae>' | grep -Fx 'Tanaabot <tanaabot@tanaab.dev>'
+"$GITHUB_WORKSPACE/bin/git" log -1 --format='%G? %GS' | grep -Fx 'G tanaabot@tanaab.dev'
+"$GITHUB_WORKSPACE/bin/git" verify-commit HEAD
 
 # should create and locally verify a trusted signed tag
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git tag --message 'verify managed signing' agent-system-signing-test
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git verify-tag agent-system-signing-test
+"$GITHUB_WORKSPACE/bin/git" tag --message 'verify managed signing' agent-system-signing-test
+"$GITHUB_WORKSPACE/bin/git" verify-tag agent-system-signing-test
 
 # should report managed ssh dependencies as healthy
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
@@ -94,7 +80,7 @@ openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git 
 
 # should load both configured keys and authenticate with the registered generated key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" git ls-remote git@github.com:tanaabased/openclaw-agent-system.git HEAD | grep -F 'HEAD'
+"$GITHUB_WORKSPACE/bin/git" ls-remote git@github.com:tanaabased/openclaw-agent-system.git HEAD | grep -F 'HEAD'
 ```
 
 ## Cleanup

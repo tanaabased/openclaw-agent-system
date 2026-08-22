@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolError from '../api/error.ts';
 import GitSshResourceService from '../tools/git/ssh-resource-service.ts';
-import type { CredentialCommandOptions } from '../utils/run-credential-command.ts';
+import type { CredentialCommandOptions } from '../credentials/run-command.ts';
 
 const privateKey =
   '-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----';

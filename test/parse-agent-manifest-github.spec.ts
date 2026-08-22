@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
-import parseAgentManifest from '../utils/parse-agent-manifest.ts';
+import parseAgentManifest from '../manifest/parse.ts';
 
 function diagnosticCodes(source: string): Set<string> {
   const result = parseAgentManifest(source);
   return new Set(result.diagnostics.map(({ code }) => code));
 }
 
-describe('utils/parse-agent-manifest', () => {
+describe('manifest/parse', () => {
   it('should parse github identity and an environment-only credential binding', () => {
     const result = parseAgentManifest(`
 schema-version: 1
@@ -93,6 +93,7 @@ github:
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
     assert.deepEqual(result.manifest.github?.notifications, {
+      assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_kgDOB9x7Qw' }],
       allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
       intervalMinutes: 5,
@@ -127,6 +128,25 @@ github:
 `).has('manifest-unknown-key'),
       true,
     );
+  });
+
+  it('should parse an explicit github notification assignment-type filter', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    assignment-types:
+      - issue
+    approved-actors:
+      - login: pirog
+        node-id: U_1
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.deepEqual(result.manifest.github?.notifications?.assignmentTypes, ['issue']);
   });
 
   it('should reject legacy github ask decisions with exact migration guidance', () => {

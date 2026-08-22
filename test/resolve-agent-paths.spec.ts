@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import resolveAgentPaths from '../utils/resolve-agent-paths.ts';
+import resolveAgentPaths from '../paths/resolve.ts';
 
-describe('utils/resolve-agent-paths', () => {
+describe('paths/resolve', () => {
   it('should order workspace, manifest, and agent system bins before the base path', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-paths-'));
     const workspaceDir = join(root, 'workspace');

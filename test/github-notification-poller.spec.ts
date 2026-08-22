@@ -3,17 +3,15 @@ import assert from 'node:assert/strict';
 import {
   GitHubNotificationPollError,
   pollGitHubNotifications,
-} from '../channels/github/lib/poller.ts';
+} from '../channels/github/intake/monitor/poller.ts';
 import {
   GitHubWorkEventClientError,
   type default as GitHubWorkEventClient,
-} from '../channels/github/lib/work-event-client.ts';
-import type { GitHubRepositoryPermission } from '../channels/github/utils/work-item.ts';
-import type { GitHubCanonicalIssueComment } from '../channels/github/utils/comment-admission.ts';
+} from '../channels/github/provider/work-event-client.ts';
+import type { GitHubRepositoryPermission } from '../channels/github/provider/work-item.ts';
 import {
   notificationAccount as account,
   notificationActor as actor,
-  notificationItemKey,
   notificationMonitorState,
   notificationRepository as repository,
 } from './github-notification-fixtures.ts';
@@ -74,6 +72,7 @@ const assignment = {
   nodeId: 'EV_assignment',
 };
 const configuration = {
+  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
   allowedRepositoryOwners: [{ login: repository.owner.login, nodeId: repository.owner.nodeId }],
   intervalMinutes: 5,
@@ -83,21 +82,27 @@ function client(
   options: {
     assigned?: boolean;
     candidates?: Array<typeof candidate | typeof pullRequestCandidate>;
-    comments?: GitHubCanonicalIssueComment[];
-    commentsTruncated?: boolean;
     identity?: typeof account;
     item?: typeof item | (Omit<typeof pullRequestItem, 'state'> & { state: 'closed' | 'open' });
     permission?: GitHubRepositoryPermission;
     repository?: typeof repository;
     resourceMissing?: boolean;
     truncated?: boolean;
+    onDiscoverAssigned?: (
+      updatedSince: string,
+      assignmentTypes: readonly ('issue' | 'pull-request')[],
+    ) => void;
   } = {},
 ) {
   const clientIdentity = options.identity ?? account;
   return {
     identity: clientIdentity,
     rateLimit: {},
-    async discoverAssigned() {
+    async discoverAssigned(
+      updatedSince: string,
+      assignmentTypes: readonly ('issue' | 'pull-request')[],
+    ) {
+      options.onDiscoverAssigned?.(updatedSince, assignmentTypes);
       const candidates = options.candidates ?? [];
       return {
         candidates,
@@ -125,16 +130,10 @@ function client(
     async listAssignmentEvents() {
       return { events: [assignment], truncated: false };
     },
-    async listIssueComments() {
-      return {
-        comments: options.comments ?? [],
-        truncated: options.commentsTruncated ?? false,
-      };
-    },
   } as unknown as GitHubWorkEventClient;
 }
 
-describe('channels/github/lib/poller', () => {
+describe('channels/github/intake/monitor/poller', () => {
   it('should establish a first baseline without approving existing assignments', async () => {
     const result = await pollGitHubNotifications({
       agentId: 'tanaabot',
@@ -180,11 +179,9 @@ describe('channels/github/lib/poller', () => {
     assert.equal(baseline.state.baselineAt, baselineAt);
     assert.equal(approved.approved, 1);
     assert.equal(approved.baselineEstablished, false);
-    assert.deepEqual(Object.values(approved.state.items)[0]?.delivery, {
+    assert.deepEqual(Object.values(approved.state.items)[0]?.intake, {
       assignmentEventId: assignment.nodeId,
-      schemaVersion: 1,
       stage: 'admitted',
-      workId: `issue-${candidate.databaseId}`,
     });
     assert.equal(restarted.approved, 0);
     assert.equal(restarted.duplicates, 1);
@@ -192,16 +189,59 @@ describe('channels/github/lib/poller', () => {
     assert.equal(Object.values(restarted.state.items)[0]?.disposition, 'approved');
   });
 
-  it('should admit a direct pull request with a fixed head snapshot and comment baseline', async () => {
-    const existing: GitHubCanonicalIssueComment = {
-      author: actor,
-      body: '@tanaabot old review note',
-      bodyTruncated: false,
-      createdAt: '2026-08-11T12:06:00.000Z',
-      databaseId: 93,
-      nodeId: 'IC_pull_request_existing',
-      updatedAt: '2026-08-11T12:06:00.000Z',
-    };
+  it('should target one assignment without advancing broad discovery', async () => {
+    const baseline = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client(),
+      configuration,
+      now: baselineAt,
+      workspaceDir: '/workspace',
+    });
+    const searchBoundary = baseline.state.searchBoundary;
+    const targeted = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({
+        onDiscoverAssigned() {
+          throw new Error('targeted refresh must not run broad discovery');
+        },
+      }),
+      configuration,
+      now: baselineAt + 300_000,
+      selector: {
+        itemType: 'issue',
+        number: candidate.number,
+        repository: 'tanaabased/example',
+      },
+      state: baseline.state,
+      workspaceDir: '/workspace',
+    });
+
+    assert.equal(targeted.approved, 1);
+    assert.equal(targeted.state.searchBoundary, searchBoundary);
+    assert.equal(Object.values(targeted.state.items)[0]?.itemNodeId, candidate.nodeId);
+  });
+
+  it('should reject a targeted assignment type disabled by the manifest', async () => {
+    await assert.rejects(
+      pollGitHubNotifications({
+        agentId: 'tanaabot',
+        client: client(),
+        configuration: { ...configuration, assignmentTypes: ['pull-request'] },
+        now: baselineAt,
+        selector: {
+          itemType: 'issue',
+          number: candidate.number,
+          repository: 'tanaabased/example',
+        },
+        workspaceDir: '/workspace',
+      }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPollError &&
+        error.code === 'github-notification-assignment-type-disabled',
+    );
+  });
+
+  it('should admit a direct pull request with a fixed head snapshot', async () => {
     const baseline = await pollGitHubNotifications({
       agentId: 'tanaabot',
       client: client(),
@@ -213,7 +253,6 @@ describe('channels/github/lib/poller', () => {
       agentId: 'tanaabot',
       client: client({
         candidates: [pullRequestCandidate],
-        comments: [existing],
         item: pullRequestItem,
       }),
       configuration,
@@ -224,13 +263,11 @@ describe('channels/github/lib/poller', () => {
 
     const approvedItem = Object.values(approved.state.items)[0];
     assert.equal(approved.approved, 1);
-    assert.equal(approved.commentBaseline, 1);
     assert.equal(approvedItem?.itemType, 'pull-request');
-    assert.deepEqual(approvedItem?.delivery, {
+    assert.equal(approvedItem?.lifecycleId, 'pull-request');
+    assert.deepEqual(approvedItem?.intake, {
       assignmentEventId: assignment.nodeId,
-      schemaVersion: 1,
       stage: 'admitted',
-      workId: 'pull-request-8',
     });
     assert.deepEqual(approvedItem?.pullRequest, {
       authorNodeId: actor.nodeId,
@@ -241,10 +278,6 @@ describe('channels/github/lib/poller', () => {
       headRepositoryNodeId: repository.nodeId,
       headSha: 'a'.repeat(40),
     });
-    assert.equal(
-      approvedItem?.commentTracking?.revisions.IC_pull_request_existing?.disposition,
-      'baseline',
-    );
   });
 
   it('should distinguish merged and closed pull-request retirement', async () => {
@@ -252,18 +285,14 @@ describe('channels/github/lib/poller', () => {
     const pullRequestState = structuredClone(state);
     const approved = {
       ...Object.values(pullRequestState.items)[0]!,
-      delivery: {
+      intake: {
         assignmentEventId: assignment.nodeId,
-        schemaVersion: 1 as const,
-        stage: 'active' as const,
-        workId: 'pull-request-8',
-        sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:13',
-        activation: { status: 'planned' as const },
-        acknowledgment: { commentId: 90, status: 'published' as const },
+        stage: 'prepared' as const,
       },
       itemDatabaseId: pullRequestItem.databaseId,
       itemNodeId: pullRequestItem.nodeId,
       itemType: 'pull-request' as const,
+      lifecycleId: 'pull-request' as const,
       number: pullRequestItem.number,
       pullRequest: {
         authorNodeId: actor.nodeId,
@@ -298,7 +327,7 @@ describe('channels/github/lib/poller', () => {
     }
   });
 
-  it('should retire an active item when canonical assignment is revoked', async () => {
+  it('should retire an admitted item when canonical assignment is revoked', async () => {
     const baseline = await pollGitHubNotifications({
       agentId: 'tanaabot',
       client: client(),
@@ -326,7 +355,7 @@ describe('channels/github/lib/poller', () => {
     assert.equal(retired.retired, 1);
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
-    assert.equal(Object.values(retired.state.items)[0]?.delivery?.stage, 'admitted');
+    assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'admitted');
   });
 
   it('should fail closed when discovery is truncated', async () => {
@@ -391,7 +420,7 @@ describe('channels/github/lib/poller', () => {
     assert.deepEqual(changed.state.items, {});
   });
 
-  it('should retire active items after permission, repository, or resource revocation', async () => {
+  it('should retire admitted items after permission, repository, or resource revocation', async () => {
     const baseline = await pollGitHubNotifications({
       agentId: 'tanaabot',
       client: client(),
@@ -444,110 +473,5 @@ describe('channels/github/lib/poller', () => {
       });
       assert.equal(Object.values(result.state.items)[0]?.reasonCode, entry.expected);
     }
-  });
-
-  it('should baseline active issue comments before admitting a later exact mention', async () => {
-    const existing: GitHubCanonicalIssueComment = {
-      author: actor,
-      body: '@tanaabot old status?',
-      bodyTruncated: false,
-      createdAt: '2026-08-11T12:05:00.000Z',
-      databaseId: 91,
-      nodeId: 'IC_existing',
-      updatedAt: '2026-08-11T12:05:00.000Z',
-    };
-    const baseline = await pollGitHubNotifications({
-      agentId: 'tanaabot',
-      client: client(),
-      configuration,
-      now: baselineAt,
-      workspaceDir: '/workspace',
-    });
-    const approved = await pollGitHubNotifications({
-      agentId: 'tanaabot',
-      client: client({ candidates: [candidate], comments: [existing] }),
-      configuration,
-      now: baselineAt + 300_000,
-      state: baseline.state,
-      workspaceDir: '/workspace',
-    });
-    const active = structuredClone(approved.state);
-    const activeItem = Object.values(active.items)[0]!;
-    activeItem.delivery = {
-      ...activeItem.delivery!,
-      activation: { status: 'planned' },
-      acknowledgment: { commentId: 90, status: 'published' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    assert.equal(approved.commentBaseline, 1);
-    assert.equal(activeItem.commentTracking?.revisions.IC_existing?.disposition, 'baseline');
-
-    const mentioned: GitHubCanonicalIssueComment = {
-      ...existing,
-      body: '@tanaabot can you give me a status update?',
-      createdAt: '2026-08-11T12:11:00.000Z',
-      databaseId: 92,
-      nodeId: 'IC_mentioned',
-      updatedAt: '2026-08-11T12:11:00.000Z',
-    };
-    const second = await pollGitHubNotifications({
-      agentId: 'tanaabot',
-      client: client({ comments: [existing, mentioned] }),
-      configuration,
-      now: baselineAt + 900_000,
-      state: active,
-      workspaceDir: '/workspace',
-    });
-    const revision = Object.values(second.state.items)[0]?.commentTracking?.revisions.IC_mentioned;
-    assert.equal(second.commentApproved, 1);
-    assert.equal(revision?.disposition, 'approved');
-    assert.deepEqual(revision?.turn, { status: 'pending' });
-
-    const edited = { ...mentioned, body: 'Never mind.', updatedAt: '2026-08-11T12:12:00.000Z' };
-    const third = await pollGitHubNotifications({
-      agentId: 'tanaabot',
-      client: client({ comments: [existing, edited] }),
-      configuration,
-      now: baselineAt + 1_200_000,
-      state: second.state,
-      workspaceDir: '/workspace',
-    });
-    const editedRevision = Object.values(third.state.items)[0]?.commentTracking?.revisions
-      .IC_mentioned;
-    assert.equal(third.commentRejected, 1);
-    assert.equal(editedRevision?.disposition, 'rejected');
-    assert.equal(editedRevision?.turn, undefined);
-    assert.notEqual(editedRevision?.revisionId, revision?.revisionId);
-  });
-
-  it('should retain the prior comment checkpoint when comment pagination is incomplete', async () => {
-    const state = notificationMonitorState();
-    const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      activation: { status: 'planned' },
-      acknowledgment: { commentId: 90, status: 'published' },
-      sessionKey: 'agent:tanaabot:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/tanaabot/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    item.commentTracking = { baselineAt, revisions: {} };
-    const before = structuredClone(item.commentTracking);
-    const result = await pollGitHubNotifications({
-      agentId: 'tanaabot',
-      client: client({ commentsTruncated: true }),
-      configuration,
-      now: baselineAt + 900_000,
-      state,
-      workspaceDir: '/workspace',
-    });
-    const tracking = Object.values(result.state.items)[0]?.commentTracking;
-    assert.equal(result.commentTrackingDeferred, 1);
-    assert.equal(tracking?.diagnosticCode, 'github-notification-comments-truncated');
-    assert.deepEqual(tracking?.revisions, before?.revisions);
   });
 });

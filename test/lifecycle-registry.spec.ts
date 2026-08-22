@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,
-} from '../lib/lifecycle-registry.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+} from '../core/lifecycle-registry.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -12,7 +12,7 @@ const manifest: AgentManifest = {
 };
 const context = { manifest, workspaceDir: '/workspace' };
 
-describe('lib/lifecycle-registry', () => {
+describe('core/lifecycle-registry', () => {
   it('should collect configured validation, inspection, and reconciliation results', async () => {
     const registry = new AgentSystemLifecycleRegistry([
       {

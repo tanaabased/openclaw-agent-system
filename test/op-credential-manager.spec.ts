@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import OpCredentialManager from '../lib/op-credential-manager.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import OpCredentialManager from '../credentials/op-manager.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -9,7 +9,7 @@ const manifest: AgentManifest = {
   environment: { op: ['environment-one', 'environment-two'] },
 };
 
-describe('lib/op-credential-manager', () => {
+describe('credentials/op-manager', () => {
   it('should validate a supplied token against every environment before storing it', async () => {
     const calls: string[] = [];
     const manager = new OpCredentialManager({

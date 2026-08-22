@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
-import AgentDoctorService from '../lib/agent-doctor-service.ts';
+import AgentDoctorService from '../agent/doctor-service.ts';
 
 const input = {
   manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
   workspaceDir: '/workspace',
 };
 
-describe('lib/agent-doctor-service', () => {
+describe('agent/doctor-service', () => {
   it('should aggregate lifecycle findings and preserve their order', async () => {
     const service = new AgentDoctorService({
       lifecycleRegistry: {

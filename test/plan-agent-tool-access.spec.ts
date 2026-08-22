@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
-import planAgentToolAccess, {
-  type AgentToolAccessGrants,
-} from '../utils/plan-agent-tool-access.ts';
+import planAgentToolAccess, { type AgentToolAccessGrants } from '../api/plan-access.ts';
 
 const owned = ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'] as const;
 
@@ -10,7 +8,7 @@ function grants(desired: readonly string[]): AgentToolAccessGrants {
   return { desired, owned };
 }
 
-describe('utils/plan-agent-tool-access', () => {
+describe('api/plan-access', () => {
   it('should preserve unrelated grants while replacing stale owned grants', () => {
     const plan = planAgentToolAccess(grants(['agent_system_git']), {
       exists: true,

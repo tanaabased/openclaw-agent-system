@@ -3,14 +3,14 @@ import { lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
+import GitHubNotificationMonitorStateStore from '../channels/github/intake/monitor/state-store.ts';
 import {
   approvedNotificationItem,
   notificationItemKey,
   notificationMonitorState,
 } from './github-notification-fixtures.ts';
 
-describe('channels/github/lib/monitor-state-store', () => {
+describe('channels/github/intake/monitor/state-store', () => {
   it('should atomically persist private value-free state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-state-'));
     const rootDir = join(temporaryDirectory, 'state');
@@ -39,7 +39,7 @@ describe('channels/github/lib/monitor-state-store', () => {
             ...state.items,
             [notificationItemKey]: {
               ...approvedNotificationItem(),
-              delivery: { ...approvedNotificationItem().delivery!, workId: 'issue-8' },
+              lifecycleId: 'pull-request',
             },
           },
         }),

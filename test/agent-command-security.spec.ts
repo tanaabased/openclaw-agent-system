@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import registerAgentCommandSecurity from '../lib/agent-command-security.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import registerAgentCommandSecurity from '../agent/command-security.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 function loaded(agentId: string, workspaceDir: string): AgentManifestLoadResult {
   return {
@@ -67,7 +67,7 @@ function context(agentId = 'tanaabot') {
   };
 }
 
-describe('lib/agent-command-security', () => {
+describe('agent/command-security', () => {
   it('should register a high-priority before-tool-call gate', () => {
     const { registrations } = setup();
 

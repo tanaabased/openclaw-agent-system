@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
 import envAgentSystem from '../cli/env.ts';
-import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const loaded: AgentEnvironmentLoadResult = {
   status: 'loaded',
@@ -47,13 +47,13 @@ function createHarness(
   } = {},
 ) {
   const calls = { agent: [] as string[], workspace: [] as string[] };
+  const diagnostics: string[] = [];
   const exitCodes: number[] = [];
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
   const output: string[] = [];
   return {
     calls,
+    diagnostics,
     exitCodes,
-    logs,
     output,
     run: () =>
       envAgentSystem({
@@ -69,12 +69,10 @@ function createHarness(
           },
         },
         json: options.json ?? false,
-        logger: {
-          error: (message) => logs.error.push(message),
-          info: (message) => logs.info.push(message),
-          warn: (message) => logs.warn.push(message),
+        output: {
+          writeStderr: (message) => diagnostics.push(message),
+          writeStdout: (message) => output.push(message),
         },
-        output: { writeStdout: (message) => output.push(message) },
         setExitCode: (code) => exitCodes.push(code),
         styles: createCliStyles({ NO_COLOR: '1' }),
         workspaceDir: '/current',
@@ -136,10 +134,12 @@ describe('cli/env', () => {
       scope: { workspaceDir: '/current' },
       diagnostics: [],
     };
-    const { exitCodes, run } = createHarness({ loadResult: invalid });
+    const { diagnostics, exitCodes, output, run } = createHarness({ loadResult: invalid });
 
     await run();
 
     assert.deepEqual(exitCodes, [1]);
+    assert.deepEqual(output, []);
+    assert.match(diagnostics.join(''), /invalid Agent System manifest/u);
   });
 });

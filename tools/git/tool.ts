@@ -1,9 +1,9 @@
 import { isAbsolute, relative } from 'node:path';
 
-import defineAgentSystemCliTool from '../../lib/define-agent-system-cli-tool.ts';
-import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../lib/tool-error.ts';
-import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
-import type { AgentManifest } from '../../utils/manifest-types.ts';
+import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
+import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
+import type { AgentSystemCliResult } from '../../api/types.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
 import type {
   GitSigningConfiguration,

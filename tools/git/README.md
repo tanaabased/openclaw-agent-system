@@ -21,13 +21,9 @@ One shared runtime provides five Git interfaces:
 | `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
 | `git`                                 | Packaged compatibility shim on supported agent command paths |
 
-The model-facing tools bind requests to trusted OpenClaw agent context. Direct
-CLI use is an operator interface that selects an agent by option or workspace.
-Inside a Gateway-hosted native agent command, the shim instead redeems a
-short-lived capability that fixes the active agent. An OpenClaw-hosted Codex
-`exec_command` descendant is fixed to the agent whose configured app-server home
-matches its `CODEX_HOME`. Both routes apply policy and launch the real `git`
-without a shell.
+Model-facing tools use the trusted active agent. Direct CLI and shell use are
+operator interfaces unless OpenClaw supplies an active-agent binding. Every
+interface applies the same Git configuration and policy before launching `git`.
 
 ## Requirements
 
@@ -129,9 +125,8 @@ can supply the key. Secret acquisition belongs to the shared
 [environment contract](../../ADVANCED.md#environment), so the Git schema does
 not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
 isolates the declared keys from ambient SSH identities and presents them only
-when Git uses SSH transport. Each invocation loads them into an isolated
-`ssh-agent`, exposes no generic SSH socket to Git, and removes its resources
-before returning. Run `openclaw agent-system doctor` to check OpenSSH readiness.
+for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
+readiness.
 
 ### `git.signing`
 
@@ -227,10 +222,7 @@ operations. These actions can still lose local work; Git's own state and the
 repository's review workflow remain responsible for recovery and coordination.
 
 Protected remote effects take precedence. `git push --mirror` selects both
-fields, so both must be `allow`. Abbreviated protected long options and bundled
-protected short options select the same fields. A denial identifies every
-controlling policy field and explains that an operator must change each one
-before retrying.
+fields, so both must be `allow`.
 
 These fields provide the same narrow safeguards across Git providers because
 equivalent server-side controls are not consistently available. Where the
@@ -289,9 +281,8 @@ openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-re
 
 Arguments after `--` pass through unchanged with the child's streams and exit
 code. Native tools remain contained to the agent workspace and configured
-worktree root. Trusted operator commands using `--agent` may also run inside an
-existing local repository declared under `git.worktrees.repositories.local`;
-undeclared paths remain unavailable.
+worktree root. Trusted operator commands may also use declared local
+repositories; undeclared paths remain unavailable.
 
 `prepare` is idempotent, `list` is read-only, and `remove` uses non-forced Git
 removal. Dirty worktrees, branches, and refs remain intact.
@@ -313,19 +304,10 @@ git --agent-system
 git status --short
 ```
 
-The shim delegates through the packaged `agent-system-tool` launcher, which
-passes arguments to `openclaw agent-system tool git`, exports its canonical
-directory, preserves the caller's directory, and forwards redirected standard
-input up to 64 KiB without reading from an interactive terminal. The runtime
-excludes managed command paths when resolving the real `git` to prevent wrapper
-recursion.
-
-In direct shells the shim remains an operator-compatible routing convenience.
-As a descendant of a Gateway-hosted native or Codex agent command, it must prove
-the active-agent binding and may run only in that agent's workspace, declared
-local repositories, or managed worktree root. A later `cd` cannot switch agent
-identity. Absolute binaries, replaced `PATH` values, and unrelated host processes
-can still bypass the shim.
+The shim routes ordinary commands through `openclaw agent-system tool git`. In a
+direct shell it is an operator convenience; in a supported agent command it
+remains bound to the active agent and admitted directories. Absolute binaries,
+replaced `PATH` values, and unrelated host processes can bypass it.
 
 ## Further Reading
 

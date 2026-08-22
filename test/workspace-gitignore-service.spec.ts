@@ -3,9 +3,9 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import WorkspaceGitignoreService from '../lib/workspace-gitignore-service.ts';
+import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 
-describe('lib/workspace-gitignore-service', () => {
+describe('paths/workspace-gitignore-service', () => {
   it('should append only missing entries and preserve the existing mode', async () => {
     const workspaceDir = await mkdtemp(join(tmpdir(), 'agent-system-gitignore-'));
     const path = join(workspaceDir, '.gitignore');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { AgentSystemOperation } from '../lib/tool-types.ts';
+import type { AgentSystemOperation } from '../api/types.ts';
 import type { GitToolConfiguration } from '../tools/git/config-schema.ts';
 import { classifyGitOperation } from '../tools/git/operation-classifier.ts';
 import { authorizeGitOperation } from '../tools/git/policy.ts';

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import interpolateEnvironmentValue from '../utils/interpolate-environment-value.ts';
+import interpolateEnvironmentValue from '../environment/interpolate.ts';
 
-describe('utils/interpolate-environment-value', () => {
+describe('environment/interpolate', () => {
   it('should resolve bare and braced uppercase references in one pass', () => {
     assert.deepEqual(
       interpolateEnvironmentValue(

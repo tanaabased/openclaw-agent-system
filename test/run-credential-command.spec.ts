@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import runCredentialCommand from '../utils/run-credential-command.ts';
+import runCredentialCommand from '../credentials/run-command.ts';
 
-describe('utils/run-credential-command', () => {
+describe('credentials/run-command', () => {
   it('should send credential input through stdin without adding it to arguments', async () => {
     const token = 'private-token';
     const script =

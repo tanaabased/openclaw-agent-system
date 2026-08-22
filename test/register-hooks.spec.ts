@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
-import registerAgentSystemHooks from '../lib/register-hooks.ts';
+import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
+import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
+import registerAgentSystemHooks from '../core/register-hooks.ts';
 
-describe('lib/register-hooks', () => {
+describe('core/register-hooks', () => {
   it('should load manifest metadata for lifecycle and prompt hooks', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const calls: Array<{ agentId?: string; trigger: string }> = [];
@@ -62,7 +64,42 @@ describe('lib/register-hooks', () => {
     );
 
     assert.deepEqual(result, {
-      appendSystemContext: `${agentCommandSecurityGuidance}\nPrefer the configured Agent System tool.`,
+      appendSystemContext: `${agentCommandSecurityGuidance}\n\nPrefer the configured Agent System tool.`,
     });
+  });
+
+  it('should inject github response instructions from the canonical channel id', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] } as const;
+        },
+      },
+      { guidance: () => [] },
+    );
+
+    const result = await handlers.get('before_prompt_build')?.(
+      {},
+      {
+        messageProvider: githubNotificationChannelId,
+        sessionId: 'sandbox-session',
+        sessionKey: 'sandbox-session',
+      },
+    );
+    const unrelated = await handlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: 'github', sessionId: 'two', sessionKey: 'two' },
+    );
+
+    assert.deepEqual(result, {
+      appendSystemContext: githubNotificationIssueWorkCommentInstructions,
+    });
+    assert.equal(unrelated, undefined);
   });
 });

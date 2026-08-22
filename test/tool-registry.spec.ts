@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import defineAgentSystemCliTool from '../lib/define-agent-system-cli-tool.ts';
-import AgentSystemToolError from '../lib/tool-error.ts';
-import AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { RegisteredAgentSystemTool } from '../lib/tool-types.ts';
+import defineAgentSystemCliTool from '../api/define-cli-tool.ts';
+import AgentSystemToolError from '../api/error.ts';
+import AgentSystemToolRegistry from '../api/registry.ts';
+import type AgentSystemToolRuntime from '../api/runtime.ts';
+import type { RegisteredAgentSystemTool } from '../api/types.ts';
 import {
   createToolTestDefinition,
   toolTestManifest,
@@ -15,7 +15,7 @@ function registeredTestTool(): RegisteredAgentSystemTool {
   return defineAgentSystemCliTool(createToolTestDefinition());
 }
 
-describe('lib/tool-registry', () => {
+describe('api/registry', () => {
   it('should project owned and manifest-configured native tool names', () => {
     const configured = registeredTestTool();
     const unconfigured: RegisteredAgentSystemTool = {

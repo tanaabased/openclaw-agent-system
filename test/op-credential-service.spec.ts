@@ -6,8 +6,8 @@ import type {
   CredentialStoreReadResult,
   CredentialStoreRemoveResult,
   CredentialStoreWriteResult,
-} from '../lib/credential-store.ts';
-import OpCredentialService from '../lib/op-credential-service.ts';
+} from '../credentials/types.ts';
+import OpCredentialService from '../credentials/op-service.ts';
 
 function createStore(
   id: string,
@@ -31,7 +31,7 @@ function createStore(
   };
 }
 
-describe('lib/op-credential-service', () => {
+describe('credentials/op-service', () => {
   it('should prefer stored credentials before the process-environment fallback', async () => {
     const calls: Array<{ key: CredentialKey; operation: string }> = [];
     const service = new OpCredentialService({

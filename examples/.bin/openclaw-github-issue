@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+subcommand=''
+creator_agent="${OPENCLAW_GITHUB_ISSUE_CREATOR_AGENT:-}"
+repository="${OPENCLAW_GITHUB_ISSUE_REPOSITORY:-}"
+title="${OPENCLAW_GITHUB_ISSUE_TITLE:-}"
+body="${OPENCLAW_GITHUB_ISSUE_BODY:-}"
+assignee="${OPENCLAW_GITHUB_ISSUE_ASSIGNEE:-}"
+issue_number_path="${OPENCLAW_GITHUB_ISSUE_NUMBER_PATH:-}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-github-issue${tty_reset} create-and-assign --creator-agent <id> --repository <owner/repo> --title <title> --body <body> --assignee <login> --issue-number-path <path> ${tty_dim}[--debug]${tty_reset}
+
+${tty_tp}Commands:${tty_reset}
+  create-and-assign       creates and assigns one GitHub issue fixture
+
+${tty_tp}Options:${tty_reset}
+  --creator-agent <id>    selects the agent authorized to create the issue
+  --repository <slug>     selects the owner/repository destination
+  --title <title>         sets the issue title
+  --body <body>           sets the issue body
+  --assignee <login>      assigns the created issue
+  --issue-number-path <path>
+                          writes the created issue number to an absolute path
+  --debug                 shows diagnostic messages
+  -h, --help              displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_GITHUB_ISSUE_CREATOR_AGENT
+                          same as --creator-agent
+  OPENCLAW_GITHUB_ISSUE_REPOSITORY
+                          same as --repository
+  OPENCLAW_GITHUB_ISSUE_TITLE
+                          same as --title
+  OPENCLAW_GITHUB_ISSUE_BODY
+                          same as --body
+  OPENCLAW_GITHUB_ISSUE_ASSIGNEE
+                          same as --assignee
+  OPENCLAW_GITHUB_ISSUE_NUMBER_PATH
+                          same as --issue-number-path
+  OPENCLAW_DEBUG          enables helper-command debug output
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --creator-agent)
+      (($# >= 2)) || error '--creator-agent requires an id' 2
+      creator_agent="$2"
+      shift 2
+      ;;
+    --repository)
+      (($# >= 2)) || error '--repository requires an owner/repository value' 2
+      repository="$2"
+      shift 2
+      ;;
+    --title)
+      (($# >= 2)) || error '--title requires a value' 2
+      title="$2"
+      shift 2
+      ;;
+    --body)
+      (($# >= 2)) || error '--body requires a value' 2
+      body="$2"
+      shift 2
+      ;;
+    --assignee)
+      (($# >= 2)) || error '--assignee requires a login' 2
+      assignee="$2"
+      shift 2
+      ;;
+    --issue-number-path)
+      (($# >= 2)) || error '--issue-number-path requires a path' 2
+      issue_number_path="$2"
+      shift 2
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+    *)
+      if [[ -n "$subcommand" ]]; then
+        usage >&2
+        error "unexpected argument: $1" 2
+      fi
+      subcommand="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
+[[ "$subcommand" == 'create-and-assign' ]] || error 'the create-and-assign subcommand is required' 2
+
+if [[ -z "$creator_agent" || -z "$repository" || -z "$title" || -z "$body" || -z "$assignee" || -z "$issue_number_path" ]]; then
+  usage >&2
+  error 'all issue creation options or their environment equivalents are required' 2
+fi
+[[ "$issue_number_path" == /* ]] || error "issue number path must be absolute: $issue_number_path" 2
+
+debug "creating issue repository=$repository creator-agent=$creator_agent assignee=$assignee"
+
+issue_url="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent "$creator_agent" -- issue create --repo "$repository" --title "$title" --body "$body")"
+issue_number="$(printf '%s\n' "$issue_url" | tail -n 1 | sed 's#.*/##')"
+if [[ ! "$issue_number" =~ ^[0-9]+$ ]]; then
+  error "GitHub issue creation returned an invalid issue URL: $issue_url"
+fi
+printf '%s\n' "$issue_number" > "$issue_number_path"
+debug "created issue repository=$repository number=$issue_number"
+
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent "$creator_agent" -- issue edit "$issue_number" --repo "$repository" --add-assignee "$assignee"

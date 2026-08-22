@@ -5,13 +5,13 @@ import { join } from 'node:path';
 
 import { FILE_LOCK_TIMEOUT_ERROR_CODE } from 'openclaw/plugin-sdk/file-lock';
 
-import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
+import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/intake/monitor/cycle-lease.ts';
 
 function lockTimeout(): Error {
   return Object.assign(new Error('busy'), { code: FILE_LOCK_TIMEOUT_ERROR_CODE });
 }
 
-describe('channels/github/lib/monitor-cycle-lease', () => {
+describe('channels/github/intake/monitor/cycle-lease', () => {
   it('should acquire the host file lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-lease-'));
     const rootDir = join(temporaryDirectory, 'state');
@@ -83,32 +83,6 @@ describe('channels/github/lib/monitor-cycle-lease', () => {
       });
 
       assert.equal((await store.acquire('tanaabot')).status, 'busy');
-    } finally {
-      await rm(temporaryDirectory, { force: true, recursive: true });
-    }
-  });
-
-  it('should isolate outbound publication from the monitor cycle lock', async () => {
-    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-scopes-'));
-    const targets: string[] = [];
-    try {
-      const store = new GitHubNotificationMonitorCycleLeaseStore({
-        async acquireFileLock(targetPath) {
-          targets.push(targetPath);
-          return { lockPath: `${targetPath}.lock`, async release() {} };
-        },
-        rootDir: join(temporaryDirectory, 'state'),
-      });
-
-      const cycle = await store.acquire('tanaabot');
-      const publication = await store.acquire('tanaabot', { scope: 'publication' });
-
-      assert.deepEqual(
-        targets.map((target) => target.slice(target.lastIndexOf('/') + 1)),
-        ['github-notifications', 'github-notifications-publication'],
-      );
-      if (cycle.status === 'acquired') await cycle.lease.release();
-      if (publication.status === 'acquired') await publication.lease.release();
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

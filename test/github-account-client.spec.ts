@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { AgentSystemCliRunRequest } from '../lib/tool-types.ts';
-import GitHubAccountClient from '../lib/github-account-client.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentSystemCliRunRequest } from '../api/types.ts';
+import GitHubAccountClient from '../core/github-account-client.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -35,7 +35,7 @@ function loadedEnvironment() {
   };
 }
 
-describe('lib/github-account-client', () => {
+describe('core/github-account-client', () => {
   it('should bind fixed calls to a sanitized child environment and configured identity', async () => {
     const requests: AgentSystemCliRunRequest[] = [];
     const controller = new AbortController();

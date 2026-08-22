@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import createGitHubLifecycleContribution from '../tools/github/lifecycle.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,

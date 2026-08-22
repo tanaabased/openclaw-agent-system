@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
-import parseAgentManifest from '../utils/parse-agent-manifest.ts';
+import parseAgentManifest from '../manifest/parse.ts';
 
 function diagnosticCodes(source: string): Set<string> {
   const result = parseAgentManifest(source);
   return new Set(result.diagnostics.map(({ code }) => code));
 }
 
-describe('utils/parse-agent-manifest', () => {
+describe('manifest/parse', () => {
   it('should parse git worktree defaults and local repository overrides', () => {
     const defaults = parseAgentManifest(`
 schema-version: 1

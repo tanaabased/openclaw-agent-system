@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import { parseGitHubApiResponse } from '../channels/github/utils/api-response.ts';
+import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 
-describe('channels/github/utils/api-response', () => {
+describe('channels/github/provider/api-response', () => {
   it('should parse the final included response and rate-limit controls', () => {
     const response = parseGitHubApiResponse(
       [

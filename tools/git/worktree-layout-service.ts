@@ -1,9 +1,10 @@
 import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
-import runToolCli from '../../lib/tool-cli-runner.ts';
-import WorkspaceGitignoreService from '../../lib/workspace-gitignore-service.ts';
+import runToolCli from '../../api/cli-runner.ts';
+import WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import resolveGitWorktreeLayout, { type GitWorktreeLayout } from './worktree-layout.ts';
 
@@ -31,10 +32,6 @@ export interface GitWorktreeLayoutServiceDependencies {
   runCli?: typeof runToolCli;
 }
 
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
-}
-
 async function directoryStatus(
   path: string,
   currentUid?: number,
@@ -47,7 +44,7 @@ async function directoryStatus(
     if ((stats.mode & (ownerOnly ? 0o077 : 0o022)) !== 0) return 'unsafe';
     return (await realpath(path)) === path ? 'ready' : 'unsafe';
   } catch (error) {
-    if (errorCode(error) === 'ENOENT') return 'missing';
+    if (nodeErrorCode(error) === 'ENOENT') return 'missing';
     throw error;
   }
 }

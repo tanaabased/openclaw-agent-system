@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import AgentSystemToolError from '../lib/tool-error.ts';
-import loadBoundToolManifest from '../lib/tool-manifest-binding.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import AgentSystemToolError from '../api/error.ts';
+import loadBoundToolManifest from '../api/manifest-binding.ts';
 
 const workspaceDir = '/workspace/data';
 
@@ -25,7 +25,7 @@ function isUnresolvedToolError(error: unknown): boolean {
   return error instanceof AgentSystemToolError && error.code === 'agent_not_resolved';
 }
 
-describe('lib/tool-manifest-binding', () => {
+describe('api/manifest-binding', () => {
   it('should bind native tool context to its exact agent workspace', async () => {
     const calls: string[] = [];
     const result = await loadBoundToolManifest(

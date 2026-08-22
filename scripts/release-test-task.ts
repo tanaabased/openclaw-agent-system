@@ -104,7 +104,21 @@ try {
 
   const packedPaths = new Set(packageResult.files?.map(({ path }) => path));
   const packageSourcePaths = await check('inventory working-tree package sources', async () => {
-    const sourceDirectories = ['bin', 'channels', 'cli', 'lib', 'skills', 'tools', 'utils'];
+    const sourceDirectories = [
+      'agent',
+      'api',
+      'bin',
+      'channels',
+      'cli',
+      'core',
+      'credentials',
+      'environment',
+      'manifest',
+      'paths',
+      'skills',
+      'tools',
+      'utils',
+    ];
     const [candidates, deleted] = await Promise.all([
       run('git', [
         'ls-files',
@@ -134,6 +148,8 @@ try {
     'bin/agent-system-tool',
     'bin/git',
     'bin/gh',
+    'channels/github/DESIGN.md',
+    'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
     'skills/git-cli/agents/openai.yaml',
     'skills/github-cli/SKILL.md',

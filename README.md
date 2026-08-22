@@ -17,7 +17,9 @@ Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw ag
 > Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
 
 > [!WARNING]
-> Agent System is still a work in progress. Check back regularly for updates.
+> Agent System remains a work in progress. Development and Leia coverage focus
+> on OpenClaw's native and Codex harnesses. Other agent harnesses may work, but
+> they are not yet part of the compatibility test matrix.
 
 ## Overview
 
@@ -39,7 +41,7 @@ Today, Agent System:
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Turns approved issue assignments into managed worktrees and issue or pull-request assignments into private sessions, safe replies, and explicitly selected progress updates.
+- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, prepares managed issue worktrees, and relays approved issue comments through lifecycle sessions.
 
 ### Skills
 

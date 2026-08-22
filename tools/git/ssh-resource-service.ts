@@ -2,13 +2,13 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolveToolExecutable } from '../../lib/tool-cli-runner.ts';
-import AgentSystemToolError from '../../lib/tool-error.ts';
-import type { AgentSystemToolResourceLease } from '../../lib/tool-types.ts';
+import { resolveToolExecutable } from '../../api/cli-runner.ts';
+import AgentSystemToolError from '../../api/error.ts';
+import type { AgentSystemToolResourceLease } from '../../api/types.ts';
 import runCredentialCommand, {
   type CredentialCommandOptions,
   type CredentialCommandResult,
-} from '../../utils/run-credential-command.ts';
+} from '../../credentials/run-command.ts';
 import type { GitSigningConfiguration, GitSshConfiguration } from './config-schema.ts';
 import loadGitSshAgent, {
   type GitSshAgentProcess,

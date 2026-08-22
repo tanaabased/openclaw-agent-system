@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+workspace="${OPENCLAW_SETUP_WORKSPACE:-}"
+model="${OPENCLAW_SETUP_MODEL:-}"
+agent_system_plugin="${OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN:-}"
+needs_secret_service="${OPENCLAW_SETUP_NEEDS_SECRET_SERVICE:-}"
+needs_ssh_key="${OPENCLAW_SETUP_NEEDS_SSH_KEY:-}"
+yolo="${OPENCLAW_SETUP_YOLO:-}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-setup${tty_reset} --workspace <path> ${tty_dim}[--agent-system-plugin <path>] [--model <provider/model>] [--needs-secret-service] [--needs-ssh-key] [--yolo] [--debug]${tty_reset}
+
+${tty_tp}Options:${tty_reset}
+  --workspace <path>            sets the isolated OpenClaw workspace
+  --agent-system-plugin <path>  installs and enables an Agent System npm pack
+  --model <provider/model>      enables OpenAI authentication and selects the model
+  --needs-secret-service        prepares the Linux Secret Service test backend
+  --needs-ssh-key               prepares an SSH keypair for Git tests
+  --yolo                        allows unattended tool execution in the isolated profile
+  --debug                       shows diagnostic messages
+  -h, --help                   displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_SETUP_WORKSPACE            same as --workspace
+  OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN  same as --agent-system-plugin
+  OPENCLAW_SETUP_MODEL                same as --model
+  OPENCLAW_SETUP_NEEDS_SECRET_SERVICE same as --needs-secret-service when enabled
+  OPENCLAW_SETUP_NEEDS_SSH_KEY        same as --needs-ssh-key when enabled
+  OPENCLAW_SETUP_YOLO                 same as --yolo when enabled
+  OPENCLAW_DEBUG                      enables helper-command debug output
+  OPENAI_API_KEY                      required when a model is provided
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --workspace)
+      (($# >= 2)) || error '--workspace requires a path' 2
+      workspace="$2"
+      shift 2
+      ;;
+    --agent-system-plugin)
+      (($# >= 2)) || error '--agent-system-plugin requires a path' 2
+      agent_system_plugin="$2"
+      shift 2
+      ;;
+    --model)
+      (($# >= 2)) || error '--model requires a provider/model value' 2
+      model="$2"
+      shift 2
+      ;;
+    --needs-secret-service)
+      needs_secret_service=1
+      shift
+      ;;
+    --needs-ssh-key)
+      needs_ssh_key=1
+      shift
+      ;;
+    --yolo)
+      yolo=1
+      shift
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+  esac
+done
+
+[[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
+[[ -n "$workspace" ]] || error '--workspace or OPENCLAW_SETUP_WORKSPACE is required' 2
+[[ "$workspace" == /* ]] || error "workspace must be absolute: $workspace" 2
+command -v jq >/dev/null 2>&1 || error 'jq is required to validate OpenClaw setup'
+
+if [[ -n "$agent_system_plugin" ]]; then
+  [[ "$agent_system_plugin" == /* ]] || error "Agent System plugin path must be absolute: $agent_system_plugin" 2
+  [[ -f "$agent_system_plugin" ]] || error "Agent System plugin pack is unavailable: $agent_system_plugin" 2
+fi
+
+if [[ -n "$model" ]]; then
+  [[ "$model" == openai/* ]] || error "only openai model references are supported: $model" 2
+  [[ -n "${OPENAI_API_KEY:-}" ]] || error 'OPENAI_API_KEY is required when a model is provided'
+fi
+
+prepare_secret_service() {
+  local platform
+  local dbus_address
+  local secret_service_home
+
+  platform="$(uname -s)"
+  if [[ "$platform" != 'Linux' ]]; then
+    if [[ "$platform" == 'Darwin' ]]; then
+      debug 'Secret Service setup skipped: platform=macos'
+    else
+      debug "Secret Service setup skipped: platform=$platform"
+    fi
+    return
+  fi
+
+  [[ -n "${TMPDIR:-}" ]] || error 'TMPDIR is required for Linux Secret Service setup'
+  [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] || error 'DBUS_SESSION_BUS_ADDRESS is required for Linux Secret Service setup'
+  [[ "$DBUS_SESSION_BUS_ADDRESS" == unix:path=* ]] || error "DBUS_SESSION_BUS_ADDRESS must use a unix path: $DBUS_SESSION_BUS_ADDRESS"
+
+  debug 'installing Linux Secret Service test dependencies'
+  sudo apt-get update
+  sudo apt-get install --no-install-recommends --yes dbus-x11 gnome-keyring libsecret-tools
+
+  secret_service_home="$TMPDIR/secret-service-home"
+  mkdir -p "$secret_service_home"
+  dbus_address="$(dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS" --print-address=1)"
+  [[ "$dbus_address" == "$DBUS_SESSION_BUS_ADDRESS"* ]] || error 'D-Bus session did not bind the configured Secret Service address'
+
+  printf '%s' 'test-keyring-password' \
+    | HOME="$secret_service_home" gnome-keyring-daemon --unlock --components=secrets >/dev/null
+  debug 'Linux Secret Service test backend is ready'
+}
+
+prepare_ssh_key() {
+  local private_key_path
+  local public_key_path
+  local ssh_directory
+
+  [[ -n "${HOME:-}" ]] || error 'HOME is required for SSH key setup'
+  ssh_directory="$HOME/.ssh"
+  private_key_path="$ssh_directory/agent-system-test-ssh"
+  public_key_path="$private_key_path.pub"
+
+  if [[ -e "$private_key_path" || -L "$private_key_path" || -e "$public_key_path" || -L "$public_key_path" ]]; then
+    error "SSH key fixture already exists: $private_key_path"
+  fi
+
+  [[ ! -L "$ssh_directory" ]] || error "SSH directory must not be a symbolic link: $ssh_directory"
+  mkdir -p "$ssh_directory"
+  chmod 700 "$ssh_directory"
+  ssh-keygen -q -t ed25519 -N '' -C agent-system-leia -f "$private_key_path"
+  chmod 600 "$private_key_path"
+  chmod 644 "$public_key_path"
+  debug "generated SSH key fixture=$private_key_path"
+}
+
+validate_openclaw_config() {
+  local report
+
+  if ! report="$(openclaw config validate --json)"; then
+    debug "OpenClaw config validation report=$report"
+    error 'OpenClaw setup produced an invalid configuration'
+  fi
+
+  if ! printf '%s\n' "$report" | jq -e '.valid == true' >/dev/null 2>&1; then
+    debug "OpenClaw config validation report=$report"
+    error 'OpenClaw setup did not report a valid configuration'
+  fi
+
+  debug 'OpenClaw configuration verified'
+}
+
+validate_agent_system_plugin() {
+  local report
+
+  if ! report="$(openclaw plugins inspect agent-system --runtime --json)"; then
+    debug "Agent System plugin inspection report=$report"
+    error 'Agent System plugin runtime inspection failed'
+  fi
+
+  if ! printf '%s\n' "$report" | jq -e --arg source_path "$agent_system_plugin" '
+    .plugin.id == "agent-system"
+      and .plugin.enabled == true
+      and .plugin.status == "loaded"
+      and ((.plugin.source | type) == "string")
+      and (.plugin.source | endswith("/dist/index.js"))
+      and (.plugin.error == null)
+      and .install.source == "npm"
+      and .install.artifactKind == "npm-pack"
+      and .install.artifactFormat == "tgz"
+      and .install.sourcePath == $source_path
+      and ((.install.installPath | type) == "string")
+      and (.install.installPath | length > 0)
+      and ((.plugin.version | type) == "string")
+      and (.plugin.version | length > 0)
+      and .install.version == .plugin.version
+      and ([.diagnostics[]? | select(.level == "error")] | length == 0)
+  ' >/dev/null 2>&1; then
+    debug "Agent System plugin inspection report=$report"
+    error 'Agent System plugin installation verification failed'
+  fi
+
+  debug 'Agent System plugin installation verified'
+}
+
+if value_enabled "$needs_secret_service"; then
+  prepare_secret_service
+fi
+
+if value_enabled "$needs_ssh_key"; then
+  prepare_ssh_key
+fi
+
+onboard_args=(
+  --non-interactive
+  --accept-risk
+  --mode local
+  --workspace "$workspace"
+  --gateway-bind loopback
+  --skip-daemon
+  --skip-health
+  --skip-bootstrap
+  --skip-channels
+  --skip-hooks
+  --skip-search
+  --skip-skills
+  --skip-ui
+  --suppress-gateway-token-output
+)
+
+if [[ -n "$model" ]]; then
+  onboard_args+=(
+    --auth-choice openai-api-key
+    --openai-api-key "$OPENAI_API_KEY"
+    --secret-input-mode plaintext
+  )
+  debug "onboarding workspace=$workspace auth=openai model=$model"
+else
+  onboard_args+=(--auth-choice skip)
+  debug "onboarding workspace=$workspace auth=skip"
+fi
+
+openclaw onboard "${onboard_args[@]}"
+
+if [[ -n "$model" ]]; then
+  openclaw models set "$model"
+fi
+
+case "$model" in
+  openai/gpt-5.4 | openai/gpt-5.4-*)
+    debug 'configuring Codex dynamic-tools-loading=direct for GPT-5.4'
+    openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+    ;;
+esac
+
+if [[ -n "$agent_system_plugin" ]]; then
+  debug "installing Agent System plugin pack=$agent_system_plugin"
+  openclaw plugins install "npm-pack:$agent_system_plugin" --force
+  openclaw plugins enable agent-system
+fi
+
+if value_enabled "$yolo"; then
+  debug 'allowing unattended tool execution in the isolated OpenClaw profile'
+  openclaw exec-policy preset yolo
+fi
+
+validate_openclaw_config
+
+if [[ -n "$agent_system_plugin" ]]; then
+  validate_agent_system_plugin
+fi

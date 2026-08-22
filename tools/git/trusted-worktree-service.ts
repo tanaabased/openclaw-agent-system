@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
 
-import type AgentEnvironmentService from '../../lib/agent-environment-service.ts';
-import type AgentManifestService from '../../lib/agent-manifest-service.ts';
-import AgentSystemToolError from '../../lib/tool-error.ts';
-import resolveManifestValue from '../../utils/resolve-manifest-value.ts';
+import type AgentEnvironmentService from '../../environment/service.ts';
+import type AgentManifestService from '../../manifest/service.ts';
+import AgentSystemToolError from '../../api/error.ts';
+import resolveManifestValue from '../../manifest/resolve-value.ts';
 import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
 import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
 import { gitWorktreeDirectoryName } from './worktree-names.ts';

@@ -3,8 +3,8 @@ import { chmod, lstat, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
-import type { NotificationRoutingReceipt } from '../channels/github/utils/routing.ts';
+import NotificationRoutingReceiptStore from '../channels/github/routing/receipt-store.ts';
+import type { NotificationRoutingReceipt } from '../channels/github/routing/routing.ts';
 
 const receipt: NotificationRoutingReceipt = {
   schemaVersion: 1,
@@ -14,7 +14,7 @@ const receipt: NotificationRoutingReceipt = {
   workspaceDir: '/workspace/data',
 };
 
-describe('channels/github/lib/routing-receipt-store', () => {
+describe('channels/github/routing/receipt-store', () => {
   it('should persist, read, and remove a private routing receipt', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-notification-store-'));
     const store = new NotificationRoutingReceiptStore({

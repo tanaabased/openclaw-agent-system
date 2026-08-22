@@ -2,7 +2,20 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const sourceRoots = ['channels', 'cli', 'lib', 'scripts', 'tools', 'utils'];
+const sourceRoots = [
+  'agent',
+  'api',
+  'channels',
+  'cli',
+  'core',
+  'credentials',
+  'environment',
+  'manifest',
+  'paths',
+  'scripts',
+  'tools',
+  'utils',
+];
 const protectedRuntimeMembers = [
   'runtime.gateway.request',
   'runtime.state.openChannelIngressQueue',

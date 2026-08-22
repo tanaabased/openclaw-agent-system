@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import type { AgentSystemCliResult } from '../lib/tool-types.ts';
+import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubAccountKeyService from '../tools/github/account-key-service.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const publicKey =
   'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRZeOEqvPxiT3iygvnST8ZByU8hK96JoQf5MLybe4v0 tanaabot@tanaab.dev';

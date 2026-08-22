@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import inspectAgentCommand from '../utils/inspect-agent-command.ts';
+import inspectAgentCommand from '../agent/inspect-command.ts';
 
-describe('utils/inspect-agent-command', () => {
+describe('agent/inspect-command', () => {
   it('should ignore tools that are not command runners', () => {
     assert.deepEqual(inspectAgentCommand('agent_system_git', { argv: ['status'] }), {
       operatorInvocations: [],

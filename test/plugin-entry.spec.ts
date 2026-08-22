@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
-import type { CommandLike } from '../lib/register-cli.ts';
+import type { CommandLike } from '../cli/register.ts';
 
 describe('index', () => {
   it('should expose the agent system plugin contract', () => {
@@ -104,12 +104,13 @@ describe('index', () => {
       'before_prompt_build',
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
-    assert.deepEqual(commandNames, ['agent-system-progress']);
+    assert.deepEqual(commandNames, []);
     assert.deepEqual(serviceIds, ['agent-system-command-authority']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'agent_system_github_reply',
     ]);
     assert.deepEqual(policyIds, [
       'agent-system.git',

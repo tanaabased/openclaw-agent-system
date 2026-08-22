@@ -4,10 +4,11 @@ import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/utils/comment-admission.ts';
+} from '../channels/github/conversation/comment-admission.ts';
 import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
 
 const configuration = {
+  assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
   intervalMinutes: 5,
 };
@@ -28,7 +29,7 @@ function comment(
   };
 }
 
-describe('channels/github/utils/comment-admission', () => {
+describe('channels/github/conversation/comment-admission', () => {
   it('should admit an approved human exact standalone account mention', () => {
     assert.deepEqual(
       admitGitHubComment({

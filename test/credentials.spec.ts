@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -21,7 +21,7 @@ const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
 };
 
 function harness() {
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+  const diagnostics: string[] = [];
   const output: string[] = [];
   const exitCodes: number[] = [];
   const manifestDirectories: string[] = [];
@@ -36,19 +36,11 @@ function harness() {
         return loaded;
       },
     },
-    logger: {
-      error(message: string) {
-        logs.error.push(message);
-      },
-      info(message: string) {
-        logs.info.push(message);
-      },
-      warn(message: string) {
-        logs.warn.push(message);
-      },
+    output: {
+      writeStderr: (message: string) => diagnostics.push(message),
+      writeStdout: (message: string) => output.push(message),
     },
-    output: { writeStdout: (message: string) => output.push(message) },
-    records: { logs, manifestDirectories, output },
+    records: { diagnostics, manifestDirectories, output },
     setExitCode(code: number) {
       exitCodes.push(code);
     },
@@ -77,7 +69,6 @@ describe('cli/credentials', () => {
       },
       fromEnvironment: true,
       fromStdin: false,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -108,7 +99,6 @@ describe('cli/credentials', () => {
       },
       fromEnvironment: true,
       fromStdin: true,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -117,7 +107,8 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, [1]);
-    assert.equal(test.records.logs.error.join('').includes('cannot be used together'), true);
+    assert.equal(test.records.diagnostics.join('').includes('cannot be used together'), true);
+    assert.deepEqual(test.records.output, []);
   });
 
   it('should report credential source and environment count without values', async () => {
@@ -138,7 +129,6 @@ describe('cli/credentials', () => {
         },
       },
       fromEnvironment: false,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -171,7 +161,6 @@ describe('cli/credentials', () => {
         },
       },
       fromEnvironment: true,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -194,7 +183,6 @@ describe('cli/credentials', () => {
         },
       },
       fromEnvironment: true,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -204,7 +192,8 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, [1]);
-    assert.equal(test.records.logs.error.join('').includes('cannot be used together'), true);
+    assert.equal(test.records.diagnostics.join('').includes('cannot be used together'), true);
+    assert.deepEqual(test.records.output, []);
   });
 
   it('should report idempotent explicit-store removal', async () => {
@@ -222,7 +211,6 @@ describe('cli/credentials', () => {
           };
         },
       },
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -247,7 +235,6 @@ describe('cli/credentials', () => {
         },
       },
       fromEnvironment: false,
-      logger: test.logger,
       manifestService: test.manifestService,
       output: test.output,
       setExitCode: test.setExitCode,
@@ -256,6 +243,7 @@ describe('cli/credentials', () => {
     });
 
     assert.deepEqual(test.exitCodes, [1]);
-    assert.deepEqual(test.records.logs.error, ['credentials: unsupported credential other']);
+    assert.deepEqual(test.records.output, []);
+    assert.deepEqual(test.records.diagnostics, ['credentials: unsupported credential other\n']);
   });
 });

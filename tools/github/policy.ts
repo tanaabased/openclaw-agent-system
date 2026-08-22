@@ -2,8 +2,8 @@ import type {
   AgentSystemAuthorizationDecision,
   AgentSystemOperation,
   AgentSystemRisk,
-} from '../../lib/tool-types.ts';
-import type { GitHubManifestConfiguration } from '../../utils/github-section-schema.ts';
+} from '../../api/types.ts';
+import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import { resolveGitHubPolicyConfiguration } from './config-schema.ts';
 import type { GitHubToolInput } from './tool-schema.ts';
 

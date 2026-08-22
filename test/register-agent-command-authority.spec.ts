@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { deniedAgentCommandEnvironment } from '../lib/agent-command-authority.ts';
-import registerAgentCommandAuthority from '../lib/register-agent-command-authority.ts';
+import { deniedAgentCommandEnvironment } from '../agent/command-authority.ts';
+import registerAgentCommandAuthority from '../core/register-agent-command-authority.ts';
 
-describe('lib/register-agent-command-authority', () => {
+describe('core/register-agent-command-authority', () => {
   it('should issue a capability only for a loaded Gateway agent context', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const services: Array<{ id: string; start(): unknown; stop?(): unknown }> = [];

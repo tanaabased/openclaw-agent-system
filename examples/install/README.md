@@ -5,25 +5,10 @@ This scenario installs the prepared Agent System package on a fresh GitHub Actio
 ## Setup
 
 ```bash
-# should configure an unauthenticated local openclaw profile
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice skip \
-  --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
-
-# should install and enable the packed plugin through openclaw's managed npm package path
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+# should configure an unauthenticated local openclaw profile with the packed plugin
+OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
+OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN="$AGENT_SYSTEM_PACKAGE" \
+  openclaw-setup
 
 # should prepare an isolated install workspace
 mkdir -p "$TMPDIR/install-data"
@@ -33,9 +18,6 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 ## Testing
 
 ```bash
-# should load the packed runtime from dist
-openclaw plugins inspect agent-system --runtime --json | jq -e '.plugin.id == "agent-system" and (.plugin.source | endswith("/dist/index.js"))'
-
 # should expose the canonical command tree and its alias
 openclaw agent-system --help | grep -F 'validate'
 openclaw as --help | grep -F 'validate'

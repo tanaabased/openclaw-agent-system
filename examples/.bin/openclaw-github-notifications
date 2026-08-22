@@ -1,0 +1,263 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+subcommand=''
+agent_id="${OPENCLAW_GITHUB_NOTIFICATIONS_AGENT:-}"
+repository="${OPENCLAW_GITHUB_NOTIFICATIONS_REPOSITORY:-}"
+kind="${OPENCLAW_GITHUB_NOTIFICATIONS_KIND:-}"
+number="${OPENCLAW_GITHUB_NOTIFICATIONS_NUMBER:-}"
+account_id="${OPENCLAW_GITHUB_NOTIFICATIONS_ACCOUNT_ID:-}"
+route_state="${OPENCLAW_GITHUB_NOTIFICATIONS_ROUTE_STATE:-}"
+timeout_seconds="${OPENCLAW_GITHUB_NOTIFICATIONS_TIMEOUT:-90}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-github-notifications${tty_reset} <refresh-completed|wait-route> ${tty_dim}[options] [--debug]${tty_reset}
+
+${tty_tp}Commands:${tty_reset}
+  refresh-completed       refreshes one notification scope and requires a completed poll
+  wait-route              waits for one notification route state
+
+${tty_tp}Options:${tty_reset}
+  --agent <id>            selects the agent for refresh-completed
+  --repository <slug>     limits refresh-completed to one owner/repository
+  --kind <kind>           limits refresh-completed to issue or pull-request
+  --number <number>       limits refresh-completed to one item number
+  --account-id <id>       selects the account for wait-route
+  --route-state <state>   sets present or absent for wait-route
+  --timeout <seconds>     limits polling ${tty_dim}[default: 90]${tty_reset}
+  --debug                 shows diagnostic messages
+  -h, --help              displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_GITHUB_NOTIFICATIONS_AGENT
+                          same as --agent
+  OPENCLAW_GITHUB_NOTIFICATIONS_REPOSITORY
+                          same as --repository
+  OPENCLAW_GITHUB_NOTIFICATIONS_KIND
+                          same as --kind
+  OPENCLAW_GITHUB_NOTIFICATIONS_NUMBER
+                          same as --number
+  OPENCLAW_GITHUB_NOTIFICATIONS_ACCOUNT_ID
+                          same as --account-id
+  OPENCLAW_GITHUB_NOTIFICATIONS_ROUTE_STATE
+                          same as --route-state
+  OPENCLAW_GITHUB_NOTIFICATIONS_TIMEOUT
+                          same as --timeout
+  OPENCLAW_DEBUG          enables helper-command debug output
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --agent)
+      (($# >= 2)) || error '--agent requires an id' 2
+      agent_id="$2"
+      shift 2
+      ;;
+    --repository)
+      (($# >= 2)) || error '--repository requires an owner/repository value' 2
+      repository="$2"
+      shift 2
+      ;;
+    --kind)
+      (($# >= 2)) || error '--kind requires a value' 2
+      kind="$2"
+      shift 2
+      ;;
+    --number)
+      (($# >= 2)) || error '--number requires a value' 2
+      number="$2"
+      shift 2
+      ;;
+    --account-id)
+      (($# >= 2)) || error '--account-id requires an id' 2
+      account_id="$2"
+      shift 2
+      ;;
+    --route-state)
+      (($# >= 2)) || error '--route-state requires a state' 2
+      route_state="$2"
+      shift 2
+      ;;
+    --timeout)
+      (($# >= 2)) || error '--timeout requires a value' 2
+      timeout_seconds="$2"
+      shift 2
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+    *)
+      if [[ -n "$subcommand" ]]; then
+        usage >&2
+        error "unexpected argument: $1" 2
+      fi
+      subcommand="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ "${GITHUB_ACTIONS:-}" == 'true' ]] || error 'this command may run only in GitHub Actions'
+require_positive_integer 'timeout' "$timeout_seconds"
+
+run_refresh() {
+  local output_path="$1"
+  local diagnostics_path="$2"
+  local guard_seconds=$((timeout_seconds + 15))
+  local -a refresh_command=(
+    openclaw agent-system notifications refresh
+    --agent "$agent_id"
+    --timeout "$timeout_seconds"
+  )
+
+  if [[ -n "$repository" ]]; then
+    refresh_command+=(--repository "$repository")
+  fi
+  if [[ -n "$kind" ]]; then
+    refresh_command+=(--kind "$kind")
+  fi
+  if [[ -n "$number" ]]; then
+    refresh_command+=(--number "$number")
+  fi
+  refresh_command+=(--json)
+
+  if command -v gtimeout > /dev/null 2>&1; then
+    gtimeout "$guard_seconds" "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
+  elif command -v timeout > /dev/null 2>&1; then
+    timeout "$guard_seconds" "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
+  else
+    "${refresh_command[@]}" > "$output_path" 2> "$diagnostics_path"
+  fi
+}
+
+refresh_completed() {
+  [[ -n "$agent_id" ]] || error '--agent or OPENCLAW_GITHUB_NOTIFICATIONS_AGENT is required' 2
+  if [[ -n "$kind" && "$kind" != 'issue' && "$kind" != 'pull-request' ]]; then
+    error "kind must be issue or pull-request: $kind" 2
+  fi
+  if [[ -n "$number" ]]; then
+    require_positive_integer 'number' "$number"
+  fi
+
+  local deadline=$((SECONDS + timeout_seconds))
+  local output_path="${TMPDIR:?}/openclaw-github-notifications-refresh-$$.json"
+  local diagnostics_path="${TMPDIR:?}/openclaw-github-notifications-refresh-$$.log"
+  local output=''
+  local status=0
+  debug "refreshing GitHub notifications agent=$agent_id timeout-seconds=$timeout_seconds"
+
+  while true; do
+    if run_refresh "$output_path" "$diagnostics_path"; then
+      status=0
+    else
+      status="$?"
+    fi
+    output="$(< "$output_path")"
+    if [[ -s "$diagnostics_path" ]]; then
+      cat "$diagnostics_path" >&2
+    fi
+
+    if ((status == 0)) && jq -se \
+      'length == 1 and (.[0] | type == "object" and .status == "completed" and .code == "github-notification-poll-complete")' \
+      "$output_path" > /dev/null 2>&1; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+
+    if jq -se \
+      'length == 1 and (.[0] | type == "object" and .status == "skipped" and .code == "github-notification-backoff-active")' \
+      "$output_path" > /dev/null 2>&1; then
+      if ((SECONDS >= deadline)); then
+        error_message "notification refresh backoff remained active for $timeout_seconds seconds for agent $agent_id"
+        printf '%s\n' "$output" >&2
+        "$command_dir/openclaw-gateway" diagnostics
+        return 1
+      fi
+      debug "notification refresh backoff is active; retrying agent=$agent_id"
+      sleep 2
+      continue
+    fi
+
+    if ((status != 0)); then
+      error_message "notification refresh command failed for agent $agent_id"
+      if [[ -n "$output" ]]; then
+        printf '%s\n' "$output" >&2
+      fi
+      "$command_dir/openclaw-gateway" diagnostics
+      return "$status"
+    fi
+
+    error_message "notification refresh did not complete a GitHub poll for agent $agent_id"
+    printf '%s\n' "$output" >&2
+    "$command_dir/openclaw-gateway" diagnostics
+    return 1
+  done
+}
+
+wait_route() {
+  [[ -n "$account_id" ]] || error '--account-id or OPENCLAW_GITHUB_NOTIFICATIONS_ACCOUNT_ID is required' 2
+  [[ "$route_state" == 'present' || "$route_state" == 'absent' ]] || error "route state must be present or absent: $route_state" 2
+
+  local deadline=$((SECONDS + timeout_seconds))
+  local status_output=''
+  debug "waiting for GitHub notification route account-id=$account_id state=$route_state timeout-seconds=$timeout_seconds"
+
+  while true; do
+    if status_output="$(openclaw channels status --channel agent-system-github --json)"; then
+      if [[ "$route_state" == 'present' ]]; then
+        if jq -e --arg accountId "$account_id" \
+          '(.channelAccounts["agent-system-github"] // []) | any(.accountId == $accountId and .configured == true and .enabled == true and .running == true and .connected == true and .healthState == "healthy")' \
+          <<< "$status_output" > /dev/null; then
+          return 0
+        fi
+      elif jq -e --arg accountId "$account_id" \
+        '(.channelAccounts["agent-system-github"] // []) | all(.accountId != $accountId)' \
+        <<< "$status_output" > /dev/null; then
+        return 0
+      fi
+    fi
+
+    if ((SECONDS >= deadline)); then
+      error_message "GitHub notification route $account_id did not become $route_state within $timeout_seconds seconds"
+      if [[ -n "$status_output" ]]; then
+        printf '%s\n' "$status_output" >&2
+      fi
+      "$command_dir/openclaw-gateway" diagnostics
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+case "$subcommand" in
+  refresh-completed)
+    refresh_completed
+    ;;
+  wait-route)
+    wait_route
+    ;;
+  '')
+    usage >&2
+    error 'a subcommand is required: refresh-completed or wait-route' 2
+    ;;
+  *)
+    usage >&2
+    error "unsupported subcommand: $subcommand" 2
+    ;;
+esac

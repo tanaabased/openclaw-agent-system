@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import KeychainCredentialStore, { type KeychainModule } from '../lib/keychain-credential-store.ts';
+import KeychainCredentialStore, { type KeychainModule } from '../credentials/keychain-store.ts';
 
 function createKeychain(): {
   calls: string[];
@@ -39,7 +39,7 @@ function createKeychain(): {
   return { calls, keychain, values };
 }
 
-describe('lib/keychain-credential-store', () => {
+describe('credentials/keychain-store', () => {
   it('should store, read, and idempotently remove one agent credential', async () => {
     const { calls, keychain } = createKeychain();
     const store = new KeychainCredentialStore({

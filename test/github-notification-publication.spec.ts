@@ -6,10 +6,10 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
-} from '../channels/github/utils/publication.ts';
+} from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
-describe('channels/github/utils/publication', () => {
+describe('channels/github/publication/publication', () => {
   it('should mint one opaque target and hidden marker for a publication intent', () => {
     const target = githubNotificationPublicationTarget({
       intent: 'initial-acknowledgment',
@@ -20,10 +20,10 @@ describe('channels/github/utils/publication', () => {
 
     assert.equal(
       target,
-      'github:R_repo:12:publication:initial-acknowledgment:cf83e6cc2cf5186ea777b680a7005925',
+      'github:issue:R_repo:12:publication:initial-acknowledgment:cf83e6cc2cf5186ea777b680a7005925',
     );
     assert.deepEqual(parseGitHubNotificationPublicationTarget(target), {
-      conversationId: 'github:R_repo:12',
+      conversationId: 'github:issue:R_repo:12',
       digest: 'cf83e6cc2cf5186ea777b680a7005925',
       intent: 'initial-acknowledgment',
     });
@@ -45,8 +45,10 @@ describe('channels/github/utils/publication', () => {
       'The first pass is ready.',
     );
     assert.equal(
-      githubNotificationPublicationText('operator-progress', [{ text: 'Tests are now green.' }]),
-      'Tests are now green.',
+      githubNotificationPublicationText('planning-outcome', [
+        { text: 'I reviewed the assignment and have a plan ready.' },
+      ]),
+      'I reviewed the assignment and have a plan ready.',
     );
   });
 

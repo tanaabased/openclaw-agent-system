@@ -2,9 +2,9 @@ import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
-import type { AgentSystemCliResult } from '../../lib/tool-types.ts';
-import { GitHubAccountClientError } from '../../lib/github-account-client.ts';
-import type { AgentManifest } from '../../utils/manifest-types.ts';
+import type { AgentSystemCliResult } from '../../api/types.ts';
+import { GitHubAccountClientError } from '../../core/github-account-client.ts';
+import type { AgentManifest } from '../../manifest/types.ts';
 import parseSshPublicKey, { type ParsedSshPublicKey } from '../../utils/parse-ssh-public-key.ts';
 import {
   githubAccountKeyCategories,

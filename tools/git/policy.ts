@@ -1,7 +1,4 @@
-import type {
-  AgentSystemAuthorizationDecision,
-  AgentSystemOperation,
-} from '../../lib/tool-types.ts';
+import type { AgentSystemAuthorizationDecision, AgentSystemOperation } from '../../api/types.ts';
 import { resolveGitPolicyConfiguration, type GitToolConfiguration } from './config-schema.ts';
 import { gitOperationProtections, type GitProtectedOperation } from './operation-classifier.ts';
 

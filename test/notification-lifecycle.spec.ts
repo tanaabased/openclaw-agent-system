@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 
-import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
-import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const manifest: AgentManifest = {
@@ -15,6 +14,7 @@ const manifest: AgentManifest = {
     username: 'data',
     token: 'GH_TOKEN_DATA',
     notifications: {
+      assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
       intervalMinutes: 5,
     },
@@ -22,7 +22,7 @@ const manifest: AgentManifest = {
 };
 const context = { manifest, workspaceDir: '/workspace/data' };
 
-describe('channels/github/lib/lifecycle', () => {
+describe('channels/github/runtime/lifecycle-contribution', () => {
   it('should always participate so removed manifest state can be cleaned up', () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {
@@ -62,6 +62,7 @@ describe('channels/github/lib/lifecycle', () => {
       git: undefined,
       github: {
         notifications: {
+          assignmentTypes: ['issue', 'pull-request'],
           approvedActors: [
             { login: 'pirog', nodeId: 'U_1' },
             { login: 'renamed', nodeId: 'U_1' },
@@ -114,7 +115,7 @@ describe('channels/github/lib/lifecycle', () => {
       items: {},
       lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
-      schemaVersion: 3,
+      schemaVersion: 4,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [
@@ -150,372 +151,6 @@ describe('channels/github/lib/lifecycle', () => {
       (await contribution.inspect?.(context))?.at(-1)?.code,
       'github-notification-search-truncated',
     );
-  });
-
-  it('should report terminal activation failures without hiding monitor health', async () => {
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = context.workspaceDir;
-    state.lastSuccessfulPollAt = 1;
-    const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: { status: 'pending' },
-      activation: {
-        failureCode: 'github-notification-planning-response-invalid',
-        status: 'failed',
-      },
-      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/data/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    const contribution = createNotificationLifecycleContribution({
-      routingService: {
-        async inspect() {
-          return {
-            code: 'notification-routing-ready',
-            kind: 'noop' as const,
-            message: 'ready',
-          };
-        },
-        async reconcile() {
-          throw new Error('not used');
-        },
-      },
-      stateStore: { read: async () => state },
-    });
-
-    const findings = await contribution.inspect?.(context);
-
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid')
-        ?.status,
-      'warning',
-    );
-    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
-    assert.deepEqual(state.items[notificationItemKey]?.delivery?.activation, {
-      failureCode: 'github-notification-planning-response-invalid',
-      status: 'failed',
-    });
-  });
-
-  it('should ignore terminal activation failures for retired items while retaining history', async () => {
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = context.workspaceDir;
-    state.lastSuccessfulPollAt = 1;
-    const item = state.items[notificationItemKey]!;
-    item.disposition = 'retired';
-    item.reasonCode = 'assignment-no-longer-authorized';
-    item.delivery = {
-      ...item.delivery!,
-      activation: {
-        failureCode: 'github-notification-planning-response-invalid',
-        status: 'failed',
-      },
-      stage: 'retired',
-    };
-    const before = structuredClone(state);
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    const contribution = createNotificationLifecycleContribution({
-      routingService: {
-        async inspect() {
-          return {
-            code: 'notification-routing-ready',
-            kind: 'noop' as const,
-            message: 'ready',
-          };
-        },
-        async reconcile() {
-          throw new Error('not used');
-        },
-      },
-      stateStore: { read: async () => state },
-    });
-
-    const findings = await contribution.inspect?.(context);
-
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid'),
-      undefined,
-    );
-    assert.deepEqual(state, before);
-  });
-
-  it('should count live activation failures by code without counting retired history', async () => {
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = context.workspaceDir;
-    state.lastSuccessfulPollAt = 1;
-    const item = state.items[notificationItemKey]!;
-    item.assignmentEventNodeId = 'EV_assignment_live_1';
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: { status: 'pending' },
-      activation: {
-        failureCode: 'github-notification-planning-response-invalid',
-        status: 'failed',
-      },
-      assignmentEventId: 'EV_assignment_live_1',
-      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      workId: 'issue-7',
-      worktreeBranch: 'agent/data/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    state.items['github:R_repo:13'] = {
-      ...item,
-      assignmentEventNodeId: 'EV_assignment_live_2',
-      itemDatabaseId: 8,
-      itemNodeId: 'I_item_2',
-      number: 13,
-      delivery: {
-        ...item.delivery!,
-        assignmentEventId: 'EV_assignment_live_2',
-        activation: {
-          failureCode: 'github-notification-planning-response-invalid',
-          status: 'failed',
-        },
-        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:13',
-        workId: 'issue-8',
-        worktreeBranch: 'agent/data/issue-8',
-        worktreePath: '/workspace/worktrees/issue-8',
-      },
-    };
-    state.items['github:R_repo:15'] = {
-      ...item,
-      assignmentEventNodeId: 'EV_assignment_live_3',
-      itemDatabaseId: 10,
-      itemNodeId: 'I_item_4',
-      number: 15,
-      delivery: {
-        ...item.delivery!,
-        assignmentEventId: 'EV_assignment_live_3',
-        activation: {
-          failureCode: 'github-notification-planning-response-missing',
-          status: 'failed',
-        },
-        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:15',
-        workId: 'issue-10',
-        worktreeBranch: 'agent/data/issue-10',
-        worktreePath: '/workspace/worktrees/issue-10',
-      },
-    };
-    state.items['github:R_repo:14'] = {
-      ...item,
-      assignmentEventNodeId: 'EV_assignment_retired_1',
-      disposition: 'retired',
-      itemDatabaseId: 9,
-      itemNodeId: 'I_item_3',
-      number: 14,
-      reasonCode: 'assignment-no-longer-authorized',
-      delivery: {
-        ...item.delivery!,
-        acknowledgment: { status: 'pending' },
-        activation: {
-          failureCode: 'github-notification-planning-response-missing',
-          status: 'failed',
-        },
-        assignmentEventId: 'EV_assignment_retired_1',
-        sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:14',
-        stage: 'retired',
-        workId: 'issue-9',
-        worktreeBranch: 'agent/data/issue-9',
-        worktreePath: '/workspace/worktrees/issue-9',
-      },
-    };
-    const before = structuredClone(state);
-    assert.equal(decodeGitHubNotificationMonitorState(state, state.agentId)?.status, 'ready');
-    const contribution = createNotificationLifecycleContribution({
-      routingService: {
-        async inspect() {
-          return {
-            code: 'notification-routing-ready',
-            kind: 'noop' as const,
-            message: 'ready',
-          };
-        },
-        async reconcile() {
-          throw new Error('not used');
-        },
-      },
-      stateStore: { read: async () => state },
-    });
-
-    const findings = await contribution.inspect?.(context);
-
-    assert.match(
-      findings?.find(({ code }) => code === 'github-notification-planning-response-invalid')
-        ?.message ?? '',
-      /2 GitHub notification activations failed/,
-    );
-    assert.match(
-      findings?.find(({ code }) => code === 'github-notification-planning-response-missing')
-        ?.message ?? '',
-      /1 GitHub notification activation failed/,
-    );
-    assert.deepEqual(state, before);
-  });
-
-  it('should report pending and failed publications without hiding monitor health', async () => {
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = context.workspaceDir;
-    state.lastSuccessfulPollAt = 1;
-    const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: { status: 'pending' },
-      activation: { status: 'adopted' },
-      progress: {
-        '123e4567-e89b-42d3-a456-426614174000': { status: 'pending' },
-      },
-      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/data/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    const contribution = createNotificationLifecycleContribution({
-      routingService: {
-        async inspect() {
-          return {
-            code: 'notification-routing-ready',
-            kind: 'noop' as const,
-            message: 'ready',
-          };
-        },
-        async reconcile() {
-          throw new Error('not used');
-        },
-      },
-      stateStore: { read: async () => state },
-    });
-
-    let findings = await contribution.inspect?.(context);
-
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-acknowledgment-pending')?.status,
-      'warning',
-    );
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-progress-publication-pending')
-        ?.status,
-      'warning',
-    );
-    item.delivery.acknowledgment = {
-      failureCode: 'github-notification-acknowledgment-not-confirmed',
-      status: 'failed',
-    };
-    item.delivery.activation = { status: 'planned' };
-    item.delivery.progress = {
-      '123e4567-e89b-42d3-a456-426614174000': {
-        failureCode: 'github-notification-publication-authority-revoked',
-        status: 'failed',
-      },
-    };
-    findings = await contribution.inspect?.(context);
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-acknowledgment-not-confirmed')
-        ?.status,
-      'warning',
-    );
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-publication-authority-revoked')
-        ?.status,
-      'warning',
-    );
-    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
-  });
-
-  it('should report comment baseline, dispatch, and reply diagnostics separately from monitor health', async () => {
-    const state = notificationMonitorState();
-    state.agentId = 'data';
-    state.workspaceDir = context.workspaceDir;
-    state.lastSuccessfulPollAt = 1;
-    const item = state.items[notificationItemKey]!;
-    item.delivery = {
-      ...item.delivery!,
-      acknowledgment: { commentId: 90, status: 'published' },
-      activation: { status: 'planned' },
-      sessionKey: 'agent:data:agent-system-github:direct:github:R_repo:12',
-      stage: 'active',
-      worktreeBranch: 'agent/data/issue-7',
-      worktreePath: '/workspace/worktrees/issue-7',
-    };
-    const contribution = createNotificationLifecycleContribution({
-      routingService: {
-        async inspect() {
-          return {
-            code: 'notification-routing-ready',
-            kind: 'noop' as const,
-            message: 'ready',
-          };
-        },
-        async reconcile() {
-          throw new Error('not used');
-        },
-      },
-      stateStore: { read: async () => state },
-    });
-
-    let findings = await contribution.inspect?.(context);
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-comment-baseline-pending')?.status,
-      'warning',
-    );
-
-    item.commentTracking = {
-      baselineAt: 2,
-      diagnosticCode: 'github-notification-comments-truncated',
-      revisions: {
-        IC_failed: {
-          actorNodeId: 'U_actor',
-          bodyDigest: 'a'.repeat(64),
-          commentDatabaseId: 91,
-          commentNodeId: 'IC_failed',
-          createdAt: 2,
-          disposition: 'approved',
-          reasonCode: 'comment-approved',
-          revisionId: 'b'.repeat(64),
-          turn: {
-            failureCode: 'github-notification-comment-dispatch-failed',
-            status: 'failed',
-          },
-          updatedAt: 2,
-        },
-        IC_reply_failed: {
-          actorNodeId: 'U_actor',
-          bodyDigest: 'c'.repeat(64),
-          commentDatabaseId: 92,
-          commentNodeId: 'IC_reply_failed',
-          createdAt: 3,
-          disposition: 'approved',
-          reasonCode: 'comment-approved',
-          reply: {
-            failureCode: 'github-notification-reply-not-confirmed',
-            status: 'failed',
-          },
-          revisionId: 'd'.repeat(64),
-          turn: { status: 'responded' },
-          updatedAt: 3,
-        },
-      },
-    };
-    findings = await contribution.inspect?.(context);
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-comments-truncated')?.status,
-      'warning',
-    );
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-comment-dispatch-failed')?.status,
-      'warning',
-    );
-    assert.equal(
-      findings?.find(({ code }) => code === 'github-notification-reply-not-confirmed')?.status,
-      'warning',
-    );
-    assert.equal(findings?.at(-1)?.code, 'github-notification-monitor-healthy');
   });
 
   it('should translate routing reconciliation and preserve attributed failures', async () => {
@@ -730,17 +365,14 @@ describe('channels/github/lib/lifecycle', () => {
     assert.equal(removals, 1);
   });
 
-  it('should retain disabled monitor state while local session retirement is pending', async () => {
+  it('should retain disabled monitor state while assignment retirement is pending', async () => {
     let removals = 0;
     const state = notificationMonitorState();
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:data:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
@@ -782,8 +414,8 @@ describe('channels/github/lib/lifecycle', () => {
     assert.deepEqual(await contribution.inspect?.(disabledContext), [
       {
         code: 'github-notification-retirement-pending',
-        message: 'GitHub notification sessions are still retiring locally.',
-        remediation: 'Keep the OpenClaw Gateway running until retirement completes.',
+        message: 'GitHub notification assignments are still retiring locally.',
+        remediation: 'Run openclaw agent-system notifications refresh.',
         status: 'warning',
       },
     ]);
@@ -792,7 +424,7 @@ describe('channels/github/lib/lifecycle', () => {
       warnings: [
         {
           code: 'github-notification-retirement-pending',
-          message: 'GitHub notification state was retained until the Gateway retires its sessions.',
+          message: 'GitHub notification state was retained until intake retirement completes.',
         },
       ],
     });
@@ -801,14 +433,11 @@ describe('channels/github/lib/lifecycle', () => {
 
   it('should retire disabled assignments before removing private monitor state', async () => {
     const state = notificationMonitorState();
-    const delivery = state.items[notificationItemKey]?.delivery;
-    assert.ok(delivery);
-    state.items[notificationItemKey]!.delivery = {
-      ...delivery,
-      activation: { status: 'planned' },
-      sessionId: 'session-1',
-      sessionKey: 'agent:data:github:item',
-      stage: 'active',
+    const intake = state.items[notificationItemKey]?.intake;
+    assert.ok(intake);
+    state.items[notificationItemKey]!.intake = {
+      ...intake,
+      stage: 'prepared',
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };

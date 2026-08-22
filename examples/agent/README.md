@@ -6,27 +6,10 @@ This scenario runs the prepared Agent System package in the default Gateway with
 
 ```bash
 # should configure the default profile with the ci model
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice openai-api-key \
-  --openai-api-key "$OPENAI_API_KEY" \
-  --secret-input-mode plaintext \
+openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
-openclaw models set "openai/$OPENAI_MODEL"
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --model "openai/$OPENAI_MODEL"
 
 # should install the scenario-owned data workspace through agent system
 cd "$GITHUB_WORKSPACE/examples/agent/data"
@@ -36,7 +19,7 @@ openclaw agent-system install
 openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
 
 # should start the default gateway as a supervised background process
-OPENCLAW_LOG_LEVEL=debug "$GITHUB_WORKSPACE/scripts/gateway-process.sh" start
+OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
 
 ## Testing
@@ -51,20 +34,23 @@ openclaw agent \
 
 # should load the data manifest through a passive gateway lifecycle
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  openclaw logs --plain --limit 1000 --max-bytes 1000000 > "$TMPDIR/agent-lifecycle.log"
   if grep -Eq \
     '\[agent-system\] manifest_loaded trigger="(service|session_start|before_prompt_build)" agentId="data"' \
-    "$TMPDIR/gateway.log"; then
+    "$TMPDIR/agent-lifecycle.log"; then
     break
   fi
   if [ "$attempt" -eq 10 ]; then
-    grep -F '[agent-system]' "$TMPDIR/gateway.log" || true
+    grep -F '[agent-system]' "$TMPDIR/agent-lifecycle.log" || true
+    tail -n 100 "$TMPDIR/agent-lifecycle.log"
     tail -n 100 "$TMPDIR/gateway.log"
     exit 1
   fi
   sleep 1
 done
 
-# should keep manifest values out of gateway lifecycle logs
+# should keep manifest values out of lifecycle and gateway logs
+if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 ```
 
@@ -72,5 +58,5 @@ if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 
 ```bash
 # should stop the background gateway cleanly
-"$GITHUB_WORKSPACE/scripts/gateway-process.sh" stop
+openclaw-gateway stop
 ```

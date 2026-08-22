@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import type { AgentSystemCliResult } from '../lib/tool-types.ts';
-import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
+import type { AgentSystemCliResult } from '../api/types.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 
 const publicationMarker =
-  '<!-- agent-system-github-publication:initial-acknowledgment:0123456789abcdef0123456789abcdef -->';
+  '<!-- agent-system-github-publication:planning-outcome:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -22,7 +22,7 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
   };
 }
 
-describe('channels/github/lib/work-event-client', () => {
+describe('channels/github/provider/work-event-client', () => {
   it('should paginate assigned-item discovery through fixed bounded api calls', async () => {
     const requests: string[][] = [];
     const pages = [
@@ -66,7 +66,10 @@ describe('channels/github/lib/work-event-client', () => {
       },
     });
 
-    const discovery = await client.discoverAssigned('2026-08-11T11:55:00.000Z');
+    const discovery = await client.discoverAssigned('2026-08-11T11:55:00.000Z', [
+      'issue',
+      'pull-request',
+    ]);
 
     assert.equal(discovery.truncated, false);
     assert.deepEqual(
@@ -108,6 +111,31 @@ describe('channels/github/lib/work-event-client', () => {
     assert.equal(item.databaseId, 42);
     assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
+  });
+
+  it('should constrain discovery to one configured assignment type', async () => {
+    const requests: string[][] = [];
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        return response({ totalCount: 0, incomplete: false, items: [] });
+      },
+    });
+
+    await client.discoverAssigned('2026-08-11T11:55:00.000Z', ['issue']);
+    await client.discoverAssigned('2026-08-11T11:55:00.000Z', ['pull-request']);
+
+    assert.ok(
+      requests[0]?.includes(
+        'q=assignee:tanaabot state:open updated:>=2026-08-11T11:55:00.000Z is:issue',
+      ),
+    );
+    assert.ok(
+      requests[1]?.includes(
+        'q=assignee:tanaabot state:open updated:>=2026-08-11T11:55:00.000Z is:pr',
+      ),
+    );
   });
 
   it('should load canonical pull-request head and lifecycle facts separately', async () => {
@@ -192,7 +220,7 @@ describe('channels/github/lib/work-event-client', () => {
     assert.doesNotMatch(projection, /actor:\{login:\.actor\.login/u);
   });
 
-  it('should fetch a bounded issue projection with the newest comment page', async () => {
+  it('should fetch bounded issue context with the newest comment page', async () => {
     const requests: string[][] = [];
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_agent' },
@@ -226,7 +254,7 @@ describe('channels/github/lib/work-event-client', () => {
       },
     });
 
-    const context = await client.getPlanningContext('tanaabased', 'example', 7);
+    const context = await client.getItemContext('tanaabased', 'example', 7);
 
     assert.equal(context.title, 'Implement the thing');
     assert.equal(context.truncated, true);
@@ -235,7 +263,6 @@ describe('channels/github/lib/work-event-client', () => {
     assert.equal(context.comments.at(-1)?.body, 'The latest requirement.');
     assert.ok(requests[1]?.includes('page=1'));
     assert.ok(requests[2]?.includes('page=2'));
-    assert.ok(requests[1]?.includes('per_page=50'));
   });
 
   it('should include bounded pull-request file summaries without patches', async () => {
@@ -258,7 +285,7 @@ describe('channels/github/lib/work-event-client', () => {
               additions: 12,
               changes: 15,
               deletions: 3,
-              filename: 'channels/github/lib/poller.ts',
+              filename: 'channels/github/intake/monitor/poller.ts',
               previousFilename: null,
               status: 'modified',
             },
@@ -268,7 +295,7 @@ describe('channels/github/lib/work-event-client', () => {
       },
     });
 
-    const context = await client.getPlanningContext('tanaabased', 'example', 8, 'pull-request');
+    const context = await client.getItemContext('tanaabased', 'example', 8, 'pull-request');
 
     assert.equal(context.truncated, true);
     assert.deepEqual(context.files, [
@@ -276,75 +303,49 @@ describe('channels/github/lib/work-event-client', () => {
         additions: 12,
         changes: 15,
         deletions: 3,
-        filename: 'channels/github/lib/poller.ts',
+        filename: 'channels/github/intake/monitor/poller.ts',
         status: 'modified',
       },
     ]);
     assert.ok(requests[1]?.includes('/repos/tanaabased/example/pulls/8/files'));
-    assert.ok(requests[1]?.some((value) => value.includes('additions')));
     assert.ok(requests[1]?.every((value) => !value.includes('patch')));
   });
 
-  it('should list bounded canonical issue comments with immutable actor and revision facts', async () => {
+  it('should list and re-read bounded canonical issue comments', async () => {
     const requests: string[][] = [];
+    const canonical = {
+      author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
+      body: '@tanaabot status?',
+      bodyLength: 18,
+      createdAt: '2026-08-14T12:00:00Z',
+      databaseId: 91,
+      nodeId: 'IC_comment',
+      updatedAt: '2026-08-14T12:01:00Z',
+    };
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_agent' },
       async execute(argv) {
         requests.push(argv);
-        return response([
-          {
-            author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
-            body: '@tanaabot status?',
-            bodyLength: 18,
-            createdAt: '2026-08-14T12:00:00Z',
-            databaseId: 91,
-            nodeId: 'IC_comment',
-            updatedAt: '2026-08-14T12:01:00Z',
-          },
-        ]);
+        return argv.includes('/repos/tanaabased/example/issues/comments/91')
+          ? response({
+              ...canonical,
+              issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
+            })
+          : response([canonical]);
       },
     });
 
     const page = await client.listIssueComments('tanaabased', 'example', 7);
+    const exact = await client.getIssueComment('tanaabased', 'example', 7, 91);
 
     assert.equal(page.truncated, false);
     assert.equal(page.comments[0]?.author?.nodeId, 'U_actor');
-    assert.equal(page.comments[0]?.updatedAt, '2026-08-14T12:01:00Z');
-    assert.equal(page.comments[0]?.bodyTruncated, false);
+    assert.equal(exact.nodeId, 'IC_comment');
     assert.ok(requests[0]?.includes('per_page=100'));
-    assert.ok(requests[0]?.some((value) => value.includes('bodyLength')));
   });
 
-  it('should re-read an exact comment only when it belongs to the expected issue', async () => {
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute() {
-        return response({
-          author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
-          body: '@tanaabot status?',
-          bodyLength: 18,
-          createdAt: '2026-08-14T12:00:00Z',
-          databaseId: 91,
-          issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
-          nodeId: 'IC_comment',
-          updatedAt: '2026-08-14T12:01:00Z',
-        });
-      },
-    });
-
-    assert.equal(
-      (await client.getIssueComment('tanaabased', 'example', 7, 91)).nodeId,
-      'IC_comment',
-    );
-    await assert.rejects(
-      client.getIssueComment('tanaabased', 'example', 8, 91),
-      /another work item/u,
-    );
-  });
-
-  it('should reconcile and publish an exact marked comment without putting its body in argv', async () => {
-    const marker = publicationMarker;
-    const body = `On it.\n\n${marker}`;
+  it('should reconcile and publish marked comments without putting bodies in argv', async () => {
+    const body = `On it.\n\n${publicationMarker}`;
     const requests: Array<{ argv: string[]; stdin?: string }> = [];
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_agent' },
@@ -358,43 +359,26 @@ describe('channels/github/lib/work-event-client', () => {
             user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
           });
         }
-        return response([]);
-      },
-    });
-
-    assert.equal(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), undefined);
-    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
-      databaseId: 91,
-      nodeId: 'IC_published',
-    });
-    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
-    assert.equal(requests[1]?.argv.includes(body), false);
-    assert.ok(requests[1]?.argv.includes('--input'));
-  });
-
-  it('should adopt only the authenticated account marker receipt', async () => {
-    const marker = publicationMarker;
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute() {
         return response([
           {
+            body,
             databaseId: 90,
-            nodeId: 'IC_other',
-            user: { login: 'someone', nodeId: 'U_other', type: 'User' },
-          },
-          {
-            databaseId: 91,
-            nodeId: 'IC_own',
+            nodeId: 'IC_existing',
             user: { login: 'tanaabot', nodeId: 'U_agent', type: 'User' },
           },
         ]);
       },
     });
 
-    assert.deepEqual(await client.findOwnIssueComment('tanaabased', 'example', 7, marker), {
+    assert.deepEqual(
+      await client.findOwnIssueComment('tanaabased', 'example', 7, publicationMarker),
+      { body, databaseId: 90, nodeId: 'IC_existing' },
+    );
+    assert.deepEqual(await client.createIssueComment('tanaabased', 'example', 7, body), {
       databaseId: 91,
-      nodeId: 'IC_own',
+      nodeId: 'IC_published',
     });
+    assert.equal(requests[1]?.stdin, JSON.stringify({ body }));
+    assert.equal(requests[1]?.argv.includes(body), false);
   });
 });

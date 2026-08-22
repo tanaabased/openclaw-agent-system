@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { admitGitHubAssignment } from '../channels/github/utils/admit-assignment.ts';
+import { admitGitHubAssignment } from '../channels/github/intake/admit-assignment.ts';
 import {
   notificationAccount as account,
   notificationActor as actor,
@@ -20,6 +20,7 @@ const base = {
   account,
   baselineAt: Date.parse('2026-08-11T12:00:00.000Z'),
   configuration: {
+    assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
     approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
     allowedRepositoryOwners: [{ login: owner.login, nodeId: owner.nodeId }],
     intervalMinutes: 5,
@@ -42,7 +43,7 @@ const base = {
   },
 };
 
-describe('channels/github/utils/admit-assignment', () => {
+describe('channels/github/intake/admit-assignment', () => {
   it('should approve a new assignment from a pinned actor in an allowed writable repository', () => {
     assert.deepEqual(admitGitHubAssignment(base), {
       code: 'assignment-approved',

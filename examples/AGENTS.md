@@ -5,16 +5,18 @@
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
-- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep examples-level files limited to `AGENTS.md` and `package.json`, and move proven shared coordination helpers to the repository's `scripts/` directory.
+- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml` plus `.bin` for shared example commands; keep other examples-level files limited to `AGENTS.md` and `package.json`.
 
 ## OpenClaw Runtime
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
+- Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, use `--yolo` only when a live-agent scenario requires unattended tool execution, omit `--model` for model-free scenarios, and pass a complete provider/model reference only when the scenario invokes a live agent. Treat successful setup as proof that the resulting OpenClaw configuration is valid and any supplied Agent System pack is enabled and runtime-loadable; keep scenario assertions focused on behavior beyond those shared postconditions.
 - Register named agents explicitly and bind them to scenario-owned workspaces; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
 - Keep static agent workspaces and message inputs checked in beside their owning README and use them in place on fresh GitHub Actions runners. Copy a fixture only when isolation from a tested mutation is part of the scenario contract.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
-- When an unattended OpenClaw CI scenario invokes tools, run `openclaw exec-policy preset yolo` in that scenario's setup; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
+- When an unattended OpenClaw CI scenario invokes tools, pass `--yolo` to `openclaw-setup`; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
+- Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_DEBUG`, `OPENCLAW_LOG_LEVEL=debug`, `DEBUG`, or runner debug mode for opt-in diagnostics.
 
 ## Assertions
 

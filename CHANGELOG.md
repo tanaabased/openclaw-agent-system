@@ -2,27 +2,27 @@
 
 ### New Features
 
-- Added a fail-closed, durable GitHub message-adapter foundation for future notification replies.
-- Added direct GitHub pull-request assignments with verified head metadata, private planning, safe replies, progress, and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
-- Added explicit operator-scoped progress publication from active local GitHub notification sessions.
-- Added live polling and connection health to `agent-system-github` channel status. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
-- Added plan-first GitHub notification activation with private issue assessment and safety-gated public acknowledgment. [#18](https://github.com/tanaabased/openclaw-agent-system/pull/18)
-- Added readable private GitHub assignment requests and structured Markdown plans while keeping issue context out of chat history. [#33](https://github.com/tanaabased/openclaw-agent-system/issues/33)
-- Added revision-aware replies for approved GitHub issue mentions, with tool-free private turns, exact comment reauthorization, and durable public delivery. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
+- Added direct GitHub pull-request assignment intake with verified head metadata and logical retirement. [#34](https://github.com/tanaabased/openclaw-agent-system/pull/34)
+- Added lifecycle-owned GitHub assignment intake with issue worktree preparation and neutral `prepared` checkpoints. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17) [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Added redacted `notifications status` and semantic `notifications wait` commands for durable intake inspection. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Added trusted issue-comment conversations with private session responses and reauthorized GitHub replies. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
 - Bound registered command-launcher descendants, including `git` and `gh`, to active OpenClaw and Codex agents with fail-closed admission. [#23](https://github.com/tanaabased/openclaw-agent-system/pull/23)
 
 ### Bug Fixes
 
-- Fixed Agent System lifecycle logs to preserve clean CLI command output.
-- Fixed GitHub notification doctor activation-failure counts to ignore logically retired items while retaining historical state. [#20](https://github.com/tanaabased/openclaw-agent-system/issues/20)
-- Fixed active GitHub notification deliveries to complete logical retirement while preserving sessions and worktrees. [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
-- Fixed `github.notifications` to establish empty baselines during `install` and remove converged channel state on disable. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17)
-- Fixed malformed notification acknowledgment output to fall back to a safe deterministic response instead of leaving assignment intake failed. [#22](https://github.com/tanaabased/openclaw-agent-system/pull/22)
+- Fixed GitHub notification baselines, inbound status, and retirement without deleting managed worktrees. [#17](https://github.com/tanaabased/openclaw-agent-system/pull/17) [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19) [#21](https://github.com/tanaabased/openclaw-agent-system/issues/21)
 - Fixed managed Codex config to set `allow_login_shell = false` and warn when user-managed config omits it. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
-- Fixed managed command launchers to preserve bounded redirected standard input.
-- Fixed managed `gh` launchers to accept root `--help`, `-h`, and `--version` flags used by repository helpers. [#25](https://github.com/tanaabased/openclaw-agent-system/pull/25)
-- Fixed notification acknowledgment failures to persist and appear in `doctor` instead of remaining indefinitely pending.
-- Fixed successful GitHub assignment intake to update the Channels UI's `Last inbound` status. [#19](https://github.com/tanaabased/openclaw-agent-system/pull/19)
+- Fixed managed command launchers to preserve bounded redirected standard input. [#29](https://github.com/tanaabased/openclaw-agent-system/pull/29)
+- Fixed notification CLI and lifecycle logging so one-shot JSON commands terminate with clean stdout. [#28](https://github.com/tanaabased/openclaw-agent-system/pull/28) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Fixed the Node 26 development baseline to compile against matching Node 26 type definitions. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+
+### Notes
+
+- Consolidated Leia setup and diagnostics under `examples/.bin` and focused installed coverage on the issue lifecycle. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Reorganized GitHub channel source around lifecycle, intake, conversation, publication, provider, routing, state, and runtime owners. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Reorganized root source around `agent`, `api`, `core`, `credentials`, `environment`, `manifest`, and `paths` owners. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Split GitHub target design, presentation components, and shipped behavior across focused channel documentation. [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
+- Updated notification state to schema 4, separating intake state from conversation and publication receipts. [#37](https://github.com/tanaabased/openclaw-agent-system/issues/37) [#42](https://github.com/tanaabased/openclaw-agent-system/pull/42)
 
 ## v0.3.0 - [August 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.3.0)
 

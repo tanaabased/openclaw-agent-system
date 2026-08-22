@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 import { gitWorktreeDirectoryName } from '../tools/git/worktree-names.ts';

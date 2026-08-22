@@ -1,0 +1,298 @@
+import { Type, type Static } from 'typebox';
+import { Value } from 'typebox/value';
+import { isAlias, parseDocument, visit } from 'yaml';
+
+import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
+import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
+import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
+import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
+
+const externalAgentManifestSchema = Type.Object(
+  {
+    'schema-version': Type.Literal(1),
+    agent: externalAgentSectionSchema,
+    environment: Type.Optional(
+      Type.Object(
+        {
+          dotenv: Type.Optional(
+            Type.Union([
+              Type.String({ minLength: 1, pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$' }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
+          op: Type.Optional(
+            Type.Union([
+              Type.String({ minLength: 1, pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$' }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
+          'path-prepend': Type.Optional(
+            Type.Union([
+              Type.String({
+                minLength: 1,
+                pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
+              }),
+              Type.Array(
+                Type.String({
+                  minLength: 1,
+                  pattern: '^(?![/\\\\])[^\\u0000\\r\\n]*\\S$',
+                }),
+                { minItems: 1, uniqueItems: true },
+              ),
+            ]),
+          ),
+          required: Type.Optional(
+            Type.Array(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }), {
+              minItems: 1,
+              uniqueItems: true,
+            }),
+          ),
+          set: Type.Optional(
+            Type.Record(
+              Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }),
+              Type.Union([Type.String(), externalOpSecretReferenceSchema]),
+            ),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    git: Type.Optional(externalGitSectionSchema),
+    github: Type.Optional(externalGitHubSectionSchema),
+  },
+  { additionalProperties: false },
+);
+
+type ExternalAgentManifest = Static<typeof externalAgentManifestSchema>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function pointerSegment(value: string): string {
+  return value.replace(/~/gu, '~0').replace(/\//gu, '~1');
+}
+
+function legacyPolicyDiagnostics(value: unknown): ManifestDiagnostic[] {
+  if (!isRecord(value)) return [];
+  const fields: string[] = [];
+  const gitPolicyFields = new Set(['delete-remote-ref', 'force-push']);
+  const githubPolicyFields = new Set(['releases']);
+  const git = value['git'];
+  if (isRecord(git)) {
+    const extensions = git['extensions'];
+    if (isRecord(extensions)) {
+      for (const [name, decision] of Object.entries(extensions)) {
+        if (/^[a-z0-9][a-z0-9-]*$/u.test(name) && decision === 'ask') {
+          fields.push(`/git/extensions/${pointerSegment(name)}`);
+        }
+      }
+    }
+    const policy = git['policy'];
+    if (isRecord(policy)) {
+      for (const [name, decision] of Object.entries(policy)) {
+        if (gitPolicyFields.has(name) && decision === 'ask') {
+          fields.push(`/git/policy/${pointerSegment(name)}`);
+        }
+      }
+    }
+  }
+  const github = value['github'];
+  if (isRecord(github)) {
+    const policy = github['policy'];
+    if (isRecord(policy)) {
+      for (const [name, decision] of Object.entries(policy)) {
+        if (githubPolicyFields.has(name) && decision === 'ask') {
+          fields.push(`/github/policy/${pointerSegment(name)}`);
+        }
+      }
+    }
+  }
+  return fields.map((fieldPath) => ({
+    code: 'manifest-policy-ask-unsupported',
+    fieldPath,
+    message: `Policy decision ask at ${fieldPath} is no longer supported. An operator must choose deny or allow.`,
+    severity: 'error',
+  }));
+}
+
+function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): ManifestDiagnostic[] {
+  if (error.keyword === 'additionalProperties') {
+    return error.params.additionalProperties.map((property) => ({
+      code: 'manifest-unknown-key',
+      fieldPath: `${error.instancePath}/${String(property)}`,
+      message: `Unknown manifest key: ${String(property)}.`,
+      severity: 'error',
+    }));
+  }
+
+  if (error.keyword === 'required') {
+    return error.params.requiredProperties.map((property) => ({
+      code: 'manifest-required-key',
+      fieldPath: `${error.instancePath}/${property}`,
+      message: `Required manifest key is missing: ${property}.`,
+      severity: 'error',
+    }));
+  }
+
+  return [
+    {
+      code: 'manifest-schema',
+      fieldPath: error.instancePath || '/',
+      message: `Manifest value at ${error.instancePath || '/'} does not match the schema.`,
+      severity: 'error',
+    },
+  ];
+}
+
+function decodeManifest(value: ExternalAgentManifest): AgentManifest {
+  return {
+    schemaVersion: value['schema-version'],
+    agent: decodeAgentSection(value.agent),
+    ...(value.environment === undefined
+      ? {}
+      : {
+          environment: {
+            ...(value.environment.dotenv === undefined
+              ? {}
+              : {
+                  dotenv:
+                    typeof value.environment.dotenv === 'string'
+                      ? [value.environment.dotenv]
+                      : [...value.environment.dotenv],
+                }),
+            ...(value.environment.op === undefined
+              ? {}
+              : {
+                  op:
+                    typeof value.environment.op === 'string'
+                      ? [value.environment.op]
+                      : [...value.environment.op],
+                }),
+            ...(value.environment['path-prepend'] === undefined
+              ? {}
+              : {
+                  pathPrepend:
+                    typeof value.environment['path-prepend'] === 'string'
+                      ? [value.environment['path-prepend']]
+                      : [...value.environment['path-prepend']],
+                }),
+            ...(value.environment.required === undefined
+              ? {}
+              : { required: [...value.environment.required] }),
+            ...(value.environment.set === undefined
+              ? {}
+              : {
+                  set: Object.fromEntries(
+                    Object.entries(value.environment.set).map(([name, input]) => [
+                      name,
+                      decodeEnvironmentSetValue(input),
+                    ]),
+                  ),
+                }),
+          },
+        }),
+    ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),
+    ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
+  };
+}
+
+/** Parse one manifest without permitting YAML references, tags, or schema extensions. */
+export default function parseAgentManifest(source: string): ParsedAgentManifest {
+  const document = parseDocument(source, {
+    customTags: [],
+    merge: false,
+    prettyErrors: false,
+    strict: true,
+    uniqueKeys: true,
+    version: '1.2',
+  });
+  const diagnostics: ManifestDiagnostic[] = document.errors.map((error) => ({
+    code: error.code === 'DUPLICATE_KEY' ? 'yaml-duplicate-key' : 'yaml-parse-error',
+    message:
+      error.code === 'DUPLICATE_KEY'
+        ? 'YAML mapping keys must be unique.'
+        : 'The manifest contains invalid YAML.',
+    severity: 'error',
+  }));
+  let hasAlias = false;
+  let hasAnchor = false;
+  let hasTag = false;
+
+  visit(document, (_key, node) => {
+    if (!node || typeof node !== 'object') return;
+    if (isAlias(node)) hasAlias = true;
+    if ('anchor' in node && typeof node.anchor === 'string' && node.anchor.length > 0) {
+      hasAnchor = true;
+    }
+    if ('tag' in node && typeof node.tag === 'string' && node.tag.length > 0) hasTag = true;
+  });
+
+  if (hasAlias) {
+    diagnostics.push({
+      code: 'yaml-alias',
+      message: 'YAML aliases are not supported.',
+      severity: 'error',
+    });
+  }
+  if (hasAnchor) {
+    diagnostics.push({
+      code: 'yaml-anchor',
+      message: 'YAML anchors are not supported.',
+      severity: 'error',
+    });
+  }
+  if (hasTag) {
+    diagnostics.push({
+      code: 'yaml-tag',
+      message: 'Explicit YAML tags are not supported.',
+      severity: 'error',
+    });
+  }
+  if (diagnostics.length > 0) return { status: 'invalid', diagnostics };
+
+  let value: unknown;
+  try {
+    value = document.toJS({ maxAliasCount: 0 });
+  } catch {
+    return {
+      status: 'invalid',
+      diagnostics: [
+        {
+          code: 'yaml-conversion',
+          message: 'The YAML document could not be converted safely.',
+          severity: 'error',
+        },
+      ],
+    };
+  }
+
+  const migrationDiagnostics = legacyPolicyDiagnostics(value);
+  if (migrationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
+    const migrationPaths = new Set(
+      migrationDiagnostics.flatMap(({ fieldPath }) => (fieldPath === undefined ? [] : [fieldPath])),
+    );
+    const schemaDiagnostics = Value.Errors(externalAgentManifestSchema, value)
+      .flatMap(schemaDiagnostic)
+      .filter(({ fieldPath }) => fieldPath === undefined || !migrationPaths.has(fieldPath));
+    return {
+      status: 'invalid',
+      diagnostics: [...migrationDiagnostics, ...schemaDiagnostics],
+    };
+  }
+
+  return { status: 'valid', manifest: decodeManifest(value), diagnostics: [] };
+}

@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
-import AgentSystemToolError from '../../lib/tool-error.ts';
+import AgentSystemToolError from '../../api/error.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitPrivateKeySource } from './config-schema.ts';
 

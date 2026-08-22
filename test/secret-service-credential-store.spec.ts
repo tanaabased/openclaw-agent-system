@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import SecretServiceCredentialStore, {
   type SecretServiceCommandRunner,
-} from '../lib/secret-service-credential-store.ts';
-import type { CredentialCommandResult } from '../utils/run-credential-command.ts';
+} from '../credentials/secret-service-store.ts';
+import type { CredentialCommandResult } from '../credentials/run-command.ts';
 
 function completed(exitCode: number, stdout = '', stderr = ''): CredentialCommandResult {
   return {
@@ -14,7 +14,7 @@ function completed(exitCode: number, stdout = '', stderr = ''): CredentialComman
   };
 }
 
-describe('lib/secret-service-credential-store', () => {
+describe('credentials/secret-service-store', () => {
   it('should use deterministic attributes and pass credentials only through stdin', async () => {
     const results = [
       completed(1),

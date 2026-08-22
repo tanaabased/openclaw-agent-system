@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=examples/.bin/openclaw-common.sh
+source "$command_dir/openclaw-common.sh"
+
+action=''
+timeout_seconds="${OPENCLAW_GATEWAY_TIMEOUT:-}"
+state_dir="${OPENCLAW_GATEWAY_STATE_DIR:-${TMPDIR:-}}"
+
+usage() {
+  cat <<EOF
+Usage: ${tty_bold}openclaw-gateway${tty_reset} <start|wait|restart|stop|diagnostics> ${tty_dim}[--timeout <seconds>] [--state-dir <path>] [--debug]${tty_reset}
+
+${tty_tp}Commands:${tty_reset}
+  start                   starts the isolated gateway and waits for readiness
+  wait                    waits for an already-started gateway
+  restart                 stops and starts the isolated gateway
+  stop                    stops the isolated gateway
+  diagnostics             prints bounded gateway diagnostics to standard error
+
+${tty_tp}Options:${tty_reset}
+  --timeout <seconds>     limits readiness or shutdown polling ${tty_dim}[default: 90; stop: 30]${tty_reset}
+  --state-dir <path>      stores isolated process files ${tty_dim}[default: TMPDIR]${tty_reset}
+  --debug                 shows diagnostic messages
+  -h, --help              displays this help message
+
+${tty_tp}Environment Variables:${tty_reset}
+  OPENCLAW_GATEWAY_TIMEOUT
+                          same as --timeout
+  OPENCLAW_GATEWAY_STATE_DIR
+                          same as --state-dir
+  OPENCLAW_DEBUG          enables helper-command debug output
+EOF
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --timeout)
+      (($# >= 2)) || error '--timeout requires a value' 2
+      timeout_seconds="$2"
+      shift 2
+      ;;
+    --state-dir)
+      (($# >= 2)) || error '--state-dir requires a path' 2
+      state_dir="$2"
+      shift 2
+      ;;
+    --debug)
+      enable_debug
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      usage >&2
+      error "unrecognized option: $1" 2
+      ;;
+    *)
+      if [[ -n "$action" ]]; then
+        usage >&2
+        error "unexpected argument: $1" 2
+      fi
+      action="$1"
+      shift
+      ;;
+  esac
+done
+
+case "$action" in
+  start | wait | restart | stop | diagnostics) ;;
+  '')
+    usage >&2
+    error 'an action is required: start, wait, restart, stop, or diagnostics' 2
+    ;;
+  *)
+    usage >&2
+    error "unsupported action: $action" 2
+    ;;
+esac
+
+[[ -n "$state_dir" ]] || error '--state-dir, OPENCLAW_GATEWAY_STATE_DIR, or TMPDIR is required'
+[[ "$state_dir" == /* && "$state_dir" != '/' && -d "$state_dir" ]] || error "state directory must be an existing absolute directory: $state_dir"
+
+pid_path="$state_dir/gateway.pid"
+log_path="$state_dir/gateway.log"
+call_log_path="$state_dir/gateway-call.log"
+debug "gateway action=$action state-dir=$state_dir"
+
+tail_diagnostics() {
+  if [[ -f "$call_log_path" ]]; then
+    tail -n 40 "$call_log_path" >&2
+  fi
+  if [[ -f "$log_path" ]]; then
+    grep -F 'github-notifications:' "$log_path" | tail -n 80 >&2 || true
+    tail -n 120 "$log_path" >&2
+  fi
+}
+
+read_gateway_pid() {
+  if [[ ! -f "$pid_path" ]]; then
+    error_message "gateway PID file is missing: $pid_path"
+    return 1
+  fi
+  gateway_pid="$(< "$pid_path")"
+  if [[ ! "$gateway_pid" =~ ^[0-9]+$ ]]; then
+    error_message "gateway PID is invalid: $gateway_pid"
+    return 1
+  fi
+}
+
+gateway_is_running() {
+  read_gateway_pid && kill -0 "$gateway_pid" 2>/dev/null
+}
+
+wait_for_gateway() {
+  local wait_timeout="$1"
+  local deadline=$((SECONDS + wait_timeout))
+  read_gateway_pid
+  debug "waiting for gateway pid=$gateway_pid timeout-seconds=$wait_timeout"
+  until openclaw gateway call agents.list --json --timeout 3000 > /dev/null 2> "$call_log_path"; do
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+      error_message 'gateway exited before becoming ready'
+      tail_diagnostics
+      return 1
+    fi
+    if ((SECONDS >= deadline)); then
+      error_message "gateway did not become ready within $wait_timeout seconds"
+      tail_diagnostics
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+start_gateway() {
+  local start_timeout="$1"
+  if [[ -f "$pid_path" ]]; then
+    if gateway_is_running; then
+      error_message "gateway is already running: $gateway_pid"
+      return 1
+    fi
+    rm -f "$pid_path"
+  fi
+
+  debug "starting gateway log-path=$log_path"
+  (
+    exec openclaw gateway run --verbose >> "$log_path" 2>&1 < /dev/null
+  ) &
+  gateway_pid="$!"
+  printf '%s\n' "$gateway_pid" > "$pid_path"
+  wait_for_gateway "$start_timeout"
+}
+
+stop_gateway() {
+  local stop_timeout="$1"
+  local deadline=$((SECONDS + stop_timeout))
+  if [[ ! -f "$pid_path" ]]; then
+    return 0
+  fi
+  read_gateway_pid
+  if ! kill -0 "$gateway_pid" 2>/dev/null; then
+    rm -f "$pid_path"
+    return 0
+  fi
+  debug "stopping gateway pid=$gateway_pid timeout-seconds=$stop_timeout"
+  if ! kill -TERM "$gateway_pid" 2>/dev/null; then
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+      rm -f "$pid_path"
+      return 0
+    fi
+    error_message "gateway could not be asked to stop: $gateway_pid"
+    tail_diagnostics
+    return 1
+  fi
+  while kill -0 "$gateway_pid" 2>/dev/null; do
+    if ((SECONDS >= deadline)); then
+      error_message "gateway did not stop within $stop_timeout seconds"
+      tail_diagnostics
+      return 1
+    fi
+    sleep 1
+  done
+  rm -f "$pid_path"
+}
+
+restart_gateway() {
+  local restart_timeout="$1"
+  stop_gateway "$restart_timeout"
+  start_gateway "$restart_timeout"
+}
+
+case "$action" in
+  start)
+    timeout_seconds="${timeout_seconds:-90}"
+    require_positive_integer 'timeout' "$timeout_seconds"
+    start_gateway "$timeout_seconds"
+    ;;
+  wait)
+    timeout_seconds="${timeout_seconds:-90}"
+    require_positive_integer 'timeout' "$timeout_seconds"
+    wait_for_gateway "$timeout_seconds"
+    ;;
+  restart)
+    timeout_seconds="${timeout_seconds:-90}"
+    require_positive_integer 'timeout' "$timeout_seconds"
+    restart_gateway "$timeout_seconds"
+    ;;
+  stop)
+    timeout_seconds="${timeout_seconds:-30}"
+    require_positive_integer 'timeout' "$timeout_seconds"
+    stop_gateway "$timeout_seconds"
+    ;;
+  diagnostics)
+    tail_diagnostics
+    ;;
+esac

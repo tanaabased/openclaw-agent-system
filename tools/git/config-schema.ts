@@ -5,8 +5,8 @@ import {
   environmentVariableNameSchema,
   externalEnvironmentBindingSchema,
   externalResolvableStringSchema,
-} from '../../utils/manifest-value-schemas.ts';
-import type { EnvironmentBinding, ResolvableString } from '../../utils/manifest-value-types.ts';
+} from '../../manifest/value-schemas.ts';
+import type { EnvironmentBinding, ResolvableString } from '../../manifest/value-types.ts';
 
 const externalGitPolicyDecisionSchema = Type.Union([Type.Literal('allow'), Type.Literal('deny')]);
 

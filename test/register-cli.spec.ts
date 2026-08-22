@@ -3,11 +3,12 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
-import registerAgentSystemCli from '../lib/register-cli.ts';
-import type { AgentSystemToolScope } from '../lib/tool-types.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
+import { createCliStyles } from '../cli/output.ts';
+import registerAgentSystemCli from '../cli/register.ts';
+import type { AgentSystemToolScope } from '../api/types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -34,8 +35,8 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
   },
 };
 
-function createProgram(input?: Readable) {
-  const logs = { error: [] as string[], info: [] as string[], warn: [] as string[] };
+function createProgram(input?: Readable, dependencies: { notificationWaitError?: Error } = {}) {
+  const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
     agent: [] as string[],
@@ -54,8 +55,17 @@ function createProgram(input?: Readable) {
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
+      executionSurface?: string;
+      selector?: { itemType: string; number: number; repository: string };
+      signalPresent: boolean;
       waitForLeaseMs?: number;
     }>,
+    notificationStatus: [] as Array<{
+      agentId: string;
+      selector?: { itemType: string; number: number; repository: string };
+    }>,
+    notificationWait: [] as GitHubNotificationWaitInput[],
+    oneShotCompletion: [] as number[],
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -67,6 +77,9 @@ function createProgram(input?: Readable) {
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    completeOneShot: async (code) => {
+      calls.oneShotCompletion.push(code);
+    },
     cwd: () => '/current',
     credentialInput: {
       async read(source) {
@@ -137,11 +150,6 @@ function createProgram(input?: Readable) {
       },
     },
     ...(input ? { input } : {}),
-    logger: {
-      error: (message) => logs.error.push(message),
-      info: (message) => logs.info.push(message),
-      warn: (message) => logs.warn.push(message),
-    },
     manifestService: {
       async loadForAgentId(agentId) {
         calls.agent.push(agentId);
@@ -155,7 +163,11 @@ function createProgram(input?: Readable) {
     notificationMonitorService: {
       async runOnce(options = {}) {
         const refreshOptions = 'aborted' in options ? {} : options;
-        calls.notificationRefresh.push(refreshOptions);
+        const { signal, ...recorded } = refreshOptions;
+        calls.notificationRefresh.push({
+          ...recorded,
+          signalPresent: signal instanceof AbortSignal,
+        });
         return [
           {
             agentId: refreshOptions.agentId ?? 'tanaabot',
@@ -172,7 +184,42 @@ function createProgram(input?: Readable) {
         ];
       },
     },
-    output: { writeStdout: (message) => output.push(message) },
+    notificationStatusService: {
+      async inspect(agentId, selector) {
+        calls.notificationStatus.push({ agentId, ...(selector ? { selector } : {}) });
+        return {
+          agentId,
+          baseline: { observedAt: 1_000, status: 'ready' as const },
+          code: 'github-notification-status-ready',
+          items: [],
+          schemaVersion: 2 as const,
+          status: 'ready' as const,
+        };
+      },
+      async wait(input) {
+        calls.notificationWait.push(input);
+        if (dependencies.notificationWaitError) throw dependencies.notificationWaitError;
+        return {
+          agentId: input.agentId,
+          code: `github-notification-${input.target}`,
+          observation: {
+            agentId: input.agentId,
+            baseline: { observedAt: 1_000, status: 'ready' as const },
+            code: 'github-notification-status-ready',
+            items: [],
+            schemaVersion: 2 as const,
+            status: 'ready' as const,
+          },
+          schemaVersion: 2 as const,
+          status: 'completed' as const,
+          target: input.target,
+        };
+      },
+    },
+    output: {
+      writeStderr: (message) => diagnostics.push(message),
+      writeStdout: (message) => output.push(message),
+    },
     toolRegistry: {
       async invoke(command, _runtime, argv, scope, stdin) {
         calls.tool.push({
@@ -203,10 +250,10 @@ function createProgram(input?: Readable) {
     toolRuntime: {} as never,
     styles: createCliStyles({ NO_COLOR: '1' }),
   });
-  return { calls, logs, output, program };
+  return { calls, diagnostics, output, program };
 }
 
-describe('lib/register-cli', () => {
+describe('cli/register', () => {
   it('should register agent-system with the as alias and owned subcommands', () => {
     const command = createProgram().program.commands[0];
 
@@ -220,7 +267,7 @@ describe('lib/register-cli', () => {
       command?.commands
         .find((subcommand) => subcommand.name() === 'notifications')
         ?.commands.map((subcommand) => subcommand.name()),
-      ['refresh'],
+      ['refresh', 'status', 'wait'],
     );
   });
 
@@ -398,10 +445,13 @@ describe('lib/register-cli', () => {
       {
         agentId: 'tanaabot',
         bypassInterval: true,
+        executionSurface: 'cli-one-shot',
+        signalPresent: true,
         waitForLeaseMs: 120_000,
       },
     ]);
     assert.equal(JSON.parse(output.join('')).code, 'github-notification-poll-complete');
+    assert.deepEqual(calls.oneShotCompletion, [0]);
   });
 
   it('should report baseline readiness in human notification refresh output', async () => {
@@ -413,6 +463,132 @@ describe('lib/register-cli', () => {
       output.join(''),
       /baseline\s+established at 1970-01-01T00:00:01.000Z with 0 existing assignments/,
     );
+  });
+
+  it('should target one notification item during refresh', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'refresh',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--timeout',
+      '45',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationRefresh[0]?.selector, {
+      itemType: 'issue',
+      number: 12,
+      repository: 'tanaabased/example',
+    });
+    assert.equal(calls.notificationRefresh[0]?.waitForLeaseMs, 45_000);
+  });
+
+  it('should inspect one notification item through the status command', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'status',
+      '--agent',
+      'data',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationStatus, [
+      {
+        agentId: 'tanaabot',
+        selector: { itemType: 'issue', number: 12, repository: 'tanaabased/example' },
+      },
+    ]);
+    assert.equal(JSON.parse(output.join('')).status, 'ready');
+    assert.deepEqual(calls.oneShotCompletion, []);
+  });
+
+  it('should wait for prepared intake with explicit refresh and timeout options', async () => {
+    const { calls, output, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'wait',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'pull-request',
+      '--number',
+      '13',
+      '--for',
+      'prepared',
+      '--refresh',
+      '--timeout',
+      '45',
+      '--json',
+    ]);
+
+    assert.deepEqual(calls.notificationWait, [
+      {
+        agentId: 'tanaabot',
+        executionSurface: 'cli-one-shot',
+        refresh: true,
+        selector: {
+          itemType: 'pull-request',
+          number: 13,
+          repository: 'tanaabased/example',
+        },
+        target: 'prepared',
+        timeoutMs: 45_000,
+      },
+    ]);
+    assert.equal(JSON.parse(output.join('')).status, 'completed');
+    assert.deepEqual(calls.oneShotCompletion, [0]);
+  });
+
+  it('should complete a failed notification wait without corrupting json stdout', async () => {
+    const { calls, diagnostics, output, program } = createProgram(undefined, {
+      notificationWaitError: new Error('state unavailable'),
+    });
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'wait',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--for',
+      'prepared',
+      '--json',
+    ]);
+
+    assert.equal(output.join(''), '');
+    assert.match(diagnostics.join(''), /code=github-notification-wait-failed/u);
+    assert.deepEqual(calls.oneShotCompletion, [1]);
   });
 
   it('should register structured json validation output', async () => {

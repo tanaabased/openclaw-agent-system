@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import resolveManifestValue from '../utils/resolve-manifest-value.ts';
+import resolveManifestValue from '../manifest/resolve-value.ts';
 
-describe('utils/resolve-manifest-value', () => {
+describe('manifest/resolve-value', () => {
   it('should preserve literal values without consulting the environment', () => {
     assert.deepEqual(
       resolveManifestValue('$AGENT_NAME', { AGENT_NAME: 'Private Name' }, '/agent/name'),

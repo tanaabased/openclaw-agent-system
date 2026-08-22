@@ -8,6 +8,10 @@ plugins that want to add tools compatible with [Agent System](./README.md).
 > first-party tools use an internal contract while a supported typed
 > cross-plugin registration and runtime boundary is designed with OpenClaw.
 
+The repository's `api/` directory owns that internal first-party contract and
+runtime today. Its source modules are packaged for the plugin entrypoint but are
+not declared package exports or a supported third-party import surface.
+
 ## Goal
 
 The public API will let another OpenClaw plugin register a compatible tool

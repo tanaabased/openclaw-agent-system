@@ -1,4 +1,4 @@
-import { resolveToolExecutable } from '../../lib/tool-cli-runner.ts';
+import { resolveToolExecutable } from '../../api/cli-runner.ts';
 
 export interface GitExtensionResolverDependencies {
   excludedExecutableDirectories?: readonly string[];

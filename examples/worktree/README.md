@@ -7,25 +7,10 @@ discovery, policy, health, and removal through the installed plugin and packaged
 ## Setup
 
 ```bash
-# should configure an unauthenticated local openclaw profile
-openclaw onboard --non-interactive --accept-risk \
-  --mode local \
-  --auth-choice skip \
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --gateway-bind loopback \
-  --skip-daemon \
-  --skip-health \
-  --skip-bootstrap \
-  --skip-channels \
-  --skip-hooks \
-  --skip-search \
-  --skip-skills \
-  --skip-ui \
-  --suppress-gateway-token-output
-
-# should install and enable the packed plugin
-openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
-openclaw plugins enable agent-system
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 
 # should install the scenario-owned agents through agent system
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"

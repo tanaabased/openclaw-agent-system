@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
-import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
+import AgentSystemToolError from '../api/error.ts';
+import AgentSystemToolRuntime from '../api/runtime.ts';
+import type { AgentSystemAuditEvent, AgentSystemCliRunRequest } from '../api/types.ts';
 import {
   createSemanticToolTestDefinition,
   createToolTestDefinition,
@@ -79,7 +79,7 @@ function createRuntime(options: {
   });
 }
 
-describe('lib/tool-runtime', () => {
+describe('api/runtime', () => {
   it('should run semantic operations through authorization, environment, and audit', async () => {
     const auditEvents: AgentSystemAuditEvent[] = [];
     const events: string[] = [];

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolError from '../api/error.ts';
 import { gitIdentityEnvironment, resolveGitIdentity } from '../tools/git/identity.ts';
 
 describe('tools/git/identity', () => {
