@@ -4,6 +4,7 @@ import pluginMetadataFailures, {
   type PackageMetadata,
   type PluginManifest,
 } from '../core/plugin-metadata-failures.ts';
+import nodeTypesBaselineFailure from './node-types-baseline.ts';
 
 const [packageContents, manifestContents, nodeVersionContents] = await Promise.all([
   readFile('package.json', 'utf8'),
@@ -23,6 +24,12 @@ if (!/^\d+\.\d+\.\d+$/.test(nodeVersion)) {
 } else if (!Bun.semver.satisfies(nodeVersion, nodeRange)) {
   failures.push(`Node ${nodeVersion} does not satisfy package engines ${nodeRange}`);
 }
+
+const nodeTypesFailure = nodeTypesBaselineFailure(
+  nodeVersion,
+  packageMetadata.devDependencies?.['@types/node'],
+);
+if (nodeTypesFailure) failures.push(nodeTypesFailure);
 
 if (failures.length > 0) {
   for (const failure of failures) process.stderr.write(`plugin check: ${failure}\n`);

@@ -5,6 +5,7 @@ import { agentSystemPluginIdentity } from './plugin-identity.ts';
 export interface PackageMetadata {
   description?: string;
   devDependencies?: {
+    '@types/node'?: string;
     openclaw?: string;
   };
   engines?: {

@@ -68,7 +68,7 @@ describe('channels/github/publication/reply-tool-context', () => {
       assert.equal(
         isGitHubNotificationReplyToolContext({ agentId: 'tanaabot', sessionKey }),
         false,
-        sessionKey,
+        sessionKey ?? 'undefined session key',
       );
     }
   });
