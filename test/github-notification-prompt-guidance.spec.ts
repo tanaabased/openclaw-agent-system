@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 
 import githubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
 import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
+import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
+import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
+import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
@@ -10,6 +13,10 @@ import { githubNotificationChannelId } from '../channels/github/routing/routing.
 
 function resolver() {
   return new GitHubNotificationTurnContractResolver({
+    events: new GitHubNotificationEventRegistry([
+      githubNotificationAssignmentEvent,
+      githubNotificationCommentEvent,
+    ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([
       new GitHubIssueLifecycle({
         async inspectGitHub() {
@@ -43,5 +50,27 @@ describe('channels/github/conversation/prompt-guidance', () => {
       githubNotificationPromptGuidance({ messageProvider: 'discord' }, { turnContracts }),
       undefined,
     );
+  });
+
+  it('should keep the compatibility selector fixed to the current turn', () => {
+    let selected: unknown;
+    const instructions = githubNotificationPromptGuidance(
+      { messageProvider: githubNotificationChannelId },
+      {
+        turnContracts: {
+          instructions(identity) {
+            selected = identity;
+            return 'current instructions';
+          },
+        },
+      },
+    );
+
+    assert.equal(instructions, 'current instructions');
+    assert.deepEqual(selected, {
+      eventId: 'comment',
+      lifecycleId: 'issue',
+      modeId: 'work',
+    });
   });
 });

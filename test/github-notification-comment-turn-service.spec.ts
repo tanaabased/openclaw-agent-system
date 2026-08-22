@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
+import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
+import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
+import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
@@ -51,6 +54,10 @@ function turnContracts() {
     },
   });
   return new GitHubNotificationTurnContractResolver({
+    events: new GitHubNotificationEventRegistry([
+      githubNotificationAssignmentEvent,
+      githubNotificationCommentEvent,
+    ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([lifecycle]),
     modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
   });

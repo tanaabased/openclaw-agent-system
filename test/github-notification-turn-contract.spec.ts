@@ -4,6 +4,9 @@ import GitHubNotificationTurnContractResolver, {
   GitHubNotificationTurnContractError,
   githubNotificationTurnDispatchOptions,
 } from '../channels/github/conversation/turn-contract.ts';
+import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
+import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
+import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import { GitHubNotificationLifecycleModeSupportError } from '../channels/github/lifecycles/mode-support.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
@@ -13,6 +16,10 @@ import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 function resolver() {
   return new GitHubNotificationTurnContractResolver({
+    events: new GitHubNotificationEventRegistry([
+      githubNotificationAssignmentEvent,
+      githubNotificationCommentEvent,
+    ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([
       new GitHubIssueLifecycle({
         async inspectGitHub() {

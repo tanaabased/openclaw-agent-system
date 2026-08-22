@@ -14,6 +14,9 @@ import GitHubNotificationCommentTurnService from '../conversation/comment-turn-s
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
+import githubNotificationAssignmentEvent from '../events/assignment.ts';
+import githubNotificationCommentEvent from '../events/comment.ts';
+import GitHubNotificationEventRegistry from '../events/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../intake/monitor/cycle-lease.ts';
@@ -84,8 +87,13 @@ export default function createGitHubNotificationRuntime(
     new GitHubPullRequestLifecycle(),
   ]);
   const modeRegistry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
+  const eventRegistry = new GitHubNotificationEventRegistry([
+    githubNotificationAssignmentEvent,
+    githubNotificationCommentEvent,
+  ]);
   const initialMode = modeRegistry.resolve('work');
   const turnContracts = new GitHubNotificationTurnContractResolver({
+    events: eventRegistry,
     lifecycles: lifecycleRegistry,
     modes: modeRegistry,
   });
