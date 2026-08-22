@@ -25,6 +25,10 @@ lifecycle session and publishes the accepted public part of the response.
   each lifecycle projects its own bounded source, repository, and resource facts
   as private structured context. The current comment flow requires the agent's
   `coding` profile.
+- Hidden instructions for the current comment flow are composed from the
+  registered `issue`, `work`, and `comment` definitions and injected through the
+  prompt hook. Selection is currently fixed to that supported combination; it
+  is not yet driven dynamically by durable lifecycle and mode state.
 - Each completed comment turn keeps its private response in the session and may
   publish one validated public reply to GitHub. Missing or invalid public replies
   are withheld without discarding the private response.
@@ -176,9 +180,10 @@ reference.
 - Comment reads are bounded, and conversation state retains revision digests
   rather than incoming provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
-  Channel-owned turn identity selects one registered lifecycle, mode, and event;
-  unsupported combinations fail closed, and the trusted Work policy requires
-  the configured `coding` profile.
+  The current channel-owned turn identity selects the one supported `issue`,
+  `work`, and `comment` combination; its registry rejects unsupported
+  combinations, and the trusted Work policy requires the configured `coding`
+  profile.
 - When material information is missing, the current turn instructions tell the
   agent to ask one precise public question and stop. A later admitted comment
   resumes the same session; no separate clarification phase is persisted.

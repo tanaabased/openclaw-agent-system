@@ -68,6 +68,9 @@
 - Keep `channels/github/README.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
 - Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
+- Inject hidden GitHub lifecycle, mode, event, and response instructions through the central `before_prompt_build` hook. Do not substitute dispatch `extraSystemPrompt`, arbitrary channel metadata, or process-local state for this cross-harness prompt boundary.
+- Treat the currently shipped `issue` + `work` + `comment` prompt selection as static compatibility behavior, not dynamic turn selection. Future dynamic selection must resolve a trusted durable turn descriptor that both Gateway and native Codex runtimes can read.
+- Keep typed GitHub reply candidates in the channel-owned file-backed handoff so model tool execution and publication remain correct across process and runtime boundaries.
 
 ## Test design
 

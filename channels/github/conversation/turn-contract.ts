@@ -19,7 +19,6 @@ export interface GitHubNotificationTurnContract {
 
 export interface GitHubNotificationTurnModelOptions {
   disableTools: boolean;
-  extraSystemPrompt: string;
   toolsAllow?: string[];
 }
 
@@ -47,11 +46,10 @@ const eventInstructions: Partial<Record<GitHubNotificationEventId, string>> = {
 
 /** Project one resolved turn contract into the channel dispatch boundary. */
 export function githubNotificationTurnDispatchOptions(
-  contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>,
+  contract: Pick<GitHubNotificationTurnContract, 'mode'>,
 ): GitHubNotificationTurnDispatchOptions {
   const replyOptions: GitHubNotificationTurnModelOptions = {
     disableTools: contract.mode.disableTools,
-    extraSystemPrompt: contract.instructions,
     ...(contract.mode.toolsAllow === undefined
       ? {}
       : { toolsAllow: [...contract.mode.toolsAllow] }),

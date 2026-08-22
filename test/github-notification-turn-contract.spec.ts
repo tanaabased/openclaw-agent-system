@@ -51,7 +51,6 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.deepEqual(githubNotificationTurnDispatchOptions(contract), {
       replyOptions: {
         disableTools: false,
-        extraSystemPrompt: contract.instructions,
       },
     });
   });
@@ -60,14 +59,12 @@ describe('channels/github/conversation/turn-contract', () => {
     const toolsAllow = ['agent_system_github_reply'];
 
     const options = githubNotificationTurnDispatchOptions({
-      instructions: 'Plan this issue.',
       mode: { disableTools: false, id: 'plan', toolsAllow },
     });
 
     assert.deepEqual(options, {
       replyOptions: {
         disableTools: false,
-        extraSystemPrompt: 'Plan this issue.',
         toolsAllow: ['agent_system_github_reply'],
       },
       toolsAllow: ['agent_system_github_reply'],

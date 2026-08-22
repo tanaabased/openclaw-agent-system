@@ -183,6 +183,22 @@ visible transcript. Hidden instructions are composed only from registered
 lifecycle, lifecycle-mode, mode, event, and shared-response definitions selected
 by channel-owned turn identity.
 
+### Prompt Transport
+
+The central `before_prompt_build` hook is the supported cross-harness transport
+for hidden channel instructions. Turn dispatch options project capability only;
+they do not carry lifecycle, mode, or event prompts through
+`extraSystemPrompt`. Typed GitHub reply candidates use their separate
+channel-owned file-backed handoff and are not inferred from response Markdown.
+
+The currently shipped compatibility path resolves `issue` + `work` + `comment`
+statically through the same registries and composer. That proves prompt
+composition and transport without claiming dynamic turn selection. A future
+selector must read a trusted durable turn descriptor available to both the
+Gateway and native Codex runtimes. It must not derive capability from GitHub
+prose, depend on process-local memory, or store prompt text as arbitrary channel
+metadata.
+
 ## Lifecycle Rules
 
 - **Receipt:** An admitted assignment produces a visible assignment card and an

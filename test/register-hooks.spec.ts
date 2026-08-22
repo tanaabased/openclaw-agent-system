@@ -65,4 +65,37 @@ describe('core/register-hooks', () => {
       appendSystemContext: `${agentCommandSecurityGuidance}\n\nPrefer the configured Agent System tool.`,
     });
   });
+
+  it('should append channel guidance through the prompt hook', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return { status: 'unresolved', diagnostics: [] } as const;
+        },
+      },
+      { guidance: () => [] },
+      {
+        async instructions(context) {
+          return context.messageProvider === 'agent-system-github'
+            ? 'Current GitHub turn instructions.'
+            : undefined;
+        },
+      },
+    );
+
+    const result = await handlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: 'agent-system-github', sessionId: 'one' },
+    );
+
+    assert.deepEqual(result, {
+      appendSystemContext: 'Current GitHub turn instructions.',
+    });
+  });
 });

@@ -56,14 +56,8 @@ function turnContracts() {
   });
 }
 
-function assertTurnContractOptions(
-  options: Record<string, unknown>,
-  contracts: ReturnType<typeof turnContracts>,
-) {
-  assert.equal(
-    options.extraSystemPrompt,
-    contracts.instructions({ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }),
-  );
+function assertTurnContractOptions(options: Record<string, unknown>) {
+  assert.equal(options.extraSystemPrompt, undefined);
 }
 
 function incomingComment(): GitHubCanonicalIssueComment {
@@ -124,7 +118,7 @@ async function respondWithCandidates(
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
       const replyOptions = input.replyOptions ?? {};
-      assertTurnContractOptions(replyOptions, contracts);
+      assertTurnContractOptions(replyOptions);
       inspectReplyOptions?.(replyOptions);
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
@@ -186,7 +180,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         assert.equal(input.ctx.Provider, githubNotificationChannelId);
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
-        assertTurnContractOptions(replyOptions, contracts);
+        assertTurnContractOptions(replyOptions);
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
