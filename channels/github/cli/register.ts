@@ -1,6 +1,12 @@
 import type AgentManifestService from '../../../manifest/service.ts';
-import { type CliOutput, type CliStyles, writeCliLines } from '../../../cli/output.ts';
+import {
+  type CliOutput,
+  type CliStyles,
+  writeCliError,
+  writeCliLines,
+} from '../../../cli/output.ts';
 import type { CommandLike } from '../../../cli/register.ts';
+import { formatErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
@@ -25,14 +31,28 @@ function writeHelp(command: CommandLike, output: CliOutput): void {
 
 async function runOneShot(
   run: (setExitCode: (code: number) => void) => Promise<void>,
-  options: Pick<RegisterGitHubNotificationsCliOptions, 'completeOneShot' | 'setExitCode'>,
+  options: Pick<
+    RegisterGitHubNotificationsCliOptions,
+    'completeOneShot' | 'output' | 'setExitCode'
+  >,
+  failureCode: string,
 ): Promise<void> {
   let exitCode = 0;
-  await run((code) => {
+  const setExitCode = (code: number) => {
     exitCode = Math.max(exitCode, code);
-    options.setExitCode(code);
-  });
-  await options.completeOneShot(exitCode);
+    options.setExitCode(exitCode);
+  };
+  try {
+    await run(setExitCode);
+  } catch (error) {
+    writeCliError(
+      options.output,
+      formatErrorDiagnostic('github-notifications', error, failureCode),
+    );
+    setExitCode(1);
+  } finally {
+    await options.completeOneShot(exitCode);
+  }
 }
 
 /** Register the GitHub channel's notification command subtree. */
@@ -73,6 +93,7 @@ export default function registerGitHubNotificationsCli(
             workspaceDir: options.cwd(),
           }),
         options,
+        'github-notification-refresh-failed',
       );
     });
   const status = notifications
@@ -133,6 +154,7 @@ export default function registerGitHubNotificationsCli(
             workspaceDir: options.cwd(),
           }),
         options,
+        'github-notification-wait-failed',
       );
     });
 }

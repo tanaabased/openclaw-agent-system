@@ -35,7 +35,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
   },
 };
 
-function createProgram(input?: Readable) {
+function createProgram(input?: Readable, dependencies: { notificationWaitError?: Error } = {}) {
   const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
@@ -198,6 +198,7 @@ function createProgram(input?: Readable) {
       },
       async wait(input) {
         calls.notificationWait.push(input);
+        if (dependencies.notificationWaitError) throw dependencies.notificationWaitError;
         return {
           agentId: input.agentId,
           code: `github-notification-${input.target}`,
@@ -561,6 +562,33 @@ describe('cli/register', () => {
     ]);
     assert.equal(JSON.parse(output.join('')).status, 'completed');
     assert.deepEqual(calls.oneShotCompletion, [0]);
+  });
+
+  it('should complete a failed notification wait without corrupting json stdout', async () => {
+    const { calls, diagnostics, output, program } = createProgram(undefined, {
+      notificationWaitError: new Error('state unavailable'),
+    });
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'notifications',
+      'wait',
+      '--repository',
+      'tanaabased/example',
+      '--kind',
+      'issue',
+      '--number',
+      '12',
+      '--for',
+      'prepared',
+      '--json',
+    ]);
+
+    assert.equal(output.join(''), '');
+    assert.match(diagnostics.join(''), /code=github-notification-wait-failed/u);
+    assert.deepEqual(calls.oneShotCompletion, [1]);
   });
 
   it('should register structured json validation output', async () => {
