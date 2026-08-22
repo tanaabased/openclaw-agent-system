@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import resolveGitHubNotificationLifecycleEventSupport, {
   GitHubNotificationLifecycleEventSupportError,
+  githubNotificationLifecycleSupportsEvent,
 } from '../channels/github/lifecycles/event-support.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
@@ -69,7 +70,8 @@ describe('channels/github/lifecycles', () => {
         ?.project,
       'function',
     );
-    assert.deepEqual(lifecycle.commentTurns, { enabled: true });
+    assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'comment'), {});
+    assert.equal(githubNotificationLifecycleSupportsEvent(lifecycle, 'comment'), true);
     assert.ok(lifecycle.modeSupport.work);
   });
 
@@ -81,7 +83,7 @@ describe('channels/github/lifecycles', () => {
     assert.equal(selected.id, 'pull-request');
     assert.deepEqual(selected.worktree, { required: false });
     assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(selected, 'assignment'), {});
-    assert.deepEqual(selected.commentTurns, { enabled: false });
+    assert.equal(githubNotificationLifecycleSupportsEvent(selected, 'comment'), false);
     assert.deepEqual(selected.modeSupport, {});
     assert.deepEqual(selected.context.project({ item: approvedPullRequestNotificationItem() }), {
       item: {

@@ -76,8 +76,6 @@ export interface GitHubNotificationLifecycleEventSupportMap {
   comment?: GitHubNotificationLifecycleCommentEventSupport;
 }
 
-export type GitHubNotificationLifecycleCommentTurnOwner = { enabled: false } | { enabled: true };
-
 export type GitHubNotificationLifecycleWorktreeOwner =
   | { required: false }
   | {
@@ -92,7 +90,6 @@ export type GitHubNotificationLifecycleWorktreeOwner =
 
 /** Own lifecycle-specific intake resources behind one classified boundary. */
 export interface GitHubNotificationLifecycle {
-  readonly commentTurns: GitHubNotificationLifecycleCommentTurnOwner;
   readonly context: GitHubNotificationLifecycleContextOwner;
   readonly eventSupport: GitHubNotificationLifecycleEventSupportMap;
   readonly id: GitHubNotificationLifecycleId;

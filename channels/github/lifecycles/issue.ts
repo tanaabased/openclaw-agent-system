@@ -54,7 +54,6 @@ function actorUrl(login: string): string {
 
 /** Own issue-assignment intake and its required managed worktree. */
 export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle {
-  readonly commentTurns = { enabled: true as const };
   readonly context = {
     project(input: GitHubNotificationLifecycleContextInput) {
       if (input.item.itemType !== 'issue' || !input.worktree) {
@@ -88,6 +87,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
         },
       },
     },
+    comment: {},
   };
   readonly id = 'issue' as const;
   readonly instructions = githubNotificationIssueLifecycleInstructions;

@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import type GitHubNotificationEventRegistry from '../events/registry.ts';
+import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
@@ -68,6 +69,7 @@ export default class GitHubNotificationTurnContractResolver {
     const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
     const mode = this.#dependencies.modes.resolve(identity.modeId);
     const support = resolveGitHubNotificationLifecycleModeSupport(lifecycle, identity.modeId);
+    resolveGitHubNotificationLifecycleEventSupport(lifecycle, identity.eventId);
     const event = this.#dependencies.events.resolve(identity.eventId);
     if (event.turn.kind !== 'model') {
       throw new GitHubNotificationTurnContractError('github-notification-event-unimplemented');

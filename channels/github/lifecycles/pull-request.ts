@@ -3,7 +3,6 @@ import type { GitHubNotificationLifecycle } from './types.ts';
 
 /** Own direct pull-request intake; later waves can add review-specific resources. */
 export default class GitHubPullRequestLifecycle implements GitHubNotificationLifecycle {
-  readonly commentTurns = { enabled: false as const };
   readonly context = {
     project(input: Parameters<GitHubNotificationLifecycle['context']['project']>[0]) {
       const pullRequest = input.item.pullRequest;

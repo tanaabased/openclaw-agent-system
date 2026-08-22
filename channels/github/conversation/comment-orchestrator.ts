@@ -24,6 +24,7 @@ import { githubNotificationPublicationTarget } from '../publication/publication.
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import { githubNotificationLifecycleSupportsEvent } from '../lifecycles/event-support.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import type GitHubNotificationCommentTurnService from './comment-turn-service.ts';
@@ -141,7 +142,7 @@ export default class GitHubNotificationCommentOrchestrator {
       return;
     }
     const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
-    if (!lifecycle.commentTurns.enabled) return;
+    if (!githubNotificationLifecycleSupportsEvent(lifecycle, 'comment')) return;
     const conversationId = githubNotificationConversationId({
       itemNumber: item.number,
       lifecycleId: item.lifecycleId,

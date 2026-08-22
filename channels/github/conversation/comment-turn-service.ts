@@ -95,9 +95,6 @@ export default class GitHubNotificationCommentTurnService {
       modeId: input.modeId,
     };
     const contract = this.#dependencies.turnContracts.resolve(identity, config, input.agentId);
-    if (!contract.lifecycle.commentTurns.enabled) {
-      throw new Error('The GitHub lifecycle does not support comment turns.');
-    }
     const lifecycleContext = contract.lifecycle.context.project({
       item: input.item,
       ...(worktreePath && worktreeBranch
