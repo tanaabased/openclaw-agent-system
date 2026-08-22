@@ -11,6 +11,7 @@ import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
 } from '../channels/github/conversation/comment-turn-service.ts';
+import GitHubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -54,6 +55,18 @@ function turnContracts() {
     lifecycles: new GitHubNotificationLifecycleRegistry([lifecycle]),
     modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
   });
+}
+
+function observePromptGuidance(
+  guidance: GitHubNotificationPromptGuidance,
+  contracts: ReturnType<typeof turnContracts>,
+  sessionKey: string,
+) {
+  assert.match(sessionKey, /^agent:tanaabot:/u);
+  assert.equal(
+    guidance.instructions({ messageProvider: githubNotificationChannelId, sessionKey }),
+    contracts.instructions({ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }),
+  );
 }
 
 function incomingComment(): GitHubCanonicalIssueComment {
@@ -109,9 +122,12 @@ async function respondWithCandidates(
     worktreePath: '/workspace/worktrees/issue-12',
   };
   const comment = incomingComment();
+  const contracts = turnContracts();
+  const promptGuidance = new GitHubNotificationPromptGuidance();
   const service = new GitHubNotificationCommentTurnService({
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
+      observePromptGuidance(promptGuidance, contracts, String(input.ctx.SessionKey));
       inspectReplyOptions?.(input.replyOptions ?? {});
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
@@ -122,11 +138,12 @@ async function respondWithCandidates(
       return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
     },
     logger: { error() {}, info() {}, warn() {} },
+    promptGuidance,
     readConfig: async () => config,
     async recordInboundSession(input) {
       input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
     },
-    turnContracts: turnContracts(),
+    turnContracts: contracts,
   });
   return service.respond({
     agentId,
@@ -152,6 +169,8 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const revision = githubCommentRevision(comment);
     let createIfMissing: boolean | undefined;
     let recorded = false;
+    const contracts = turnContracts();
+    const promptGuidance = new GitHubNotificationPromptGuidance();
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
@@ -179,6 +198,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
+        observePromptGuidance(promptGuidance, contracts, String(input.ctx.SessionKey));
         await input.dispatcherOptions.deliver(
           {
             text: [
@@ -193,9 +213,10 @@ describe('channels/github/conversation/comment-turn-service', () => {
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
       logger: { error() {}, info() {}, warn() {} },
+      promptGuidance,
       readConfig: async () => config,
       recordInboundSession,
-      turnContracts: turnContracts(),
+      turnContracts: contracts,
     });
 
     const result = await service.respond({
@@ -215,11 +236,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
     assert.deepEqual(result.publication, { status: 'candidate', publicText: 'ready' });
     assert.equal(result.accountId, agentId);
     assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
-      githubNotificationTurn: {
-        eventId: 'comment',
-        lifecycleId: 'issue',
-        modeId: 'work',
-      },
       id: 'github:issue:R_repo:12',
     });
     assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
@@ -253,17 +269,20 @@ describe('channels/github/conversation/comment-turn-service', () => {
       worktreePath: '/workspace/worktrees/issue-12',
     };
     const comment = incomingComment();
+    const contracts = turnContracts();
+    const promptGuidance = new GitHubNotificationPromptGuidance();
     const service = new GitHubNotificationCommentTurnService({
       candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {
         throw new Error('unexpected model dispatch');
       },
       logger: { error() {}, info() {}, warn() {} },
+      promptGuidance,
       readConfig: async () => config,
       async recordInboundSession(input) {
         input.trackSessionMetaTask?.(Promise.resolve(null));
       },
-      turnContracts: turnContracts(),
+      turnContracts: contracts,
     });
 
     await assert.rejects(

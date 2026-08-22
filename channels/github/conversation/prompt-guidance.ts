@@ -1,14 +1,12 @@
 import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
 
 import { githubNotificationChannelId } from '../routing/routing.ts';
-import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
-import {
-  decodeGitHubNotificationTurnIdentity,
-  githubNotificationTurnContextKey,
-} from './turn-identity.ts';
+import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
-export interface GitHubNotificationPromptGuidanceDependencies {
-  turnContracts: Pick<GitHubNotificationTurnContractResolver, 'instructions'>;
+interface ActiveGitHubNotificationPrompt {
+  contract: Pick<GitHubNotificationTurnContract, 'identity' | 'instructions'>;
+  observed: boolean;
+  token: symbol;
 }
 
 export class GitHubNotificationPromptGuidanceError extends Error {
@@ -19,17 +17,61 @@ export class GitHubNotificationPromptGuidanceError extends Error {
   }
 }
 
-/** Resolve hidden guidance only from channel-owned turn identity. */
-export default function githubNotificationPromptGuidance(
-  context: PluginHookAgentContext,
-  dependencies: GitHubNotificationPromptGuidanceDependencies,
-): string | undefined {
-  if (context.messageProvider !== githubNotificationChannelId) return undefined;
-  const identity = decodeGitHubNotificationTurnIdentity(
-    context.channelContext?.chat?.[githubNotificationTurnContextKey],
-  );
-  if (!identity) {
-    throw new GitHubNotificationPromptGuidanceError('github-notification-turn-identity-invalid');
+/**
+ * Scope one resolved turn contract to the existing prompt-build hook mechanism.
+ * The session key is the stable cross-harness correlation; Codex prompt hooks do
+ * not preserve arbitrary channel-context metadata.
+ */
+export default class GitHubNotificationPromptGuidance {
+  readonly #active = new Map<string, ActiveGitHubNotificationPrompt>();
+
+  instructions(context: PluginHookAgentContext): string | undefined {
+    if (context.messageProvider !== githubNotificationChannelId) return undefined;
+    const sessionKey = context.sessionKey?.trim();
+    const active = sessionKey ? this.#active.get(sessionKey) : undefined;
+    if (!active) {
+      throw new GitHubNotificationPromptGuidanceError(
+        'github-notification-turn-prompt-scope-missing',
+      );
+    }
+    active.observed = true;
+    return active.contract.instructions;
   }
-  return dependencies.turnContracts.instructions(identity);
+
+  async withTurn<T>(
+    sessionKey: string,
+    contract: Pick<GitHubNotificationTurnContract, 'identity' | 'instructions'>,
+    dispatch: () => Promise<T>,
+  ): Promise<T> {
+    const normalizedSessionKey = sessionKey.trim();
+    if (!normalizedSessionKey || !contract.instructions.trim()) {
+      throw new GitHubNotificationPromptGuidanceError(
+        'github-notification-turn-prompt-scope-invalid',
+      );
+    }
+    if (this.#active.has(normalizedSessionKey)) {
+      throw new GitHubNotificationPromptGuidanceError(
+        'github-notification-turn-prompt-scope-conflict',
+      );
+    }
+    const active: ActiveGitHubNotificationPrompt = {
+      contract,
+      observed: false,
+      token: Symbol(normalizedSessionKey),
+    };
+    this.#active.set(normalizedSessionKey, active);
+    try {
+      const result = await dispatch();
+      if (!active.observed) {
+        throw new GitHubNotificationPromptGuidanceError(
+          'github-notification-turn-prompt-unobserved',
+        );
+      }
+      return result;
+    } finally {
+      if (this.#active.get(normalizedSessionKey)?.token === active.token) {
+        this.#active.delete(normalizedSessionKey);
+      }
+    }
+  }
 }

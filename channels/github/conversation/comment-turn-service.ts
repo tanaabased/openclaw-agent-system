@@ -24,17 +24,16 @@ import {
 } from '../publication/publication.ts';
 import { resolveNotificationRoute, githubNotificationChannelId } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
+import type GitHubNotificationPromptGuidance from './prompt-guidance.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
-import {
-  githubNotificationTurnChatContext,
-  type GitHubNotificationTurnIdentity,
-} from './turn-identity.ts';
+import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
   candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
+  promptGuidance: Pick<GitHubNotificationPromptGuidance, 'withTurn'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
@@ -120,7 +119,7 @@ export default class GitHubNotificationCommentTurnService {
       accountId: route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
-        chat: { id: route.conversationId, ...githubNotificationTurnChatContext(identity) },
+        chat: { id: route.conversationId },
         sender: { id: author.nodeId },
       },
       conversation: {
@@ -175,60 +174,62 @@ export default class GitHubNotificationCommentTurnService {
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
-      result = await dispatchChannelInboundReply({
-        accountId: route.accountId,
-        agentId: route.agentId,
-        afterRecord: async () => {
-          if (!sessionRecordTask) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-recording-failed',
-            );
-          }
-          if (!(await sessionRecordTask)) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-missing',
-            );
-          }
-        },
-        cfg: config,
-        channel: githubNotificationChannelId,
-        ctxPayload,
-        delivery: {
-          async deliver(payload, info) {
-            if (info.kind === 'final') finalPayloads.push(payload);
-            return { visibleReplySent: false };
+      result = await this.#dependencies.promptGuidance.withTurn(route.sessionKey, contract, () =>
+        dispatchChannelInboundReply({
+          accountId: route.accountId,
+          agentId: route.agentId,
+          afterRecord: async () => {
+            if (!sessionRecordTask) {
+              throw new GitHubNotificationCommentTurnError(
+                'github-notification-comment-session-recording-failed',
+              );
+            }
+            if (!(await sessionRecordTask)) {
+              throw new GitHubNotificationCommentTurnError(
+                'github-notification-comment-session-missing',
+              );
+            }
           },
-        },
-        dispatchReplyWithBufferedBlockDispatcher:
-          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
-        messageId,
-        record: {
-          createIfMissing: false,
-          onRecordError(error) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-recording-failed',
-              { cause: error },
-            );
+          cfg: config,
+          channel: githubNotificationChannelId,
+          ctxPayload,
+          delivery: {
+            async deliver(payload, info) {
+              if (info.kind === 'final') finalPayloads.push(payload);
+              return { visibleReplySent: false };
+            },
           },
-          trackSessionMetaTask(task) {
-            sessionRecordTask = task;
+          dispatchReplyWithBufferedBlockDispatcher:
+            this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+          messageId,
+          record: {
+            createIfMissing: false,
+            onRecordError(error) {
+              throw new GitHubNotificationCommentTurnError(
+                'github-notification-comment-session-recording-failed',
+                { cause: error },
+              );
+            },
+            trackSessionMetaTask(task) {
+              sessionRecordTask = task;
+            },
           },
-        },
-        recordInboundSession: this.#dependencies.recordInboundSession,
-        replyOptions: {
-          ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-          ...githubNotificationReplyCleanupOptions(input.executionSurface),
-          commentaryPayloadsEnabled: true,
-          disableTools: mode.disableTools,
-          sourceReplyDeliveryMode: 'automatic',
-          suppressDefaultToolProgressMessages: true,
-          suppressTyping: true,
+          recordInboundSession: this.#dependencies.recordInboundSession,
+          replyOptions: {
+            ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
+            ...githubNotificationReplyCleanupOptions(input.executionSurface),
+            commentaryPayloadsEnabled: true,
+            disableTools: mode.disableTools,
+            sourceReplyDeliveryMode: 'automatic',
+            suppressDefaultToolProgressMessages: true,
+            suppressTyping: true,
+            ...(mode.toolsAllow === undefined ? {} : { toolsAllow: mode.toolsAllow }),
+          },
+          routeSessionKey: route.sessionKey,
+          storePath: resolveStorePath(config.session?.store, { agentId: route.agentId }),
           ...(mode.toolsAllow === undefined ? {} : { toolsAllow: mode.toolsAllow }),
-        },
-        routeSessionKey: route.sessionKey,
-        storePath: resolveStorePath(config.session?.store, { agentId: route.agentId }),
-        ...(mode.toolsAllow === undefined ? {} : { toolsAllow: mode.toolsAllow }),
-      });
+        }),
+      );
     } catch (error) {
       await this.#dependencies.candidates
         .cancel({ ...candidateIdentity, turnId: candidateTurn })
