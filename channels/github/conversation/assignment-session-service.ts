@@ -14,6 +14,7 @@ import type {
   GitHubNotificationLifecycle,
   GitHubNotificationLifecycleWorktree,
 } from '../lifecycles/types.ts';
+import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
@@ -43,12 +44,15 @@ export default class GitHubNotificationAssignmentSessionService {
   }
 
   async prepare(input: GitHubNotificationAssignmentSessionInput): Promise<void> {
-    const assignmentSession = input.lifecycle.assignmentSession;
+    const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
+      input.lifecycle,
+      'assignment',
+    );
     resolveGitHubNotificationLifecycleModeSupport(input.lifecycle, input.mode.policy.id);
-    if (!assignmentSession.enabled) {
+    if (!assignmentSupport.session) {
       throw new Error('The GitHub lifecycle does not support assignment sessions.');
     }
-    const projection = assignmentSession.project(input.item);
+    const projection = assignmentSupport.session.project(input.item);
     const lifecycleContext = input.lifecycle.context.project({
       item: input.item,
       ...(input.worktree === undefined ? {} : { worktree: input.worktree }),

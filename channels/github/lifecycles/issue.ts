@@ -54,26 +54,6 @@ function actorUrl(login: string): string {
 
 /** Own issue-assignment intake and its required managed worktree. */
 export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle {
-  readonly assignmentSession = {
-    enabled: true as const,
-    project(item: GitHubNotificationLifecycleContextInput['item']) {
-      const actorLogin = item.assignmentActorLogin?.trim();
-      const actorNodeId = item.assignmentActorNodeId?.trim();
-      if (item.itemType !== 'issue' || !actorLogin || !actorNodeId) {
-        throw new Error('The GitHub issue assignment is missing trusted assignment context.');
-      }
-      const repository = `${item.repositoryOwner}/${item.repositoryName}`;
-      return {
-        card: {
-          emoji: '📥',
-          summary: `[@${githubNotificationMarkdownText(actorLogin)}](${actorUrl(actorLogin)}) assigned you [${githubNotificationMarkdownText(`${repository}#${item.number}`)}](${issueUrl(item)}).`,
-          title: 'Issue assignment received',
-        },
-        sender: { id: actorNodeId, label: actorLogin },
-        timestamp: item.lastObservedAt,
-      };
-    },
-  };
   readonly commentTurns = { enabled: true as const };
   readonly context = {
     project(input: GitHubNotificationLifecycleContextInput) {
@@ -84,6 +64,29 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
         item: githubNotificationItemContext(input, 'issue'),
         worktree: input.worktree,
       };
+    },
+  };
+  readonly eventSupport = {
+    assignment: {
+      session: {
+        project(item: GitHubNotificationLifecycleContextInput['item']) {
+          const actorLogin = item.assignmentActorLogin?.trim();
+          const actorNodeId = item.assignmentActorNodeId?.trim();
+          if (item.itemType !== 'issue' || !actorLogin || !actorNodeId) {
+            throw new Error('The GitHub issue assignment is missing trusted assignment context.');
+          }
+          const repository = `${item.repositoryOwner}/${item.repositoryName}`;
+          return {
+            card: {
+              emoji: '📥',
+              summary: `[@${githubNotificationMarkdownText(actorLogin)}](${actorUrl(actorLogin)}) assigned you [${githubNotificationMarkdownText(`${repository}#${item.number}`)}](${issueUrl(item)}).`,
+              title: 'Issue assignment received',
+            },
+            sender: { id: actorNodeId, label: actorLogin },
+            timestamp: item.lastObservedAt,
+          };
+        },
+      },
     },
   };
   readonly id = 'issue' as const;

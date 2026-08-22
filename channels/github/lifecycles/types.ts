@@ -61,14 +61,20 @@ export interface GitHubNotificationLifecycleAssignmentSessionProjection {
   timestamp: number;
 }
 
-export type GitHubNotificationLifecycleAssignmentSessionOwner =
-  | { enabled: false }
-  | {
-      enabled: true;
-      project(
-        item: GitHubNotificationItemState,
-      ): GitHubNotificationLifecycleAssignmentSessionProjection;
-    };
+export interface GitHubNotificationLifecycleAssignmentEventSupport {
+  session?: {
+    project(
+      item: GitHubNotificationItemState,
+    ): GitHubNotificationLifecycleAssignmentSessionProjection;
+  };
+}
+
+export type GitHubNotificationLifecycleCommentEventSupport = Record<string, never>;
+
+export interface GitHubNotificationLifecycleEventSupportMap {
+  assignment?: GitHubNotificationLifecycleAssignmentEventSupport;
+  comment?: GitHubNotificationLifecycleCommentEventSupport;
+}
 
 export type GitHubNotificationLifecycleCommentTurnOwner = { enabled: false } | { enabled: true };
 
@@ -86,9 +92,9 @@ export type GitHubNotificationLifecycleWorktreeOwner =
 
 /** Own lifecycle-specific intake resources behind one classified boundary. */
 export interface GitHubNotificationLifecycle {
-  readonly assignmentSession: GitHubNotificationLifecycleAssignmentSessionOwner;
   readonly commentTurns: GitHubNotificationLifecycleCommentTurnOwner;
   readonly context: GitHubNotificationLifecycleContextOwner;
+  readonly eventSupport: GitHubNotificationLifecycleEventSupportMap;
   readonly id: GitHubNotificationLifecycleId;
   readonly instructions: string;
   readonly modeSupport: GitHubNotificationLifecycleModeSupportMap;

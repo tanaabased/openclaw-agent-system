@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import resolveGitHubNotificationLifecycleEventSupport, {
+  GitHubNotificationLifecycleEventSupportError,
+} from '../channels/github/lifecycles/event-support.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import {
@@ -61,7 +64,11 @@ describe('channels/github/lifecycles', () => {
         worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
       },
     );
-    assert.equal(lifecycle.assignmentSession.enabled, true);
+    assert.equal(
+      typeof resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'assignment').session
+        ?.project,
+      'function',
+    );
     assert.deepEqual(lifecycle.commentTurns, { enabled: true });
     assert.ok(lifecycle.modeSupport.work);
   });
@@ -73,7 +80,7 @@ describe('channels/github/lifecycles', () => {
 
     assert.equal(selected.id, 'pull-request');
     assert.deepEqual(selected.worktree, { required: false });
-    assert.equal(selected.assignmentSession.enabled, false);
+    assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(selected, 'assignment'), {});
     assert.deepEqual(selected.commentTurns, { enabled: false });
     assert.deepEqual(selected.modeSupport, {});
     assert.deepEqual(selected.context.project({ item: approvedPullRequestNotificationItem() }), {
@@ -103,6 +110,16 @@ describe('channels/github/lifecycles', () => {
           new GitHubPullRequestLifecycle(),
         ]),
       /Duplicate GitHub notification lifecycle pull-request/u,
+    );
+  });
+
+  it('should reject an unsupported lifecycle event', () => {
+    assert.throws(
+      () =>
+        resolveGitHubNotificationLifecycleEventSupport(new GitHubPullRequestLifecycle(), 'comment'),
+      (error: unknown) =>
+        error instanceof GitHubNotificationLifecycleEventSupportError &&
+        error.code === 'github-notification-lifecycle-event-unsupported',
     );
   });
 });

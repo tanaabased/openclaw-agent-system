@@ -3,7 +3,6 @@ import type { GitHubNotificationLifecycle } from './types.ts';
 
 /** Own direct pull-request intake; later waves can add review-specific resources. */
 export default class GitHubPullRequestLifecycle implements GitHubNotificationLifecycle {
-  readonly assignmentSession = { enabled: false as const };
   readonly commentTurns = { enabled: false as const };
   readonly context = {
     project(input: Parameters<GitHubNotificationLifecycle['context']['project']>[0]) {
@@ -31,6 +30,7 @@ export default class GitHubPullRequestLifecycle implements GitHubNotificationLif
       };
     },
   };
+  readonly eventSupport = { assignment: {} };
   readonly id = 'pull-request' as const;
   readonly instructions = 'Continue the current GitHub pull request lifecycle.';
   readonly modeSupport = {};

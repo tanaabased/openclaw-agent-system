@@ -2,6 +2,7 @@ import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import type {
   GitHubNotificationLifecycle,
@@ -315,7 +316,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const intake = item?.intake;
     if (!item || !intake) return;
     const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
-    if (lifecycle.assignmentSession.enabled) {
+    const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
+      lifecycle,
+      'assignment',
+    );
+    if (assignmentSupport.session) {
       const preparedWorktree =
         worktree ??
         (intake.worktreeBranch && intake.worktreePath
