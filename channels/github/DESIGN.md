@@ -197,13 +197,12 @@ they do not carry lifecycle, mode, or event prompts through
 `extraSystemPrompt`. Typed GitHub reply candidates use their separate
 channel-owned file-backed handoff and are not inferred from response Markdown.
 
-The currently shipped compatibility path resolves `issue` + `work` + `comment`
-statically through the same registries and composer. That proves prompt
-composition and transport without claiming dynamic turn selection. A future
-selector must read a trusted durable turn descriptor available to both the
-Gateway and native Codex runtimes. It must not derive capability from GitHub
-prose, depend on process-local memory, or store prompt text as arbitrary channel
-metadata.
+The selector resolves the active lifecycle, mode, and event through the shared
+catalog using trusted hook routing and the private durable turn descriptor
+available to both the Gateway and native Codex runtimes. It does not derive
+capability from GitHub prose, depend on process-local memory, or store prompt
+text as arbitrary channel metadata. Missing, conflicting, or unsupported turn
+selection fails closed instead of falling back to a different prompt.
 
 ## Lifecycle Rules
 

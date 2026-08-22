@@ -4,17 +4,6 @@ import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
 import type { CommandLike } from '../cli/register.ts';
-import githubNotificationCommentEventInstructions from '../channels/github/conversation/prompts/event-comment.ts';
-import githubNotificationIssueLifecycleInstructions from '../channels/github/conversation/prompts/lifecycle-issue.ts';
-import githubNotificationWorkModeInstructions from '../channels/github/conversation/prompts/mode-work.ts';
-import githubNotificationResponseInstructions from '../channels/github/conversation/prompts/response.ts';
-
-const currentGitHubTurnInstructions = [
-  githubNotificationIssueLifecycleInstructions,
-  githubNotificationWorkModeInstructions,
-  githubNotificationCommentEventInstructions,
-  githubNotificationResponseInstructions,
-].join('\n\n');
 
 describe('index', () => {
   it('should expose the agent system plugin contract', () => {
@@ -143,8 +132,7 @@ describe('index', () => {
       {},
       { messageProvider: 'agent-system-github' },
     )) as { appendSystemContext?: string } | undefined;
-    assert.deepEqual(promptResult, { appendSystemContext: currentGitHubTurnInstructions });
-    assert.equal(currentGitHubTurnInstructions.match(/agent_system_github_reply/gu)?.length, 1);
+    assert.equal(promptResult, undefined);
 
     const unrelatedPromptResult = await hookHandlers.get('before_prompt_build')?.(
       {},
