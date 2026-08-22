@@ -17,7 +17,6 @@ import GitHubNotificationTurnContractResolver from '../conversation/turn-contrac
 import GitHubNotificationTurnCatalog, {
   githubNotificationSupportedTurnIdentities,
 } from '../conversation/turn-catalog.ts';
-import GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
@@ -100,11 +99,6 @@ export default function createGitHubNotificationRuntime(
     lifecycles: lifecycleRegistry,
     modes: modeRegistry,
   });
-  const turnSelector = new GitHubNotificationTurnSelector({
-    conversations: conversationStateStore,
-    logger: dependencies.lifecycleLogger,
-    turns: turnCatalog,
-  });
   const initialMode = modeRegistry.resolve('work');
   const turnContracts = new GitHubNotificationTurnContractResolver({
     events: eventRegistry,
@@ -127,7 +121,7 @@ export default function createGitHubNotificationRuntime(
     }),
     promptGuidance: {
       instructions(context: PluginHookAgentContext) {
-        return githubNotificationPromptGuidance(context, { turnContracts, turnSelector });
+        return githubNotificationPromptGuidance(context, { turnContracts });
       },
     },
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),

@@ -26,9 +26,9 @@ lifecycle session and publishes the accepted public part of the response.
   as private structured context. The current comment flow requires the agent's
   `coding` profile.
 - Hidden instructions for the current comment flow are composed from the
-  registered `issue`, `work`, and `comment` definitions, selected from the
-  private active-turn descriptor, and injected through the prompt hook. Missing
-  or unsupported selection does not fall back to a different prompt.
+  registered `issue`, `work`, and `comment` definitions and injected through the
+  prompt hook. Selection is currently fixed to that supported combination; it
+  is not yet driven dynamically by durable lifecycle and mode state.
 - Each completed comment turn keeps its private response in the session and may
   publish one validated public reply to GitHub. Missing or invalid public replies
   are withheld without discarding the private response.
