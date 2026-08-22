@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
+import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 describe('channels/github/modes/registry', () => {
   it('should inherit an explicitly configured coding profile for work', () => {
-    const registry = new GitHubNotificationModeRegistry();
+    const registry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
 
     assert.deepEqual(
       registry.resolve('work').resolve(
@@ -19,7 +20,7 @@ describe('channels/github/modes/registry', () => {
   });
 
   it('should reject a work turn without the configured coding profile', () => {
-    const registry = new GitHubNotificationModeRegistry();
+    const registry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
 
     assert.throws(
       () =>
@@ -38,9 +39,20 @@ describe('channels/github/modes/registry', () => {
   });
 
   it('should leave dormant modes unwired', () => {
-    const registry = new GitHubNotificationModeRegistry();
+    const registry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
 
     assert.throws(() => registry.resolve('plan'), /not implemented/u);
     assert.throws(() => registry.resolve('auto'), /not implemented/u);
+  });
+
+  it('should reject duplicate mode definitions', () => {
+    assert.throws(
+      () =>
+        new GitHubNotificationModeRegistry([
+          githubNotificationWorkMode,
+          githubNotificationWorkMode,
+        ]),
+      /Duplicate GitHub notification mode work/u,
+    );
   });
 });

@@ -60,6 +60,19 @@ describe('channels/github/conversation/conversation-state', () => {
     );
   });
 
+  it('should reject unimplemented conversation modes', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    state.conversations['github:issue:R_repo:12'] = {
+      baselineEstablished: true,
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'plan',
+      revisions: {},
+    };
+
+    assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
+  });
+
   it('should retain a withheld publication without storing private response text', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     state.conversations['github:issue:R_repo:12'] = {

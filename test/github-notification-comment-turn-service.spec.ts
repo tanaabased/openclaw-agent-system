@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
+import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
+import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
@@ -36,6 +40,21 @@ const config: OpenClawConfig = {
     [githubNotificationChannelId]: { accounts: { [agentId]: { enabled: true } } },
   },
 };
+
+function turnContracts() {
+  const lifecycle = new GitHubIssueLifecycle({
+    async inspectGitHub() {
+      return undefined;
+    },
+    async prepareGitHub() {
+      throw new Error('not used');
+    },
+  });
+  return new GitHubNotificationTurnContractResolver({
+    lifecycles: new GitHubNotificationLifecycleRegistry([lifecycle]),
+    modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
+  });
+}
 
 function incomingComment(): GitHubCanonicalIssueComment {
   return {
@@ -91,7 +110,6 @@ async function respondWithCandidates(
   };
   const comment = incomingComment();
   const service = new GitHubNotificationCommentTurnService({
-    modes: new GitHubNotificationModeRegistry(),
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
       inspectReplyOptions?.(input.replyOptions ?? {});
@@ -108,12 +126,14 @@ async function respondWithCandidates(
     async recordInboundSession(input) {
       input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
     },
+    turnContracts: turnContracts(),
   });
   return service.respond({
     agentId,
     comment,
     executionSurface,
     item,
+    modeId: 'work',
     revision: githubCommentRevision(comment),
     workspaceDir,
   });
@@ -142,7 +162,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
         input.trackSessionMetaTask?.(task);
       };
     const service = new GitHubNotificationCommentTurnService({
-      modes: new GitHubNotificationModeRegistry(),
       candidates: candidateStore(['ready']),
       async dispatchReplyWithBufferedBlockDispatcher(input) {
         assert.equal(recorded, true);
@@ -176,6 +195,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       recordInboundSession,
+      turnContracts: turnContracts(),
     });
 
     const result = await service.respond({
@@ -183,6 +203,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       comment,
       executionSurface: 'cli-one-shot',
       item,
+      modeId: 'work',
       revision,
       workspaceDir,
     });
@@ -193,6 +214,14 @@ describe('channels/github/conversation/comment-turn-service', () => {
     );
     assert.deepEqual(result.publication, { status: 'candidate', publicText: 'ready' });
     assert.equal(result.accountId, agentId);
+    assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
+      githubNotificationTurn: {
+        eventId: 'comment',
+        lifecycleId: 'issue',
+        modeId: 'work',
+      },
+      id: 'github:issue:R_repo:12',
+    });
     assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
       {
         comment: {
@@ -209,6 +238,10 @@ describe('channels/github/conversation/comment-turn-service', () => {
         worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
       },
     ]);
+    assert.equal(
+      JSON.stringify(result.ctxPayload.UntrustedStructuredContext),
+      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
+    );
   });
 
   it('should reject a comment turn when the assignment session is absent', async () => {
@@ -221,7 +254,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
     };
     const comment = incomingComment();
     const service = new GitHubNotificationCommentTurnService({
-      modes: new GitHubNotificationModeRegistry(),
       candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {
         throw new Error('unexpected model dispatch');
@@ -231,6 +263,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       async recordInboundSession(input) {
         input.trackSessionMetaTask?.(Promise.resolve(null));
       },
+      turnContracts: turnContracts(),
     });
 
     await assert.rejects(
@@ -239,6 +272,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         comment,
         executionSurface: 'gateway',
         item,
+        modeId: 'work',
         revision: githubCommentRevision(comment),
         workspaceDir,
       }),

@@ -22,8 +22,9 @@ lifecycle session and publishes the accepted public part of the response.
   or edited exact-mention comment from an approved human resumes the existing
   issue session as a normalized direct message.
 - Incoming GitHub prose is visible to the model as the author's message while
-  source, repository, and worktree facts remain private context. The current
-  comment flow requires the agent's `coding` profile.
+  each lifecycle projects its own bounded source, repository, and resource facts
+  as private structured context. The current comment flow requires the agent's
+  `coding` profile.
 - Each completed comment turn keeps its private response in the session and may
   publish one validated public reply to GitHub. Missing or invalid public replies
   are withheld without discarding the private response.
@@ -174,8 +175,13 @@ reference.
   access.
 - Comment reads are bounded, and conversation state retains revision digests
   rather than incoming provider prose.
-- An approved actor may enter the conversation but cannot select capabilities;
-  the trusted Work policy requires the configured `coding` profile.
+- An approved actor may enter the conversation but cannot select capabilities.
+  Channel-owned turn identity selects one registered lifecycle, mode, and event;
+  unsupported combinations fail closed, and the trusted Work policy requires
+  the configured `coding` profile.
+- When material information is missing, the current turn instructions tell the
+  agent to ask one precise public question and stop. A later admitted comment
+  resumes the same session; no separate clarification phase is persisted.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the source and destination before loading credentials and publishes
   idempotently.
@@ -186,8 +192,8 @@ reference.
 
 ## Further Reading
 
-- [Design](./DESIGN.md): target message flow, lifecycle types, modes, states,
-  and response boundaries
+- [Design](./DESIGN.md): target message flow, lifecycle types, modes, durable
+  conversation state, and response boundaries
 - [Presentation](./PRESENTATION.md): reusable visible component definitions
 - [Agent System README](../../README.md): installation and common manifest workflow
 - [Advanced](../../ADVANCED.md): complete manifest and CLI reference

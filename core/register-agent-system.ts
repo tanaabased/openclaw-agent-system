@@ -255,7 +255,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     managedExecutableDirectories: excludedToolExecutableDirectories,
     manifestService,
   });
-  registerAgentSystemHooks(api, manifestService, toolRegistry);
+  registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
   api.registerCli(
     ({ program }) => {
       registerAgentSystemCli(program, {

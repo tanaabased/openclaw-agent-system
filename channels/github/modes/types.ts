@@ -1,6 +1,12 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-export type GitHubNotificationModeId = 'auto' | 'plan' | 'work';
+export const githubNotificationModeIds = ['auto', 'plan', 'work'] as const;
+
+export type GitHubNotificationModeId = (typeof githubNotificationModeIds)[number];
+
+export function isGitHubNotificationModeId(value: unknown): value is GitHubNotificationModeId {
+  return githubNotificationModeIds.includes(value as GitHubNotificationModeId);
+}
 
 export type GitHubNotificationToolProjection =
   | {
@@ -14,6 +20,7 @@ export type GitHubNotificationToolProjection =
 
 export interface GitHubNotificationModePolicy {
   id: GitHubNotificationModeId;
+  label: string;
   toolProjection: GitHubNotificationToolProjection;
 }
 
@@ -24,6 +31,7 @@ export interface ResolvedGitHubNotificationMode {
 }
 
 export interface GitHubNotificationMode {
+  instructions: string;
   policy: GitHubNotificationModePolicy;
   resolve(config: OpenClawConfig, agentId: string): ResolvedGitHubNotificationMode;
 }

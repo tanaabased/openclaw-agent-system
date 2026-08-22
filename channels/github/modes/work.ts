@@ -1,6 +1,7 @@
 import { listAgentEntries } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
+import githubNotificationWorkModeInstructions from '../conversation/prompts/mode-work.ts';
 import type { GitHubNotificationMode, ResolvedGitHubNotificationMode } from './types.ts';
 
 export class GitHubNotificationCapabilityError extends Error {
@@ -19,8 +20,10 @@ function effectiveProfile(config: OpenClawConfig, agentId: string) {
 
 /** Retain the configured coding surface for trusted Work-mode turns. */
 const githubNotificationWorkMode: GitHubNotificationMode = {
+  instructions: githubNotificationWorkModeInstructions,
   policy: {
     id: 'work',
+    label: 'Work',
     toolProjection: { kind: 'inherit-configured', requiredProfile: 'coding' },
   },
   resolve(config: OpenClawConfig, agentId: string): ResolvedGitHubNotificationMode {

@@ -23,6 +23,8 @@ import {
   type GitHubNotificationConversationState,
 } from '../channels/github/conversation/conversation-state.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationAccount,
@@ -124,6 +126,19 @@ function memoryStateStore(initial?: GitHubNotificationConversationState) {
   };
 }
 
+function lifecycles() {
+  return new GitHubNotificationLifecycleRegistry([
+    new GitHubIssueLifecycle({
+      async inspectGitHub() {
+        return undefined;
+      },
+      async prepareGitHub() {
+        throw new Error('not used');
+      },
+    }),
+  ]);
+}
+
 describe('channels/github/conversation/comment-orchestrator', () => {
   it('should persist an empty baseline without dispatching a turn', async () => {
     const monitor = preparedMonitor();
@@ -132,6 +147,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([]),
       conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
@@ -206,6 +223,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([incoming]),
       conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
       deliver,
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
@@ -261,6 +280,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([incoming]),
       conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
       deliver: async () => {
         deliveries += 1;
         throw new Error('unexpected delivery');
@@ -317,6 +338,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([incoming]),
       conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
       deliver: async () => ({
         delivery: {
           messageIds: ['101'],
@@ -364,6 +387,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([], true),
       conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },

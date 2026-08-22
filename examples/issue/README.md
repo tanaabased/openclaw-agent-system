@@ -4,7 +4,8 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
-delivers one approved comment to the lifecycle session, publishes one reply, and
+delivers one approved comment through the registered issue/Work/comment turn
+contract, publishes one reply, and
 retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
@@ -118,7 +119,7 @@ openclaw agent-system notifications wait \
   --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
 
-# should answer one approved issue comment without a long model task
+# should answer one approved issue comment through the registered turn contract
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

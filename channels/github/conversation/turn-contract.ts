@@ -1,0 +1,78 @@
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+
+import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
+import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
+import type GitHubNotificationModeRegistry from '../modes/registry.ts';
+import type { ResolvedGitHubNotificationMode } from '../modes/types.ts';
+import composeGitHubNotificationPrompt from './prompts/compose.ts';
+import githubNotificationCommentEventInstructions from './prompts/event-comment.ts';
+import githubNotificationResponseInstructions from './prompts/response.ts';
+import type { GitHubNotificationEventId, GitHubNotificationTurnIdentity } from './turn-identity.ts';
+
+export interface GitHubNotificationTurnContract {
+  identity: GitHubNotificationTurnIdentity;
+  instructions: string;
+  lifecycle: GitHubNotificationLifecycle;
+  mode: ResolvedGitHubNotificationMode;
+}
+
+export interface GitHubNotificationTurnContractResolverDependencies {
+  lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
+  modes: Pick<GitHubNotificationModeRegistry, 'resolve'>;
+}
+
+export class GitHubNotificationTurnContractError extends Error {
+  override name = 'GitHubNotificationTurnContractError';
+
+  constructor(readonly code: string) {
+    super('The GitHub notification turn contract is unavailable.');
+  }
+}
+
+const eventInstructions: Partial<Record<GitHubNotificationEventId, string>> = {
+  comment: githubNotificationCommentEventInstructions,
+};
+
+/** Resolve trusted lifecycle, mode, prompt, and capability for one turn. */
+export default class GitHubNotificationTurnContractResolver {
+  readonly #dependencies: GitHubNotificationTurnContractResolverDependencies;
+
+  constructor(dependencies: GitHubNotificationTurnContractResolverDependencies) {
+    this.#dependencies = dependencies;
+  }
+
+  instructions(identity: GitHubNotificationTurnIdentity): string {
+    const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
+    const mode = this.#dependencies.modes.resolve(identity.modeId);
+    const support = resolveGitHubNotificationLifecycleModeSupport(lifecycle, identity.modeId);
+    const selectedEventInstructions = eventInstructions[identity.eventId];
+    if (!selectedEventInstructions) {
+      throw new GitHubNotificationTurnContractError('github-notification-event-unimplemented');
+    }
+    return composeGitHubNotificationPrompt({
+      eventInstructions: selectedEventInstructions,
+      lifecycleInstructions: lifecycle.instructions,
+      modeInstructions: mode.instructions,
+      ...(support.instructions === undefined
+        ? {}
+        : { modeLifecycleInstructions: support.instructions }),
+      responseInstructions: githubNotificationResponseInstructions,
+    });
+  }
+
+  resolve(
+    identity: GitHubNotificationTurnIdentity,
+    config: OpenClawConfig,
+    agentId: string,
+  ): GitHubNotificationTurnContract {
+    const lifecycle = this.#dependencies.lifecycles.resolve(identity.lifecycleId);
+    const mode = this.#dependencies.modes.resolve(identity.modeId).resolve(config, agentId);
+    return {
+      identity,
+      instructions: this.instructions(identity),
+      lifecycle,
+      mode,
+    };
+  }
+}

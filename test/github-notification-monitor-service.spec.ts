@@ -6,6 +6,7 @@ import GitHubNotificationAssignmentOrchestrator, {
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
@@ -436,6 +437,7 @@ describe('channels/github/intake/monitor/service', () => {
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
       lifecycles: new GitHubNotificationLifecycleRegistry([
         new GitHubIssueLifecycle({
           async inspectGitHub() {

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
@@ -70,6 +69,7 @@ describe('core/register-hooks', () => {
 
   it('should inject github response instructions from the canonical channel id', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const channelInstructions = 'Lifecycle and mode instructions.';
     registerAgentSystemHooks(
       {
         on(name: string, handler: (...args: unknown[]) => unknown) {
@@ -82,6 +82,13 @@ describe('core/register-hooks', () => {
         },
       },
       { guidance: () => [] },
+      {
+        instructions(context) {
+          return context.messageProvider === githubNotificationChannelId
+            ? channelInstructions
+            : undefined;
+        },
+      },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
@@ -98,7 +105,7 @@ describe('core/register-hooks', () => {
     );
 
     assert.deepEqual(result, {
-      appendSystemContext: githubNotificationIssueWorkCommentInstructions,
+      appendSystemContext: channelInstructions,
     });
     assert.equal(unrelated, undefined);
   });

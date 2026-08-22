@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added registered GitHub lifecycle-mode turn contracts with lifecycle-owned structured context, trusted prompt composition, and fail-closed compatibility.
+
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)
 
 ### New Features

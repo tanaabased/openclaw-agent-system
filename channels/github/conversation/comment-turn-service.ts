@@ -9,7 +9,6 @@ import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../core/logger.ts';
-import type GitHubNotificationModeRegistry from '../modes/registry.ts';
 import githubNotificationCommentContext from './context/comment.ts';
 import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comment-admission.ts';
 import {
@@ -25,14 +24,20 @@ import {
 } from '../publication/publication.ts';
 import { resolveNotificationRoute, githubNotificationChannelId } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
+import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
+import {
+  githubNotificationTurnChatContext,
+  type GitHubNotificationTurnIdentity,
+} from './turn-identity.ts';
+import type { GitHubNotificationModeId } from '../modes/types.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
-  modes: Pick<GitHubNotificationModeRegistry, 'resolve'>;
   candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
   dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
+  turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
 }
 
 export interface GitHubNotificationCommentTurnInput {
@@ -40,6 +45,7 @@ export interface GitHubNotificationCommentTurnInput {
   comment: GitHubCanonicalIssueComment;
   executionSurface: GitHubNotificationExecutionSurface;
   item: GitHubNotificationItemState;
+  modeId: GitHubNotificationModeId;
   revision: GitHubCommentRevision;
   signal?: AbortSignal;
   workspaceDir: string;
@@ -79,10 +85,25 @@ export default class GitHubNotificationCommentTurnService {
     const author = input.comment.author;
     const worktreePath = input.item.intake?.worktreePath;
     const worktreeBranch = input.item.intake?.worktreeBranch;
-    if (!author || !worktreePath || !worktreeBranch || input.item.lifecycleId !== 'issue') {
-      throw new Error('The GitHub notification comment turn is missing prepared issue context.');
+    if (!author) {
+      throw new Error('The GitHub notification comment turn is missing its trusted author.');
     }
     const config = await this.#dependencies.readConfig();
+    const identity: GitHubNotificationTurnIdentity = {
+      eventId: 'comment',
+      lifecycleId: input.item.lifecycleId,
+      modeId: input.modeId,
+    };
+    const contract = this.#dependencies.turnContracts.resolve(identity, config, input.agentId);
+    if (!contract.lifecycle.commentTurns.enabled) {
+      throw new Error('The GitHub lifecycle does not support comment turns.');
+    }
+    const lifecycleContext = contract.lifecycle.context.project({
+      item: input.item,
+      ...(worktreePath && worktreeBranch
+        ? { worktree: { branch: worktreeBranch, path: worktreePath } }
+        : {}),
+    });
     const conversationId = githubNotificationConversationId({
       itemNumber: input.item.number,
       lifecycleId: input.item.lifecycleId,
@@ -93,13 +114,13 @@ export default class GitHubNotificationCommentTurnService {
       { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
       conversationId,
     );
-    const mode = this.#dependencies.modes.resolve('work').resolve(config, input.agentId);
+    const mode = contract.mode;
     const messageId = `comment:${input.revision.revisionId}`;
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
-        chat: { id: route.conversationId },
+        chat: { id: route.conversationId, ...githubNotificationTurnChatContext(identity) },
         sender: { id: author.nodeId },
       },
       conversation: {
@@ -112,9 +133,8 @@ export default class GitHubNotificationCommentTurnService {
         UntrustedStructuredContext: [
           githubNotificationCommentContext({
             comment: input.comment,
-            item: input.item,
+            lifecycleContext,
             revision: input.revision,
-            worktree: { branch: worktreeBranch, path: worktreePath },
           }),
         ],
       },

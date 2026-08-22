@@ -5,6 +5,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import GitHubNotificationAssignmentSessionService, {
   type GitHubNotificationAssignmentSessionServiceDependencies,
 } from '../channels/github/conversation/assignment-session-service.ts';
+import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
@@ -36,8 +38,30 @@ describe('channels/github/conversation/assignment-session-service', () => {
         recordedSessionKey = input.sessionKey;
         assert.equal(input.createIfMissing, true);
         assert.equal(input.ctx.Provider, githubNotificationChannelId);
-        assert.match(String(input.ctx.Body), /Issue assignment received/u);
-        assert.match(String(input.ctx.Body), /tanaabased\/example#12/u);
+        assert.equal(
+          input.ctx.Body,
+          [
+            '## 📥 Issue assignment received',
+            '',
+            '[@pirog](https://github.com/pirog) assigned you [tanaabased/example#12](https://github.com/tanaabased/example/issues/12).',
+            '',
+            '**Mode:** Work',
+          ].join('\n'),
+        );
+        assert.equal(
+          JSON.stringify(input.ctx.UntrustedStructuredContext),
+          JSON.stringify([
+            {
+              item: {
+                lifecycleId: 'issue',
+                number: 12,
+                repositoryName: 'example',
+                repositoryOwner: 'tanaabased',
+              },
+              worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
+            },
+          ]),
+        );
         input.trackSessionMetaTask?.(
           Promise.resolve({ sessionId: 'session-1', sessionKey: input.sessionKey }),
         );
@@ -47,9 +71,19 @@ describe('channels/github/conversation/assignment-session-service', () => {
       readConfig: async () => config,
       recordInboundSession,
     });
+    const lifecycle = new GitHubIssueLifecycle({
+      async inspectGitHub() {
+        return undefined;
+      },
+      async prepareGitHub() {
+        throw new Error('not used');
+      },
+    });
     const input = {
       agentId,
       item,
+      lifecycle,
+      mode: githubNotificationWorkMode,
       workspaceDir,
       worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
     };

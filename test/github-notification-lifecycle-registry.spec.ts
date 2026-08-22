@@ -46,6 +46,24 @@ describe('channels/github/lifecycles', () => {
         repositoryDatabaseId: issue.repositoryDatabaseId,
       },
     ]);
+    assert.deepEqual(
+      lifecycle.context.project({
+        item: issue,
+        worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
+      }),
+      {
+        item: {
+          lifecycleId: 'issue',
+          number: issue.number,
+          repositoryName: issue.repositoryName,
+          repositoryOwner: issue.repositoryOwner,
+        },
+        worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
+      },
+    );
+    assert.equal(lifecycle.assignmentSession.enabled, true);
+    assert.deepEqual(lifecycle.commentTurns, { enabled: true });
+    assert.ok(lifecycle.modeSupport.work);
   });
 
   it('should classify a direct pull request without assigning worktree ownership', () => {
@@ -55,6 +73,26 @@ describe('channels/github/lifecycles', () => {
 
     assert.equal(selected.id, 'pull-request');
     assert.deepEqual(selected.worktree, { required: false });
+    assert.equal(selected.assignmentSession.enabled, false);
+    assert.deepEqual(selected.commentTurns, { enabled: false });
+    assert.deepEqual(selected.modeSupport, {});
+    assert.deepEqual(selected.context.project({ item: approvedPullRequestNotificationItem() }), {
+      item: {
+        lifecycleId: 'pull-request',
+        number: 13,
+        repositoryName: 'example',
+        repositoryOwner: 'tanaabased',
+      },
+      pullRequest: {
+        authorNodeId: 'U_actor',
+        baseRef: 'main',
+        draft: false,
+        headRef: 'notification-pr',
+        headRepositoryDatabaseId: 3,
+        headRepositoryNodeId: 'R_repo',
+        headSha: 'a'.repeat(40),
+      },
+    });
   });
 
   it('should reject duplicate lifecycle owners', () => {

@@ -1,6 +1,10 @@
+import githubNotificationIssueLifecycleInstructions from '../conversation/prompts/lifecycle-issue.ts';
+import { githubNotificationMarkdownText } from '../conversation/presentation/card.ts';
+import githubNotificationItemContext from './context.ts';
 import type {
   GitHubNotificationLifecycle,
   GitHubNotificationLifecycleBoundaryInput,
+  GitHubNotificationLifecycleContextInput,
   GitHubNotificationLifecycleWorktree,
 } from './types.ts';
 
@@ -40,9 +44,51 @@ function worktreeInput(input: GitHubNotificationLifecycleBoundaryInput) {
   };
 }
 
+function issueUrl(item: GitHubNotificationLifecycleContextInput['item']): string {
+  return `https://github.com/${encodeURIComponent(item.repositoryOwner)}/${encodeURIComponent(item.repositoryName)}/issues/${item.number}`;
+}
+
+function actorUrl(login: string): string {
+  return `https://github.com/${encodeURIComponent(login)}`;
+}
+
 /** Own issue-assignment intake and its required managed worktree. */
 export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle {
+  readonly assignmentSession = {
+    enabled: true as const,
+    project(item: GitHubNotificationLifecycleContextInput['item']) {
+      const actorLogin = item.assignmentActorLogin?.trim();
+      const actorNodeId = item.assignmentActorNodeId?.trim();
+      if (item.itemType !== 'issue' || !actorLogin || !actorNodeId) {
+        throw new Error('The GitHub issue assignment is missing trusted assignment context.');
+      }
+      const repository = `${item.repositoryOwner}/${item.repositoryName}`;
+      return {
+        card: {
+          emoji: '📥',
+          summary: `[@${githubNotificationMarkdownText(actorLogin)}](${actorUrl(actorLogin)}) assigned you [${githubNotificationMarkdownText(`${repository}#${item.number}`)}](${issueUrl(item)}).`,
+          title: 'Issue assignment received',
+        },
+        sender: { id: actorNodeId, label: actorLogin },
+        timestamp: item.lastObservedAt,
+      };
+    },
+  };
+  readonly commentTurns = { enabled: true as const };
+  readonly context = {
+    project(input: GitHubNotificationLifecycleContextInput) {
+      if (input.item.itemType !== 'issue' || !input.worktree) {
+        throw new Error('The issue lifecycle context requires its prepared worktree.');
+      }
+      return {
+        item: githubNotificationItemContext(input, 'issue'),
+        worktree: input.worktree,
+      };
+    },
+  };
   readonly id = 'issue' as const;
+  readonly instructions = githubNotificationIssueLifecycleInstructions;
+  readonly modeSupport = { work: {} } as const;
   readonly worktree;
 
   constructor(worktrees: GitHubIssueLifecycleWorktreeService) {

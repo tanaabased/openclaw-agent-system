@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 
-import type { GitHubNotificationLifecycleId } from '../lifecycles/types.ts';
+import {
+  isGitHubNotificationLifecycleId,
+  type GitHubNotificationLifecycleId,
+} from '../lifecycles/types.ts';
+import type { GitHubNotificationModeId } from '../modes/types.ts';
 import { parseGitHubNotificationPublicationTarget } from '../publication/publication.ts';
 
 export type GitHubNotificationCommentTurnStatus =
@@ -49,7 +53,7 @@ export interface GitHubNotificationConversation {
   baselineEstablished: boolean;
   itemKey: string;
   lifecycleId: GitHubNotificationLifecycleId;
-  mode: 'work';
+  mode: GitHubNotificationModeId;
   revisions: Record<string, GitHubNotificationCommentRevisionState>;
 }
 
@@ -168,7 +172,7 @@ function validConversation(value: unknown, conversationId: string): boolean {
     typeof value.baselineEstablished !== 'boolean' ||
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
-    !['issue', 'pull-request', 'pull-request-review'].includes(String(value.lifecycleId)) ||
+    !isGitHubNotificationLifecycleId(value.lifecycleId) ||
     value.mode !== 'work' ||
     !record(value.revisions) ||
     Object.keys(value.revisions).length > maximumRevisions

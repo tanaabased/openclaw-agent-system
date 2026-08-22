@@ -8,8 +8,14 @@ import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../core/logger.ts';
 import githubNotificationAssignmentContext from './context/assignment.ts';
-import githubNotificationCard, { githubNotificationMarkdownText } from './presentation/card.ts';
+import githubNotificationCard from './presentation/card.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import type {
+  GitHubNotificationLifecycle,
+  GitHubNotificationLifecycleWorktree,
+} from '../lifecycles/types.ts';
+import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
+import type { GitHubNotificationMode } from '../modes/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { githubNotificationChannelId, resolveNotificationRoute } from '../routing/routing.ts';
 
@@ -22,19 +28,13 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
 export interface GitHubNotificationAssignmentSessionInput {
   agentId: string;
   item: GitHubNotificationItemState;
+  lifecycle: GitHubNotificationLifecycle;
+  mode: Pick<GitHubNotificationMode, 'policy'>;
   workspaceDir: string;
-  worktree: { branch: string; path: string };
+  worktree?: GitHubNotificationLifecycleWorktree;
 }
 
-function issueUrl(item: GitHubNotificationItemState): string {
-  return `https://github.com/${encodeURIComponent(item.repositoryOwner)}/${encodeURIComponent(item.repositoryName)}/issues/${item.number}`;
-}
-
-function actorUrl(login: string): string {
-  return `https://github.com/${encodeURIComponent(login)}`;
-}
-
-/** Prepare one issue assignment's deterministic OpenClaw session without a model turn. */
+/** Prepare one lifecycle assignment's deterministic OpenClaw session without a model turn. */
 export default class GitHubNotificationAssignmentSessionService {
   readonly #dependencies: GitHubNotificationAssignmentSessionServiceDependencies;
 
@@ -43,16 +43,16 @@ export default class GitHubNotificationAssignmentSessionService {
   }
 
   async prepare(input: GitHubNotificationAssignmentSessionInput): Promise<void> {
-    const actorLogin = input.item.assignmentActorLogin?.trim();
-    const actorNodeId = input.item.assignmentActorNodeId?.trim();
-    if (
-      input.item.lifecycleId !== 'issue' ||
-      input.item.itemType !== 'issue' ||
-      !actorLogin ||
-      !actorNodeId
-    ) {
-      throw new Error('The GitHub issue assignment session is missing trusted assignment context.');
+    const assignmentSession = input.lifecycle.assignmentSession;
+    resolveGitHubNotificationLifecycleModeSupport(input.lifecycle, input.mode.policy.id);
+    if (!assignmentSession.enabled) {
+      throw new Error('The GitHub lifecycle does not support assignment sessions.');
     }
+    const projection = assignmentSession.project(input.item);
+    const lifecycleContext = input.lifecycle.context.project({
+      item: input.item,
+      ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+    });
     const config = await this.#dependencies.readConfig();
     const conversationId = githubNotificationConversationId({
       itemNumber: input.item.number,
@@ -66,17 +66,15 @@ export default class GitHubNotificationAssignmentSessionService {
     );
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
     const body = githubNotificationCard({
-      emoji: '📥',
-      mode: 'Work',
-      summary: `[@${githubNotificationMarkdownText(actorLogin)}](${actorUrl(actorLogin)}) assigned you [${githubNotificationMarkdownText(`${repository}#${input.item.number}`)}](${issueUrl(input.item)}).`,
-      title: 'Issue assignment received',
+      ...projection.card,
+      mode: input.mode.policy.label,
     });
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
       channelContext: {
         chat: { id: route.conversationId },
-        sender: { id: actorNodeId },
+        sender: { id: projection.sender.id },
       },
       conversation: {
         id: route.conversationId,
@@ -85,11 +83,9 @@ export default class GitHubNotificationAssignmentSessionService {
         routePeer: { id: route.conversationId, kind: 'direct' },
       },
       extra: {
-        UntrustedStructuredContext: [
-          githubNotificationAssignmentContext({ item: input.item, worktree: input.worktree }),
-        ],
+        UntrustedStructuredContext: [githubNotificationAssignmentContext({ lifecycleContext })],
       },
-      from: `github:${actorNodeId}`,
+      from: `github:${projection.sender.id}`,
       message: {
         body,
         bodyForAgent: body,
@@ -106,15 +102,15 @@ export default class GitHubNotificationAssignmentSessionService {
         routeSessionKey: route.sessionKey,
       },
       sender: {
-        displayLabel: actorLogin,
-        id: actorNodeId,
+        displayLabel: projection.sender.label,
+        id: projection.sender.id,
         isBot: false,
         isSelf: false,
-        name: actorLogin,
-        username: actorLogin,
+        name: projection.sender.label,
+        username: projection.sender.label,
       },
       surface: githubNotificationChannelId,
-      timestamp: input.item.lastObservedAt,
+      timestamp: projection.timestamp,
     });
     let sessionRecordTask: Promise<unknown> | undefined;
     const result = await runPreparedInboundReply<void>({

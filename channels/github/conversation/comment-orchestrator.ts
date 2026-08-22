@@ -23,6 +23,8 @@ import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
+import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import type { GitHubNotificationModeId } from '../modes/types.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import type GitHubNotificationCommentTurnService from './comment-turn-service.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
@@ -32,6 +34,8 @@ export interface GitHubNotificationCommentOrchestratorDependencies {
   assignmentAuthority: Pick<GitHubNotificationAssignmentProvider, 'open'>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
+  initialModeId: GitHubNotificationModeId;
+  lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
   monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
@@ -133,15 +137,11 @@ export default class GitHubNotificationCommentOrchestrator {
     const { executionSurface, signal } = options;
     const monitor = await this.#dependencies.monitorStateStore.read(agentId);
     const item = monitor?.items[itemKey];
-    if (
-      !monitor ||
-      !item ||
-      item.disposition !== 'approved' ||
-      item.lifecycleId !== 'issue' ||
-      item.intake?.stage !== 'prepared'
-    ) {
+    if (!monitor || !item || item.disposition !== 'approved' || item.intake?.stage !== 'prepared') {
       return;
     }
+    const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
+    if (!lifecycle.commentTurns.enabled) return;
     const conversationId = githubNotificationConversationId({
       itemNumber: item.number,
       lifecycleId: item.lifecycleId,
@@ -211,7 +211,7 @@ export default class GitHubNotificationCommentOrchestrator {
         baselineEstablished: true,
         itemKey,
         lifecycleId: item.lifecycleId,
-        mode: 'work',
+        mode: this.#dependencies.initialModeId,
         revisions,
       };
       await this.#dependencies.conversationStateStore.write(state);
@@ -271,6 +271,7 @@ export default class GitHubNotificationCommentOrchestrator {
         exact,
         exactRevision,
         item,
+        existingConversation.mode,
         monitor.workspaceDir,
         signal,
       );
@@ -285,6 +286,7 @@ export default class GitHubNotificationCommentOrchestrator {
     comment: GitHubCanonicalIssueComment,
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
+    modeId: GitHubNotificationModeId,
     workspaceDir: string,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -295,6 +297,7 @@ export default class GitHubNotificationCommentOrchestrator {
         comment,
         executionSurface,
         item,
+        modeId,
         revision,
         ...(signal === undefined ? {} : { signal }),
         workspaceDir,

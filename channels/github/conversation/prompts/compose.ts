@@ -1,13 +1,22 @@
-import githubNotificationCommentEventInstructions from './event-comment.ts';
-import githubNotificationIssueLifecycleInstructions from './lifecycle-issue.ts';
-import githubNotificationWorkModeInstructions from './mode-work.ts';
-import githubNotificationResponseInstructions from './response.ts';
+export interface GitHubNotificationPromptComposition {
+  eventInstructions: string;
+  lifecycleInstructions: string;
+  modeInstructions: string;
+  modeLifecycleInstructions?: string;
+  responseInstructions: string;
+}
 
-/** Compose hidden instructions for the currently supported issue comment turn. */
-const githubNotificationIssueWorkCommentInstructions = [
-  `${githubNotificationIssueLifecycleInstructions} in Work mode. ${githubNotificationCommentEventInstructions}`,
-  githubNotificationWorkModeInstructions,
-  githubNotificationResponseInstructions,
-].join('\n\n');
-
-export default githubNotificationIssueWorkCommentInstructions;
+/** Compose trusted instruction layers without provider-controlled values. */
+export default function composeGitHubNotificationPrompt(
+  input: GitHubNotificationPromptComposition,
+): string {
+  return [
+    input.lifecycleInstructions,
+    input.modeLifecycleInstructions,
+    input.modeInstructions,
+    input.eventInstructions,
+    input.responseInstructions,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join('\n\n');
+}
