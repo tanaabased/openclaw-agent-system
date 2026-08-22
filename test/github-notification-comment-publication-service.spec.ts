@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
-import type { GitHubNotificationAssignmentInspection } from '../channels/github/lib/assignment-provider.ts';
+import type { GitHubNotificationAssignmentInspection } from '../channels/github/intake/assignment-provider.ts';
 import GitHubNotificationCommentPublicationService, {
   GitHubNotificationCommentPublicationServiceError,
-} from '../channels/github/lib/comment-publication-service.ts';
-import type GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
+} from '../channels/github/publication/comment-publication-service.ts';
+import type GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/utils/comment-admission.ts';
+} from '../channels/github/conversation/comment-admission.ts';
 import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
-} from '../channels/github/utils/conversation-state.ts';
-import { githubNotificationPublicationTarget } from '../channels/github/utils/publication.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+} from '../channels/github/conversation/conversation-state.ts';
+import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import {
   notificationAccount,
@@ -118,7 +118,7 @@ function stateFixture() {
   return { comment, conversations, monitor, target };
 }
 
-describe('channels/github/lib/comment-publication-service', () => {
+describe('channels/github/publication/comment-publication-service', () => {
   it('should reauthorize the exact source revision before publishing accepted text', async () => {
     const fixture = stateFixture();
     let opened = 0;

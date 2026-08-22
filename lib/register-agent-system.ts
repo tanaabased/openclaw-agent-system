@@ -6,29 +6,7 @@ import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plug
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
-import { createGitHubNotificationChannel } from '../channels/github/channel.ts';
-import GitHubNotificationCapabilityRegistry from '../channels/github/capabilities/registry.ts';
-import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
-import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
-import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import createGitHubNotificationReplyTool from '../channels/github/reply-tool.ts';
-import GitHubNotificationAssignmentOrchestrator from '../channels/github/lib/assignment-orchestrator.ts';
-import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
-import GitHubNotificationAssignmentSessionService from '../channels/github/lib/assignment-session-service.ts';
-import GitHubNotificationCommentOrchestrator from '../channels/github/lib/comment-orchestrator.ts';
-import GitHubNotificationCommentPublicationService from '../channels/github/lib/comment-publication-service.ts';
-import GitHubNotificationCommentTurnService from '../channels/github/lib/comment-turn-service.ts';
-import GitHubNotificationConversationStateStore from '../channels/github/lib/conversation-state-store.ts';
-import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
-import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
-import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
-import createGitHubNotificationMessageAdapter from '../channels/github/lib/message-adapter.ts';
-import GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
-import GitHubNotificationMonitorStateStore from '../channels/github/lib/monitor-state-store.ts';
-import NotificationRoutingReceiptStore from '../channels/github/lib/routing-receipt-store.ts';
-import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
-import GitHubNotificationPublicationLeaseStore from '../channels/github/lib/publication-lease.ts';
-import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
+import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../utils/resolve-codex-command-agent-id.ts';
@@ -158,42 +136,27 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     environmentService: lifecycleEnvironmentService,
     privateStateRoot,
   });
-  const notificationReplyCandidateStore = new GitHubNotificationReplyCandidateStore({
+  const notificationRuntime = createGitHubNotificationRuntime({
+    accountClient: githubCapability.accountClient,
     ...(currentUid === undefined ? {} : { currentUid }),
-    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+    dispatchReplyWithBufferedBlockDispatcher:
+      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    lifecycleLogger,
+    mutateConfigFile(params) {
+      return api.runtime.config.mutateConfigFile(params);
+    },
+    ...(privateStateRoot === undefined ? {} : { privateStateRoot }),
+    readConfig,
+    readRuntimeConfig,
+    recordInboundSession: api.runtime.channel.session.recordInboundSession,
+    replyToolLogger: logger,
+    worktrees: gitCapability.trustedWorktreeService,
   });
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,
-    createGitHubNotificationReplyTool(notificationReplyCandidateStore, logger),
+    notificationRuntime.replyTool,
   ]);
-  const notificationRoutingService = new NotificationRoutingService({
-    mutateConfigFile(params) {
-      return api.runtime.config.mutateConfigFile(params);
-    },
-    readConfig,
-    receiptStore: new NotificationRoutingReceiptStore({
-      ...(currentUid === undefined ? {} : { currentUid }),
-      ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-    }),
-  });
-  const notificationMonitorStateStore = new GitHubNotificationMonitorStateStore({
-    ...(currentUid === undefined ? {} : { currentUid }),
-    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-  });
-  const notificationMonitorCycleLeaseStore = new GitHubNotificationMonitorCycleLeaseStore({
-    ...(currentUid === undefined ? {} : { currentUid }),
-    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-  });
-  const notificationConversationStateStore = new GitHubNotificationConversationStateStore({
-    ...(currentUid === undefined ? {} : { currentUid }),
-    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-  });
-  const notificationPublicationLeaseStore = new GitHubNotificationPublicationLeaseStore({
-    ...(currentUid === undefined ? {} : { currentUid }),
-    ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
-  });
-  const notificationMonitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
   const lifecycleRegistry = new AgentSystemLifecycleRegistry([
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
@@ -219,17 +182,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
-    createNotificationLifecycleContribution({
-      monitorService: {
-        runOnce(input) {
-          const service = notificationMonitorServiceRef.current;
-          if (!service) throw new Error('GitHub notification monitor service is unavailable.');
-          return service.runOnce(input);
-        },
-      },
-      routingService: notificationRoutingService,
-      stateStore: notificationMonitorStateStore,
-    }),
+    notificationRuntime.lifecycleContribution,
   ]);
   const manifestService = new AgentManifestService({
     getConfig: () => api.runtime.config.current(),
@@ -278,78 +231,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     credentialManager,
     lifecycleRegistry,
   });
-  const notificationAssignmentProvider = new GitHubNotificationAssignmentProvider({
-    accountClient: githubCapability.accountClient,
-    manifestService,
-    readConfig: readRuntimeConfig,
-  });
-  const notificationLifecycleRegistry = new GitHubNotificationLifecycleRegistry([
-    new GitHubIssueLifecycle(gitCapability.trustedWorktreeService),
-    new GitHubPullRequestLifecycle(),
-  ]);
-  const notificationAssignmentSessionService = new GitHubNotificationAssignmentSessionService({
-    logger: lifecycleLogger,
-    readConfig: readRuntimeConfig,
-    recordInboundSession: api.runtime.channel.session.recordInboundSession,
-  });
-  const notificationAssignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
-    authority: notificationAssignmentProvider,
-    lifecycles: notificationLifecycleRegistry,
-    sessions: notificationAssignmentSessionService,
-    stateStore: notificationMonitorStateStore,
-  });
-  const notificationCapabilities = new GitHubNotificationCapabilityRegistry();
-  const notificationCommentTurnService = new GitHubNotificationCommentTurnService({
-    capabilities: notificationCapabilities,
-    candidates: notificationReplyCandidateStore,
-    dispatchReplyWithBufferedBlockDispatcher:
-      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
-    logger: lifecycleLogger,
-    readConfig: readRuntimeConfig,
-    recordInboundSession: api.runtime.channel.session.recordInboundSession,
-  });
-  const notificationCommentPublicationService = new GitHubNotificationCommentPublicationService({
-    assignmentAuthority: notificationAssignmentProvider,
-    conversationStateStore: notificationConversationStateStore,
-    manifestService,
-    monitorStateStore: notificationMonitorStateStore,
-    publicationLeaseStore: notificationPublicationLeaseStore,
-    readConfig: readRuntimeConfig,
-  });
-  const notificationMessageAdapter = createGitHubNotificationMessageAdapter({
-    publications: notificationCommentPublicationService,
-  });
-  const notificationCommentOrchestrator = new GitHubNotificationCommentOrchestrator({
-    assignmentAuthority: notificationAssignmentProvider,
-    conversationStateStore: notificationConversationStateStore,
-    logger: lifecycleLogger,
-    monitorStateStore: notificationMonitorStateStore,
-    publications: notificationCommentPublicationService,
-    turns: notificationCommentTurnService,
-  });
-  const notificationMonitorService = new GitHubNotificationMonitorService({
-    accountClient: githubCapability.accountClient,
-    assignmentOrchestrator: notificationAssignmentOrchestrator,
-    commentOrchestrator: notificationCommentOrchestrator,
-    cycleLeaseStore: notificationMonitorCycleLeaseStore,
-    logger: lifecycleLogger,
-    manifestService,
-    readConfig: readRuntimeConfig,
-    routingService: notificationRoutingService,
-    stateStore: notificationMonitorStateStore,
-  });
-  const notificationStatusService = new GitHubNotificationStatusService({
+  const {
+    channel: notificationChannel,
     monitorService: notificationMonitorService,
-    stateStore: notificationMonitorStateStore,
-  });
-  notificationMonitorServiceRef.current = notificationMonitorService;
+    statusService: notificationStatusService,
+  } = notificationRuntime.assemble(manifestService);
 
   api.registerChannel({
-    plugin: createGitHubNotificationChannel({
-      message: notificationMessageAdapter,
-      monitorService: notificationMonitorService,
-      stateStore: notificationMonitorStateStore,
-    }),
+    plugin: notificationChannel,
   });
   toolRegistry.registerTools(api, toolRuntime);
   toolRegistry.registerTrustedPolicies(api, manifestService);

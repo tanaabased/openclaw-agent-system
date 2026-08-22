@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 
 import githubNotificationMessage, {
   githubNotificationMarkdownText,
-} from '../channels/github/messages/presentation/card.ts';
-import { githubNotificationBlockquote } from '../channels/github/messages/presentation/response-envelope.ts';
+} from '../channels/github/conversation/presentation/card.ts';
+import { githubNotificationBlockquote } from '../channels/github/conversation/presentation/public-response.ts';
 
-describe('channels/github/messages/presentation', () => {
+describe('channels/github/conversation/presentation', () => {
   it('should render one rich message with an optional concise note', () => {
     assert.equal(
       githubNotificationMessage({

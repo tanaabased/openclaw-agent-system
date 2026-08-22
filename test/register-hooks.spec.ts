@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationWorkCommentInstructions from '../channels/github/messages/instructions/work-comment.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
 import registerAgentSystemHooks from '../lib/register-hooks.ts';
 
@@ -97,7 +97,9 @@ describe('lib/register-hooks', () => {
       { messageProvider: 'github', sessionId: 'two', sessionKey: 'two' },
     );
 
-    assert.deepEqual(result, { appendSystemContext: githubNotificationWorkCommentInstructions });
+    assert.deepEqual(result, {
+      appendSystemContext: githubNotificationIssueWorkCommentInstructions,
+    });
     assert.equal(unrelated, undefined);
   });
 });

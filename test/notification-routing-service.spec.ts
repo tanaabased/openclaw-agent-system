@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import NotificationRoutingService from '../channels/github/lib/routing-service.ts';
+import NotificationRoutingService from '../channels/github/routing/service.ts';
 import type {
   NotificationRoutingDesiredState,
   NotificationRoutingReceipt,
-} from '../channels/github/utils/routing.ts';
+} from '../channels/github/routing/routing.ts';
 
 const desired: NotificationRoutingDesiredState = {
   agentId: 'data',
@@ -14,7 +14,7 @@ const desired: NotificationRoutingDesiredState = {
   workspaceDir: '/workspace/data',
 };
 
-describe('channels/github/lib/routing-service', () => {
+describe('channels/github/routing/service', () => {
   it('should reconcile idempotently and remove only owned state', async () => {
     const config: OpenClawConfig = {
       agents: { list: [{ id: 'data', workspace: '/workspace/data' }] },

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import GitHubNotificationReplyCandidateStore, {
   GitHubNotificationReplyCandidateStoreError,
-} from '../channels/github/lib/reply-candidate-store.ts';
+} from '../channels/github/publication/reply-candidate-store.ts';
 
 const identity = {
   agentId: 'tanaabot',
@@ -18,7 +18,7 @@ function hasCode(expected: string) {
     error instanceof GitHubNotificationReplyCandidateStoreError && error.code === expected;
 }
 
-describe('channels/github/lib/reply-candidate-store', () => {
+describe('channels/github/publication/reply-candidate-store', () => {
   it('should exchange private candidates across independent runtime instances', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-candidate-'));
     const rootDir = join(temporaryDirectory, 'state');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import GitHubNotificationCommentPublisher from '../channels/github/lib/comment-publisher.ts';
+import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 function input() {
@@ -12,7 +12,7 @@ function input() {
   };
 }
 
-describe('channels/github/lib/comment-publisher', () => {
+describe('channels/github/publication/comment-publisher', () => {
   it('should reauthorize before connecting and publish one marked comment', async () => {
     const calls: string[] = [];
     let publishedBody = '';

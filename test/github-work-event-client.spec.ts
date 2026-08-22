@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
-import GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 
 const publicationMarker =
   '<!-- agent-system-github-publication:planning-outcome:0123456789abcdef0123456789abcdef -->';
@@ -22,7 +22,7 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
   };
 }
 
-describe('channels/github/lib/work-event-client', () => {
+describe('channels/github/provider/work-event-client', () => {
   it('should paginate assigned-item discovery through fixed bounded api calls', async () => {
     const requests: string[][] = [];
     const pages = [
@@ -285,7 +285,7 @@ describe('channels/github/lib/work-event-client', () => {
               additions: 12,
               changes: 15,
               deletions: 3,
-              filename: 'channels/github/lib/poller.ts',
+              filename: 'channels/github/intake/monitor/poller.ts',
               previousFilename: null,
               status: 'modified',
             },
@@ -303,7 +303,7 @@ describe('channels/github/lib/work-event-client', () => {
         additions: 12,
         changes: 15,
         deletions: 3,
-        filename: 'channels/github/lib/poller.ts',
+        filename: 'channels/github/intake/monitor/poller.ts',
         status: 'modified',
       },
     ]);

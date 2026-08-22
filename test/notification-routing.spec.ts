@@ -9,7 +9,7 @@ import {
   planNotificationRouting,
   resolveNotificationRoute,
   type NotificationRoutingDesiredState,
-} from '../channels/github/utils/routing.ts';
+} from '../channels/github/routing/routing.ts';
 
 const desired: NotificationRoutingDesiredState = {
   agentId: 'data',
@@ -23,7 +23,7 @@ function config(): OpenClawConfig {
   };
 }
 
-describe('channels/github/utils/routing', () => {
+describe('channels/github/routing/routing', () => {
   it('should install and resolve one deterministic account-scoped route', () => {
     const current = config();
     const initial = planNotificationRouting(current, desired);

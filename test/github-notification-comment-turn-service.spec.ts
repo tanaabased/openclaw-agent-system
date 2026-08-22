@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-import GitHubNotificationCapabilityRegistry from '../channels/github/capabilities/registry.ts';
+import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
-} from '../channels/github/lib/comment-turn-service.ts';
+} from '../channels/github/conversation/comment-turn-service.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/utils/comment-admission.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+} from '../channels/github/conversation/comment-admission.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationActor,
   notificationItemKey,
@@ -91,7 +91,7 @@ async function respondWithCandidates(
   };
   const comment = incomingComment();
   const service = new GitHubNotificationCommentTurnService({
-    capabilities: new GitHubNotificationCapabilityRegistry(),
+    modes: new GitHubNotificationModeRegistry(),
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
       inspectReplyOptions?.(input.replyOptions ?? {});
@@ -119,7 +119,7 @@ async function respondWithCandidates(
   });
 }
 
-describe('channels/github/lib/comment-turn-service', () => {
+describe('channels/github/conversation/comment-turn-service', () => {
   it('should dispatch the exact comment and retain one ordinary private response', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     item.intake = {
@@ -142,7 +142,7 @@ describe('channels/github/lib/comment-turn-service', () => {
         input.trackSessionMetaTask?.(task);
       };
     const service = new GitHubNotificationCommentTurnService({
-      capabilities: new GitHubNotificationCapabilityRegistry(),
+      modes: new GitHubNotificationModeRegistry(),
       candidates: candidateStore(['ready']),
       async dispatchReplyWithBufferedBlockDispatcher(input) {
         assert.equal(recorded, true);
@@ -221,7 +221,7 @@ describe('channels/github/lib/comment-turn-service', () => {
     };
     const comment = incomingComment();
     const service = new GitHubNotificationCommentTurnService({
-      capabilities: new GitHubNotificationCapabilityRegistry(),
+      modes: new GitHubNotificationModeRegistry(),
       candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {
         throw new Error('unexpected model dispatch');

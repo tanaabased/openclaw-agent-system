@@ -4,8 +4,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import GitHubNotificationAssignmentSessionService, {
   type GitHubNotificationAssignmentSessionServiceDependencies,
-} from '../channels/github/lib/assignment-session-service.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+} from '../channels/github/conversation/assignment-session-service.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const agentId = 'tanaabot';
@@ -25,7 +25,7 @@ const config: OpenClawConfig = {
   },
 };
 
-describe('channels/github/lib/assignment-session-service', () => {
+describe('channels/github/conversation/assignment-session-service', () => {
   it('should idempotently prepare one assignment session without model dispatch', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     let records = 0;

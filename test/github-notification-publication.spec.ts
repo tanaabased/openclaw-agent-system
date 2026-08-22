@@ -6,10 +6,10 @@ import {
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
-} from '../channels/github/utils/publication.ts';
+} from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
-describe('channels/github/utils/publication', () => {
+describe('channels/github/publication/publication', () => {
   it('should mint one opaque target and hidden marker for a publication intent', () => {
     const target = githubNotificationPublicationTarget({
       intent: 'initial-acknowledgment',

@@ -8,7 +8,7 @@ import {
   writeCliSummary,
 } from '../../../lib/cli-output.ts';
 import { formatManifestFailure } from '../../../lib/logger.ts';
-import type GitHubNotificationStatusService from '../lib/status-service.ts';
+import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
 export interface StatusNotificationsAgentSystemOptions {

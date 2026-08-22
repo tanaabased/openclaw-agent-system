@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {
   GitHubNotificationPollError,
   pollGitHubNotifications,
-} from '../channels/github/lib/poller.ts';
+} from '../channels/github/intake/monitor/poller.ts';
 import {
   GitHubWorkEventClientError,
   type default as GitHubWorkEventClient,
-} from '../channels/github/lib/work-event-client.ts';
-import type { GitHubRepositoryPermission } from '../channels/github/utils/work-item.ts';
+} from '../channels/github/provider/work-event-client.ts';
+import type { GitHubRepositoryPermission } from '../channels/github/provider/work-item.ts';
 import {
   notificationAccount as account,
   notificationActor as actor,
@@ -133,7 +133,7 @@ function client(
   } as unknown as GitHubWorkEventClient;
 }
 
-describe('channels/github/lib/poller', () => {
+describe('channels/github/intake/monitor/poller', () => {
   it('should establish a first baseline without approving existing assignments', async () => {
     const result = await pollGitHubNotifications({
       agentId: 'tanaabot',

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import decodeGitHubNotificationMonitorState from '../channels/github/utils/monitor-state-codec.ts';
+import decodeGitHubNotificationMonitorState from '../channels/github/intake/monitor/state-codec.ts';
 import {
   approvedPullRequestNotificationItem,
   notificationItemKey,
@@ -8,7 +8,7 @@ import {
   notificationPullRequestItemKey,
 } from './github-notification-fixtures.ts';
 
-describe('channels/github/utils/monitor-state-codec', () => {
+describe('channels/github/intake/monitor/state-codec', () => {
   it('should accept strict schema-four intake state', () => {
     const state = notificationMonitorState();
 

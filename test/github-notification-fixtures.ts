@@ -1,7 +1,7 @@
 import type {
   GitHubNotificationItemState,
   GitHubNotificationMonitorState,
-} from '../channels/github/utils/monitor-state.ts';
+} from '../channels/github/intake/monitor/state.ts';
 
 export const notificationAccount = { login: 'tanaabot', nodeId: 'U_agent', type: 'User' };
 export const notificationActor = { login: 'pirog', nodeId: 'U_actor', type: 'User' };

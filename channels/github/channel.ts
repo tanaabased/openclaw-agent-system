@@ -6,10 +6,10 @@ import {
   createDefaultChannelRuntimeState,
 } from 'openclaw/plugin-sdk/status-helpers';
 
-import type GitHubNotificationMonitorService from './lib/monitor-service.ts';
-import type GitHubNotificationMonitorStateStore from './lib/monitor-state-store.ts';
-import type { GitHubNotificationMonitorState } from './utils/monitor-state.ts';
-import { githubNotificationChannelId } from './utils/routing.ts';
+import type GitHubNotificationMonitorService from './intake/monitor/service.ts';
+import type GitHubNotificationMonitorStateStore from './intake/monitor/state-store.ts';
+import type { GitHubNotificationMonitorState } from './intake/monitor/state.ts';
+import { githubNotificationChannelId } from './routing/routing.ts';
 
 interface ResolvedNotificationChannelAccount {
   accountId: string;

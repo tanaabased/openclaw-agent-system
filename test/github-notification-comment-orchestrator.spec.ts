@@ -8,22 +8,22 @@ import {
 } from 'openclaw/plugin-sdk/channel-outbound';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
-import type { GitHubNotificationAssignmentInspection } from '../channels/github/lib/assignment-provider.ts';
+import type { GitHubNotificationAssignmentInspection } from '../channels/github/intake/assignment-provider.ts';
 import GitHubNotificationCommentOrchestrator, {
   GitHubNotificationCommentOrchestratorError,
-} from '../channels/github/lib/comment-orchestrator.ts';
-import type GitHubWorkEventClient from '../channels/github/lib/work-event-client.ts';
+} from '../channels/github/conversation/comment-orchestrator.ts';
+import type GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/utils/comment-admission.ts';
+} from '../channels/github/conversation/comment-admission.ts';
 import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversationState,
-} from '../channels/github/utils/conversation-state.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+} from '../channels/github/conversation/conversation-state.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationAccount,
   notificationActor,
@@ -124,7 +124,7 @@ function memoryStateStore(initial?: GitHubNotificationConversationState) {
   };
 }
 
-describe('channels/github/lib/comment-orchestrator', () => {
+describe('channels/github/conversation/comment-orchestrator', () => {
   it('should persist an empty baseline without dispatching a turn', async () => {
     const monitor = preparedMonitor();
     const store = memoryStateStore();

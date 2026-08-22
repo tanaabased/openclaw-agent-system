@@ -5,7 +5,7 @@ import { Command } from 'commander';
 
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
-import type { GitHubNotificationWaitInput } from '../channels/github/lib/status-service.ts';
+import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
 import { createCliStyles } from '../lib/cli-output.ts';
 import registerAgentSystemCli from '../lib/register-cli.ts';
 import type { AgentSystemToolScope } from '../lib/tool-types.ts';

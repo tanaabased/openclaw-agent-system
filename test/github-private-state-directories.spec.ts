@@ -3,9 +3,9 @@ import { chmod, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import ensurePrivateStateDirectories from '../channels/github/utils/ensure-private-state-directories.ts';
+import ensurePrivateStateDirectories from '../channels/github/state/ensure-private-directories.ts';
 
-describe('channels/github/utils/ensure-private-state-directories', () => {
+describe('channels/github/state/ensure-private-directories', () => {
   it('should create and verify a private state directory chain', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-private-state-'));
     const rootDir = join(temporaryDirectory, 'state');

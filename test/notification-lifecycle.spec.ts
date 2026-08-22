@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import createNotificationLifecycleContribution from '../channels/github/lib/lifecycle.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
+import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
@@ -22,7 +22,7 @@ const manifest: AgentManifest = {
 };
 const context = { manifest, workspaceDir: '/workspace/data' };
 
-describe('channels/github/lib/lifecycle', () => {
+describe('channels/github/runtime/lifecycle-contribution', () => {
   it('should always participate so removed manifest state can be cleaned up', () => {
     const contribution = createNotificationLifecycleContribution({
       routingService: {

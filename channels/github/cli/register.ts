@@ -1,8 +1,8 @@
 import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
 import { type CliOutput, type CliStyles, writeCliLines } from '../../../lib/cli-output.ts';
 import type { CommandLike } from '../../../lib/register-cli.ts';
-import type GitHubNotificationMonitorService from '../lib/monitor-service.ts';
-import type GitHubNotificationStatusService from '../lib/status-service.ts';
+import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
+import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
 import statusNotificationsAgentSystem from './status.ts';
 import waitNotificationsAgentSystem from './wait.ts';

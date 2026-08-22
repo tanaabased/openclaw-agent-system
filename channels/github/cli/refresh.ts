@@ -8,7 +8,7 @@ import {
   writeCliSummary,
 } from '../../../lib/cli-output.ts';
 import { formatErrorDiagnostic, formatManifestFailure } from '../../../lib/logger.ts';
-import type GitHubNotificationMonitorService from '../lib/monitor-service.ts';
+import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,

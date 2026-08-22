@@ -4,11 +4,11 @@ import {
   createGitHubNotificationConversationState,
   decodeGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
-} from '../channels/github/utils/conversation-state.ts';
-import { githubNotificationPublicationTarget } from '../channels/github/utils/publication.ts';
+} from '../channels/github/conversation/conversation-state.ts';
+import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
-describe('channels/github/utils/conversation-state', () => {
+describe('channels/github/conversation/conversation-state', () => {
   it('should retain value-free comment receipts and one accepted public text', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     const conversationId = 'github:issue:R_repo:12';

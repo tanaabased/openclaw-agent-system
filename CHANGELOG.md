@@ -37,6 +37,9 @@
 
 ### Notes
 
+- Reorganized the GitHub channel around lifecycle, mode, intake, conversation,
+  publication, provider, routing, state, and runtime owners, with structured
+  context and hidden prompt composition in dedicated source files.
 - Moved the GitHub notification CLI implementation into its owning channel.
 - Split the packaged GitHub notification target design from its reusable visual
   presentation components and current-behavior channel guide.

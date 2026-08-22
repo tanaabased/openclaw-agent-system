@@ -3,7 +3,8 @@
 ## Scope
 
 - Keep the OpenClaw plugin entrypoint at `index.ts`; do not add a generic `src/` directory.
-- Keep one implementation file per OpenClaw subcommand in `cli/`, CLI registration and shared product orchestration in `lib/`, independently testable functions in `utils/`, first-party OpenClaw tool capabilities in `tools/<capability>/`, first-party channel capabilities in `channels/<provider>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`.
+- Organize implementation owner-first. Keep one implementation file per OpenClaw subcommand in `cli/`, first-party tools in `tools/<capability>/`, first-party channels in `channels/<provider>/`, repository automation in `scripts/`, and flat behavior-focused specs in `test/`. Keep small owner scopes flat; add scoped `lib/` or `utils/` only when file density makes the distinction useful. Reserve root `lib/` and `utils/` for genuinely cross-owner orchestration and primitives.
+- Treat `tools/` and `channels/` as registry scopes: they contain only their named capability or provider folders, with shared code promoted to an appropriate root owner such as `api/`, `core/`, `lib/`, or `utils/`.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Keep every channel's static schema and runtime entry in its owning channel folder. Never load schema files, tools, or channels from manifest values, and do not create empty capability folders before their implementation exists.
 - Keep `examples/` as matrix-backed GitHub Actions-only Leia material and exclude it from published packages. Put agent-facing guidance in `skills/` and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
 

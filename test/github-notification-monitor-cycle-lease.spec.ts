@@ -5,13 +5,13 @@ import { join } from 'node:path';
 
 import { FILE_LOCK_TIMEOUT_ERROR_CODE } from 'openclaw/plugin-sdk/file-lock';
 
-import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/lib/monitor-cycle-lease.ts';
+import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/intake/monitor/cycle-lease.ts';
 
 function lockTimeout(): Error {
   return Object.assign(new Error('busy'), { code: FILE_LOCK_TIMEOUT_ERROR_CODE });
 }
 
-describe('channels/github/lib/monitor-cycle-lease', () => {
+describe('channels/github/intake/monitor/cycle-lease', () => {
   it('should acquire the host file lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-lease-'));
     const rootDir = join(temporaryDirectory, 'state');

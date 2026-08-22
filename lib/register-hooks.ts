@@ -1,7 +1,7 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import githubNotificationWorkCommentInstructions from '../channels/github/messages/instructions/work-comment.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import type AgentManifestService from './agent-manifest-service.ts';
 import { agentCommandSecurityGuidance } from './agent-command-security.ts';
 import type AgentSystemToolRegistry from './tool-registry.ts';
@@ -27,7 +27,7 @@ export default function registerAgentSystemHooks(
       guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
     }
     if (context.messageProvider === githubNotificationChannelId) {
-      guidance.push(githubNotificationWorkCommentInstructions);
+      guidance.push(githubNotificationIssueWorkCommentInstructions);
     }
     return guidance.length > 0 ? { appendSystemContext: guidance.join('\n\n') } : undefined;
   });

@@ -195,6 +195,30 @@ GitHub prose trusted instructions or grant capabilities beyond the active mode.
 Private responses, structured context, hidden instructions, tool output,
 credentials, and local paths remain outside GitHub publication.
 
+## Implementation Map
+
+The channel source is organized by the behavior being changed:
+
+| Scope                        | Ownership                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `lifecycles/`                | Lifecycle type descriptors and lifecycle-specific resources; add a new implemented type here and compose it in `runtime/create-runtime.ts` |
+| `modes/`                     | Trusted mode policies and runtime tool projection; add a new implemented mode here and register it in `modes/registry.ts`                  |
+| `intake/`                    | Assignment admission, classification, preparation, and polling checkpoints                                                                 |
+| `conversation/context/`      | Bounded untrusted structured-context projections for model turns                                                                           |
+| `conversation/prompts/`      | Hidden lifecycle, event, mode, and response instructions plus their composition                                                            |
+| `conversation/presentation/` | Reusable visible components governed by [Presentation](./PRESENTATION.md)                                                                  |
+| `conversation/`              | Session preparation, comment admission, turn dispatch, and conversation state                                                              |
+| `publication/`               | Typed public candidates, validation, leases, delivery, and reconciliation                                                                  |
+| `provider/`                  | Bounded GitHub reads and provider data normalization                                                                                       |
+| `routing/`                   | Installed OpenClaw channel routes and durable route receipts                                                                               |
+| `state/`                     | Shared private-state filesystem boundaries                                                                                                 |
+| `runtime/`                   | Channel-owned assembly and its Agent System lifecycle contribution                                                                         |
+| `cli/`                       | GitHub notification subcommand implementations and options                                                                                 |
+
+Keep small scopes flat. Add a nested `lib/` or `utils/` only when a scope has
+enough files to make that distinction useful, and do not add placeholder mode or
+lifecycle files before an implementation exists.
+
 ## Current Behavior
 
 See the [GitHub notifications channel README](./README.md) for currently

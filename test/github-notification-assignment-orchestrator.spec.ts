@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
-} from '../channels/github/lib/assignment-orchestrator.ts';
+} from '../channels/github/intake/assignment-orchestrator.ts';
 import GitHubIssueLifecycle, {
   type GitHubIssueLifecycleWorktreeService,
 } from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import {
   approvedPullRequestNotificationItem,
   notificationItemKey as itemKey,
@@ -47,7 +47,7 @@ function lifecycles(worktrees: {
   ]);
 }
 
-describe('channels/github/lib/assignment-orchestrator', () => {
+describe('channels/github/intake/assignment-orchestrator', () => {
   it('should prepare one issue worktree and assignment session without a model turn', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   GitHubNotificationPrivateResponseError,
   githubNotificationPrivateResponse,
-} from '../channels/github/utils/private-response.ts';
+} from '../channels/github/conversation/private-response.ts';
 
-describe('channels/github/utils/private-response', () => {
+describe('channels/github/conversation/private-response', () => {
   it('should accept one ordinary rich markdown response without parsing its structure', () => {
     const response = [
       'The private response is ready.',

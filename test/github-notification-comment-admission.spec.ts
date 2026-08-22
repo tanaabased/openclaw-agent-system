@@ -4,7 +4,7 @@ import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
-} from '../channels/github/utils/comment-admission.ts';
+} from '../channels/github/conversation/comment-admission.ts';
 import { notificationAccount, notificationActor } from './github-notification-fixtures.ts';
 
 const configuration = {
@@ -29,7 +29,7 @@ function comment(
   };
 }
 
-describe('channels/github/utils/comment-admission', () => {
+describe('channels/github/conversation/comment-admission', () => {
   it('should admit an approved human exact standalone account mention', () => {
     assert.deepEqual(
       admitGitHubComment({

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import refreshNotificationsAgentSystem from '../channels/github/cli/refresh.ts';
-import type { GitHubNotificationMonitorRunOptions } from '../channels/github/lib/monitor-service.ts';
+import type { GitHubNotificationMonitorRunOptions } from '../channels/github/intake/monitor/service.ts';
 import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
 
 const manifest: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {

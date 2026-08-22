@@ -4,9 +4,9 @@ import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import GitHubNotificationPublicationLeaseStore from '../channels/github/lib/publication-lease.ts';
+import GitHubNotificationPublicationLeaseStore from '../channels/github/publication/publication-lease.ts';
 
-describe('channels/github/lib/publication-lease', () => {
+describe('channels/github/publication/publication-lease', () => {
   it('should hold one target-specific host lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-publication-lease-'));
     const rootDir = join(temporaryDirectory, 'state');

@@ -1,0 +1,169 @@
+import type {
+  AssembledInboundReply,
+  PreparedInboundReply,
+} from 'openclaw/plugin-sdk/channel-inbound';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+
+import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
+import type GitHubAccountClient from '../../../lib/github-account-client.ts';
+import type { Logger } from '../../../lib/logger.ts';
+import { createGitHubNotificationChannel } from '../channel.ts';
+import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
+import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
+import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
+import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
+import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
+import GitHubNotificationMonitorCycleLeaseStore from '../intake/monitor/cycle-lease.ts';
+import GitHubNotificationMonitorService from '../intake/monitor/service.ts';
+import GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
+import GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
+import GitHubIssueLifecycle, {
+  type GitHubIssueLifecycleWorktreeService,
+} from '../lifecycles/issue.ts';
+import GitHubPullRequestLifecycle from '../lifecycles/pull-request.ts';
+import GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
+import GitHubNotificationModeRegistry from '../modes/registry.ts';
+import GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
+import createGitHubNotificationMessageAdapter from '../publication/message-adapter.ts';
+import GitHubNotificationPublicationLeaseStore from '../publication/publication-lease.ts';
+import GitHubNotificationReplyCandidateStore from '../publication/reply-candidate-store.ts';
+import createGitHubNotificationReplyTool from '../publication/reply-tool.ts';
+import NotificationRoutingReceiptStore from '../routing/receipt-store.ts';
+import NotificationRoutingService, {
+  type NotificationRoutingServiceDependencies,
+} from '../routing/service.ts';
+import createNotificationLifecycleContribution from './lifecycle-contribution.ts';
+
+export interface GitHubNotificationRuntimeDependencies {
+  accountClient: GitHubAccountClient;
+  currentUid?: number;
+  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
+  lifecycleLogger: Logger;
+  mutateConfigFile: NotificationRoutingServiceDependencies['mutateConfigFile'];
+  privateStateRoot?: string;
+  readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  readRuntimeConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
+  replyToolLogger: Pick<Logger, 'debug'>;
+  worktrees: GitHubIssueLifecycleWorktreeService;
+}
+
+function privateStateOptions(
+  dependencies: Pick<GitHubNotificationRuntimeDependencies, 'currentUid' | 'privateStateRoot'>,
+) {
+  return {
+    ...(dependencies.currentUid === undefined ? {} : { currentUid: dependencies.currentUid }),
+    ...(dependencies.privateStateRoot === undefined
+      ? {}
+      : { rootDir: dependencies.privateStateRoot }),
+  };
+}
+
+/** Assemble the GitHub channel's stores, lifecycle contribution, tool, and runtime services. */
+export default function createGitHubNotificationRuntime(
+  dependencies: GitHubNotificationRuntimeDependencies,
+) {
+  const stateOptions = privateStateOptions(dependencies);
+  const candidates = new GitHubNotificationReplyCandidateStore(stateOptions);
+  const monitorStateStore = new GitHubNotificationMonitorStateStore(stateOptions);
+  const monitorCycleLeaseStore = new GitHubNotificationMonitorCycleLeaseStore(stateOptions);
+  const conversationStateStore = new GitHubNotificationConversationStateStore(stateOptions);
+  const publicationLeaseStore = new GitHubNotificationPublicationLeaseStore(stateOptions);
+  const routingService = new NotificationRoutingService({
+    mutateConfigFile: dependencies.mutateConfigFile,
+    readConfig: dependencies.readConfig,
+    receiptStore: new NotificationRoutingReceiptStore(stateOptions),
+  });
+  const monitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
+
+  return {
+    lifecycleContribution: createNotificationLifecycleContribution({
+      monitorService: {
+        runOnce(input) {
+          const service = monitorServiceRef.current;
+          if (!service) throw new Error('GitHub notification monitor service is unavailable.');
+          return service.runOnce(input);
+        },
+      },
+      routingService,
+      stateStore: monitorStateStore,
+    }),
+    replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
+    assemble(manifestService: AgentManifestService) {
+      const assignmentProvider = new GitHubNotificationAssignmentProvider({
+        accountClient: dependencies.accountClient,
+        manifestService,
+        readConfig: dependencies.readRuntimeConfig,
+      });
+      const lifecycleRegistry = new GitHubNotificationLifecycleRegistry([
+        new GitHubIssueLifecycle(dependencies.worktrees),
+        new GitHubPullRequestLifecycle(),
+      ]);
+      const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
+        logger: dependencies.lifecycleLogger,
+        readConfig: dependencies.readRuntimeConfig,
+        recordInboundSession: dependencies.recordInboundSession,
+      });
+      const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
+        authority: assignmentProvider,
+        lifecycles: lifecycleRegistry,
+        sessions: assignmentSessionService,
+        stateStore: monitorStateStore,
+      });
+      const commentTurnService = new GitHubNotificationCommentTurnService({
+        modes: new GitHubNotificationModeRegistry(),
+        candidates,
+        dispatchReplyWithBufferedBlockDispatcher:
+          dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        logger: dependencies.lifecycleLogger,
+        readConfig: dependencies.readRuntimeConfig,
+        recordInboundSession: dependencies.recordInboundSession,
+      });
+      const commentPublicationService = new GitHubNotificationCommentPublicationService({
+        assignmentAuthority: assignmentProvider,
+        conversationStateStore,
+        manifestService,
+        monitorStateStore,
+        publicationLeaseStore,
+        readConfig: dependencies.readRuntimeConfig,
+      });
+      const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
+        assignmentAuthority: assignmentProvider,
+        conversationStateStore,
+        logger: dependencies.lifecycleLogger,
+        monitorStateStore,
+        publications: commentPublicationService,
+        turns: commentTurnService,
+      });
+      const monitorService = new GitHubNotificationMonitorService({
+        accountClient: dependencies.accountClient,
+        assignmentOrchestrator,
+        commentOrchestrator,
+        cycleLeaseStore: monitorCycleLeaseStore,
+        logger: dependencies.lifecycleLogger,
+        manifestService,
+        readConfig: dependencies.readRuntimeConfig,
+        routingService,
+        stateStore: monitorStateStore,
+      });
+      const statusService = new GitHubNotificationStatusService({
+        monitorService,
+        stateStore: monitorStateStore,
+      });
+      monitorServiceRef.current = monitorService;
+
+      return {
+        channel: createGitHubNotificationChannel({
+          message: createGitHubNotificationMessageAdapter({
+            publications: commentPublicationService,
+          }),
+          monitorService,
+          stateStore: monitorStateStore,
+        }),
+        monitorService,
+        statusService,
+      };
+    },
+  };
+}

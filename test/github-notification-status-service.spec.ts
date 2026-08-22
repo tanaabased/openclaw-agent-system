@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-import GitHubNotificationStatusService from '../channels/github/lib/status-service.ts';
+import GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
-describe('channels/github/lib/status-service', () => {
+describe('channels/github/intake/monitor/status-service', () => {
   it('should wait for an asynchronous durable checkpoint without refreshing', async () => {
     let now = 0;
     const state = notificationMonitorState();

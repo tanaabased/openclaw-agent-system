@@ -10,11 +10,11 @@ import type {
 
 import createGitHubNotificationReplyTool, {
   githubNotificationReplyToolName,
-} from '../channels/github/reply-tool.ts';
-import GitHubNotificationReplyCandidateStore from '../channels/github/lib/reply-candidate-store.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+} from '../channels/github/publication/reply-tool.ts';
+import GitHubNotificationReplyCandidateStore from '../channels/github/publication/reply-candidate-store.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
-describe('channels/github/reply-tool', () => {
+describe('channels/github/publication/reply-tool', () => {
   it('should expose one typed staging tool only in authorized github notification turns', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-tool-'));
     const rootDir = join(temporaryDirectory, 'state');

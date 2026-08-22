@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import planGitHubNotificationIntake from '../channels/github/utils/intake-plan.ts';
-import type { GitHubNotificationIntakeState } from '../channels/github/utils/monitor-state.ts';
+import planGitHubNotificationIntake from '../channels/github/intake/intake-plan.ts';
+import type { GitHubNotificationIntakeState } from '../channels/github/intake/monitor/state.ts';
 
 const admitted: GitHubNotificationIntakeState = {
   assignmentEventId: 'EV_assignment',
@@ -9,7 +9,7 @@ const admitted: GitHubNotificationIntakeState = {
 };
 const authority = { authorized: true };
 
-describe('channels/github/utils/intake-plan', () => {
+describe('channels/github/intake/intake-plan', () => {
   it('should prepare a lifecycle that owns no worktree', () => {
     assert.deepEqual(planGitHubNotificationIntake(admitted, { authority }, false), {
       kind: 'mark-prepared',

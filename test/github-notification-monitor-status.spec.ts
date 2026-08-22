@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {
   evaluateGitHubNotificationWait,
   githubNotificationMonitorStatus,
-} from '../channels/github/utils/monitor-status.ts';
+} from '../channels/github/intake/monitor/status.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
-describe('channels/github/utils/monitor-status', () => {
+describe('channels/github/intake/monitor/status', () => {
   it('should project prepared intake without private worktree values', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;

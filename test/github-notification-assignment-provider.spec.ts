@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import GitHubNotificationAssignmentProvider from '../channels/github/lib/assignment-provider.ts';
+import GitHubNotificationAssignmentProvider from '../channels/github/intake/assignment-provider.ts';
 import type { AgentSystemCliResult } from '../lib/tool-types.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import {
@@ -167,7 +167,7 @@ function input() {
   };
 }
 
-describe('channels/github/lib/assignment-provider', () => {
+describe('channels/github/intake/assignment-provider', () => {
   it('should recheck the exact approved assignment from canonical control facts', async () => {
     assert.deepEqual(await provider().inspect(input()), { authorized: true });
   });

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 
-import isGitHubNotificationReplyToolContext from '../channels/github/utils/reply-tool-context.ts';
-import { githubNotificationChannelId } from '../channels/github/utils/routing.ts';
+import isGitHubNotificationReplyToolContext from '../channels/github/publication/reply-tool-context.ts';
+import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
 const codexSessionKey =
   'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:r_repository:12';
 
-describe('channels/github/utils/reply-tool-context', () => {
+describe('channels/github/publication/reply-tool-context', () => {
   it('should admit explicit github notification channel contexts', () => {
     assert.equal(
       isGitHubNotificationReplyToolContext({

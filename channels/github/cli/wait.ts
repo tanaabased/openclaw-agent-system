@@ -8,11 +8,11 @@ import {
   writeCliSummary,
 } from '../../../lib/cli-output.ts';
 import { formatManifestFailure } from '../../../lib/logger.ts';
-import type GitHubNotificationStatusService from '../lib/status-service.ts';
+import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import {
   githubNotificationWaitTargets,
   type GitHubNotificationWaitTarget,
-} from '../utils/monitor-status.ts';
+} from '../intake/monitor/status.ts';
 import {
   NotificationCliOptionError,
   notificationItemSelector,

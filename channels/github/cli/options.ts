@@ -1,4 +1,4 @@
-import type { GitHubNotificationItemSelector } from '../utils/monitor-status.ts';
+import type { GitHubNotificationItemSelector } from '../intake/monitor/status.ts';
 
 export class NotificationCliOptionError extends Error {
   override name = 'NotificationCliOptionError';

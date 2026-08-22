@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
-} from '../channels/github/lib/assignment-orchestrator.ts';
+} from '../channels/github/intake/assignment-orchestrator.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import GitHubNotificationMonitorService from '../channels/github/lib/monitor-service.ts';
+import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
 import { GitHubAccountClientError } from '../lib/github-account-client.ts';
-import type { GitHubNotificationMonitorState } from '../channels/github/utils/monitor-state.ts';
+import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import type { AgentManifest } from '../utils/manifest-types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
@@ -57,7 +57,7 @@ function githubResponse(body: unknown) {
   };
 }
 
-describe('channels/github/lib/monitor-service', () => {
+describe('channels/github/intake/monitor/service', () => {
   it('should stop an account scheduler without surfacing the host abort', async () => {
     const service = new GitHubNotificationMonitorService({
       accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },

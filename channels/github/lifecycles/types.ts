@@ -1,7 +1,7 @@
 import type {
   GitHubNotificationIntakeState,
   GitHubNotificationItemState,
-} from '../utils/monitor-state.ts';
+} from '../intake/monitor/state.ts';
 
 export type GitHubNotificationLifecycleId = 'issue' | 'pull-request' | 'pull-request-review';
 
