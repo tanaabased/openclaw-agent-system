@@ -13,7 +13,10 @@ import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from './state.ts';
-import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
+import {
+  githubNotificationItemMatchesSelector,
+  type GitHubNotificationItemSelector,
+} from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
 import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './cycle-lease.ts';
@@ -98,11 +101,10 @@ function matchesSelector(
   item: GitHubNotificationMonitorState['items'][string],
   selector: GitHubNotificationItemSelector,
 ): boolean {
-  return (
-    item.itemType === selector.itemType &&
-    item.number === selector.number &&
-    `${item.repositoryOwner}/${item.repositoryName}`.toLowerCase() ===
-      selector.repository.toLowerCase()
+  return githubNotificationItemMatchesSelector(
+    item,
+    `${item.repositoryOwner}/${item.repositoryName}`,
+    selector,
   );
 }
 

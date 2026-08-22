@@ -8,6 +8,7 @@ import {
   type GitHubNotificationPullRequestState,
 } from './state.ts';
 import {
+  githubNotificationItemMatchesSelector,
   githubRepositoryPath,
   githubWorkItemKey,
   type GitHubAssignedItemCandidate,
@@ -201,21 +202,6 @@ function closedReason(
   return 'item-closed';
 }
 
-function matchesSelector(
-  item: Pick<
-    GitHubNotificationItemState,
-    'itemType' | 'number' | 'repositoryName' | 'repositoryOwner'
-  >,
-  selector: GitHubNotificationItemSelector,
-): boolean {
-  return (
-    item.itemType === selector.itemType &&
-    item.number === selector.number &&
-    `${item.repositoryOwner}/${item.repositoryName}`.toLowerCase() ===
-      selector.repository.toLowerCase()
-  );
-}
-
 async function observeCandidate(input: {
   candidate: GitHubAssignedItemCandidate;
   canonicalItem?: GitHubCanonicalWorkItem;
@@ -330,7 +316,16 @@ export async function pollGitHubNotifications(
     let selectedExistingItem = false;
     for (const [key, current] of Object.entries(state.items)) {
       if (current.disposition !== 'approved') continue;
-      if (input.selector && !matchesSelector(current, input.selector)) continue;
+      if (
+        input.selector &&
+        !githubNotificationItemMatchesSelector(
+          current,
+          `${current.repositoryOwner}/${current.repositoryName}`,
+          input.selector,
+        )
+      ) {
+        continue;
+      }
       if (input.selector) selectedExistingItem = true;
       try {
         const repository = await input.client.getRepository(

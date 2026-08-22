@@ -19,6 +19,19 @@ export interface GitHubNotificationItemSelector {
   repository: string;
 }
 
+/** Match one notification item against an exact repository, kind, and number selector. */
+export function githubNotificationItemMatchesSelector(
+  item: Pick<GitHubNotificationItemSelector, 'itemType' | 'number'>,
+  repository: string,
+  selector: GitHubNotificationItemSelector,
+): boolean {
+  return (
+    item.itemType === selector.itemType &&
+    item.number === selector.number &&
+    repository.toLowerCase() === selector.repository.toLowerCase()
+  );
+}
+
 export interface GitHubRepositoryIdentity {
   archived: boolean;
   cloneUrl: string;

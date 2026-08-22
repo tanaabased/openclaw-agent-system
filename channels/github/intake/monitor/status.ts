@@ -3,7 +3,10 @@ import type {
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
 } from './state.ts';
-import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
+import {
+  githubNotificationItemMatchesSelector,
+  type GitHubNotificationItemSelector,
+} from '../../provider/work-item.ts';
 
 export type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 
@@ -55,11 +58,7 @@ function matchesSelector(
   item: GitHubNotificationStatusItem,
   selector: GitHubNotificationItemSelector,
 ): boolean {
-  return (
-    item.itemType === selector.itemType &&
-    item.number === selector.number &&
-    item.repository.toLowerCase() === selector.repository.toLowerCase()
-  );
+  return githubNotificationItemMatchesSelector(item, item.repository, selector);
 }
 
 /** Project private monitor state into a value-free operator and test surface. */
