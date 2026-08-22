@@ -186,6 +186,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const incoming = comment();
     const store = memoryStateStore(state);
     const observedBodies: string[] = [];
+    const observedActiveTurns: unknown[] = [];
     const publishedTexts: string[] = [];
     const adapterReceipt = createMessageReceiptFromOutboundResults({
       kind: 'text',
@@ -232,6 +233,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       turns: {
         async respond(input) {
           observedBodies.push(input.comment.body);
+          observedActiveTurns.push(store.snapshot()?.conversations[id]?.activeTurn);
           return {
             accountId: agentId,
             agentId,
@@ -247,7 +249,11 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     await orchestrator.reconcile(agentId, notificationItemKey);
 
     assert.deepEqual(observedBodies, [incoming.body]);
+    assert.deepEqual(observedActiveTurns, [
+      { eventId: 'comment', sourceId: githubCommentRevision(incoming).revisionId },
+    ]);
     assert.deepEqual(publishedTexts, ['ready']);
+    assert.equal(store.snapshot()?.conversations[id]?.activeTurn, undefined);
     const revision = store.snapshot()?.conversations[id]?.revisions[incoming.nodeId];
     assert.equal(revision?.revisionId, githubCommentRevision(incoming).revisionId);
     assert.equal(revision?.status, 'responded');
@@ -260,6 +266,61 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       publicTextDigest: githubNotificationPublicTextDigest('ready'),
       status: 'published',
       target: publication.target,
+    });
+  });
+
+  it('should retain the active turn when response dispatch remains retryable', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const incoming = comment();
+    const revision = githubCommentRevision(incoming);
+    const store = memoryStateStore(state);
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([incoming]),
+      conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: { read: async () => structuredClone(monitor) },
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turns: {
+        async respond() {
+          assert.deepEqual(store.snapshot()?.conversations[id]?.activeTurn, {
+            eventId: 'comment',
+            sourceId: revision.revisionId,
+          });
+          throw new Error('model dispatch failed');
+        },
+      },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile(agentId, notificationItemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentOrchestratorError &&
+        error.code === 'github-notification-comment-reconciliation-failed' &&
+        error.cause instanceof Error &&
+        error.cause.message === 'model dispatch failed',
+    );
+    assert.deepEqual(store.snapshot()?.conversations[id]?.activeTurn, {
+      eventId: 'comment',
+      sourceId: revision.revisionId,
+    });
+    assert.deepEqual(store.snapshot()?.conversations[id]?.revisions[incoming.nodeId], {
+      bodyDigest: revision.bodyDigest,
+      commentDatabaseId: incoming.databaseId,
+      failureCode: 'github-notification-comment-reconciliation-failed',
+      reasonCode: 'comment-approved',
+      revisionId: revision.revisionId,
+      status: 'admitted',
     });
   });
 

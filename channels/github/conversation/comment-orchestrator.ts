@@ -442,7 +442,16 @@ export default class GitHubNotificationCommentOrchestrator {
       );
     }
     const state = structuredClone(current);
-    state.conversations[conversationId]!.revisions[commentNodeId] = revision;
+    const updatedConversation = state.conversations[conversationId]!;
+    if (revision.status === 'admitted') {
+      updatedConversation.activeTurn = {
+        eventId: 'comment',
+        sourceId: revision.revisionId,
+      };
+    } else {
+      delete updatedConversation.activeTurn;
+    }
+    updatedConversation.revisions[commentNodeId] = revision;
     await this.#dependencies.conversationStateStore.write(state);
     return state;
   }

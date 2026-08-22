@@ -146,6 +146,12 @@ than introducing general planning and working phases. Human-facing labels such
 as planning, waiting for clarification, working, completed, failed, and retired
 may be derived for presentation until runtime behavior depends on them.
 
+While an admitted model turn is running or remains retryable, the conversation
+also retains one bounded active-turn descriptor containing its registered event
+ID and stable source ID. The coordinator clears that descriptor when it
+checkpoints a response, so prompt selection never depends on process-local
+memory or arbitrary prompt text in persisted state.
+
 The polling monitor owns provider intake stages (`admitted`, `prepared`, and
 `retired`). The shared coordinator may record the deterministic OpenClaw route
 while preparing intake, but model-backed lifecycle state begins after prepared

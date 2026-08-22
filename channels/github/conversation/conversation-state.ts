@@ -5,11 +5,17 @@ import {
   isGitHubNotificationLifecycleId,
   type GitHubNotificationLifecycleId,
 } from '../lifecycles/types.ts';
+import { isGitHubNotificationEventId, type GitHubNotificationEventId } from '../events/types.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 import { parseGitHubNotificationPublicationTarget } from '../publication/publication.ts';
 
 export type GitHubNotificationCommentTurnStatus =
   'admitted' | 'baseline' | 'rejected' | 'responded';
+
+export interface GitHubNotificationActiveTurnState {
+  eventId: GitHubNotificationEventId;
+  sourceId: string;
+}
 
 export interface GitHubNotificationCommentPublicationPendingState {
   commentDatabaseId?: number;
@@ -50,6 +56,7 @@ export interface GitHubNotificationCommentRevisionState {
 }
 
 export interface GitHubNotificationConversation {
+  activeTurn?: GitHubNotificationActiveTurnState;
   baselineEstablished: boolean;
   itemKey: string;
   lifecycleId: GitHubNotificationLifecycleId;
@@ -60,7 +67,7 @@ export interface GitHubNotificationConversation {
 export interface GitHubNotificationConversationState {
   agentId: string;
   conversations: Record<string, GitHubNotificationConversation>;
-  schemaVersion: 1;
+  schemaVersion: 2;
   workspaceDir: string;
 }
 
@@ -165,10 +172,27 @@ function validRevision(value: unknown, conversationId: string): boolean {
   return value.publication === undefined;
 }
 
-function validConversation(value: unknown, conversationId: string): boolean {
+function validActiveTurn(value: unknown): boolean {
+  return (
+    record(value) &&
+    onlyKeys(value, ['eventId', 'sourceId']) &&
+    isGitHubNotificationEventId(value.eventId) &&
+    nodeId(value.sourceId)
+  );
+}
+
+function validConversation(value: unknown, conversationId: string, schemaVersion: 1 | 2): boolean {
   if (
     !record(value) ||
-    !onlyKeys(value, ['baselineEstablished', 'itemKey', 'lifecycleId', 'mode', 'revisions']) ||
+    !onlyKeys(value, [
+      ...(schemaVersion === 2 ? ['activeTurn'] : []),
+      'baselineEstablished',
+      'itemKey',
+      'lifecycleId',
+      'mode',
+      'revisions',
+    ]) ||
+    (value.activeTurn !== undefined && !validActiveTurn(value.activeTurn)) ||
     typeof value.baselineEstablished !== 'boolean' ||
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
@@ -192,7 +216,7 @@ export function decodeGitHubNotificationConversationState(
   if (
     !record(value) ||
     !onlyKeys(value, ['agentId', 'conversations', 'schemaVersion', 'workspaceDir']) ||
-    value.schemaVersion !== 1 ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
     value.agentId !== expectedAgentId ||
     typeof value.agentId !== 'string' ||
     !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
@@ -207,17 +231,30 @@ export function decodeGitHubNotificationConversationState(
     !Object.entries(value.conversations).every(
       ([key, conversation]) =>
         /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(key) &&
-        validConversation(conversation, key),
+        validConversation(conversation, key, value.schemaVersion as 1 | 2),
     )
   ) {
     return undefined;
   }
-  return value as unknown as GitHubNotificationConversationState;
+  if (value.schemaVersion === 2) {
+    return value as unknown as GitHubNotificationConversationState;
+  }
+  return {
+    agentId: value.agentId,
+    conversations: Object.fromEntries(
+      Object.entries(value.conversations).map(([conversationId, conversation]) => [
+        conversationId,
+        { ...(conversation as GitHubNotificationConversation) },
+      ]),
+    ),
+    schemaVersion: 2,
+    workspaceDir: value.workspaceDir,
+  } as GitHubNotificationConversationState;
 }
 
 export function createGitHubNotificationConversationState(
   agentId: string,
   workspaceDir: string,
 ): GitHubNotificationConversationState {
-  return { agentId, conversations: {}, schemaVersion: 1, workspaceDir };
+  return { agentId, conversations: {}, schemaVersion: 2, workspaceDir };
 }
