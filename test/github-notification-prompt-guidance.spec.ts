@@ -39,13 +39,18 @@ function resolver() {
 }
 
 describe('channels/github/conversation/prompt-guidance', () => {
-  it('should compose the current issue work comment instructions for github turns', () => {
+  it('should compose the selected issue work comment instructions for github turns', async () => {
     const turnContracts = resolver();
+    const turnSelector = {
+      async select() {
+        return { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
+      },
+    };
 
     assert.equal(
-      githubNotificationPromptGuidance(
+      await githubNotificationPromptGuidance(
         { messageProvider: githubNotificationChannelId },
-        { turnContracts },
+        { turnContracts, turnSelector },
       ),
       turnContracts.instructions({
         eventId: 'comment',
@@ -54,26 +59,46 @@ describe('channels/github/conversation/prompt-guidance', () => {
       }),
     );
     assert.equal(
-      githubNotificationPromptGuidance({ messageProvider: 'discord' }, { turnContracts }),
+      await githubNotificationPromptGuidance(
+        { messageProvider: 'discord' },
+        {
+          turnContracts,
+          turnSelector: {
+            async select() {
+              throw new Error('unrelated providers must not select a github turn');
+            },
+          },
+        },
+      ),
       undefined,
     );
   });
 
-  it('should keep the compatibility selector fixed to the current turn', () => {
+  it('should compose the identity returned by the trusted selector', async () => {
+    let selectorContext: unknown;
     let selected: unknown;
-    const instructions = githubNotificationPromptGuidance(
-      { messageProvider: githubNotificationChannelId },
-      {
-        turnContracts: {
-          instructions(identity) {
-            selected = identity;
-            return 'current instructions';
-          },
+    const context = {
+      agentId: 'tanaabot',
+      channelId: 'github:issue:R_repo:12',
+      messageProvider: githubNotificationChannelId,
+    };
+    const instructions = await githubNotificationPromptGuidance(context, {
+      turnContracts: {
+        instructions(identity) {
+          selected = identity;
+          return 'current instructions';
         },
       },
-    );
+      turnSelector: {
+        async select(receivedContext) {
+          selectorContext = receivedContext;
+          return { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' };
+        },
+      },
+    });
 
     assert.equal(instructions, 'current instructions');
+    assert.equal(selectorContext, context);
     assert.deepEqual(selected, {
       eventId: 'comment',
       lifecycleId: 'issue',
