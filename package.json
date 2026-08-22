@@ -1,6 +1,6 @@
 {
   "name": "@tanaab/openclaw-agent-system",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Better per-agent management for OpenClaw.",
   "license": "MIT",
   "type": "module",
