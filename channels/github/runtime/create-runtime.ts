@@ -11,7 +11,6 @@ import GitHubNotificationAssignmentSessionService from '../conversation/assignme
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
-import GitHubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
@@ -88,7 +87,6 @@ export default function createGitHubNotificationRuntime(
     lifecycles: lifecycleRegistry,
     modes: modeRegistry,
   });
-  const promptGuidance = new GitHubNotificationPromptGuidance();
 
   return {
     lifecycleContribution: createNotificationLifecycleContribution({
@@ -102,7 +100,6 @@ export default function createGitHubNotificationRuntime(
       routingService,
       stateStore: monitorStateStore,
     }),
-    promptGuidance,
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
     assemble(manifestService: AgentManifestService) {
       const assignmentProvider = new GitHubNotificationAssignmentProvider({
@@ -127,7 +124,6 @@ export default function createGitHubNotificationRuntime(
         dispatchReplyWithBufferedBlockDispatcher:
           dependencies.dispatchReplyWithBufferedBlockDispatcher,
         logger: dependencies.lifecycleLogger,
-        promptGuidance,
         readConfig: dependencies.readRuntimeConfig,
         recordInboundSession: dependencies.recordInboundSession,
         turnContracts,

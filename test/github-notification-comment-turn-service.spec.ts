@@ -11,7 +11,6 @@ import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
 } from '../channels/github/conversation/comment-turn-service.ts';
-import GitHubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -57,14 +56,12 @@ function turnContracts() {
   });
 }
 
-function observePromptGuidance(
-  guidance: GitHubNotificationPromptGuidance,
+function assertTurnContractOptions(
+  options: Record<string, unknown>,
   contracts: ReturnType<typeof turnContracts>,
-  sessionKey: string,
 ) {
-  assert.match(sessionKey, /^agent:tanaabot:/u);
   assert.equal(
-    guidance.instructions({ messageProvider: githubNotificationChannelId, sessionKey }),
+    options.extraSystemPrompt,
     contracts.instructions({ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }),
   );
 }
@@ -123,12 +120,12 @@ async function respondWithCandidates(
   };
   const comment = incomingComment();
   const contracts = turnContracts();
-  const promptGuidance = new GitHubNotificationPromptGuidance();
   const service = new GitHubNotificationCommentTurnService({
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
-      observePromptGuidance(promptGuidance, contracts, String(input.ctx.SessionKey));
-      inspectReplyOptions?.(input.replyOptions ?? {});
+      const replyOptions = input.replyOptions ?? {};
+      assertTurnContractOptions(replyOptions, contracts);
+      inspectReplyOptions?.(replyOptions);
       await input.dispatcherOptions.deliver(
         { text: 'Private response remains available.' },
         {
@@ -138,7 +135,6 @@ async function respondWithCandidates(
       return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
     },
     logger: { error() {}, info() {}, warn() {} },
-    promptGuidance,
     readConfig: async () => config,
     async recordInboundSession(input) {
       input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
@@ -170,7 +166,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
     let createIfMissing: boolean | undefined;
     let recorded = false;
     const contracts = turnContracts();
-    const promptGuidance = new GitHubNotificationPromptGuidance();
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
@@ -191,6 +186,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         assert.equal(input.ctx.Provider, githubNotificationChannelId);
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
+        assertTurnContractOptions(replyOptions, contracts);
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
@@ -198,7 +194,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
         assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
         assert.equal(input.toolsAllow, undefined);
         assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-        observePromptGuidance(promptGuidance, contracts, String(input.ctx.SessionKey));
         await input.dispatcherOptions.deliver(
           {
             text: [
@@ -213,7 +208,6 @@ describe('channels/github/conversation/comment-turn-service', () => {
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
       },
       logger: { error() {}, info() {}, warn() {} },
-      promptGuidance,
       readConfig: async () => config,
       recordInboundSession,
       turnContracts: contracts,
@@ -270,14 +264,12 @@ describe('channels/github/conversation/comment-turn-service', () => {
     };
     const comment = incomingComment();
     const contracts = turnContracts();
-    const promptGuidance = new GitHubNotificationPromptGuidance();
     const service = new GitHubNotificationCommentTurnService({
       candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {
         throw new Error('unexpected model dispatch');
       },
       logger: { error() {}, info() {}, warn() {} },
-      promptGuidance,
       readConfig: async () => config,
       async recordInboundSession(input) {
         input.trackSessionMetaTask?.(Promise.resolve(null));

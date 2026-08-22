@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 
-import GitHubNotificationPromptGuidance, {
-  GitHubNotificationPromptGuidanceError,
-} from '../channels/github/conversation/prompt-guidance.ts';
 import GitHubNotificationTurnContractResolver, {
   GitHubNotificationTurnContractError,
+  githubNotificationTurnDispatchOptions,
 } from '../channels/github/conversation/turn-contract.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import { GitHubNotificationLifecycleModeSupportError } from '../channels/github/lifecycles/mode-support.ts';
@@ -12,7 +10,6 @@ import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-reque
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
-import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
 function resolver() {
   return new GitHubNotificationTurnContractResolver({
@@ -51,6 +48,31 @@ describe('channels/github/conversation/turn-contract', () => {
         'Before your final response, call `agent_system_github_reply` exactly once with one concise GitHub-facing response in your own voice. The tool stages a candidate only; it does not grant publication authority. Keep the candidate under 800 characters and use plain prose without secrets, credentials, links, mentions, local paths, tool output, hidden context, headings, lists, or code formatting.\n\nOnly when missing information materially prevents a safe or correct response, use that GitHub-facing response to ask exactly one precise clarification question and stop. Otherwise, do not ask a question solely to satisfy this instruction. Do not guess, continue blocked work, or claim a lifecycle-state transition; the next admitted comment will continue the same conversation.\n\nThen respond normally with one complete Markdown answer for the private OpenClaw session. Do not add a `To GitHub` section or follow any publication serialization protocol in that response.',
       ].join('\n\n'),
     );
+    assert.deepEqual(githubNotificationTurnDispatchOptions(contract), {
+      replyOptions: {
+        disableTools: false,
+        extraSystemPrompt: contract.instructions,
+      },
+    });
+  });
+
+  it('should project one allowlist into both channel dispatch boundaries', () => {
+    const toolsAllow = ['agent_system_github_reply'];
+
+    const options = githubNotificationTurnDispatchOptions({
+      instructions: 'Plan this issue.',
+      mode: { disableTools: false, id: 'plan', toolsAllow },
+    });
+
+    assert.deepEqual(options, {
+      replyOptions: {
+        disableTools: false,
+        extraSystemPrompt: 'Plan this issue.',
+        toolsAllow: ['agent_system_github_reply'],
+      },
+      toolsAllow: ['agent_system_github_reply'],
+    });
+    assert.notEqual(options.toolsAllow, toolsAllow);
   });
 
   it('should reject an unsupported lifecycle mode pair', () => {
@@ -78,55 +100,6 @@ describe('channels/github/conversation/turn-contract', () => {
       (error: unknown) =>
         error instanceof GitHubNotificationTurnContractError &&
         error.code === 'github-notification-event-unimplemented',
-    );
-  });
-
-  it('should scope composed guidance to the dispatched notification session', async () => {
-    const turnContracts = resolver();
-    const contract = turnContracts.resolve(identity, contractConfig, 'tanaabot');
-    const promptGuidance = new GitHubNotificationPromptGuidance();
-
-    await promptGuidance.withTurn('agent:tanaabot:notification-session', contract, async () => {
-      assert.equal(
-        promptGuidance.instructions({
-          messageProvider: githubNotificationChannelId,
-          sessionKey: 'agent:tanaabot:notification-session',
-        }),
-        contract.instructions,
-      );
-      assert.equal(
-        promptGuidance.instructions({
-          messageProvider: 'github',
-          sessionKey: 'agent:tanaabot:notification-session',
-        }),
-        undefined,
-      );
-    });
-  });
-
-  it('should reject missing and unobserved prompt scopes', async () => {
-    const contract = resolver().resolve(identity, contractConfig, 'tanaabot');
-    const promptGuidance = new GitHubNotificationPromptGuidance();
-
-    assert.throws(
-      () =>
-        promptGuidance.instructions({
-          messageProvider: githubNotificationChannelId,
-          sessionKey: 'agent:tanaabot:notification-session',
-        }),
-      (error: unknown) =>
-        error instanceof GitHubNotificationPromptGuidanceError &&
-        error.code === 'github-notification-turn-prompt-scope-missing',
-    );
-    await assert.rejects(
-      promptGuidance.withTurn(
-        'agent:tanaabot:notification-session',
-        contract,
-        async () => undefined,
-      ),
-      (error: unknown) =>
-        error instanceof GitHubNotificationPromptGuidanceError &&
-        error.code === 'github-notification-turn-prompt-unobserved',
     );
   });
 });

@@ -17,6 +17,17 @@ export interface GitHubNotificationTurnContract {
   mode: ResolvedGitHubNotificationMode;
 }
 
+export interface GitHubNotificationTurnModelOptions {
+  disableTools: boolean;
+  extraSystemPrompt: string;
+  toolsAllow?: string[];
+}
+
+export interface GitHubNotificationTurnDispatchOptions {
+  replyOptions: GitHubNotificationTurnModelOptions;
+  toolsAllow?: string[];
+}
+
 export interface GitHubNotificationTurnContractResolverDependencies {
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   modes: Pick<GitHubNotificationModeRegistry, 'resolve'>;
@@ -33,6 +44,23 @@ export class GitHubNotificationTurnContractError extends Error {
 const eventInstructions: Partial<Record<GitHubNotificationEventId, string>> = {
   comment: githubNotificationCommentEventInstructions,
 };
+
+/** Project one resolved turn contract into the channel dispatch boundary. */
+export function githubNotificationTurnDispatchOptions(
+  contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>,
+): GitHubNotificationTurnDispatchOptions {
+  const replyOptions: GitHubNotificationTurnModelOptions = {
+    disableTools: contract.mode.disableTools,
+    extraSystemPrompt: contract.instructions,
+    ...(contract.mode.toolsAllow === undefined
+      ? {}
+      : { toolsAllow: [...contract.mode.toolsAllow] }),
+  };
+  return {
+    replyOptions,
+    ...(replyOptions.toolsAllow === undefined ? {} : { toolsAllow: replyOptions.toolsAllow }),
+  };
+}
 
 /** Resolve trusted lifecycle, mode, prompt, and capability for one turn. */
 export default class GitHubNotificationTurnContractResolver {
