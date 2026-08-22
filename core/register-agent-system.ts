@@ -88,7 +88,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return api.runtime.config.mutateConfigFile(params);
     },
     packageDir,
-    projectionStore: new PathProjectionStore(privateStateRoot),
+    projectionStore: new PathProjectionStore({
+      ...(currentUid === undefined ? {} : { currentUid }),
+      ...(privateStateRoot === undefined ? {} : { rootDir: privateStateRoot }),
+    }),
     readConfig,
   });
 

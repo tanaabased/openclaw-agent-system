@@ -2,7 +2,7 @@ import { join, resolve } from 'node:path';
 
 import decodeGitHubNotificationMonitorState from './state-codec.ts';
 import type { GitHubNotificationMonitorState } from './state.ts';
-import PrivateStateFile from '../../state/private-state-file.ts';
+import PrivateStateFile from '../../../../core/private-state-file.ts';
 
 const maximumStateBytes = 1024 * 1024;
 

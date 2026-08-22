@@ -3,6 +3,7 @@ import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
@@ -52,10 +53,6 @@ interface RegisteredWorktree {
   path: string;
 }
 
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
-}
-
 function getOwn<T>(record: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(record, key) ? record[key] : undefined;
 }
@@ -66,7 +63,7 @@ async function pathKind(path: string): Promise<'absent' | 'directory' | 'unsafe'
     if (!stats.isDirectory() || stats.isSymbolicLink()) return 'unsafe';
     return (await realpath(path)) === path ? 'directory' : 'unsafe';
   } catch (error) {
-    if (errorCode(error) === 'ENOENT') return 'absent';
+    if (nodeErrorCode(error) === 'ENOENT') return 'absent';
     throw error;
   }
 }

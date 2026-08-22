@@ -7,7 +7,8 @@ import {
 } from 'openclaw/plugin-sdk/file-lock';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 
-import ensurePrivateStateDirectories from '../../state/ensure-private-directories.ts';
+import ensurePrivateStateDirectories from '../../../../core/ensure-private-state-directories.ts';
+import nodeErrorCode from '../../../../utils/node-error-code.ts';
 
 const defaultRetryMs = 250;
 const defaultStaleMs = 30 * 60 * 1000;
@@ -31,10 +32,6 @@ export interface GitHubNotificationMonitorCycleLeaseStoreDependencies {
 export interface GitHubNotificationMonitorCycleLeaseAcquireOptions {
   signal?: AbortSignal;
   waitMs?: number;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 function validAgentId(value: string): boolean {
@@ -105,7 +102,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
         stale: this.#staleMs,
       });
     } catch (error) {
-      if (errorCode(error) === FILE_LOCK_TIMEOUT_ERROR_CODE) return undefined;
+      if (nodeErrorCode(error) === FILE_LOCK_TIMEOUT_ERROR_CODE) return undefined;
       throw error;
     }
     return { release: handle.release };

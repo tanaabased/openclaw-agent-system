@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import nodeErrorCode from '../utils/node-error-code.ts';
 import {
   classifyCodexPathConfig,
   inspectCodexPathConfig,
@@ -31,10 +32,6 @@ export interface CodexPathConfigReconcileResult extends CodexPathConfigInspectio
   status: CodexPathConfigStatus;
 }
 
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
-}
-
 async function readRegularFile(path: string): Promise<string | undefined> {
   try {
     const stats = await lstat(path);
@@ -43,7 +40,7 @@ async function readRegularFile(path: string): Promise<string | undefined> {
     }
     return await readFile(path, 'utf8');
   } catch (error) {
-    if (errorCode(error) === 'ENOENT') return undefined;
+    if (nodeErrorCode(error) === 'ENOENT') return undefined;
     throw error;
   }
 }

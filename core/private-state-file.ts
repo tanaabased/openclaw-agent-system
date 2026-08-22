@@ -3,7 +3,8 @@ import { constants, type Stats } from 'node:fs';
 import { lstat, open, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
-import ensurePrivateStateDirectories from './ensure-private-directories.ts';
+import nodeErrorCode from '../utils/node-error-code.ts';
+import ensurePrivateStateDirectories from './ensure-private-state-directories.ts';
 
 export interface PrivateStateFileOptions {
   currentUid?: number;
@@ -11,10 +12,6 @@ export interface PrivateStateFileOptions {
   label: string;
   maximumBytes: number;
   path: string;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 function hasPrivateMode(mode: number): boolean {
@@ -45,8 +42,8 @@ export default class PrivateStateFile {
     try {
       handle = await open(this.#path, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return undefined;
-      if (errorCode(error) === 'ELOOP') {
+      if (nodeErrorCode(error) === 'ENOENT') return undefined;
+      if (nodeErrorCode(error) === 'ELOOP') {
         throw new Error(`The ${this.#label} may not be a symbolic link.`, { cause: error });
       }
       throw error;
@@ -77,7 +74,7 @@ export default class PrivateStateFile {
     try {
       this.#assertPrivateFile(await lstat(this.#path));
     } catch (error) {
-      if (errorCode(error) !== 'ENOENT') throw error;
+      if (nodeErrorCode(error) !== 'ENOENT') throw error;
     }
 
     const temporaryPath = join(dirname(this.#path), `.${basename(this.#path)}.${randomUUID()}.tmp`);
@@ -108,7 +105,7 @@ export default class PrivateStateFile {
       await unlink(this.#path);
       return true;
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return false;
+      if (nodeErrorCode(error) === 'ENOENT') return false;
       throw error;
     }
   }
@@ -130,7 +127,7 @@ export default class PrivateStateFile {
     try {
       stats = await lstat(path);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return 'missing';
+      if (nodeErrorCode(error) === 'ENOENT') return 'missing';
       throw error;
     }
     const label = `${this.#label.charAt(0).toUpperCase()}${this.#label.slice(1)}`;

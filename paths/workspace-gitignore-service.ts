@@ -3,13 +3,11 @@ import { constants } from 'node:fs';
 import { lstat, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import nodeErrorCode from '../utils/node-error-code.ts';
+
 export interface WorkspaceGitignoreBlock {
   comment: string;
   entries: readonly string[];
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 async function readRegularFile(path: string): Promise<string | undefined> {
@@ -20,7 +18,7 @@ async function readRegularFile(path: string): Promise<string | undefined> {
     }
     return await readFile(path, 'utf8');
   } catch (error) {
-    if (errorCode(error) === 'ENOENT') return undefined;
+    if (nodeErrorCode(error) === 'ENOENT') return undefined;
     throw error;
   }
 }
@@ -53,7 +51,7 @@ async function existingFileMode(path: string): Promise<number> {
     }
     return stats.mode & 0o777;
   } catch (error) {
-    if (errorCode(error) === 'ENOENT') return 0o644;
+    if (nodeErrorCode(error) === 'ENOENT') return 0o644;
     throw error;
   }
 }

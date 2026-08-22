@@ -3,8 +3,8 @@ import { join, resolve } from 'node:path';
 
 import { acquireFileLock, type FileLockHandle } from 'openclaw/plugin-sdk/file-lock';
 
-import ensurePrivateStateDirectories from '../state/ensure-private-directories.ts';
-import PrivateStateFile from '../state/private-state-file.ts';
+import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
+import PrivateStateFile from '../../../core/private-state-file.ts';
 
 const defaultTtlMs = 30 * 60 * 1000;
 const maximumStateBytes = 4 * 1024;

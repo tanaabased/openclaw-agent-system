@@ -1,14 +1,12 @@
 import { type Stats } from 'node:fs';
 import { lstat, mkdir } from 'node:fs/promises';
 
+import nodeErrorCode from '../utils/node-error-code.ts';
+
 export interface EnsurePrivateStateDirectoriesOptions {
   currentUid?: number;
   directories: string[];
   label: string;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 function assertPrivateDirectory(
@@ -34,7 +32,7 @@ export default async function ensurePrivateStateDirectories(
     try {
       await mkdir(directory, { mode: 0o700, recursive: index === 0 });
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
+      if (nodeErrorCode(error) !== 'EEXIST') throw error;
     }
     assertPrivateDirectory(await lstat(directory), options);
   }

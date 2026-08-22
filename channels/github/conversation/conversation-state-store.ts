@@ -4,7 +4,7 @@ import {
   decodeGitHubNotificationConversationState,
   type GitHubNotificationConversationState,
 } from './conversation-state.ts';
-import PrivateStateFile from '../state/private-state-file.ts';
+import PrivateStateFile from '../../../core/private-state-file.ts';
 
 const maximumStateBytes = 1024 * 1024;
 

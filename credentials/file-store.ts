@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
+import nodeErrorCode from '../utils/node-error-code.ts';
 import {
   isCredentialKeyValid,
   isCredentialValueValid,
@@ -28,10 +29,6 @@ function problem(
   message: string,
 ): CredentialStoreProblem {
   return { status, code, message };
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 function hasPrivateMode(mode: number): boolean {
@@ -85,7 +82,7 @@ export default class FileCredentialStore implements CredentialStore {
     try {
       handle = await open(paths.credentialPath, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
-      const code = errorCode(error);
+      const code = nodeErrorCode(error);
       if (code === 'ENOENT') return { status: 'missing' };
       if (code === 'ELOOP') {
         return problem(
@@ -238,7 +235,7 @@ export default class FileCredentialStore implements CredentialStore {
       await unlink(paths.credentialPath);
       return { status: 'removed' };
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return { status: 'missing' };
+      if (nodeErrorCode(error) === 'ENOENT') return { status: 'missing' };
       return problem(
         'unavailable',
         'credential-file-remove-failed',
@@ -290,7 +287,7 @@ export default class FileCredentialStore implements CredentialStore {
     try {
       stats = await lstat(path);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return { status: 'missing' };
+      if (nodeErrorCode(error) === 'ENOENT') return { status: 'missing' };
       return problem(
         'unavailable',
         'credential-directory-unreadable',

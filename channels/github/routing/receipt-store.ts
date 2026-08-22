@@ -1,7 +1,7 @@
 import { isAbsolute, join, resolve } from 'node:path';
 
 import { githubNotificationChannelId, type NotificationRoutingReceipt } from './routing.ts';
-import PrivateStateFile from '../state/private-state-file.ts';
+import PrivateStateFile from '../../../core/private-state-file.ts';
 
 const maximumReceiptBytes = 16 * 1024;
 const receiptKeys = new Set(['accountId', 'agentId', 'channelId', 'schemaVersion', 'workspaceDir']);

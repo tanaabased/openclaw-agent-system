@@ -3,9 +3,9 @@ import { chmod, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import ensurePrivateStateDirectories from '../channels/github/state/ensure-private-directories.ts';
+import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 
-describe('channels/github/state/ensure-private-directories', () => {
+describe('core/ensure-private-state-directories', () => {
   it('should create and verify a private state directory chain', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-private-state-'));
     const rootDir = join(temporaryDirectory, 'state');
@@ -15,7 +15,7 @@ describe('channels/github/state/ensure-private-directories', () => {
       await ensurePrivateStateDirectories({
         currentUid: process.getuid?.(),
         directories: [rootDir, agentDir, channelDir],
-        label: 'GitHub notification state',
+        label: 'Agent System state',
       });
 
       for (const directory of [rootDir, agentDir, channelDir]) {
@@ -33,13 +33,13 @@ describe('channels/github/state/ensure-private-directories', () => {
     try {
       await ensurePrivateStateDirectories({
         directories: [publicDirectory],
-        label: 'GitHub notification state',
+        label: 'Agent System state',
       });
       await chmod(publicDirectory, 0o755);
       await assert.rejects(
         ensurePrivateStateDirectories({
           directories: [publicDirectory],
-          label: 'GitHub notification state',
+          label: 'Agent System state',
         }),
         /directories must be private/u,
       );
@@ -48,7 +48,7 @@ describe('channels/github/state/ensure-private-directories', () => {
       await assert.rejects(
         ensurePrivateStateDirectories({
           directories: [link],
-          label: 'GitHub notification state',
+          label: 'Agent System state',
         }),
         /directories must be real directories/u,
       );
@@ -66,7 +66,7 @@ describe('channels/github/state/ensure-private-directories', () => {
         ensurePrivateStateDirectories({
           currentUid: currentUid + 1,
           directories: [join(temporaryDirectory, 'state')],
-          label: 'GitHub notification state',
+          label: 'Agent System state',
         }),
         /directories must be owned by the current user/u,
       );

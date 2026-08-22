@@ -7,6 +7,7 @@ import { createConnection, createServer, type Server, type Socket } from 'node:n
 
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import isPathContained from '../utils/is-path-contained.ts';
+import nodeErrorCode from '../utils/node-error-code.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import AgentSystemToolError from '../api/error.ts';
 
@@ -62,10 +63,6 @@ export interface AgentCommandAuthorityDependencies {
   resolveCodexAgentId?(context: CodexCommandContext): Promise<string | undefined>;
   rootDir?: string;
   socketTimeoutMs?: number;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 /** Mark one Gateway command descendant as explicitly unbound when authority is unavailable. */
@@ -337,7 +334,7 @@ export default class AgentCommandAuthority {
           try {
             return await realpath(path);
           } catch (error) {
-            if (errorCode(error) === 'ENOENT') return undefined;
+            if (nodeErrorCode(error) === 'ENOENT') return undefined;
             throw error;
           }
         }),

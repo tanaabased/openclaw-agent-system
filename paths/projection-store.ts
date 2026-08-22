@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+
+import PrivateStateFile from '../core/private-state-file.ts';
 
 export interface StoredPathProjection {
   agentId: string;
@@ -10,9 +9,12 @@ export interface StoredPathProjection {
   workspaceDir: string;
 }
 
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
+export interface PathProjectionStoreDependencies {
+  currentUid?: number;
+  rootDir?: string;
 }
+
+const maximumPathProjectionBytes = 64 * 1024;
 
 function isStoredPathProjection(value: unknown): value is StoredPathProjection {
   if (!value || typeof value !== 'object') return false;
@@ -30,58 +32,48 @@ function isStoredPathProjection(value: unknown): value is StoredPathProjection {
 
 /** Persist the last Agent System-owned OpenClaw prefix outside the workspace repository. */
 export default class PathProjectionStore {
+  readonly #currentUid: number | undefined;
   readonly #rootDir: string | undefined;
 
-  constructor(rootDir: string | undefined) {
-    this.#rootDir = rootDir ? resolve(rootDir) : undefined;
+  constructor(dependencies: PathProjectionStoreDependencies) {
+    this.#currentUid = dependencies.currentUid;
+    this.#rootDir = dependencies.rootDir ? resolve(dependencies.rootDir) : undefined;
   }
 
   async read(agentId: string): Promise<StoredPathProjection | undefined> {
-    const path = this.#path(agentId);
-    if (!path) return undefined;
+    const file = this.#file(agentId);
+    if (!file) return undefined;
+    const contents = await file.read();
+    if (contents === undefined) return undefined;
+    let value: unknown;
     try {
-      const stats = await lstat(path);
-      if (!stats.isFile()) throw new Error('The path projection receipt must be a regular file.');
-      const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
-      if (!isStoredPathProjection(value) || value.agentId !== agentId) {
-        throw new Error('The path projection receipt is invalid.');
-      }
-      return value;
+      value = JSON.parse(contents) as unknown;
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') return undefined;
-      throw error;
+      throw new Error('The path projection receipt is invalid.', { cause: error });
     }
+    if (!isStoredPathProjection(value) || value.agentId !== agentId) {
+      throw new Error('The path projection receipt is invalid.');
+    }
+    return value;
   }
 
   async write(state: StoredPathProjection): Promise<void> {
-    const path = this.#path(state.agentId);
-    if (!path || !this.#rootDir) {
+    const file = this.#file(state.agentId);
+    if (!file) {
       throw new Error('The path projection store does not have a usable configuration directory.');
     }
-    const agentDir = join(this.#rootDir, state.agentId);
-    await mkdir(agentDir, { mode: 0o700, recursive: true });
-    const temporaryPath = `${path}.${randomUUID()}.tmp`;
-    let handle;
-    try {
-      handle = await open(
-        temporaryPath,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-        0o600,
-      );
-      await handle.writeFile(`${JSON.stringify(state, undefined, 2)}\n`, 'utf8');
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
-      await rename(temporaryPath, path);
-    } finally {
-      await handle?.close().catch(() => undefined);
-      await unlink(temporaryPath).catch(() => undefined);
-    }
+    await file.write(`${JSON.stringify(state, undefined, 2)}\n`);
   }
 
-  #path(agentId: string): string | undefined {
-    return this.#rootDir && /^[a-z0-9][a-z0-9-]*$/u.test(agentId)
-      ? join(this.#rootDir, agentId, 'path-projection.json')
-      : undefined;
+  #file(agentId: string): PrivateStateFile | undefined {
+    if (!this.#rootDir || !/^[a-z0-9][a-z0-9-]*$/u.test(agentId)) return undefined;
+    const agentDir = join(this.#rootDir, agentId);
+    return new PrivateStateFile({
+      currentUid: this.#currentUid,
+      directories: [this.#rootDir, agentDir],
+      label: 'path projection receipt',
+      maximumBytes: maximumPathProjectionBytes,
+      path: join(agentDir, 'path-projection.json'),
+    });
   }
 }

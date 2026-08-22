@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lstat, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,13 +9,13 @@ describe('paths/projection-store', () => {
   it('should return no receipt when the store or agent receipt is absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
 
-    assert.equal(await new PathProjectionStore(undefined).read('data'), undefined);
-    assert.equal(await new PathProjectionStore(root).read('data'), undefined);
+    assert.equal(await new PathProjectionStore({}).read('data'), undefined);
+    assert.equal(await new PathProjectionStore({ rootDir: root }).read('data'), undefined);
   });
 
   it('should persist and read an agent-owned receipt with private permissions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
-    const store = new PathProjectionStore(root);
+    const store = new PathProjectionStore({ currentUid: process.getuid?.(), rootDir: root });
     const state: StoredPathProjection = {
       schemaVersion: 1,
       agentId: 'data',
@@ -42,11 +42,11 @@ describe('paths/projection-store', () => {
     };
 
     await assert.rejects(
-      new PathProjectionStore(root).write(state),
+      new PathProjectionStore({ rootDir: root }).write(state),
       /does not have a usable configuration directory/u,
     );
     await assert.rejects(
-      new PathProjectionStore(undefined).write({ ...state, agentId: 'data' }),
+      new PathProjectionStore({}).write({ ...state, agentId: 'data' }),
       /does not have a usable configuration directory/u,
     );
   });
@@ -54,7 +54,7 @@ describe('paths/projection-store', () => {
   it('should reject receipts that do not belong to the requested agent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
     const agentDir = join(root, 'data');
-    await mkdir(agentDir);
+    await mkdir(agentDir, { mode: 0o700 });
     await writeFile(
       join(agentDir, 'path-projection.json'),
       JSON.stringify({
@@ -64,9 +64,10 @@ describe('paths/projection-store', () => {
         openClawPaths: ['/workspace/data/bin'],
       }),
     );
+    await chmod(join(agentDir, 'path-projection.json'), 0o600);
 
     await assert.rejects(
-      new PathProjectionStore(root).read('data'),
+      new PathProjectionStore({ rootDir: root }).read('data'),
       /path projection receipt is invalid/u,
     );
   });
@@ -75,13 +76,75 @@ describe('paths/projection-store', () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
     const agentDir = join(root, 'data');
     const target = join(root, 'target.json');
-    await mkdir(agentDir);
+    await mkdir(agentDir, { mode: 0o700 });
     await writeFile(target, '{}');
     await symlink(target, join(agentDir, 'path-projection.json'));
 
     await assert.rejects(
-      new PathProjectionStore(root).read('data'),
-      /path projection receipt must be a regular file/u,
+      new PathProjectionStore({ rootDir: root }).read('data'),
+      /path projection receipt may not be a symbolic link/u,
+    );
+  });
+
+  it('should reject public or incorrectly owned receipt state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
+    const store = new PathProjectionStore({ currentUid: process.getuid?.(), rootDir: root });
+    const state: StoredPathProjection = {
+      schemaVersion: 1,
+      agentId: 'data',
+      workspaceDir: '/workspace/data',
+      openClawPaths: ['/workspace/data/bin'],
+    };
+    await store.write(state);
+    const receiptPath = join(root, 'data', 'path-projection.json');
+    await chmod(receiptPath, 0o644);
+
+    await assert.rejects(store.read('data'), /must be private to the current user/u);
+
+    const currentUid = process.getuid?.();
+    if (currentUid === undefined) return;
+    await chmod(receiptPath, 0o600);
+    await assert.rejects(
+      new PathProjectionStore({ currentUid: currentUid + 1, rootDir: root }).read('data'),
+      /must be owned by the current user/u,
+    );
+  });
+
+  it('should reject unsafe receipt directories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
+    const agentDir = join(root, 'data');
+    await mkdir(agentDir, { mode: 0o700 });
+    await chmod(agentDir, 0o755);
+
+    await assert.rejects(
+      new PathProjectionStore({ rootDir: root }).read('data'),
+      /directories must be private/u,
+    );
+  });
+
+  it('should reject oversized and invalid utf8 receipt state', async () => {
+    const oversizedRoot = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
+    const oversizedAgentDir = join(oversizedRoot, 'data');
+    await mkdir(oversizedAgentDir, { mode: 0o700 });
+    const oversizedPath = join(oversizedAgentDir, 'path-projection.json');
+    await writeFile(oversizedPath, Buffer.alloc(64 * 1024 + 1));
+    await chmod(oversizedPath, 0o600);
+
+    await assert.rejects(
+      new PathProjectionStore({ rootDir: oversizedRoot }).read('data'),
+      /exceeds its size limit/u,
+    );
+
+    const invalidRoot = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
+    const invalidAgentDir = join(invalidRoot, 'data');
+    await mkdir(invalidAgentDir, { mode: 0o700 });
+    const invalidPath = join(invalidAgentDir, 'path-projection.json');
+    await writeFile(invalidPath, Buffer.from([0xc3, 0x28]));
+    await chmod(invalidPath, 0o600);
+
+    await assert.rejects(
+      new PathProjectionStore({ rootDir: invalidRoot }).read('data'),
+      /path projection receipt is invalid/u,
     );
   });
 });
