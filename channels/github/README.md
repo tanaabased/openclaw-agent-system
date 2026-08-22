@@ -14,34 +14,19 @@ lifecycle session and publishes the accepted public part of the response.
 - `install` records the agent's currently assigned open work items as a safe
   baseline without creating local work. An empty result is valid.
 - Later polling or `notifications refresh` discovers new issue and pull-request
-  assignments and verifies the agent account, assigning actor, repository owner,
-  repository access, and exact assignment event.
-- Each admitted assignment resolves through its lifecycle machine id before
-  lifecycle-specific local resources are reconciled.
-- Accepted assignments converge on the lifecycle-neutral `prepared` intake
-  checkpoint. Issues create or reuse one deterministic managed worktree;
-  pull-request assignments retain bounded head metadata without creating one.
-- Before an issue reaches `prepared`, the shared coordinator records its
-  deterministic OpenClaw session and assignment-card context without invoking
-  the model. A later comment must resume that existing session.
-- Each prepared issue establishes a bounded comment baseline without replaying
-  history. A later new or edited exact-mention comment from an approved human is
-  re-read canonically and admitted as a direct message in the issue session.
-- The visible inbound message is the normalized author-written comment. Bounded
-  source and worktree facts are model-only context, and the canonical
-  `agent-system-github` prompt hook supplies hidden Work response instructions.
-- The current comment slice requires the configured agent's `coding` profile.
-  It preserves that configured native coding surface across the built-in
-  OpenClaw and Codex harnesses instead of choosing a harness-specific tool list.
-- A comment turn accepts one ordinary private Markdown response and one typed
-  `agent_system_github_reply` tool candidate. It never parses the private
-  response for publication. The bounded candidate crosses native harness
-  runtimes through one private, atomic, expiring turn record; the parent then
-  reauthorizes it, reconciles it by exact body and hidden marker, and publishes
-  it.
-- If the turn omits the candidate, calls the staging tool more than once, or
-  produces a candidate that fails validation, the private response remains in
-  the lifecycle session and GitHub publication is withheld with a stable code.
+  assignments and admits only authorized actors, repositories, and events.
+- Accepted issues create or reuse one deterministic managed worktree and one
+  OpenClaw lifecycle session. Pull-request assignments retain bounded head
+  metadata without creating a worktree.
+- Prepared issues establish a comment baseline without replaying history. A new
+  or edited exact-mention comment from an approved human resumes the existing
+  issue session as a normalized direct message.
+- Incoming GitHub prose is visible to the model as the author's message while
+  source, repository, and worktree facts remain private context. The current
+  comment flow requires the agent's `coding` profile.
+- Each completed comment turn keeps its private response in the session and may
+  publish one validated public reply to GitHub. Missing or invalid public replies
+  are withheld without discarding the private response.
 - Pull-request comments, GitHub assignment acknowledgments, initial planning
   turns, Plan and Auto modes, mode transitions, and chat-originated publication
   remain intentionally dormant.
@@ -159,17 +144,9 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 ```
 
 A repository, kind, and number selector is all-or-nothing. `refresh` runs the
-same bounded, lease-protected intake cycle as the scheduler and defaults to a
-300-second timeout. Its CLI-owned agent turns request one-shot harness cleanup
-before the command returns. `status` projects
-only baseline readiness, lifecycle id, admission disposition, intake stage,
-issue-worktree readiness, and bounded pull-request head metadata; it omits
-provider prose, credentials, session identifiers, and local paths.
-
-For a prepared issue, a refresh may also run one admitted comment turn and wait
-for its GitHub response publication. The monitor status schema remains limited
-to provider intake; comment revisions and publication receipts live in separate
-private conversation state.
+same intake cycle as scheduled polling and defaults to a 300-second timeout. It
+may also process one admitted comment for a prepared issue. `status` returns a
+redacted view of assignment and intake state.
 
 `wait` supports these stable intake checkpoints:
 
@@ -183,7 +160,7 @@ private conversation state.
 
 Every target except `baseline-ready` requires a complete item selector.
 `--refresh` advances provider-owned intake while waiting. Failed and timed-out
-waits return nonzero and include the last redacted observation in JSON.
+waits return nonzero.
 
 See [Advanced](../../ADVANCED.md) for the complete shared CLI and manifest
 reference.
@@ -195,22 +172,14 @@ reference.
 - Admission requires the authenticated assigned account, an approved immutable
   assigning actor, an eligible repository owner, and sufficient repository
   access.
-- Comment listings and canonical re-reads are bounded. Conversation state keeps
-  revision digests and the accepted public response but does not persist the
-  incoming provider prose.
-- The reply staging tool exists only during an active GitHub lifecycle turn and
-  does not publish, load GitHub credentials, or grant publication authority.
-- `install` projects the staging tool through the existing Agent System tool
-  access lifecycle. No plugin LLM override or conversation-access hook
-  permission is required.
+- Comment reads are bounded, and conversation state retains revision digests
+  rather than incoming provider prose.
 - An approved actor may enter the conversation but cannot select capabilities;
   the trusted Work policy requires the configured `coding` profile.
-- Publication checks accepted conversation state before credentials are
-  connected, reauthorizes the exact source revision and destination, serializes
-  each target across processes, and reconciles both the hidden idempotency marker
-  and exact accepted body.
-- Private monitor state contains no tokens. Deterministic assignment and
-  worktree identities make intake retry-safe.
+- A staged reply does not itself authorize publication. Agent System reauthorizes
+  the source and destination before loading credentials and publishes
+  idempotently.
+- Private monitor and conversation state contain no tokens.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without
   deleting existing issue worktrees.

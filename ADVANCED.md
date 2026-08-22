@@ -49,7 +49,7 @@ tool-provided sections.
 
 Agent System currently owns no global plugin settings. Its public configuration
 is the per-workspace manifest plus any configured tool sections. When
-[`github.notifications`](./channels/github/README.md#configuration-reference) is present,
+[`github.notifications`](./channels/github/README.md#configuration) is present,
 `install` projects only a non-secret channel account and exact agent binding into
 global OpenClaw configuration; notification policy and credentials remain
 workspace-owned.
@@ -158,13 +158,8 @@ alias. Bare `agent-system` or `as` prints help.
 | `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
 | `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait`             | Writes undecorated structured output.                                    |
 
-Human and machine-readable command results use standard output and honor
-`NO_COLOR` and `FORCE_COLOR=0`. A successful `--json` command writes exactly one
-JSON document to standard output. Command-owned warnings, validation findings,
-and failures use standard error. Routine Agent System lifecycle metadata remains
-in OpenClaw's file logs at every console log level so it cannot corrupt command
-results; host-owned runtime logs continue to follow OpenClaw's logger routing. A
-failed operation sets a nonzero exit code.
+Human output honors `NO_COLOR` and `FORCE_COLOR=0`. A failed operation sets a
+nonzero exit code.
 
 ### Trust Boundary
 
@@ -172,38 +167,18 @@ Model-facing `agent_system_*` tools bind the manifest and credentials to trusted
 OpenClaw agent context. They remain the preferred direct execution path for
 agents.
 
-Gateway-hosted native `exec` calls also receive a short-lived opaque capability.
-When a repository helper invokes a packaged managed launcher, the delegated
-`tool` process redeems that capability through Agent System's owner-only local
-authority. The generic `agent-system-tool` launcher accepts any statically
-registered command; the current `git` and `gh` shims are convenience launchers
-over that same route. Unknown commands remain unavailable, and each registered
-tool retains its own configuration, policy, credential, and audit behavior.
-Redirected standard input is forwarded up to 64 KiB without reading from an
-interactive terminal, matching the bounded input contract of native tools.
-OpenClaw-hosted Codex `exec_command` descendants use the same command scope after
-Agent System matches their OpenClaw state and `CODEX_HOME` to the configured
-per-agent Codex app-server home. Standalone Codex does not satisfy that OpenClaw
-harness check.
+Packaged shims invoked from supported OpenClaw native or Codex agent commands
+remain bound to the active agent and its admitted workspace, repositories, and
+managed worktrees. They cannot select another agent after that binding. Direct
+`tool` and `credentials` commands remain trusted operator interfaces and may
+select an installed agent explicitly.
 
-In both harnesses the active agent is authoritative; the helper's eventual
-directory is admitted only when it remains inside that agent's workspace, a
-declared `git.worktrees.repositories.local` repository, or its managed worktree
-root. Changing directory cannot select another agent, and `--agent` is rejected
-while the binding is active. A Gateway descendant receives an explicit denial
-marker instead of falling back to directory discovery when authority or agent
-resolution is unavailable. Capabilities are not issued to sandbox or node hosts.
-
-Direct `tool` commands without that capability and every `credentials` command
-remain trusted operator interfaces. Their `--agent` option intentionally selects
-an installed agent, and workspace discovery can select one from its directory.
-The descendant bindings prevent cwd-based cross-agent identity selection through
-managed launchers; they are practical same-user guardrails, not secret boundaries.
-They do not make arbitrary checkout code safe or intercept absolute
-binaries, replaced `PATH` values, direct HTTP, SDKs, or unrelated host
-processes. See OpenClaw's [security model](https://docs.openclaw.ai/gateway/security)
-and [sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the
-host boundary beneath Agent System.
+These are practical same-user guardrails, not process isolation. Absolute
+binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
+processes can bypass them. See OpenClaw's
+[security model](https://docs.openclaw.ai/gateway/security) and
+[sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the host
+boundary beneath Agent System.
 
 ### `openclaw agent-system validate`
 
@@ -226,8 +201,8 @@ predicting another tool's environment.
 openclaw agent-system env [--agent <id>] [--json]
 ```
 
-Human output reports each variable's name, winning source, required state, and
-override count. JSON adds the agent id, workspace, and manifest path.
+The result reports each variable's name, winning source, required state, and
+override count without printing values.
 
 ### `openclaw agent-system credentials`
 
@@ -276,14 +251,9 @@ declared, requires a working persistent credential before applying changes. It
 creates or updates only owned state, verifies the result, and reports unchanged
 state on repeated runs. An existing agent id bound to another workspace fails
 instead of being repointed. It also reconciles per-agent grants for the native
-Git, managed-worktree, and GitHub tools selected by the manifest. Agent System
-preserves unrelated entries, uses an existing exact `tools.allow` list when
-present and `tools.alsoAllow` otherwise, removes its owned entries from the other
-allowlist, and removes stale grants when capabilities disappear. An explicit
-per-agent `tools.deny` entry that blocks a selected tool is operator-owned state,
-so doctor reports it as blocked and install refuses to override it. Global,
-provider, group, and sandbox policies remain separate runtime authorization
-layers and can still make a granted tool unavailable.
+Git, managed-worktree, and GitHub tools selected by the manifest while preserving
+unrelated grants. An explicit operator-owned denial remains authoritative and
+blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 
@@ -296,13 +266,8 @@ openclaw agent-system doctor [--agent <id>] [--json]
 
 Doctor reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
-responsibility. Tool-access findings compare the installed per-agent grants with
-the Git, managed-worktree, and GitHub capabilities declared by the manifest. It
-also warns when configured tools coexist with command paths
-that can reach operator interfaces. Tool-specific lifecycle checks are
-documented in each tool guide. This check covers exec host routing, sandbox mode
-and scope, and elevated execution; it does not certify custom mounts or sandbox
-backend isolation.
+responsibility. It also reports tool-access and execution-boundary findings;
+tool-specific checks are documented in each tool guide.
 
 ### `openclaw agent-system notifications refresh`
 
@@ -313,16 +278,11 @@ explicitly selected installed agent.
 openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
 ```
 
-The command uses the same provider client, baseline, private state, trust gates,
-and cross-process lease as scheduled polling. The optional repository, kind,
-and number selector is all-or-nothing and limits the cycle to that exact item
-without advancing account-wide discovery. It may prepare a managed worktree for
-an accepted issue. For a prepared issue, it also establishes the bounded comment
-baseline or dispatches one new approved exact-mention comment through the issue
-session and waits for the accepted GitHub response publication. Deferred and
-failed cycles return nonzero. The default timeout is 300 seconds. Manual refresh
-uses one-shot agent-run cleanup so a completed command releases its harness and
-exits after writing the result.
+The optional repository, kind, and number selector is all-or-nothing and limits
+the cycle to that exact item. A refresh may prepare a managed issue worktree,
+establish its comment baseline, or process one new approved exact-mention
+comment. Deferred and failed cycles return nonzero. The default timeout is 300
+seconds.
 
 ### `openclaw agent-system notifications status`
 
@@ -332,11 +292,8 @@ Reads private monitor state and returns a redacted intake projection.
 openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
 ```
 
-Results report baseline readiness, lifecycle id, assignment disposition and
-intake stage, issue worktree readiness, and bounded pull-request head metadata.
-The schema omits provider prose, credentials, session identifiers, and local
-paths. A durable monitor diagnostic returns `degraded` and sets a nonzero exit
-code.
+Results report redacted assignment and intake status. A durable monitor
+diagnostic returns `degraded` and sets a nonzero exit code.
 
 ### `openclaw agent-system notifications wait`
 
@@ -350,20 +307,16 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 Supported targets are `baseline-ready`, `assignment-rejected`, `prepared`,
 `worktree-ready`, and `retired`. Every non-baseline target requires the full
 item selector. `--refresh` explicitly advances provider-owned intake while
-waiting. The default timeout is 300 seconds. Terminal diagnostics fail
-immediately, and failed or timed-out JSON results include the last redacted
-observation.
+waiting. The default timeout is 300 seconds, and terminal diagnostics fail
+immediately.
 
 ### `openclaw agent-system tool`
 
 Runs a registered command through its Agent System tool. Direct invocations are
 an explicitly selected operator identity and are intended for administration,
-testing, and debugging. A verified OpenClaw native-exec or Codex-harness binding
-instead fixes a managed launcher invocation to the active agent and rejects
-`--agent`; agents should still use the corresponding native `agent_system_*`
-tool for direct work. The current release uses a closed command registry, not an
-arbitrary executable or raw-secret interface. A public tool integration contract
-is planned in [Tool API](./API.md).
+testing, and debugging. Agents should use the corresponding native
+`agent_system_*` tool for direct work. A public tool integration contract is
+planned in [Tool API](./API.md).
 
 ```text
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
@@ -375,7 +328,6 @@ openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 | `git-worktree` | `worktree` | [Usage](./tools/git/README.md#cli)    | none                                           |
 | `gh`           | `gh`       | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
 
-Registered tools preserve the child command's standard streams and exit code.
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.
 
 ## Environment
