@@ -1,0 +1,87 @@
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+
+import type { AgentManifest } from '../manifest/types.ts';
+import type AgentManifestService from '../manifest/service.ts';
+import AgentSystemToolError from './error.ts';
+import type AgentSystemToolRuntime from './runtime.ts';
+import type {
+  AgentSystemToolExecutionResult,
+  AgentSystemToolScope,
+  RegisteredAgentSystemTool,
+} from './types.ts';
+
+/** Own statically imported first-party tool definitions and their command routes. */
+export default class AgentSystemToolRegistry {
+  readonly #commands = new Map<string, RegisteredAgentSystemTool>();
+  readonly #tools = new Map<string, RegisteredAgentSystemTool>();
+
+  constructor(tools: readonly RegisteredAgentSystemTool[]) {
+    for (const tool of tools) {
+      if (this.#tools.has(tool.id)) {
+        throw new Error(`Duplicate Agent System tool id: ${tool.id}.`);
+      }
+      this.#tools.set(tool.id, tool);
+      for (const { command } of tool.commands) {
+        if (this.#commands.has(command)) {
+          throw new Error(`Duplicate Agent System tool command: ${command}.`);
+        }
+        this.#commands.set(command, tool);
+      }
+    }
+  }
+
+  /** Return the native model-facing tool names owned by every registered definition. */
+  allToolNames(): string[] {
+    return [...new Set([...this.#tools.values()].flatMap(({ toolNames }) => toolNames))];
+  }
+
+  /** Return the native model-facing tool names enabled by one agent manifest. */
+  configuredToolNames(manifest: AgentManifest): string[] {
+    return [
+      ...new Set(
+        [...this.#tools.values()].flatMap((tool) =>
+          tool.isConfigured(manifest) ? tool.toolNames : [],
+        ),
+      ),
+    ];
+  }
+
+  guidance(manifest: AgentManifest): string[] {
+    return [...this.#tools.values()].flatMap((tool) =>
+      tool.isConfigured(manifest) && tool.guidance ? [tool.guidance.prompt] : [],
+    );
+  }
+
+  invoke(
+    command: string,
+    runtime: AgentSystemToolRuntime,
+    argv: string[],
+    scope: AgentSystemToolScope,
+    stdin?: string,
+  ): Promise<AgentSystemToolExecutionResult> {
+    const tool = this.#commands.get(command);
+    if (!tool) {
+      throw new AgentSystemToolError(
+        'tool_unavailable',
+        `Agent System tool command ${command} is unavailable.`,
+      );
+    }
+    return tool.invoke(runtime, argv, scope, stdin);
+  }
+
+  registerTools(
+    api: Pick<OpenClawPluginApi, 'registerTool'>,
+    runtime: AgentSystemToolRuntime,
+  ): void {
+    for (const tool of this.#tools.values()) tool.registerTools(api, runtime);
+  }
+
+  registerTrustedPolicies(
+    api: Pick<OpenClawPluginApi, 'registerTrustedToolPolicy'>,
+    manifestService: Pick<AgentManifestService, 'loadForAgentId'>,
+  ): void {
+    for (const tool of this.#tools.values()) {
+      tool.registerTrustedPolicy?.(api, manifestService);
+    }
+  }
+}

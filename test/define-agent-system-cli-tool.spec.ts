@@ -5,15 +5,15 @@ import type {
   PluginTrustedToolPolicyRegistration,
 } from 'openclaw/plugin-sdk/plugin-entry';
 
-import defineAgentSystemCliTool from '../lib/define-agent-system-cli-tool.ts';
-import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
+import defineAgentSystemCliTool from '../api/define-cli-tool.ts';
+import type AgentSystemToolRuntime from '../api/runtime.ts';
 import {
   createToolTestDefinition,
   loadedToolTestManifest,
   toolTestWorkspaceDir,
 } from './tool-test-fixture.ts';
 
-describe('lib/define-agent-system-cli-tool', () => {
+describe('api/define-cli-tool', () => {
   it('should compile command and native tool calls through one runtime definition', async () => {
     const definition = createToolTestDefinition();
     const registered = defineAgentSystemCliTool(definition);

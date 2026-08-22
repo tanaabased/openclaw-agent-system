@@ -1,11 +1,11 @@
-import type { AgentManifest, ManifestDiagnostic } from '../../../utils/manifest-types.ts';
+import type { AgentManifest, ManifestDiagnostic } from '../../../manifest/types.ts';
 import type { NotificationRoutingDesiredState } from '../routing/routing.ts';
 import { githubNotificationRetirementItemKeys } from '../intake/monitor/state.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleContext,
-} from '../../../lib/lifecycle-registry.ts';
+} from '../../../core/lifecycle-registry.ts';
 import type NotificationRoutingService from '../routing/service.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';

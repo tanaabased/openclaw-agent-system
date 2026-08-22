@@ -5,7 +5,7 @@ import {
   createAgentSystemLogger,
   formatDiagnostic,
   reportManifestDiagnostics,
-} from '../lib/logger.ts';
+} from '../core/logger.ts';
 
 function createLogger() {
   const records = {
@@ -25,7 +25,7 @@ function createLogger() {
   };
 }
 
-describe('lib/logger', () => {
+describe('core/logger', () => {
   it('should derive one namespace from the plugin id and preserve log levels', () => {
     const test = createLogger();
     const logger = createAgentSystemLogger(test.logger, 'agent-system');

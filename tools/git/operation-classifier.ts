@@ -1,4 +1,4 @@
-import type { AgentSystemOperation, AgentSystemRisk } from '../../lib/tool-types.ts';
+import type { AgentSystemOperation, AgentSystemRisk } from '../../api/types.ts';
 import type { GitPolicyConfiguration } from './config-schema.ts';
 import type { GitToolInput } from './tool-schema.ts';
 

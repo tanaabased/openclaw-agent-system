@@ -18,9 +18,15 @@
   },
   "include": [
     "index.ts",
+    "agent/**/*.ts",
+    "api/**/*.ts",
     "channels/**/*.ts",
     "cli/**/*.ts",
-    "lib/**/*.ts",
+    "core/**/*.ts",
+    "credentials/**/*.ts",
+    "environment/**/*.ts",
+    "manifest/**/*.ts",
+    "paths/**/*.ts",
     "tools/**/*.ts",
     "utils/**/*.ts"
   ]

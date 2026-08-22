@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import discoverManifest, {
   discoverManifestFromDirectory,
   maximumManifestBytes,
-} from '../utils/discover-manifest.ts';
+} from '../manifest/discover.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -20,7 +20,7 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true })));
 });
 
-describe('utils/discover-manifest', () => {
+describe('manifest/discover', () => {
   it('should report a workspace without a manifest as unmanaged', async () => {
     const result = await discoverManifest(await temporaryRoot());
 

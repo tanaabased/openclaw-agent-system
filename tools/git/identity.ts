@@ -1,6 +1,6 @@
-import AgentSystemToolError from '../../lib/tool-error.ts';
-import type { AgentSystemManifestValueResolver } from '../../lib/tool-types.ts';
-import type { ResolvableString } from '../../utils/manifest-value-types.ts';
+import AgentSystemToolError from '../../api/error.ts';
+import type { AgentSystemManifestValueResolver } from '../../api/types.ts';
+import type { ResolvableString } from '../../manifest/value-types.ts';
 import type { GitToolConfiguration } from './config-schema.ts';
 
 export interface ResolvedGitIdentity {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { completeCliOneShot, type CliFlushStream } from '../lib/cli-one-shot.ts';
+import { completeCliOneShot, type CliFlushStream } from '../cli/one-shot.ts';
 
 function recordingStream(name: string, events: string[], error?: Error): CliFlushStream {
   return {
@@ -13,7 +13,7 @@ function recordingStream(name: string, events: string[], error?: Error): CliFlus
   };
 }
 
-describe('lib/cli-one-shot', () => {
+describe('cli/one-shot', () => {
   it('should flush both output streams before exiting', async () => {
     const events: string[] = [];
 

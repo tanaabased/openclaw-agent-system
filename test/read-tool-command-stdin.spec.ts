@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
-import readToolCommandStdin, {
-  maximumToolCommandStdinBytes,
-} from '../utils/read-tool-command-stdin.ts';
+import readToolCommandStdin, { maximumToolCommandStdinBytes } from '../api/read-command-stdin.ts';
 
-describe('utils/read-tool-command-stdin', () => {
+describe('api/read-command-stdin', () => {
   it('should return no input for an absent or interactive stream', async () => {
     const terminal = Readable.from(['ignored']) as Readable & { isTTY?: boolean };
     terminal.isTTY = true;

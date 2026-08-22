@@ -1,8 +1,8 @@
 import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
-import runToolCli from '../../lib/tool-cli-runner.ts';
-import WorkspaceGitignoreService from '../../lib/workspace-gitignore-service.ts';
+import runToolCli from '../../api/cli-runner.ts';
+import WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import resolveGitWorktreeLayout, { type GitWorktreeLayout } from './worktree-layout.ts';

@@ -1,17 +1,17 @@
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
-import type OpCredentialManager from '../lib/op-credential-manager.ts';
+import type AgentManifestService from '../manifest/service.ts';
+import type OpCredentialManager from '../credentials/op-manager.ts';
 import {
   type CliOutput,
   type CliStyles,
   writeCliDiagnostics,
   writeCliError,
   writeCliSummary,
-} from '../lib/cli-output.ts';
+} from './output.ts';
 import {
   formatDiagnostic,
   formatManifestDiagnostics,
   formatManifestFailure,
-} from '../lib/logger.ts';
+} from '../core/logger.ts';
 
 export interface UnsetCredentialsAgentSystemOptions {
   agentId?: string;

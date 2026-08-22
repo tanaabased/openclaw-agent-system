@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import loadAgentDotenv, { maximumDotenvBytes } from '../utils/load-agent-dotenv.ts';
+import loadAgentDotenv, { maximumDotenvBytes } from '../environment/load-dotenv.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -17,7 +17,7 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true })));
 });
 
-describe('utils/load-agent-dotenv', () => {
+describe('environment/load-dotenv', () => {
   it('should load ordered workspace files into source-labelled layers', async () => {
     const root = await temporaryRoot();
     await mkdir(join(root, 'env'));

@@ -1,10 +1,10 @@
 import { resolve } from 'node:path';
 
-import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../manifest/service.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type { GitHubNotificationLifecycleBoundaryInput } from '../lifecycles/types.ts';
 import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
-import type GitHubAccountClient from '../../../lib/github-account-client.ts';
+import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from './admit-assignment.ts';

@@ -5,12 +5,12 @@ import { join } from 'node:path';
 
 import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
-import AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { AgentSystemCliRunRequest } from '../lib/tool-types.ts';
+import AgentSystemToolError from '../api/error.ts';
+import AgentSystemToolRegistry from '../api/registry.ts';
+import AgentSystemToolRuntime from '../api/runtime.ts';
+import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import { createGitTool } from '../tools/git/tool.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 describe('tools/git/tool', () => {
   let root = '';

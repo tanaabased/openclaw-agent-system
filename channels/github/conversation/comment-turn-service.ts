@@ -8,7 +8,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
-import type { Logger } from '../../../lib/logger.ts';
+import type { Logger } from '../../../core/logger.ts';
 import type GitHubNotificationModeRegistry from '../modes/registry.ts';
 import githubNotificationCommentContext from './context/comment.ts';
 import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comment-admission.ts';

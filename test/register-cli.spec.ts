@@ -3,12 +3,12 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
-import registerAgentSystemCli from '../lib/register-cli.ts';
-import type { AgentSystemToolScope } from '../lib/tool-types.ts';
+import { createCliStyles } from '../cli/output.ts';
+import registerAgentSystemCli from '../cli/register.ts';
+import type { AgentSystemToolScope } from '../api/types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -252,7 +252,7 @@ function createProgram(input?: Readable) {
   return { calls, diagnostics, output, program };
 }
 
-describe('lib/register-cli', () => {
+describe('cli/register', () => {
   it('should register agent-system with the as alias and owned subcommands', () => {
     const command = createProgram().program.commands[0];
 

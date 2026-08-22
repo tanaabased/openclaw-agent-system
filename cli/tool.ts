@@ -1,12 +1,12 @@
 import type { Readable } from 'node:stream';
 
-import type AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import AgentSystemToolError from '../lib/tool-error.ts';
-import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { AgentCommandBinding } from '../lib/agent-command-authority.ts';
-import { type CliOutput, writeCliError } from '../lib/cli-output.ts';
-import { formatErrorDiagnostic } from '../lib/logger.ts';
-import readToolCommandStdin from '../utils/read-tool-command-stdin.ts';
+import type AgentSystemToolRegistry from '../api/registry.ts';
+import AgentSystemToolError from '../api/error.ts';
+import type AgentSystemToolRuntime from '../api/runtime.ts';
+import type { AgentCommandBinding } from '../agent/command-authority.ts';
+import { type CliOutput, writeCliError } from './output.ts';
+import { formatErrorDiagnostic } from '../core/logger.ts';
+import readToolCommandStdin from '../api/read-command-stdin.ts';
 
 export interface RunAgentSystemToolOptions {
   agentId?: string;

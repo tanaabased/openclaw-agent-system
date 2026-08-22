@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AgentManifestService from '../lib/agent-manifest-service.ts';
+import AgentManifestService from '../manifest/service.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -53,7 +53,7 @@ function createService(
   return { service, logs, workspaceResolutions: () => workspaceResolutions };
 }
 
-describe('lib/agent-manifest-service', () => {
+describe('manifest/service', () => {
   it('should load and bind a valid manifest to the active agent', async () => {
     const root = await temporaryRoot();
     await writeFile(join(root, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: tanaabot\n');

@@ -6,11 +6,11 @@ import AgentCommandAuthority, {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
   deniedAgentCommandEnvironment,
-} from '../lib/agent-command-authority.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import AgentSystemToolError from '../lib/tool-error.ts';
+} from '../agent/command-authority.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import AgentSystemToolError from '../api/error.ts';
 
-describe('lib/agent-command-authority', () => {
+describe('agent/command-authority', () => {
   let root: string;
   let workspaceDir: string;
   let localRepository: string;

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
 import installAgentSystem from '../cli/install.ts';
-import type { AgentInstallResult } from '../lib/agent-install-service.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
+import type { AgentInstallResult } from '../agent/install-service.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',

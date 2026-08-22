@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
 import validateAgentSystem from '../cli/validate.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',

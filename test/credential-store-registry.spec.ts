@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import createCredentialStores from '../lib/credential-store-registry.ts';
+import createCredentialStores from '../credentials/registry.ts';
 
-describe('lib/credential-store-registry', () => {
+describe('credentials/registry', () => {
   it('should prefer keychain on macos', () => {
     assert.deepEqual(
       createCredentialStores({ environment: { HOME: '/tmp/home' }, platform: 'darwin' }).map(

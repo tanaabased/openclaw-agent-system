@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import OpEnvironmentService from '../lib/op-environment-service.ts';
+import OpEnvironmentService from '../environment/op-service.ts';
 
-describe('lib/op-environment-service', () => {
+describe('environment/op-service', () => {
   it('should remain lazy when no op resources are declared', async () => {
     let credentialCalls = 0;
     let clientCalls = 0;

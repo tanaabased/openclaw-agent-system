@@ -5,11 +5,11 @@ import { join } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import AgentPathService from '../lib/agent-path-service.ts';
-import CodexPathConfigService from '../lib/codex-path-config-service.ts';
-import type { StoredPathProjection } from '../lib/path-projection-store.ts';
+import AgentPathService from '../paths/service.ts';
+import CodexPathConfigService from '../paths/codex-config-service.ts';
+import type { StoredPathProjection } from '../paths/projection-store.ts';
 
-describe('lib/agent-path-service', () => {
+describe('paths/service', () => {
   it('should reconcile both exec surfaces while preserving user path entries', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-service-'));
     const workspaceDir = join(root, 'workspace');

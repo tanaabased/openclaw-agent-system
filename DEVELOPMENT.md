@@ -166,13 +166,19 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 
 | Path                   | Responsibility                                                |
 | ---------------------- | ------------------------------------------------------------- |
-| `index.ts`             | Static plugin, tool, channel, and lifecycle registration      |
+| `index.ts`             | Thin static plugin entrypoint                                 |
+| `agent/`               | Agent identity, authority, lifecycle, install, and diagnosis  |
+| `api/`                 | Model-facing tool contracts, runtime, policy, and projection  |
 | `bin/`                 | Packaged shims and shared tool or SSH launchers               |
 | `channels/<provider>/` | Channel schema, runtime, lifecycle, state, and provider guide |
-| `cli/`                 | One implementation file per subcommand                        |
-| `lib/`                 | Cross-owner registration, lifecycle, and shared orchestration |
+| `cli/`                 | OpenClaw subcommands, registration, and output handling       |
+| `core/`                | Cross-owner plugin composition and shared runtime boundaries  |
+| `credentials/`         | Credential input, storage, resolution, and management         |
+| `environment/`         | Agent environment and 1Password environment resolution        |
+| `manifest/`            | Manifest schemas, parsing, discovery, values, and types       |
+| `paths/`               | PATH projection, Codex path config, and workspace ignores     |
 | `tools/<capability>/`  | Tool schemas, execution, and optional lifecycle contribution  |
-| `utils/`               | Cross-owner independently testable primitives                 |
+| `utils/`               | Cross-owner independently testable function primitives        |
 | `scripts/`             | Development and release tasks                                 |
 | `test/`                | Flat behavior-focused unit tests                              |
 
@@ -198,4 +204,14 @@ launcher with their fixed registered command name. Keep argument handling,
 launcher-directory resolution, and the `--agent-system` probe in that shared
 launcher so future shims inherit the same failure and routing contract.
 
-Foundational `agent`, `tool-access`, and `path` lifecycle contributions live in `lib/`; capability contributions remain beside their optional model-facing tool definitions. Declaration validation is deterministic and side-effect free, doctor inspection is read-only, and reconciliation runs only through explicit install after global prerequisites pass. Register contributions in deterministic dependency order in `index.ts`, return explicit unchanged outcomes, and cover validation, inspection, reconciliation, and component-aware presentation directly. Public lifecycle behavior is exercised by GitHub Actions-only Leia scenarios, including `validate`, `install`, and `doctor`; capability scenarios assert their own native grants.
+Foundational lifecycle contributions live with their owners: agent lifecycle in
+`agent/`, tool access and security in `api/`, and path projection in `paths/`.
+Capability contributions remain beside their optional model-facing tool
+definitions. Declaration validation is deterministic and side-effect free,
+doctor inspection is read-only, and reconciliation runs only through explicit
+install after global prerequisites pass. Compose contributions in deterministic
+dependency order in `core/register-agent-system.ts`, return explicit unchanged
+outcomes, and cover validation, inspection, reconciliation, and component-aware
+presentation directly. Public lifecycle behavior is exercised by GitHub
+Actions-only Leia scenarios, including `validate`, `install`, and `doctor`;
+capability scenarios assert their own native grants.

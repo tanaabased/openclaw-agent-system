@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
 import doctorAgentSystem from '../cli/doctor.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const manifest: AgentManifestLoadResult = {
   status: 'loaded',

@@ -7,9 +7,9 @@ import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
-import { GitHubAccountClientError } from '../lib/github-account-client.ts';
+import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const workspaceDir = '/workspace/tanaabot';

@@ -1,10 +1,10 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import defineAgentSystemSemanticTool from '../../../lib/define-agent-system-semantic-tool.ts';
-import type { Logger } from '../../../lib/logger.ts';
-import AgentSystemToolError from '../../../lib/tool-error.ts';
-import type { AgentManifest } from '../../../utils/manifest-types.ts';
+import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts';
+import type { Logger } from '../../../core/logger.ts';
+import AgentSystemToolError from '../../../api/error.ts';
+import type { AgentManifest } from '../../../manifest/types.ts';
 import { GitHubNotificationReplyCandidateStoreError } from './reply-candidate-store.ts';
 import {
   githubNotificationReplyToolName,

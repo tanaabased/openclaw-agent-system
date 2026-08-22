@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
-import createToolAccessLifecycleContribution from '../lib/tool-access-lifecycle.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -43,7 +43,7 @@ function createHarness(config: OpenClawConfig) {
   return { contribution, mutations: () => mutations };
 }
 
-describe('lib/tool-access-lifecycle', () => {
+describe('api/access-lifecycle', () => {
   it('should report healthy access when installed grants match the manifest', async () => {
     const { contribution } = createHarness({
       agents: {

@@ -3,13 +3,11 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, unlink } from 'node:fs/pro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import FileCredentialStore, {
-  resolveFileCredentialStoreRoot,
-} from '../lib/file-credential-store.ts';
+import FileCredentialStore, { resolveFileCredentialStoreRoot } from '../credentials/file-store.ts';
 
 const key = { agentId: 'data', credentialId: 'op' };
 
-describe('lib/file-credential-store', () => {
+describe('credentials/file-store', () => {
   let temporaryDirectory: string;
   let rootDir: string;
 

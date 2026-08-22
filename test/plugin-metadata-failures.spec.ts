@@ -4,7 +4,7 @@ import pluginMetadataFailures, {
   type PackageMetadata,
   type PluginManifest,
   type PluginMetadataFailureCode,
-} from '../utils/plugin-metadata-failures.ts';
+} from '../core/plugin-metadata-failures.ts';
 
 const openclawVersion = '2026.7.1-2';
 const packageMetadata: PackageMetadata = {
@@ -15,10 +15,16 @@ const packageMetadata: PackageMetadata = {
   files: [
     'dist/',
     'index.ts',
-    'cli/',
+    'agent/',
+    'api/',
     'bin/',
     'channels/',
-    'lib/',
+    'cli/',
+    'core/',
+    'credentials/',
+    'environment/',
+    'manifest/',
+    'paths/',
     'skills/',
     'tools/',
     'utils/',
@@ -115,7 +121,7 @@ function failureCodes(
   );
 }
 
-describe('utils/plugin-metadata-failures', () => {
+describe('core/plugin-metadata-failures', () => {
   it('should accept aligned package and plugin metadata', () => {
     assert.deepEqual(pluginMetadataFailures(packageMetadata, manifest), []);
   });

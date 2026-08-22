@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 
-import OpCredentialInput from '../lib/op-credential-input.ts';
+import OpCredentialInput from '../credentials/op-input.ts';
 
 function stream(isTTY = false): PassThrough & { isTTY?: boolean } {
   return Object.assign(new PassThrough(), { isTTY });
 }
 
-describe('lib/op-credential-input', () => {
+describe('credentials/op-input', () => {
   it('should read the fixed process-environment credential without changing it', async () => {
     const input = stream();
     const output = stream();

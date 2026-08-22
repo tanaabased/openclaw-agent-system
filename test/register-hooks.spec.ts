@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 
 import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import { agentCommandSecurityGuidance } from '../lib/agent-command-security.ts';
-import registerAgentSystemHooks from '../lib/register-hooks.ts';
+import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
+import registerAgentSystemHooks from '../core/register-hooks.ts';
 
-describe('lib/register-hooks', () => {
+describe('core/register-hooks', () => {
   it('should load manifest metadata for lifecycle and prompt hooks', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const calls: Array<{ agentId?: string; trigger: string }> = [];

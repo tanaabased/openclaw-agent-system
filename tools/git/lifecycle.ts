@@ -1,7 +1,7 @@
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
-} from '../../lib/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';

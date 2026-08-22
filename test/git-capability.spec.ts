@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import WorkspaceGitignoreService from '../lib/workspace-gitignore-service.ts';
+import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 import createGitCapability from '../tools/git/capability.ts';
 
 describe('tools/git/capability', () => {

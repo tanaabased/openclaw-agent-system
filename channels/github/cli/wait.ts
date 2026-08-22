@@ -1,4 +1,4 @@
-import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
@@ -6,8 +6,8 @@ import {
   writeCliError,
   writeCliJson,
   writeCliSummary,
-} from '../../../lib/cli-output.ts';
-import { formatManifestFailure } from '../../../lib/logger.ts';
+} from '../../../cli/output.ts';
+import { formatManifestFailure } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import {
   githubNotificationWaitTargets,

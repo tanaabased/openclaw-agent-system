@@ -2,7 +2,7 @@ import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
   type AgentSystemLifecycleOutcome,
-} from '../../lib/lifecycle-registry.ts';
+} from '../../core/lifecycle-registry.ts';
 import type GitHubConfigStore from './config-store.ts';
 import { resolveGitHubCliConfiguration } from './config-schema.ts';
 import { validateGitHubAccountKeyDeclarations } from './account-key-declarations.ts';

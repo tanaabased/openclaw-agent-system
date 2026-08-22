@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
+import AgentSystemToolError from '../api/error.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 
 function definitionFixture(options: { cleanupFails?: boolean } = {}) {

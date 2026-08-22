@@ -1,6 +1,6 @@
-import type AgentEnvironmentService from '../../lib/agent-environment-service.ts';
-import type { AgentSystemCapability } from '../../lib/capability.ts';
-import GitHubAccountClient from '../../lib/github-account-client.ts';
+import type AgentEnvironmentService from '../../environment/service.ts';
+import type { AgentSystemCapability } from '../../api/capability.ts';
+import GitHubAccountClient from '../../core/github-account-client.ts';
 import GitHubAccountKeyService from './account-key-service.ts';
 import GitHubConfigStore from './config-store.ts';
 import createGitHubLifecycleContribution from './lifecycle.ts';

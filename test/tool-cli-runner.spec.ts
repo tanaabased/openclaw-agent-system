@@ -3,9 +3,9 @@ import { access, chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import runToolCli, { resolveToolExecutable } from '../lib/tool-cli-runner.ts';
+import runToolCli, { resolveToolExecutable } from '../api/cli-runner.ts';
 
-describe('lib/tool-cli-runner', () => {
+describe('api/cli-runner', () => {
   let root = '';
 
   beforeEach(async () => {

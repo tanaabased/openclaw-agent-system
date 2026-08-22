@@ -4,7 +4,7 @@ import {
   type DurableInboundReplyDeliveryResult,
 } from 'openclaw/plugin-sdk/channel-outbound';
 
-import type { Logger } from '../../../lib/logger.ts';
+import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import {
   admitGitHubComment,

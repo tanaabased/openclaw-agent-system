@@ -4,9 +4,9 @@ import { Value } from 'typebox/value';
 import {
   externalEnvironmentBindingSchema,
   externalResolvableStringSchema,
-} from '../utils/manifest-value-schemas.ts';
+} from '../manifest/value-schemas.ts';
 
-describe('utils/manifest-value-schemas', () => {
+describe('manifest/value-schemas', () => {
   it('should allow literal or explicit environment-backed resolvable strings', () => {
     assert.equal(Value.Check(externalResolvableStringSchema, 'Tanaabot'), true);
     assert.equal(

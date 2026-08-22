@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import AgentEnvironmentService from '../lib/agent-environment-service.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import type { AgentEnvironmentInputSource } from '../utils/resolve-agent-environment.ts';
+import AgentEnvironmentService from '../environment/service.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type { AgentEnvironmentInputSource } from '../environment/resolve.ts';
 
 const loaded: AgentManifestLoadResult = {
   status: 'loaded',
@@ -18,7 +18,7 @@ const loaded: AgentManifestLoadResult = {
   validationChecks: [],
 };
 
-describe('lib/agent-environment-service', () => {
+describe('environment/service', () => {
   it('should resolve host references from a fixed lookup and log only metadata', async () => {
     const logs = { error: [] as string[], info: [] as string[] };
     const hostEnvironment = { AGENT_COLOR_SOURCE: 'green' };

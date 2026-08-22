@@ -4,9 +4,9 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
 
 import createAgentLifecycleContribution, {
   type AgentLifecycleDependencies,
-} from '../lib/agent-lifecycle.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+} from '../agent/lifecycle.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
@@ -18,7 +18,7 @@ function successfulResult() {
   return { code: 0, stderr: '', stdout: '{}' };
 }
 
-describe('lib/agent-lifecycle', () => {
+describe('agent/lifecycle', () => {
   it('should validate the foundational agent declaration', () => {
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({}),

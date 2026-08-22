@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import resolveAgentEnvironment from '../utils/resolve-agent-environment.ts';
+import resolveAgentEnvironment from '../environment/resolve.ts';
 
-describe('utils/resolve-agent-environment', () => {
+describe('environment/resolve', () => {
   it('should separate sorted metadata from resolved values', () => {
     const resolved = resolveAgentEnvironment(
       {

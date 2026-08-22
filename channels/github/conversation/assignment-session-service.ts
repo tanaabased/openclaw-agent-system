@@ -6,7 +6,7 @@ import {
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
-import type { Logger } from '../../../lib/logger.ts';
+import type { Logger } from '../../../core/logger.ts';
 import githubNotificationAssignmentContext from './context/assignment.ts';
 import githubNotificationCard, { githubNotificationMarkdownText } from './presentation/card.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';

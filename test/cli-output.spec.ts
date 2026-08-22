@@ -8,11 +8,11 @@ import {
   writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
+} from '../cli/output.ts';
 
 const plainStyles = createCliStyles({ NO_COLOR: '1' });
 
-describe('lib/cli-output', () => {
+describe('cli/output', () => {
   it('should align each summary to its own longest label without color', () => {
     assert.deepEqual(
       renderCliSummary(

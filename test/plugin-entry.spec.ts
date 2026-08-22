@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
-import type { CommandLike } from '../lib/register-cli.ts';
+import type { CommandLike } from '../cli/register.ts';
 
 describe('index', () => {
   it('should expose the agent system plugin contract', () => {

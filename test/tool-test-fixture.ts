@@ -1,14 +1,14 @@
 import { Type } from 'typebox';
 
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type {
   AgentSystemAuthorizationDecision,
   AgentSystemCliToolDefinition,
   AgentSystemOperation,
   AgentSystemSemanticToolDefinition,
   AgentSystemToolResourceLease,
-} from '../lib/tool-types.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+} from '../api/types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 export const toolTestWorkspaceDir = '/workspace/data';
 export const toolTestManifest: AgentManifest = { schemaVersion: 1, agent: { id: 'data' } };

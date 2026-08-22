@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 
-import type { AgentSystemCapability } from '../../lib/capability.ts';
-import defineAgentSystemSemanticTool from '../../lib/define-agent-system-semantic-tool.ts';
-import type WorkspaceGitignoreService from '../../lib/workspace-gitignore-service.ts';
+import type { AgentSystemCapability } from '../../api/capability.ts';
+import defineAgentSystemSemanticTool from '../../api/define-semantic-tool.ts';
+import type WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import createGitExtensionResolver from './extension.ts';
 import createGitLifecycleContribution from './lifecycle.ts';
 import GitSshResourceService from './ssh-resource-service.ts';

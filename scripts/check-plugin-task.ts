@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import pluginMetadataFailures, {
   type PackageMetadata,
   type PluginManifest,
-} from '../utils/plugin-metadata-failures.ts';
+} from '../core/plugin-metadata-failures.ts';
 
 const [packageContents, manifestContents, nodeVersionContents] = await Promise.all([
   readFile('package.json', 'utf8'),

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import parseDotenv from '../utils/parse-dotenv.ts';
+import parseDotenv from '../environment/parse-dotenv.ts';
 
-describe('utils/parse-dotenv', () => {
+describe('environment/parse-dotenv', () => {
   it('should parse the supported literal, quoted, comment, and export forms', () => {
     assert.deepEqual(
       parseDotenv(`

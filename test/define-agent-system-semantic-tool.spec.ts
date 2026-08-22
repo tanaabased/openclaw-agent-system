@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
 
-import defineAgentSystemSemanticTool from '../lib/define-agent-system-semantic-tool.ts';
-import type AgentSystemToolRuntime from '../lib/tool-runtime.ts';
+import defineAgentSystemSemanticTool from '../api/define-semantic-tool.ts';
+import type AgentSystemToolRuntime from '../api/runtime.ts';
 import { createSemanticToolTestDefinition } from './tool-test-fixture.ts';
 
-describe('lib/define-agent-system-semantic-tool', () => {
+describe('api/define-semantic-tool', () => {
   it('should register native and command semantic surfaces through the shared runtime', async () => {
     const definition = createSemanticToolTestDefinition();
     const registered = defineAgentSystemSemanticTool(definition);

@@ -5,11 +5,11 @@ import type {
   PluginTrustedToolPolicyRegistration,
 } from 'openclaw/plugin-sdk/plugin-entry';
 
-import AgentSystemToolRegistry from '../lib/tool-registry.ts';
-import AgentSystemToolError from '../lib/tool-error.ts';
-import AgentSystemToolRuntime from '../lib/tool-runtime.ts';
-import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../lib/tool-types.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import AgentSystemToolRegistry from '../api/registry.ts';
+import AgentSystemToolError from '../api/error.ts';
+import AgentSystemToolRuntime from '../api/runtime.ts';
+import type { AgentSystemCliResult, AgentSystemCliRunRequest } from '../api/types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { createGitHubTool } from '../tools/github/tool.ts';
 
 const workspaceDir = '/workspace/data';

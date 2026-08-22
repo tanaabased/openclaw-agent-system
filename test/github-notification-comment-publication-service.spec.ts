@@ -18,7 +18,7 @@ import {
 } from '../channels/github/conversation/conversation-state.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import {
   notificationAccount,
   notificationActor,

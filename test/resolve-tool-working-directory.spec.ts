@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import resolveToolWorkingDirectory from '../utils/resolve-tool-working-directory.ts';
+import resolveToolWorkingDirectory from '../api/resolve-working-directory.ts';
 
-describe('utils/resolve-tool-working-directory', () => {
+describe('api/resolve-working-directory', () => {
   let root = '';
 
   beforeEach(async () => {

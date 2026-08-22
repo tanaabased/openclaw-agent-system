@@ -6,7 +6,7 @@ import {
   inspectCodexPathConfig,
   manualCodexPathMarker,
   renderCodexPathConfig,
-} from '../utils/codex-path-config.ts';
+} from '../paths/codex-config.ts';
 
 const projection = {
   entries: [
@@ -16,7 +16,7 @@ const projection = {
   path: ['/workspace/bin', '/package/bin', '/usr/bin'].join(delimiter),
 };
 
-describe('utils/codex-path-config', () => {
+describe('paths/codex-config', () => {
   it('should render a managed literal path configuration', () => {
     const source = renderCodexPathConfig(projection.path);
 

@@ -1,4 +1,4 @@
-import type { ConnectedGitHubAccountClient } from '../../../lib/github-account-client.ts';
+import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 import { parseGitHubApiResponse, type GitHubRateLimit } from './api-response.ts';
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
 import {

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
 import envAgentSystem from '../cli/env.ts';
-import type { AgentEnvironmentLoadResult } from '../lib/agent-environment-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const loaded: AgentEnvironmentLoadResult = {
   status: 'loaded',

@@ -40,6 +40,9 @@
 - Reorganized the GitHub channel around lifecycle, mode, intake, conversation,
   publication, provider, routing, state, and runtime owners, with structured
   context and hidden prompt composition in dedicated source files.
+- Reorganized root implementation around agent, API, core, credential,
+  environment, manifest, and path owners while retaining only cross-owner
+  function primitives in `utils/`.
 - Moved the GitHub notification CLI implementation into its owning channel.
 - Split the packaged GitHub notification target design from its reusable visual
   presentation components and current-behavior channel guide.

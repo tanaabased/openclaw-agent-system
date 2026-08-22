@@ -3,9 +3,9 @@ import { lstat, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import PathProjectionStore, { type StoredPathProjection } from '../lib/path-projection-store.ts';
+import PathProjectionStore, { type StoredPathProjection } from '../paths/projection-store.ts';
 
-describe('lib/path-projection-store', () => {
+describe('paths/projection-store', () => {
   it('should return no receipt when the store or agent receipt is absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-path-store-'));
 

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import createNotificationLifecycleContribution from '../channels/github/runtime/lifecycle-contribution.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
 const manifest: AgentManifest = {

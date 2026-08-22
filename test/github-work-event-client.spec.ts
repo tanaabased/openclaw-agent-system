@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { AgentSystemCliResult } from '../lib/tool-types.ts';
+import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 
 const publicationMarker =

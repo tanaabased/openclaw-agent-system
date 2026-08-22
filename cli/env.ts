@@ -1,13 +1,13 @@
-import type AgentEnvironmentService from '../lib/agent-environment-service.ts';
+import type AgentEnvironmentService from '../environment/service.ts';
 import {
   type CliOutput,
   type CliStyles,
   writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import { formatManifestDiagnostics, formatManifestFailure } from '../lib/logger.ts';
-import type { AgentEnvironmentVariable } from '../utils/resolve-agent-environment.ts';
+} from './output.ts';
+import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
+import type { AgentEnvironmentVariable } from '../environment/resolve.ts';
 
 export interface EnvAgentSystemOptions {
   agentId?: string;

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import CodexPathConfigService from '../lib/codex-path-config-service.ts';
+import CodexPathConfigService from '../paths/codex-config-service.ts';
 
 const projection = {
   entries: [
@@ -13,7 +13,7 @@ const projection = {
   path: '/workspace/bin:/package/bin:/usr/bin',
 };
 
-describe('lib/codex-path-config-service', () => {
+describe('paths/codex-config-service', () => {
   it('should create and visibly ignore a managed workspace configuration', async () => {
     const workspaceDir = await mkdtemp(join(tmpdir(), 'agent-system-codex-'));
     const service = new CodexPathConfigService();

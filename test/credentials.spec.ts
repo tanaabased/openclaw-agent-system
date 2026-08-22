@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import setCredentialsAgentSystem from '../cli/credentials-set.ts';
 import unsetCredentialsAgentSystem from '../cli/credentials-unset.ts';
 import validateCredentialsAgentSystem from '../cli/credentials-validate.ts';
-import type { AgentManifestLoadResult } from '../lib/agent-manifest-service.ts';
-import { createCliStyles } from '../lib/cli-output.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 const loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import AgentSystemToolError from '../lib/tool-error.ts';
-import executeAgentSystemCliTool from '../lib/tool-cli-execution.ts';
-import type { AgentSystemCliRunRequest } from '../lib/tool-types.ts';
+import AgentSystemToolError from '../api/error.ts';
+import executeAgentSystemCliTool from '../api/cli-execution.ts';
+import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import {
   createToolTestDefinition,
   toolTestManifest,
@@ -37,7 +37,7 @@ function execute(
   });
 }
 
-describe('lib/tool-cli-execution', () => {
+describe('api/cli-execution', () => {
   it('should isolate the child environment and redact invocation-scoped resources', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];

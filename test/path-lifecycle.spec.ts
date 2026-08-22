@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
-import createPathLifecycleContribution from '../lib/path-lifecycle.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
+import createPathLifecycleContribution from '../paths/lifecycle.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 const context = {
   manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
@@ -9,7 +9,7 @@ const context = {
 };
 const projection = { entries: [], path: '/usr/bin' };
 
-describe('lib/path-lifecycle', () => {
+describe('paths/lifecycle', () => {
   it('should validate the foundational path declaration', () => {
     const contribution = createPathLifecycleContribution({
       pathService: {

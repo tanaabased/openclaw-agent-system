@@ -1,8 +1,8 @@
 import {
   AgentInstallError,
   type default as AgentInstallService,
-} from '../lib/agent-install-service.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
+} from '../agent/install-service.ts';
+import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
@@ -10,15 +10,15 @@ import {
   writeCliError,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
-import { AgentSystemLifecycleError } from '../lib/lifecycle-registry.ts';
+} from './output.ts';
+import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import {
   formatDiagnostic,
   formatErrorDiagnostic,
   formatManifestDiagnostics,
   formatManifestFailure,
-} from '../lib/logger.ts';
+} from '../core/logger.ts';
 
 export interface InstallAgentSystemOptions {
   installService: Pick<AgentInstallService, 'install'>;

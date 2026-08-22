@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 
-import AgentInstallService, { AgentInstallError } from '../lib/agent-install-service.ts';
-import type { AgentManifest } from '../utils/manifest-types.ts';
+import AgentInstallService, { AgentInstallError } from '../agent/install-service.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
   agent: { id: 'data', name: 'Data' },
 };
 
-describe('lib/agent-install-service', () => {
+describe('agent/install-service', () => {
   it('should reconcile lifecycle components after global prerequisites pass', async () => {
     const calls: string[] = [];
     const service = new AgentInstallService({

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import resolveAgentId from '../utils/resolve-agent-id.ts';
+import resolveAgentId from '../agent/resolve-id.ts';
 
-describe('utils/resolve-agent-id', () => {
+describe('agent/resolve-id', () => {
   it('should prefer the host-supplied agent id', () => {
     assert.equal(
       resolveAgentId({ agentId: 'tanaabot', sessionKey: 'agent:other:main' }, () => 'other'),

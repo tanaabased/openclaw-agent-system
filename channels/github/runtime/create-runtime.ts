@@ -4,9 +4,9 @@ import type {
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
-import type GitHubAccountClient from '../../../lib/github-account-client.ts';
-import type { Logger } from '../../../lib/logger.ts';
+import type AgentManifestService from '../../../manifest/service.ts';
+import type GitHubAccountClient from '../../../core/github-account-client.ts';
+import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';

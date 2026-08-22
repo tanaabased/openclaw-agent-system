@@ -2,12 +2,12 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 
-import type AgentManifestService from '../../../../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../../manifest/service.ts';
 import {
   GitHubAccountClientError,
   type default as GitHubAccountClient,
-} from '../../../../lib/github-account-client.ts';
-import type { Logger } from '../../../../lib/logger.ts';
+} from '../../../../core/github-account-client.ts';
+import type { Logger } from '../../../../core/logger.ts';
 import {
   createGitHubNotificationMonitorState,
   githubNotificationRetirementItemKeys,

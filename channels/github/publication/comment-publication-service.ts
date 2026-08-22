@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import type AgentManifestService from '../../../lib/agent-manifest-service.ts';
+import type AgentManifestService from '../../../manifest/service.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
 import { admitGitHubComment, githubCommentRevision } from '../conversation/comment-admission.ts';

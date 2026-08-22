@@ -1,5 +1,5 @@
-import runToolCli from '../../lib/tool-cli-runner.ts';
-import AgentSystemToolError from '../../lib/tool-error.ts';
+import runToolCli from '../../api/cli-runner.ts';
+import AgentSystemToolError from '../../api/error.ts';
 import type { GitSshConfiguration } from './config-schema.ts';
 import { gitIdentityEnvironment, type ResolvedGitIdentity } from './identity.ts';
 import type GitSshResourceService from './ssh-resource-service.ts';

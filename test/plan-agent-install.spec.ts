@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import planAgentInstall from '../utils/plan-agent-install.ts';
+import planAgentInstall from '../agent/plan-install.ts';
 
 const desired = {
   agentId: 'data',
@@ -8,7 +8,7 @@ const desired = {
   identity: { name: 'Data', avatar: 'avatar.png' },
 };
 
-describe('utils/plan-agent-install', () => {
+describe('agent/plan-install', () => {
   it('should add and identify an absent agent', () => {
     const plan = planAgentInstall(desired, { exists: false });
 

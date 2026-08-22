@@ -1,14 +1,14 @@
-import type AgentDoctorService from '../lib/agent-doctor-service.ts';
-import type AgentManifestService from '../lib/agent-manifest-service.ts';
+import type AgentDoctorService from '../agent/doctor-service.ts';
+import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
   writeCliDiagnostics,
   writeCliJson,
   writeCliSummary,
-} from '../lib/cli-output.ts';
-import lifecyclePresentationLines from '../lib/lifecycle-presentation.ts';
-import { formatManifestDiagnostics, formatManifestFailure } from '../lib/logger.ts';
+} from './output.ts';
+import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
+import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
 
 export interface DoctorAgentSystemOptions {
   agentId?: string;
