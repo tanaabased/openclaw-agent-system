@@ -51,12 +51,20 @@ component needs it.
 
 ## Direct Message
 
-A direct inbound message is presented as the exact author-written text admitted
-from GitHub:
+A direct inbound comment replaces each admitted GitHub account mention with the
+agent's installed emoji, display name, and OpenClaw Agents link. The remaining
+author-written text stays exact. A quoted italic footer links the author and the
+source comment:
 
 ```markdown
-Can you confirm whether this also covers comments received while planning?
+📬 [Notification Data](/agents) can you confirm whether this also covers comments received while planning?
+
+> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7#issuecomment-123)._
 ```
+
+Use the agent's configured emoji and fall back to `🤖` when it has none. Keep
+the original GitHub comment as the raw inbound body even though the visible and
+model-facing message uses this presentation.
 
 ## Response
 

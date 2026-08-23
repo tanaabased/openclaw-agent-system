@@ -5,7 +5,7 @@ import planAgentInstall from '../agent/plan-install.ts';
 const desired = {
   agentId: 'data',
   workspaceDir: '/workspace/data',
-  identity: { name: 'Data', avatar: 'avatar.png' },
+  identity: { name: 'Data', avatar: 'avatar.png', emoji: '📊' },
 };
 
 describe('agent/plan-install', () => {
@@ -24,20 +24,20 @@ describe('agent/plan-install', () => {
     const plan = planAgentInstall(desired, {
       exists: true,
       workspaceDir: '/workspace/data',
-      identity: { name: 'Data', avatar: 'avatar.png' },
+      identity: { name: 'Data', avatar: 'avatar.png', emoji: '📊' },
     });
 
     assert.equal(plan.status, 'ready');
     if (plan.status === 'ready') assert.deepEqual(plan.actions, []);
   });
 
-  it('should preserve an undeclared avatar', () => {
+  it('should preserve undeclared optional identity fields', () => {
     const plan = planAgentInstall(
       { ...desired, identity: { name: 'Data' } },
       {
         exists: true,
         workspaceDir: '/workspace/data',
-        identity: { name: 'Data', avatar: 'existing.png' },
+        identity: { name: 'Data', avatar: 'existing.png', emoji: '🤖' },
       },
     );
 
@@ -49,7 +49,18 @@ describe('agent/plan-install', () => {
     const plan = planAgentInstall(desired, {
       exists: true,
       workspaceDir: '/workspace/data',
-      identity: { name: 'Other', avatar: 'other.png' },
+      identity: { name: 'Other', avatar: 'other.png', emoji: '🤖' },
+    });
+
+    assert.equal(plan.status, 'ready');
+    if (plan.status === 'ready') assert.deepEqual(plan.actions, ['set-identity']);
+  });
+
+  it('should reconcile manifest-owned emoji drift', () => {
+    const plan = planAgentInstall(desired, {
+      exists: true,
+      workspaceDir: '/workspace/data',
+      identity: { name: 'Data', avatar: 'avatar.png', emoji: '🤖' },
     });
 
     assert.equal(plan.status, 'ready');
@@ -61,7 +72,7 @@ describe('agent/plan-install', () => {
       planAgentInstall(desired, {
         exists: true,
         workspaceDir: '/workspace/other',
-        identity: { name: 'Data', avatar: 'avatar.png' },
+        identity: { name: 'Data', avatar: 'avatar.png', emoji: '📊' },
       }),
       {
         status: 'conflict',

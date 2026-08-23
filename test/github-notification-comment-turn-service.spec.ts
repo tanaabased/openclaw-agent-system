@@ -29,7 +29,14 @@ const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
 const config: OpenClawConfig = {
   agents: {
-    list: [{ id: agentId, tools: { profile: 'coding' }, workspace: workspaceDir }],
+    list: [
+      {
+        id: agentId,
+        identity: { emoji: '📬', name: 'Tanaabot' },
+        tools: { profile: 'coding' },
+        workspace: workspaceDir,
+      },
+    ],
   },
   bindings: [
     {
@@ -42,6 +49,7 @@ const config: OpenClawConfig = {
   channels: {
     [githubNotificationChannelId]: { accounts: { [agentId]: { enabled: true } } },
   },
+  gateway: { controlUi: { basePath: '/openclaw/' } },
 };
 
 function assertTurnContractOptions(options: Record<string, unknown>) {
@@ -58,6 +66,11 @@ function incomingComment(): GitHubCanonicalIssueComment {
     nodeId: 'IC_comment',
     updatedAt: '2026-08-15T12:00:00.000Z',
   };
+}
+
+function incomingMentions(comment: GitHubCanonicalIssueComment) {
+  const start = comment.body.indexOf('@tanaabot');
+  return [{ end: start + '@tanaabot'.length, start }];
 }
 
 function candidateStore(candidates: readonly string[], finishError?: Error) {
@@ -93,6 +106,7 @@ async function respondWithCandidates(
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
   inspectReplyOptions?: (options: Record<string, unknown>) => void,
   finishError?: Error,
+  currentConfig: OpenClawConfig = config,
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -125,7 +139,7 @@ async function respondWithCandidates(
       ),
     }),
     logger: { error() {}, info() {}, warn() {} },
-    readConfig: async () => config,
+    readConfig: async () => currentConfig,
     turnContracts: contracts,
   });
   return service.respond({
@@ -133,6 +147,7 @@ async function respondWithCandidates(
     comment,
     executionSurface,
     item,
+    mentions: incomingMentions(comment),
     modeId: 'work',
     revision: githubCommentRevision(comment),
     workspaceDir,
@@ -140,7 +155,7 @@ async function respondWithCandidates(
 }
 
 describe('channels/github/conversation/comment-turn-service', () => {
-  it('should dispatch the exact comment and retain one ordinary private response', async () => {
+  it('should dispatch the comment card and retain one ordinary private response', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     item.intake = {
       ...item.intake!,
@@ -168,8 +183,13 @@ describe('channels/github/conversation/comment-turn-service', () => {
         dispatcher: modelTurnDispatcher(async (input) => {
           assert.equal(recorded, true);
           assert.equal(createIfMissing, false);
-          assert.equal(input.ctx.Body, comment.body);
-          assert.equal(input.ctx.BodyForAgent, comment.body);
+          const presentation = [
+            '📬 [Tanaabot](/openclaw/agents) reply with ready',
+            '',
+            '> _[@pirog](https://github.com/pirog) mentioned Tanaabot on [tanaabased/example#12](https://github.com/tanaabased/example/issues/12#issuecomment-91)._',
+          ].join('\n');
+          assert.equal(input.ctx.Body, presentation);
+          assert.equal(input.ctx.BodyForAgent, presentation);
           assert.equal(input.ctx.RawBody, comment.body);
           assert.equal(input.ctx.Provider, githubNotificationChannelId);
           assert.equal(input.replyOptions?.disableTools, false);
@@ -206,6 +226,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       comment,
       executionSurface: 'cli-one-shot',
       item,
+      mentions: incomingMentions(comment),
       modeId: 'work',
       revision,
       workspaceDir,
@@ -275,6 +296,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         comment,
         executionSurface: 'gateway',
         item,
+        mentions: incomingMentions(comment),
         modeId: 'work',
         revision: githubCommentRevision(comment),
         workspaceDir,
@@ -293,6 +315,26 @@ describe('channels/github/conversation/comment-turn-service', () => {
       status: 'withheld',
       code: 'github-notification-publication-candidate-missing',
     });
+  });
+
+  it('should fall back to the agent id and bot emoji', async () => {
+    const fallbackConfig: OpenClawConfig = {
+      ...config,
+      agents: {
+        list: [{ id: agentId, tools: { profile: 'coding' }, workspace: workspaceDir }],
+      },
+      gateway: { controlUi: { basePath: '/' } },
+    };
+
+    const result = await respondWithCandidates(
+      ['ready'],
+      'gateway',
+      undefined,
+      undefined,
+      fallbackConfig,
+    );
+
+    assert.match(String(result.ctxPayload.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
   });
 
   it('should classify a missing prompt-selection attestation', async () => {

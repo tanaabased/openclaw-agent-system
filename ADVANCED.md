@@ -66,6 +66,7 @@ agent:
     from-environment: AGENT_EMAIL
   description: Tanaab development agent.
   avatar: avatar.png
+  emoji: 🧑‍💻
 
 environment:
   dotenv:
@@ -103,6 +104,7 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 | `email`       | string or `from-environment` value | no            | Agent email available to configured consumers.                   |
 | `description` | string                             | no            | Agent description retained for configured consumers.             |
 | `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained. |
+| `emoji`       | string                             | no            | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:

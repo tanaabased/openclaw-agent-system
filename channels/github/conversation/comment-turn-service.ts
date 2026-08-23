@@ -2,12 +2,17 @@ import {
   buildChannelInboundEventContext,
   type AssembledInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
+import { listAgentEntries } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationCommentPresentation } from '../events/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
-import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comment-admission.ts';
+import type {
+  GitHubCanonicalIssueComment,
+  GitHubCommentMention,
+  GitHubCommentRevision,
+} from './comment-admission.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
@@ -34,6 +39,7 @@ export interface GitHubNotificationCommentTurnInput {
   comment: GitHubCanonicalIssueComment;
   executionSurface: GitHubNotificationExecutionSurface;
   item: GitHubNotificationItemState;
+  mentions: readonly GitHubCommentMention[];
   modeId: GitHubNotificationModeId;
   revision: GitHubCommentRevision;
   signal?: AbortSignal;
@@ -79,6 +85,32 @@ function commentDispatchError(error: GitHubNotificationModelTurnDispatcherError)
   );
 }
 
+function normalizedAgentId(agentId: string): string {
+  return agentId.trim().toLowerCase();
+}
+
+function agentPresentation(config: OpenClawConfig, agentId: string) {
+  const agent = listAgentEntries(config).find(
+    ({ id }) => normalizedAgentId(id) === normalizedAgentId(agentId),
+  );
+  return {
+    emoji: agent?.identity?.emoji?.trim() || '🤖',
+    label: agent?.identity?.name?.trim() || agentId,
+  };
+}
+
+function controlUiAgentsPath(config: OpenClawConfig): string {
+  const configured = config.gateway?.controlUi?.basePath?.trim() ?? '';
+  const rooted =
+    configured && configured !== '/' ? `/${configured.replace(/^\/+|\/+$/gu, '')}` : '';
+  return `${rooted}/agents`;
+}
+
+function commentPermalink(item: GitHubNotificationItemState, databaseId: number): string {
+  const path = item.itemType === 'pull-request' ? 'pull' : 'issues';
+  return `https://github.com/${item.repositoryOwner}/${item.repositoryName}/${path}/${item.number}#issuecomment-${databaseId}`;
+}
+
 /** Dispatch one admitted direct comment and retain the complete private response. */
 export default class GitHubNotificationCommentTurnService {
   readonly #dependencies: GitHubNotificationCommentTurnServiceDependencies;
@@ -120,7 +152,23 @@ export default class GitHubNotificationCommentTurnService {
       conversationId,
     );
     const messageId = `comment:${input.revision.revisionId}`;
-    const presentation = githubNotificationCommentPresentation(input.comment.body);
+    const agent = agentPresentation(config, route.agentId);
+    const presentation = githubNotificationCommentPresentation({
+      agent: {
+        ...agent,
+        url: controlUiAgentsPath(config),
+      },
+      author: {
+        label: author.login,
+        url: `https://github.com/${author.login}`,
+      },
+      body: input.comment.body,
+      item: {
+        label: `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.item.number}`,
+        url: commentPermalink(input.item, input.comment.databaseId),
+      },
+      mentions: input.mentions,
+    });
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
@@ -149,7 +197,7 @@ export default class GitHubNotificationCommentTurnService {
         bodyForAgent: presentation,
         commandBody: '',
         inboundEventKind: 'user_request',
-        rawBody: presentation,
+        rawBody: input.comment.body,
       },
       messageId,
       reply: { sourceReplyDeliveryMode: 'none', to: route.conversationId },

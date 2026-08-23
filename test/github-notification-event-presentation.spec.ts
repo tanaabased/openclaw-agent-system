@@ -33,9 +33,28 @@ describe('channels/github/events/presentation', () => {
     );
   });
 
-  it('should preserve the exact admitted github comment', () => {
-    const body = '  Please keep this **exact**.\n\nSecond paragraph.  ';
+  it('should render trusted comment identity around the exact author prose', () => {
+    const body = '  @tanaabot Please keep this **exact**.\n\nSecond paragraph.  ';
+    const start = body.indexOf('@tanaabot');
 
-    assert.equal(githubNotificationCommentPresentation(body), body);
+    assert.equal(
+      githubNotificationCommentPresentation({
+        agent: { emoji: '📬', label: 'Notification Data', url: '/openclaw/agents' },
+        author: { label: 'pirog', url: 'https://github.com/pirog' },
+        body,
+        item: {
+          label: 'tanaabased/openclaw-agent-system#46',
+          url: 'https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123',
+        },
+        mentions: [{ end: start + '@tanaabot'.length, start }],
+      }),
+      [
+        '  📬 [Notification Data](/openclaw/agents) Please keep this **exact**.',
+        '',
+        'Second paragraph.  ',
+        '',
+        '> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/openclaw-agent-system#46](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)._',
+      ].join('\n'),
+    );
   });
 });

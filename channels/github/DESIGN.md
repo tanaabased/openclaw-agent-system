@@ -164,7 +164,7 @@ Each model-backed turn keeps these layers separate:
 
 | Layer              | Purpose                                                                  | Visibility                                      |
 | ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| Presentation       | Assignment card, direct message, and response components                 | Visible in the session                          |
+| Presentation       | Assignment card, attributed comment card, and response components        | Visible in the session                          |
 | Structured context | Bounded GitHub content, provenance, and recorded state                   | Model-only current-turn context                 |
 | Instructions       | Trusted guidance selected by lifecycle type, mode, and event             | Hidden from the conversation                    |
 | Capability         | Tool and mutation boundary selected from trusted mode state              | Runtime-enforced                                |
@@ -229,8 +229,11 @@ selection fails closed instead of falling back to a different prompt.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
-- **Comments:** An admitted comment enters as a direct message in the existing
-  session and inherits its lifecycle type, current mode, and capability.
+- **Comments:** An admitted comment enters as an attributed direct-message card
+  in the existing session and inherits its lifecycle type, current mode, and
+  capability. The event presentation replaces only admitted account mentions,
+  links the installed agent identity and exact source comment, and retains the
+  unchanged provider comment as the raw inbound body.
 - **Publication:** Only the typed GitHub candidate or a trusted
   provider-constructed message may be published. Publication validates the
   payload, reauthorizes the destination, records a durable receipt, and retries

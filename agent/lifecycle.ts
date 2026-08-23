@@ -111,6 +111,9 @@ async function desiredAgentState(
       ...(context.manifest.agent.avatar === undefined
         ? {}
         : { avatar: context.manifest.agent.avatar }),
+      ...(context.manifest.agent.emoji === undefined
+        ? {}
+        : { emoji: context.manifest.agent.emoji }),
     },
   };
 }
@@ -141,6 +144,7 @@ function commandArguments(
     '--name',
     desired.identity.name,
     ...(desired.identity.avatar === undefined ? [] : ['--avatar', desired.identity.avatar]),
+    ...(desired.identity.emoji === undefined ? [] : ['--emoji', desired.identity.emoji]),
     '--json',
   ];
 }

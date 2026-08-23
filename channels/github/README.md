@@ -20,11 +20,15 @@ lifecycle session and publishes the accepted public part of the response.
   metadata without creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
-  issue session with the exact admitted GitHub comment as its direct message.
-- Incoming GitHub prose is visible to the model as the author's message while
-  each lifecycle projects its own bounded source, repository, and resource facts
-  as private structured context. The current comment flow requires the agent's
-  `coding` profile.
+  issue session with an attributed comment card as its direct message. The card
+  replaces admitted account mentions with the installed agent emoji and name,
+  links the agent to OpenClaw's Agents page, and links its footer to the GitHub
+  author and exact source comment. Agents without an emoji use `🤖`.
+- Incoming GitHub prose remains exact apart from the presented account mention,
+  and the untouched comment is retained as the raw inbound body. Each lifecycle
+  projects its own bounded source, repository, and resource facts as private
+  structured context. The current comment flow requires the agent's `coding`
+  profile.
 - Hidden instructions for the current comment flow are composed from the
   registered `issue`, `work`, and `comment` definitions, selected from the
   private active-turn descriptor, and injected through the prompt hook. Missing
@@ -72,6 +76,7 @@ agent:
   id: tanaabot
   name: Tanaabot
   email: tanaabot@tanaab.dev
+  emoji: 🤖
 
 environment:
   required:

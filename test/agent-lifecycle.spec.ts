@@ -10,7 +10,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
-  agent: { id: 'data', name: 'Data', avatar: 'avatar.png' },
+  agent: { id: 'data', name: 'Data', avatar: 'avatar.png', emoji: '📊' },
 };
 const context = { manifest, workspaceDir: '/workspace/data' };
 
@@ -48,7 +48,7 @@ describe('agent/lifecycle', () => {
                   list: [
                     {
                       id: 'data',
-                      identity: { avatar: 'avatar.png', name: 'Data' },
+                      identity: { avatar: 'avatar.png', emoji: '📊', name: 'Data' },
                       workspace: '/workspace/data',
                     },
                   ],
@@ -68,6 +68,21 @@ describe('agent/lifecycle', () => {
       ],
     );
     assert.equal(commands.length, 2);
+    assert.deepEqual(commands[1], [
+      'agents',
+      'set-identity',
+      '--agent',
+      'data',
+      '--workspace',
+      '/workspace/data',
+      '--name',
+      'Data',
+      '--avatar',
+      'avatar.png',
+      '--emoji',
+      '📊',
+      '--json',
+    ]);
   });
 
   it('should report and preserve matching agent state as unchanged', async () => {
@@ -77,7 +92,7 @@ describe('agent/lifecycle', () => {
           list: [
             {
               id: 'data',
-              identity: { avatar: 'avatar.png', name: 'Data' },
+              identity: { avatar: 'avatar.png', emoji: '📊', name: 'Data' },
               workspace: '/workspace/data',
             },
           ],
@@ -122,7 +137,7 @@ describe('agent/lifecycle', () => {
         list: [
           {
             id: 'data',
-            identity: { avatar: 'avatar.png', name: 'Other' },
+            identity: { avatar: 'avatar.png', emoji: '📊', name: 'Other' },
             workspace: '/workspace/data',
           },
         ],
