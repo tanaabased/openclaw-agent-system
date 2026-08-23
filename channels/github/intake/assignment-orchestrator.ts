@@ -1,7 +1,7 @@
 import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
-import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import type GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import type {
@@ -26,10 +26,10 @@ export interface GitHubNotificationAssignmentAuthority {
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
+  acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
   authority: GitHubNotificationAssignmentAuthority;
   initialMode: Pick<GitHubNotificationMode, 'policy'>;
   lifecycles: GitHubNotificationLifecycleRegistry;
-  sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
 }
 
@@ -334,17 +334,15 @@ export default class GitHubNotificationAssignmentOrchestrator {
         );
       }
       await this.#diagnosticBoundary(
-        'github-notification-assignment-session-recording-failed',
-        'The GitHub assignment session could not be prepared.',
+        'github-notification-assignment-acknowledgment-failed',
+        'The GitHub assignment acknowledgment could not be published.',
         () =>
-          this.#dependencies.sessions.prepare({
+          this.#dependencies.acknowledgments.publish({
             agentId,
             item,
-            lifecycle,
-            mode: this.#dependencies.initialMode,
+            modeId: this.#dependencies.initialMode.policy.id,
             ...(signal === undefined ? {} : { signal }),
             workspaceDir: state.workspaceDir,
-            ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
           }),
       );
     }

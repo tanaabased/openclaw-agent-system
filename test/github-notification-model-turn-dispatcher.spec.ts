@@ -39,6 +39,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         return { counts: { block: 1, final: 1, tool: 0 }, queuedFinal: false };
       },
       async recordInboundSession(input) {
+        assert.equal(input.createIfMissing, true);
         input.trackSessionMetaTask?.(
           Promise.resolve().then(() => {
             recorded = true;
@@ -51,6 +52,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
     const result = await dispatcher.dispatch({
       config: {},
       contract: { mode: { disableTools: false, id: 'work' } },
+      createIfMissing: true,
       ctxPayload,
       executionSurface: 'cli-one-shot',
       messageId: 'comment:revision-1',
@@ -80,6 +82,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
       dispatcher.dispatch({
         config: {},
         contract: { mode: { disableTools: false, id: 'work' } },
+        createIfMissing: false,
         ctxPayload,
         executionSurface: 'gateway',
         messageId: 'comment:revision-1',

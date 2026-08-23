@@ -223,6 +223,7 @@ export default class GitHubNotificationCommentTurnService {
       turnResult = await this.#dependencies.coordinator.run({
         config,
         contract,
+        createIfMissing: false,
         ctxPayload,
         executionSurface: input.executionSurface,
         messageId,

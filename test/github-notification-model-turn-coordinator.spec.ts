@@ -33,6 +33,7 @@ function input() {
   return {
     config: {},
     contract,
+    createIfMissing: false,
     ctxPayload,
     executionSurface: 'gateway' as const,
     messageId: 'comment:revision-1',

@@ -158,7 +158,7 @@ export default class GitHubNotificationAssignmentTurnService {
       route: {
         accountId: route.accountId,
         agentId: route.agentId,
-        createIfMissing: false,
+        createIfMissing: true,
         routeSessionKey: route.sessionKey,
       },
       sender: {
@@ -177,6 +177,7 @@ export default class GitHubNotificationAssignmentTurnService {
       result = await this.#dependencies.coordinator.run({
         config,
         contract,
+        createIfMissing: true,
         ctxPayload,
         executionSurface: input.executionSurface,
         messageId,

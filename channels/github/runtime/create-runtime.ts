@@ -10,7 +10,6 @@ import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import GitHubNotificationAssignmentPlanningOrchestrator from '../conversation/assignment-planning-orchestrator.ts';
-import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
 import GitHubNotificationAssignmentTurnService from '../conversation/assignment-turn-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
@@ -163,17 +162,11 @@ export default function createGitHubNotificationRuntime(
           publications: commentPublicationService,
         },
       );
-      const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
-        acknowledgments: assignmentAcknowledgmentService,
-        logger: dependencies.lifecycleLogger,
-        readConfig: dependencies.readRuntimeConfig,
-        recordInboundSession: dependencies.recordInboundSession,
-      });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
+        acknowledgments: assignmentAcknowledgmentService,
         authority: assignmentProvider,
         initialMode,
         lifecycles: lifecycleRegistry,
-        sessions: assignmentSessionService,
         stateStore: monitorStateStore,
       });
       const commentTurnService = new GitHubNotificationCommentTurnService({

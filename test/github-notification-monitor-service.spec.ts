@@ -400,6 +400,7 @@ describe('channels/github/intake/monitor/service', () => {
     };
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
+      acknowledgments: { publish: async () => undefined },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: new GitHubNotificationLifecycleRegistry([
@@ -415,7 +416,6 @@ describe('channels/github/intake/monitor/service', () => {
         }),
         new GitHubPullRequestLifecycle(),
       ]),
-      sessions: { prepare: async () => undefined },
       stateStore,
     });
     const service = monitorService({
