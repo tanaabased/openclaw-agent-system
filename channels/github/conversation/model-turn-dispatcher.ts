@@ -17,7 +17,7 @@ import {
   type GitHubNotificationTurnContract,
 } from './turn-contract.ts';
 
-type GitHubNotificationHostDispatchResult = Extract<
+export type GitHubNotificationHostDispatchResult = Extract<
   Awaited<ReturnType<typeof dispatchChannelInboundReply>>,
   { dispatched: true }
 >['dispatchResult'];

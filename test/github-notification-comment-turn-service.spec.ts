@@ -9,6 +9,7 @@ import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
 } from '../channels/github/conversation/comment-admission.ts';
+import GitHubNotificationModelTurnCoordinator from '../channels/github/conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher, {
   type GitHubNotificationModelTurnDispatcherDependencies,
 } from '../channels/github/conversation/model-turn-dispatcher.ts';
@@ -103,24 +104,26 @@ async function respondWithCandidates(
   const comment = incomingComment();
   const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
-    candidates: candidateStore(candidates, finishError),
-    dispatcher: modelTurnDispatcher(
-      async (input) => {
-        const replyOptions = input.replyOptions ?? {};
-        assertTurnContractOptions(replyOptions);
-        inspectReplyOptions?.(replyOptions);
-        await input.dispatcherOptions.deliver(
-          { text: 'Private response remains available.' },
-          {
-            kind: 'final',
-          },
-        );
-        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-      },
-      async (input) => {
-        input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
-      },
-    ),
+    coordinator: new GitHubNotificationModelTurnCoordinator({
+      candidates: candidateStore(candidates, finishError),
+      dispatcher: modelTurnDispatcher(
+        async (input) => {
+          const replyOptions = input.replyOptions ?? {};
+          assertTurnContractOptions(replyOptions);
+          inspectReplyOptions?.(replyOptions);
+          await input.dispatcherOptions.deliver(
+            { text: 'Private response remains available.' },
+            {
+              kind: 'final',
+            },
+          );
+          return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+        },
+        async (input) => {
+          input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
+        },
+      ),
+    }),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => config,
     turnContracts: contracts,
@@ -160,37 +163,39 @@ describe('channels/github/conversation/comment-turn-service', () => {
         input.trackSessionMetaTask?.(task);
       };
     const service = new GitHubNotificationCommentTurnService({
-      candidates: candidateStore(['ready']),
-      dispatcher: modelTurnDispatcher(async (input) => {
-        assert.equal(recorded, true);
-        assert.equal(createIfMissing, false);
-        assert.equal(input.ctx.Body, comment.body);
-        assert.equal(input.ctx.BodyForAgent, comment.body);
-        assert.equal(input.ctx.RawBody, comment.body);
-        assert.equal(input.ctx.Provider, githubNotificationChannelId);
-        assert.equal(input.replyOptions?.disableTools, false);
-        const replyOptions = input.replyOptions as Record<string, unknown>;
-        assertTurnContractOptions(replyOptions);
-        assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
-        assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
-        assert.equal(replyOptions.oneShotCliRun, true);
-        assert.equal(input.replyOptions?.runId, undefined);
-        assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
-        assert.equal(input.toolsAllow, undefined);
-        assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-        await input.dispatcherOptions.deliver(
-          {
-            text: [
-              'I checked the request and it is ready.',
-              '',
-              '## Notes',
-              'This private response may use normal Markdown without a publication envelope.',
-            ].join('\n'),
-          },
-          { kind: 'final' },
-        );
-        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-      }, recordInboundSession),
+      coordinator: new GitHubNotificationModelTurnCoordinator({
+        candidates: candidateStore(['ready']),
+        dispatcher: modelTurnDispatcher(async (input) => {
+          assert.equal(recorded, true);
+          assert.equal(createIfMissing, false);
+          assert.equal(input.ctx.Body, comment.body);
+          assert.equal(input.ctx.BodyForAgent, comment.body);
+          assert.equal(input.ctx.RawBody, comment.body);
+          assert.equal(input.ctx.Provider, githubNotificationChannelId);
+          assert.equal(input.replyOptions?.disableTools, false);
+          const replyOptions = input.replyOptions as Record<string, unknown>;
+          assertTurnContractOptions(replyOptions);
+          assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
+          assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
+          assert.equal(replyOptions.oneShotCliRun, true);
+          assert.equal(input.replyOptions?.runId, undefined);
+          assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
+          assert.equal(input.toolsAllow, undefined);
+          assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
+          await input.dispatcherOptions.deliver(
+            {
+              text: [
+                'I checked the request and it is ready.',
+                '',
+                '## Notes',
+                'This private response may use normal Markdown without a publication envelope.',
+              ].join('\n'),
+            },
+            { kind: 'final' },
+          );
+          return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+        }, recordInboundSession),
+      }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       turnContracts: contracts,
@@ -248,15 +253,17 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const comment = incomingComment();
     const contracts = createGitHubNotificationTurnContractResolver();
     const service = new GitHubNotificationCommentTurnService({
-      candidates: candidateStore([]),
-      dispatcher: modelTurnDispatcher(
-        async () => {
-          throw new Error('unexpected model dispatch');
-        },
-        async (input) => {
-          input.trackSessionMetaTask?.(Promise.resolve(null));
-        },
-      ),
+      coordinator: new GitHubNotificationModelTurnCoordinator({
+        candidates: candidateStore([]),
+        dispatcher: modelTurnDispatcher(
+          async () => {
+            throw new Error('unexpected model dispatch');
+          },
+          async (input) => {
+            input.trackSessionMetaTask?.(Promise.resolve(null));
+          },
+        ),
+      }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       turnContracts: contracts,

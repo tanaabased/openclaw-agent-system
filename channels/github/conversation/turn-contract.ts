@@ -3,6 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
 import resolveGitHubNotificationModeCapability from '../modes/capability.ts';
 import type { ResolvedGitHubNotificationMode } from '../modes/types.ts';
+import type { GitHubNotificationPublicationIntent } from '../publication/publication.ts';
 import composeGitHubNotificationPrompt from './prompts/compose.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
 import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
@@ -13,6 +14,7 @@ export interface GitHubNotificationTurnContract {
   instructions: string;
   lifecycle: GitHubNotificationLifecycle;
   mode: ResolvedGitHubNotificationMode;
+  publicationIntent: GitHubNotificationPublicationIntent;
 }
 
 export interface GitHubNotificationTurnModelOptions {
@@ -80,6 +82,7 @@ export default class GitHubNotificationTurnContractResolver {
       instructions: turnInstructions(turn),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
+      publicationIntent: turn.eventTurn.publicationIntent,
     };
   }
 }

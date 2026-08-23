@@ -13,6 +13,7 @@ const githubNotificationCommentEvent = {
   turn: {
     instructions: githubNotificationCommentEventInstructions,
     kind: 'model',
+    publicationIntent: 'github-reply',
     responseInstructions: githubNotificationResponseInstructions,
   },
 } as const satisfies GitHubNotificationEvent;

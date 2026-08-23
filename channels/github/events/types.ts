@@ -1,3 +1,5 @@
+import type { GitHubNotificationPublicationIntent } from '../publication/publication.ts';
+
 export const githubNotificationEventIds = ['assignment', 'comment'] as const;
 
 export type GitHubNotificationEventId = (typeof githubNotificationEventIds)[number];
@@ -11,6 +13,7 @@ export type GitHubNotificationEventTurn =
   | {
       instructions: string;
       kind: 'model';
+      publicationIntent: GitHubNotificationPublicationIntent;
       responseInstructions: string;
     };
 

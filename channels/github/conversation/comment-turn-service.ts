@@ -11,18 +11,11 @@ import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comme
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
-  GitHubNotificationModelTurnDispatcherError,
-  type default as GitHubNotificationModelTurnDispatcher,
-} from './model-turn-dispatcher.ts';
-import { githubNotificationPrivateResponse } from './private-response.ts';
-import {
-  GitHubNotificationReplyCandidateStoreError,
-  type default as GitHubNotificationReplyCandidateStore,
-} from '../publication/reply-candidate-store.ts';
-import {
-  GitHubNotificationPublicationError,
-  githubNotificationPublicationText,
-} from '../publication/publication.ts';
+  GitHubNotificationModelTurnCoordinatorError,
+  type GitHubNotificationModelTurnPublication,
+  type default as GitHubNotificationModelTurnCoordinator,
+} from './model-turn-coordinator.ts';
+import { GitHubNotificationModelTurnDispatcherError } from './model-turn-dispatcher.ts';
 import { resolveNotificationRoute, githubNotificationChannelId } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
@@ -30,8 +23,7 @@ import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
-  candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
-  dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
+  coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
@@ -54,7 +46,7 @@ export interface GitHubNotificationCommentTurnResult {
   config: OpenClawConfig;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   privateText: string;
-  publication: { status: 'candidate'; publicText: string } | { status: 'withheld'; code: string };
+  publication: GitHubNotificationModelTurnPublication;
 }
 
 export class GitHubNotificationCommentTurnError extends Error {
@@ -68,13 +60,7 @@ export class GitHubNotificationCommentTurnError extends Error {
   }
 }
 
-function commentDispatchError(error: unknown): Error {
-  if (!(error instanceof GitHubNotificationModelTurnDispatcherError)) {
-    return new GitHubNotificationCommentTurnError(
-      'github-notification-comment-model-dispatch-failed',
-      { cause: error },
-    );
-  }
+function commentDispatchError(error: GitHubNotificationModelTurnDispatcherError): Error {
   if (error.code === 'github-notification-model-turn-dispatch-unconfirmed') {
     return new Error('OpenClaw did not dispatch the expected notification comment turn.');
   }
@@ -184,16 +170,9 @@ export default class GitHubNotificationCommentTurnService {
       surface: githubNotificationChannelId,
       timestamp: Date.parse(input.comment.updatedAt),
     });
-    const candidateIdentity = {
-      agentId: route.agentId,
-      conversationId: route.conversationId,
-      identity: contract.identity,
-      sourceId: input.revision.revisionId,
-    };
-    const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
     let turnResult;
     try {
-      turnResult = await this.#dependencies.dispatcher.dispatch({
+      turnResult = await this.#dependencies.coordinator.run({
         config,
         contract,
         ctxPayload,
@@ -201,11 +180,18 @@ export default class GitHubNotificationCommentTurnService {
         messageId,
         route,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
+        sourceId: input.revision.revisionId,
       });
     } catch (error) {
-      await this.#dependencies.candidates
-        .cancel({ ...candidateIdentity, turnId: candidateTurn })
-        .catch(() => undefined);
+      if (error instanceof GitHubNotificationModelTurnCoordinatorError) {
+        throw new GitHubNotificationCommentTurnError(
+          error.code === 'github-notification-model-turn-prompt-selection-missing'
+            ? 'github-notification-comment-prompt-selection-missing'
+            : 'github-notification-comment-reply-candidate-failed',
+          { cause: error.cause ?? error },
+        );
+      }
+      if (!(error instanceof GitHubNotificationModelTurnDispatcherError)) throw error;
       const classified = commentDispatchError(error);
       if (!(classified instanceof GitHubNotificationCommentTurnError)) throw classified;
       this.#dependencies.logger.warn(
@@ -219,70 +205,25 @@ export default class GitHubNotificationCommentTurnService {
       );
       throw classified;
     }
-    const { dispatch, finalPayloads } = turnResult;
+    const { dispatch, finalPayloadCount } = turnResult;
     this.#dependencies.logger.info(
       [
         'github-notifications: comment dispatch complete',
         `agent=${route.agentId}`,
-        `payloads=${finalPayloads.length}`,
+        `payloads=${finalPayloadCount}`,
         `final=${dispatch.counts.final ?? 0}`,
         `block=${dispatch.counts.block ?? 0}`,
         `tool=${dispatch.counts.tool ?? 0}`,
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    let publicCandidates: string[];
-    try {
-      publicCandidates = await this.#dependencies.candidates.finish({
-        ...candidateIdentity,
-        turnId: candidateTurn,
-      });
-    } catch (error) {
-      throw new GitHubNotificationCommentTurnError(
-        error instanceof GitHubNotificationReplyCandidateStoreError &&
-          error.code === 'reply-turn-prompt-selection-missing'
-          ? 'github-notification-comment-prompt-selection-missing'
-          : 'github-notification-comment-reply-candidate-failed',
-        { cause: error },
-      );
-    }
-    const privateText = githubNotificationPrivateResponse(finalPayloads);
-    let publication: GitHubNotificationCommentTurnResult['publication'];
-    if (publicCandidates.length === 0) {
-      publication = {
-        status: 'withheld',
-        code: 'github-notification-publication-candidate-missing',
-      };
-    } else if (publicCandidates.length !== 1) {
-      publication = {
-        status: 'withheld',
-        code: 'github-notification-publication-candidate-duplicate',
-      };
-    } else {
-      try {
-        publication = {
-          status: 'candidate',
-          publicText: githubNotificationPublicationText('github-reply', [
-            { text: publicCandidates[0] },
-          ]),
-        };
-      } catch (error) {
-        publication = {
-          status: 'withheld',
-          code:
-            error instanceof GitHubNotificationPublicationError
-              ? error.code
-              : 'github-notification-publication-validation-failed',
-        };
-      }
-    }
     return {
       accountId: route.accountId,
       agentId: route.agentId,
       config,
       ctxPayload,
-      privateText,
-      publication,
+      privateText: turnResult.privateText,
+      publication: turnResult.publication,
     };
   }
 }

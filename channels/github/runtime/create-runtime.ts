@@ -13,6 +13,7 @@ import GitHubNotificationCommentOrchestrator from '../conversation/comment-orche
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
+import GitHubNotificationModelTurnCoordinator from '../conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher from '../conversation/model-turn-dispatcher.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
 import GitHubNotificationTurnCatalog, {
@@ -112,6 +113,10 @@ export default function createGitHubNotificationRuntime(
     dispatchReplyWithBufferedBlockDispatcher: dependencies.dispatchReplyWithBufferedBlockDispatcher,
     recordInboundSession: dependencies.recordInboundSession,
   });
+  const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
+    candidates,
+    dispatcher: turnDispatcher,
+  });
 
   return {
     lifecycleContribution: createNotificationLifecycleContribution({
@@ -154,8 +159,7 @@ export default function createGitHubNotificationRuntime(
         stateStore: monitorStateStore,
       });
       const commentTurnService = new GitHubNotificationCommentTurnService({
-        candidates,
-        dispatcher: turnDispatcher,
+        coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         turnContracts,

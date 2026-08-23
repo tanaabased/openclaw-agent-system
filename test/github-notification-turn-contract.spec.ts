@@ -19,6 +19,7 @@ describe('channels/github/conversation/turn-contract', () => {
 
     assert.equal(contract.lifecycle.id, 'issue');
     assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
+    assert.equal(contract.publicationIntent, 'github-reply');
     assert.equal(
       contract.instructions,
       [
