@@ -1,0 +1,28 @@
+name: "Feature request"
+description: "Suggest a new or improved capability for triage and normalization."
+type: "feature"
+body:
+  - type: "markdown"
+    attributes:
+      value: "Share the evidence you have. A maintainer or agent will normalize the report, estimate task metadata, and ask focused follow-up questions when needed."
+  - type: "textarea"
+    id: "problem"
+    attributes:
+      label: "What problem or opportunity are you seeing?"
+      description: "Describe the affected users or workflows, the current experience or workaround, and why it matters."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "outcome"
+    attributes:
+      label: "What outcome would help?"
+      description: "Describe the capability or result you want and an example of how it would be used. Avoid prescribing implementation details unless they are essential."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "additional-context"
+    attributes:
+      label: "Additional context"
+      description: "Optionally share examples, mockups, comparable behavior, links, compatibility concerns, constraints, or dependencies."
+    validations:
+      required: false

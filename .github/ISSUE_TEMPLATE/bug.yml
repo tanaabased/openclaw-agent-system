@@ -1,0 +1,35 @@
+name: "Bug report"
+description: "Share a bug for triage and normalization."
+type: "bug"
+body:
+  - type: "markdown"
+    attributes:
+      value: "Share the evidence you have. A maintainer or agent will normalize the report, estimate task metadata, and ask focused follow-up questions when needed."
+  - type: "textarea"
+    id: "observed"
+    attributes:
+      label: "What happened?"
+      description: "Describe the behavior you observed, when it occurred, and how it affected you."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "expected"
+    attributes:
+      label: "What did you expect?"
+      description: "Describe the behavior that should have occurred instead."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "investigation"
+    attributes:
+      label: "How can we reproduce or investigate it?"
+      description: "Provide steps, inputs, affected versions or environments, logs, or other direct evidence. Do not perform risky or machine-mutating actions solely to complete this report."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "additional-context"
+    attributes:
+      label: "Additional context"
+      description: "Share relevant constraints, dependencies, deadlines, logs, screenshots, or other evidence."
+    validations:
+      required: false
