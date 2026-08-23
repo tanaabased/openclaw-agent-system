@@ -49,7 +49,7 @@ function lifecycles(worktrees: {
 }
 
 describe('channels/github/intake/assignment-orchestrator', () => {
-  it('should prepare one issue worktree and assignment turn', async () => {
+  it('should checkpoint one issue worktree before its assignment response', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
     let sessionPreparations = 0;
@@ -70,6 +70,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
           sessionPreparations += 1;
           assert.equal(input.executionSurface, 'gateway');
           assert.deepEqual(input.worktree, worktree);
+          assert.equal(store.state().items[itemKey]?.intake?.stage, 'prepared');
         },
       },
       stateStore: store,
@@ -82,12 +83,43 @@ describe('channels/github/intake/assignment-orchestrator', () => {
 
     const intake = store.state().items[itemKey]?.intake;
     assert.equal(worktreePreparations, 1);
-    assert.equal(sessionPreparations, 1);
+    assert.equal(sessionPreparations, 0);
     assert.equal(intake?.stage, 'prepared');
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.intake?.stage),
       ['prepared'],
     );
+
+    await orchestrator.respond('tanaabot', itemKey);
+
+    assert.equal(sessionPreparations, 1);
+  });
+
+  it('should preserve prepared intake when its assignment response fails', async () => {
+    const store = memoryStore();
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({ inspect: async () => undefined, prepare: async () => worktree }),
+      sessions: {
+        async prepare() {
+          throw new Error('private assignment response failure');
+        },
+      },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+    await assert.rejects(
+      orchestrator.respond('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-assignment-session-recording-failed' &&
+        !error.message.includes('private'),
+    );
+
+    assert.equal(store.state().items[itemKey]?.intake?.stage, 'prepared');
+    assert.equal(store.state().items[itemKey]?.intake?.failureCode, undefined);
   });
 
   it('should complete pull-request intake without a worktree', async () => {

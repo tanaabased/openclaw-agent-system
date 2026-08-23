@@ -65,7 +65,10 @@ function monitorService(
 ): GitHubNotificationMonitorService {
   return new GitHubNotificationMonitorService({
     accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-    assignmentOrchestrator: { reconcile: async () => undefined },
+    assignmentOrchestrator: {
+      reconcile: async () => undefined,
+      respond: async () => undefined,
+    },
     cycleLeaseStore: availableCycleLeaseStore(),
     logger: { error() {}, info() {}, warn() {} },
     manifestService: { loadForAgentId: async () => loadedManifest() },
@@ -147,10 +150,14 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(warnings, []);
   });
 
-  it('should reconcile persisted intake backlog before the next remote poll', async () => {
+  it('should continue comment reconciliation after a backlogged assignment response fails', async () => {
     let connected = 0;
+    const commentExecutions: string[] = [];
+    const controller = new AbortController();
     const reconciled: string[] = [];
     const executionSurfaces: string[] = [];
+    const operations: string[] = [];
+    const warnings: string[] = [];
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
@@ -163,23 +170,57 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       assignmentOrchestrator: {
-        async reconcile(_agentId, itemKey, _signal, executionSurface) {
+        async reconcile(_agentId, itemKey) {
           reconciled.push(itemKey);
+          const intake = state.items[itemKey]?.intake;
+          if (intake) {
+            state.items[itemKey]!.intake = {
+              ...intake,
+              stage: 'prepared',
+              worktreeBranch: 'issue-7-branch',
+              worktreePath: '/workspace/worktrees/issue-7',
+            };
+          }
+        },
+        async respond(_agentId, _itemKey, _signal, executionSurface) {
+          operations.push('assignment-response');
           executionSurfaces.push(executionSurface ?? 'missing');
+          controller.abort();
+          throw Object.assign(new Error('private assignment response failure'), {
+            code: 'github-notification-model-turn-dispatch-failed',
+          });
         },
       },
       clock: () => 1_000,
+      commentOrchestrator: {
+        async reconcile(_agentId, _itemKey, options) {
+          operations.push('comment');
+          commentExecutions.push(options?.executionSurface ?? 'missing');
+        },
+      },
+      logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
       },
     });
 
-    await service.runOnce({ executionSurface: 'cli-one-shot' });
+    const [result] = await service.runOnce({
+      executionSurface: 'cli-one-shot',
+      signal: controller.signal,
+    });
 
+    assert.equal(result?.code, 'github-notification-pending-reconciled');
+    assert.equal(result?.status, 'completed');
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
     assert.deepEqual(executionSurfaces, ['cli-one-shot']);
+    assert.deepEqual(commentExecutions, ['cli-one-shot']);
+    assert.deepEqual(operations, ['comment', 'assignment-response']);
+    assert.ok(warnings.some((message) => message.includes('model-turn-dispatch-failed')));
+    assert.ok(
+      warnings.every((message) => !message.includes('private assignment response failure')),
+    );
   });
 
   it('should leave prepared intake idle until the next remote poll', async () => {
@@ -208,6 +249,7 @@ describe('channels/github/intake/monitor/service', () => {
         async reconcile(_agentId, itemKey) {
           reconciled.push(itemKey);
         },
+        respond: async () => undefined,
       },
       clock: () => 1_000,
       stateStore: {
@@ -236,6 +278,7 @@ describe('channels/github/intake/monitor/service', () => {
             'The notification worktree could not be prepared.',
           );
         },
+        respond: async () => undefined,
       },
       clock: () => 1_000,
       random: () => 0.5,
@@ -319,6 +362,7 @@ describe('channels/github/intake/monitor/service', () => {
           const item = state.items[itemKey];
           if (item?.disposition === 'retired' && item.intake) item.intake.stage = 'retired';
         },
+        respond: async () => undefined,
       },
       commentOrchestrator: {
         async reconcile(_agentId, _itemKey, options) {
@@ -458,6 +502,7 @@ describe('channels/github/intake/monitor/service', () => {
             item.intake.stage = 'retired';
           }
         },
+        respond: async () => undefined,
       },
       clock: () => 1_000,
       random: () => 0.5,
@@ -520,6 +565,7 @@ describe('channels/github/intake/monitor/service', () => {
             item.intake.stage = 'retired';
           }
         },
+        respond: async () => undefined,
       },
       clock: () => 1_000,
       manifestService: { loadForAgentId: async () => loadedManifest(disabledManifest) },

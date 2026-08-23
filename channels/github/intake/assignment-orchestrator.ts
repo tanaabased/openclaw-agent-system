@@ -61,14 +61,18 @@ export default class GitHubNotificationAssignmentOrchestrator {
     this.#dependencies = dependencies;
   }
 
-  async reconcile(
+  async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
+    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
+  }
+
+  async respond(
     agentId: string,
     itemKey: string,
     signal?: AbortSignal,
     executionSurface: GitHubNotificationExecutionSurface = 'gateway',
   ): Promise<void> {
     return this.#queue.enqueue(agentId, () =>
-      this.#reconcile(agentId, itemKey, signal, executionSurface),
+      this.#respond(agentId, itemKey, signal, executionSurface),
     );
   }
 
@@ -76,10 +80,9 @@ export default class GitHubNotificationAssignmentOrchestrator {
     agentId: string,
     itemKey: string,
     signal: AbortSignal | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
   ): Promise<void> {
     try {
-      await this.#run(agentId, itemKey, signal, executionSurface);
+      await this.#run(agentId, itemKey, signal);
     } catch (error) {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
@@ -96,12 +99,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     }
   }
 
-  async #run(
-    agentId: string,
-    itemKey: string,
-    signal: AbortSignal | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
-  ): Promise<void> {
+  async #run(agentId: string, itemKey: string, signal: AbortSignal | undefined): Promise<void> {
     for (let step = 0; step < 12; step += 1) {
       if (signal?.aborted) {
         throw new GitHubNotificationAssignmentOrchestratorError(
@@ -129,14 +127,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         return;
       }
       if (action.kind === 'mark-prepared') {
-        await this.#checkpointPrepared(
-          agentId,
-          state,
-          itemKey,
-          action.worktree,
-          signal,
-          executionSurface,
-        );
+        await this.#checkpointPrepared(state, itemKey, action.worktree);
         return;
       }
       if (action.kind === 'prepare-worktree') {
@@ -172,7 +163,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
               workspaceDir: state.workspaceDir,
             }),
         );
-        await this.#checkpointPrepared(agentId, state, itemKey, worktree, signal, executionSurface);
+        await this.#checkpointPrepared(state, itemKey, worktree);
         return;
       }
       continue;
@@ -180,6 +171,49 @@ export default class GitHubNotificationAssignmentOrchestrator {
     throw new GitHubNotificationAssignmentOrchestratorError(
       'github-notification-intake-step-limit',
       'The GitHub notification assignment exceeded its reconciliation step limit.',
+    );
+  }
+
+  async #respond(
+    agentId: string,
+    itemKey: string,
+    signal: AbortSignal | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
+  ): Promise<void> {
+    const loaded = await this.#loadItem(agentId, itemKey);
+    if (!loaded) return;
+    const { intake, item, state } = loaded;
+    if (item.disposition !== 'approved' || intake.stage !== 'prepared') return;
+    const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
+    const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
+      lifecycle,
+      'assignment',
+    );
+    if (!assignmentSupport.session) return;
+    const preparedWorktree =
+      intake.worktreeBranch && intake.worktreePath
+        ? { branch: intake.worktreeBranch, path: intake.worktreePath }
+        : undefined;
+    if (lifecycle.worktree.required && !preparedWorktree) {
+      throw new GitHubNotificationAssignmentOrchestratorError(
+        'github-notification-assignment-session-context-missing',
+        'The GitHub assignment session is missing its lifecycle context.',
+      );
+    }
+    await this.#diagnosticBoundary(
+      'github-notification-assignment-session-recording-failed',
+      'The GitHub assignment session could not be prepared.',
+      () =>
+        this.#dependencies.sessions.prepare({
+          agentId,
+          executionSurface,
+          item,
+          lifecycle,
+          mode: this.#dependencies.initialMode,
+          ...(signal === undefined ? {} : { signal }),
+          workspaceDir: state.workspaceDir,
+          ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
+        }),
     );
   }
 
@@ -328,47 +362,23 @@ export default class GitHubNotificationAssignmentOrchestrator {
   }
 
   async #checkpointPrepared(
-    agentId: string,
     state: GitHubNotificationMonitorState,
     itemKey: string,
     worktree?: GitHubNotificationLifecycleWorktree,
-    signal?: AbortSignal,
-    executionSurface: GitHubNotificationExecutionSurface = 'gateway',
   ): Promise<void> {
     const item = state.items[itemKey];
     const intake = item?.intake;
     if (!item || !intake) return;
     const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
-    const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
-      lifecycle,
-      'assignment',
-    );
-    if (assignmentSupport.session) {
-      const preparedWorktree =
-        worktree ??
-        (intake.worktreeBranch && intake.worktreePath
-          ? { branch: intake.worktreeBranch, path: intake.worktreePath }
-          : undefined);
-      if (lifecycle.worktree.required && !preparedWorktree) {
-        throw new GitHubNotificationAssignmentOrchestratorError(
-          'github-notification-assignment-session-context-missing',
-          'The GitHub assignment session is missing its lifecycle context.',
-        );
-      }
-      await this.#diagnosticBoundary(
-        'github-notification-assignment-session-recording-failed',
-        'The GitHub assignment session could not be prepared.',
-        () =>
-          this.#dependencies.sessions.prepare({
-            agentId,
-            executionSurface,
-            item,
-            lifecycle,
-            mode: this.#dependencies.initialMode,
-            ...(signal === undefined ? {} : { signal }),
-            workspaceDir: state.workspaceDir,
-            ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
-          }),
+    const preparedWorktree =
+      worktree ??
+      (intake.worktreeBranch && intake.worktreePath
+        ? { branch: intake.worktreeBranch, path: intake.worktreePath }
+        : undefined);
+    if (lifecycle.worktree.required && !preparedWorktree) {
+      throw new GitHubNotificationAssignmentOrchestratorError(
+        'github-notification-assignment-session-context-missing',
+        'The GitHub assignment session is missing its lifecycle context.',
       );
     }
     await this.#checkpointIntake(state, itemKey, {

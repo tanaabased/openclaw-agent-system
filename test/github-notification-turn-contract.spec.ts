@@ -91,6 +91,7 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.equal(contract.publicationIntent, 'assignment-response');
     assert.match(contract.instructions, /explain the issue in user-centric terms/u);
     assert.match(contract.instructions, /implementation-ready plan/u);
+    assert.match(contract.instructions, /Do not call agent_system_git_worktree/u);
     assert.match(
       contract.instructions,
       /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
