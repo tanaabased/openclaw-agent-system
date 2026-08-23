@@ -31,24 +31,20 @@ notifications channel. It describes their appearance and composition only. The
 
 Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
-outcome.
+outcome or call to action.
 
 ## Assignment Card
 
 ```markdown
 ## 📥 Issue assigned
 
-- **Assigned by:** [@pirog](https://github.com/pirog)
-- **Issue:** [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7)
-- **Mode:** Work
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7). Please begin working on it in **Work mode**.
 ```
 
 ```markdown
 ## 🔀 Pull request assigned
 
-- **Assigned by:** [@pirog](https://github.com/pirog)
-- **Pull request:** [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18)
-- **Mode:** Plan
+[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18). Please begin working on it in **Plan mode**.
 ```
 
 ## Direct Message

@@ -46,9 +46,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
           [
             '## 📥 Issue assigned',
             '',
-            '- **Assigned by:** [@pirog](https://github.com/pirog)',
-            '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
-            '- **Mode:** Work',
+            '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in **Work mode**.',
           ].join('\n'),
         );
         assert.equal(

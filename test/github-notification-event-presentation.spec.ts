@@ -8,7 +8,7 @@ import { githubNotificationCommentPresentation } from '../channels/github/events
 import { githubNotificationPublicationText } from '../channels/github/publication/publication.ts';
 
 describe('channels/github/events/presentation', () => {
-  it('should render lifecycle-projected assignment facts through the shared card grammar', () => {
+  it('should render a linked assignment directive through the shared card grammar', () => {
     assert.equal(
       githubNotificationAssignmentCard(
         {
@@ -30,9 +30,7 @@ describe('channels/github/events/presentation', () => {
       [
         '## 📥 Issue assigned',
         '',
-        '- **Assigned by:** [@pirog](https://github.com/pirog)',
-        '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
-        '- **Mode:** Work',
+        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in **Work mode**.',
       ].join('\n'),
     );
   });
