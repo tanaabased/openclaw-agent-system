@@ -13,6 +13,7 @@ import GitHubNotificationCommentOrchestrator from '../conversation/comment-orche
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
+import GitHubNotificationModelTurnDispatcher from '../conversation/model-turn-dispatcher.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
 import GitHubNotificationTurnCatalog, {
   githubNotificationSupportedTurnIdentities,
@@ -107,6 +108,10 @@ export default function createGitHubNotificationRuntime(
   });
   const initialMode = modeRegistry.resolve('work');
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
+  const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
+    dispatchReplyWithBufferedBlockDispatcher: dependencies.dispatchReplyWithBufferedBlockDispatcher,
+    recordInboundSession: dependencies.recordInboundSession,
+  });
 
   return {
     lifecycleContribution: createNotificationLifecycleContribution({
@@ -150,11 +155,9 @@ export default function createGitHubNotificationRuntime(
       });
       const commentTurnService = new GitHubNotificationCommentTurnService({
         candidates,
-        dispatchReplyWithBufferedBlockDispatcher:
-          dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        dispatcher: turnDispatcher,
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
-        recordInboundSession: dependencies.recordInboundSession,
         turnContracts,
       });
       const commentPublicationService = new GitHubNotificationCommentPublicationService({

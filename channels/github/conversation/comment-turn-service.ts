@@ -1,22 +1,19 @@
 import {
   buildChannelInboundEventContext,
-  dispatchChannelInboundReply,
   type AssembledInboundReply,
-  type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
-import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationCommentPresentation } from '../events/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
 import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comment-admission.ts';
-import {
-  githubNotificationReplyCleanupOptions,
-  type GitHubNotificationExecutionSurface,
-} from './execution.ts';
+import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import {
+  GitHubNotificationModelTurnDispatcherError,
+  type default as GitHubNotificationModelTurnDispatcher,
+} from './model-turn-dispatcher.ts';
 import { githubNotificationPrivateResponse } from './private-response.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
@@ -28,19 +25,15 @@ import {
 } from '../publication/publication.ts';
 import { resolveNotificationRoute, githubNotificationChannelId } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
-import {
-  githubNotificationTurnDispatchOptions,
-  type default as GitHubNotificationTurnContractResolver,
-} from './turn-contract.ts';
+import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
   candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
+  dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
-  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
 }
 
@@ -73,6 +66,31 @@ export class GitHubNotificationCommentTurnError extends Error {
   ) {
     super('The GitHub notification comment turn could not be dispatched.', options);
   }
+}
+
+function commentDispatchError(error: unknown): Error {
+  if (!(error instanceof GitHubNotificationModelTurnDispatcherError)) {
+    return new GitHubNotificationCommentTurnError(
+      'github-notification-comment-model-dispatch-failed',
+      { cause: error },
+    );
+  }
+  if (error.code === 'github-notification-model-turn-dispatch-unconfirmed') {
+    return new Error('OpenClaw did not dispatch the expected notification comment turn.');
+  }
+  if (error.code === 'github-notification-model-turn-session-missing') {
+    return new GitHubNotificationCommentTurnError('github-notification-comment-session-missing');
+  }
+  if (error.code === 'github-notification-model-turn-session-recording-failed') {
+    return new GitHubNotificationCommentTurnError(
+      'github-notification-comment-session-recording-failed',
+      error.cause === undefined ? undefined : { cause: error.cause },
+    );
+  }
+  return new GitHubNotificationCommentTurnError(
+    'github-notification-comment-model-dispatch-failed',
+    { cause: error.cause ?? error },
+  );
 }
 
 /** Dispatch one admitted direct comment and retain the complete private response. */
@@ -115,7 +133,6 @@ export default class GitHubNotificationCommentTurnService {
       { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
       conversationId,
     );
-    const turnDispatch = githubNotificationTurnDispatchOptions(contract);
     const messageId = `comment:${input.revision.revisionId}`;
     const presentation = githubNotificationCommentPresentation(input.comment.body);
     const ctxPayload = buildChannelInboundEventContext({
@@ -167,7 +184,6 @@ export default class GitHubNotificationCommentTurnService {
       surface: githubNotificationChannelId,
       timestamp: Date.parse(input.comment.updatedAt),
     });
-    const finalPayloads: ReplyPayload[] = [];
     const candidateIdentity = {
       agentId: route.agentId,
       conversationId: route.conversationId,
@@ -175,73 +191,23 @@ export default class GitHubNotificationCommentTurnService {
       sourceId: input.revision.revisionId,
     };
     const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
-    let sessionRecordTask: Promise<unknown> | undefined;
-    let result;
+    let turnResult;
     try {
-      result = await dispatchChannelInboundReply({
-        accountId: route.accountId,
-        agentId: route.agentId,
-        afterRecord: async () => {
-          if (!sessionRecordTask) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-recording-failed',
-            );
-          }
-          if (!(await sessionRecordTask)) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-missing',
-            );
-          }
-        },
-        cfg: config,
-        channel: githubNotificationChannelId,
+      turnResult = await this.#dependencies.dispatcher.dispatch({
+        config,
+        contract,
         ctxPayload,
-        delivery: {
-          async deliver(payload, info) {
-            if (info.kind === 'final') finalPayloads.push(payload);
-            return { visibleReplySent: false };
-          },
-        },
-        dispatchReplyWithBufferedBlockDispatcher:
-          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
+        executionSurface: input.executionSurface,
         messageId,
-        record: {
-          createIfMissing: false,
-          onRecordError(error) {
-            throw new GitHubNotificationCommentTurnError(
-              'github-notification-comment-session-recording-failed',
-              { cause: error },
-            );
-          },
-          trackSessionMetaTask(task) {
-            sessionRecordTask = task;
-          },
-        },
-        recordInboundSession: this.#dependencies.recordInboundSession,
-        replyOptions: {
-          ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
-          ...githubNotificationReplyCleanupOptions(input.executionSurface),
-          commentaryPayloadsEnabled: true,
-          ...turnDispatch.replyOptions,
-          sourceReplyDeliveryMode: 'automatic',
-          suppressDefaultToolProgressMessages: true,
-          suppressTyping: true,
-        },
-        routeSessionKey: route.sessionKey,
-        storePath: resolveStorePath(config.session?.store, { agentId: route.agentId }),
-        ...(turnDispatch.toolsAllow === undefined ? {} : { toolsAllow: turnDispatch.toolsAllow }),
+        route,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     } catch (error) {
       await this.#dependencies.candidates
         .cancel({ ...candidateIdentity, turnId: candidateTurn })
         .catch(() => undefined);
-      const classified =
-        error instanceof GitHubNotificationCommentTurnError
-          ? error
-          : new GitHubNotificationCommentTurnError(
-              'github-notification-comment-model-dispatch-failed',
-              { cause: error },
-            );
+      const classified = commentDispatchError(error);
+      if (!(classified instanceof GitHubNotificationCommentTurnError)) throw classified;
       this.#dependencies.logger.warn(
         [
           'github-notifications: comment turn failed',
@@ -253,11 +219,7 @@ export default class GitHubNotificationCommentTurnService {
       );
       throw classified;
     }
-    if (!result.dispatched || result.routeSessionKey !== route.sessionKey) {
-      await this.#dependencies.candidates.cancel({ ...candidateIdentity, turnId: candidateTurn });
-      throw new Error('OpenClaw did not dispatch the expected notification comment turn.');
-    }
-    const dispatch = result.dispatchResult;
+    const { dispatch, finalPayloads } = turnResult;
     this.#dependencies.logger.info(
       [
         'github-notifications: comment dispatch complete',

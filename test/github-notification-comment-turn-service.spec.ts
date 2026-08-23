@@ -4,12 +4,14 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
-  type GitHubNotificationCommentTurnServiceDependencies,
 } from '../channels/github/conversation/comment-turn-service.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
 } from '../channels/github/conversation/comment-admission.ts';
+import GitHubNotificationModelTurnDispatcher, {
+  type GitHubNotificationModelTurnDispatcherDependencies,
+} from '../channels/github/conversation/model-turn-dispatcher.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
   type GitHubNotificationReplyCandidateTurnInput,
@@ -75,6 +77,16 @@ function candidateStore(candidates: readonly string[], finishError?: Error) {
   };
 }
 
+function modelTurnDispatcher(
+  dispatchReplyWithBufferedBlockDispatcher: GitHubNotificationModelTurnDispatcherDependencies['dispatchReplyWithBufferedBlockDispatcher'],
+  recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'],
+) {
+  return new GitHubNotificationModelTurnDispatcher({
+    dispatchReplyWithBufferedBlockDispatcher,
+    recordInboundSession,
+  });
+}
+
 async function respondWithCandidates(
   candidates: readonly string[],
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
@@ -92,23 +104,25 @@ async function respondWithCandidates(
   const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
     candidates: candidateStore(candidates, finishError),
-    async dispatchReplyWithBufferedBlockDispatcher(input) {
-      const replyOptions = input.replyOptions ?? {};
-      assertTurnContractOptions(replyOptions);
-      inspectReplyOptions?.(replyOptions);
-      await input.dispatcherOptions.deliver(
-        { text: 'Private response remains available.' },
-        {
-          kind: 'final',
-        },
-      );
-      return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-    },
+    dispatcher: modelTurnDispatcher(
+      async (input) => {
+        const replyOptions = input.replyOptions ?? {};
+        assertTurnContractOptions(replyOptions);
+        inspectReplyOptions?.(replyOptions);
+        await input.dispatcherOptions.deliver(
+          { text: 'Private response remains available.' },
+          {
+            kind: 'final',
+          },
+        );
+        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+      },
+      async (input) => {
+        input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
+      },
+    ),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => config,
-    async recordInboundSession(input) {
-      input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
-    },
     turnContracts: contracts,
   });
   return service.respond({
@@ -136,7 +150,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     let createIfMissing: boolean | undefined;
     let recorded = false;
     const contracts = createGitHubNotificationTurnContractResolver();
-    const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
+    const recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
         const task = Promise.resolve().then(() => {
@@ -147,7 +161,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       };
     const service = new GitHubNotificationCommentTurnService({
       candidates: candidateStore(['ready']),
-      async dispatchReplyWithBufferedBlockDispatcher(input) {
+      dispatcher: modelTurnDispatcher(async (input) => {
         assert.equal(recorded, true);
         assert.equal(createIfMissing, false);
         assert.equal(input.ctx.Body, comment.body);
@@ -176,10 +190,9 @@ describe('channels/github/conversation/comment-turn-service', () => {
           { kind: 'final' },
         );
         return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-      },
+      }, recordInboundSession),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
-      recordInboundSession,
       turnContracts: contracts,
     });
 
@@ -236,14 +249,16 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const contracts = createGitHubNotificationTurnContractResolver();
     const service = new GitHubNotificationCommentTurnService({
       candidates: candidateStore([]),
-      async dispatchReplyWithBufferedBlockDispatcher() {
-        throw new Error('unexpected model dispatch');
-      },
+      dispatcher: modelTurnDispatcher(
+        async () => {
+          throw new Error('unexpected model dispatch');
+        },
+        async (input) => {
+          input.trackSessionMetaTask?.(Promise.resolve(null));
+        },
+      ),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
-      async recordInboundSession(input) {
-        input.trackSessionMetaTask?.(Promise.resolve(null));
-      },
       turnContracts: contracts,
     });
 
