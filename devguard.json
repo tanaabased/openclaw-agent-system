@@ -11,9 +11,15 @@
       "args": ["run", "plugin:check"]
     },
     "watch": [
+      "agent",
+      "api",
       "channels",
       "cli",
-      "lib",
+      "core",
+      "credentials",
+      "environment",
+      "manifest",
+      "paths",
       "scripts",
       "skills",
       "tools",

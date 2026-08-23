@@ -1,5 +1,7 @@
-import type GitHubWorkEventClient from '../provider/work-event-client.ts';
-import type { GitHubIssueCommentReceipt } from '../provider/work-event-client.ts';
+import type {
+  GitHubIssueCommentReceipt,
+  GitHubNotificationPublicationClient,
+} from '../provider/work-event-client.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
   githubNotificationPublicationComment,
@@ -33,8 +35,10 @@ export interface GitHubNotificationCommentPublisherDependencies {
     | GitHubNotificationCommentPublicationAuthorization
     | Promise<GitHubNotificationCommentPublicationAuthorization>;
   connect():
-    | Pick<GitHubWorkEventClient, 'createIssueComment' | 'findOwnIssueComment'>
-    | Promise<Pick<GitHubWorkEventClient, 'createIssueComment' | 'findOwnIssueComment'>>;
+    | Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>
+    | Promise<
+        Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>
+      >;
   exclusive<T>(key: string, run: () => Promise<T>): Promise<T>;
 }
 

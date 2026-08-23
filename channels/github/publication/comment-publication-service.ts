@@ -19,10 +19,11 @@ import { resolveNotificationRoute } from '../routing/routing.ts';
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationResult,
 } from './comment-publisher.ts';
-import type GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
+import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationPublicationLeaseStore from './publication-lease.ts';
+import type { GitHubNotificationPublicationClient } from '../provider/work-event-client.ts';
 
 type PublishablePublication = Exclude<
   GitHubNotificationCommentPublicationState,
@@ -39,7 +40,7 @@ interface PublicationMatch {
 }
 
 export interface GitHubNotificationCommentPublicationServiceDependencies {
-  assignmentAuthority: Pick<GitHubNotificationAssignmentProvider, 'open'>;
+  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationPublicationClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;

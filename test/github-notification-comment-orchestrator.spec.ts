@@ -12,7 +12,7 @@ import type { GitHubNotificationAssignmentInspection } from '../channels/github/
 import GitHubNotificationCommentOrchestrator, {
   GitHubNotificationCommentOrchestratorError,
 } from '../channels/github/conversation/comment-orchestrator.ts';
-import type GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -86,8 +86,10 @@ function comment(
 function authority(
   comments: GitHubCanonicalIssueComment[],
   truncated = false,
-): { open(): Promise<GitHubNotificationAssignmentInspection> } {
-  const client = {
+): {
+  open(): Promise<GitHubNotificationAssignmentInspection<GitHubNotificationCommentClient>>;
+} {
+  const client: GitHubNotificationCommentClient = {
     identity: notificationAccount,
     async getIssueComment(
       _owner: string,
@@ -102,7 +104,7 @@ function authority(
     async listIssueComments() {
       return { comments: structuredClone(comments), truncated };
     },
-  } as unknown as GitHubWorkEventClient;
+  };
   return {
     async open() {
       return { authorized: true, client, configuration };
