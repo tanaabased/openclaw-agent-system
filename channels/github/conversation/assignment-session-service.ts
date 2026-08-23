@@ -72,7 +72,7 @@ export default class GitHubNotificationAssignmentSessionService {
       conversationId,
     );
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
-    const body = githubNotificationAssignmentCard(projection, input.mode.policy.label);
+    const body = githubNotificationAssignmentCard(projection, input.mode.policy.id);
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,

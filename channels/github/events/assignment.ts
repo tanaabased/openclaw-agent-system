@@ -21,11 +21,11 @@ export interface GitHubNotificationAssignmentEventProjection {
 /** Render one lifecycle-projected assignment through the shared card grammar. */
 export function githubNotificationAssignmentCard(
   projection: GitHubNotificationAssignmentEventProjection,
-  mode: string,
+  modeId: string,
 ): string {
   return githubNotificationCard({
     emoji: projection.emoji,
-    summary: `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url}) assigned you to [${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url}). Please begin working on it in **${githubNotificationMarkdownText(mode)} mode**.`,
+    summary: `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url}) assigned you to [${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url}). Please begin working on it in \`${githubNotificationMarkdownText(modeId)}\` mode.`,
     title: `${projection.item.kind} assigned`,
   });
 }

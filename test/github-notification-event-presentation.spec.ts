@@ -25,12 +25,12 @@ describe('channels/github/events/presentation', () => {
           },
           timestamp: 1_755_259_200_000,
         },
-        'Work',
+        'work',
       ),
       [
         '## 📥 Issue assigned',
         '',
-        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in **Work mode**.',
+        '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
       ].join('\n'),
     );
   });
