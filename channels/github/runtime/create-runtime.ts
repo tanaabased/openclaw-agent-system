@@ -9,7 +9,7 @@ import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
-import GitHubNotificationAssignmentPlanningOrchestrator from '../conversation/assignment-planning-orchestrator.ts';
+import GitHubNotificationAssignmentResponseOrchestrator from '../conversation/assignment-response-orchestrator.ts';
 import GitHubNotificationAssignmentTurnService from '../conversation/assignment-turn-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
@@ -181,7 +181,7 @@ export default function createGitHubNotificationRuntime(
         readConfig: dependencies.readRuntimeConfig,
         turnContracts,
       });
-      const assignmentPlanningOrchestrator = new GitHubNotificationAssignmentPlanningOrchestrator({
+      const assignmentResponseOrchestrator = new GitHubNotificationAssignmentResponseOrchestrator({
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
         initialMode,
@@ -206,7 +206,7 @@ export default function createGitHubNotificationRuntime(
       const monitorService = new GitHubNotificationMonitorService({
         accountClient: dependencies.accountClient,
         assignmentOrchestrator,
-        assignmentPlanningOrchestrator,
+        assignmentResponseOrchestrator,
         commentOrchestrator,
         cycleLeaseStore: monitorCycleLeaseStore,
         logger: dependencies.lifecycleLogger,

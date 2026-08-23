@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 
+import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
+import {
+  createMessageReceiptFromOutboundResults,
+  type DurableInboundReplyDeliveryResult,
+} from 'openclaw/plugin-sdk/channel-outbound';
+
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
-import GitHubNotificationAssignmentPlanningOrchestrator from '../channels/github/conversation/assignment-planning-orchestrator.ts';
+import GitHubNotificationAssignmentResponseOrchestrator from '../channels/github/conversation/assignment-response-orchestrator.ts';
 import {
   createGitHubNotificationConversationState,
   type GitHubNotificationConversationState,
@@ -60,7 +66,7 @@ function lifecycles() {
   ]);
 }
 
-describe('channels/github/conversation/assignment-planning-orchestrator', () => {
+describe('channels/github/conversation/assignment-response-orchestrator', () => {
   it('should publish one assignment response and remain idempotent', async () => {
     const monitor = preparedMonitor();
     const item = monitor.items[notificationItemKey]!;
@@ -107,9 +113,35 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
         };
       },
     };
-    const orchestrator = new GitHubNotificationAssignmentPlanningOrchestrator({
+    const adapterReceipt = createMessageReceiptFromOutboundResults({
+      kind: 'text',
+      results: [
+        {
+          channel: 'agent-system-github',
+          conversationId,
+          messageId: '501',
+          meta: { nodeId: 'IC_plan' },
+        },
+      ],
+    });
+    const deliveryResult: DurableInboundReplyDeliveryResult = {
+      delivery: {
+        messageIds: ['501'],
+        receipt: createMessageReceiptFromOutboundResults({
+          kind: 'text',
+          results: [{ messageId: '501', receipt: adapterReceipt }],
+        }),
+        visibleReplySent: true,
+      },
+      status: 'handled_visible',
+    };
+    const orchestrator = new GitHubNotificationAssignmentResponseOrchestrator({
       assignmentAuthority: authority,
       conversationStateStore: conversations,
+      async deliver(input) {
+        calls.push(['deliver', input.to, input.payload.text]);
+        return deliveryResult;
+      },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles(),
       logger: {
@@ -126,13 +158,8 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
         },
       },
       publications: {
-        async publish(input) {
-          calls.push(['publish', input]);
-          return {
-            receipt: { databaseId: 501, nodeId: 'IC_plan' },
-            status: 'published' as const,
-            target: input.target,
-          };
+        async publish() {
+          throw new Error('unexpected retry');
         },
       },
       turnCatalog: {
@@ -151,6 +178,10 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
             input.mode.policy.label,
           ]);
           return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText:
               '## Assessment\n\nThe user needs the form to save successfully.\n\n## Plan\n\nUpdate the owning behavior and verify the save flow.',
             publication: {
@@ -197,6 +228,6 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
         ],
       ],
     );
-    assert.equal(calls.filter(([kind]) => kind === 'publish').length, 1);
+    assert.equal(calls.filter(([kind]) => kind === 'deliver').length, 1);
   });
 });

@@ -42,7 +42,7 @@ export function githubNotificationAssignmentCard(
   });
 }
 
-/** Describe the model-backed assignment planning event. */
+/** Describe the model-backed assignment response event. */
 const githubNotificationAssignmentEvent = {
   id: 'assignment',
   turn: {

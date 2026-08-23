@@ -47,6 +47,10 @@ export interface GitHubNotificationAssignmentTurnInput {
 }
 
 export interface GitHubNotificationAssignmentTurnResult {
+  accountId: string;
+  agentId: string;
+  config: OpenClawConfig;
+  ctxPayload: AssembledInboundReply['ctxPayload'];
   privateText: string;
   publication: GitHubNotificationModelTurnPublication;
 }
@@ -58,13 +62,13 @@ export class GitHubNotificationAssignmentTurnError extends Error {
     readonly code: string,
     options?: ErrorOptions,
   ) {
-    super('The GitHub assignment planning turn could not be dispatched.', options);
+    super('The GitHub assignment response turn could not be dispatched.', options);
   }
 }
 
 function assignmentDispatchError(error: GitHubNotificationModelTurnDispatcherError): Error {
   if (error.code === 'github-notification-model-turn-dispatch-unconfirmed') {
-    return new Error('OpenClaw did not dispatch the expected assignment planning turn.');
+    return new Error('OpenClaw did not dispatch the expected assignment response turn.');
   }
   const suffix =
     error.code === 'github-notification-model-turn-session-missing'
@@ -77,7 +81,7 @@ function assignmentDispatchError(error: GitHubNotificationModelTurnDispatcherErr
   });
 }
 
-/** Dispatch one prepared issue assignment into its first model-backed planning turn. */
+/** Dispatch one prepared issue assignment into its first model-backed response turn. */
 export default class GitHubNotificationAssignmentTurnService {
   readonly #dependencies: GitHubNotificationAssignmentTurnServiceDependencies;
 
@@ -90,11 +94,11 @@ export default class GitHubNotificationAssignmentTurnService {
   ): Promise<GitHubNotificationAssignmentTurnResult> {
     const intake = input.item.intake;
     if (!intake || intake.assignmentEventId !== input.sourceId) {
-      throw new Error('The GitHub assignment planning turn is missing its intake identity.');
+      throw new Error('The GitHub assignment response turn is missing its intake identity.');
     }
     const support = resolveGitHubNotificationLifecycleEventSupport(input.lifecycle, 'assignment');
     if (!support.session) {
-      throw new Error('The GitHub lifecycle does not support assignment planning sessions.');
+      throw new Error('The GitHub lifecycle does not support assignment response sessions.');
     }
     const config = await this.#dependencies.readConfig();
     const contract = this.#dependencies.turnContracts.resolve(
@@ -199,7 +203,7 @@ export default class GitHubNotificationAssignmentTurnService {
       if (!(classified instanceof GitHubNotificationAssignmentTurnError)) throw classified;
       this.#dependencies.logger.warn(
         [
-          'github-notifications: assignment planning turn failed',
+          'github-notifications: assignment response turn failed',
           `agent=${route.agentId}`,
           `item=${repository}#${input.item.number}`,
           `code=${classified.code}`,
@@ -209,7 +213,7 @@ export default class GitHubNotificationAssignmentTurnService {
     }
     this.#dependencies.logger.info(
       [
-        'github-notifications: assignment planning dispatch complete',
+        'github-notifications: assignment response dispatch complete',
         `agent=${route.agentId}`,
         `payloads=${result.finalPayloadCount}`,
         `final=${result.dispatch.counts.final ?? 0}`,
@@ -217,6 +221,13 @@ export default class GitHubNotificationAssignmentTurnService {
         `tool=${result.dispatch.counts.tool ?? 0}`,
       ].join(' '),
     );
-    return { privateText: result.privateText, publication: result.publication };
+    return {
+      accountId: route.accountId,
+      agentId: route.agentId,
+      config,
+      ctxPayload,
+      privateText: result.privateText,
+      publication: result.publication,
+    };
   }
 }

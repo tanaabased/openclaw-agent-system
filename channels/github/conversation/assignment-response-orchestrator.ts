@@ -1,4 +1,5 @@
 import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
+import { deliverInboundReplyWithMessageSendContext } from 'openclaw/plugin-sdk/channel-outbound';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
@@ -8,7 +9,9 @@ import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts'
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import type { GitHubNotificationItemContextClient } from '../provider/work-event-client.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
+import { githubNotificationDurableDeliveryReceipt } from '../publication/durable-delivery.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
+import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationAssignmentTurnService from './assignment-turn-service.ts';
 import {
   githubNotificationPublicTextDigest,
@@ -18,9 +21,10 @@ import type GitHubNotificationConversationStateStore from './conversation-state-
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
 
-export interface GitHubNotificationAssignmentPlanningOrchestratorDependencies {
+export interface GitHubNotificationAssignmentResponseOrchestratorDependencies {
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationItemContextClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
+  deliver?: typeof deliverInboundReplyWithMessageSendContext;
   initialMode: Pick<GitHubNotificationMode, 'policy'>;
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
@@ -30,19 +34,19 @@ export interface GitHubNotificationAssignmentPlanningOrchestratorDependencies {
   turns: Pick<GitHubNotificationAssignmentTurnService, 'respond'>;
 }
 
-export interface GitHubNotificationAssignmentPlanningReconcileOptions {
+export interface GitHubNotificationAssignmentResponseReconcileOptions {
   executionSurface: GitHubNotificationExecutionSurface;
   signal?: AbortSignal;
 }
 
-export class GitHubNotificationAssignmentPlanningOrchestratorError extends Error {
-  override name = 'GitHubNotificationAssignmentPlanningOrchestratorError';
+export class GitHubNotificationAssignmentResponseOrchestratorError extends Error {
+  override name = 'GitHubNotificationAssignmentResponseOrchestratorError';
 
   constructor(
     readonly code: string,
     options?: ErrorOptions,
   ) {
-    super('The GitHub assignment planning lifecycle could not be reconciled.', options);
+    super('The GitHub assignment response could not be reconciled.', options);
   }
 }
 
@@ -55,22 +59,24 @@ function errorCode(error: unknown): string {
   ) {
     return error.code;
   }
-  return 'github-notification-assignment-planning-failed';
+  return 'github-notification-assignment-response-failed';
 }
 
 /** Reconcile the model-backed response for one prepared assignment. */
-export default class GitHubNotificationAssignmentPlanningOrchestrator {
-  readonly #dependencies: GitHubNotificationAssignmentPlanningOrchestratorDependencies;
+export default class GitHubNotificationAssignmentResponseOrchestrator {
+  readonly #deliver: typeof deliverInboundReplyWithMessageSendContext;
+  readonly #dependencies: GitHubNotificationAssignmentResponseOrchestratorDependencies;
   readonly #queue = new KeyedAsyncQueue();
 
-  constructor(dependencies: GitHubNotificationAssignmentPlanningOrchestratorDependencies) {
+  constructor(dependencies: GitHubNotificationAssignmentResponseOrchestratorDependencies) {
     this.#dependencies = dependencies;
+    this.#deliver = dependencies.deliver ?? deliverInboundReplyWithMessageSendContext;
   }
 
   async reconcile(
     agentId: string,
     itemKey: string,
-    options: GitHubNotificationAssignmentPlanningReconcileOptions = {
+    options: GitHubNotificationAssignmentResponseReconcileOptions = {
       executionSurface: 'gateway',
     },
   ): Promise<void> {
@@ -78,9 +84,9 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       try {
         await this.#run(agentId, itemKey, options);
       } catch (error) {
-        throw error instanceof GitHubNotificationAssignmentPlanningOrchestratorError
+        throw error instanceof GitHubNotificationAssignmentResponseOrchestratorError
           ? error
-          : new GitHubNotificationAssignmentPlanningOrchestratorError(errorCode(error), {
+          : new GitHubNotificationAssignmentResponseOrchestratorError(errorCode(error), {
               cause: error,
             });
       }
@@ -90,7 +96,7 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
   async #run(
     agentId: string,
     itemKey: string,
-    options: GitHubNotificationAssignmentPlanningReconcileOptions,
+    options: GitHubNotificationAssignmentResponseReconcileOptions,
   ): Promise<void> {
     const monitor = await this.#dependencies.monitorStateStore.read(agentId);
     const item = monitor?.items[itemKey];
@@ -120,13 +126,13 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       conversation.lifecycleId !== item.lifecycleId ||
       conversation.mode !== this.#dependencies.initialMode.policy.id
     ) {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
-        'github-notification-assignment-planning-state-missing',
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
+        'github-notification-assignment-response-state-missing',
       );
     }
     if (conversation.assignmentResponse?.publication.status === 'published') return;
     if (conversation.assignmentResponse?.publication.status === 'pending') {
-      await this.#publish(
+      await this.#retryPublication(
         agentId,
         conversationId,
         conversation.assignmentResponse.sourceId,
@@ -144,8 +150,8 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
     });
     const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
     if (!intake.worktreeBranch || !intake.worktreePath) {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
-        'github-notification-assignment-planning-worktree-missing',
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
+        'github-notification-assignment-response-worktree-missing',
       );
     }
     const opened = await this.#dependencies.assignmentAuthority.open({
@@ -156,8 +162,8 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       workspaceDir: monitor.workspaceDir,
     });
     if (!opened.authorized) {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
-        opened.reasonCode ?? 'github-notification-assignment-planning-authority-revoked',
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
+        opened.reasonCode ?? 'github-notification-assignment-response-authority-revoked',
       );
     }
     const itemContext = await opened.client.getItemContext(
@@ -180,7 +186,7 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       worktree: { branch: intake.worktreeBranch, path: intake.worktreePath },
     });
     if (response.publication.status !== 'candidate') {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
         response.publication.status === 'withheld'
           ? response.publication.code
           : 'github-notification-assignment-assignment-response-missing',
@@ -198,13 +204,13 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       response.publication.publicText,
       target,
     );
-    await this.#publish(
+    await this.#deliverResponse(
       agentId,
       conversationId,
       intake.assignmentEventId,
       target,
       response.publication.publicText,
-      options.signal,
+      response,
     );
     this.#dependencies.logger.info(
       `github-notifications: assignment response published agent=${agentId} item=${itemKey}`,
@@ -231,8 +237,8 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
     const current = await this.#dependencies.conversationStateStore.read(agentId);
     const conversation = current?.conversations[conversationId];
     if (!current || conversation?.activeTurn?.sourceId !== sourceId) {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
-        'github-notification-assignment-planning-turn-missing',
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
+        'github-notification-assignment-response-turn-missing',
       );
     }
     const next = structuredClone(current);
@@ -250,7 +256,35 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
     await this.#dependencies.conversationStateStore.write(next);
   }
 
-  async #publish(
+  async #deliverResponse(
+    agentId: string,
+    conversationId: string,
+    sourceId: string,
+    target: string,
+    publicText: string,
+    response: Awaited<ReturnType<GitHubNotificationAssignmentTurnService['respond']>>,
+  ): Promise<void> {
+    const delivered = await this.#deliver({
+      accountId: response.accountId,
+      agentId: response.agentId,
+      cfg: response.config,
+      channel: githubNotificationChannelId,
+      ctxPayload: response.ctxPayload,
+      info: { kind: 'final' },
+      payload: { text: publicText },
+      requiredCapabilities: { reconcileUnknownSend: true, text: true },
+      to: target,
+    });
+    await this.#checkpointPublished(
+      agentId,
+      conversationId,
+      sourceId,
+      target,
+      githubNotificationDurableDeliveryReceipt(delivered),
+    );
+  }
+
+  async #retryPublication(
     agentId: string,
     conversationId: string,
     sourceId: string,
@@ -264,6 +298,16 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       target,
       text: publicText,
     });
+    await this.#checkpointPublished(agentId, conversationId, sourceId, target, result.receipt);
+  }
+
+  async #checkpointPublished(
+    agentId: string,
+    conversationId: string,
+    sourceId: string,
+    target: string,
+    receipt: { databaseId: number; nodeId: string },
+  ): Promise<void> {
     const current = await this.#dependencies.conversationStateStore.read(agentId);
     const assignmentResponse = current?.conversations[conversationId]?.assignmentResponse;
     if (
@@ -271,8 +315,8 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       assignmentResponse?.sourceId !== sourceId ||
       assignmentResponse.publication.target !== target
     ) {
-      throw new GitHubNotificationAssignmentPlanningOrchestratorError(
-        'github-notification-assignment-planning-checkpoint-missing',
+      throw new GitHubNotificationAssignmentResponseOrchestratorError(
+        'github-notification-assignment-response-checkpoint-missing',
       );
     }
     if (assignmentResponse.publication.status === 'published') return;
@@ -281,8 +325,8 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       ...assignmentResponse,
       publication: {
         ...assignmentResponse.publication,
-        commentDatabaseId: result.receipt.databaseId,
-        commentNodeId: result.receipt.nodeId,
+        commentDatabaseId: receipt.databaseId,
+        commentNodeId: receipt.nodeId,
         status: 'published',
       },
     };

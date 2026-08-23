@@ -19,7 +19,7 @@ import {
 } from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
 import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
-import type { GitHubNotificationAssignmentPlanningReconcileOptions } from '../../conversation/assignment-planning-orchestrator.ts';
+import type { GitHubNotificationAssignmentResponseReconcileOptions } from '../../conversation/assignment-response-orchestrator.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
@@ -34,11 +34,11 @@ export interface GitHubNotificationMonitorServiceDependencies {
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
   };
-  assignmentPlanningOrchestrator?: {
+  assignmentResponseOrchestrator?: {
     reconcile(
       agentId: string,
       itemKey: string,
-      options?: GitHubNotificationAssignmentPlanningReconcileOptions,
+      options?: GitHubNotificationAssignmentResponseReconcileOptions,
     ): Promise<void>;
   };
   commentOrchestrator?: {
@@ -381,7 +381,12 @@ export default class GitHubNotificationMonitorService {
         await this.#dependencies.stateStore.write(current);
       } else if (pollDeferred) {
         await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
-        await this.#reconcilePlanning(agentId, options.selector, executionSurface, signal);
+        await this.#reconcileAssignmentResponses(
+          agentId,
+          options.selector,
+          executionSurface,
+          signal,
+        );
         await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
         return {
           agentId,
@@ -421,7 +426,12 @@ export default class GitHubNotificationMonitorService {
         signal,
       );
       try {
-        await this.#reconcilePlanning(agentId, options.selector, executionSurface, signal);
+        await this.#reconcileAssignmentResponses(
+          agentId,
+          options.selector,
+          executionSurface,
+          signal,
+        );
         await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -541,17 +551,17 @@ export default class GitHubNotificationMonitorService {
     }
   }
 
-  async #reconcilePlanning(
+  async #reconcileAssignmentResponses(
     agentId: string,
     selector: GitHubNotificationItemSelector | undefined,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
   ): Promise<void> {
-    if (!this.#dependencies.assignmentPlanningOrchestrator) return;
+    if (!this.#dependencies.assignmentResponseOrchestrator) return;
     const state = await this.#dependencies.stateStore.read(agentId);
     for (const itemKey of preparedIssueItemKeys(state, selector)) {
       if (signal?.aborted) return;
-      await this.#dependencies.assignmentPlanningOrchestrator.reconcile(agentId, itemKey, {
+      await this.#dependencies.assignmentResponseOrchestrator.reconcile(agentId, itemKey, {
         executionSurface,
         ...(signal === undefined ? {} : { signal }),
       });

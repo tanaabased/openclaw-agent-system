@@ -1,6 +1,6 @@
 import { maximumGitHubNotificationReplyLength } from '../../publication/limits.ts';
 
-/** Hidden response instructions shared by assignment planning turns. */
+/** Hidden response instructions shared by assignment response turns. */
 const githubNotificationPlanningResponseInstructions = [
   '## Response format',
   `Before your final response, call \`agent_system_github_reply\` exactly once with one GitHub-facing response at or below ${maximumGitHubNotificationReplyLength} characters. The tool stages a candidate only; it does not grant publication authority.`,

@@ -318,7 +318,7 @@ describe('channels/github/intake/monitor/service', () => {
           if (item?.disposition === 'retired' && item.intake) item.intake.stage = 'retired';
         },
       },
-      assignmentPlanningOrchestrator: {
+      assignmentResponseOrchestrator: {
         async reconcile(_agentId, _itemKey, options) {
           conversationExecutions.push(`planning:${options?.executionSurface ?? 'missing'}`);
         },

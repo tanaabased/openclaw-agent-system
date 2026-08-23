@@ -1,8 +1,4 @@
-import {
-  deliverInboundReplyWithMessageSendContext,
-  resolveMessageReceiptPrimaryId,
-  type DurableInboundReplyDeliveryResult,
-} from 'openclaw/plugin-sdk/channel-outbound';
+import { deliverInboundReplyWithMessageSendContext } from 'openclaw/plugin-sdk/channel-outbound';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
@@ -28,6 +24,7 @@ import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts'
 import { githubNotificationLifecycleSupportsEvent } from '../lifecycles/event-support.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
+import { githubNotificationDurableDeliveryReceipt } from '../publication/durable-delivery.ts';
 import type GitHubNotificationCommentTurnService from './comment-turn-service.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
@@ -73,33 +70,6 @@ function errorCode(error: unknown): string {
     return error.code;
   }
   return 'github-notification-comment-reconciliation-failed';
-}
-
-function publicationReceipt(result: DurableInboundReplyDeliveryResult): {
-  databaseId: number;
-  nodeId: string;
-} {
-  if (result.status !== 'handled_visible') {
-    throw new GitHubNotificationCommentOrchestratorError(
-      result.status === 'failed'
-        ? 'github-notification-publication-failed'
-        : 'github-notification-publication-not-confirmed',
-      result.status === 'failed' ? { cause: result.error } : undefined,
-    );
-  }
-  const receipt = result.delivery.receipt;
-  const databaseIdText =
-    (receipt ? resolveMessageReceiptPrimaryId(receipt) : undefined) ??
-    result.delivery.messageIds?.[0];
-  const nodeId = receipt?.parts.find((part) => part.platformMessageId === databaseIdText)?.raw?.meta
-    ?.nodeId;
-  const databaseId = Number(databaseIdText);
-  if (!Number.isSafeInteger(databaseId) || databaseId < 1 || typeof nodeId !== 'string') {
-    throw new GitHubNotificationCommentOrchestratorError(
-      'github-notification-publication-receipt-invalid',
-    );
-  }
-  return { databaseId, nodeId };
 }
 
 function sortedComments(comments: readonly GitHubCanonicalIssueComment[]) {
@@ -378,7 +348,7 @@ export default class GitHubNotificationCommentOrchestrator {
       requiredCapabilities: { reconcileUnknownSend: true, text: true },
       to: target,
     });
-    const receipt = publicationReceipt(delivered);
+    const receipt = githubNotificationDurableDeliveryReceipt(delivered);
     await this.#checkpointPublished(
       agentId,
       conversationId,
