@@ -49,20 +49,12 @@ function lifecycles(worktrees: {
 }
 
 describe('channels/github/intake/assignment-orchestrator', () => {
-  it('should prepare one issue worktree and publish its acknowledgment', async () => {
+  it('should prepare one issue worktree and assignment session without a model turn', async () => {
     const store = memoryStore();
-    let acknowledgments = 0;
     let observedWorktree: typeof worktree | undefined;
+    let sessionPreparations = 0;
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: {
-        async publish(input) {
-          acknowledgments += 1;
-          assert.equal(input.agentId, 'tanaabot');
-          assert.equal(input.modeId, 'work');
-          assert.equal(input.workspaceDir, store.state().workspaceDir);
-        },
-      },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
@@ -73,6 +65,12 @@ describe('channels/github/intake/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: {
+        async prepare(input) {
+          sessionPreparations += 1;
+          assert.deepEqual(input.worktree, worktree);
+        },
+      },
       stateStore: store,
     });
 
@@ -83,7 +81,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
 
     const intake = store.state().items[itemKey]?.intake;
     assert.equal(worktreePreparations, 1);
-    assert.equal(acknowledgments, 1);
+    assert.equal(sessionPreparations, 1);
     assert.equal(intake?.stage, 'prepared');
     assert.deepEqual(
       store.writes.map((state) => state.items[itemKey]?.intake?.stage),
@@ -100,7 +98,6 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     let worktreeInspections = 0;
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: { publish: async () => undefined },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
@@ -113,6 +110,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -131,7 +129,6 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     let observedWorktree: typeof worktree | undefined;
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: { publish: async () => undefined },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
@@ -142,6 +139,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
           return worktree;
         },
       }),
+      sessions: { prepare: async () => undefined },
       stateStore: {
         read: store.read,
         async write(next) {
@@ -165,12 +163,12 @@ describe('channels/github/intake/assignment-orchestrator', () => {
   it('should retire an assignment when provider authority is revoked', async () => {
     const store = memoryStore();
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: { publish: async () => undefined },
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -196,10 +194,10 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     const preparedIntake = structuredClone(item.intake);
     const store = memoryStore(state);
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: { publish: async () => undefined },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
       stateStore: store,
     });
 
@@ -217,7 +215,6 @@ describe('channels/github/intake/assignment-orchestrator', () => {
         code: 'github-notification-authority-inspection-failed',
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
-            acknowledgments: { publish: async () => undefined },
             authority: {
               inspect: async () => {
                 throw new Error('restricted authority detail');
@@ -228,6 +225,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
               inspect: async () => worktree,
               prepare: async () => worktree,
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },
@@ -236,7 +234,6 @@ describe('channels/github/intake/assignment-orchestrator', () => {
         code: 'github-notification-worktree-inspection-failed',
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
-            acknowledgments: { publish: async () => undefined },
             authority: { inspect: async () => ({ authorized: true }) },
             initialMode: githubNotificationWorkMode,
             lifecycles: lifecycles({
@@ -245,6 +242,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
               },
               prepare: async () => worktree,
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },
@@ -253,7 +251,6 @@ describe('channels/github/intake/assignment-orchestrator', () => {
         code: 'github-notification-worktree-preparation-failed',
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
-            acknowledgments: { publish: async () => undefined },
             authority: { inspect: async () => ({ authorized: true }) },
             initialMode: githubNotificationWorkMode,
             lifecycles: lifecycles({
@@ -262,6 +259,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
                 throw new Error('restricted preparation detail');
               },
             }),
+            sessions: { prepare: async () => undefined },
             stateStore: store,
           });
         },

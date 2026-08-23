@@ -3,7 +3,6 @@
 ### New Features
 
 - Added compact GitHub assignment metadata cards and deterministic varied issue acknowledgments with durable publication receipts.
-- Added issue assignment response turns with user-centric private reports and concise conversational public candidates. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake.
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.

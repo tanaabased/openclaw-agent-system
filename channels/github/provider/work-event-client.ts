@@ -106,15 +106,6 @@ export interface GitHubNotificationCommentClient {
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage>;
 }
 
-export interface GitHubNotificationItemContextClient {
-  getItemContext(
-    owner: string,
-    name: string,
-    number: number,
-    itemType?: 'issue' | 'pull-request',
-  ): Promise<GitHubNotificationItemContext>;
-}
-
 export interface GitHubNotificationPublicationClient {
   readonly identity: GitHubIdentity;
   createIssueComment(
@@ -141,7 +132,6 @@ export interface GitHubNotificationProviderClient
   extends
     GitHubNotificationIntakeClient,
     GitHubNotificationCommentClient,
-    GitHubNotificationItemContextClient,
     GitHubNotificationPublicationClient {}
 
 interface ApiPage<T> {
@@ -746,7 +736,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     marker: string,
   ): Promise<GitHubIssueCommentReconciliationReceipt | undefined> {
     if (
-      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|assignment-response):[a-f0-9]{32} -->$/u.test(
+      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|planning-outcome):[a-f0-9]{32} -->$/u.test(
         marker,
       )
     ) {

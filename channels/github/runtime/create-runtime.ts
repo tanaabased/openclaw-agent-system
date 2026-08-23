@@ -9,8 +9,7 @@ import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
-import GitHubNotificationAssignmentResponseOrchestrator from '../conversation/assignment-response-orchestrator.ts';
-import GitHubNotificationAssignmentTurnService from '../conversation/assignment-turn-service.ts';
+import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
@@ -162,11 +161,17 @@ export default function createGitHubNotificationRuntime(
           publications: commentPublicationService,
         },
       );
-      const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
+      const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
         acknowledgments: assignmentAcknowledgmentService,
+        logger: dependencies.lifecycleLogger,
+        readConfig: dependencies.readRuntimeConfig,
+        recordInboundSession: dependencies.recordInboundSession,
+      });
+      const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
         authority: assignmentProvider,
         initialMode,
         lifecycles: lifecycleRegistry,
+        sessions: assignmentSessionService,
         stateStore: monitorStateStore,
       });
       const commentTurnService = new GitHubNotificationCommentTurnService({
@@ -174,23 +179,6 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         turnContracts,
-      });
-      const assignmentTurnService = new GitHubNotificationAssignmentTurnService({
-        coordinator: turnCoordinator,
-        logger: dependencies.lifecycleLogger,
-        readConfig: dependencies.readRuntimeConfig,
-        turnContracts,
-      });
-      const assignmentResponseOrchestrator = new GitHubNotificationAssignmentResponseOrchestrator({
-        assignmentAuthority: assignmentProvider,
-        conversationStateStore,
-        initialMode,
-        lifecycles: lifecycleRegistry,
-        logger: dependencies.lifecycleLogger,
-        monitorStateStore,
-        publications: commentPublicationService,
-        turnCatalog,
-        turns: assignmentTurnService,
       });
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,
@@ -206,7 +194,6 @@ export default function createGitHubNotificationRuntime(
       const monitorService = new GitHubNotificationMonitorService({
         accountClient: dependencies.accountClient,
         assignmentOrchestrator,
-        assignmentResponseOrchestrator,
         commentOrchestrator,
         cycleLeaseStore: monitorCycleLeaseStore,
         logger: dependencies.lifecycleLogger,

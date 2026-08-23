@@ -79,20 +79,17 @@ describe('channels/github/conversation/turn-contract', () => {
     );
   });
 
-  it('should compose the assignment report and conversational response contract', () => {
-    const instructions = createGitHubNotificationTurnContractResolver().instructions({
-      eventId: 'assignment',
-      lifecycleId: 'issue',
-      modeId: 'work',
-    });
-
-    assert.match(instructions, /explain the issue in user-centric terms/u);
-    assert.match(
-      instructions,
-      /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
+  it('should leave assignment model turns dormant', () => {
+    assert.throws(
+      () =>
+        createGitHubNotificationTurnContractResolver().instructions({
+          eventId: 'assignment',
+          lifecycleId: 'issue',
+          modeId: 'work',
+        }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationTurnCatalogError &&
+        error.code === 'github-notification-turn-unsupported',
     );
-    assert.match(instructions, /When the private report contains a plan/u);
-    assert.match(instructions, /smallest complete set of currently known blocking questions/u);
-    assert.doesNotMatch(instructions, /exactly one precise clarification question/u);
   });
 });

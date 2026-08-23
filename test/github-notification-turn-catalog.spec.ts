@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnCatalog, {
   GitHubNotificationTurnCatalogError,
-  githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationSupportedTurnIdentities,
 } from '../channels/github/conversation/turn-catalog.ts';
@@ -14,7 +13,7 @@ function definitions() {
 }
 
 describe('channels/github/conversation/turn-catalog', () => {
-  it('should admit only the declared model-turn tuples', () => {
+  it('should admit only the declared model-turn tuple', () => {
     const catalog = new GitHubNotificationTurnCatalog(
       githubNotificationSupportedTurnIdentities,
       definitions(),
@@ -26,29 +25,25 @@ describe('channels/github/conversation/turn-catalog', () => {
     assert.equal(definition.eventTurn.kind, 'model');
     assert.equal(definition.lifecycle.id, 'issue');
     assert.equal(definition.mode.policy.id, 'work');
-    assert.deepEqual(
-      catalog.resolve(githubNotificationIssueWorkAssignmentTurnIdentity).identity,
-      githubNotificationIssueWorkAssignmentTurnIdentity,
+    assert.throws(
+      () =>
+        catalog.resolve({
+          eventId: 'assignment',
+          lifecycleId: 'issue',
+          modeId: 'work',
+        }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationTurnCatalogError &&
+        error.code === 'github-notification-turn-unsupported',
     );
   });
 
   it('should reject an observe-only event declared as a model turn', () => {
-    const base = definitions();
-    const custom = {
-      ...base,
-      events: {
-        resolve(id: 'assignment' | 'comment') {
-          return id === 'assignment'
-            ? ({ id, turn: { kind: 'observe-only' } } as const)
-            : base.events.resolve(id);
-        },
-      },
-    };
     assert.throws(
       () =>
         new GitHubNotificationTurnCatalog(
           [{ eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' }],
-          custom,
+          definitions(),
         ),
       (error: unknown) =>
         error instanceof GitHubNotificationTurnCatalogError &&

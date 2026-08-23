@@ -26,7 +26,7 @@ export type GitHubNotificationCommentPublicationInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'initial-acknowledgment' | 'assignment-response';
+      intent: 'initial-acknowledgment';
       publicationId: string;
     }
 );
@@ -51,7 +51,7 @@ export interface GitHubNotificationCommentPublisherDependencies {
           target: string;
         }
       | {
-          intent: 'initial-acknowledgment' | 'assignment-response';
+          intent: 'initial-acknowledgment';
           item: PublicationItem;
           publicationId: string;
           target: string;

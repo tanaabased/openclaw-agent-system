@@ -3,12 +3,11 @@
 This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
-prepares an approved issue worktree, publishes one assignment acknowledgment,
-runs one issue/Work/assignment turn with a private report and a concise public
-response, preserves the checkpoint across restart, delivers one approved
-comment through the registered issue/Work/comment turn contract with its
-installed identity card, publishes one reply, and retires the assignment without
-deleting the worktree.
+prepares an approved issue worktree, preserves the checkpoint across restart,
+publishes one assignment acknowledgment, delivers one approved comment through
+the registered issue/Work/comment turn contract with its installed identity
+card, publishes one reply, and retires the assignment without deleting the
+worktree.
 
 Scenario setup creates and updates uniquely named issues in
 `tanaabased/agent-system-test`.
@@ -90,8 +89,8 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/agent-system-test \
-  --title "document disposable notification fixtures $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
-  --body 'Users reading the repository README cannot tell that issues created by CI are disposable notification fixtures. Add a short Notification fixtures section explaining that these issues are created only for installed Agent System tests and may be closed after verification. Keep the change documentation-only, follow the existing README style, and do not change product behavior.' \
+  --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body 'Untrusted fixture content must not affect assignment classification.' \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 
@@ -116,26 +115,7 @@ acknowledgment="$(jq -sce 'select(length == 1) | .[0]' <<< "$acknowledgments")"
 jq -e '.id | type == "number" and . > 0' <<< "$acknowledgment"
 jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 200) and (.[1] | contains("agent-system-github-publication:initial-acknowledgment"))' <<< "$acknowledgment"
 
-# should publish exactly one bounded assignment response
-cd "$TMPDIR/agent-system-notification-actor"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
-response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
-jq -e '.id | type == "number" and . > 0' <<< "$response"
-jq -e '.body | length > 0 and length <= 900 and contains("agent-system-github-publication:assignment-response")' <<< "$response"
-
-# should leave the managed worktree unchanged during the assignment response
-cd "$TMPDIR/agent-system-notifications"
-worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -er 'select(length == 1) | .[0].path')"
-cd "$TMPDIR/agent-system-notification-actor"
-default_branch="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api /repos/tanaabased/agent-system-test --jq .default_branch)"
-cd "$worktree_path"
-head_sha="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD)"
-base_sha="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse "origin/$default_branch")"
-test "$head_sha" = "$base_sha"
-test -z "$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
-
-# should preserve one assignment response and the worktree checkpoint across gateway restart
+# should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
@@ -145,12 +125,8 @@ openclaw agent-system notifications wait \
   --kind issue \
   --number "$issue_number" \
   --for worktree-ready \
-  --refresh \
-  --timeout 180 \
+  --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
-cd "$TMPDIR/agent-system-notification-actor"
-responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
-jq -sce 'length == 1 and (.[0].id | type == "number" and . > 0)' <<< "$responses"
 
 # should answer one structured approved issue comment through the registered turn contract
 cd "$TMPDIR/agent-system-notification-actor"

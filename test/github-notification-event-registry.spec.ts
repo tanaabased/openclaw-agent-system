@@ -16,8 +16,10 @@ describe('channels/github/events/registry', () => {
     ]);
 
     assert.deepEqual(githubNotificationEventIds, ['assignment', 'comment']);
-    assert.deepEqual(registry.resolve('assignment'), githubNotificationAssignmentEvent);
-    assert.equal(registry.resolve('assignment').turn.kind, 'model');
+    assert.deepEqual(registry.resolve('assignment'), {
+      id: 'assignment',
+      turn: { kind: 'observe-only' },
+    });
     assert.deepEqual(registry.resolve('comment'), githubNotificationCommentEvent);
     assert.equal(registry.resolve('comment').turn.kind, 'model');
   });
@@ -39,7 +41,6 @@ describe('channels/github/events/registry', () => {
 
   it('should recognize only declared event ids', () => {
     assert.equal(isGitHubNotificationEventId('assignment'), true);
-    assert.equal(isGitHubNotificationEventId('assignment-clarification'), false);
     assert.equal(isGitHubNotificationEventId('comment'), true);
     assert.equal(isGitHubNotificationEventId('review-submitted'), false);
     assert.equal(isGitHubNotificationEventId(undefined), false);

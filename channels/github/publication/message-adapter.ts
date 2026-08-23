@@ -4,10 +4,7 @@ import {
   type ChannelMessageSendResult,
 } from 'openclaw/plugin-sdk/channel-outbound';
 
-import {
-  githubNotificationPublicationText,
-  parseGitHubNotificationPublicationTarget,
-} from './publication.ts';
+import { githubNotificationPublicationText } from './publication.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationCommentPublicationService from './comment-publication-service.ts';
 import type { GitHubIssueCommentReceipt } from '../provider/work-event-client.ts';
@@ -46,8 +43,7 @@ export default function createGitHubNotificationMessageAdapter(
       async reconcileUnknownSend(ctx) {
         const payload = ctx.payloads.length === 1 ? ctx.payloads[0] : undefined;
         if (!payload) return { status: 'not_sent' as const };
-        const { intent } = parseGitHubNotificationPublicationTarget(ctx.to);
-        const text = githubNotificationPublicationText(intent, [payload]);
+        const text = githubNotificationPublicationText('github-reply', [payload]);
         const publication = await dependencies.publications.reconcile({
           accountId: ctx.accountId ?? '',
           target: ctx.to,

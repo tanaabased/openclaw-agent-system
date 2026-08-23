@@ -32,7 +32,7 @@ function notifications(manifest: AgentManifest) {
   return manifest.github?.notifications;
 }
 
-/** Return one validated public candidate during a GitHub notification turn. */
+/** Return one typed public candidate during a GitHub notification turn. */
 export default function createGitHubNotificationReplyTool(
   candidates: GitHubNotificationReplyCandidateStager,
   logger?: Pick<Logger, 'debug'>,

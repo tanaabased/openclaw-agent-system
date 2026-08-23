@@ -89,34 +89,30 @@ tables when they make the complete result easier to review.
 ## Plan
 
 ```markdown
+## 🧭 Plan ready
+
+<one-sentence plan summary>
+
 ## Assessment
 
-<user goal, current result, and expected result>
+<assessment>
 
 ## Plan
 
-<technical implementation and validation plan>
+<implementation plan>
 ```
-
-The complete private plan is a report. Its separate GitHub candidate summarizes
-the understanding and direction conversationally without copying these headings.
 
 ## Question
 
 ```markdown
-## Assessment
+## ❓ Clarification needed
 
-<what is already understood in user-centric terms>
+<one-sentence explanation>
 
-## Questions
+## Question
 
-1. <blocking question and relevant choices>
-2. <another currently known blocking question, when needed>
+<complete private question and relevant choices>
 ```
-
-Ask the smallest complete set of currently known blocking questions. The public
-candidate stays shorter and conversational; use a numbered list only when there
-is more than one question.
 
 ## To GitHub
 

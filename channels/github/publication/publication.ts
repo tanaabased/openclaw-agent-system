@@ -12,12 +12,12 @@ const markerPrefix = 'agent-system-github-publication';
 export const githubNotificationCommenterToken = '{{commenter}}';
 
 export type GitHubNotificationPublicationIntent =
-  'github-reply' | 'initial-acknowledgment' | 'assignment-response';
+  'github-reply' | 'initial-acknowledgment' | 'planning-outcome';
 
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'github-reply',
   'initial-acknowledgment',
-  'assignment-response',
+  'planning-outcome',
 ]);
 
 export class GitHubNotificationPublicationError extends Error {
@@ -139,7 +139,7 @@ type GitHubNotificationPublicationTargetInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'initial-acknowledgment' | 'assignment-response';
+      intent: 'initial-acknowledgment' | 'planning-outcome';
       publicationId: string;
     }
 );
@@ -198,7 +198,7 @@ export function githubNotificationPublicationMarker(target: string): string {
 export function githubNotificationPublicationComment(text: string, marker: string): string {
   if (
     !new RegExp(
-      `^<!-- ${markerPrefix}:(?:github-reply|initial-acknowledgment|assignment-response):[a-f0-9]{32} -->$`,
+      `^<!-- ${markerPrefix}:(?:github-reply|initial-acknowledgment|planning-outcome):[a-f0-9]{32} -->$`,
       'u',
     ).test(marker)
   ) {

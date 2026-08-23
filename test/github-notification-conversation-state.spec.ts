@@ -27,7 +27,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 4,
+      schemaVersion: 3,
     });
   });
 
@@ -50,7 +50,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 4,
+      schemaVersion: 3,
     });
   });
 
@@ -101,34 +101,6 @@ describe('channels/github/conversation/conversation-state', () => {
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
     state.conversations['github:issue:R_repo:12']!.activeTurn!.sourceId = 'provider prose';
     assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
-  });
-
-  it('should retain one assignment response without private or provider prose', () => {
-    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
-    const conversationId = 'github:issue:R_repo:12';
-    const publicText = 'I understand the user-facing failure and have a focused plan to fix it.';
-    state.conversations[conversationId] = {
-      baselineEstablished: true,
-      itemKey: 'github:R_repo:12',
-      lifecycleId: 'issue',
-      mode: 'work',
-      assignmentResponse: {
-        publication: {
-          publicText,
-          publicTextDigest: githubNotificationPublicTextDigest(publicText),
-          status: 'pending',
-          target: githubNotificationPublicationTarget({
-            intent: 'assignment-response',
-            item: approvedNotificationItem(),
-            publicationId: 'EV_assignment',
-          }),
-        },
-        sourceId: 'EV_assignment',
-      },
-      revisions: {},
-    };
-
-    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
   });
 
   it('should retain value-free comment receipts and one accepted public text', () => {

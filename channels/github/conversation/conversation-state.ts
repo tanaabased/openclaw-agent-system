@@ -53,13 +53,6 @@ export type GitHubNotificationAssignmentAcknowledgmentState =
   | GitHubNotificationCommentPublicationPendingState
   | GitHubNotificationCommentPublicationPublishedState;
 
-export interface GitHubNotificationAssignmentResponseState {
-  publication:
-    | GitHubNotificationCommentPublicationPendingState
-    | GitHubNotificationCommentPublicationPublishedState;
-  sourceId: string;
-}
-
 export interface GitHubNotificationCommentRevisionState {
   bodyDigest: string;
   commentDatabaseId: number;
@@ -73,7 +66,6 @@ export interface GitHubNotificationCommentRevisionState {
 export interface GitHubNotificationConversation {
   acknowledgment?: GitHubNotificationAssignmentAcknowledgmentState;
   activeTurn?: GitHubNotificationActiveTurnState;
-  assignmentResponse?: GitHubNotificationAssignmentResponseState;
   baselineEstablished: boolean;
   itemKey: string;
   lifecycleId: GitHubNotificationLifecycleId;
@@ -84,7 +76,7 @@ export interface GitHubNotificationConversation {
 export interface GitHubNotificationConversationState {
   agentId: string;
   conversations: Record<string, GitHubNotificationConversation>;
-  schemaVersion: 4;
+  schemaVersion: 3;
   workspaceDir: string;
 }
 
@@ -127,7 +119,7 @@ export function githubNotificationPublicTextDigest(value: string): string {
 function validPublication(
   value: unknown,
   conversationId: string,
-  expectedIntent: 'github-reply' | 'initial-acknowledgment' | 'assignment-response',
+  expectedIntent: 'github-reply' | 'initial-acknowledgment',
 ): boolean {
   if (
     expectedIntent === 'github-reply' &&
@@ -206,15 +198,6 @@ function validRevision(value: unknown, conversationId: string): boolean {
   return value.publication === undefined;
 }
 
-function validAssignmentResponse(value: unknown, conversationId: string): boolean {
-  return (
-    record(value) &&
-    onlyKeys(value, ['publication', 'sourceId']) &&
-    nodeId(value.sourceId) &&
-    validPublication(value.publication, conversationId, 'assignment-response')
-  );
-}
-
 function validActiveTurn(value: unknown): boolean {
   return (
     record(value) &&
@@ -227,14 +210,13 @@ function validActiveTurn(value: unknown): boolean {
 function validConversation(
   value: unknown,
   conversationId: string,
-  schemaVersion: 1 | 2 | 3 | 4,
+  schemaVersion: 1 | 2 | 3,
 ): boolean {
   if (
     !record(value) ||
     !onlyKeys(value, [
-      ...(schemaVersion >= 3 ? ['acknowledgment'] : []),
+      ...(schemaVersion === 3 ? ['acknowledgment'] : []),
       ...(schemaVersion >= 2 ? ['activeTurn'] : []),
-      ...(schemaVersion === 4 ? ['assignmentResponse'] : []),
       'baselineEstablished',
       'itemKey',
       'lifecycleId',
@@ -244,8 +226,6 @@ function validConversation(
     (value.acknowledgment !== undefined &&
       !validPublication(value.acknowledgment, conversationId, 'initial-acknowledgment')) ||
     (value.activeTurn !== undefined && !validActiveTurn(value.activeTurn)) ||
-    (value.assignmentResponse !== undefined &&
-      !validAssignmentResponse(value.assignmentResponse, conversationId)) ||
     typeof value.baselineEstablished !== 'boolean' ||
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
@@ -269,10 +249,7 @@ export function decodeGitHubNotificationConversationState(
   if (
     !record(value) ||
     !onlyKeys(value, ['agentId', 'conversations', 'schemaVersion', 'workspaceDir']) ||
-    (value.schemaVersion !== 1 &&
-      value.schemaVersion !== 2 &&
-      value.schemaVersion !== 3 &&
-      value.schemaVersion !== 4) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
     value.agentId !== expectedAgentId ||
     typeof value.agentId !== 'string' ||
     !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
@@ -287,12 +264,12 @@ export function decodeGitHubNotificationConversationState(
     !Object.entries(value.conversations).every(
       ([key, conversation]) =>
         /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(key) &&
-        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4),
+        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3),
     )
   ) {
     return undefined;
   }
-  if (value.schemaVersion === 4) {
+  if (value.schemaVersion === 3) {
     return value as unknown as GitHubNotificationConversationState;
   }
   return {
@@ -303,7 +280,7 @@ export function decodeGitHubNotificationConversationState(
         { ...(conversation as GitHubNotificationConversation) },
       ]),
     ),
-    schemaVersion: 4,
+    schemaVersion: 3,
     workspaceDir: value.workspaceDir,
   } as GitHubNotificationConversationState;
 }
@@ -312,5 +289,5 @@ export function createGitHubNotificationConversationState(
   agentId: string,
   workspaceDir: string,
 ): GitHubNotificationConversationState {
-  return { agentId, conversations: {}, schemaVersion: 4, workspaceDir };
+  return { agentId, conversations: {}, schemaVersion: 3, workspaceDir };
 }

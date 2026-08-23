@@ -153,49 +153,6 @@ function acknowledgmentFixture() {
   return { conversations, monitor, publicText, target };
 }
 
-function assignmentResponseFixture() {
-  const monitor = notificationMonitorState();
-  monitor.agentId = agentId;
-  monitor.workspaceDir = workspaceDir;
-  const item = monitor.items[notificationItemKey]!;
-  item.intake = {
-    ...item.intake!,
-    stage: 'prepared',
-    worktreeBranch: 'issue-12',
-    worktreePath: '/workspace/worktrees/issue-12',
-  };
-  const conversationId = githubNotificationConversationId({
-    itemNumber: item.number,
-    lifecycleId: item.lifecycleId,
-    repositoryId: item.repositoryNodeId,
-  });
-  const publicText = 'I understand the user-facing problem and have a focused plan to fix it.';
-  const sourceId = item.intake.assignmentEventId;
-  const target = githubNotificationPublicationTarget({
-    intent: 'assignment-response',
-    item,
-    publicationId: sourceId,
-  });
-  const conversations = createGitHubNotificationConversationState(agentId, workspaceDir);
-  conversations.conversations[conversationId] = {
-    baselineEstablished: false,
-    itemKey: notificationItemKey,
-    lifecycleId: 'issue',
-    mode: 'work',
-    assignmentResponse: {
-      publication: {
-        publicText,
-        publicTextDigest: githubNotificationPublicTextDigest(publicText),
-        status: 'pending',
-        target,
-      },
-      sourceId,
-    },
-    revisions: {},
-  };
-  return { conversations, monitor, publicText, target };
-}
-
 describe('channels/github/publication/comment-publication-service', () => {
   it('should reauthorize the exact source revision before publishing accepted text', async () => {
     const fixture = stateFixture();
@@ -342,59 +299,6 @@ describe('channels/github/publication/comment-publication-service', () => {
     assert.equal(result.status, 'published');
     assert.match(publishedBody, /^Got it — I'm starting on this now\./u);
     assert.match(publishedBody, /<!-- agent-system-github-publication:initial-acknowledgment:/u);
-    assert.doesNotMatch(publishedBody, /^@/u);
-  });
-
-  it('should reauthorize the prepared assignment before publishing its response', async () => {
-    const fixture = assignmentResponseFixture();
-    let publishedBody = '';
-    const client: PublicationClient = {
-      identity: notificationAccount,
-      async createIssueComment(_owner: string, _repository: string, _number: number, body: string) {
-        publishedBody = body;
-        return { databaseId: 102, nodeId: 'IC_plan' };
-      },
-      async findOwnIssueComment() {
-        return undefined;
-      },
-      async getIssueComment() {
-        throw new Error('assignment responses do not reauthorize a source comment');
-      },
-    };
-    const service = new GitHubNotificationCommentPublicationService({
-      assignmentAuthority: {
-        async open(): Promise<GitHubNotificationAssignmentInspection<PublicationClient>> {
-          return { authorized: true, client, configuration };
-        },
-      },
-      conversationStateStore: { read: async () => structuredClone(fixture.conversations) },
-      manifestService: {
-        async loadForAgentId() {
-          return {
-            diagnostics: [],
-            digest: 'digest',
-            manifest,
-            path: `${workspaceDir}/agent.yaml`,
-            scope: { agentId, workspaceDir },
-            status: 'loaded' as const,
-            validationChecks: [],
-          };
-        },
-      },
-      monitorStateStore: { read: async () => structuredClone(fixture.monitor) },
-      publicationLeaseStore: { exclusive: async (_agent, _target, _signal, run) => run() },
-      readConfig: async () => config,
-    });
-
-    const result = await service.publish({
-      accountId: agentId,
-      target: fixture.target,
-      text: fixture.publicText,
-    });
-
-    assert.equal(result.status, 'published');
-    assert.match(publishedBody, /^I understand the user-facing problem/u);
-    assert.match(publishedBody, /<!-- agent-system-github-publication:assignment-response:/u);
     assert.doesNotMatch(publishedBody, /^@/u);
   });
 });

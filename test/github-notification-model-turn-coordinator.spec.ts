@@ -8,7 +8,6 @@ import GitHubNotificationModelTurnCoordinator, {
 import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
 import { GitHubNotificationReplyCandidateStoreError } from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-import { GitHubNotificationPrivateResponseError } from '../channels/github/conversation/private-response.ts';
 
 const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
 const route = {
@@ -33,7 +32,6 @@ function input() {
   return {
     config: {},
     contract,
-    createIfMissing: false,
     ctxPayload,
     executionSurface: 'gateway' as const,
     messageId: 'comment:revision-1',
@@ -43,7 +41,7 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
-  it('should coordinate one private response and one public candidate', async () => {
+  it('should coordinate one private response and one typed public candidate', async () => {
     const calls: unknown[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
@@ -133,87 +131,6 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       sourceId: 'revision-1',
       turnId: 'turn-1',
     });
-  });
-
-  it('should validate a plan-shaped assignment report', async () => {
-    const coordinator = new GitHubNotificationModelTurnCoordinator({
-      candidates: {
-        async begin() {
-          return 'turn-1';
-        },
-        async cancel() {},
-        async finish() {
-          return ['I understand the user-facing problem and have a focused plan to address it.'];
-        },
-      },
-      dispatcher: {
-        async dispatch() {
-          return {
-            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-            finalPayloads: [
-              {
-                text: [
-                  '## Assessment',
-                  '',
-                  'The user needs the expected result instead of the current failure.',
-                  '',
-                  '## Plan',
-                  '',
-                  'Update the owning behavior and verify it with focused tests.',
-                ].join('\n'),
-              },
-            ],
-          };
-        },
-      },
-    });
-    const planningContract = {
-      ...contract,
-      identity: { ...identity, eventId: 'assignment' as const },
-      publicationIntent: 'assignment-response' as const,
-    };
-
-    const result = await coordinator.run({ ...input(), contract: planningContract });
-
-    assert.deepEqual(result.publication, {
-      publicText: 'I understand the user-facing problem and have a focused plan to address it.',
-      status: 'candidate',
-    });
-    assert.match(result.privateText, /^## Assessment[\s\S]+^## Plan$/mu);
-  });
-
-  it('should reject an assignment response without the required report headings', async () => {
-    const coordinator = new GitHubNotificationModelTurnCoordinator({
-      candidates: {
-        async begin() {
-          return 'turn-1';
-        },
-        async cancel() {},
-        async finish() {
-          return ['I need one answer before I can finish the plan.'];
-        },
-      },
-      dispatcher: {
-        async dispatch() {
-          return {
-            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-            finalPayloads: [{ text: '## Question\n\nWhich behavior should win?' }],
-          };
-        },
-      },
-    });
-    const planningContract = {
-      ...contract,
-      identity: { ...identity, eventId: 'assignment' as const },
-      publicationIntent: 'assignment-response' as const,
-    };
-
-    await assert.rejects(
-      coordinator.run({ ...input(), contract: planningContract }),
-      (error: unknown) =>
-        error instanceof GitHubNotificationPrivateResponseError &&
-        error.code === 'github-notification-planning-private-response-invalid',
-    );
   });
 
   it('should classify a missing prompt-selection attestation', async () => {

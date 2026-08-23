@@ -19,7 +19,6 @@ import {
 } from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
 import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
-import type { GitHubNotificationAssignmentResponseReconcileOptions } from '../../conversation/assignment-response-orchestrator.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './state-store.ts';
 import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
@@ -33,13 +32,6 @@ export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
-  };
-  assignmentResponseOrchestrator?: {
-    reconcile(
-      agentId: string,
-      itemKey: string,
-      options?: GitHubNotificationAssignmentResponseReconcileOptions,
-    ): Promise<void>;
   };
   commentOrchestrator?: {
     reconcile(
@@ -381,13 +373,6 @@ export default class GitHubNotificationMonitorService {
         await this.#dependencies.stateStore.write(current);
       } else if (pollDeferred) {
         await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
-        await this.#reconcileAssignmentResponses(
-          agentId,
-          options.selector,
-          executionSurface,
-          signal,
-        );
-        await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
         return {
           agentId,
           code: 'github-notification-pending-reconciled',
@@ -426,18 +411,12 @@ export default class GitHubNotificationMonitorService {
         signal,
       );
       try {
-        await this.#reconcileAssignmentResponses(
-          agentId,
-          options.selector,
-          executionSurface,
-          signal,
-        );
         await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
       } catch (error) {
         if (signal?.aborted) throw error;
         const diagnostic = diagnosticCode(error);
         this.#dependencies.logger.warn(
-          `github-notifications: conversation reconciliation failed agent=${agentId} code=${diagnostic.code}`,
+          `github-notifications: comment reconciliation failed agent=${agentId} code=${diagnostic.code}`,
         );
         return {
           agentId,
@@ -545,23 +524,6 @@ export default class GitHubNotificationMonitorService {
     for (const itemKey of preparedIssueItemKeys(state, selector)) {
       if (signal?.aborted) return;
       await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, {
-        executionSurface,
-        ...(signal === undefined ? {} : { signal }),
-      });
-    }
-  }
-
-  async #reconcileAssignmentResponses(
-    agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.#dependencies.assignmentResponseOrchestrator) return;
-    const state = await this.#dependencies.stateStore.read(agentId);
-    for (const itemKey of preparedIssueItemKeys(state, selector)) {
-      if (signal?.aborted) return;
-      await this.#dependencies.assignmentResponseOrchestrator.reconcile(agentId, itemKey, {
         executionSurface,
         ...(signal === undefined ? {} : { signal }),
       });

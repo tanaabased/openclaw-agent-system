@@ -47,7 +47,6 @@ export interface GitHubNotificationModelTurnDispatcherDependencies {
 export interface GitHubNotificationModelTurnDispatchInput {
   config: OpenClawConfig;
   contract: Pick<GitHubNotificationTurnContract, 'mode'>;
-  createIfMissing: boolean;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
   messageId: string;
@@ -104,7 +103,7 @@ export default class GitHubNotificationModelTurnDispatcher {
           this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
         messageId: input.messageId,
         record: {
-          createIfMissing: input.createIfMissing,
+          createIfMissing: false,
           onRecordError(error) {
             throw new GitHubNotificationModelTurnDispatcherError(
               'github-notification-model-turn-session-recording-failed',

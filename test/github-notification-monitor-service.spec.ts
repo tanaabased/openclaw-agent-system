@@ -271,7 +271,6 @@ describe('channels/github/intake/monitor/service', () => {
       worktreePath: '/workspace/worktrees/issue-7',
     };
     let connections = 0;
-    const conversationExecutions: string[] = [];
     const commentExecutions: string[] = [];
     const warnings: string[] = [];
     const service = monitorService({
@@ -318,14 +317,8 @@ describe('channels/github/intake/monitor/service', () => {
           if (item?.disposition === 'retired' && item.intake) item.intake.stage = 'retired';
         },
       },
-      assignmentResponseOrchestrator: {
-        async reconcile(_agentId, _itemKey, options) {
-          conversationExecutions.push(`planning:${options?.executionSurface ?? 'missing'}`);
-        },
-      },
       commentOrchestrator: {
         async reconcile(_agentId, _itemKey, options) {
-          conversationExecutions.push(`comment:${options?.executionSurface ?? 'missing'}`);
           commentExecutions.push(options?.executionSurface ?? 'missing');
           throw Object.assign(new Error('private response detail'), {
             code: 'github-notification-publication-candidate-missing',
@@ -355,7 +348,6 @@ describe('channels/github/intake/monitor/service', () => {
     assert.equal(state.failureCount, 0);
     assert.equal(state.lastSuccessfulPollAt, 1_000);
     assert.deepEqual(commentExecutions, ['cli-one-shot']);
-    assert.deepEqual(conversationExecutions, ['planning:cli-one-shot', 'comment:cli-one-shot']);
     assert.ok(warnings.every((message) => !message.includes('private response detail')));
 
     state.items[notificationItemKey]!.disposition = 'retired';
@@ -400,7 +392,6 @@ describe('channels/github/intake/monitor/service', () => {
     };
     let worktreeOperations = 0;
     const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
-      acknowledgments: { publish: async () => undefined },
       authority: { inspect: async () => ({ authorized: true }) },
       initialMode: githubNotificationWorkMode,
       lifecycles: new GitHubNotificationLifecycleRegistry([
@@ -416,6 +407,7 @@ describe('channels/github/intake/monitor/service', () => {
         }),
         new GitHubPullRequestLifecycle(),
       ]),
+      sessions: { prepare: async () => undefined },
       stateStore,
     });
     const service = monitorService({

@@ -7,10 +7,9 @@
 The GitHub notifications channel currently owns trusted polling, assignment
 admission, durable deduplication, routing, and managed issue-worktree intake.
 Accepted issues receive a private assignment card and an immediate public
-acknowledgment. Once issue intake is prepared, the agent assesses the issue and
-publishes either a concise plan summary or its blocking questions. Approved
-comments then enter the ordinary comment flow in the same OpenClaw lifecycle
-session.
+acknowledgment. For prepared issues, the channel also admits new approved
+comments into one OpenClaw lifecycle session and publishes the accepted public
+part of the response.
 
 ## Current Behavior
 
@@ -23,11 +22,6 @@ session.
   then the channel publishes one deterministic, varied acknowledgment using a
   durable idempotency marker. Pull-request assignments retain bounded head
   metadata without creating a worktree.
-- Prepared issues start one model-backed assignment response turn with bounded
-  current issue context and the managed worktree. The private response is a
-  report with `Assessment` plus either `Plan` or `Questions`; the separate public
-  candidate remains concise and conversational. A plan ends this slice of the
-  lifecycle without implementing it.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
   issue session with an attributed comment card as its direct message. The card
@@ -40,23 +34,21 @@ session.
   OpenClaw. Each lifecycle projects its own bounded source, repository, and
   resource facts as private structured context. The current comment flow
   requires the agent's `coding` profile.
-- Hidden instructions are composed from the registered `issue`, `work`, and
-  active assignment or comment definitions, selected from the private
-  active-turn descriptor, and injected through the prompt hook. Missing or
-  unsupported selection does not fall back to a different prompt.
-- Each completed model turn keeps its private response in the session and may
-  publish one validated public response to GitHub. Assignment responses retain
-  the accepted public text and publication receipt without interpreting the
-  private report as lifecycle state.
+- Hidden instructions for the current comment flow are composed from the
+  registered `issue`, `work`, and `comment` definitions, selected from the
+  private active-turn descriptor, and injected through the prompt hook. Missing
+  or unsupported selection does not fall back to a different prompt.
+- Each completed comment turn keeps its private response in the session and may
+  publish one validated public reply to GitHub. Missing or invalid public replies
+  are withheld without discarding the private response.
 - Public replies are concise conversational comments and may use GitHub-flavored
   Markdown when it improves clarity. Publication still rejects secrets,
   credentials, local paths, hidden context, and literal model-authored mentions.
   The model can position one reserved commenter placeholder naturally; after
   exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, post-plan implementation and pull-request creation,
-  Plan and Auto modes, mode transitions, and chat-originated publication remain
-  intentionally dormant.
+- Pull-request comments, initial planning turns, Plan and Auto modes, mode
+  transitions, and chat-originated publication remain intentionally dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -143,7 +135,7 @@ openclaw agent-system validate
 # reconcile routing and establish the first safe baseline.
 openclaw agent-system install
 
-# run intake, assignment response, and prepared-issue comment reconciliation immediately.
+# run intake and prepared-issue comment reconciliation immediately.
 openclaw agent-system notifications refresh
 
 # inspect redacted intake state.
@@ -173,8 +165,8 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 
 A repository, kind, and number selector is all-or-nothing. `refresh` runs the
 same intake cycle as scheduled polling and defaults to a 300-second timeout. It
-may also run an assignment response or process one admitted comment for a prepared
-issue. `status` returns a redacted view of assignment and intake state.
+may also process one admitted comment for a prepared issue. `status` returns a
+redacted view of assignment and intake state.
 
 `wait` supports these stable intake checkpoints:
 
@@ -203,15 +195,13 @@ reference.
 - Comment reads are bounded, and conversation state retains revision digests
   rather than incoming provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
-  The current channel-owned turn identity selects a declared `issue` and `work`
-  assignment or comment combination; its registry
-  rejects unsupported combinations, and the trusted Work policy requires the
-  configured `coding` profile.
-- When material information blocks a correct plan, the assignment instructions
-  tell the agent to ask the smallest complete set of currently known questions
-  and stop. A later admitted exact-mention comment uses the existing comment
-  tuple in the same session; the durable record retains the accepted assignment
-  response and publication receipt rather than a broad phase machine.
+  The current channel-owned turn identity selects the one supported `issue`,
+  `work`, and `comment` combination; its registry rejects unsupported
+  combinations, and the trusted Work policy requires the configured `coding`
+  profile.
+- When material information is missing, the current turn instructions tell the
+  agent to ask one precise public question and stop. A later admitted comment
+  resumes the same session; no separate clarification phase is persisted.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the exact source author and destination before loading credentials, substitutes
   only that verified commenter mention, and publishes idempotently. Assignment

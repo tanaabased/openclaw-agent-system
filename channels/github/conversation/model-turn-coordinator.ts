@@ -13,18 +13,11 @@ import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnDispatcher from './model-turn-dispatcher.ts';
 import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatcher.ts';
-import {
-  githubNotificationPlanningPrivateResponse,
-  githubNotificationPrivateResponse,
-} from './private-response.ts';
+import { githubNotificationPrivateResponse } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
-  | {
-      status: 'candidate';
-      publicText: string;
-    }
-  | { status: 'withheld'; code: string };
+  { status: 'candidate'; publicText: string } | { status: 'withheld'; code: string };
 
 export type GitHubNotificationModelTurnCoordinatorErrorCode =
   | 'github-notification-model-turn-prompt-selection-missing'
@@ -49,7 +42,6 @@ export interface GitHubNotificationModelTurnCoordinatorDependencies {
 export interface GitHubNotificationModelTurnCoordinatorInput {
   config: OpenClawConfig;
   contract: GitHubNotificationTurnContract;
-  createIfMissing: boolean;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
   messageId: string;
@@ -120,7 +112,6 @@ export default class GitHubNotificationModelTurnCoordinator {
       turnResult = await this.#dependencies.dispatcher.dispatch({
         config: input.config,
         contract: input.contract,
-        createIfMissing: input.createIfMissing,
         ctxPayload: input.ctxPayload,
         executionSurface: input.executionSurface,
         messageId: input.messageId,
@@ -150,18 +141,11 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
-    const privateText = githubNotificationPrivateResponse(turnResult.finalPayloads);
-    const coordinatedPublication = publication(publicCandidates, input.contract.publicationIntent);
-    const validatedPrivateText =
-      coordinatedPublication.status === 'candidate' &&
-      input.contract.publicationIntent === 'assignment-response'
-        ? githubNotificationPlanningPrivateResponse(privateText)
-        : privateText;
     return {
       dispatch: turnResult.dispatch,
       finalPayloadCount: turnResult.finalPayloads.length,
-      privateText: validatedPrivateText,
-      publication: coordinatedPublication,
+      privateText: githubNotificationPrivateResponse(turnResult.finalPayloads),
+      publication: publication(publicCandidates, input.contract.publicationIntent),
     };
   }
 }

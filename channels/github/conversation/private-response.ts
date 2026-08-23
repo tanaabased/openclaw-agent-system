@@ -23,23 +23,3 @@ export function githubNotificationPrivateResponse(payloads: readonly ReplyPayloa
   }
   return complete[0].text!.trim();
 }
-
-/** Enforce stable report sections for one assignment response. */
-export function githubNotificationPlanningPrivateResponse(value: string): string {
-  const text = value.trim();
-  const assessmentIndex = text.indexOf('## Assessment');
-  const headings = text.match(/^## .+$/gmu) ?? [];
-  const secondHeading = headings[1];
-  if (
-    assessmentIndex !== 0 ||
-    headings.length !== 2 ||
-    headings[0] !== '## Assessment' ||
-    (secondHeading !== '## Plan' && secondHeading !== '## Questions') ||
-    text.indexOf(secondHeading) <= assessmentIndex + '## Assessment'.length
-  ) {
-    throw new GitHubNotificationPrivateResponseError(
-      'github-notification-planning-private-response-invalid',
-    );
-  }
-  return text;
-}
