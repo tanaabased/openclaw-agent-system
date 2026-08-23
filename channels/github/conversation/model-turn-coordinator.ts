@@ -196,22 +196,25 @@ export default class GitHubNotificationModelTurnCoordinator {
     }
 
     const responsePublication = publication(publicCandidates, input.contract.publicationIntent);
-    this.#dependencies.logger.info(
-      [
-        'github-notifications: model turn completed',
-        details,
-        `final-payloads=${turnResult.finalPayloads.length}`,
-        `block=${turnResult.dispatch.counts.block}`,
-        `final=${turnResult.dispatch.counts.final}`,
-        `tool=${turnResult.dispatch.counts.tool}`,
-        `queued-final=${turnResult.dispatch.queuedFinal}`,
-        `candidates=${publicCandidates.length}`,
-        `publication=${responsePublication.status}`,
-        ...(responsePublication.status === 'withheld' ? [`code=${responsePublication.code}`] : []),
-        `aborted=${Boolean(input.signal?.aborted)}`,
-        `duration-ms=${Date.now() - startedAt}`,
-      ].join(' '),
-    );
+    const completion = [
+      'github-notifications: model turn completed',
+      details,
+      `final-payloads=${turnResult.finalPayloads.length}`,
+      `block=${turnResult.dispatch.counts.block}`,
+      `final=${turnResult.dispatch.counts.final}`,
+      `tool=${turnResult.dispatch.counts.tool}`,
+      `queued-final=${turnResult.dispatch.queuedFinal}`,
+      `candidates=${publicCandidates.length}`,
+      `publication=${responsePublication.status}`,
+      ...(responsePublication.status === 'withheld' ? [`code=${responsePublication.code}`] : []),
+      `aborted=${Boolean(input.signal?.aborted)}`,
+      `duration-ms=${Date.now() - startedAt}`,
+    ].join(' ');
+    if (responsePublication.status === 'withheld') {
+      this.#dependencies.logger.warn(completion);
+    } else {
+      this.#dependencies.logger.info(completion);
+    }
 
     return {
       dispatch: turnResult.dispatch,

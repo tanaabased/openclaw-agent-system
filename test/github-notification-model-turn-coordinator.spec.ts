@@ -155,6 +155,42 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
+  it('should warn with bounded diagnostics when publication is withheld', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 2, final: 1, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'Complete private response.' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    assert.deepEqual((await coordinator.run(input())).publication, {
+      code: 'github-notification-publication-candidate-missing',
+      status: 'withheld',
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /model turn completed .*final-payloads=1 block=2 final=1 tool=0 queued-final=false candidates=0 publication=withheld code=github-notification-publication-candidate-missing aborted=false/u,
+    );
+  });
+
   it('should classify a missing prompt-selection attestation', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
