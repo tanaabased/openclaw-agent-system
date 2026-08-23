@@ -17,6 +17,13 @@ export interface GitHubNotificationTurnSelectorDependencies {
   };
 }
 
+export interface GitHubNotificationSelectedTurn {
+  agentId: string;
+  conversationId: string;
+  identity: Readonly<GitHubNotificationTurnIdentity>;
+  sourceId: string;
+}
+
 function normalizedAgentId(context: PluginHookAgentContext): string | undefined {
   const agentId = context.agentId?.trim().toLowerCase();
   return agentId && /^[a-z0-9][a-z0-9-]*$/u.test(agentId) ? agentId : undefined;
@@ -40,7 +47,7 @@ export default class GitHubNotificationTurnSelector {
 
   async select(
     context: PluginHookAgentContext,
-  ): Promise<GitHubNotificationTurnIdentity | undefined> {
+  ): Promise<GitHubNotificationSelectedTurn | undefined> {
     const agentId = normalizedAgentId(context);
     const selectedConversationId = conversationId(context);
     if (!agentId || !selectedConversationId) return undefined;
@@ -57,11 +64,17 @@ export default class GitHubNotificationTurnSelector {
       }
       const conversation = state.conversations[selectedConversationId];
       if (!conversation?.activeTurn) return undefined;
-      return this.#dependencies.turns.resolve({
+      const identity = this.#dependencies.turns.resolve({
         eventId: conversation.activeTurn.eventId,
         lifecycleId: conversation.lifecycleId,
         modeId: conversation.mode,
       }).identity;
+      return {
+        agentId,
+        conversationId: selectedConversationId,
+        identity,
+        sourceId: conversation.activeTurn.sourceId,
+      };
     } catch {
       this.#dependencies.logger.warn(
         'github-notifications: turn selection failed code=github-notification-turn-selection-failed',

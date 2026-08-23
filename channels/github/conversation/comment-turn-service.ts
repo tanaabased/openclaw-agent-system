@@ -18,7 +18,10 @@ import {
 } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import { githubNotificationPrivateResponse } from './private-response.ts';
-import type GitHubNotificationReplyCandidateStore from '../publication/reply-candidate-store.ts';
+import {
+  GitHubNotificationReplyCandidateStoreError,
+  type default as GitHubNotificationReplyCandidateStore,
+} from '../publication/reply-candidate-store.ts';
 import {
   GitHubNotificationPublicationError,
   githubNotificationPublicationText,
@@ -168,7 +171,8 @@ export default class GitHubNotificationCommentTurnService {
     const candidateIdentity = {
       agentId: route.agentId,
       conversationId: route.conversationId,
-      revisionId: input.revision.revisionId,
+      identity: contract.identity,
+      sourceId: input.revision.revisionId,
     };
     const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
     let sessionRecordTask: Promise<unknown> | undefined;
@@ -265,10 +269,21 @@ export default class GitHubNotificationCommentTurnService {
         `queued-final=${dispatch.queuedFinal === true}`,
       ].join(' '),
     );
-    const publicCandidates = await this.#dependencies.candidates.finish({
-      ...candidateIdentity,
-      turnId: candidateTurn,
-    });
+    let publicCandidates: string[];
+    try {
+      publicCandidates = await this.#dependencies.candidates.finish({
+        ...candidateIdentity,
+        turnId: candidateTurn,
+      });
+    } catch (error) {
+      throw new GitHubNotificationCommentTurnError(
+        error instanceof GitHubNotificationReplyCandidateStoreError &&
+          error.code === 'reply-turn-prompt-selection-missing'
+          ? 'github-notification-comment-prompt-selection-missing'
+          : 'github-notification-comment-reply-candidate-failed',
+        { cause: error },
+      );
+    }
     const privateText = githubNotificationPrivateResponse(finalPayloads);
     let publication: GitHubNotificationCommentTurnResult['publication'];
     if (publicCandidates.length === 0) {

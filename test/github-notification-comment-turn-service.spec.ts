@@ -10,6 +10,10 @@ import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
 } from '../channels/github/conversation/comment-admission.ts';
+import {
+  GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateTurnInput,
+} from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationActor,
@@ -53,29 +57,19 @@ function incomingComment(): GitHubCanonicalIssueComment {
   };
 }
 
-function candidateStore(candidates: readonly string[]) {
-  let identity:
-    { agentId: string; conversationId: string; revisionId: string; turnId?: string } | undefined;
+function candidateStore(candidates: readonly string[], finishError?: Error) {
+  let identity: GitHubNotificationReplyCandidateTurnInput | undefined;
   return {
-    async begin(input: { agentId: string; conversationId: string; revisionId: string }) {
+    async begin(input: GitHubNotificationReplyCandidateTurnInput) {
       identity = { ...input };
       return 'turn-1';
     },
-    async cancel(input: {
-      agentId: string;
-      conversationId: string;
-      revisionId: string;
-      turnId: string;
-    }) {
+    async cancel(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
     },
-    async finish(input: {
-      agentId: string;
-      conversationId: string;
-      revisionId: string;
-      turnId: string;
-    }) {
+    async finish(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
+      if (finishError) throw finishError;
       return [...candidates];
     },
   };
@@ -85,6 +79,7 @@ async function respondWithCandidates(
   candidates: readonly string[],
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
   inspectReplyOptions?: (options: Record<string, unknown>) => void,
+  finishError?: Error,
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -96,7 +91,7 @@ async function respondWithCandidates(
   const comment = incomingComment();
   const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
-    candidates: candidateStore(candidates),
+    candidates: candidateStore(candidates, finishError),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
       const replyOptions = input.replyOptions ?? {};
       assertTurnContractOptions(replyOptions);
@@ -276,6 +271,20 @@ describe('channels/github/conversation/comment-turn-service', () => {
       status: 'withheld',
       code: 'github-notification-publication-candidate-missing',
     });
+  });
+
+  it('should classify a missing prompt-selection attestation', async () => {
+    await assert.rejects(
+      respondWithCandidates(
+        [],
+        'gateway',
+        undefined,
+        new GitHubNotificationReplyCandidateStoreError('reply-turn-prompt-selection-missing'),
+      ),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentTurnError &&
+        error.code === 'github-notification-comment-prompt-selection-missing',
+    );
   });
 
   it('should preserve long-lived host resources for gateway turns', async () => {

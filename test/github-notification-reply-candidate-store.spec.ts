@@ -10,7 +10,8 @@ import GitHubNotificationReplyCandidateStore, {
 const identity = {
   agentId: 'tanaabot',
   conversationId: 'github:issue:repository:12',
-  revisionId: 'revision-1',
+  identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const,
+  sourceId: 'revision-1',
 };
 
 function hasCode(expected: string) {
@@ -31,6 +32,7 @@ describe('channels/github/publication/reply-candidate-store', () => {
       const executor = new GitHubNotificationReplyCandidateStore({ rootDir });
       const turnId = await parent.begin(identity);
 
+      await executor.attestPromptSelection(identity);
       await executor.stage(identity.agentId, ' ready ');
 
       assert.equal(turnId, 'turn-1');
@@ -65,6 +67,22 @@ describe('channels/github/publication/reply-candidate-store', () => {
         store.finish({ ...identity, turnId: 'stale-turn' }),
         hasCode('reply-turn-mismatch'),
       );
+      await assert.rejects(
+        store.stage(identity.agentId, 'unattested'),
+        hasCode('reply-turn-prompt-selection-missing'),
+      );
+      await assert.rejects(
+        store.attestPromptSelection({ ...identity, sourceId: 'stale-revision' }),
+        hasCode('reply-turn-mismatch'),
+      );
+      await assert.rejects(
+        store.attestPromptSelection({
+          ...identity,
+          identity: { ...identity.identity, lifecycleId: 'pull-request' },
+        }),
+        hasCode('reply-turn-mismatch'),
+      );
+      await store.attestPromptSelection(identity);
       await store.stage(identity.agentId, 'first');
       await store.stage(identity.agentId, 'second');
       await assert.rejects(
@@ -74,12 +92,30 @@ describe('channels/github/publication/reply-candidate-store', () => {
       assert.deepEqual(await store.finish({ ...identity, turnId }), ['first', 'second']);
 
       const expiringTurn = await store.begin(identity);
+      await store.attestPromptSelection(identity);
       now += 1_001;
       await assert.rejects(
         store.finish({ ...identity, turnId: expiringTurn }),
         hasCode('reply-turn-expired'),
       );
       await assert.rejects(store.stage(identity.agentId, 'late'), hasCode('reply-turn-missing'));
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('should release a turn that finishes without attested prompt selection', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-unattested-'));
+    const rootDir = join(temporaryDirectory, 'state');
+    try {
+      const store = new GitHubNotificationReplyCandidateStore({ rootDir });
+      const turnId = await store.begin(identity);
+
+      await assert.rejects(
+        store.finish({ ...identity, turnId }),
+        hasCode('reply-turn-prompt-selection-missing'),
+      );
+      await store.begin(identity);
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }
@@ -99,15 +135,14 @@ describe('channels/github/publication/reply-candidate-store', () => {
       });
       const oldTurn = await store.begin(identity);
       now += 1_001;
-      const newTurn = await store.begin({ ...identity, revisionId: 'revision-2' });
+      const newIdentity = { ...identity, sourceId: 'revision-2' };
+      const newTurn = await store.begin(newIdentity);
 
       await store.cancel({ ...identity, turnId: oldTurn });
+      await store.attestPromptSelection(newIdentity);
       await store.stage(identity.agentId, 'new response');
 
-      assert.deepEqual(
-        await store.finish({ ...identity, revisionId: 'revision-2', turnId: newTurn }),
-        ['new response'],
-      );
+      assert.deepEqual(await store.finish({ ...newIdentity, turnId: newTurn }), ['new response']);
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

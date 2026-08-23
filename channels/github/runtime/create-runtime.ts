@@ -122,7 +122,11 @@ export default function createGitHubNotificationRuntime(
     }),
     promptGuidance: {
       instructions(context: PluginHookAgentContext) {
-        return githubNotificationPromptGuidance(context, { turnContracts, turnSelector });
+        return githubNotificationPromptGuidance(context, {
+          candidates,
+          turnContracts,
+          turnSelector,
+        });
       },
     },
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),

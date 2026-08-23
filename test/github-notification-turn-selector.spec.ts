@@ -51,7 +51,12 @@ describe('channels/github/conversation/turn-selector', () => {
         chatId: conversationId,
         workspaceDir,
       }),
-      { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
     );
     assert.deepEqual(reads, [agentId]);
     assert.deepEqual(resolved, [{ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }]);
