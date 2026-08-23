@@ -1,3 +1,4 @@
+import type { GitHubNotificationAssignmentEventProjection } from '../events/assignment.ts';
 import type {
   GitHubNotificationIntakeState,
   GitHubNotificationItemState,
@@ -48,24 +49,9 @@ export type GitHubNotificationLifecycleModeSupportMap = Partial<
   Record<GitHubNotificationModeId, GitHubNotificationLifecycleModeSupport>
 >;
 
-export interface GitHubNotificationLifecycleAssignmentSessionProjection {
-  card: {
-    emoji: string;
-    summary: string;
-    title: string;
-  };
-  sender: {
-    id: string;
-    label: string;
-  };
-  timestamp: number;
-}
-
 export interface GitHubNotificationLifecycleAssignmentEventSupport {
   session?: {
-    project(
-      item: GitHubNotificationItemState,
-    ): GitHubNotificationLifecycleAssignmentSessionProjection;
+    project(item: GitHubNotificationItemState): GitHubNotificationAssignmentEventProjection;
   };
 }
 

@@ -9,6 +9,7 @@ import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../core/logger.ts';
+import { githubNotificationCommentPresentation } from '../events/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
 import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from './comment-admission.ts';
 import {
@@ -113,6 +114,7 @@ export default class GitHubNotificationCommentTurnService {
     );
     const turnDispatch = githubNotificationTurnDispatchOptions(contract);
     const messageId = `comment:${input.revision.revisionId}`;
+    const presentation = githubNotificationCommentPresentation(input.comment.body);
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
@@ -137,11 +139,11 @@ export default class GitHubNotificationCommentTurnService {
       },
       from: `github:${author.nodeId}`,
       message: {
-        body: input.comment.body,
-        bodyForAgent: input.comment.body,
+        body: presentation,
+        bodyForAgent: presentation,
         commandBody: '',
         inboundEventKind: 'user_request',
-        rawBody: input.comment.body,
+        rawBody: presentation,
       },
       messageId,
       reply: { sourceReplyDeliveryMode: 'none', to: route.conversationId },

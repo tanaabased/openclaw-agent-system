@@ -20,7 +20,7 @@ lifecycle session and publishes the accepted public part of the response.
   metadata without creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
-  issue session as a normalized direct message.
+  issue session with the exact admitted GitHub comment as its direct message.
 - Incoming GitHub prose is visible to the model as the author's message while
   each lifecycle projects its own bounded source, repository, and resource facts
   as private structured context. The current comment flow requires the agent's

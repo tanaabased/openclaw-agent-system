@@ -1,5 +1,4 @@
 import githubNotificationIssueLifecycleInstructions from '../conversation/prompts/lifecycle-issue.ts';
-import { githubNotificationMarkdownText } from '../conversation/presentation/card.ts';
 import githubNotificationItemContext from './context.ts';
 import type {
   GitHubNotificationLifecycle,
@@ -76,12 +75,13 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
           }
           const repository = `${item.repositoryOwner}/${item.repositoryName}`;
           return {
-            card: {
-              emoji: '📥',
-              summary: `[@${githubNotificationMarkdownText(actorLogin)}](${actorUrl(actorLogin)}) assigned you [${githubNotificationMarkdownText(`${repository}#${item.number}`)}](${issueUrl(item)}).`,
-              title: 'Issue assignment received',
+            emoji: '📥',
+            item: {
+              kind: 'Issue',
+              label: `${repository}#${item.number}`,
+              url: issueUrl(item),
             },
-            sender: { id: actorNodeId, label: actorLogin },
+            sender: { id: actorNodeId, label: actorLogin, url: actorUrl(actorLogin) },
             timestamp: item.lastObservedAt,
           };
         },

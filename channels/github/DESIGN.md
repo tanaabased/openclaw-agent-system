@@ -235,13 +235,13 @@ The channel source is organized by the behavior being changed:
 
 | Scope                        | Ownership                                                                                                                  |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `events/`                    | Trusted event definitions and explicit registration; lifecycle support and runtime orchestration remain separate           |
+| `events/`                    | Trusted event definitions, event-owned visible presentation, and explicit registration                                     |
 | `lifecycles/`                | Lifecycle descriptors, supported-mode declarations, structured-context projection, and lifecycle-specific resources        |
 | `modes/`                     | Trusted mode instructions, policies, and runtime tool projection; register implemented definitions during runtime assembly |
 | `intake/`                    | Assignment admission, classification, preparation, and polling checkpoints                                                 |
 | `conversation/context/`      | Event-specific composition over lifecycle-owned bounded structured context                                                 |
 | `conversation/prompts/`      | Hidden lifecycle, event, mode, and response instruction text and pure composition                                          |
-| `conversation/presentation/` | Reusable visible components governed by [Presentation](./PRESENTATION.md)                                                  |
+| `conversation/presentation/` | Reusable mode-neutral visible primitives governed by [Presentation](./PRESENTATION.md)                                     |
 | `conversation/`              | Session preparation, comment admission, turn dispatch, and conversation state                                              |
 | `publication/`               | Typed public candidates, validation, leases, delivery, and reconciliation                                                  |
 | `provider/`                  | Bounded GitHub reads and provider data normalization                                                                       |

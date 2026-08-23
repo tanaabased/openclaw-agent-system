@@ -7,8 +7,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import type { Logger } from '../../../core/logger.ts';
+import { githubNotificationAssignmentCard } from '../events/assignment.ts';
 import githubNotificationAssignmentContext from './context/assignment.ts';
-import githubNotificationCard from './presentation/card.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type {
   GitHubNotificationLifecycle,
@@ -69,10 +69,7 @@ export default class GitHubNotificationAssignmentSessionService {
       conversationId,
     );
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
-    const body = githubNotificationCard({
-      ...projection.card,
-      mode: input.mode.policy.label,
-    });
+    const body = githubNotificationAssignmentCard(projection, input.mode.policy.label);
     const ctxPayload = buildChannelInboundEventContext({
       accountId: route.accountId,
       channel: githubNotificationChannelId,
