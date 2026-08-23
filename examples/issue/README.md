@@ -138,7 +138,7 @@ cd "$TMPDIR/agent-system-notification-actor"
 replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
 reply="$(jq -sce 'select(length == 1) | .[0]' <<< "$replies")"
 jq -e '.id | type == "number" and . > 0' <<< "$reply"
-jq -e --arg token "$reply_token" '.body | contains("## Results") and contains("- " + $token)' <<< "$reply"
+jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains("## Results") and contains("- " + $token)' <<< "$reply"
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

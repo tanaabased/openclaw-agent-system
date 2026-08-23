@@ -34,7 +34,14 @@ describe('channels/github/events/presentation', () => {
   });
 
   it('should render trusted comment identity around the exact author prose', () => {
-    const body = '  @tanaabot Please keep this **exact**.\n\nSecond paragraph.  ';
+    const body = [
+      '  @tanaabot Please check [the build](https://github.com/tanaabased/example/actions).',
+      '',
+      '## Notes',
+      '',
+      '- Keep `code` exact.',
+      '- Ask @octocat about #12.  ',
+    ].join('\n');
     const start = body.indexOf('@tanaabot');
 
     assert.equal(
@@ -49,9 +56,12 @@ describe('channels/github/events/presentation', () => {
         mentions: [{ end: start + '@tanaabot'.length, start }],
       }),
       [
-        '  📬 [Notification Data](/openclaw/agents) Please keep this **exact**.',
+        '  📬 [Notification Data](/openclaw/agents) Please check [the build](https://github.com/tanaabased/example/actions).',
         '',
-        'Second paragraph.  ',
+        '## Notes',
+        '',
+        '- Keep `code` exact.',
+        '- Ask @octocat about #12.  ',
         '',
         '> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/openclaw-agent-system#46](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123)._',
       ].join('\n'),

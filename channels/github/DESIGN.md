@@ -185,7 +185,11 @@ but publication never depends on that rendering.
 The GitHub-facing candidate is a conversational comment, not a report. It may
 use GitHub-flavored Markdown when structure improves clarity, while deterministic
 publication validation continues to reject secrets, credentials, local paths,
-hidden context, and model-authored mentions.
+hidden context, and literal model-authored mentions. The model may place the
+reserved `{{commenter}}` token once wherever addressing the source author reads
+naturally. After exact-source reauthorization, the publisher substitutes only
+that provider-verified login. If the token is omitted, publication prefixes the
+same trusted mention as a deterministic fallback.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
@@ -232,12 +236,14 @@ selection fails closed instead of falling back to a different prompt.
 - **Comments:** An admitted comment enters as an attributed direct-message card
   in the existing session and inherits its lifecycle type, current mode, and
   capability. The event presentation replaces only admitted account mentions,
-  links the installed agent identity and exact source comment, and retains the
-  unchanged provider comment as the raw inbound body.
+  links the installed agent identity and exact source comment, preserves the
+  remaining Markdown source, and retains the unchanged provider comment as the
+  raw inbound body.
 - **Publication:** Only the typed GitHub candidate or a trusted
   provider-constructed message may be published. Publication validates the
-  payload, reauthorizes the destination, records a durable receipt, and retries
-  the accepted text without model regeneration.
+  payload, reauthorizes the exact source author and destination, substitutes its
+  verified commenter token, records a durable receipt, and retries the accepted
+  text without model regeneration.
 
 Private responses, structured context, hidden instructions, tool output,
 credentials, and local paths remain outside GitHub publication.

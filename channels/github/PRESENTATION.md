@@ -53,8 +53,11 @@ component needs it.
 
 A direct inbound comment replaces each admitted GitHub account mention with the
 agent's installed emoji, display name, and OpenClaw Agents link. The remaining
-author-written text stays exact. A quoted italic footer links the author and the
-source comment:
+author-written Markdown source stays exact, so standard links, headings, lists,
+tables, blockquotes, and code formatting remain available to OpenClaw's Markdown
+renderer. GitHub-specific shorthand such as bare mentions and issue numbers may
+remain literal text. A quoted italic footer links the author and the source
+comment:
 
 ```markdown
 📬 [Notification Data](/agents) can you confirm whether this also covers comments received while planning?
@@ -111,11 +114,13 @@ model-facing message uses this presentation.
 ```markdown
 ## 📤 To GitHub
 
-> <complete GitHub-facing response>
+> Thanks for flagging this, @pirog. The notification flow now preserves the link.
 ```
 
 Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
-responses repeat the blockquote marker for each paragraph.
+responses repeat the blockquote marker for each paragraph. Address the verified
+source commenter where it reads naturally rather than imposing a fixed mention
+position.
 
 ## Private and Public Composition
 

@@ -9,6 +9,7 @@ import { maximumGitHubNotificationReplyLength } from './limits.ts';
 
 const maximumAcknowledgmentLength = 200;
 const markerPrefix = 'agent-system-github-publication';
+export const githubNotificationCommenterToken = '{{commenter}}';
 
 export type GitHubNotificationPublicationIntent =
   'github-reply' | 'initial-acknowledgment' | 'planning-outcome';
@@ -56,6 +57,19 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
       reject('github-notification-publication-acknowledgment-invalid');
     }
   }
+  const commenterTokenIndex = text.indexOf(githubNotificationCommenterToken);
+  const commenterTokenEnd = commenterTokenIndex + githubNotificationCommenterToken.length;
+  if (
+    commenterTokenIndex >= 0 &&
+    (publicationIntent !== 'github-reply' ||
+      text.indexOf(githubNotificationCommenterToken, commenterTokenEnd) >= 0 ||
+      (commenterTokenIndex > 0 && !/[\s({"',.:;!?—-]$/u.test(text.slice(0, commenterTokenIndex))) ||
+      (commenterTokenEnd < text.length &&
+        !/^[\s)}"',.:;!?—]/u.test(text.slice(commenterTokenEnd))) ||
+      !/\p{L}/u.test(`${text.slice(0, commenterTokenIndex)}${text.slice(commenterTokenEnd)}`))
+  ) {
+    reject('github-notification-publication-commenter-token-invalid');
+  }
   if (
     redactSensitiveText(text) !== text ||
     /\b[A-Z][A-Z0-9_]{2,}=|@[A-Za-z0-9]/iu.test(text) ||
@@ -66,6 +80,23 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
     reject('github-notification-publication-secret-safety-rejected');
   }
   return text;
+}
+
+/** Substitute only one provider-verified commenter into a safe reply candidate. */
+export function githubNotificationAttributedReplyText(
+  value: string,
+  commenterLogin: string,
+): string {
+  const text = safeText(value, 'github-reply');
+  if (
+    commenterLogin.length > 255 ||
+    !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(commenterLogin)
+  ) {
+    throw new Error('GitHub notification commenter logins are invalid.');
+  }
+  return text.includes(githubNotificationCommenterToken)
+    ? text.replace(githubNotificationCommenterToken, `@${commenterLogin}`)
+    : `@${commenterLogin}\n\n${text}`;
 }
 
 /** Accept one bounded final agent reply for an explicit GitHub publication intent. */

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
 import {
+  githubNotificationAttributedReplyText,
+  githubNotificationCommenterToken,
   githubNotificationPublicationComment,
+  GitHubNotificationPublicationError,
   githubNotificationPublicationMarker,
   githubNotificationPublicationTarget,
   githubNotificationPublicationText,
@@ -47,7 +50,7 @@ describe('channels/github/publication/publication', () => {
           text: [
             '## Result',
             '',
-            'The `notification` flow is ready.',
+            `The \`notification\` flow is ready, ${githubNotificationCommenterToken}.`,
             '',
             '| Check | Status |',
             '| --- | --- |',
@@ -58,7 +61,7 @@ describe('channels/github/publication/publication', () => {
       [
         '## Result',
         '',
-        'The `notification` flow is ready.',
+        `The \`notification\` flow is ready, ${githubNotificationCommenterToken}.`,
         '',
         '| Check | Status |',
         '| --- | --- |',
@@ -70,6 +73,27 @@ describe('channels/github/publication/publication', () => {
         { text: 'I reviewed the assignment and have a plan ready.' },
       ]),
       'I reviewed the assignment and have a plan ready.',
+    );
+  });
+
+  it('should substitute the verified commenter wherever the reserved token reads naturally', () => {
+    assert.equal(
+      githubNotificationAttributedReplyText(
+        `Thanks for flagging this, ${githubNotificationCommenterToken}. I checked the flow.`,
+        'emoriwan',
+      ),
+      'Thanks for flagging this, @emoriwan. I checked the flow.',
+    );
+    assert.equal(
+      githubNotificationAttributedReplyText('I checked the flow.', 'emoriwan'),
+      '@emoriwan\n\nI checked the flow.',
+    );
+    assert.equal(
+      githubNotificationAttributedReplyText(
+        `I checked the flow. Thanks, ${githubNotificationCommenterToken}`,
+        'emoriwan',
+      ),
+      'I checked the flow. Thanks, @emoriwan',
     );
   });
 
@@ -103,6 +127,20 @@ describe('channels/github/publication/publication', () => {
       () => githubNotificationPublicationText('github-reply', [{ text: 'See @pirog.' }]),
       /not safe to publish/u,
     );
+    for (const text of [
+      `Thanks${githubNotificationCommenterToken}.`,
+      `Thanks, ${githubNotificationCommenterToken}${githubNotificationCommenterToken}.`,
+      `[${githubNotificationCommenterToken}](https://github.com/pirog) thanks.`,
+      `${githubNotificationCommenterToken}-other thanks.`,
+      githubNotificationCommenterToken,
+    ]) {
+      assert.throws(
+        () => githubNotificationPublicationText('github-reply', [{ text }]),
+        (error: unknown) =>
+          error instanceof GitHubNotificationPublicationError &&
+          error.code === 'github-notification-publication-commenter-token-invalid',
+      );
+    }
     assert.throws(
       () =>
         githubNotificationPublicationText('github-reply', [

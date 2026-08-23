@@ -4,6 +4,7 @@ import type {
 } from '../provider/work-event-client.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
+  githubNotificationAttributedReplyText,
   githubNotificationPublicationComment,
   githubNotificationPublicationMarker,
   githubNotificationPublicationTarget,
@@ -28,6 +29,11 @@ export interface GitHubNotificationCommentPublicationAuthorization {
   reasonCode?: string;
 }
 
+export interface GitHubNotificationCommentPublicationConnection {
+  client: Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>;
+  commenterLogin: string;
+}
+
 export interface GitHubNotificationCommentPublisherDependencies {
   authorize(
     input: Omit<GitHubNotificationCommentPublicationInput, 'text'> & { target: string },
@@ -35,10 +41,8 @@ export interface GitHubNotificationCommentPublisherDependencies {
     | GitHubNotificationCommentPublicationAuthorization
     | Promise<GitHubNotificationCommentPublicationAuthorization>;
   connect():
-    | Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>
-    | Promise<
-        Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>
-      >;
+    | GitHubNotificationCommentPublicationConnection
+    | Promise<GitHubNotificationCommentPublicationConnection>;
   exclusive<T>(key: string, run: () => Promise<T>): Promise<T>;
 }
 
@@ -93,7 +97,6 @@ export default class GitHubNotificationCommentPublisher {
       source: input.source,
     });
     const marker = githubNotificationPublicationMarker(target);
-    const expectedBody = githubNotificationPublicationComment(text, marker);
     return this.#dependencies.exclusive(target, async () => {
       const authorization = await this.#dependencies.authorize({
         intent: input.intent,
@@ -106,8 +109,10 @@ export default class GitHubNotificationCommentPublisher {
           authorization.reasonCode ?? 'github-notification-publication-authority-revoked',
         );
       }
-      const client = await this.#dependencies.connect();
-      const existing = await client.findOwnIssueComment(
+      const connection = await this.#dependencies.connect();
+      const attributedText = githubNotificationAttributedReplyText(text, connection.commenterLogin);
+      const expectedBody = githubNotificationPublicationComment(attributedText, marker);
+      const existing = await connection.client.findOwnIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,
         input.item.number,
@@ -122,7 +127,7 @@ export default class GitHubNotificationCommentPublisher {
         return { receipt: existing, status: 'reconciled', target };
       }
       if (!create) return undefined;
-      const receipt = await client.createIssueComment(
+      const receipt = await connection.client.createIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,
         input.item.number,

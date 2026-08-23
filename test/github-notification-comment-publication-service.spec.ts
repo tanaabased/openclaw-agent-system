@@ -28,7 +28,7 @@ import {
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
-const publicText = 'ready';
+const publicText = 'Ready for you, {{commenter}}.';
 const configuration = {
   assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
@@ -172,7 +172,10 @@ describe('channels/github/publication/comment-publication-service', () => {
 
     assert.equal(opened, 1);
     assert.equal(result.status, 'published');
-    assert.match(publishedBody, /^ready\n\n<!-- agent-system-github-publication:github-reply:/u);
+    assert.match(
+      publishedBody,
+      /^Ready for you, @pirog\.\n\n<!-- agent-system-github-publication:github-reply:/u,
+    );
   });
 
   it('should reject unaccepted text before connecting credentials', async () => {

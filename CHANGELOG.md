@@ -5,6 +5,7 @@
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
 - Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety.
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
+- Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.
 
 ### Bug Fixes
 
