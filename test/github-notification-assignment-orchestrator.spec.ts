@@ -49,7 +49,7 @@ function lifecycles(worktrees: {
 }
 
 describe('channels/github/intake/assignment-orchestrator', () => {
-  it('should prepare one issue worktree and assignment session without a model turn', async () => {
+  it('should prepare one issue worktree and assignment turn', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
     let sessionPreparations = 0;
@@ -68,6 +68,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
       sessions: {
         async prepare(input) {
           sessionPreparations += 1;
+          assert.equal(input.executionSurface, 'gateway');
           assert.deepEqual(input.worktree, worktree);
         },
       },

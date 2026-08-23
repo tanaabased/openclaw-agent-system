@@ -163,9 +163,12 @@ export default function createGitHubNotificationRuntime(
       );
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
         acknowledgments: assignmentAcknowledgmentService,
+        conversationStateStore,
+        coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
+        publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,
-        recordInboundSession: dependencies.recordInboundSession,
+        turnContracts,
       });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
         authority: assignmentProvider,

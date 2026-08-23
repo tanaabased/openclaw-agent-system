@@ -138,7 +138,7 @@ prepare_ssh_key() {
 
   [[ -n "${HOME:-}" ]] || error 'HOME is required for SSH key setup'
   ssh_directory="$HOME/.ssh"
-  private_key_path="$ssh_directory/agent-system-test-ssh"
+  private_key_path="$ssh_directory/big-test-bucket-ssh"
   public_key_path="$private_key_path.pub"
 
   if [[ -e "$private_key_path" || -L "$private_key_path" || -e "$public_key_path" || -L "$public_key_path" ]]; then

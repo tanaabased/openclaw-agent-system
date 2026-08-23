@@ -77,6 +77,9 @@
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Assert exact values only for stable public, schema, and security contracts. For human messages and logs, assert semantic signal and stable diagnostic codes.
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
+- Use `tanaabased/big-test-bucket` as the default hosted repository for manual and GitHub-backed tests that can use a Tanaab organization repository.
+- Use `pirog/me` only when a test specifically requires a non-organization, user-owned repository.
+- Keep created GitHub fixtures bounded and disposable, clean them up after capturing evidence, and do not spread live testing across unrelated repositories.
 
 ## Optimization
 

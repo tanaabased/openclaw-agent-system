@@ -42,6 +42,7 @@ export interface GitHubNotificationModelTurnCoordinatorDependencies {
 export interface GitHubNotificationModelTurnCoordinatorInput {
   config: OpenClawConfig;
   contract: GitHubNotificationTurnContract;
+  createIfMissing?: boolean;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
   messageId: string;
@@ -112,6 +113,7 @@ export default class GitHubNotificationModelTurnCoordinator {
       turnResult = await this.#dependencies.dispatcher.dispatch({
         config: input.config,
         contract: input.contract,
+        ...(input.createIfMissing === undefined ? {} : { createIfMissing: input.createIfMissing }),
         ctxPayload: input.ctxPayload,
         executionSurface: input.executionSurface,
         messageId: input.messageId,

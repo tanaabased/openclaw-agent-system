@@ -150,6 +150,7 @@ describe('channels/github/intake/monitor/service', () => {
   it('should reconcile persisted intake backlog before the next remote poll', async () => {
     let connected = 0;
     const reconciled: string[] = [];
+    const executionSurfaces: string[] = [];
     const state = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
@@ -162,8 +163,9 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       assignmentOrchestrator: {
-        async reconcile(_agentId, itemKey) {
+        async reconcile(_agentId, itemKey, _signal, executionSurface) {
           reconciled.push(itemKey);
+          executionSurfaces.push(executionSurface ?? 'missing');
         },
       },
       clock: () => 1_000,
@@ -173,10 +175,11 @@ describe('channels/github/intake/monitor/service', () => {
       },
     });
 
-    await service.runOnce();
+    await service.runOnce({ executionSurface: 'cli-one-shot' });
 
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
+    assert.deepEqual(executionSurfaces, ['cli-one-shot']);
   });
 
   it('should leave prepared intake idle until the next remote poll', async () => {

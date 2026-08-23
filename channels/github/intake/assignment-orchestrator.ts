@@ -2,6 +2,7 @@ import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import type { GitHubNotificationExecutionSurface } from '../conversation/execution.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import type {
@@ -60,17 +61,25 @@ export default class GitHubNotificationAssignmentOrchestrator {
     this.#dependencies = dependencies;
   }
 
-  async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
-    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
+  async reconcile(
+    agentId: string,
+    itemKey: string,
+    signal?: AbortSignal,
+    executionSurface: GitHubNotificationExecutionSurface = 'gateway',
+  ): Promise<void> {
+    return this.#queue.enqueue(agentId, () =>
+      this.#reconcile(agentId, itemKey, signal, executionSurface),
+    );
   }
 
   async #reconcile(
     agentId: string,
     itemKey: string,
     signal: AbortSignal | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
   ): Promise<void> {
     try {
-      await this.#run(agentId, itemKey, signal);
+      await this.#run(agentId, itemKey, signal, executionSurface);
     } catch (error) {
       const code =
         error instanceof GitHubNotificationAssignmentOrchestratorError
@@ -87,7 +96,12 @@ export default class GitHubNotificationAssignmentOrchestrator {
     }
   }
 
-  async #run(agentId: string, itemKey: string, signal: AbortSignal | undefined): Promise<void> {
+  async #run(
+    agentId: string,
+    itemKey: string,
+    signal: AbortSignal | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
+  ): Promise<void> {
     for (let step = 0; step < 12; step += 1) {
       if (signal?.aborted) {
         throw new GitHubNotificationAssignmentOrchestratorError(
@@ -115,7 +129,14 @@ export default class GitHubNotificationAssignmentOrchestrator {
         return;
       }
       if (action.kind === 'mark-prepared') {
-        await this.#checkpointPrepared(agentId, state, itemKey, action.worktree, signal);
+        await this.#checkpointPrepared(
+          agentId,
+          state,
+          itemKey,
+          action.worktree,
+          signal,
+          executionSurface,
+        );
         return;
       }
       if (action.kind === 'prepare-worktree') {
@@ -151,7 +172,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
               workspaceDir: state.workspaceDir,
             }),
         );
-        await this.#checkpointPrepared(agentId, state, itemKey, worktree, signal);
+        await this.#checkpointPrepared(agentId, state, itemKey, worktree, signal, executionSurface);
         return;
       }
       continue;
@@ -312,6 +333,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     itemKey: string,
     worktree?: GitHubNotificationLifecycleWorktree,
     signal?: AbortSignal,
+    executionSurface: GitHubNotificationExecutionSurface = 'gateway',
   ): Promise<void> {
     const item = state.items[itemKey];
     const intake = item?.intake;
@@ -339,6 +361,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         () =>
           this.#dependencies.sessions.prepare({
             agentId,
+            executionSurface,
             item,
             lifecycle,
             mode: this.#dependencies.initialMode,

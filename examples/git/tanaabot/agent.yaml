@@ -13,13 +13,13 @@ environment:
 
 git:
   extensions:
-    agent-system-test: allow
+    big-test-bucket: allow
   signing:
     key: OP_SSH_KEY
     allowed-signers-file: .agent-system/allowed_signers
   ssh:
     private-keys:
-      - path: ~/.ssh/agent-system-test-ssh
+      - path: ~/.ssh/big-test-bucket-ssh
       - from-environment: OP_SSH_KEY
 
 github:

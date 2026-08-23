@@ -4,13 +4,14 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
-publishes one assignment acknowledgment, delivers one approved comment through
-the registered issue/Work/comment turn contract with its installed identity
-card, publishes one reply, and retires the assignment without deleting the
-worktree.
+publishes one assignment acknowledgment, runs the registered issue/Work/assignment
+turn, publishes one bounded assignment response, delivers one approved comment
+through the registered issue/Work/comment turn contract with its installed
+identity card, publishes one reply, and retires the assignment without deleting
+the worktree.
 
 Scenario setup creates and updates uniquely named issues in
-`tanaabased/agent-system-test`.
+`tanaabased/big-test-bucket`.
 
 ## Setup
 
@@ -64,7 +65,7 @@ openclaw agent-system notifications wait \
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-data \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --title "agent system rejected notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
   --body 'This self-authored assignment must not start local work.' \
   --assignee "$agent_login" \
@@ -75,7 +76,7 @@ cd "$TMPDIR/agent-system-notifications"
 rejected_issue="$(cat "$TMPDIR/rejected-issue-number")"
 openclaw agent-system notifications wait \
   --agent notification-data \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --kind issue \
   --number "$rejected_issue" \
   --for assignment-rejected \
@@ -88,7 +89,7 @@ cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
   --body 'Untrusted fixture content must not affect assignment classification.' \
   --assignee "$agent_login" \
@@ -99,21 +100,29 @@ cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
   --agent notification-data \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --kind issue \
   --number "$issue_number" \
   --for worktree-ready \
   --refresh \
   --timeout 180 \
-  --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/agent-system-test" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
+  --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/big-test-bucket" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
 
 # should publish exactly one bounded assignment acknowledgment
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-acknowledgments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment"))) | {body, id}')"
+acknowledgments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment"))) | {body, id}')"
 acknowledgment="$(jq -sce 'select(length == 1) | .[0]' <<< "$acknowledgments")"
 jq -e '.id | type == "number" and . > 0' <<< "$acknowledgment"
 jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 200) and (.[1] | contains("agent-system-github-publication:initial-acknowledgment"))' <<< "$acknowledgment"
+
+# should publish exactly one bounded assignment response
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
+response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
+jq -e '.id | type == "number" and . > 0' <<< "$response"
+jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
@@ -121,7 +130,7 @@ cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
   --agent notification-data \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --kind issue \
   --number "$issue_number" \
   --for worktree-ready \
@@ -132,19 +141,19 @@ openclaw agent-system notifications wait \
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/big-test-bucket --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
 cd "$TMPDIR/agent-system-notifications"
 refresh_result="$(
   openclaw-github-notifications refresh-completed \
     --agent notification-data \
-    --repository tanaabased/agent-system-test \
+    --repository tanaabased/big-test-bucket \
     --kind issue \
     --number "$issue_number" \
     --timeout 180
 )"
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 cd "$TMPDIR/agent-system-notification-actor"
-replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
+replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
 reply="$(jq -sce 'select(length == 1) | .[0]' <<< "$replies")"
 jq -e '.id | type == "number" and . > 0' <<< "$reply"
 jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains($token)' <<< "$reply"
@@ -153,11 +162,11 @@ jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains($to
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$issue_number" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system notifications wait \
   --agent notification-data \
-  --repository tanaabased/agent-system-test \
+  --repository tanaabased/big-test-bucket \
   --kind issue \
   --number "$issue_number" \
   --for retired \
@@ -174,12 +183,12 @@ cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 if test -f "$TMPDIR/rejected-issue-number"; then
   rejected_issue="$(cat "$TMPDIR/rejected-issue-number")"
-  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$rejected_issue" --repo tanaabased/agent-system-test --remove-assignee "$agent_login"
-  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$rejected_issue" --repo tanaabased/agent-system-test
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$rejected_issue" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$rejected_issue" --repo tanaabased/big-test-bucket
 fi
 if test -f "$TMPDIR/approved-issue-number"; then
   approved_issue="$(cat "$TMPDIR/approved-issue-number")"
-  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$approved_issue" --repo tanaabased/agent-system-test
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$approved_issue" --repo tanaabased/big-test-bucket
 fi
 
 # should stop the background gateway cleanly
