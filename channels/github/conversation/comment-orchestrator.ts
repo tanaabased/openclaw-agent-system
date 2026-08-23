@@ -22,7 +22,7 @@ import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
-import type GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
+import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import { githubNotificationLifecycleSupportsEvent } from '../lifecycles/event-support.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
@@ -31,9 +31,10 @@ import type GitHubNotificationCommentTurnService from './comment-turn-service.ts
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
+import type { GitHubNotificationCommentClient } from '../provider/work-event-client.ts';
 
 export interface GitHubNotificationCommentOrchestratorDependencies {
-  assignmentAuthority: Pick<GitHubNotificationAssignmentProvider, 'open'>;
+  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationCommentClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
   initialModeId: GitHubNotificationModeId;

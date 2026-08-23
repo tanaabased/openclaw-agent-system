@@ -10,6 +10,7 @@ import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from './admit-assignment.ts';
 import { resolveNotificationRoute } from '../routing/routing.ts';
 import GitHubWorkEventClient, {
+  type GitHubNotificationProviderClient,
   GitHubWorkEventClientError,
 } from '../provider/work-event-client.ts';
 
@@ -19,16 +20,26 @@ export interface GitHubNotificationAssignmentProviderDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
 }
 
-export type GitHubNotificationAssignmentInspection =
+export type GitHubNotificationAssignmentInspection<Client = GitHubNotificationProviderClient> =
   | { authorized: false; reasonCode?: string }
   | {
       authorized: true;
-      client: GitHubWorkEventClient;
+      client: Client;
       configuration: GitHubNotificationsConfiguration;
     };
 
+export interface GitHubNotificationAssignmentProviderAuthority<
+  Client = GitHubNotificationProviderClient,
+> {
+  open(
+    input: GitHubNotificationLifecycleBoundaryInput,
+  ): Promise<GitHubNotificationAssignmentInspection<Client>>;
+}
+
 /** Read current GitHub authority for assignment intake. */
-export default class GitHubNotificationAssignmentProvider implements GitHubNotificationAssignmentAuthority {
+export default class GitHubNotificationAssignmentProvider
+  implements GitHubNotificationAssignmentAuthority, GitHubNotificationAssignmentProviderAuthority
+{
   readonly #dependencies: GitHubNotificationAssignmentProviderDependencies;
 
   constructor(dependencies: GitHubNotificationAssignmentProviderDependencies) {

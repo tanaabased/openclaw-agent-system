@@ -16,8 +16,8 @@ import {
   type GitHubNotificationItemSelector,
 } from '../../provider/work-item.ts';
 import {
+  type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
-  type default as GitHubWorkEventClient,
 } from '../../provider/work-event-client.ts';
 
 const discoveryOverlapMs = 5 * 60 * 1000;
@@ -37,7 +37,7 @@ export class GitHubNotificationPollError extends Error {
 
 export interface GitHubNotificationPollInput {
   agentId: string;
-  client: GitHubWorkEventClient;
+  client: GitHubNotificationIntakeClient;
   configuration: GitHubNotificationsConfiguration;
   now: number;
   selector?: GitHubNotificationItemSelector;
@@ -128,9 +128,9 @@ function itemState(
   disposition: GitHubNotificationItemState['disposition'],
   reasonCode: string,
   now: number,
-  repository: Awaited<ReturnType<GitHubWorkEventClient['getRepository']>>,
-  item: Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
-  permission: Awaited<ReturnType<GitHubWorkEventClient['getPermission']>>,
+  repository: Awaited<ReturnType<GitHubNotificationIntakeClient['getRepository']>>,
+  item: Awaited<ReturnType<GitHubNotificationIntakeClient['getItem']>>,
+  permission: Awaited<ReturnType<GitHubNotificationIntakeClient['getPermission']>>,
   assignment?: { actor: { login: string; nodeId: string }; nodeId: string },
 ): GitHubNotificationItemState {
   return {
@@ -173,7 +173,7 @@ function itemState(
 
 function pullRequestState(
   pullRequest: Extract<
-    Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
+    Awaited<ReturnType<GitHubNotificationIntakeClient['getItem']>>,
     { itemType: 'pull-request' }
   >['pullRequest'],
 ): GitHubNotificationPullRequestState {
@@ -193,7 +193,7 @@ function pullRequestState(
 }
 
 function closedReason(
-  item: Awaited<ReturnType<GitHubWorkEventClient['getItem']>>,
+  item: Awaited<ReturnType<GitHubNotificationIntakeClient['getItem']>>,
 ): string | undefined {
   if (item.state === 'open') return undefined;
   if (item.itemType === 'pull-request') {
@@ -205,7 +205,7 @@ function closedReason(
 async function observeCandidate(input: {
   candidate: GitHubAssignedItemCandidate;
   canonicalItem?: GitHubCanonicalWorkItem;
-  client: GitHubWorkEventClient;
+  client: GitHubNotificationIntakeClient;
   configuration: GitHubNotificationsConfiguration;
   counts: GitHubNotificationPollCounts;
   now: number;

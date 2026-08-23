@@ -7,7 +7,7 @@ import type { GitHubNotificationAssignmentInspection } from '../channels/github/
 import GitHubNotificationCommentPublicationService, {
   GitHubNotificationCommentPublicationServiceError,
 } from '../channels/github/publication/comment-publication-service.ts';
-import type GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -57,6 +57,8 @@ const manifest: AgentManifest = {
   },
   schemaVersion: 1,
 };
+
+type PublicationClient = GitHubNotificationPublicationClient;
 
 function sourceComment(): GitHubCanonicalIssueComment {
   return {
@@ -123,7 +125,7 @@ describe('channels/github/publication/comment-publication-service', () => {
     const fixture = stateFixture();
     let opened = 0;
     let publishedBody = '';
-    const client = {
+    const client: PublicationClient = {
       identity: notificationAccount,
       async createIssueComment(_owner: string, _repository: string, _number: number, body: string) {
         publishedBody = body;
@@ -135,10 +137,10 @@ describe('channels/github/publication/comment-publication-service', () => {
       async getIssueComment() {
         return structuredClone(fixture.comment);
       },
-    } as unknown as GitHubWorkEventClient;
+    };
     const service = new GitHubNotificationCommentPublicationService({
       assignmentAuthority: {
-        async open(): Promise<GitHubNotificationAssignmentInspection> {
+        async open(): Promise<GitHubNotificationAssignmentInspection<PublicationClient>> {
           opened += 1;
           return { authorized: true, client, configuration };
         },

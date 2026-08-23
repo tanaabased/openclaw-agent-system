@@ -7,7 +7,9 @@ import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
-import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
+import GitHubNotificationMonitorService, {
+  type GitHubNotificationMonitorServiceDependencies,
+} from '../channels/github/intake/monitor/service.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -58,26 +60,35 @@ function githubResponse(body: unknown) {
   };
 }
 
+function monitorService(
+  overrides: Partial<GitHubNotificationMonitorServiceDependencies> = {},
+): GitHubNotificationMonitorService {
+  return new GitHubNotificationMonitorService({
+    accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+    assignmentOrchestrator: { reconcile: async () => undefined },
+    cycleLeaseStore: availableCycleLeaseStore(),
+    logger: { error() {}, info() {}, warn() {} },
+    manifestService: { loadForAgentId: async () => loadedManifest() },
+    readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
+    routingService: {
+      inspect: async () => ({
+        code: 'notification-routing-ready',
+        kind: 'noop',
+        message: 'ready',
+      }),
+    },
+    stateStore: {
+      read: async () => undefined,
+      write: async () => undefined,
+    },
+    ...overrides,
+  });
+}
+
 describe('channels/github/intake/monitor/service', () => {
   it('should stop an account scheduler without surfacing the host abort', async () => {
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-      assignmentOrchestrator: { reconcile: async () => undefined },
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
+    const service = monitorService({
       readConfig: async () => ({ agents: { list: [] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
-      stateStore: {
-        read: async () => undefined,
-        write: async () => undefined,
-      },
     });
 
     const controller = new AbortController();
@@ -99,7 +110,7 @@ describe('channels/github/intake/monitor/service', () => {
     const connected = new Promise<void>((resolve) => {
       markConnected = resolve;
     });
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect(_context, _trigger, signal) {
           markConnected();
@@ -113,18 +124,7 @@ describe('channels/github/intake/monitor/service', () => {
           });
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
-      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => {
@@ -154,7 +154,7 @@ describe('channels/github/intake/monitor/service', () => {
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
@@ -167,17 +167,6 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
@@ -205,7 +194,7 @@ describe('channels/github/intake/monitor/service', () => {
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
@@ -218,17 +207,6 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
@@ -247,8 +225,7 @@ describe('channels/github/intake/monitor/service', () => {
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
     state.nextPollAt = 10_000;
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+    const service = monitorService({
       assignmentOrchestrator: {
         async reconcile() {
           throw new GitHubNotificationAssignmentOrchestratorError(
@@ -258,18 +235,7 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async (next) => {
@@ -307,7 +273,7 @@ describe('channels/github/intake/monitor/service', () => {
     let connections = 0;
     const commentExecutions: string[] = [];
     const warnings: string[] = [];
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connections += 1;
@@ -360,18 +326,8 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async (next) => {
@@ -454,21 +410,9 @@ describe('channels/github/intake/monitor/service', () => {
       sessions: { prepare: async () => undefined },
       stateStore,
     });
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
+    const service = monitorService({
       assignmentOrchestrator,
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore,
     });
 
@@ -495,7 +439,7 @@ describe('channels/github/intake/monitor/service', () => {
       worktreeBranch: 'issue-7-branch',
       worktreePath: '/workspace/worktrees/issue-7',
     };
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
@@ -513,11 +457,7 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
       routingService: {
         inspect: async () => ({
           code: 'notification-routing-repair-required',
@@ -561,7 +501,7 @@ describe('channels/github/intake/monitor/service', () => {
       ...manifest,
       github: { token: 'GH_TOKEN_TANAABOT', username: 'tanaabot' },
     };
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
@@ -579,10 +519,7 @@ describe('channels/github/intake/monitor/service', () => {
         },
       },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
       manifestService: { loadForAgentId: async () => loadedManifest(disabledManifest) },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
       routingService: {
         inspect: async () =>
           Promise.reject(new Error('disabled retirement should not inspect routing')),
@@ -611,7 +548,7 @@ describe('channels/github/intake/monitor/service', () => {
   it('should persist value-free exponential backoff after a transient account failure', async () => {
     let state: GitHubNotificationMonitorState | undefined;
     const warnings: string[] = [];
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           throw new GitHubAccountClientError(
@@ -620,20 +557,9 @@ describe('channels/github/intake/monitor/service', () => {
           );
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 10_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
       random: () => 0.5,
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => state,
         write: async (next) => {
@@ -657,26 +583,14 @@ describe('channels/github/intake/monitor/service', () => {
     state.workspaceDir = workspaceDir;
     state.items = {};
     state.nextPollAt = 10_000;
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
           throw new GitHubAccountClientError('github-account-identity-failed', 'private detail');
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
@@ -699,26 +613,14 @@ describe('channels/github/intake/monitor/service', () => {
     state.diagnosticCode = 'github-account-identity-failed';
     state.failureCount = 1;
     state.nextPollAt = 10_000;
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
           throw new Error('should remain deferred');
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
@@ -749,26 +651,14 @@ describe('channels/github/intake/monitor/service', () => {
     state.diagnosticCode = 'notification-routing-install-required';
     state.failureCount = 5;
     state.nextPollAt = 10_000;
-    const service = new GitHubNotificationMonitorService({
+    const service = monitorService({
       accountClient: {
         async connect() {
           connected += 1;
           throw new GitHubAccountClientError('github-account-identity-failed', 'private detail');
         },
       },
-      assignmentOrchestrator: { reconcile: async () => undefined },
       clock: () => 1_000,
-      cycleLeaseStore: availableCycleLeaseStore(),
-      logger: { error() {}, info() {}, warn() {} },
-      manifestService: { loadForAgentId: async () => loadedManifest() },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
       stateStore: {
         read: async () => structuredClone(state),
         write: async () => undefined,
@@ -784,28 +674,13 @@ describe('channels/github/intake/monitor/service', () => {
 
   it('should skip a cycle held by another process before reading agent state', async () => {
     let manifests = 0;
-    const service = new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
-      assignmentOrchestrator: { reconcile: async () => undefined },
+    const service = monitorService({
       cycleLeaseStore: { acquire: async () => ({ status: 'busy' }) },
-      logger: { error() {}, info() {}, warn() {} },
       manifestService: {
         async loadForAgentId() {
           manifests += 1;
           return loadedManifest();
         },
-      },
-      readConfig: async () => ({ agents: { list: [{ id: 'tanaabot', workspace: workspaceDir }] } }),
-      routingService: {
-        inspect: async () => ({
-          code: 'notification-routing-ready',
-          kind: 'noop',
-          message: 'ready',
-        }),
-      },
-      stateStore: {
-        read: async () => undefined,
-        write: async () => undefined,
       },
     });
 

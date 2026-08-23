@@ -5,8 +5,8 @@ import {
   pollGitHubNotifications,
 } from '../channels/github/intake/monitor/poller.ts';
 import {
+  type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
-  type default as GitHubWorkEventClient,
 } from '../channels/github/provider/work-event-client.ts';
 import type { GitHubRepositoryPermission } from '../channels/github/provider/work-item.ts';
 import {
@@ -93,11 +93,10 @@ function client(
       assignmentTypes: readonly ('issue' | 'pull-request')[],
     ) => void;
   } = {},
-) {
+): GitHubNotificationIntakeClient {
   const clientIdentity = options.identity ?? account;
   return {
     identity: clientIdentity,
-    rateLimit: {},
     async discoverAssigned(
       updatedSince: string,
       assignmentTypes: readonly ('issue' | 'pull-request')[],
@@ -130,7 +129,7 @@ function client(
     async listAssignmentEvents() {
       return { events: [assignment], truncated: false };
     },
-  } as unknown as GitHubWorkEventClient;
+  };
 }
 
 describe('channels/github/intake/monitor/poller', () => {
