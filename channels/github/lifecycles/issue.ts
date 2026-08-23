@@ -87,6 +87,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
         },
       },
     },
+    'assignment-clarification': {},
     comment: {},
   };
   readonly id = 'issue' as const;

@@ -12,7 +12,10 @@ import type { GitHubNotificationAssignmentInspection } from '../channels/github/
 import GitHubNotificationCommentOrchestrator, {
   GitHubNotificationCommentOrchestratorError,
 } from '../channels/github/conversation/comment-orchestrator.ts';
-import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-client.ts';
+import type {
+  GitHubNotificationCommentClient,
+  GitHubNotificationItemContextClient,
+} from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -88,9 +91,13 @@ function authority(
   comments: GitHubCanonicalIssueComment[],
   truncated = false,
 ): {
-  open(): Promise<GitHubNotificationAssignmentInspection<GitHubNotificationCommentClient>>;
+  open(): Promise<
+    GitHubNotificationAssignmentInspection<
+      GitHubNotificationCommentClient & GitHubNotificationItemContextClient
+    >
+  >;
 } {
-  const client: GitHubNotificationCommentClient = {
+  const client: GitHubNotificationCommentClient & GitHubNotificationItemContextClient = {
     identity: notificationAccount,
     async getIssueComment(
       _owner: string,
@@ -104,6 +111,15 @@ function authority(
     },
     async listIssueComments() {
       return { comments: structuredClone(comments), truncated };
+    },
+    async getItemContext() {
+      return {
+        body: 'Current behavior differs from the expected result.',
+        comments: [],
+        labels: [],
+        title: 'Test issue',
+        truncated: false,
+      };
     },
   };
   return {
@@ -307,6 +323,110 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       publicTextDigest: githubNotificationPublicTextDigest('ready'),
       status: 'published',
       target: publication.target,
+    });
+  });
+
+  it('should resume assignment planning from an admitted clarification answer', async () => {
+    const monitor = preparedMonitor();
+    const item = monitor.items[notificationItemKey]!;
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    const questionText = 'I need one detail before I can finish the plan: which result should win?';
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      planning: {
+        outcome: 'questions',
+        publication: {
+          commentDatabaseId: 100,
+          commentNodeId: 'IC_questions',
+          publicText: questionText,
+          publicTextDigest: githubNotificationPublicTextDigest(questionText),
+          status: 'published',
+          target: githubNotificationPublicationTarget({
+            intent: 'planning-outcome',
+            item,
+            publicationId: item.intake!.assignmentEventId,
+          }),
+        },
+        sourceId: item.intake!.assignmentEventId,
+      },
+      revisions: {},
+    };
+    const incoming = comment('@tanaabot The newer saved value should win.');
+    const revision = githubCommentRevision(incoming);
+    const store = memoryStateStore(state);
+    const observed: unknown[] = [];
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([incoming]),
+      conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: { read: async () => structuredClone(monitor) },
+      publications: {
+        async publish(input) {
+          observed.push(['publish', input.text, input.target]);
+          return {
+            receipt: { databaseId: 102, nodeId: 'IC_plan' },
+            status: 'published' as const,
+            target: input.target,
+          };
+        },
+      },
+      turnCatalog,
+      turns: {
+        async respond(input) {
+          observed.push([
+            'turn',
+            input.eventId,
+            input.itemContext?.title,
+            store.snapshot()?.conversations[id]?.activeTurn,
+          ]);
+          return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
+            privateText:
+              '## Assessment\n\nThe user confirmed the newer value should win.\n\n## Plan\n\nUpdate the precedence rule and verify the save flow.',
+            publication: {
+              planningOutcome: 'plan' as const,
+              publicText: 'Thanks, that resolves the ambiguity. I now have a complete plan.',
+              status: 'candidate' as const,
+            },
+          };
+        },
+      },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(observed[0], [
+      'turn',
+      'assignment-clarification',
+      'Test issue',
+      { eventId: 'assignment-clarification', sourceId: revision.revisionId },
+    ]);
+    assert.equal((observed[1] as unknown[])[0], 'publish');
+    const conversation = store.snapshot()?.conversations[id];
+    assert.equal(conversation?.activeTurn, undefined);
+    assert.equal(conversation?.revisions[incoming.nodeId]?.status, 'continued');
+    assert.deepEqual(conversation?.planning, {
+      outcome: 'plan',
+      publication: {
+        commentDatabaseId: 102,
+        commentNodeId: 'IC_plan',
+        publicText: 'Thanks, that resolves the ambiguity. I now have a complete plan.',
+        publicTextDigest: githubNotificationPublicTextDigest(
+          'Thanks, that resolves the ambiguity. I now have a complete plan.',
+        ),
+        status: 'published',
+        target: conversation?.planning?.publication.target,
+      },
+      sourceId: revision.revisionId,
     });
   });
 

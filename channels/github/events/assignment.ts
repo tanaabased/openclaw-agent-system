@@ -1,6 +1,8 @@
 import githubNotificationCard, {
   githubNotificationMarkdownText,
 } from '../conversation/presentation/card.ts';
+import githubNotificationAssignmentEventInstructions from '../conversation/prompts/event-assignment.ts';
+import githubNotificationPlanningResponseInstructions from '../conversation/prompts/response-planning.ts';
 import type { GitHubNotificationEvent } from './types.ts';
 
 export interface GitHubNotificationAssignmentEventProjection {
@@ -40,10 +42,15 @@ export function githubNotificationAssignmentCard(
   });
 }
 
-/** Describe the currently observe-only assignment event. */
+/** Describe the model-backed assignment planning event. */
 const githubNotificationAssignmentEvent = {
   id: 'assignment',
-  turn: { kind: 'observe-only' },
+  turn: {
+    instructions: githubNotificationAssignmentEventInstructions,
+    kind: 'model',
+    publicationIntent: 'planning-outcome',
+    responseInstructions: githubNotificationPlanningResponseInstructions,
+  },
 } as const satisfies GitHubNotificationEvent;
 
 export default githubNotificationAssignmentEvent;

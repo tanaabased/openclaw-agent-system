@@ -14,6 +14,8 @@ export const githubNotificationCommenterToken = '{{commenter}}';
 export type GitHubNotificationPublicationIntent =
   'github-reply' | 'initial-acknowledgment' | 'planning-outcome';
 
+export type GitHubNotificationPlanningOutcome = 'plan' | 'questions';
+
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'github-reply',
   'initial-acknowledgment',

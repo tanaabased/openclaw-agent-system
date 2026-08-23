@@ -6,7 +6,10 @@ import type { Logger } from '../../../core/logger.ts';
 import AgentSystemToolError from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
-import { GitHubNotificationReplyCandidateStoreError } from './reply-candidate-store.ts';
+import {
+  GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateInput,
+} from './reply-candidate-store.ts';
 import {
   githubNotificationReplyToolName,
   githubNotificationReplyToolOutput,
@@ -18,6 +21,7 @@ export { githubNotificationReplyToolName } from './reply-tool-result.ts';
 const githubNotificationReplyToolSchema = Type.Object(
   {
     body: Type.String({ maxLength: maximumGitHubNotificationReplyLength, minLength: 1 }),
+    outcome: Type.Optional(Type.Union([Type.Literal('plan'), Type.Literal('questions')])),
   },
   { additionalProperties: false },
 );
@@ -26,6 +30,7 @@ type GitHubNotificationReplyToolInput = Static<typeof githubNotificationReplyToo
 
 interface GitHubNotificationReplyCandidateStager {
   stage(agentId: string, candidate: string): Promise<void>;
+  stagePlanning(agentId: string, candidate: GitHubNotificationReplyCandidateInput): Promise<void>;
 }
 
 function notifications(manifest: AgentManifest) {
@@ -60,7 +65,11 @@ export default function createGitHubNotificationReplyTool(
       }
       const agentId = scope.toolContext.agentId.trim();
       try {
-        await candidates.stage(agentId, input.body);
+        if (input.outcome === undefined) {
+          await candidates.stage(agentId, input.body);
+        } else {
+          await candidates.stagePlanning(agentId, { body: input.body, outcome: input.outcome });
+        }
       } catch (error) {
         if (error instanceof GitHubNotificationReplyCandidateStoreError) {
           throw new AgentSystemToolError(
@@ -95,7 +104,7 @@ export default function createGitHubNotificationReplyTool(
         };
       },
       description:
-        'Stage one concise public GitHub reply candidate for the current notification turn. This does not publish directly; Agent System validates, reauthorizes, and publishes the candidate after the private response completes.',
+        'Stage one concise public GitHub reply candidate for the current notification turn. Assignment planning turns also require the typed plan or questions outcome. This does not publish directly; Agent System validates, reauthorizes, and publishes the candidate after the private response completes.',
       inputFromCommand(argv, stdin) {
         return { body: stdin ?? argv.join(' ') };
       },

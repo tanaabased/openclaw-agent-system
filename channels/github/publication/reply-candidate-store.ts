@@ -10,6 +10,7 @@ import { isGitHubNotificationLifecycleId } from '../lifecycles/types.ts';
 import { isGitHubNotificationModeId } from '../modes/types.ts';
 import type { GitHubNotificationTurnIdentity } from '../conversation/turn-identity.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
+import type { GitHubNotificationPlanningOutcome } from './publication.ts';
 
 const defaultTtlMs = 30 * 60 * 1000;
 const maximumStateBytes = 4 * 1024;
@@ -34,7 +35,7 @@ export class GitHubNotificationReplyCandidateStoreError extends Error {
 
 interface GitHubNotificationReplyCandidateState {
   agentId: string;
-  candidates: Array<{ body: string; stagedAt: string }>;
+  candidates: GitHubNotificationReplyCandidate[];
   conversationId: string;
   expiresAt: string;
   identity: GitHubNotificationTurnIdentity;
@@ -43,6 +44,15 @@ interface GitHubNotificationReplyCandidateState {
   schemaVersion: 2;
   sourceId: string;
   turnId: string;
+}
+
+export interface GitHubNotificationReplyCandidateInput {
+  body: string;
+  outcome?: GitHubNotificationPlanningOutcome;
+}
+
+export interface GitHubNotificationReplyCandidate extends GitHubNotificationReplyCandidateInput {
+  stagedAt: string;
 }
 
 export interface GitHubNotificationReplyCandidateTurnInput {
@@ -137,12 +147,19 @@ function decodeState(
     if (
       !boundedString(entry.body, maximumGitHubNotificationReplyLength) ||
       entry.body !== entry.body.trim() ||
+      (entry.outcome !== undefined && entry.outcome !== 'plan' && entry.outcome !== 'questions') ||
       !boundedString(entry.stagedAt, 64) ||
       !Number.isFinite(Date.parse(entry.stagedAt))
     ) {
       fail('reply-turn-state-invalid');
     }
-    return { body: entry.body, stagedAt: entry.stagedAt };
+    return {
+      body: entry.body,
+      ...(entry.outcome === undefined
+        ? {}
+        : { outcome: entry.outcome as GitHubNotificationPlanningOutcome }),
+      stagedAt: entry.stagedAt,
+    };
   });
   return {
     agentId: expectedAgentId,
@@ -209,11 +226,26 @@ export default class GitHubNotificationReplyCandidateStore {
   }
 
   async finish(input: GitHubNotificationReplyCandidateFinishInput): Promise<string[]> {
+    return (await this.#finish(input)).map(({ body }) => body);
+  }
+
+  async finishWithMetadata(
+    input: GitHubNotificationReplyCandidateFinishInput,
+  ): Promise<GitHubNotificationReplyCandidateInput[]> {
+    return (await this.#finish(input)).map(({ body, outcome }) => ({
+      body,
+      ...(outcome === undefined ? {} : { outcome }),
+    }));
+  }
+
+  async #finish(
+    input: GitHubNotificationReplyCandidateFinishInput,
+  ): Promise<GitHubNotificationReplyCandidate[]> {
     return this.#exclusive(input.agentId, async (file) => {
       const active = await this.#matchingState(file, input);
       await file.remove();
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
-      return active.candidates.map(({ body }) => body);
+      return active.candidates;
     });
   }
 
@@ -227,6 +259,17 @@ export default class GitHubNotificationReplyCandidateStore {
   }
 
   async stage(agentId: string, candidate: string): Promise<void> {
+    await this.#stage(agentId, { body: candidate });
+  }
+
+  async stagePlanning(
+    agentId: string,
+    candidate: GitHubNotificationReplyCandidateInput,
+  ): Promise<void> {
+    await this.#stage(agentId, candidate);
+  }
+
+  async #stage(agentId: string, candidate: GitHubNotificationReplyCandidateInput): Promise<void> {
     await this.#exclusive(agentId, async (file) => {
       const active = await this.#read(file, agentId);
       if (!active) fail('reply-turn-missing');
@@ -236,11 +279,15 @@ export default class GitHubNotificationReplyCandidateStore {
       }
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.candidates.length >= 2) fail('reply-turn-candidate-limit');
-      const body = candidate.trim();
+      const body = candidate.body.trim();
       if (!body || body.length > maximumGitHubNotificationReplyLength) {
         fail('reply-turn-state-invalid');
       }
-      active.candidates.push({ body, stagedAt: new Date(this.#now()).toISOString() });
+      active.candidates.push({
+        body,
+        ...(candidate.outcome === undefined ? {} : { outcome: candidate.outcome }),
+        stagedAt: new Date(this.#now()).toISOString(),
+      });
       await file.write(`${JSON.stringify(active, undefined, 2)}\n`);
     });
   }

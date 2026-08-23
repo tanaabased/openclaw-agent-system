@@ -59,6 +59,7 @@ export type GitHubNotificationLifecycleCommentEventSupport = Record<string, neve
 
 export interface GitHubNotificationLifecycleEventSupportMap {
   assignment?: GitHubNotificationLifecycleAssignmentEventSupport;
+  'assignment-clarification'?: GitHubNotificationLifecycleCommentEventSupport;
   comment?: GitHubNotificationLifecycleCommentEventSupport;
 }
 

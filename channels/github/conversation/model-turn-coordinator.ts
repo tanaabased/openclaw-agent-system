@@ -3,21 +3,31 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import {
   GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateInput,
   type default as GitHubNotificationReplyCandidateStore,
 } from '../publication/reply-candidate-store.ts';
 import {
   GitHubNotificationPublicationError,
+  type GitHubNotificationPlanningOutcome,
   githubNotificationPublicationText,
 } from '../publication/publication.ts';
 import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnDispatcher from './model-turn-dispatcher.ts';
 import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatcher.ts';
-import { githubNotificationPrivateResponse } from './private-response.ts';
+import {
+  githubNotificationPlanningPrivateResponse,
+  githubNotificationPrivateResponse,
+} from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
-  { status: 'candidate'; publicText: string } | { status: 'withheld'; code: string };
+  | {
+      planningOutcome?: GitHubNotificationPlanningOutcome;
+      status: 'candidate';
+      publicText: string;
+    }
+  | { status: 'withheld'; code: string };
 
 export type GitHubNotificationModelTurnCoordinatorErrorCode =
   | 'github-notification-model-turn-prompt-selection-missing'
@@ -35,7 +45,10 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
-  candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
+  candidates: Pick<
+    GitHubNotificationReplyCandidateStore,
+    'begin' | 'cancel' | 'finishWithMetadata'
+  >;
   dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
 }
 
@@ -58,7 +71,7 @@ export interface GitHubNotificationModelTurnCoordinatorResult {
 }
 
 function publication(
-  candidates: readonly string[],
+  candidates: readonly GitHubNotificationReplyCandidateInput[],
   intent: GitHubNotificationTurnContract['publicationIntent'],
 ): GitHubNotificationModelTurnPublication {
   if (candidates.length === 0) {
@@ -73,10 +86,24 @@ function publication(
       code: 'github-notification-publication-candidate-duplicate',
     };
   }
+  const candidate = candidates[0]!;
+  if (intent === 'planning-outcome' && candidate.outcome === undefined) {
+    return {
+      status: 'withheld',
+      code: 'github-notification-publication-planning-outcome-missing',
+    };
+  }
+  if (intent !== 'planning-outcome' && candidate.outcome !== undefined) {
+    return {
+      status: 'withheld',
+      code: 'github-notification-publication-planning-outcome-unexpected',
+    };
+  }
   try {
     return {
       status: 'candidate',
-      publicText: githubNotificationPublicationText(intent, [{ text: candidates[0] }]),
+      ...(candidate.outcome === undefined ? {} : { planningOutcome: candidate.outcome }),
+      publicText: githubNotificationPublicationText(intent, [{ text: candidate.body }]),
     };
   } catch (error) {
     return {
@@ -125,9 +152,9 @@ export default class GitHubNotificationModelTurnCoordinator {
       throw error;
     }
 
-    let publicCandidates: string[];
+    let publicCandidates: GitHubNotificationReplyCandidateInput[];
     try {
-      publicCandidates = await this.#dependencies.candidates.finish({
+      publicCandidates = await this.#dependencies.candidates.finishWithMetadata({
         ...candidateIdentity,
         turnId: candidateTurn,
       });
@@ -141,11 +168,21 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
+    const privateText = githubNotificationPrivateResponse(turnResult.finalPayloads);
+    const coordinatedPublication = publication(publicCandidates, input.contract.publicationIntent);
+    const validatedPrivateText =
+      coordinatedPublication.status === 'candidate' &&
+      coordinatedPublication.planningOutcome !== undefined
+        ? githubNotificationPlanningPrivateResponse(
+            privateText,
+            coordinatedPublication.planningOutcome,
+          )
+        : privateText;
     return {
       dispatch: turnResult.dispatch,
       finalPayloadCount: turnResult.finalPayloads.length,
-      privateText: githubNotificationPrivateResponse(turnResult.finalPayloads),
-      publication: publication(publicCandidates, input.contract.publicationIntent),
+      privateText: validatedPrivateText,
+      publication: coordinatedPublication,
     };
   }
 }

@@ -1,7 +1,9 @@
 import type { GitHubCanonicalIssueComment, GitHubCommentRevision } from '../comment-admission.ts';
+import type { GitHubNotificationItemContext } from '../../provider/work-event-client.ts';
 
 export interface GitHubNotificationCommentContextInput {
   comment: GitHubCanonicalIssueComment;
+  itemContext?: GitHubNotificationItemContext;
   lifecycleContext: Readonly<Record<string, unknown>>;
   revision: GitHubCommentRevision;
 }
@@ -16,6 +18,7 @@ export default function githubNotificationCommentContext(
       nodeId: input.comment.nodeId,
       revisionId: input.revision.revisionId,
     },
+    ...(input.itemContext === undefined ? {} : { currentItem: input.itemContext }),
     ...input.lifecycleContext,
   };
 }

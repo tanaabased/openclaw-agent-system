@@ -3,6 +3,7 @@ import GitHubNotificationTurnCatalog, {
 } from '../channels/github/conversation/turn-catalog.ts';
 import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
+import githubNotificationAssignmentClarificationEvent from '../channels/github/events/assignment-clarification.ts';
 import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
 import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
@@ -17,6 +18,7 @@ export function createGitHubNotificationTurnDefinitions(options?: {
   return {
     events: new GitHubNotificationEventRegistry([
       githubNotificationAssignmentEvent,
+      githubNotificationAssignmentClarificationEvent,
       githubNotificationCommentEvent,
     ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([

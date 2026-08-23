@@ -106,6 +106,15 @@ export interface GitHubNotificationCommentClient {
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage>;
 }
 
+export interface GitHubNotificationItemContextClient {
+  getItemContext(
+    owner: string,
+    name: string,
+    number: number,
+    itemType?: 'issue' | 'pull-request',
+  ): Promise<GitHubNotificationItemContext>;
+}
+
 export interface GitHubNotificationPublicationClient {
   readonly identity: GitHubIdentity;
   createIssueComment(
@@ -132,6 +141,7 @@ export interface GitHubNotificationProviderClient
   extends
     GitHubNotificationIntakeClient,
     GitHubNotificationCommentClient,
+    GitHubNotificationItemContextClient,
     GitHubNotificationPublicationClient {}
 
 interface ApiPage<T> {

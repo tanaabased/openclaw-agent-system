@@ -39,7 +39,21 @@ export const githubNotificationIssueWorkCommentTurnIdentity = {
   modeId: 'work',
 } as const satisfies GitHubNotificationTurnIdentity;
 
+export const githubNotificationIssueWorkAssignmentTurnIdentity = {
+  eventId: 'assignment',
+  lifecycleId: 'issue',
+  modeId: 'work',
+} as const satisfies GitHubNotificationTurnIdentity;
+
+export const githubNotificationIssueWorkAssignmentClarificationTurnIdentity = {
+  eventId: 'assignment-clarification',
+  lifecycleId: 'issue',
+  modeId: 'work',
+} as const satisfies GitHubNotificationTurnIdentity;
+
 export const githubNotificationSupportedTurnIdentities = [
+  githubNotificationIssueWorkAssignmentTurnIdentity,
+  githubNotificationIssueWorkAssignmentClarificationTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
 ] as const satisfies readonly GitHubNotificationTurnIdentity[];
 

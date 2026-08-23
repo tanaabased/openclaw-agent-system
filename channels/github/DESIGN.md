@@ -228,8 +228,9 @@ selection fails closed instead of falling back to a different prompt.
 - **Response:** Every agent-authored outcome keeps its complete private response
   separate from one typed GitHub-facing candidate.
 - **Plan:** The agent investigates the item, discussion, code, and documentation.
-  It returns a plan or asks one concise public question and ends the turn. An
-  admitted answer resumes the same Plan session.
+  It returns a plan or asks the smallest complete set of currently known
+  blocking questions and ends the turn. An admitted answer resumes the same
+  session and may produce a plan or another newly discovered blocking set.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.

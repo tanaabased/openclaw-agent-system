@@ -1,5 +1,7 @@
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
+import type { GitHubNotificationPlanningOutcome } from '../publication/publication.ts';
+
 export class GitHubNotificationPrivateResponseError extends Error {
   override name = 'GitHubNotificationPrivateResponseError';
 
@@ -22,4 +24,28 @@ export function githubNotificationPrivateResponse(payloads: readonly ReplyPayloa
     );
   }
   return complete[0].text!.trim();
+}
+
+/** Enforce stable report sections for one typed assignment planning outcome. */
+export function githubNotificationPlanningPrivateResponse(
+  value: string,
+  outcome: GitHubNotificationPlanningOutcome,
+): string {
+  const text = value.trim();
+  const expectedSecondHeading = outcome === 'plan' ? '## Plan' : '## Questions';
+  const assessmentIndex = text.indexOf('## Assessment');
+  const secondIndex = text.indexOf(expectedSecondHeading);
+  const headings = text.match(/^## .+$/gmu) ?? [];
+  if (
+    assessmentIndex !== 0 ||
+    secondIndex <= assessmentIndex + '## Assessment'.length ||
+    headings.length !== 2 ||
+    headings[0] !== '## Assessment' ||
+    headings[1] !== expectedSecondHeading
+  ) {
+    throw new GitHubNotificationPrivateResponseError(
+      'github-notification-planning-private-response-invalid',
+    );
+  }
+  return text;
 }

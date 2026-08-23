@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   GitHubNotificationPrivateResponseError,
+  githubNotificationPlanningPrivateResponse,
   githubNotificationPrivateResponse,
 } from '../channels/github/conversation/private-response.ts';
 
@@ -39,5 +40,21 @@ describe('channels/github/conversation/private-response', () => {
         (error: unknown) => error instanceof GitHubNotificationPrivateResponseError,
       );
     }
+  });
+
+  it('should enforce report sections that match the typed planning outcome', () => {
+    const plan =
+      '## Assessment\n\nThe user needs a corrected result.\n\n## Plan\n\nUpdate and test it.';
+    const questions =
+      '## Assessment\n\nThe user goal is clear, but one constraint is missing.\n\n## Questions\n\n1. Which behavior should win?';
+
+    assert.equal(githubNotificationPlanningPrivateResponse(plan, 'plan'), plan);
+    assert.equal(githubNotificationPlanningPrivateResponse(questions, 'questions'), questions);
+    assert.throws(
+      () => githubNotificationPlanningPrivateResponse(plan, 'questions'),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPrivateResponseError &&
+        error.code === 'github-notification-planning-private-response-invalid',
+    );
   });
 });
