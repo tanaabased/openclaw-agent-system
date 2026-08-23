@@ -1,46 +1,12 @@
 import assert from 'node:assert/strict';
 
 import githubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
-import GitHubNotificationTurnCatalog, {
-  githubNotificationSupportedTurnIdentities,
-} from '../channels/github/conversation/turn-catalog.ts';
-import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
-import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
-import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
-import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
-import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
-import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
-import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
-
-function resolver() {
-  const events = new GitHubNotificationEventRegistry([
-    githubNotificationAssignmentEvent,
-    githubNotificationCommentEvent,
-  ]);
-  const lifecycles = new GitHubNotificationLifecycleRegistry([
-    new GitHubIssueLifecycle({
-      async inspectGitHub() {
-        return undefined;
-      },
-      async prepareGitHub() {
-        throw new Error('not used');
-      },
-    }),
-  ]);
-  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
-  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
-    events,
-    lifecycles,
-    modes,
-  });
-  return new GitHubNotificationTurnContractResolver({ turns });
-}
+import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 describe('channels/github/conversation/prompt-guidance', () => {
   it('should compose the selected issue work comment instructions for github turns', async () => {
-    const turnContracts = resolver();
+    const turnContracts = createGitHubNotificationTurnContractResolver();
     const turnSelector = {
       async select() {
         return { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;

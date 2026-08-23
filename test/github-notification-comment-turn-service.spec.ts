@@ -2,17 +2,6 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-import GitHubNotificationTurnCatalog, {
-  githubNotificationSupportedTurnIdentities,
-} from '../channels/github/conversation/turn-catalog.ts';
-import GitHubNotificationTurnContractResolver from '../channels/github/conversation/turn-contract.ts';
-import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
-import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
-import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
-import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
-import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
-import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
   type GitHubNotificationCommentTurnServiceDependencies,
@@ -27,6 +16,7 @@ import {
   notificationItemKey,
   notificationMonitorState,
 } from './github-notification-fixtures.ts';
+import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
@@ -46,29 +36,6 @@ const config: OpenClawConfig = {
     [githubNotificationChannelId]: { accounts: { [agentId]: { enabled: true } } },
   },
 };
-
-function turnContracts() {
-  const lifecycle = new GitHubIssueLifecycle({
-    async inspectGitHub() {
-      return undefined;
-    },
-    async prepareGitHub() {
-      throw new Error('not used');
-    },
-  });
-  const events = new GitHubNotificationEventRegistry([
-    githubNotificationAssignmentEvent,
-    githubNotificationCommentEvent,
-  ]);
-  const lifecycles = new GitHubNotificationLifecycleRegistry([lifecycle]);
-  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
-  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
-    events,
-    lifecycles,
-    modes,
-  });
-  return new GitHubNotificationTurnContractResolver({ turns });
-}
 
 function assertTurnContractOptions(options: Record<string, unknown>) {
   assert.equal(options.extraSystemPrompt, undefined);
@@ -127,7 +94,7 @@ async function respondWithCandidates(
     worktreePath: '/workspace/worktrees/issue-12',
   };
   const comment = incomingComment();
-  const contracts = turnContracts();
+  const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
     candidates: candidateStore(candidates),
     async dispatchReplyWithBufferedBlockDispatcher(input) {
@@ -173,7 +140,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const revision = githubCommentRevision(comment);
     let createIfMissing: boolean | undefined;
     let recorded = false;
-    const contracts = turnContracts();
+    const contracts = createGitHubNotificationTurnContractResolver();
     const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
@@ -271,7 +238,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       worktreePath: '/workspace/worktrees/issue-12',
     };
     const comment = incomingComment();
-    const contracts = turnContracts();
+    const contracts = createGitHubNotificationTurnContractResolver();
     const service = new GitHubNotificationCommentTurnService({
       candidates: candidateStore([]),
       async dispatchReplyWithBufferedBlockDispatcher() {

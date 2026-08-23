@@ -1,45 +1,8 @@
 import assert from 'node:assert/strict';
 
-import GitHubNotificationTurnContractResolver, {
-  githubNotificationTurnDispatchOptions,
-} from '../channels/github/conversation/turn-contract.ts';
-import GitHubNotificationTurnCatalog, {
-  GitHubNotificationTurnCatalogError,
-  githubNotificationSupportedTurnIdentities,
-} from '../channels/github/conversation/turn-catalog.ts';
-import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
-import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
-import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
-import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
-import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
-import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
-import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
-import githubNotificationWorkMode from '../channels/github/modes/work.ts';
-
-function resolver() {
-  const events = new GitHubNotificationEventRegistry([
-    githubNotificationAssignmentEvent,
-    githubNotificationCommentEvent,
-  ]);
-  const lifecycles = new GitHubNotificationLifecycleRegistry([
-    new GitHubIssueLifecycle({
-      async inspectGitHub() {
-        return undefined;
-      },
-      async prepareGitHub() {
-        throw new Error('not used');
-      },
-    }),
-    new GitHubPullRequestLifecycle(),
-  ]);
-  const modes = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
-  const turns = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
-    events,
-    lifecycles,
-    modes,
-  });
-  return new GitHubNotificationTurnContractResolver({ turns });
-}
+import { githubNotificationTurnDispatchOptions } from '../channels/github/conversation/turn-contract.ts';
+import { GitHubNotificationTurnCatalogError } from '../channels/github/conversation/turn-catalog.ts';
+import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
 const contractConfig = {
@@ -48,7 +11,11 @@ const contractConfig = {
 
 describe('channels/github/conversation/turn-contract', () => {
   it('should compose one supported lifecycle mode event contract', () => {
-    const contract = resolver().resolve(identity, contractConfig, 'tanaabot');
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      identity,
+      contractConfig,
+      'tanaabot',
+    );
 
     assert.equal(contract.lifecycle.id, 'issue');
     assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
@@ -88,7 +55,7 @@ describe('channels/github/conversation/turn-contract', () => {
   it('should reject a tuple outside the supported turn catalog', () => {
     assert.throws(
       () =>
-        resolver().instructions({
+        createGitHubNotificationTurnContractResolver().instructions({
           eventId: 'comment',
           lifecycleId: 'pull-request',
           modeId: 'work',
@@ -102,7 +69,7 @@ describe('channels/github/conversation/turn-contract', () => {
   it('should leave assignment model turns dormant', () => {
     assert.throws(
       () =>
-        resolver().instructions({
+        createGitHubNotificationTurnContractResolver().instructions({
           eventId: 'assignment',
           lifecycleId: 'issue',
           modeId: 'work',
