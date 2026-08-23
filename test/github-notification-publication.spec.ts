@@ -69,7 +69,7 @@ describe('channels/github/publication/publication', () => {
       ].join('\n'),
     );
     assert.equal(
-      githubNotificationPublicationText('planning-outcome', [
+      githubNotificationPublicationText('assignment-response', [
         { text: 'I reviewed the assignment and have a plan ready.' },
       ]),
       'I reviewed the assignment and have a plan ready.',

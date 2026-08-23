@@ -11,6 +11,7 @@ import { maximumGitHubNotificationReplyLength } from '../publication/limits.ts';
 import {
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
+  type GitHubNotificationPublicationIntent,
 } from '../publication/publication.ts';
 
 export type GitHubNotificationCommentTurnStatus =
@@ -21,7 +22,7 @@ export interface GitHubNotificationActiveTurnState {
   sourceId: string;
 }
 
-export interface GitHubNotificationCommentPublicationPendingState {
+export interface GitHubNotificationPublicationPendingState {
   commentDatabaseId?: number;
   commentNodeId?: string;
   publicText: string;
@@ -30,7 +31,7 @@ export interface GitHubNotificationCommentPublicationPendingState {
   target: string;
 }
 
-export interface GitHubNotificationCommentPublicationPublishedState {
+export interface GitHubNotificationPublicationPublishedState {
   commentDatabaseId: number;
   commentNodeId: string;
   publicText: string;
@@ -39,25 +40,24 @@ export interface GitHubNotificationCommentPublicationPublishedState {
   target: string;
 }
 
-export interface GitHubNotificationCommentPublicationWithheldState {
+export interface GitHubNotificationPublicationWithheldState {
   reasonCode: string;
   status: 'withheld';
 }
 
-export type GitHubNotificationCommentPublicationState =
-  | GitHubNotificationCommentPublicationPendingState
-  | GitHubNotificationCommentPublicationPublishedState
-  | GitHubNotificationCommentPublicationWithheldState;
+export type GitHubNotificationPublicationState =
+  | GitHubNotificationPublicationPendingState
+  | GitHubNotificationPublicationPublishedState
+  | GitHubNotificationPublicationWithheldState;
 
 export type GitHubNotificationAssignmentAcknowledgmentState =
-  | GitHubNotificationCommentPublicationPendingState
-  | GitHubNotificationCommentPublicationPublishedState;
+  GitHubNotificationPublicationPendingState | GitHubNotificationPublicationPublishedState;
 
 export interface GitHubNotificationCommentRevisionState {
   bodyDigest: string;
   commentDatabaseId: number;
   failureCode?: string;
-  publication?: GitHubNotificationCommentPublicationState;
+  publication?: GitHubNotificationPublicationState;
   reasonCode?: string;
   revisionId: string;
   status: GitHubNotificationCommentTurnStatus;
@@ -66,6 +66,7 @@ export interface GitHubNotificationCommentRevisionState {
 export interface GitHubNotificationConversation {
   acknowledgment?: GitHubNotificationAssignmentAcknowledgmentState;
   activeTurn?: GitHubNotificationActiveTurnState;
+  assignmentResponse?: GitHubNotificationPublicationState;
   baselineEstablished: boolean;
   itemKey: string;
   lifecycleId: GitHubNotificationLifecycleId;
@@ -76,7 +77,7 @@ export interface GitHubNotificationConversation {
 export interface GitHubNotificationConversationState {
   agentId: string;
   conversations: Record<string, GitHubNotificationConversation>;
-  schemaVersion: 3;
+  schemaVersion: 4;
   workspaceDir: string;
 }
 
@@ -119,10 +120,10 @@ export function githubNotificationPublicTextDigest(value: string): string {
 function validPublication(
   value: unknown,
   conversationId: string,
-  expectedIntent: 'github-reply' | 'initial-acknowledgment',
+  expectedIntent: GitHubNotificationPublicationIntent,
 ): boolean {
   if (
-    expectedIntent === 'github-reply' &&
+    expectedIntent !== 'initial-acknowledgment' &&
     record(value) &&
     value.status === 'withheld' &&
     onlyKeys(value, ['reasonCode', 'status'])
@@ -210,13 +211,14 @@ function validActiveTurn(value: unknown): boolean {
 function validConversation(
   value: unknown,
   conversationId: string,
-  schemaVersion: 1 | 2 | 3,
+  schemaVersion: 1 | 2 | 3 | 4,
 ): boolean {
   if (
     !record(value) ||
     !onlyKeys(value, [
-      ...(schemaVersion === 3 ? ['acknowledgment'] : []),
+      ...(schemaVersion >= 3 ? ['acknowledgment'] : []),
       ...(schemaVersion >= 2 ? ['activeTurn'] : []),
+      ...(schemaVersion === 4 ? ['assignmentResponse'] : []),
       'baselineEstablished',
       'itemKey',
       'lifecycleId',
@@ -226,6 +228,8 @@ function validConversation(
     (value.acknowledgment !== undefined &&
       !validPublication(value.acknowledgment, conversationId, 'initial-acknowledgment')) ||
     (value.activeTurn !== undefined && !validActiveTurn(value.activeTurn)) ||
+    (value.assignmentResponse !== undefined &&
+      !validPublication(value.assignmentResponse, conversationId, 'assignment-response')) ||
     typeof value.baselineEstablished !== 'boolean' ||
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
@@ -249,7 +253,10 @@ export function decodeGitHubNotificationConversationState(
   if (
     !record(value) ||
     !onlyKeys(value, ['agentId', 'conversations', 'schemaVersion', 'workspaceDir']) ||
-    (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
+    (value.schemaVersion !== 1 &&
+      value.schemaVersion !== 2 &&
+      value.schemaVersion !== 3 &&
+      value.schemaVersion !== 4) ||
     value.agentId !== expectedAgentId ||
     typeof value.agentId !== 'string' ||
     !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
@@ -264,12 +271,12 @@ export function decodeGitHubNotificationConversationState(
     !Object.entries(value.conversations).every(
       ([key, conversation]) =>
         /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(key) &&
-        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3),
+        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4),
     )
   ) {
     return undefined;
   }
-  if (value.schemaVersion === 3) {
+  if (value.schemaVersion === 4) {
     return value as unknown as GitHubNotificationConversationState;
   }
   return {
@@ -280,7 +287,7 @@ export function decodeGitHubNotificationConversationState(
         { ...(conversation as GitHubNotificationConversation) },
       ]),
     ),
-    schemaVersion: 3,
+    schemaVersion: 4,
     workspaceDir: value.workspaceDir,
   } as GitHubNotificationConversationState;
 }
@@ -289,5 +296,5 @@ export function createGitHubNotificationConversationState(
   agentId: string,
   workspaceDir: string,
 ): GitHubNotificationConversationState {
-  return { agentId, conversations: {}, schemaVersion: 3, workspaceDir };
+  return { agentId, conversations: {}, schemaVersion: 4, workspaceDir };
 }

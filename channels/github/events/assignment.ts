@@ -38,7 +38,7 @@ const githubNotificationAssignmentEvent = {
   turn: {
     instructions: githubNotificationAssignmentEventInstructions,
     kind: 'model',
-    publicationIntent: 'planning-outcome',
+    publicationIntent: 'assignment-response',
     responseInstructions: githubNotificationAssignmentResponseInstructions,
   },
 } as const satisfies GitHubNotificationEvent;

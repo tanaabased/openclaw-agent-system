@@ -27,7 +27,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 3,
+      schemaVersion: 4,
     });
   });
 
@@ -50,7 +50,29 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
+      schemaVersion: 4,
+    });
+  });
+
+  it('should migrate the acknowledgment schema without inventing an assignment response', () => {
+    const legacy = {
+      agentId: 'notification-data',
+      conversations: {
+        'github:issue:R_repo:12': {
+          baselineEstablished: true,
+          itemKey: 'github:R_repo:12',
+          lifecycleId: 'issue',
+          mode: 'work',
+          revisions: {},
+        },
+      },
       schemaVersion: 3,
+      workspaceDir: '/workspace',
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
+      ...legacy,
+      schemaVersion: 4,
     });
   });
 
@@ -101,6 +123,30 @@ describe('channels/github/conversation/conversation-state', () => {
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
     state.conversations['github:issue:R_repo:12']!.activeTurn!.sourceId = 'provider prose';
     assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
+  });
+
+  it('should retain one assignment response in the shared publication envelope', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    const publicText = 'I reviewed the assignment and have a plan ready.';
+    state.conversations['github:issue:R_repo:12'] = {
+      assignmentResponse: {
+        publicText,
+        publicTextDigest: githubNotificationPublicTextDigest(publicText),
+        status: 'pending',
+        target: githubNotificationPublicationTarget({
+          intent: 'assignment-response',
+          item: approvedNotificationItem(),
+          publicationId: 'EV_assignment',
+        }),
+      },
+      baselineEstablished: true,
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
   });
 
   it('should retain value-free comment receipts and one accepted public text', () => {
