@@ -105,6 +105,7 @@ describe('channels/github/conversation/assignment-turn-service', () => {
 
     assert.equal(result.publication.status, 'candidate');
     assert.equal(coordinated?.createIfMissing, true);
+    assert.equal(coordinated?.ctxPayload.InboundEventKind, 'user_request');
     assert.equal(coordinated?.messageId, `assignment:${sourceId}`);
     assert.equal(coordinated?.sourceId, sourceId);
     assert.equal(

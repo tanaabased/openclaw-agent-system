@@ -154,7 +154,7 @@ export default class GitHubNotificationAssignmentTurnService {
         body,
         bodyForAgent: body,
         commandBody: '',
-        inboundEventKind: 'room_event',
+        inboundEventKind: 'user_request',
         rawBody: body,
       },
       messageId,
