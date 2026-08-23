@@ -47,7 +47,8 @@ component needs it.
 
 ## Direct Message
 
-A direct inbound message is presented as its normalized author-written text:
+A direct inbound message is presented as the exact author-written text admitted
+from GitHub:
 
 ```markdown
 Can you confirm whether this also covers comments received while planning?

@@ -1,9 +1,23 @@
+import type { GitHubNotificationAssignmentEventProjection } from '../events/assignment.ts';
 import type {
   GitHubNotificationIntakeState,
   GitHubNotificationItemState,
 } from '../intake/monitor/state.ts';
+import type { GitHubNotificationModeId } from '../modes/types.ts';
 
-export type GitHubNotificationLifecycleId = 'issue' | 'pull-request' | 'pull-request-review';
+export const githubNotificationLifecycleIds = [
+  'issue',
+  'pull-request',
+  'pull-request-review',
+] as const;
+
+export type GitHubNotificationLifecycleId = (typeof githubNotificationLifecycleIds)[number];
+
+export function isGitHubNotificationLifecycleId(
+  value: unknown,
+): value is GitHubNotificationLifecycleId {
+  return githubNotificationLifecycleIds.includes(value as GitHubNotificationLifecycleId);
+}
 
 export interface GitHubNotificationLifecycleBoundaryInput {
   agentId: string;
@@ -16,6 +30,36 @@ export interface GitHubNotificationLifecycleBoundaryInput {
 export interface GitHubNotificationLifecycleWorktree {
   branch: string;
   path: string;
+}
+
+export interface GitHubNotificationLifecycleContextInput {
+  item: GitHubNotificationItemState;
+  worktree?: GitHubNotificationLifecycleWorktree;
+}
+
+export interface GitHubNotificationLifecycleContextOwner {
+  project(input: GitHubNotificationLifecycleContextInput): Readonly<Record<string, unknown>>;
+}
+
+export interface GitHubNotificationLifecycleModeSupport {
+  instructions?: string;
+}
+
+export type GitHubNotificationLifecycleModeSupportMap = Partial<
+  Record<GitHubNotificationModeId, GitHubNotificationLifecycleModeSupport>
+>;
+
+export interface GitHubNotificationLifecycleAssignmentEventSupport {
+  session?: {
+    project(item: GitHubNotificationItemState): GitHubNotificationAssignmentEventProjection;
+  };
+}
+
+export type GitHubNotificationLifecycleCommentEventSupport = Record<string, never>;
+
+export interface GitHubNotificationLifecycleEventSupportMap {
+  assignment?: GitHubNotificationLifecycleAssignmentEventSupport;
+  comment?: GitHubNotificationLifecycleCommentEventSupport;
 }
 
 export type GitHubNotificationLifecycleWorktreeOwner =
@@ -32,6 +76,10 @@ export type GitHubNotificationLifecycleWorktreeOwner =
 
 /** Own lifecycle-specific intake resources behind one classified boundary. */
 export interface GitHubNotificationLifecycle {
+  readonly context: GitHubNotificationLifecycleContextOwner;
+  readonly eventSupport: GitHubNotificationLifecycleEventSupportMap;
   readonly id: GitHubNotificationLifecycleId;
+  readonly instructions: string;
+  readonly modeSupport: GitHubNotificationLifecycleModeSupportMap;
   readonly worktree: GitHubNotificationLifecycleWorktreeOwner;
 }

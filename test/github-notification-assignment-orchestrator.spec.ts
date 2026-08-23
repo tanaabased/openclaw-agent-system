@@ -8,6 +8,7 @@ import GitHubIssueLifecycle, {
 } from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import {
   approvedPullRequestNotificationItem,
@@ -55,6 +56,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
         inspect: async () => observedWorktree,
         async prepare() {
@@ -97,6 +99,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
         async inspect() {
           worktreeInspections += 1;
@@ -127,6 +130,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     let worktreePreparations = 0;
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({
         inspect: async () => observedWorktree,
         async prepare() {
@@ -162,6 +166,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
       authority: {
         inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
       },
+      initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
       sessions: { prepare: async () => undefined },
       stateStore: store,
@@ -190,6 +195,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     const store = memoryStore(state);
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
       sessions: { prepare: async () => undefined },
       stateStore: store,
@@ -214,6 +220,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
                 throw new Error('restricted authority detail');
               },
             },
+            initialMode: githubNotificationWorkMode,
             lifecycles: lifecycles({
               inspect: async () => worktree,
               prepare: async () => worktree,
@@ -228,6 +235,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
+            initialMode: githubNotificationWorkMode,
             lifecycles: lifecycles({
               inspect: async () => {
                 throw new Error('restricted inspection detail');
@@ -244,6 +252,7 @@ describe('channels/github/intake/assignment-orchestrator', () => {
         create(store: ReturnType<typeof memoryStore>) {
           return new GitHubNotificationAssignmentOrchestrator({
             authority: { inspect: async () => ({ authorized: true }) },
+            initialMode: githubNotificationWorkMode,
             lifecycles: lifecycles({
               inspect: async () => undefined,
               prepare: async () => {

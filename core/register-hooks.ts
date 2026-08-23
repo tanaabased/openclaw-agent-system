@@ -1,7 +1,6 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
 
-import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
-import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
@@ -10,12 +9,16 @@ type HookApi = Pick<OpenClawPluginApi, 'on'> & {
   logger?: Pick<OpenClawPluginApi['logger'], 'info' | 'warn'>;
 };
 type HookManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
+export interface AgentSystemPromptGuidance {
+  instructions(context: PluginHookAgentContext): string | undefined | Promise<string | undefined>;
+}
 
 /** Register passive agent-aware manifest loading. */
 export default function registerAgentSystemHooks(
   api: HookApi,
   manifestService: HookManifestService,
   toolRegistry: Pick<AgentSystemToolRegistry, 'guidance'>,
+  promptGuidance?: AgentSystemPromptGuidance,
 ): void {
   api.on('session_start', async (_event, context) => {
     await manifestService.loadForRuntimeContext(context, 'session_start');
@@ -26,9 +29,8 @@ export default function registerAgentSystemHooks(
     if (result.status === 'loaded') {
       guidance.push(agentCommandSecurityGuidance, ...toolRegistry.guidance(result.manifest));
     }
-    if (context.messageProvider === githubNotificationChannelId) {
-      guidance.push(githubNotificationIssueWorkCommentInstructions);
-    }
+    const promptInstructions = await promptGuidance?.instructions(context);
+    if (promptInstructions) guidance.push(promptInstructions);
     return guidance.length > 0 ? { appendSystemContext: guidance.join('\n\n') } : undefined;
   });
 }

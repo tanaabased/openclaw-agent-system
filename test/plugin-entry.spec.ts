@@ -15,7 +15,7 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should register startup hooks and both cli roots', () => {
+  it('should register startup hooks and both cli roots', async () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
@@ -26,6 +26,7 @@ describe('index', () => {
         }
       | undefined;
     const hookNames: string[] = [];
+    const hookHandlers = new Map<string, (...args: unknown[]) => unknown>();
     const channelIds: string[] = [];
     const commandNames: string[] = [];
     const policyIds: string[] = [];
@@ -40,8 +41,9 @@ describe('index', () => {
     const api = {
       id: 'agent-system',
       logger,
-      on(name: string) {
+      on(name: string, handler: (...args: unknown[]) => unknown) {
         hookNames.push(name);
+        hookHandlers.set(name, handler);
       },
       runtime: {
         agent: {
@@ -125,5 +127,17 @@ describe('index', () => {
         { hasSubcommands: true, name: 'as' },
       ],
     );
+
+    const promptResult = (await hookHandlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: 'agent-system-github' },
+    )) as { appendSystemContext?: string } | undefined;
+    assert.equal(promptResult, undefined);
+
+    const unrelatedPromptResult = await hookHandlers.get('before_prompt_build')?.(
+      {},
+      { messageProvider: 'discord' },
+    );
+    assert.equal(unrelatedPromptResult, undefined);
   });
 });

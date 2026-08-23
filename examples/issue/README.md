@@ -4,7 +4,8 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
-delivers one approved comment to the lifecycle session, publishes one reply, and
+delivers one approved comment through the registered issue/Work/comment turn
+contract, publishes one reply, and
 retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
@@ -118,7 +119,7 @@ openclaw agent-system notifications wait \
   --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
 
-# should answer one approved issue comment without a long model task
+# should answer one approved issue comment through the registered turn contract
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -132,10 +133,10 @@ refresh_result="$(
     --number "$issue_number" \
     --timeout 180
 )"
-jq -e '.status == "completed" and .code == "github-notification-poll-complete"' <<< "$refresh_result"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 cd "$TMPDIR/agent-system-notification-actor"
-reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq ".[] | select(.user.login == \"tanaabot\" and (.body | contains(\"$reply_token\")) and (.body | contains(\"agent-system-github-publication:github-reply\"))) | .id")"
-test -n "$reply_id"
+reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | .id')"
+[[ "$reply_id" =~ ^[1-9][0-9]*$ ]]
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

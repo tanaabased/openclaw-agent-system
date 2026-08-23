@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
+
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)
 
 ### New Features

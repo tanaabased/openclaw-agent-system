@@ -21,11 +21,14 @@ describe('channels/github/publication/reply-tool', () => {
     const parentCandidates = new GitHubNotificationReplyCandidateStore({ rootDir });
     const toolCandidates = new GitHubNotificationReplyCandidateStore({ rootDir });
     const diagnostics: string[] = [];
-    const turn = await parentCandidates.begin({
+    const identity = {
       agentId: 'tanaabot',
       conversationId: 'github:issue:repository:12',
-      revisionId: 'revision-1',
-    });
+      identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const,
+      sourceId: 'revision-1',
+    };
+    const turn = await parentCandidates.begin(identity);
+    await toolCandidates.attestPromptSelection(identity);
     let factory: OpenClawPluginToolFactory | undefined;
     const registered = createGitHubNotificationReplyTool(toolCandidates, {
       debug(message) {
@@ -113,9 +116,7 @@ describe('channels/github/publication/reply-tool', () => {
       });
       assert.deepEqual(
         await parentCandidates.finish({
-          agentId: 'tanaabot',
-          conversationId: 'github:issue:repository:12',
-          revisionId: 'revision-1',
+          ...identity,
           turnId: turn,
         }),
         ['ready'],
@@ -124,11 +125,13 @@ describe('channels/github/publication/reply-tool', () => {
       if (result.content[0]?.type === 'text') {
         assert.match(result.content[0].text, /github-reply-candidate/u);
       }
-      const codexTurn = await parentCandidates.begin({
-        agentId: 'tanaabot',
+      const codexIdentity = {
+        ...identity,
         conversationId: 'github:issue:repository:13',
-        revisionId: 'revision-2',
-      });
+        sourceId: 'revision-2',
+      };
+      const codexTurn = await parentCandidates.begin(codexIdentity);
+      await toolCandidates.attestPromptSelection(codexIdentity);
       const codexResult = await codexTool.execute('call-2', { body: ' codex ready ' });
       assert.deepEqual(codexResult.details, {
         auditId: 'audit-1',
@@ -136,9 +139,7 @@ describe('channels/github/publication/reply-tool', () => {
       });
       assert.deepEqual(
         await parentCandidates.finish({
-          agentId: 'tanaabot',
-          conversationId: 'github:issue:repository:13',
-          revisionId: 'revision-2',
+          ...codexIdentity,
           turnId: codexTurn,
         }),
         ['codex ready'],

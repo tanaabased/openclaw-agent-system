@@ -5,6 +5,10 @@ import { acquireFileLock, type FileLockHandle } from 'openclaw/plugin-sdk/file-l
 
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
+import { isGitHubNotificationEventId } from '../events/types.ts';
+import { isGitHubNotificationLifecycleId } from '../lifecycles/types.ts';
+import { isGitHubNotificationModeId } from '../modes/types.ts';
+import type { GitHubNotificationTurnIdentity } from '../conversation/turn-identity.ts';
 
 const defaultTtlMs = 30 * 60 * 1000;
 const maximumStateBytes = 4 * 1024;
@@ -15,6 +19,7 @@ export type GitHubNotificationReplyCandidateStoreErrorCode =
   | 'reply-turn-expired'
   | 'reply-turn-mismatch'
   | 'reply-turn-missing'
+  | 'reply-turn-prompt-selection-missing'
   | 'reply-turn-state-invalid'
   | 'reply-turn-store-unavailable';
 
@@ -31,16 +36,19 @@ interface GitHubNotificationReplyCandidateState {
   candidates: Array<{ body: string; stagedAt: string }>;
   conversationId: string;
   expiresAt: string;
+  identity: GitHubNotificationTurnIdentity;
   openedAt: string;
-  revisionId: string;
-  schemaVersion: 1;
+  promptSelectedAt?: string;
+  schemaVersion: 2;
+  sourceId: string;
   turnId: string;
 }
 
 export interface GitHubNotificationReplyCandidateTurnInput {
   agentId: string;
   conversationId: string;
-  revisionId: string;
+  identity: GitHubNotificationTurnIdentity;
+  sourceId: string;
 }
 
 export interface GitHubNotificationReplyCandidateFinishInput extends GitHubNotificationReplyCandidateTurnInput {
@@ -68,6 +76,30 @@ function boundedString(value: unknown, maximumLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maximumLength;
 }
 
+function turnIdentity(value: unknown): value is GitHubNotificationTurnIdentity {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const identity = value as Record<string, unknown>;
+  return (
+    Object.keys(identity).length === 3 &&
+    isGitHubNotificationEventId(identity.eventId) &&
+    isGitHubNotificationLifecycleId(identity.lifecycleId) &&
+    isGitHubNotificationModeId(identity.modeId)
+  );
+}
+
+function sameTurn(
+  state: GitHubNotificationReplyCandidateState,
+  input: GitHubNotificationReplyCandidateTurnInput,
+): boolean {
+  return (
+    state.conversationId === input.conversationId &&
+    state.sourceId === input.sourceId &&
+    state.identity.eventId === input.identity.eventId &&
+    state.identity.lifecycleId === input.identity.lifecycleId &&
+    state.identity.modeId === input.identity.modeId
+  );
+}
+
 function decodeState(
   value: unknown,
   expectedAgentId: string,
@@ -78,13 +110,17 @@ function decodeState(
   const state = value as Record<string, unknown>;
   const candidates = state.candidates;
   if (
-    state.schemaVersion !== 1 ||
+    state.schemaVersion !== 2 ||
     state.agentId !== expectedAgentId ||
     !boundedString(state.turnId, 128) ||
     !boundedString(state.conversationId, 512) ||
-    !boundedString(state.revisionId, 256) ||
+    !boundedString(state.sourceId, 256) ||
+    !turnIdentity(state.identity) ||
     !boundedString(state.openedAt, 64) ||
     !boundedString(state.expiresAt, 64) ||
+    (state.promptSelectedAt !== undefined &&
+      (!boundedString(state.promptSelectedAt, 64) ||
+        !Number.isFinite(Date.parse(state.promptSelectedAt)))) ||
     !Number.isFinite(Date.parse(state.openedAt)) ||
     !Number.isFinite(Date.parse(state.expiresAt)) ||
     !Array.isArray(candidates) ||
@@ -112,9 +148,11 @@ function decodeState(
     candidates: decodedCandidates,
     conversationId: state.conversationId,
     expiresAt: state.expiresAt,
+    identity: state.identity,
     openedAt: state.openedAt,
-    revisionId: state.revisionId,
-    schemaVersion: 1,
+    ...(state.promptSelectedAt === undefined ? {} : { promptSelectedAt: state.promptSelectedAt }),
+    schemaVersion: 2,
+    sourceId: state.sourceId,
     turnId: state.turnId,
   };
 }
@@ -151,9 +189,10 @@ export default class GitHubNotificationReplyCandidateStore {
         candidates: [],
         conversationId: input.conversationId,
         expiresAt: new Date(openedAt + this.#ttlMs).toISOString(),
+        identity: input.identity,
         openedAt: new Date(openedAt).toISOString(),
-        revisionId: input.revisionId,
-        schemaVersion: 1,
+        schemaVersion: 2,
+        sourceId: input.sourceId,
         turnId: this.#randomId(),
       };
       await file.write(`${JSON.stringify(state, undefined, 2)}\n`);
@@ -172,7 +211,17 @@ export default class GitHubNotificationReplyCandidateStore {
     return this.#exclusive(input.agentId, async (file) => {
       const active = await this.#matchingState(file, input);
       await file.remove();
+      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       return active.candidates.map(({ body }) => body);
+    });
+  }
+
+  async attestPromptSelection(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
+    await this.#exclusive(input.agentId, async (file) => {
+      const active = await this.#activeState(file, input);
+      if (active.promptSelectedAt) return;
+      active.promptSelectedAt = new Date(this.#now()).toISOString();
+      await file.write(`${JSON.stringify(active, undefined, 2)}\n`);
     });
   }
 
@@ -184,6 +233,7 @@ export default class GitHubNotificationReplyCandidateStore {
         await file.remove();
         fail('reply-turn-expired');
       }
+      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.candidates.length >= 2) fail('reply-turn-candidate-limit');
       const body = candidate.trim();
       if (!body || body.length > 800) fail('reply-turn-state-invalid');
@@ -200,19 +250,22 @@ export default class GitHubNotificationReplyCandidateStore {
     file: PrivateStateFile,
     input: GitHubNotificationReplyCandidateFinishInput,
   ): Promise<GitHubNotificationReplyCandidateState> {
+    const active = await this.#activeState(file, input);
+    if (active.turnId !== input.turnId) fail('reply-turn-mismatch');
+    return active;
+  }
+
+  async #activeState(
+    file: PrivateStateFile,
+    input: GitHubNotificationReplyCandidateTurnInput,
+  ): Promise<GitHubNotificationReplyCandidateState> {
     const active = await this.#read(file, input.agentId);
     if (!active) fail('reply-turn-missing');
     if (this.#expired(active)) {
       await file.remove();
       fail('reply-turn-expired');
     }
-    if (
-      active.turnId !== input.turnId ||
-      active.conversationId !== input.conversationId ||
-      active.revisionId !== input.revisionId
-    ) {
-      fail('reply-turn-mismatch');
-    }
+    if (!sameTurn(active, input)) fail('reply-turn-mismatch');
     return active;
   }
 

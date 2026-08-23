@@ -2,21 +2,28 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
-  type GitHubNotificationCommentTurnServiceDependencies,
 } from '../channels/github/conversation/comment-turn-service.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
 } from '../channels/github/conversation/comment-admission.ts';
+import GitHubNotificationModelTurnCoordinator from '../channels/github/conversation/model-turn-coordinator.ts';
+import GitHubNotificationModelTurnDispatcher, {
+  type GitHubNotificationModelTurnDispatcherDependencies,
+} from '../channels/github/conversation/model-turn-dispatcher.ts';
+import {
+  GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateTurnInput,
+} from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationActor,
   notificationItemKey,
   notificationMonitorState,
 } from './github-notification-fixtures.ts';
+import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
@@ -37,6 +44,10 @@ const config: OpenClawConfig = {
   },
 };
 
+function assertTurnContractOptions(options: Record<string, unknown>) {
+  assert.equal(options.extraSystemPrompt, undefined);
+}
+
 function incomingComment(): GitHubCanonicalIssueComment {
   return {
     author: notificationActor,
@@ -49,38 +60,39 @@ function incomingComment(): GitHubCanonicalIssueComment {
   };
 }
 
-function candidateStore(candidates: readonly string[]) {
-  let identity:
-    { agentId: string; conversationId: string; revisionId: string; turnId?: string } | undefined;
+function candidateStore(candidates: readonly string[], finishError?: Error) {
+  let identity: GitHubNotificationReplyCandidateTurnInput | undefined;
   return {
-    async begin(input: { agentId: string; conversationId: string; revisionId: string }) {
+    async begin(input: GitHubNotificationReplyCandidateTurnInput) {
       identity = { ...input };
       return 'turn-1';
     },
-    async cancel(input: {
-      agentId: string;
-      conversationId: string;
-      revisionId: string;
-      turnId: string;
-    }) {
+    async cancel(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
     },
-    async finish(input: {
-      agentId: string;
-      conversationId: string;
-      revisionId: string;
-      turnId: string;
-    }) {
+    async finish(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
+      if (finishError) throw finishError;
       return [...candidates];
     },
   };
+}
+
+function modelTurnDispatcher(
+  dispatchReplyWithBufferedBlockDispatcher: GitHubNotificationModelTurnDispatcherDependencies['dispatchReplyWithBufferedBlockDispatcher'],
+  recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'],
+) {
+  return new GitHubNotificationModelTurnDispatcher({
+    dispatchReplyWithBufferedBlockDispatcher,
+    recordInboundSession,
+  });
 }
 
 async function respondWithCandidates(
   candidates: readonly string[],
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
   inspectReplyOptions?: (options: Record<string, unknown>) => void,
+  finishError?: Error,
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -90,30 +102,38 @@ async function respondWithCandidates(
     worktreePath: '/workspace/worktrees/issue-12',
   };
   const comment = incomingComment();
+  const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
-    modes: new GitHubNotificationModeRegistry(),
-    candidates: candidateStore(candidates),
-    async dispatchReplyWithBufferedBlockDispatcher(input) {
-      inspectReplyOptions?.(input.replyOptions ?? {});
-      await input.dispatcherOptions.deliver(
-        { text: 'Private response remains available.' },
-        {
-          kind: 'final',
+    coordinator: new GitHubNotificationModelTurnCoordinator({
+      candidates: candidateStore(candidates, finishError),
+      dispatcher: modelTurnDispatcher(
+        async (input) => {
+          const replyOptions = input.replyOptions ?? {};
+          assertTurnContractOptions(replyOptions);
+          inspectReplyOptions?.(replyOptions);
+          await input.dispatcherOptions.deliver(
+            { text: 'Private response remains available.' },
+            {
+              kind: 'final',
+            },
+          );
+          return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
         },
-      );
-      return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-    },
+        async (input) => {
+          input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
+        },
+      ),
+    }),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => config,
-    async recordInboundSession(input) {
-      input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
-    },
+    turnContracts: contracts,
   });
   return service.respond({
     agentId,
     comment,
     executionSurface,
     item,
+    modeId: 'work',
     revision: githubCommentRevision(comment),
     workspaceDir,
   });
@@ -132,7 +152,8 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const revision = githubCommentRevision(comment);
     let createIfMissing: boolean | undefined;
     let recorded = false;
-    const recordInboundSession: GitHubNotificationCommentTurnServiceDependencies['recordInboundSession'] =
+    const contracts = createGitHubNotificationTurnContractResolver();
+    const recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'] =
       async (input) => {
         createIfMissing = input.createIfMissing;
         const task = Promise.resolve().then(() => {
@@ -142,40 +163,42 @@ describe('channels/github/conversation/comment-turn-service', () => {
         input.trackSessionMetaTask?.(task);
       };
     const service = new GitHubNotificationCommentTurnService({
-      modes: new GitHubNotificationModeRegistry(),
-      candidates: candidateStore(['ready']),
-      async dispatchReplyWithBufferedBlockDispatcher(input) {
-        assert.equal(recorded, true);
-        assert.equal(createIfMissing, false);
-        assert.equal(input.ctx.Body, comment.body);
-        assert.equal(input.ctx.BodyForAgent, comment.body);
-        assert.equal(input.ctx.RawBody, comment.body);
-        assert.equal(input.ctx.Provider, githubNotificationChannelId);
-        assert.equal(input.replyOptions?.disableTools, false);
-        const replyOptions = input.replyOptions as Record<string, unknown>;
-        assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
-        assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
-        assert.equal(replyOptions.oneShotCliRun, true);
-        assert.equal(input.replyOptions?.runId, undefined);
-        assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
-        assert.equal(input.toolsAllow, undefined);
-        assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-        await input.dispatcherOptions.deliver(
-          {
-            text: [
-              'I checked the request and it is ready.',
-              '',
-              '## Notes',
-              'This private response may use normal Markdown without a publication envelope.',
-            ].join('\n'),
-          },
-          { kind: 'final' },
-        );
-        return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
-      },
+      coordinator: new GitHubNotificationModelTurnCoordinator({
+        candidates: candidateStore(['ready']),
+        dispatcher: modelTurnDispatcher(async (input) => {
+          assert.equal(recorded, true);
+          assert.equal(createIfMissing, false);
+          assert.equal(input.ctx.Body, comment.body);
+          assert.equal(input.ctx.BodyForAgent, comment.body);
+          assert.equal(input.ctx.RawBody, comment.body);
+          assert.equal(input.ctx.Provider, githubNotificationChannelId);
+          assert.equal(input.replyOptions?.disableTools, false);
+          const replyOptions = input.replyOptions as Record<string, unknown>;
+          assertTurnContractOptions(replyOptions);
+          assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
+          assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
+          assert.equal(replyOptions.oneShotCliRun, true);
+          assert.equal(input.replyOptions?.runId, undefined);
+          assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
+          assert.equal(input.toolsAllow, undefined);
+          assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
+          await input.dispatcherOptions.deliver(
+            {
+              text: [
+                'I checked the request and it is ready.',
+                '',
+                '## Notes',
+                'This private response may use normal Markdown without a publication envelope.',
+              ].join('\n'),
+            },
+            { kind: 'final' },
+          );
+          return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
+        }, recordInboundSession),
+      }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
-      recordInboundSession,
+      turnContracts: contracts,
     });
 
     const result = await service.respond({
@@ -183,6 +206,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       comment,
       executionSurface: 'cli-one-shot',
       item,
+      modeId: 'work',
       revision,
       workspaceDir,
     });
@@ -193,6 +217,9 @@ describe('channels/github/conversation/comment-turn-service', () => {
     );
     assert.deepEqual(result.publication, { status: 'candidate', publicText: 'ready' });
     assert.equal(result.accountId, agentId);
+    assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
+      id: 'github:issue:R_repo:12',
+    });
     assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
       {
         comment: {
@@ -209,6 +236,10 @@ describe('channels/github/conversation/comment-turn-service', () => {
         worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
       },
     ]);
+    assert.equal(
+      JSON.stringify(result.ctxPayload.UntrustedStructuredContext),
+      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
+    );
   });
 
   it('should reject a comment turn when the assignment session is absent', async () => {
@@ -220,17 +251,22 @@ describe('channels/github/conversation/comment-turn-service', () => {
       worktreePath: '/workspace/worktrees/issue-12',
     };
     const comment = incomingComment();
+    const contracts = createGitHubNotificationTurnContractResolver();
     const service = new GitHubNotificationCommentTurnService({
-      modes: new GitHubNotificationModeRegistry(),
-      candidates: candidateStore([]),
-      async dispatchReplyWithBufferedBlockDispatcher() {
-        throw new Error('unexpected model dispatch');
-      },
+      coordinator: new GitHubNotificationModelTurnCoordinator({
+        candidates: candidateStore([]),
+        dispatcher: modelTurnDispatcher(
+          async () => {
+            throw new Error('unexpected model dispatch');
+          },
+          async (input) => {
+            input.trackSessionMetaTask?.(Promise.resolve(null));
+          },
+        ),
+      }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
-      async recordInboundSession(input) {
-        input.trackSessionMetaTask?.(Promise.resolve(null));
-      },
+      turnContracts: contracts,
     });
 
     await assert.rejects(
@@ -239,6 +275,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         comment,
         executionSurface: 'gateway',
         item,
+        modeId: 'work',
         revision: githubCommentRevision(comment),
         workspaceDir,
       }),
@@ -256,6 +293,20 @@ describe('channels/github/conversation/comment-turn-service', () => {
       status: 'withheld',
       code: 'github-notification-publication-candidate-missing',
     });
+  });
+
+  it('should classify a missing prompt-selection attestation', async () => {
+    await assert.rejects(
+      respondWithCandidates(
+        [],
+        'gateway',
+        undefined,
+        new GitHubNotificationReplyCandidateStoreError('reply-turn-prompt-selection-missing'),
+      ),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentTurnError &&
+        error.code === 'github-notification-comment-prompt-selection-missing',
+    );
   });
 
   it('should preserve long-lived host resources for gateway turns', async () => {

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import resolveGitHubNotificationLifecycleEventSupport, {
+  GitHubNotificationLifecycleEventSupportError,
+  githubNotificationLifecycleSupportsEvent,
+} from '../channels/github/lifecycles/event-support.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import {
@@ -46,6 +50,29 @@ describe('channels/github/lifecycles', () => {
         repositoryDatabaseId: issue.repositoryDatabaseId,
       },
     ]);
+    assert.deepEqual(
+      lifecycle.context.project({
+        item: issue,
+        worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
+      }),
+      {
+        item: {
+          lifecycleId: 'issue',
+          number: issue.number,
+          repositoryName: issue.repositoryName,
+          repositoryOwner: issue.repositoryOwner,
+        },
+        worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
+      },
+    );
+    assert.equal(
+      typeof resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'assignment').session
+        ?.project,
+      'function',
+    );
+    assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'comment'), {});
+    assert.equal(githubNotificationLifecycleSupportsEvent(lifecycle, 'comment'), true);
+    assert.ok(lifecycle.modeSupport.work);
   });
 
   it('should classify a direct pull request without assigning worktree ownership', () => {
@@ -55,6 +82,26 @@ describe('channels/github/lifecycles', () => {
 
     assert.equal(selected.id, 'pull-request');
     assert.deepEqual(selected.worktree, { required: false });
+    assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(selected, 'assignment'), {});
+    assert.equal(githubNotificationLifecycleSupportsEvent(selected, 'comment'), false);
+    assert.deepEqual(selected.modeSupport, {});
+    assert.deepEqual(selected.context.project({ item: approvedPullRequestNotificationItem() }), {
+      item: {
+        lifecycleId: 'pull-request',
+        number: 13,
+        repositoryName: 'example',
+        repositoryOwner: 'tanaabased',
+      },
+      pullRequest: {
+        authorNodeId: 'U_actor',
+        baseRef: 'main',
+        draft: false,
+        headRef: 'notification-pr',
+        headRepositoryDatabaseId: 3,
+        headRepositoryNodeId: 'R_repo',
+        headSha: 'a'.repeat(40),
+      },
+    });
   });
 
   it('should reject duplicate lifecycle owners', () => {
@@ -65,6 +112,16 @@ describe('channels/github/lifecycles', () => {
           new GitHubPullRequestLifecycle(),
         ]),
       /Duplicate GitHub notification lifecycle pull-request/u,
+    );
+  });
+
+  it('should reject an unsupported lifecycle event', () => {
+    assert.throws(
+      () =>
+        resolveGitHubNotificationLifecycleEventSupport(new GitHubPullRequestLifecycle(), 'comment'),
+      (error: unknown) =>
+        error instanceof GitHubNotificationLifecycleEventSupportError &&
+        error.code === 'github-notification-lifecycle-event-unsupported',
     );
   });
 });

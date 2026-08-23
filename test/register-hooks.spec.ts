@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationIssueWorkCommentInstructions from '../channels/github/conversation/prompts/compose.ts';
-import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
 
@@ -68,7 +66,7 @@ describe('core/register-hooks', () => {
     });
   });
 
-  it('should inject github response instructions from the canonical channel id', async () => {
+  it('should append channel guidance through the prompt hook', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(
       {
@@ -82,24 +80,22 @@ describe('core/register-hooks', () => {
         },
       },
       { guidance: () => [] },
+      {
+        async instructions(context) {
+          return context.messageProvider === 'agent-system-github'
+            ? 'Current GitHub turn instructions.'
+            : undefined;
+        },
+      },
     );
 
     const result = await handlers.get('before_prompt_build')?.(
       {},
-      {
-        messageProvider: githubNotificationChannelId,
-        sessionId: 'sandbox-session',
-        sessionKey: 'sandbox-session',
-      },
-    );
-    const unrelated = await handlers.get('before_prompt_build')?.(
-      {},
-      { messageProvider: 'github', sessionId: 'two', sessionKey: 'two' },
+      { messageProvider: 'agent-system-github', sessionId: 'one' },
     );
 
     assert.deepEqual(result, {
-      appendSystemContext: githubNotificationIssueWorkCommentInstructions,
+      appendSystemContext: 'Current GitHub turn instructions.',
     });
-    assert.equal(unrelated, undefined);
   });
 });

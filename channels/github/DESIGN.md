@@ -26,7 +26,7 @@ GitHub notification
         |                                   |
  GitHub comment -> same lifecycle session --+
         |
- clarification / plan ready / work / complete
+ question / plan summary / work result / complete
 ```
 
 Polling discovers candidate events. Admission verifies the agent, actor,
@@ -58,10 +58,11 @@ A lifecycle implementation such as `issue.ts` owns only provider-specific
 facts and resources:
 
 - validate that the classified item belongs to the lifecycle and project
-  bounded trusted inputs;
+  bounded provider facts;
 - declare lifecycle-specific resources, such as the issue worktree;
+- declare which registered modes the lifecycle supports;
 - supply lifecycle facts for shared presentation, structured context, hidden
-  instructions, and completion evidence as those capabilities are added.
+  instructions, and completion evidence through small capabilities.
 
 The shared coordinator owns admission, durable session identity and state,
 serialization, retries, mode enforcement, OpenClaw turn dispatch, response
@@ -69,6 +70,16 @@ validation, and publication. Lifecycle implementations do not load credentials,
 write OpenClaw session storage, choose arbitrary tool lists, or publish directly.
 Add lifecycle behavior through small explicit capabilities rather than one
 all-purpose reconciliation method.
+
+The lifecycle's structured-context projector selects normalized facts already
+obtained through authorized, bounded provider reads. It does not perform lazy
+credential resolution from the prompt hook. The shared coordinator calls the
+projector again for each turn so current lifecycle metadata is available without
+copying provider prose into durable conversation state. Durable records retain
+only identifiers, digests, current mode, transition facts, and delivery receipts.
+A pull-request lifecycle can therefore project base and head refs, head SHA,
+draft state, and repository identity while a review lifecycle can project its
+review identifiers and target commit without changing the coordinator.
 
 ### Modes
 
@@ -83,6 +94,14 @@ A mode determines what the agent may do inside the lifecycle session.
 The target `agent.yaml` notification configuration selects the initial mode.
 Mode transitions are trusted lifecycle actions; GitHub prose cannot select or
 elevate a mode. A comment inherits the session's current mode.
+
+A distinct mode is justified only when it changes runtime capability,
+authorization, or transition policy. Planning, clarification, and implementation
+style may all happen inside Work without changing modes. If Plan and Work ever
+differ only by prompt wording, they should be one mode with behavioral guidance.
+Every implemented lifecycle-mode pair must be declared explicitly and resolve
+through the shared registry; missing lifecycle, mode, event, or compatibility
+definitions fail closed.
 
 ### Capability Enforcement
 
@@ -110,32 +129,28 @@ remaining sandbox and execution-authorization boundaries allow it. Capability
 enforcement must therefore be verified separately in both harnesses rather
 than expressed only as prompt instructions.
 
-### States
+### Durable Conversation State
 
-State describes lifecycle progress. Delivery receipts remain separate so a
-successful private turn is not erased by a failed GitHub publication.
+Do not persist a broad phase machine merely to describe what a capable model is
+doing. Planning, asking a question, and working are ordinary turn outcomes until
+the runtime needs a durable fact for authorization, scheduling, retry, UI, or
+operator control. A clarification question is published, the turn ends, and an
+admitted answer resumes the same session without a `clarification-needed`
+transition.
 
-| Name                 | Machine ID             | Meaning                                                    |
-| -------------------- | ---------------------- | ---------------------------------------------------------- |
-| Received             | `received`             | Admission and session preparation completed                |
-| Planning             | `planning`             | The agent is investigating or preparing its next action    |
-| Clarification needed | `clarification-needed` | A published question is waiting for an admitted answer     |
-| Plan ready           | `plan-ready`           | A private plan and public summary are ready                |
-| Working              | `working`              | Authorized implementation is underway                      |
-| Completed            | `completed`            | The lifecycle produced its intended result                 |
-| Failed               | `failed`               | A durable failure prevents the current transition          |
-| Retired              | `retired`              | Monitoring ended while preserving the session and worktree |
+The conversation record retains the current trusted mode, processed comment
+revision identifiers and digests, and publication receipts. If promotion from
+Plan to Work requires an authorized decision, add one bounded pending
+mode-transition record with its source, target, requester, and decision rather
+than introducing general planning and working phases. Human-facing labels such
+as planning, waiting for clarification, working, completed, failed, and retired
+may be derived for presentation until runtime behavior depends on them.
 
-```text
-received -> planning -> clarification-needed -> planning
-                     -> plan-ready -> working -> completed
-
-any nonterminal state -> failed | retired
-```
-
-In Plan, `plan-ready` waits for an authorized transition to Work. In Work, an
-unblocked plan may advance directly to `working`. Auto will define its own
-bounded transitions.
+While an admitted model turn is running or remains retryable, the conversation
+also retains one bounded active-turn descriptor containing its registered event
+ID and stable source ID. The coordinator clears that descriptor when it
+checkpoints a response, so prompt selection never depends on process-local
+memory or arbitrary prompt text in persisted state.
 
 The polling monitor owns provider intake stages (`admitted`, `prepared`, and
 `retired`). The shared coordinator may record the deterministic OpenClaw route
@@ -169,6 +184,25 @@ but publication never depends on that rendering.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
+Structured context is untrusted data even when the channel hides it from the
+visible transcript. Hidden instructions are composed only from registered
+lifecycle, lifecycle-mode, mode, event, and shared-response definitions selected
+by channel-owned turn identity.
+
+### Prompt Transport
+
+The central `before_prompt_build` hook is the supported cross-harness transport
+for hidden channel instructions. Turn dispatch options project capability only;
+they do not carry lifecycle, mode, or event prompts through
+`extraSystemPrompt`. Typed GitHub reply candidates use their separate
+channel-owned file-backed handoff and are not inferred from response Markdown.
+
+The selector resolves the active lifecycle, mode, and event through the shared
+catalog using trusted hook routing and the private durable turn descriptor
+available to both the Gateway and native Codex runtimes. It does not derive
+capability from GitHub prose, depend on process-local memory, or store prompt
+text as arbitrary channel metadata. Missing, conflicting, or unsupported turn
+selection fails closed instead of falling back to a different prompt.
 
 ## Lifecycle Rules
 
@@ -180,13 +214,13 @@ GitHub prose trusted instructions or grant capabilities beyond the active mode.
 - **Response:** Every agent-authored outcome keeps its complete private response
   separate from one typed GitHub-facing candidate.
 - **Plan:** The agent investigates the item, discussion, code, and documentation.
-  It returns a plan or enters `clarification-needed` with a concise public
-  question. An admitted answer resumes the same Plan session.
+  It returns a plan or asks one concise public question and ends the turn. An
+  admitted answer resumes the same Plan session.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
 - **Comments:** An admitted comment enters as a direct message in the existing
-  session and inherits its lifecycle type, mode, state, and capability.
+  session and inherits its lifecycle type, current mode, and capability.
 - **Publication:** Only the typed GitHub candidate or a trusted
   provider-constructed message may be published. Publication validates the
   payload, reauthorizes the destination, records a durable receipt, and retries
@@ -199,21 +233,21 @@ credentials, and local paths remain outside GitHub publication.
 
 The channel source is organized by the behavior being changed:
 
-| Scope                        | Ownership                                                                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `lifecycles/`                | Lifecycle type descriptors and lifecycle-specific resources; add a new implemented type here and compose it in `runtime/create-runtime.ts` |
-| `modes/`                     | Trusted mode policies and runtime tool projection; add a new implemented mode here and register it in `modes/registry.ts`                  |
-| `intake/`                    | Assignment admission, classification, preparation, and polling checkpoints                                                                 |
-| `conversation/context/`      | Bounded untrusted structured-context projections for model turns                                                                           |
-| `conversation/prompts/`      | Hidden lifecycle, event, mode, and response instructions plus their composition                                                            |
-| `conversation/presentation/` | Reusable visible components governed by [Presentation](./PRESENTATION.md)                                                                  |
-| `conversation/`              | Session preparation, comment admission, turn dispatch, and conversation state                                                              |
-| `publication/`               | Typed public candidates, validation, leases, delivery, and reconciliation                                                                  |
-| `provider/`                  | Bounded GitHub reads and provider data normalization                                                                                       |
-| `routing/`                   | Installed OpenClaw channel routes and durable route receipts                                                                               |
-| `state/`                     | Shared private-state filesystem boundaries                                                                                                 |
-| `runtime/`                   | Channel-owned assembly and its Agent System lifecycle contribution                                                                         |
-| `cli/`                       | GitHub notification subcommand implementations and options                                                                                 |
+| Scope                        | Ownership                                                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `events/`                    | Trusted event definitions, event-owned visible presentation, and explicit registration                                     |
+| `lifecycles/`                | Lifecycle descriptors, supported-mode declarations, structured-context projection, and lifecycle-specific resources        |
+| `modes/`                     | Trusted mode instructions, policies, and runtime tool projection; register implemented definitions during runtime assembly |
+| `intake/`                    | Assignment admission, classification, preparation, and polling checkpoints                                                 |
+| `conversation/context/`      | Event-specific composition over lifecycle-owned bounded structured context                                                 |
+| `conversation/prompts/`      | Hidden lifecycle, event, mode, and response instruction text and pure composition                                          |
+| `conversation/presentation/` | Reusable mode-neutral visible primitives governed by [Presentation](./PRESENTATION.md)                                     |
+| `conversation/`              | Session preparation, comment admission, turn dispatch, and conversation state                                              |
+| `publication/`               | Typed public candidates, validation, leases, delivery, and reconciliation                                                  |
+| `provider/`                  | Bounded GitHub reads and provider data normalization                                                                       |
+| `routing/`                   | Installed OpenClaw channel routes and durable route receipts                                                               |
+| `runtime/`                   | Channel-owned assembly and its Agent System lifecycle contribution                                                         |
+| `cli/`                       | GitHub notification subcommand implementations and options                                                                 |
 
 Keep small scopes flat. Add a nested `lib/` or `utils/` only when a scope has
 enough files to make that distinction useful, and do not add placeholder mode or

@@ -2,6 +2,8 @@ import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
+import type { GitHubNotificationMode } from '../modes/types.ts';
 import type {
   GitHubNotificationLifecycle,
   GitHubNotificationLifecycleBoundaryInput,
@@ -25,6 +27,7 @@ export interface GitHubNotificationAssignmentAuthority {
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
+  initialMode: Pick<GitHubNotificationMode, 'policy'>;
   lifecycles: GitHubNotificationLifecycleRegistry;
   sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
@@ -312,27 +315,34 @@ export default class GitHubNotificationAssignmentOrchestrator {
     const item = state.items[itemKey];
     const intake = item?.intake;
     if (!item || !intake) return;
-    if (item.lifecycleId === 'issue') {
+    const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
+    const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
+      lifecycle,
+      'assignment',
+    );
+    if (assignmentSupport.session) {
       const preparedWorktree =
         worktree ??
         (intake.worktreeBranch && intake.worktreePath
           ? { branch: intake.worktreeBranch, path: intake.worktreePath }
           : undefined);
-      if (!preparedWorktree) {
+      if (lifecycle.worktree.required && !preparedWorktree) {
         throw new GitHubNotificationAssignmentOrchestratorError(
           'github-notification-assignment-session-context-missing',
-          'The GitHub issue assignment session is missing its prepared worktree.',
+          'The GitHub assignment session is missing its lifecycle context.',
         );
       }
       await this.#diagnosticBoundary(
         'github-notification-assignment-session-recording-failed',
-        'The GitHub issue assignment session could not be prepared.',
+        'The GitHub assignment session could not be prepared.',
         () =>
           this.#dependencies.sessions.prepare({
             agentId,
             item,
+            lifecycle,
+            mode: this.#dependencies.initialMode,
             workspaceDir: state.workspaceDir,
-            worktree: preparedWorktree,
+            ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
           }),
       );
     }
