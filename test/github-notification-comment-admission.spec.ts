@@ -31,14 +31,50 @@ function comment(
 
 describe('channels/github/conversation/comment-admission', () => {
   it('should admit an approved human exact standalone account mention', () => {
+    const body = 'Could you check this, @Tanaabot?';
+    const start = body.indexOf('@Tanaabot');
     assert.deepEqual(
       admitGitHubComment({
         account: notificationAccount,
-        comment: comment('Could you check this, @Tanaabot?'),
+        comment: comment(body),
         configuration,
       }),
-      { code: 'comment-approved', disposition: 'approved' },
+      {
+        code: 'comment-approved',
+        disposition: 'approved',
+        mentions: [{ end: start + '@Tanaabot'.length, start }],
+      },
     );
+  });
+
+  it('should retain exact source ranges for each admitted prose mention', () => {
+    const body = [
+      '👋 @Tanaabot could you compare this with `@tanaabot`?',
+      '> @tanaabot quoted reply',
+      'Then let @TANAABOT know.',
+    ].join('\n');
+    const result = admitGitHubComment({
+      account: notificationAccount,
+      comment: comment(body),
+      configuration,
+    });
+
+    assert.equal(result.disposition, 'approved');
+    if (result.disposition !== 'approved') return;
+    assert.deepEqual(
+      result.mentions.map(({ end, start }) => body.slice(start, end)),
+      ['@Tanaabot', '@TANAABOT'],
+    );
+    assert.deepEqual(result.mentions, [
+      {
+        end: body.indexOf('@Tanaabot') + '@Tanaabot'.length,
+        start: body.indexOf('@Tanaabot'),
+      },
+      {
+        end: body.indexOf('@TANAABOT') + '@TANAABOT'.length,
+        start: body.indexOf('@TANAABOT'),
+      },
+    ]);
   });
 
   it('should reject literal agent, partial, self, bot, and unapproved mentions', () => {

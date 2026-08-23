@@ -18,6 +18,7 @@ agent:
     from-environment: AGENT_EMAIL
   description: Tanaab development agent.
   avatar: .agent-system/assets/tanaabot.png
+  emoji: 🧑‍💻
 environment:
   dotenv:
     - .agent-system/env/base.env
@@ -45,6 +46,7 @@ environment:
           email: { fromEnvironment: 'AGENT_EMAIL' },
           description: 'Tanaab development agent.',
           avatar: '.agent-system/assets/tanaabot.png',
+          emoji: '🧑‍💻',
         },
         environment: {
           dotenv: ['.agent-system/env/base.env', '.agent-system/env/local.env'],

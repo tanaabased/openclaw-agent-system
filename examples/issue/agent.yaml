@@ -4,6 +4,7 @@ agent:
   id: notification-data
   name: Notification Data
   email: notification-data@tanaab.dev
+  emoji: 📬
 
 environment:
   op: jglytdfegfggijqkalco2cxexa

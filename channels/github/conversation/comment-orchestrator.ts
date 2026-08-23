@@ -10,6 +10,7 @@ import {
   admitGitHubComment,
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
+  type GitHubCommentMention,
   type GitHubCommentRevision,
 } from './comment-admission.ts';
 import {
@@ -279,6 +280,7 @@ export default class GitHubNotificationCommentOrchestrator {
         conversationId,
         executionSurface,
         exact,
+        admission.mentions,
         exactRevision,
         item,
         modeId,
@@ -294,6 +296,7 @@ export default class GitHubNotificationCommentOrchestrator {
     conversationId: string,
     executionSurface: GitHubNotificationExecutionSurface,
     comment: GitHubCanonicalIssueComment,
+    mentions: readonly GitHubCommentMention[],
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
     modeId: GitHubNotificationModeId,
@@ -307,6 +310,7 @@ export default class GitHubNotificationCommentOrchestrator {
         comment,
         executionSurface,
         item,
+        mentions,
         modeId,
         revision,
         ...(signal === undefined ? {} : { signal }),

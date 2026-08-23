@@ -171,7 +171,9 @@ export default class GitHubNotificationCommentPublicationService {
               : admission.code,
           );
         }
-        return opened.client;
+        const commenter = exact.author;
+        if (!commenter) fail('comment-actor-missing');
+        return { client: opened.client, commenterLogin: commenter.login };
       },
       exclusive: (target, run) =>
         this.#dependencies.publicationLeaseStore.exclusive(

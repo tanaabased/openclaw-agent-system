@@ -10,6 +10,7 @@ export interface AgentManifest {
     email?: ResolvableString;
     description?: string;
     avatar?: string;
+    emoji?: string;
   };
   environment?: {
     dotenv?: string[];

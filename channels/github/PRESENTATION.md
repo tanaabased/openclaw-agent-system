@@ -13,6 +13,10 @@ notifications channel. It describes their appearance and composition only. The
 - Use `**Mode:** <name>` for a compact mode label.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
+- Keep GitHub-facing responses conversational; they are comments rather than
+  reports.
+- Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
+  code formatting, and links, only when it materially improves clarity.
 
 ## Card
 
@@ -47,12 +51,23 @@ component needs it.
 
 ## Direct Message
 
-A direct inbound message is presented as the exact author-written text admitted
-from GitHub:
+A direct inbound comment replaces each admitted GitHub account mention with the
+agent's installed emoji, display name, and OpenClaw Agents link. The remaining
+author-written Markdown source stays exact, so standard links, headings, lists,
+tables, blockquotes, and code formatting remain available to OpenClaw's Markdown
+renderer. GitHub-specific shorthand such as bare mentions and issue numbers may
+remain literal text. A quoted italic footer links the author and the source
+comment:
 
 ```markdown
-Can you confirm whether this also covers comments received while planning?
+📬 [Notification Data](/agents) can you confirm whether this also covers comments received while planning?
+
+> _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7#issuecomment-123)._
 ```
+
+Use the agent's configured emoji and fall back to `🤖` when it has none. Keep
+the original GitHub comment as the raw inbound body even though the visible and
+model-facing message uses this presentation.
 
 ## Response
 
@@ -99,11 +114,13 @@ Can you confirm whether this also covers comments received while planning?
 ```markdown
 ## 📤 To GitHub
 
-> <complete GitHub-facing response>
+> Thanks for flagging this, @pirog. The notification flow now preserves the link.
 ```
 
 Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
-responses repeat the blockquote marker for each paragraph.
+responses repeat the blockquote marker for each paragraph. Address the verified
+source commenter where it reads naturally rather than imposing a fixed mention
+position.
 
 ## Private and Public Composition
 

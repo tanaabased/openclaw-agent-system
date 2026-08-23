@@ -10,6 +10,7 @@ export const externalAgentSectionSchema = Type.Object(
     email: Type.Optional(externalResolvableStringSchema),
     description: Type.Optional(Type.String({ minLength: 1 })),
     avatar: Type.Optional(Type.String({ minLength: 1 })),
+    emoji: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -24,5 +25,6 @@ export function decodeAgentSection(value: ExternalAgentSection): AgentManifest['
     ...(value.email === undefined ? {} : { email: decodeResolvableString(value.email) }),
     ...(value.description === undefined ? {} : { description: value.description }),
     ...(value.avatar === undefined ? {} : { avatar: value.avatar }),
+    ...(value.emoji === undefined ? {} : { emoji: value.emoji }),
   };
 }

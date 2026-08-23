@@ -23,70 +23,100 @@ export type GitHubCommentAdmissionCode =
   | 'comment-mention-missing'
   | 'comment-mention-quote-only';
 
-export interface GitHubCommentAdmission {
-  code: GitHubCommentAdmissionCode;
-  disposition: 'approved' | 'rejected';
+export interface GitHubCommentMention {
+  end: number;
+  start: number;
 }
+
+export type GitHubCommentAdmission =
+  | {
+      code: 'comment-approved';
+      disposition: 'approved';
+      mentions: GitHubCommentMention[];
+    }
+  | {
+      code: Exclude<GitHubCommentAdmissionCode, 'comment-approved'>;
+      disposition: 'rejected';
+    };
 
 export interface GitHubCommentRevision {
   bodyDigest: string;
   revisionId: string;
 }
 
-function exactMentionPattern(login: string): RegExp {
+function exactMentionPattern(login: string, global = false): RegExp {
   const escaped = login.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  return new RegExp(`(?:^|[^A-Za-z0-9@-])@${escaped}(?![A-Za-z0-9-])`, 'iu');
+  return new RegExp(`(^|[^A-Za-z0-9@-])(@${escaped})(?![A-Za-z0-9-])`, global ? 'giu' : 'iu');
 }
 
-function authorProse(body: string): string {
-  const lines = body
-    .replace(/<(blockquote|pre|code)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, ' ')
-    .replace(/<(?:blockquote|pre|code)\b[^>]*>[\s\S]*$/giu, ' ')
-    .split(/\r?\n/u);
-  const prose: string[] = [];
+function maskedText(value: string): string {
+  let masked = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    masked += character === '\r' || character === '\n' ? character : ' ';
+  }
+  return masked;
+}
+
+function maskRange(value: string, start: number, end: number): string {
+  return `${value.slice(0, start)}${maskedText(value.slice(start, end))}${value.slice(end)}`;
+}
+
+function maskPattern(value: string, pattern: RegExp): string {
+  let masked = value;
+  for (const match of value.matchAll(pattern)) {
+    if (match.index === undefined || !match[0]) continue;
+    masked = maskRange(masked, match.index, match.index + match[0].length);
+  }
+  return masked;
+}
+
+function authorProseMask(body: string): string {
+  let prose = maskPattern(body, /<(blockquote|pre|code)\b[^>]*>[\s\S]*?<\/\1\s*>/giu);
+  prose = maskPattern(prose, /<(?:blockquote|pre|code)\b[^>]*>[\s\S]*$/giu);
+  prose = maskPattern(prose, /<!--[\s\S]*?-->/gu);
+  prose = maskPattern(prose, /<!--[\s\S]*$/gu);
   let fence: string | undefined;
-  let htmlComment = false;
-  for (const line of lines) {
+  let lineStart = 0;
+  while (lineStart < prose.length) {
+    const newline = prose.indexOf('\n', lineStart);
+    const lineEnd = newline < 0 ? prose.length : newline;
+    const contentEnd = lineEnd > lineStart && prose[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
+    const line = prose.slice(lineStart, contentEnd);
     const trimmed = line.trimStart();
     const fenceMatch = /^(?<fence>`{3,}|~{3,})/u.exec(trimmed)?.groups?.fence;
     if (fenceMatch) {
       if (!fence) fence = fenceMatch[0];
       else if (fenceMatch[0] === fence) fence = undefined;
-      continue;
-    }
-    if (
+      prose = maskRange(prose, lineStart, contentEnd);
+    } else if (
       fence ||
       /^(?: {0,3}(?:(?:[-+*]|\d+[.)])\s+))* {0,3}>/u.test(line) ||
       /^(?: {4}|\t)/u.test(line)
     ) {
-      continue;
+      prose = maskRange(prose, lineStart, contentEnd);
     }
-    let value = line;
-    if (htmlComment) {
-      const end = value.indexOf('-->');
-      if (end < 0) continue;
-      value = value.slice(end + 3);
-      htmlComment = false;
-    }
-    while (value.includes('<!--')) {
-      const start = value.indexOf('<!--');
-      const end = value.indexOf('-->', start + 4);
-      if (end < 0) {
-        value = value.slice(0, start);
-        htmlComment = true;
-        break;
-      }
-      value = `${value.slice(0, start)} ${value.slice(end + 3)}`;
-    }
-    prose.push(
-      value
-        .replace(/(`+)(?:[^`]|`(?!\1))*\1/gu, ' ')
-        .replace(/\]\([^\n)]*\)/gu, ']')
-        .replace(/<[^\n>]+>/gu, ' ')
-        .replace(/(?:https?|ftp):\/\/\S+/giu, ' '),
-    );
+    if (newline < 0) break;
+    lineStart = newline + 1;
   }
-  return prose.join('\n');
+  prose = maskPattern(prose, /(`+)(?:[^`]|`(?!\1))*\1/gu);
+  for (const match of prose.matchAll(/\]\([^\n)]*\)/gu)) {
+    if (match.index === undefined || !match[0]) continue;
+    prose = maskRange(prose, match.index + 1, match.index + match[0].length);
+  }
+  prose = maskPattern(prose, /<[^\n>]+>/gu);
+  return maskPattern(prose, /(?:https?|ftp):\/\/\S+/giu);
+}
+
+function authorMentions(body: string, login: string): GitHubCommentMention[] {
+  const prose = authorProseMask(body);
+  const mentions: GitHubCommentMention[] = [];
+  for (const match of prose.matchAll(exactMentionPattern(login, true))) {
+    if (match.index === undefined || !match[2]) continue;
+    const start = match.index + (match[1]?.length ?? 0);
+    mentions.push({ end: start + match[2].length, start });
+  }
+  return mentions;
 }
 
 /** Derive a value-free identity for one exact current comment revision. */
@@ -125,12 +155,12 @@ export function admitGitHubComment(input: {
   if (input.comment.bodyTruncated) {
     return { code: 'comment-body-truncated', disposition: 'rejected' };
   }
-  const mention = exactMentionPattern(input.account.login);
-  if (mention.test(authorProse(input.comment.body))) {
-    return { code: 'comment-approved', disposition: 'approved' };
+  const mentions = authorMentions(input.comment.body, input.account.login);
+  if (mentions.length > 0) {
+    return { code: 'comment-approved', disposition: 'approved', mentions };
   }
   return {
-    code: mention.test(input.comment.body)
+    code: exactMentionPattern(input.account.login).test(input.comment.body)
       ? 'comment-mention-quote-only'
       : 'comment-mention-missing',
     disposition: 'rejected',

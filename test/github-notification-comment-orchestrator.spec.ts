@@ -197,6 +197,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const incoming = comment();
     const store = memoryStateStore(state);
     const observedBodies: string[] = [];
+    const observedMentions: unknown[] = [];
     const observedActiveTurns: unknown[] = [];
     const publishedTexts: string[] = [];
     const adapterReceipt = createMessageReceiptFromOutboundResults({
@@ -245,6 +246,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       turns: {
         async respond(input) {
           observedBodies.push(input.comment.body);
+          observedMentions.push(input.mentions);
           observedActiveTurns.push(store.snapshot()?.conversations[id]?.activeTurn);
           return {
             accountId: agentId,
@@ -261,6 +263,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     await orchestrator.reconcile(agentId, notificationItemKey);
 
     assert.deepEqual(observedBodies, [incoming.body]);
+    assert.deepEqual(observedMentions, [[{ end: 9, start: 0 }]]);
     assert.deepEqual(observedActiveTurns, [
       { eventId: 'comment', sourceId: githubCommentRevision(incoming).revisionId },
     ]);

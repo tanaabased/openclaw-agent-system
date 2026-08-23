@@ -59,7 +59,7 @@ describe('channels/github/conversation/conversation-state', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     const conversationId = 'github:issue:R_repo:12';
     const source = { commentDatabaseId: 91, revisionId: 'a'.repeat(64) };
-    const publicText = 'Acknowledged LEIA-COMMENT.';
+    const publicText = '## Ready\n\n- `LEIA-COMMENT` acknowledged.';
     state.conversations[conversationId] = {
       baselineEstablished: true,
       itemKey: 'github:R_repo:12',

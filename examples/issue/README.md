@@ -5,7 +5,7 @@ Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
 delivers one approved comment through the registered issue/Work/comment turn
-contract, publishes one reply, and
+contract with its installed identity card, publishes one reply, and
 retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
@@ -119,11 +119,11 @@ openclaw agent-system notifications wait \
   --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-worktree-ready" and .observation.items[0].stage == "prepared" and .observation.items[0].worktree == "ready"'
 
-# should answer one approved issue comment through the registered turn contract
+# should answer one structured approved issue comment through the registered turn contract
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 reply_token="ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue comment "$issue_number" --repo tanaabased/agent-system-test --body "@tanaabot Reply only with a level-two Results heading followed by one bullet containing $reply_token. Do not inspect files or perform repository work."
 cd "$TMPDIR/agent-system-notifications"
 refresh_result="$(
   openclaw-github-notifications refresh-completed \
@@ -135,8 +135,10 @@ refresh_result="$(
 )"
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 cd "$TMPDIR/agent-system-notification-actor"
-reply_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | .id')"
-[[ "$reply_id" =~ ^[1-9][0-9]*$ ]]
+replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
+reply="$(jq -sce 'select(length == 1) | .[0]' <<< "$replies")"
+jq -e '.id | type == "number" and . > 0' <<< "$reply"
+jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains("## Results") and contains("- " + $token)' <<< "$reply"
 
 # should retire an unassigned issue while retaining its managed worktree
 cd "$TMPDIR/agent-system-notification-actor"

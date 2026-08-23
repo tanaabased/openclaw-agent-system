@@ -20,11 +20,16 @@ lifecycle session and publishes the accepted public part of the response.
   metadata without creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
-  issue session with the exact admitted GitHub comment as its direct message.
-- Incoming GitHub prose is visible to the model as the author's message while
-  each lifecycle projects its own bounded source, repository, and resource facts
-  as private structured context. The current comment flow requires the agent's
-  `coding` profile.
+  issue session with an attributed comment card as its direct message. The card
+  replaces admitted account mentions with the installed agent emoji and name,
+  links the agent to OpenClaw's Agents page, and links its footer to the GitHub
+  author and exact source comment. Agents without an emoji use `🤖`.
+- Incoming GitHub prose remains exact apart from the presented account mention,
+  including its standard Markdown source, and the untouched comment is retained
+  as the raw inbound body. GitHub-specific shorthand may remain literal in
+  OpenClaw. Each lifecycle projects its own bounded source, repository, and
+  resource facts as private structured context. The current comment flow
+  requires the agent's `coding` profile.
 - Hidden instructions for the current comment flow are composed from the
   registered `issue`, `work`, and `comment` definitions, selected from the
   private active-turn descriptor, and injected through the prompt hook. Missing
@@ -32,6 +37,12 @@ lifecycle session and publishes the accepted public part of the response.
 - Each completed comment turn keeps its private response in the session and may
   publish one validated public reply to GitHub. Missing or invalid public replies
   are withheld without discarding the private response.
+- Public replies are concise conversational comments and may use GitHub-flavored
+  Markdown when it improves clarity. Publication still rejects secrets,
+  credentials, local paths, hidden context, and literal model-authored mentions.
+  The model can position one reserved commenter placeholder naturally; after
+  exact-source reauthorization, Agent System replaces it with the verified
+  author login or prefixes that trusted mention when the placeholder is omitted.
 - Pull-request comments, GitHub assignment acknowledgments, initial planning
   turns, Plan and Auto modes, mode transitions, and chat-originated publication
   remain intentionally dormant.
@@ -69,6 +80,7 @@ agent:
   id: tanaabot
   name: Tanaabot
   email: tanaabot@tanaab.dev
+  emoji: 🤖
 
 environment:
   required:
@@ -188,8 +200,8 @@ reference.
   agent to ask one precise public question and stop. A later admitted comment
   resumes the same session; no separate clarification phase is persisted.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
-  the source and destination before loading credentials and publishes
-  idempotently.
+  the exact source author and destination before loading credentials, substitutes
+  only that verified commenter mention, and publishes idempotently.
 - Private monitor and conversation state contain no tokens.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without

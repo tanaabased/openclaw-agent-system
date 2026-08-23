@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import GitHubNotificationCommentPublisher from '../channels/github/publication/comment-publisher.ts';
+import { githubNotificationCommenterToken } from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 function input() {
@@ -8,7 +9,7 @@ function input() {
     intent: 'github-reply' as const,
     item: approvedNotificationItem(),
     source: { commentDatabaseId: 89, revisionId: 'a'.repeat(64) },
-    text: 'I checked this and the current behavior is understood.',
+    text: `Thanks for flagging this, ${githubNotificationCommenterToken}. I checked the current behavior.`,
   };
 }
 
@@ -24,15 +25,18 @@ describe('channels/github/publication/comment-publisher', () => {
       connect() {
         calls.push('connect');
         return {
-          async findOwnIssueComment(_owner, _name, _number, marker) {
-            calls.push(`find:${marker}`);
-            return undefined;
+          client: {
+            async findOwnIssueComment(_owner, _name, _number, marker) {
+              calls.push(`find:${marker}`);
+              return undefined;
+            },
+            async createIssueComment(_owner, _name, _number, body) {
+              calls.push('create');
+              publishedBody = body;
+              return { databaseId: 91, nodeId: 'IC_published' };
+            },
           },
-          async createIssueComment(_owner, _name, _number, body) {
-            calls.push('create');
-            publishedBody = body;
-            return { databaseId: 91, nodeId: 'IC_published' };
-          },
+          commenterLogin: 'pirog',
         };
       },
       async exclusive(key, run) {
@@ -45,7 +49,7 @@ describe('channels/github/publication/comment-publisher', () => {
 
     assert.equal(result.status, 'published');
     assert.deepEqual(result.receipt, { databaseId: 91, nodeId: 'IC_published' });
-    assert.match(publishedBody, /^I checked this/u);
+    assert.match(publishedBody, /^Thanks for flagging this, @pirog\. I checked/u);
     assert.match(publishedBody, /<!-- agent-system-github-publication:github-reply:/u);
     assert.match(calls[0] ?? '', /^exclusive:/u);
     assert.match(calls[1] ?? '', /^authorize:/u);
@@ -57,15 +61,18 @@ describe('channels/github/publication/comment-publisher', () => {
     const publisher = new GitHubNotificationCommentPublisher({
       authorize: () => ({ authorized: true }),
       connect: () => ({
-        findOwnIssueComment: async (_owner, _name, _number, marker) => ({
-          body: `I checked this and the current behavior is understood.\n\n${marker}`,
-          databaseId: 90,
-          nodeId: 'IC_existing',
-        }),
-        createIssueComment: async () => {
-          created = true;
-          return { databaseId: 91, nodeId: 'IC_created' };
+        client: {
+          findOwnIssueComment: async (_owner, _name, _number, marker) => ({
+            body: `Thanks for flagging this, @pirog. I checked the current behavior.\n\n${marker}`,
+            databaseId: 90,
+            nodeId: 'IC_existing',
+          }),
+          createIssueComment: async () => {
+            created = true;
+            return { databaseId: 91, nodeId: 'IC_created' };
+          },
         },
+        commenterLogin: 'pirog',
       }),
       exclusive: async (_key, run) => run(),
     });
@@ -82,15 +89,18 @@ describe('channels/github/publication/comment-publisher', () => {
     const publisher = new GitHubNotificationCommentPublisher({
       authorize: () => ({ authorized: true }),
       connect: () => ({
-        findOwnIssueComment: async () => ({
-          body: 'Different accepted text.',
-          databaseId: 90,
-          nodeId: 'IC_existing',
-        }),
-        createIssueComment: async () => {
-          created = true;
-          return { databaseId: 91, nodeId: 'IC_created' };
+        client: {
+          findOwnIssueComment: async () => ({
+            body: 'Different accepted text.',
+            databaseId: 90,
+            nodeId: 'IC_existing',
+          }),
+          createIssueComment: async () => {
+            created = true;
+            return { databaseId: 91, nodeId: 'IC_created' };
+          },
         },
+        commenterLogin: 'pirog',
       }),
       exclusive: async (_key, run) => run(),
     });
@@ -103,6 +113,28 @@ describe('channels/github/publication/comment-publisher', () => {
       );
     });
     assert.equal(created, false);
+  });
+
+  it('should prefix the verified commenter when the model omits the token', async () => {
+    let publishedBody = '';
+    const publisher = new GitHubNotificationCommentPublisher({
+      authorize: () => ({ authorized: true }),
+      connect: () => ({
+        client: {
+          createIssueComment: async (_owner, _name, _number, body) => {
+            publishedBody = body;
+            return { databaseId: 91, nodeId: 'IC_created' };
+          },
+          findOwnIssueComment: async () => undefined,
+        },
+        commenterLogin: 'pirog',
+      }),
+      exclusive: async (_key, run) => run(),
+    });
+
+    await publisher.publish({ ...input(), text: 'I checked the current behavior.' });
+
+    assert.match(publishedBody, /^@pirog\n\nI checked the current behavior\./u);
   });
 
   it('should reject revoked authority before credentials are connected', async () => {

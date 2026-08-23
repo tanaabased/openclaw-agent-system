@@ -6,6 +6,7 @@ export interface DesiredAgentInstallState {
   identity: {
     name: string;
     avatar?: string;
+    emoji?: string;
   };
 }
 
@@ -15,6 +16,7 @@ export interface CurrentAgentInstallState {
   identity?: {
     name?: string;
     avatar?: string;
+    emoji?: string;
   };
 }
 
@@ -58,7 +60,9 @@ export default function planAgentInstall(
   const identityDiffers =
     !current.exists ||
     current.identity?.name !== desired.identity.name ||
-    (desired.identity.avatar !== undefined && current.identity?.avatar !== desired.identity.avatar);
+    (desired.identity.avatar !== undefined &&
+      current.identity?.avatar !== desired.identity.avatar) ||
+    (desired.identity.emoji !== undefined && current.identity?.emoji !== desired.identity.emoji);
   if (identityDiffers) actions.push('set-identity');
 
   return {
