@@ -20,7 +20,7 @@ Scenario setup creates and updates uniquely named issues in
 OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
 OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN="$AGENT_SYSTEM_PACKAGE" \
 OPENCLAW_SETUP_MODEL="openai/$OPENAI_MODEL" \
-  openclaw-setup
+  openclaw-setup --yolo
 
 # should prepare notification and approved-actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
