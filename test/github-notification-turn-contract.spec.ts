@@ -4,7 +4,7 @@ import { githubNotificationTurnDispatchOptions } from '../channels/github/conver
 import { GitHubNotificationTurnCatalogError } from '../channels/github/conversation/turn-catalog.ts';
 import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
-const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
+const commentIdentity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
 const contractConfig = {
   agents: { list: [{ id: 'tanaabot', tools: { profile: 'coding' as const } }] },
 };
@@ -12,7 +12,7 @@ const contractConfig = {
 describe('channels/github/conversation/turn-contract', () => {
   it('should compose one supported lifecycle mode event contract', () => {
     const contract = createGitHubNotificationTurnContractResolver().resolve(
-      identity,
+      commentIdentity,
       contractConfig,
       'tanaabot',
     );
@@ -79,17 +79,29 @@ describe('channels/github/conversation/turn-contract', () => {
     );
   });
 
-  it('should leave assignment model turns dormant', () => {
-    assert.throws(
-      () =>
-        createGitHubNotificationTurnContractResolver().instructions({
-          eventId: 'assignment',
-          lifecycleId: 'issue',
-          modeId: 'work',
-        }),
-      (error: unknown) =>
-        error instanceof GitHubNotificationTurnCatalogError &&
-        error.code === 'github-notification-turn-unsupported',
+  it('should compose the assignment report and conversational response contract', () => {
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' },
+      contractConfig,
+      'tanaabot',
     );
+
+    assert.equal(contract.lifecycle.id, 'issue');
+    assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
+    assert.equal(contract.publicationIntent, 'planning-outcome');
+    assert.match(contract.instructions, /explain the issue in user-centric terms/u);
+    assert.match(contract.instructions, /implementation-ready plan/u);
+    assert.match(
+      contract.instructions,
+      /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
+    );
+    assert.match(contract.instructions, /concise, conversational GitHub comment/u);
+    assert.match(
+      contract.instructions,
+      /smallest complete set of currently known blocking questions/u,
+    );
+    assert.match(contract.instructions, /Do not make persistent implementation changes/u);
+    assert.doesNotMatch(contract.instructions, /\{\{commenter\}\}/u);
+    assert.doesNotMatch(contract.instructions, /exactly one precise clarification question/u);
   });
 });
