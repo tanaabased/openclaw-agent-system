@@ -137,6 +137,7 @@ async function respondWithCandidates(
           input.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
         },
       ),
+      logger: { info() {}, warn() {} },
     }),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => currentConfig,
@@ -215,6 +216,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
           );
           return { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false };
         }, recordInboundSession),
+        logger: { info() {}, warn() {} },
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
@@ -284,6 +286,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
             input.trackSessionMetaTask?.(Promise.resolve(null));
           },
         ),
+        logger: { info() {}, warn() {} },
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,

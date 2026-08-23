@@ -117,6 +117,7 @@ export default function createGitHubNotificationRuntime(
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
     candidates,
     dispatcher: turnDispatcher,
+    logger: dependencies.lifecycleLogger,
   });
 
   return {

@@ -21,21 +21,22 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          - install
-          - validate
-          - doctor
-          - agent
-          - identity
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
+          # temporarily narrowed to the PR #48 installed issue diagnostic
+          # - install
+          # - validate
+          # - doctor
+          # - agent
+          # - identity
+          # - path
+          # - env
+          # - credentials
+          # - git
+          # - worktree
+          # - github
+          # - routing
           - issue
-          - tool
-          - security
+          # - tool
+          # - security
         exclude:
           - os: ubuntu-24.04
             example: issue

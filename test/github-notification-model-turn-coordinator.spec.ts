@@ -43,6 +43,7 @@ function input() {
 describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should coordinate one private response and one typed public candidate', async () => {
     const calls: unknown[] = [];
+    const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin(candidateIdentity) {
@@ -65,6 +66,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
             finalPayloads: [{ text: 'Complete private response.' }],
           };
         },
+      },
+      logger: {
+        info: (message) => messages.push(message),
+        warn() {},
       },
     });
 
@@ -99,11 +104,20 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         },
       ],
     ]);
+    assert.match(
+      messages[0] ?? '',
+      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=gateway/u,
+    );
+    assert.match(
+      messages[1] ?? '',
+      /model turn completed .*final-payloads=1 block=0 final=1 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
+    );
   });
 
   it('should cancel the candidate handoff when model dispatch fails', async () => {
     const failure = new Error('dispatch failed');
     let cancellation: unknown;
+    const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin() {
@@ -121,6 +135,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
           throw failure;
         },
       },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
     });
 
     await assert.rejects(coordinator.run(input()), (error: unknown) => error === failure);
@@ -131,6 +149,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       sourceId: 'revision-1',
       turnId: 'turn-1',
     });
+    assert.match(
+      warnings[0] ?? '',
+      /model turn failed .*event=comment .*phase=dispatch code=unclassified aborted=false/u,
+    );
   });
 
   it('should classify a missing prompt-selection attestation', async () => {
@@ -154,6 +176,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
           };
         },
       },
+      logger: { info() {}, warn() {} },
     });
 
     await assert.rejects(

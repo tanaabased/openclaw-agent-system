@@ -1,6 +1,7 @@
 import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
+import type { Logger } from '../../../core/logger.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
   type default as GitHubNotificationReplyCandidateStore,
@@ -37,6 +38,7 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
   candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
   dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
+  logger: Pick<Logger, 'info' | 'warn'>;
 }
 
 export interface GitHubNotificationModelTurnCoordinatorInput {
@@ -90,6 +92,28 @@ function publication(
   }
 }
 
+function diagnosticCode(error: unknown): string {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    /^[a-z0-9-]+$/u.test(error.code)
+  ) {
+    return error.code;
+  }
+  return 'unclassified';
+}
+
+function turnDetails(input: GitHubNotificationModelTurnCoordinatorInput): string {
+  return [
+    `agent=${input.route.agentId}`,
+    `lifecycle=${input.contract.identity.lifecycleId}`,
+    `mode=${input.contract.identity.modeId}`,
+    `event=${input.contract.identity.eventId}`,
+    `surface=${input.executionSurface}`,
+  ].join(' ');
+}
+
 /** Coordinate one prepared model turn and its channel-owned response candidate. */
 export default class GitHubNotificationModelTurnCoordinator {
   readonly #dependencies: GitHubNotificationModelTurnCoordinatorDependencies;
@@ -101,6 +125,9 @@ export default class GitHubNotificationModelTurnCoordinator {
   async run(
     input: GitHubNotificationModelTurnCoordinatorInput,
   ): Promise<GitHubNotificationModelTurnCoordinatorResult> {
+    const startedAt = Date.now();
+    const details = turnDetails(input);
+    this.#dependencies.logger.info(`github-notifications: model turn started ${details}`);
     const candidateIdentity = {
       agentId: input.route.agentId,
       conversationId: input.route.conversationId,
@@ -124,6 +151,16 @@ export default class GitHubNotificationModelTurnCoordinator {
       await this.#dependencies.candidates
         .cancel({ ...candidateIdentity, turnId: candidateTurn })
         .catch(() => undefined);
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: model turn failed',
+          details,
+          'phase=dispatch',
+          `code=${diagnosticCode(error)}`,
+          `aborted=${Boolean(input.signal?.aborted)}`,
+          `duration-ms=${Date.now() - startedAt}`,
+        ].join(' '),
+      );
       throw error;
     }
 
@@ -134,6 +171,21 @@ export default class GitHubNotificationModelTurnCoordinator {
         turnId: candidateTurn,
       });
     } catch (error) {
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: model turn failed',
+          details,
+          'phase=candidate-handoff',
+          `code=${diagnosticCode(error)}`,
+          `final-payloads=${turnResult.finalPayloads.length}`,
+          `block=${turnResult.dispatch.counts.block}`,
+          `final=${turnResult.dispatch.counts.final}`,
+          `tool=${turnResult.dispatch.counts.tool}`,
+          `queued-final=${turnResult.dispatch.queuedFinal}`,
+          `aborted=${Boolean(input.signal?.aborted)}`,
+          `duration-ms=${Date.now() - startedAt}`,
+        ].join(' '),
+      );
       throw new GitHubNotificationModelTurnCoordinatorError(
         error instanceof GitHubNotificationReplyCandidateStoreError &&
           error.code === 'reply-turn-prompt-selection-missing'
@@ -143,11 +195,29 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
+    const responsePublication = publication(publicCandidates, input.contract.publicationIntent);
+    this.#dependencies.logger.info(
+      [
+        'github-notifications: model turn completed',
+        details,
+        `final-payloads=${turnResult.finalPayloads.length}`,
+        `block=${turnResult.dispatch.counts.block}`,
+        `final=${turnResult.dispatch.counts.final}`,
+        `tool=${turnResult.dispatch.counts.tool}`,
+        `queued-final=${turnResult.dispatch.queuedFinal}`,
+        `candidates=${publicCandidates.length}`,
+        `publication=${responsePublication.status}`,
+        ...(responsePublication.status === 'withheld' ? [`code=${responsePublication.code}`] : []),
+        `aborted=${Boolean(input.signal?.aborted)}`,
+        `duration-ms=${Date.now() - startedAt}`,
+      ].join(' '),
+    );
+
     return {
       dispatch: turnResult.dispatch,
       finalPayloadCount: turnResult.finalPayloads.length,
       privateText: githubNotificationPrivateResponse(turnResult.finalPayloads),
-      publication: publication(publicCandidates, input.contract.publicationIntent),
+      publication: responsePublication,
     };
   }
 }
