@@ -22,6 +22,9 @@ import {
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversationState,
 } from '../channels/github/conversation/conversation-state.ts';
+import GitHubNotificationTurnCatalog, {
+  githubNotificationSupportedTurnIdentities,
+} from '../channels/github/conversation/turn-catalog.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
@@ -32,6 +35,7 @@ import {
   notificationItemKey,
   notificationMonitorState,
 } from './github-notification-fixtures.ts';
+import { createGitHubNotificationTurnDefinitions } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
@@ -43,6 +47,10 @@ const configuration = {
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
   intervalMinutes: 5,
 };
+const turnCatalog = new GitHubNotificationTurnCatalog(
+  githubNotificationSupportedTurnIdentities,
+  createGitHubNotificationTurnDefinitions(),
+);
 
 function preparedMonitor(): GitHubNotificationMonitorState {
   const state = notificationMonitorState();
@@ -152,6 +160,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      turnCatalog,
       turns: {
         async respond() {
           turns += 1;
@@ -230,6 +239,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
       turns: {
         async respond(input) {
           observedBodies.push(input.comment.body);
@@ -291,6 +301,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
       turns: {
         async respond() {
           assert.deepEqual(store.snapshot()?.conversations[id]?.activeTurn, {
@@ -350,6 +361,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
       turns: {
         async respond() {
           return {
@@ -415,6 +427,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
       turns: {
         async respond() {
           return {
@@ -442,6 +455,44 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     assert.equal(revision?.publication?.commentNodeId, undefined);
   });
 
+  it('should reject an undeclared active tuple before reading provider comments', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'plan',
+      revisions: {},
+    };
+    let providerReads = 0;
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: {
+        async open() {
+          providerReads += 1;
+          throw new Error('unsupported turns must not read provider comments');
+        },
+      },
+      conversationStateStore: memoryStateStore(state),
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: { read: async () => structuredClone(monitor) },
+      publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      turnCatalog,
+      turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
+    });
+
+    await assert.rejects(
+      orchestrator.reconcile(agentId, notificationItemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationCommentOrchestratorError &&
+        error.code === 'github-notification-turn-unsupported',
+    );
+    assert.equal(providerReads, 0);
+  });
+
   it('should reject a truncated listing without accepting a partial baseline', async () => {
     const monitor = preparedMonitor();
     const store = memoryStateStore();
@@ -453,6 +504,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: { read: async () => structuredClone(monitor) },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      turnCatalog,
       turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
     });
 

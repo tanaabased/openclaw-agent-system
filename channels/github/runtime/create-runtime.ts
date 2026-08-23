@@ -173,6 +173,7 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         monitorStateStore,
         publications: commentPublicationService,
+        turnCatalog,
         turns: commentTurnService,
       });
       const monitorService = new GitHubNotificationMonitorService({
