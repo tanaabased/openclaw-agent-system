@@ -5,3 +5,4 @@ temp
 cache
 .cache
 bun.lock
+.github/ISSUE_TEMPLATE/*.yml

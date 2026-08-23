@@ -1,0 +1,28 @@
+name: "Task"
+description: "Share a task for triage and normalization."
+type: "task"
+body:
+  - type: "markdown"
+    attributes:
+      value: "Share the evidence you have. A maintainer or agent will normalize the report, estimate task metadata, and ask focused follow-up questions when needed."
+  - type: "textarea"
+    id: "work"
+    attributes:
+      label: "What needs to be done, and why?"
+      description: "Describe the current situation, the result you want, and who or what is affected."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "completion"
+    attributes:
+      label: "How will we know it is complete?"
+      description: "Describe the observable result, deliverable, or external state. Formal acceptance criteria are not required."
+    validations:
+      required: true
+  - type: "textarea"
+    id: "task-context"
+    attributes:
+      label: "What constraints, inputs, or approvals should we know about?"
+      description: "Include relevant deadlines, budgets, people, access, links, files, dependencies, privacy concerns, or actions requiring approval. Do not include secrets."
+    validations:
+      required: false
