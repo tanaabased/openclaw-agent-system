@@ -103,7 +103,7 @@ describe('channels/github/conversation/conversation-state', () => {
     assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
   });
 
-  it('should retain one typed assignment planning outcome without private or provider prose', () => {
+  it('should retain one assignment response without private or provider prose', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     const conversationId = 'github:issue:R_repo:12';
     const publicText = 'I understand the user-facing failure and have a focused plan to fix it.';
@@ -112,14 +112,13 @@ describe('channels/github/conversation/conversation-state', () => {
       itemKey: 'github:R_repo:12',
       lifecycleId: 'issue',
       mode: 'work',
-      planning: {
-        outcome: 'plan',
+      assignmentResponse: {
         publication: {
           publicText,
           publicTextDigest: githubNotificationPublicTextDigest(publicText),
           status: 'pending',
           target: githubNotificationPublicationTarget({
-            intent: 'planning-outcome',
+            intent: 'assignment-response',
             item: approvedNotificationItem(),
             publicationId: 'EV_assignment',
           }),

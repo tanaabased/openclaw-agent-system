@@ -42,16 +42,16 @@ describe('channels/github/conversation/private-response', () => {
     }
   });
 
-  it('should enforce report sections that match the typed planning outcome', () => {
+  it('should enforce assignment report sections for a plan or questions', () => {
     const plan =
       '## Assessment\n\nThe user needs a corrected result.\n\n## Plan\n\nUpdate and test it.';
     const questions =
       '## Assessment\n\nThe user goal is clear, but one constraint is missing.\n\n## Questions\n\n1. Which behavior should win?';
 
-    assert.equal(githubNotificationPlanningPrivateResponse(plan, 'plan'), plan);
-    assert.equal(githubNotificationPlanningPrivateResponse(questions, 'questions'), questions);
+    assert.equal(githubNotificationPlanningPrivateResponse(plan), plan);
+    assert.equal(githubNotificationPlanningPrivateResponse(questions), questions);
     assert.throws(
-      () => githubNotificationPlanningPrivateResponse(plan, 'questions'),
+      () => githubNotificationPlanningPrivateResponse('## Question\n\nWhich behavior should win?'),
       (error: unknown) =>
         error instanceof GitHubNotificationPrivateResponseError &&
         error.code === 'github-notification-planning-private-response-invalid',

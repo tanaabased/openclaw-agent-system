@@ -121,24 +121,6 @@ describe('channels/github/publication/reply-tool', () => {
         }),
         ['ready'],
       );
-      const planningIdentity = {
-        ...identity,
-        identity: { ...identity.identity, eventId: 'assignment' as const },
-        sourceId: 'EV_assignment',
-      };
-      const planningTurn = await parentCandidates.begin(planningIdentity);
-      await toolCandidates.attestPromptSelection(planningIdentity);
-      await tool.execute('call-planning', {
-        body: 'I understand the problem and have a focused plan.',
-        outcome: 'plan',
-      });
-      assert.deepEqual(
-        await parentCandidates.finishWithMetadata({
-          ...planningIdentity,
-          turnId: planningTurn,
-        }),
-        [{ body: 'I understand the problem and have a focused plan.', outcome: 'plan' }],
-      );
       assert.equal(result.content[0]?.type, 'text');
       if (result.content[0]?.type === 'text') {
         assert.match(result.content[0].text, /github-reply-candidate/u);

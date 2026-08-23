@@ -42,7 +42,7 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
-  it('should coordinate one private response and one typed public candidate', async () => {
+  it('should coordinate one private response and one public candidate', async () => {
     const calls: unknown[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
@@ -53,9 +53,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async cancel() {
           throw new Error('successful turns must not be cancelled');
         },
-        async finishWithMetadata(candidateIdentity) {
+        async finish(candidateIdentity) {
           calls.push(['finish', candidateIdentity]);
-          return [{ body: '## Ready\n\n- `notification` checks passed' }];
+          return ['## Ready\n\n- `notification` checks passed'];
         },
       },
       dispatcher: {
@@ -113,7 +113,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async cancel(input) {
           cancellation = input;
         },
-        async finishWithMetadata() {
+        async finish() {
           throw new Error('failed turns must not finish candidates');
         },
       },
@@ -134,20 +134,15 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     });
   });
 
-  it('should retain a typed plan outcome and validate the private report', async () => {
+  it('should validate a plan-shaped assignment report', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin() {
           return 'turn-1';
         },
         async cancel() {},
-        async finishWithMetadata() {
-          return [
-            {
-              body: 'I understand the user-facing problem and have a focused plan to address it.',
-              outcome: 'plan' as const,
-            },
-          ];
+        async finish() {
+          return ['I understand the user-facing problem and have a focused plan to address it.'];
         },
       },
       dispatcher: {
@@ -174,30 +169,27 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const planningContract = {
       ...contract,
       identity: { ...identity, eventId: 'assignment' as const },
-      publicationIntent: 'planning-outcome' as const,
+      publicationIntent: 'assignment-response' as const,
     };
 
     const result = await coordinator.run({ ...input(), contract: planningContract });
 
     assert.deepEqual(result.publication, {
-      planningOutcome: 'plan',
       publicText: 'I understand the user-facing problem and have a focused plan to address it.',
       status: 'candidate',
     });
     assert.match(result.privateText, /^## Assessment[\s\S]+^## Plan$/mu);
   });
 
-  it('should reject a planning response whose private headings do not match its outcome', async () => {
+  it('should reject an assignment response without the required report headings', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin() {
           return 'turn-1';
         },
         async cancel() {},
-        async finishWithMetadata() {
-          return [
-            { body: 'I need one answer before I can finish the plan.', outcome: 'questions' },
-          ];
+        async finish() {
+          return ['I need one answer before I can finish the plan.'];
         },
       },
       dispatcher: {
@@ -212,7 +204,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const planningContract = {
       ...contract,
       identity: { ...identity, eventId: 'assignment' as const },
-      publicationIntent: 'planning-outcome' as const,
+      publicationIntent: 'assignment-response' as const,
     };
 
     await assert.rejects(
@@ -230,7 +222,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
           return 'turn-1';
         },
         async cancel() {},
-        async finishWithMetadata() {
+        async finish() {
           throw new GitHubNotificationReplyCandidateStoreError(
             'reply-turn-prompt-selection-missing',
           );

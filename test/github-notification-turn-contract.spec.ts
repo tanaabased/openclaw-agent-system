@@ -79,7 +79,7 @@ describe('channels/github/conversation/turn-contract', () => {
     );
   });
 
-  it('should compose the assignment planning report and typed outcome contract', () => {
+  it('should compose the assignment report and conversational response contract', () => {
     const instructions = createGitHubNotificationTurnContractResolver().instructions({
       eventId: 'assignment',
       lifecycleId: 'issue',
@@ -87,8 +87,11 @@ describe('channels/github/conversation/turn-contract', () => {
     });
 
     assert.match(instructions, /explain the issue in user-centric terms/u);
-    assert.match(instructions, /an `outcome` of either `plan` or `questions`/u);
-    assert.match(instructions, /exactly `## Assessment` followed by `## Plan`/u);
+    assert.match(
+      instructions,
+      /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
+    );
+    assert.match(instructions, /When the private report contains a plan/u);
     assert.match(instructions, /smallest complete set of currently known blocking questions/u);
     assert.doesNotMatch(instructions, /exactly one precise clarification question/u);
   });

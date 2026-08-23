@@ -9,8 +9,8 @@ admission, durable deduplication, routing, and managed issue-worktree intake.
 Accepted issues receive a private assignment card and an immediate public
 acknowledgment. Once issue intake is prepared, the agent assesses the issue and
 publishes either a concise plan summary or its blocking questions. Approved
-comments then continue planning or enter the ordinary comment flow in the same
-OpenClaw lifecycle session.
+comments then enter the ordinary comment flow in the same OpenClaw lifecycle
+session.
 
 ## Current Behavior
 
@@ -23,7 +23,7 @@ OpenClaw lifecycle session.
   then the channel publishes one deterministic, varied acknowledgment using a
   durable idempotency marker. Pull-request assignments retain bounded head
   metadata without creating a worktree.
-- Prepared issues start one model-backed assignment planning turn with bounded
+- Prepared issues start one model-backed assignment response turn with bounded
   current issue context and the managed worktree. The private response is a
   report with `Assessment` plus either `Plan` or `Questions`; the separate public
   candidate remains concise and conversational. A plan ends this slice of the
@@ -41,13 +41,13 @@ OpenClaw lifecycle session.
   resource facts as private structured context. The current comment flow
   requires the agent's `coding` profile.
 - Hidden instructions are composed from the registered `issue`, `work`, and
-  active assignment, assignment-clarification, or comment definitions, selected from the
-  private active-turn descriptor, and injected through the prompt hook. Missing
-  or unsupported selection does not fall back to a different prompt.
+  active assignment or comment definitions, selected from the private
+  active-turn descriptor, and injected through the prompt hook. Missing or
+  unsupported selection does not fall back to a different prompt.
 - Each completed model turn keeps its private response in the session and may
-  publish one validated public outcome to GitHub. Assignment planning candidates
-  also carry a typed `plan` or `questions` outcome; publication never infers that
-  outcome from private Markdown.
+  publish one validated public response to GitHub. Assignment responses retain
+  the accepted public text and publication receipt without interpreting the
+  private report as lifecycle state.
 - Public replies are concise conversational comments and may use GitHub-flavored
   Markdown when it improves clarity. Publication still rejects secrets,
   credentials, local paths, hidden context, and literal model-authored mentions.
@@ -143,7 +143,7 @@ openclaw agent-system validate
 # reconcile routing and establish the first safe baseline.
 openclaw agent-system install
 
-# run intake, assignment planning, and prepared-issue comment reconciliation immediately.
+# run intake, assignment response, and prepared-issue comment reconciliation immediately.
 openclaw agent-system notifications refresh
 
 # inspect redacted intake state.
@@ -173,7 +173,7 @@ openclaw agent-system notifications wait [--agent <id>] [--repository <owner/nam
 
 A repository, kind, and number selector is all-or-nothing. `refresh` runs the
 same intake cycle as scheduled polling and defaults to a 300-second timeout. It
-may also run assignment planning or process one admitted comment for a prepared
+may also run an assignment response or process one admitted comment for a prepared
 issue. `status` returns a redacted view of assignment and intake state.
 
 `wait` supports these stable intake checkpoints:
@@ -204,14 +204,14 @@ reference.
   rather than incoming provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
   The current channel-owned turn identity selects a declared `issue` and `work`
-  assignment, assignment-clarification, or comment combination; its registry
+  assignment or comment combination; its registry
   rejects unsupported combinations, and the trusted Work policy requires the
   configured `coding` profile.
 - When material information blocks a correct plan, the assignment instructions
   tell the agent to ask the smallest complete set of currently known questions
-  and stop. A later admitted comment resumes planning through its declared
-  clarification tuple; the durable record retains only the typed current outcome
-  and accepted publication receipt rather than a broad phase machine.
+  and stop. A later admitted exact-mention comment uses the existing comment
+  tuple in the same session; the durable record retains the accepted assignment
+  response and publication receipt rather than a broad phase machine.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the exact source author and destination before loading credentials, substitutes
   only that verified commenter mention, and publishes idempotently. Assignment

@@ -44,7 +44,7 @@ type PublicationMatch = PublicationMatchBase &
         publication: PublishablePublication;
       }
     | {
-        kind: 'planning';
+        kind: 'assignment-response';
         publication: PublishablePublication;
         sourceId: string;
       }
@@ -113,7 +113,7 @@ function publicationMatches(
   | {
       conversationId: string;
       itemKey: string;
-      kind: 'planning';
+      kind: 'assignment-response';
       publication: PublishablePublication;
       sourceId: string;
     }
@@ -129,7 +129,7 @@ function publicationMatches(
     | {
         conversationId: string;
         itemKey: string;
-        kind: 'planning';
+        kind: 'assignment-response';
         publication: PublishablePublication;
         sourceId: string;
       }
@@ -144,13 +144,13 @@ function publicationMatches(
         publication: conversation.acknowledgment,
       });
     }
-    if (conversation.planning?.publication.target === target) {
+    if (conversation.assignmentResponse?.publication.target === target) {
       matches.push({
         conversationId,
         itemKey: conversation.itemKey,
-        kind: 'planning',
-        publication: conversation.planning.publication,
-        sourceId: conversation.planning.sourceId,
+        kind: 'assignment-response',
+        publication: conversation.assignmentResponse.publication,
+        sourceId: conversation.assignmentResponse.sourceId,
       });
     }
     for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
@@ -269,9 +269,9 @@ export default class GitHubNotificationCommentPublicationService {
         text: match.revision.publication.publicText,
       };
     }
-    if (match.kind === 'planning') {
+    if (match.kind === 'assignment-response') {
       return {
-        intent: 'planning-outcome' as const,
+        intent: 'assignment-response' as const,
         item: match.item,
         publicationId: match.sourceId,
         text: match.publication.publicText,
@@ -293,7 +293,7 @@ export default class GitHubNotificationCommentPublicationService {
     if (
       parsed.intent !== 'github-reply' &&
       parsed.intent !== 'initial-acknowledgment' &&
-      parsed.intent !== 'planning-outcome'
+      parsed.intent !== 'assignment-response'
     ) {
       fail('github-notification-publication-intent-unsupported');
     }
@@ -343,9 +343,11 @@ export default class GitHubNotificationCommentPublicationService {
               item,
               publicationId: item.intake?.assignmentEventId ?? '',
             }) === input.target
-          : item && parsed.intent === 'planning-outcome' && candidate.kind === 'planning'
+          : item &&
+              parsed.intent === 'assignment-response' &&
+              candidate.kind === 'assignment-response'
             ? githubNotificationPublicationTarget({
-                intent: 'planning-outcome',
+                intent: 'assignment-response',
                 item,
                 publicationId: candidate.sourceId,
               }) === input.target
@@ -358,7 +360,7 @@ export default class GitHubNotificationCommentPublicationService {
       !item ||
       item.disposition !== 'approved' ||
       !intakeReady ||
-      ((parsed.intent === 'github-reply' || parsed.intent === 'planning-outcome') &&
+      ((parsed.intent === 'github-reply' || parsed.intent === 'assignment-response') &&
         item.lifecycleId !== 'issue') ||
       candidate.conversationId !== parsed.conversationId ||
       conversation?.itemKey !== candidate.itemKey ||

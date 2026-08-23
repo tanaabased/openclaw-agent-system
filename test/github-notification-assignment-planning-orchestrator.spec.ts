@@ -61,7 +61,7 @@ function lifecycles() {
 }
 
 describe('channels/github/conversation/assignment-planning-orchestrator', () => {
-  it('should publish one typed plan for a prepared assignment and remain idempotent', async () => {
+  it('should publish one assignment response and remain idempotent', async () => {
     const monitor = preparedMonitor();
     const item = monitor.items[notificationItemKey]!;
     const intake = item.intake!;
@@ -154,7 +154,6 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
             privateText:
               '## Assessment\n\nThe user needs the form to save successfully.\n\n## Plan\n\nUpdate the owning behavior and verify the save flow.',
             publication: {
-              planningOutcome: 'plan' as const,
               publicText:
                 'I found the failing save path and have a focused implementation and validation plan.',
               status: 'candidate' as const,
@@ -171,17 +170,17 @@ describe('channels/github/conversation/assignment-planning-orchestrator', () => 
       executionSurface: 'gateway',
     });
 
-    const planning = conversations.snapshot().conversations[conversationId]!.planning;
-    assert.deepEqual(planning, {
-      outcome: 'plan',
+    const assignmentResponse =
+      conversations.snapshot().conversations[conversationId]!.assignmentResponse;
+    assert.deepEqual(assignmentResponse, {
       publication: {
         commentDatabaseId: 501,
         commentNodeId: 'IC_plan',
         publicText:
           'I found the failing save path and have a focused implementation and validation plan.',
-        publicTextDigest: planning?.publication.publicTextDigest,
+        publicTextDigest: assignmentResponse?.publication.publicTextDigest,
         status: 'published',
-        target: planning?.publication.target,
+        target: assignmentResponse?.publication.target,
       },
       sourceId: intake.assignmentEventId,
     });

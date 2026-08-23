@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnCatalog, {
   GitHubNotificationTurnCatalogError,
-  githubNotificationIssueWorkAssignmentClarificationTurnIdentity,
   githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationSupportedTurnIdentities,
@@ -31,10 +30,6 @@ describe('channels/github/conversation/turn-catalog', () => {
       catalog.resolve(githubNotificationIssueWorkAssignmentTurnIdentity).identity,
       githubNotificationIssueWorkAssignmentTurnIdentity,
     );
-    assert.deepEqual(
-      catalog.resolve(githubNotificationIssueWorkAssignmentClarificationTurnIdentity).identity,
-      githubNotificationIssueWorkAssignmentClarificationTurnIdentity,
-    );
   });
 
   it('should reject an observe-only event declared as a model turn', () => {
@@ -42,7 +37,7 @@ describe('channels/github/conversation/turn-catalog', () => {
     const custom = {
       ...base,
       events: {
-        resolve(id: 'assignment' | 'assignment-clarification' | 'comment') {
+        resolve(id: 'assignment' | 'comment') {
           return id === 'assignment'
             ? ({ id, turn: { kind: 'observe-only' } } as const)
             : base.events.resolve(id);

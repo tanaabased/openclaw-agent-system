@@ -105,36 +105,6 @@ describe('channels/github/publication/reply-candidate-store', () => {
     }
   });
 
-  it('should preserve a typed planning outcome across runtime instances', async () => {
-    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-planning-candidate-'));
-    const rootDir = join(temporaryDirectory, 'state');
-    const planningIdentity = {
-      ...identity,
-      identity: { ...identity.identity, eventId: 'assignment' as const },
-      sourceId: 'EV_assignment',
-    };
-    try {
-      const parent = new GitHubNotificationReplyCandidateStore({ rootDir });
-      const executor = new GitHubNotificationReplyCandidateStore({ rootDir });
-      const turnId = await parent.begin(planningIdentity);
-
-      await executor.attestPromptSelection(planningIdentity);
-      await executor.stagePlanning(planningIdentity.agentId, {
-        body: 'I need two answers before I can finish the plan.',
-        outcome: 'questions',
-      });
-
-      assert.deepEqual(await parent.finishWithMetadata({ ...planningIdentity, turnId }), [
-        {
-          body: 'I need two answers before I can finish the plan.',
-          outcome: 'questions',
-        },
-      ]);
-    } finally {
-      await rm(temporaryDirectory, { force: true, recursive: true });
-    }
-  });
-
   it('should enforce the shared reply length boundary', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-length-'));
     const rootDir = join(temporaryDirectory, 'state');

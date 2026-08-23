@@ -32,17 +32,10 @@ import type GitHubNotificationCommentTurnService from './comment-turn-service.ts
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
-import type {
-  GitHubNotificationCommentClient,
-  GitHubNotificationItemContext,
-  GitHubNotificationItemContextClient,
-} from '../provider/work-event-client.ts';
-import type { GitHubNotificationEventId } from '../events/types.ts';
+import type { GitHubNotificationCommentClient } from '../provider/work-event-client.ts';
 
 export interface GitHubNotificationCommentOrchestratorDependencies {
-  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<
-    GitHubNotificationCommentClient & GitHubNotificationItemContextClient
-  >;
+  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationCommentClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
   initialModeId: GitHubNotificationModeId;
@@ -180,13 +173,8 @@ export default class GitHubNotificationCommentOrchestrator {
       }
     }
     const modeId = existingConversation?.mode ?? this.#dependencies.initialModeId;
-    const eventId: Extract<GitHubNotificationEventId, 'assignment-clarification' | 'comment'> =
-      existingConversation?.planning?.outcome === 'questions' &&
-      existingConversation.planning.publication.status === 'published'
-        ? 'assignment-clarification'
-        : 'comment';
     this.#dependencies.turnCatalog.resolve({
-      eventId,
+      eventId: 'comment',
       lifecycleId: item.lifecycleId,
       modeId,
     });
@@ -281,38 +269,21 @@ export default class GitHubNotificationCommentOrchestrator {
         });
         continue;
       }
-      await this.#checkpointRevision(
-        agentId,
-        conversationId,
-        exact.nodeId,
-        {
-          bodyDigest: exactRevision.bodyDigest,
-          commentDatabaseId: exact.databaseId,
-          reasonCode: admission.code,
-          revisionId: exactRevision.revisionId,
-          status: 'admitted',
-        },
-        eventId,
-      );
-      const itemContext =
-        eventId === 'assignment-clarification'
-          ? await opened.client.getItemContext(
-              item.repositoryOwner,
-              item.repositoryName,
-              item.number,
-              item.itemType,
-            )
-          : undefined;
+      await this.#checkpointRevision(agentId, conversationId, exact.nodeId, {
+        bodyDigest: exactRevision.bodyDigest,
+        commentDatabaseId: exact.databaseId,
+        reasonCode: admission.code,
+        revisionId: exactRevision.revisionId,
+        status: 'admitted',
+      });
       await this.#respond(
         agentId,
         conversationId,
         executionSurface,
-        eventId,
         exact,
         admission.mentions,
         exactRevision,
         item,
-        itemContext,
         modeId,
         monitor.workspaceDir,
         signal,
@@ -325,12 +296,10 @@ export default class GitHubNotificationCommentOrchestrator {
     agentId: string,
     conversationId: string,
     executionSurface: GitHubNotificationExecutionSurface,
-    eventId: Extract<GitHubNotificationEventId, 'assignment-clarification' | 'comment'>,
     comment: GitHubCanonicalIssueComment,
     mentions: readonly GitHubCommentMention[],
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
-    itemContext: GitHubNotificationItemContext | undefined,
     modeId: GitHubNotificationModeId,
     workspaceDir: string,
     signal?: AbortSignal,
@@ -341,9 +310,7 @@ export default class GitHubNotificationCommentOrchestrator {
         agentId,
         comment,
         executionSurface,
-        eventId,
         item,
-        ...(itemContext === undefined ? {} : { itemContext }),
         mentions,
         modeId,
         revision,
@@ -351,33 +318,15 @@ export default class GitHubNotificationCommentOrchestrator {
         workspaceDir,
       });
     } catch (error) {
-      await this.#checkpointRevision(
-        agentId,
-        conversationId,
-        comment.nodeId,
-        {
-          bodyDigest: revision.bodyDigest,
-          commentDatabaseId: comment.databaseId,
-          failureCode: errorCode(error),
-          reasonCode: 'comment-approved',
-          revisionId: revision.revisionId,
-          status: 'admitted',
-        },
-        eventId,
-      );
+      await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
+        bodyDigest: revision.bodyDigest,
+        commentDatabaseId: comment.databaseId,
+        failureCode: errorCode(error),
+        reasonCode: 'comment-approved',
+        revisionId: revision.revisionId,
+        status: 'admitted',
+      });
       throw error;
-    }
-    if (eventId === 'assignment-clarification') {
-      await this.#checkpointPlanningResponse(
-        agentId,
-        conversationId,
-        comment.nodeId,
-        revision,
-        item,
-        response.publication,
-        signal,
-      );
-      return;
     }
     if (response.publication.status === 'withheld') {
       await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
@@ -439,93 +388,6 @@ export default class GitHubNotificationCommentOrchestrator {
     );
   }
 
-  async #checkpointPlanningResponse(
-    agentId: string,
-    conversationId: string,
-    commentNodeId: string,
-    revision: GitHubCommentRevision,
-    item: GitHubNotificationItemState,
-    publication: Awaited<
-      ReturnType<GitHubNotificationCommentTurnService['respond']>
-    >['publication'],
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (publication.status !== 'candidate' || publication.planningOutcome === undefined) {
-      throw new GitHubNotificationCommentOrchestratorError(
-        publication.status === 'withheld'
-          ? publication.code
-          : 'github-notification-assignment-planning-outcome-missing',
-      );
-    }
-    const target = githubNotificationPublicationTarget({
-      intent: 'planning-outcome',
-      item,
-      publicationId: revision.revisionId,
-    });
-    const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const conversation = current?.conversations[conversationId];
-    const currentRevision = conversation?.revisions[commentNodeId];
-    if (
-      !current ||
-      conversation?.activeTurn?.eventId !== 'assignment-clarification' ||
-      conversation.activeTurn.sourceId !== revision.revisionId ||
-      currentRevision?.revisionId !== revision.revisionId ||
-      currentRevision.status !== 'admitted'
-    ) {
-      throw new GitHubNotificationCommentOrchestratorError(
-        'github-notification-assignment-planning-turn-missing',
-      );
-    }
-    const next = structuredClone(current);
-    const updated = next.conversations[conversationId]!;
-    delete updated.activeTurn;
-    updated.planning = {
-      outcome: publication.planningOutcome,
-      publication: {
-        publicText: publication.publicText,
-        publicTextDigest: githubNotificationPublicTextDigest(publication.publicText),
-        status: 'pending',
-        target,
-      },
-      sourceId: revision.revisionId,
-    };
-    updated.revisions[commentNodeId] = {
-      ...currentRevision,
-      status: 'continued',
-    };
-    await this.#dependencies.conversationStateStore.write(next);
-
-    const result = await this.#dependencies.publications.publish({
-      accountId: agentId,
-      ...(signal === undefined ? {} : { signal }),
-      target,
-      text: publication.publicText,
-    });
-    const published = await this.#dependencies.conversationStateStore.read(agentId);
-    const planning = published?.conversations[conversationId]?.planning;
-    if (
-      !published ||
-      planning?.sourceId !== revision.revisionId ||
-      planning.publication.target !== target
-    ) {
-      throw new GitHubNotificationCommentOrchestratorError(
-        'github-notification-assignment-planning-checkpoint-missing',
-      );
-    }
-    if (planning.publication.status === 'published') return;
-    const completed = structuredClone(published);
-    completed.conversations[conversationId]!.planning = {
-      ...planning,
-      publication: {
-        ...planning.publication,
-        commentDatabaseId: result.receipt.databaseId,
-        commentNodeId: result.receipt.nodeId,
-        status: 'published',
-      },
-    };
-    await this.#dependencies.conversationStateStore.write(completed);
-  }
-
   async #retryPublication(
     agentId: string,
     conversationId: string,
@@ -585,10 +447,6 @@ export default class GitHubNotificationCommentOrchestrator {
     conversationId: string,
     commentNodeId: string,
     revision: GitHubNotificationCommentRevisionState,
-    activeEventId: Extract<
-      GitHubNotificationEventId,
-      'assignment-clarification' | 'comment'
-    > = 'comment',
   ): Promise<GitHubNotificationConversationState> {
     const current = await this.#dependencies.conversationStateStore.read(agentId);
     const conversation = current?.conversations[conversationId];
@@ -601,7 +459,7 @@ export default class GitHubNotificationCommentOrchestrator {
     const updatedConversation = state.conversations[conversationId]!;
     if (revision.status === 'admitted') {
       updatedConversation.activeTurn = {
-        eventId: activeEventId,
+        eventId: 'comment',
         sourceId: revision.revisionId,
       };
     } else {

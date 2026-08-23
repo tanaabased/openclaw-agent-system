@@ -26,8 +26,6 @@ import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
-import type { GitHubNotificationItemContext } from '../provider/work-event-client.ts';
-import type { GitHubNotificationEventId } from '../events/types.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
@@ -40,9 +38,7 @@ export interface GitHubNotificationCommentTurnInput {
   agentId: string;
   comment: GitHubCanonicalIssueComment;
   executionSurface: GitHubNotificationExecutionSurface;
-  eventId?: Extract<GitHubNotificationEventId, 'assignment-clarification' | 'comment'>;
   item: GitHubNotificationItemState;
-  itemContext?: GitHubNotificationItemContext;
   mentions: readonly GitHubCommentMention[];
   modeId: GitHubNotificationModeId;
   revision: GitHubCommentRevision;
@@ -133,9 +129,8 @@ export default class GitHubNotificationCommentTurnService {
       throw new Error('The GitHub notification comment turn is missing its trusted author.');
     }
     const config = await this.#dependencies.readConfig();
-    const eventId = input.eventId ?? 'comment';
     const identity: GitHubNotificationTurnIdentity = {
-      eventId,
+      eventId: 'comment',
       lifecycleId: input.item.lifecycleId,
       modeId: input.modeId,
     };
@@ -191,7 +186,6 @@ export default class GitHubNotificationCommentTurnService {
         UntrustedStructuredContext: [
           githubNotificationCommentContext({
             comment: input.comment,
-            ...(input.itemContext === undefined ? {} : { itemContext: input.itemContext }),
             lifecycleContext,
             revision: input.revision,
           }),

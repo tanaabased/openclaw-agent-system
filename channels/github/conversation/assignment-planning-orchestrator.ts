@@ -58,7 +58,7 @@ function errorCode(error: unknown): string {
   return 'github-notification-assignment-planning-failed';
 }
 
-/** Reconcile the current model-backed planning outcome for one prepared assignment. */
+/** Reconcile the model-backed response for one prepared assignment. */
 export default class GitHubNotificationAssignmentPlanningOrchestrator {
   readonly #dependencies: GitHubNotificationAssignmentPlanningOrchestratorDependencies;
   readonly #queue = new KeyedAsyncQueue();
@@ -124,14 +124,14 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
         'github-notification-assignment-planning-state-missing',
       );
     }
-    if (conversation.planning?.publication.status === 'published') return;
-    if (conversation.planning?.publication.status === 'pending') {
+    if (conversation.assignmentResponse?.publication.status === 'published') return;
+    if (conversation.assignmentResponse?.publication.status === 'pending') {
       await this.#publish(
         agentId,
         conversationId,
-        conversation.planning.sourceId,
-        conversation.planning.publication.target,
-        conversation.planning.publication.publicText,
+        conversation.assignmentResponse.sourceId,
+        conversation.assignmentResponse.publication.target,
+        conversation.assignmentResponse.publication.publicText,
         options.signal,
       );
       return;
@@ -179,18 +179,15 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       workspaceDir: monitor.workspaceDir,
       worktree: { branch: intake.worktreeBranch, path: intake.worktreePath },
     });
-    if (
-      response.publication.status !== 'candidate' ||
-      response.publication.planningOutcome === undefined
-    ) {
+    if (response.publication.status !== 'candidate') {
       throw new GitHubNotificationAssignmentPlanningOrchestratorError(
         response.publication.status === 'withheld'
           ? response.publication.code
-          : 'github-notification-assignment-planning-outcome-missing',
+          : 'github-notification-assignment-assignment-response-missing',
       );
     }
     const target = githubNotificationPublicationTarget({
-      intent: 'planning-outcome',
+      intent: 'assignment-response',
       item,
       publicationId: intake.assignmentEventId,
     });
@@ -198,7 +195,6 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       agentId,
       conversationId,
       intake.assignmentEventId,
-      response.publication.planningOutcome,
       response.publication.publicText,
       target,
     );
@@ -211,7 +207,7 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       options.signal,
     );
     this.#dependencies.logger.info(
-      `github-notifications: assignment planning published agent=${agentId} item=${itemKey} outcome=${response.publication.planningOutcome}`,
+      `github-notifications: assignment response published agent=${agentId} item=${itemKey}`,
     );
   }
 
@@ -229,7 +225,6 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
     agentId: string,
     conversationId: string,
     sourceId: string,
-    outcome: 'plan' | 'questions',
     publicText: string,
     target: string,
   ): Promise<void> {
@@ -243,8 +238,7 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
     const next = structuredClone(current);
     const updated = next.conversations[conversationId]!;
     delete updated.activeTurn;
-    updated.planning = {
-      outcome,
+    updated.assignmentResponse = {
       publication: {
         publicText,
         publicTextDigest: githubNotificationPublicTextDigest(publicText),
@@ -271,18 +265,22 @@ export default class GitHubNotificationAssignmentPlanningOrchestrator {
       text: publicText,
     });
     const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const planning = current?.conversations[conversationId]?.planning;
-    if (!current || planning?.sourceId !== sourceId || planning.publication.target !== target) {
+    const assignmentResponse = current?.conversations[conversationId]?.assignmentResponse;
+    if (
+      !current ||
+      assignmentResponse?.sourceId !== sourceId ||
+      assignmentResponse.publication.target !== target
+    ) {
       throw new GitHubNotificationAssignmentPlanningOrchestratorError(
         'github-notification-assignment-planning-checkpoint-missing',
       );
     }
-    if (planning.publication.status === 'published') return;
+    if (assignmentResponse.publication.status === 'published') return;
     const next = structuredClone(current);
-    next.conversations[conversationId]!.planning = {
-      ...planning,
+    next.conversations[conversationId]!.assignmentResponse = {
+      ...assignmentResponse,
       publication: {
-        ...planning.publication,
+        ...assignmentResponse.publication,
         commentDatabaseId: result.receipt.databaseId,
         commentNodeId: result.receipt.nodeId,
         status: 'published',

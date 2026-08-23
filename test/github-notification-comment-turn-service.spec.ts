@@ -83,12 +83,10 @@ function candidateStore(candidates: readonly string[], finishError?: Error) {
     async cancel(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
     },
-    async finishWithMetadata(
-      input: GitHubNotificationReplyCandidateTurnInput & { turnId: string },
-    ) {
+    async finish(input: GitHubNotificationReplyCandidateTurnInput & { turnId: string }) {
       assert.deepEqual(input, { ...identity, turnId: 'turn-1' });
       if (finishError) throw finishError;
-      return candidates.map((body) => ({ body }));
+      return [...candidates];
     },
   };
 }

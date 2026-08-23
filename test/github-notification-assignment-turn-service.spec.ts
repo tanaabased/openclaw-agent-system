@@ -44,7 +44,7 @@ describe('channels/github/conversation/assignment-turn-service', () => {
       instructions: 'trusted assignment instructions',
       lifecycle,
       mode: { disableTools: false, id: 'work' },
-      publicationIntent: 'planning-outcome',
+      publicationIntent: 'assignment-response',
     } as GitHubNotificationTurnContract;
     let coordinated:
       | Parameters<
@@ -63,7 +63,6 @@ describe('channels/github/conversation/assignment-turn-service', () => {
             privateText:
               '## Assessment\n\nThe user needs the form to save.\n\n## Plan\n\nUpdate and test the save path.',
             publication: {
-              planningOutcome: 'plan',
               publicText: 'I found the failing save path and have a focused plan.',
               status: 'candidate',
             },

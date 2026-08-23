@@ -153,7 +153,7 @@ function acknowledgmentFixture() {
   return { conversations, monitor, publicText, target };
 }
 
-function planningFixture() {
+function assignmentResponseFixture() {
   const monitor = notificationMonitorState();
   monitor.agentId = agentId;
   monitor.workspaceDir = workspaceDir;
@@ -172,7 +172,7 @@ function planningFixture() {
   const publicText = 'I understand the user-facing problem and have a focused plan to fix it.';
   const sourceId = item.intake.assignmentEventId;
   const target = githubNotificationPublicationTarget({
-    intent: 'planning-outcome',
+    intent: 'assignment-response',
     item,
     publicationId: sourceId,
   });
@@ -182,8 +182,7 @@ function planningFixture() {
     itemKey: notificationItemKey,
     lifecycleId: 'issue',
     mode: 'work',
-    planning: {
-      outcome: 'plan',
+    assignmentResponse: {
       publication: {
         publicText,
         publicTextDigest: githubNotificationPublicTextDigest(publicText),
@@ -346,8 +345,8 @@ describe('channels/github/publication/comment-publication-service', () => {
     assert.doesNotMatch(publishedBody, /^@/u);
   });
 
-  it('should reauthorize the prepared assignment before publishing its planning outcome', async () => {
-    const fixture = planningFixture();
+  it('should reauthorize the prepared assignment before publishing its response', async () => {
+    const fixture = assignmentResponseFixture();
     let publishedBody = '';
     const client: PublicationClient = {
       identity: notificationAccount,
@@ -359,7 +358,7 @@ describe('channels/github/publication/comment-publication-service', () => {
         return undefined;
       },
       async getIssueComment() {
-        throw new Error('planning outcomes do not reauthorize a source comment');
+        throw new Error('assignment responses do not reauthorize a source comment');
       },
     };
     const service = new GitHubNotificationCommentPublicationService({
@@ -395,7 +394,7 @@ describe('channels/github/publication/comment-publication-service', () => {
 
     assert.equal(result.status, 'published');
     assert.match(publishedBody, /^I understand the user-facing problem/u);
-    assert.match(publishedBody, /<!-- agent-system-github-publication:planning-outcome:/u);
+    assert.match(publishedBody, /<!-- agent-system-github-publication:assignment-response:/u);
     assert.doesNotMatch(publishedBody, /^@/u);
   });
 });
