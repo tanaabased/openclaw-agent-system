@@ -8,13 +8,15 @@ notifications channel. It describes their appearance and composition only. The
 ## Style
 
 - Use one meaningful emoji and a short descriptive title.
-- Follow the title with one plain-language sentence whenever a summary helps.
-- Link canonical GitHub actors and items in the sentence that names them.
-- Use `**Mode:** <name>` for a compact mode label.
+- Follow the title with compact facts or one plain-language sentence, whichever
+  makes the component easier to scan.
+- Link canonical GitHub actors and items where they are named.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
+- Give private responses a report-like structure with stable sections for the
+  complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports.
+  reports. Keep them shorter than their private counterparts.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -23,30 +25,30 @@ notifications channel. It describes their appearance and composition only. The
 ```markdown
 ## <emoji> <short descriptive title>
 
-<one sentence describing the item or result>
-
-**Mode:** <Plan, Work, or Auto>
+- **<fact>:** <value>
+- **<fact>:** <value>
 ```
 
-The mode line is optional. Supporting detail may follow the summary when the
-component needs it.
+Use a short bulleted fact list when a card primarily presents metadata. A
+summary sentence may replace the list when the component primarily presents an
+outcome.
 
 ## Assignment Card
 
 ```markdown
-## 📥 Issue assignment received
+## 📥 Issue assigned
 
-[@pirog](https://github.com/pirog) assigned you [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7).
-
-**Mode:** Plan
+- **Assigned by:** [@pirog](https://github.com/pirog)
+- **Issue:** [tanaabased/example#7 — Improve planning](https://github.com/tanaabased/example/issues/7)
+- **Mode:** Work
 ```
 
 ```markdown
-## 🔀 Pull request assignment received
+## 🔀 Pull request assigned
 
-[@pirog](https://github.com/pirog) assigned you [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18).
-
-**Mode:** Plan
+- **Assigned by:** [@pirog](https://github.com/pirog)
+- **Pull request:** [tanaabased/example#18 — Refine notification routing](https://github.com/tanaabased/example/pull/18)
+- **Mode:** Plan
 ```
 
 ## Direct Message
@@ -80,6 +82,9 @@ model-facing message uses this presentation.
 
 <complete private response>
 ```
+
+The private response is the report of record. Use headings and compact lists or
+tables when they make the complete result easier to review.
 
 ## Plan
 
@@ -120,7 +125,8 @@ model-facing message uses this presentation.
 Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
 responses repeat the blockquote marker for each paragraph. Address the verified
 source commenter where it reads naturally rather than imposing a fixed mention
-position.
+position. Keep this candidate concise and conversational even when the private
+response uses a fuller report structure.
 
 ## Private and Public Composition
 

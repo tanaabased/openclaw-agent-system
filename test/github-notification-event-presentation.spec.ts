@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
+import githubNotificationAssignmentAcknowledgment, {
+  githubNotificationAssignmentAcknowledgments,
+} from '../channels/github/events/assignment-acknowledgment.ts';
 import { githubNotificationAssignmentCard } from '../channels/github/events/assignment.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/events/comment.ts';
+import { githubNotificationPublicationText } from '../channels/github/publication/publication.ts';
 
 describe('channels/github/events/presentation', () => {
   it('should render lifecycle-projected assignment facts through the shared card grammar', () => {
@@ -24,12 +28,32 @@ describe('channels/github/events/presentation', () => {
         'Work',
       ),
       [
-        '## 📥 Issue assignment received',
+        '## 📥 Issue assigned',
         '',
-        '[@pirog](https://github.com/pirog) assigned you [tanaabased/example#12](https://github.com/tanaabased/example/issues/12).',
-        '',
-        '**Mode:** Work',
+        '- **Assigned by:** [@pirog](https://github.com/pirog)',
+        '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
+        '- **Mode:** Work',
       ].join('\n'),
+    );
+  });
+
+  it('should select varied safe acknowledgments deterministically by assignment', () => {
+    assert.equal(githubNotificationAssignmentAcknowledgments.length, 32);
+    assert.equal(
+      new Set(githubNotificationAssignmentAcknowledgments).size,
+      githubNotificationAssignmentAcknowledgments.length,
+    );
+    for (const text of githubNotificationAssignmentAcknowledgments) {
+      assert.equal(githubNotificationPublicationText('initial-acknowledgment', [{ text }]), text);
+    }
+    const selected = githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_assignment');
+    assert.equal(githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_assignment'), selected);
+    assert.ok(
+      new Set(
+        Array.from({ length: 64 }, (_, index) =>
+          githubNotificationAssignmentAcknowledgment('tanaabot', `EV_assignment_${index}`),
+        ),
+      ).size >= 16,
     );
   });
 

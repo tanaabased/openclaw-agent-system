@@ -153,4 +153,32 @@ describe('channels/github/publication/comment-publisher', () => {
     });
     assert.equal(connected, false);
   });
+
+  it('should publish a deterministic acknowledgment without commenter attribution', async () => {
+    let publishedBody = '';
+    const publisher = new GitHubNotificationCommentPublisher({
+      authorize: () => ({ authorized: true }),
+      connect: () => ({
+        client: {
+          createIssueComment: async (_owner, _name, _number, body) => {
+            publishedBody = body;
+            return { databaseId: 91, nodeId: 'IC_acknowledgment' };
+          },
+          findOwnIssueComment: async () => undefined,
+        },
+      }),
+      exclusive: async (_key, run) => run(),
+    });
+
+    await publisher.publish({
+      intent: 'initial-acknowledgment',
+      item: approvedNotificationItem(),
+      publicationId: 'EV_assignment',
+      text: "Got it — I'm starting on this now.",
+    });
+
+    assert.match(publishedBody, /^Got it — I'm starting on this now\./u);
+    assert.match(publishedBody, /<!-- agent-system-github-publication:initial-acknowledgment:/u);
+    assert.doesNotMatch(publishedBody, /^@/u);
+  });
 });

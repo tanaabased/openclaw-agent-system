@@ -120,6 +120,39 @@ function stateFixture() {
   return { comment, conversations, monitor, target };
 }
 
+function acknowledgmentFixture() {
+  const monitor = notificationMonitorState();
+  monitor.agentId = agentId;
+  monitor.workspaceDir = workspaceDir;
+  const item = monitor.items[notificationItemKey]!;
+  const conversationId = githubNotificationConversationId({
+    itemNumber: item.number,
+    lifecycleId: item.lifecycleId,
+    repositoryId: item.repositoryNodeId,
+  });
+  const publicText = "Got it — I'm starting on this now.";
+  const target = githubNotificationPublicationTarget({
+    intent: 'initial-acknowledgment',
+    item,
+    publicationId: item.intake!.assignmentEventId,
+  });
+  const conversations = createGitHubNotificationConversationState(agentId, workspaceDir);
+  conversations.conversations[conversationId] = {
+    acknowledgment: {
+      publicText,
+      publicTextDigest: githubNotificationPublicTextDigest(publicText),
+      status: 'pending',
+      target,
+    },
+    baselineEstablished: false,
+    itemKey: notificationItemKey,
+    lifecycleId: 'issue',
+    mode: 'work',
+    revisions: {},
+  };
+  return { conversations, monitor, publicText, target };
+}
+
 describe('channels/github/publication/comment-publication-service', () => {
   it('should reauthorize the exact source revision before publishing accepted text', async () => {
     const fixture = stateFixture();
@@ -214,5 +247,58 @@ describe('channels/github/publication/comment-publication-service', () => {
         error.code === 'github-notification-publication-target-not-admitted',
     );
     assert.equal(opened, 0);
+  });
+
+  it('should reauthorize the assignment before publishing its acknowledgment', async () => {
+    const fixture = acknowledgmentFixture();
+    let publishedBody = '';
+    const client: PublicationClient = {
+      identity: notificationAccount,
+      async createIssueComment(_owner: string, _repository: string, _number: number, body: string) {
+        publishedBody = body;
+        return { databaseId: 101, nodeId: 'IC_acknowledgment' };
+      },
+      async findOwnIssueComment() {
+        return undefined;
+      },
+      async getIssueComment() {
+        throw new Error('not used for assignment acknowledgments');
+      },
+    };
+    const service = new GitHubNotificationCommentPublicationService({
+      assignmentAuthority: {
+        async open(): Promise<GitHubNotificationAssignmentInspection<PublicationClient>> {
+          return { authorized: true, client, configuration };
+        },
+      },
+      conversationStateStore: { read: async () => structuredClone(fixture.conversations) },
+      manifestService: {
+        async loadForAgentId() {
+          return {
+            diagnostics: [],
+            digest: 'digest',
+            manifest,
+            path: `${workspaceDir}/agent.yaml`,
+            scope: { agentId, workspaceDir },
+            status: 'loaded' as const,
+            validationChecks: [],
+          };
+        },
+      },
+      monitorStateStore: { read: async () => structuredClone(fixture.monitor) },
+      publicationLeaseStore: { exclusive: async (_agent, _target, _signal, run) => run() },
+      readConfig: async () => config,
+    });
+
+    const result = await service.publish({
+      accountId: agentId,
+      target: fixture.target,
+      text: fixture.publicText,
+    });
+
+    assert.equal(result.status, 'published');
+    assert.match(publishedBody, /^Got it — I'm starting on this now\./u);
+    assert.match(publishedBody, /<!-- agent-system-github-publication:initial-acknowledgment:/u);
+    assert.doesNotMatch(publishedBody, /^@/u);
   });
 });

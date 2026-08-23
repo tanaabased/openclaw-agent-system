@@ -115,7 +115,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
         return;
       }
       if (action.kind === 'mark-prepared') {
-        await this.#checkpointPrepared(agentId, state, itemKey, action.worktree);
+        await this.#checkpointPrepared(agentId, state, itemKey, action.worktree, signal);
         return;
       }
       if (action.kind === 'prepare-worktree') {
@@ -151,7 +151,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
               workspaceDir: state.workspaceDir,
             }),
         );
-        await this.#checkpointPrepared(agentId, state, itemKey, worktree);
+        await this.#checkpointPrepared(agentId, state, itemKey, worktree, signal);
         return;
       }
       continue;
@@ -311,6 +311,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     state: GitHubNotificationMonitorState,
     itemKey: string,
     worktree?: GitHubNotificationLifecycleWorktree,
+    signal?: AbortSignal,
   ): Promise<void> {
     const item = state.items[itemKey];
     const intake = item?.intake;
@@ -341,6 +342,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
             item,
             lifecycle,
             mode: this.#dependencies.initialMode,
+            ...(signal === undefined ? {} : { signal }),
             workspaceDir: state.workspaceDir,
             ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
           }),

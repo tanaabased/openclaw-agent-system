@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added compact GitHub assignment metadata cards and deterministic varied issue acknowledgments with durable publication receipts.
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake.
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.

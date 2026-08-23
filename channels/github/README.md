@@ -6,8 +6,10 @@
 
 The GitHub notifications channel currently owns trusted polling, assignment
 admission, durable deduplication, routing, and managed issue-worktree intake.
-For prepared issues, it also admits new approved comments into one OpenClaw
-lifecycle session and publishes the accepted public part of the response.
+Accepted issues receive a private assignment card and an immediate public
+acknowledgment. For prepared issues, the channel also admits new approved
+comments into one OpenClaw lifecycle session and publishes the accepted public
+part of the response.
 
 ## Current Behavior
 
@@ -16,7 +18,9 @@ lifecycle session and publishes the accepted public part of the response.
 - Later polling or `notifications refresh` discovers new issue and pull-request
   assignments and admits only authorized actors, repositories, and events.
 - Accepted issues create or reuse one deterministic managed worktree and one
-  OpenClaw lifecycle session. Pull-request assignments retain bounded head
+  OpenClaw lifecycle session. The session begins with a compact assignment card,
+  then the channel publishes one deterministic, varied acknowledgment using a
+  durable idempotency marker. Pull-request assignments retain bounded head
   metadata without creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
@@ -43,9 +47,8 @@ lifecycle session and publishes the accepted public part of the response.
   The model can position one reserved commenter placeholder naturally; after
   exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, GitHub assignment acknowledgments, initial planning
-  turns, Plan and Auto modes, mode transitions, and chat-originated publication
-  remain intentionally dormant.
+- Pull-request comments, initial planning turns, Plan and Auto modes, mode
+  transitions, and chat-originated publication remain intentionally dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -201,7 +204,9 @@ reference.
   resumes the same session; no separate clarification phase is persisted.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the exact source author and destination before loading credentials, substitutes
-  only that verified commenter mention, and publishes idempotently.
+  only that verified commenter mention, and publishes idempotently. Assignment
+  acknowledgments pass through the same publication safety, authorization,
+  marker, and reconciliation boundary without model-authored text.
 - Private monitor and conversation state contain no tokens.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without

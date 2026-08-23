@@ -4,9 +4,10 @@ This macOS-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
-delivers one approved comment through the registered issue/Work/comment turn
-contract with its installed identity card, publishes one reply, and
-retires the assignment without deleting the worktree.
+publishes one assignment acknowledgment, delivers one approved comment through
+the registered issue/Work/comment turn contract with its installed identity
+card, publishes one reply, and retires the assignment without deleting the
+worktree.
 
 Scenario setup creates and updates uniquely named issues in
 `tanaabased/agent-system-test`.
@@ -105,6 +106,14 @@ openclaw agent-system notifications wait \
   --refresh \
   --timeout 180 \
   --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/agent-system-test" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
+
+# should publish exactly one bounded assignment acknowledgment
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+acknowledgments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/agent-system-test/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment"))) | {body, id}')"
+acknowledgment="$(jq -sce 'select(length == 1) | .[0]' <<< "$acknowledgments")"
+jq -e '.id | type == "number" and . > 0' <<< "$acknowledgment"
+jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 200) and (.[1] | contains("agent-system-github-publication:initial-acknowledgment"))' <<< "$acknowledgment"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart

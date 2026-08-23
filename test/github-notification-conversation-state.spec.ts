@@ -27,8 +27,56 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
+  });
+
+  it('should migrate the active-turn schema without inventing an acknowledgment', () => {
+    const legacy = {
+      agentId: 'notification-data',
+      conversations: {
+        'github:issue:R_repo:12': {
+          activeTurn: { eventId: 'comment', sourceId: 'a'.repeat(64) },
+          baselineEstablished: true,
+          itemKey: 'github:R_repo:12',
+          lifecycleId: 'issue',
+          mode: 'work',
+          revisions: {},
+        },
+      },
+      schemaVersion: 2,
+      workspaceDir: '/workspace',
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
+      ...legacy,
+      schemaVersion: 3,
+    });
+  });
+
+  it('should retain one durable assignment acknowledgment without provider prose', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    const conversationId = 'github:issue:R_repo:12';
+    const publicText = "Got it — I'm starting on this now.";
+    state.conversations[conversationId] = {
+      acknowledgment: {
+        publicText,
+        publicTextDigest: githubNotificationPublicTextDigest(publicText),
+        status: 'pending',
+        target: githubNotificationPublicationTarget({
+          intent: 'initial-acknowledgment',
+          item: approvedNotificationItem(),
+          publicationId: 'EV_assignment',
+        }),
+      },
+      baselineEstablished: false,
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
   });
 
   it('should retain one bounded active model turn', () => {

@@ -28,6 +28,7 @@ import GitHubNotificationTurnCatalog, {
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationAccount,
@@ -152,7 +153,31 @@ function lifecycles() {
 describe('channels/github/conversation/comment-orchestrator', () => {
   it('should persist an empty baseline without dispatching a turn', async () => {
     const monitor = preparedMonitor();
-    const store = memoryStateStore();
+    const item = monitor.items[notificationItemKey]!;
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    const publicText = "Got it — I'm starting on this now.";
+    const acknowledgment = {
+      commentDatabaseId: 90,
+      commentNodeId: 'IC_acknowledgment',
+      publicText,
+      publicTextDigest: githubNotificationPublicTextDigest(publicText),
+      status: 'published' as const,
+      target: githubNotificationPublicationTarget({
+        intent: 'initial-acknowledgment',
+        item,
+        publicationId: item.intake!.assignmentEventId,
+      }),
+    };
+    state.conversations[id] = {
+      acknowledgment,
+      baselineEstablished: false,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const store = memoryStateStore(state);
     let turns = 0;
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([]),
@@ -174,7 +199,8 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     await orchestrator.reconcile(agentId, notificationItemKey);
 
     assert.equal(turns, 0);
-    assert.deepEqual(store.snapshot()?.conversations[conversationId(monitor)], {
+    assert.deepEqual(store.snapshot()?.conversations[id], {
+      acknowledgment,
       baselineEstablished: true,
       itemKey: notificationItemKey,
       lifecycleId: 'issue',

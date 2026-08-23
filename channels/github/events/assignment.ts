@@ -25,9 +25,18 @@ export function githubNotificationAssignmentCard(
 ): string {
   return githubNotificationCard({
     emoji: projection.emoji,
-    mode,
-    summary: `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url}) assigned you [${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url}).`,
-    title: `${projection.item.kind} assignment received`,
+    facts: [
+      {
+        label: 'Assigned by',
+        value: `[@${githubNotificationMarkdownText(projection.sender.label)}](${projection.sender.url})`,
+      },
+      {
+        label: projection.item.kind,
+        value: `[${githubNotificationMarkdownText(projection.item.label)}](${projection.item.url})`,
+      },
+      { label: 'Mode', value: mode },
+    ],
+    title: `${projection.item.kind} assigned`,
   });
 }
 

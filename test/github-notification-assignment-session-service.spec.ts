@@ -30,10 +30,13 @@ const config: OpenClawConfig = {
 describe('channels/github/conversation/assignment-session-service', () => {
   it('should idempotently prepare one assignment session without model dispatch', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
+    const sequence: string[] = [];
+    let acknowledgments = 0;
     let records = 0;
     let recordedSessionKey: string | undefined;
     const recordInboundSession: GitHubNotificationAssignmentSessionServiceDependencies['recordInboundSession'] =
       async (input) => {
+        sequence.push('record');
         records += 1;
         recordedSessionKey = input.sessionKey;
         assert.equal(input.createIfMissing, true);
@@ -41,11 +44,11 @@ describe('channels/github/conversation/assignment-session-service', () => {
         assert.equal(
           input.ctx.Body,
           [
-            '## 📥 Issue assignment received',
+            '## 📥 Issue assigned',
             '',
-            '[@pirog](https://github.com/pirog) assigned you [tanaabased/example#12](https://github.com/tanaabased/example/issues/12).',
-            '',
-            '**Mode:** Work',
+            '- **Assigned by:** [@pirog](https://github.com/pirog)',
+            '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
+            '- **Mode:** Work',
           ].join('\n'),
         );
         assert.equal(
@@ -67,6 +70,16 @@ describe('channels/github/conversation/assignment-session-service', () => {
         );
       };
     const service = new GitHubNotificationAssignmentSessionService({
+      acknowledgments: {
+        async publish(input) {
+          sequence.push('acknowledgment');
+          acknowledgments += 1;
+          assert.equal(input.agentId, agentId);
+          assert.equal(input.item, item);
+          assert.equal(input.modeId, 'work');
+          assert.equal(input.workspaceDir, workspaceDir);
+        },
+      },
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
       recordInboundSession,
@@ -92,6 +105,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await service.prepare(input);
 
     assert.equal(records, 2);
+    assert.equal(acknowledgments, 2);
+    assert.deepEqual(sequence, ['record', 'acknowledgment', 'record', 'acknowledgment']);
     assert.match(recordedSessionKey ?? '', /^agent:tanaabot:agent-system-github:/u);
   });
 });

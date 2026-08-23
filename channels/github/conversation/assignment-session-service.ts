@@ -19,8 +19,10 @@ import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-su
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { githubNotificationChannelId, resolveNotificationRoute } from '../routing/routing.ts';
+import type GitHubNotificationAssignmentAcknowledgmentService from './assignment-acknowledgment-service.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
+  acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
@@ -31,6 +33,7 @@ export interface GitHubNotificationAssignmentSessionInput {
   item: GitHubNotificationItemState;
   lifecycle: GitHubNotificationLifecycle;
   mode: Pick<GitHubNotificationMode, 'policy'>;
+  signal?: AbortSignal;
   workspaceDir: string;
   worktree?: GitHubNotificationLifecycleWorktree;
 }
@@ -154,8 +157,15 @@ export default class GitHubNotificationAssignmentSessionService {
     ) {
       throw new Error('OpenClaw did not record the expected assignment session.');
     }
+    await this.#dependencies.acknowledgments.publish({
+      agentId: input.agentId,
+      item: input.item,
+      modeId: input.mode.policy.id,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
+    });
     this.#dependencies.logger.info(
-      `github-notifications: assignment session prepared agent=${route.agentId} item=${repository}#${input.item.number}`,
+      `github-notifications: assignment session and acknowledgment prepared agent=${route.agentId} item=${repository}#${input.item.number}`,
     );
   }
 }

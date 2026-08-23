@@ -17,12 +17,19 @@ type PublicationItem = Pick<
   'lifecycleId' | 'number' | 'repositoryName' | 'repositoryNodeId' | 'repositoryOwner'
 >;
 
-export interface GitHubNotificationCommentPublicationInput {
-  intent: 'github-reply';
+export type GitHubNotificationCommentPublicationInput = {
   item: PublicationItem;
-  source: GitHubNotificationPublicationSource;
   text: string;
-}
+} & (
+  | {
+      intent: 'github-reply';
+      source: GitHubNotificationPublicationSource;
+    }
+  | {
+      intent: 'initial-acknowledgment';
+      publicationId: string;
+    }
+);
 
 export interface GitHubNotificationCommentPublicationAuthorization {
   authorized: boolean;
@@ -31,12 +38,24 @@ export interface GitHubNotificationCommentPublicationAuthorization {
 
 export interface GitHubNotificationCommentPublicationConnection {
   client: Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>;
-  commenterLogin: string;
+  commenterLogin?: string;
 }
 
 export interface GitHubNotificationCommentPublisherDependencies {
   authorize(
-    input: Omit<GitHubNotificationCommentPublicationInput, 'text'> & { target: string },
+    input:
+      | {
+          intent: 'github-reply';
+          item: PublicationItem;
+          source: GitHubNotificationPublicationSource;
+          target: string;
+        }
+      | {
+          intent: 'initial-acknowledgment';
+          item: PublicationItem;
+          publicationId: string;
+          target: string;
+        },
   ):
     | GitHubNotificationCommentPublicationAuthorization
     | Promise<GitHubNotificationCommentPublicationAuthorization>;
@@ -91,27 +110,44 @@ export default class GitHubNotificationCommentPublisher {
     create: boolean,
   ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
     const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
-    const target = githubNotificationPublicationTarget({
-      intent: input.intent,
-      item: input.item,
-      source: input.source,
-    });
+    const target =
+      input.intent === 'github-reply'
+        ? githubNotificationPublicationTarget({
+            intent: input.intent,
+            item: input.item,
+            source: input.source,
+          })
+        : githubNotificationPublicationTarget({
+            intent: input.intent,
+            item: input.item,
+            publicationId: input.publicationId,
+          });
     const marker = githubNotificationPublicationMarker(target);
     return this.#dependencies.exclusive(target, async () => {
-      const authorization = await this.#dependencies.authorize({
-        intent: input.intent,
-        item: input.item,
-        source: input.source,
-        target,
-      });
+      const authorization = await this.#dependencies.authorize(
+        input.intent === 'github-reply'
+          ? { intent: input.intent, item: input.item, source: input.source, target }
+          : {
+              intent: input.intent,
+              item: input.item,
+              publicationId: input.publicationId,
+              target,
+            },
+      );
       if (!authorization.authorized) {
         throw new GitHubNotificationCommentPublisherError(
           authorization.reasonCode ?? 'github-notification-publication-authority-revoked',
         );
       }
       const connection = await this.#dependencies.connect();
-      const attributedText = githubNotificationAttributedReplyText(text, connection.commenterLogin);
-      const expectedBody = githubNotificationPublicationComment(attributedText, marker);
+      const publicText =
+        input.intent === 'github-reply'
+          ? githubNotificationAttributedReplyText(
+              text,
+              connection.commenterLogin ?? missingCommenterLogin(),
+            )
+          : text;
+      const expectedBody = githubNotificationPublicationComment(publicText, marker);
       const existing = await connection.client.findOwnIssueComment(
         input.item.repositoryOwner,
         input.item.repositoryName,
@@ -136,4 +172,10 @@ export default class GitHubNotificationCommentPublisher {
       return { receipt, status: 'published', target };
     });
   }
+}
+
+function missingCommenterLogin(): never {
+  throw new GitHubNotificationCommentPublisherError(
+    'github-notification-publication-commenter-missing',
+  );
 }

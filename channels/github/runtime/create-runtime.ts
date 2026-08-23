@@ -8,6 +8,7 @@ import type AgentManifestService from '../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
+import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
@@ -146,7 +147,22 @@ export default function createGitHubNotificationRuntime(
         manifestService,
         readConfig: dependencies.readRuntimeConfig,
       });
+      const commentPublicationService = new GitHubNotificationCommentPublicationService({
+        assignmentAuthority: assignmentProvider,
+        conversationStateStore,
+        manifestService,
+        monitorStateStore,
+        publicationLeaseStore,
+        readConfig: dependencies.readRuntimeConfig,
+      });
+      const assignmentAcknowledgmentService = new GitHubNotificationAssignmentAcknowledgmentService(
+        {
+          conversationStateStore,
+          publications: commentPublicationService,
+        },
+      );
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
+        acknowledgments: assignmentAcknowledgmentService,
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         recordInboundSession: dependencies.recordInboundSession,
@@ -163,14 +179,6 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         turnContracts,
-      });
-      const commentPublicationService = new GitHubNotificationCommentPublicationService({
-        assignmentAuthority: assignmentProvider,
-        conversationStateStore,
-        manifestService,
-        monitorStateStore,
-        publicationLeaseStore,
-        readConfig: dependencies.readRuntimeConfig,
       });
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,
