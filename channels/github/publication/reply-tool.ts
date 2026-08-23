@@ -5,6 +5,7 @@ import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts'
 import type { Logger } from '../../../core/logger.ts';
 import AgentSystemToolError from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
+import { maximumGitHubNotificationReplyLength } from './limits.ts';
 import { GitHubNotificationReplyCandidateStoreError } from './reply-candidate-store.ts';
 import {
   githubNotificationReplyToolName,
@@ -16,7 +17,7 @@ export { githubNotificationReplyToolName } from './reply-tool-result.ts';
 
 const githubNotificationReplyToolSchema = Type.Object(
   {
-    body: Type.String({ maxLength: 800, minLength: 1 }),
+    body: Type.String({ maxLength: maximumGitHubNotificationReplyLength, minLength: 1 }),
   },
   { additionalProperties: false },
 );

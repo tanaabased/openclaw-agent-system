@@ -13,6 +13,10 @@ notifications channel. It describes their appearance and composition only. The
 - Use `**Mode:** <name>` for a compact mode label.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
+- Keep GitHub-facing responses conversational; they are comments rather than
+  reports.
+- Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
+  code formatting, and links, only when it materially improves clarity.
 
 ## Card
 

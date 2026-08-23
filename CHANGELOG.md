@@ -3,6 +3,7 @@
 ### New Features
 
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
+- Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety.
 
 ### Bug Fixes
 

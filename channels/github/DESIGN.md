@@ -162,14 +162,14 @@ publication, or conversation progress back to monitor state.
 
 Each model-backed turn keeps these layers separate:
 
-| Layer              | Purpose                                                      | Visibility                                      |
-| ------------------ | ------------------------------------------------------------ | ----------------------------------------------- |
-| Presentation       | Assignment card, direct message, and response components     | Visible in the session                          |
-| Structured context | Bounded GitHub content, provenance, and recorded state       | Model-only current-turn context                 |
-| Instructions       | Trusted guidance selected by lifecycle type, mode, and event | Hidden from the conversation                    |
-| Capability         | Tool and mutation boundary selected from trusted mode state  | Runtime-enforced                                |
-| Private response   | Complete local response                                      | Private session only                            |
-| GitHub response    | Concise typed candidate, separate from response Markdown     | Channel-owned; optionally rendered or published |
+| Layer              | Purpose                                                                  | Visibility                                      |
+| ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| Presentation       | Assignment card, direct message, and response components                 | Visible in the session                          |
+| Structured context | Bounded GitHub content, provenance, and recorded state                   | Model-only current-turn context                 |
+| Instructions       | Trusted guidance selected by lifecycle type, mode, and event             | Hidden from the conversation                    |
+| Capability         | Tool and mutation boundary selected from trusted mode state              | Runtime-enforced                                |
+| Private response   | Complete local response                                                  | Private session only                            |
+| GitHub response    | Concise conversational GFM candidate, separate from the private response | Channel-owned; optionally rendered or published |
 
 This contract must work through both the built-in OpenClaw agent harness and
 the native Codex app-server harness. Their prompt, context, hook, and tool
@@ -181,6 +181,11 @@ GitHub-facing candidate through a typed channel-owned interface rather than
 recreating a Markdown envelope for the host to parse. A host may render the two
 parts with the [private and public composition](./PRESENTATION.md#private-and-public-composition),
 but publication never depends on that rendering.
+
+The GitHub-facing candidate is a conversational comment, not a report. It may
+use GitHub-flavored Markdown when structure improves clarity, while deterministic
+publication validation continues to reject secrets, credentials, local paths,
+hidden context, and model-authored mentions.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
@@ -196,6 +201,11 @@ for hidden channel instructions. Turn dispatch options project capability only;
 they do not carry lifecycle, mode, or event prompts through
 `extraSystemPrompt`. Typed GitHub reply candidates use their separate
 channel-owned file-backed handoff and are not inferred from response Markdown.
+
+The prompt composer renders lifecycle, lifecycle-mode, mode, event, response,
+style, publication-safety, clarification, and private-response guidance under
+stable Markdown headings. Those headings clarify trusted ownership without
+changing selection, capability, or publication authority.
 
 The selector resolves the active lifecycle, mode, and event through the shared
 catalog using trusted hook routing and the private durable turn descriptor

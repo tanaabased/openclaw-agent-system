@@ -9,6 +9,7 @@ import { isGitHubNotificationEventId } from '../events/types.ts';
 import { isGitHubNotificationLifecycleId } from '../lifecycles/types.ts';
 import { isGitHubNotificationModeId } from '../modes/types.ts';
 import type { GitHubNotificationTurnIdentity } from '../conversation/turn-identity.ts';
+import { maximumGitHubNotificationReplyLength } from './limits.ts';
 
 const defaultTtlMs = 30 * 60 * 1000;
 const maximumStateBytes = 4 * 1024;
@@ -134,7 +135,7 @@ function decodeState(
     }
     const entry = candidate as Record<string, unknown>;
     if (
-      !boundedString(entry.body, 800) ||
+      !boundedString(entry.body, maximumGitHubNotificationReplyLength) ||
       entry.body !== entry.body.trim() ||
       !boundedString(entry.stagedAt, 64) ||
       !Number.isFinite(Date.parse(entry.stagedAt))
@@ -236,7 +237,9 @@ export default class GitHubNotificationReplyCandidateStore {
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.candidates.length >= 2) fail('reply-turn-candidate-limit');
       const body = candidate.trim();
-      if (!body || body.length > 800) fail('reply-turn-state-invalid');
+      if (!body || body.length > maximumGitHubNotificationReplyLength) {
+        fail('reply-turn-state-invalid');
+      }
       active.candidates.push({ body, stagedAt: new Date(this.#now()).toISOString() });
       await file.write(`${JSON.stringify(active, undefined, 2)}\n`);
     });

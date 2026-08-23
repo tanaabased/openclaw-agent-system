@@ -54,7 +54,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         },
         async finish(candidateIdentity) {
           calls.push(['finish', candidateIdentity]);
-          return ['ready'];
+          return ['## Ready\n\n- `notification` checks passed'];
         },
       },
       dispatcher: {
@@ -72,7 +72,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
       finalPayloadCount: 1,
       privateText: 'Complete private response.',
-      publication: { status: 'candidate', publicText: 'ready' },
+      publication: {
+        status: 'candidate',
+        publicText: '## Ready\n\n- `notification` checks passed',
+      },
     });
     assert.deepEqual(calls, [
       [

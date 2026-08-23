@@ -5,8 +5,8 @@ import { redactSensitiveText } from 'openclaw/plugin-sdk/security-runtime';
 
 import { githubNotificationConversationId } from '../channel.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import { maximumGitHubNotificationReplyLength } from './limits.ts';
 
-const maximumPublicationLength = 800;
 const maximumAcknowledgmentLength = 200;
 const markerPrefix = 'agent-system-github-publication';
 
@@ -43,7 +43,7 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
   const maximumLength =
     publicationIntent === 'initial-acknowledgment'
       ? maximumAcknowledgmentLength
-      : maximumPublicationLength;
+      : maximumGitHubNotificationReplyLength;
   if (!text || text.length > maximumLength || /\0/u.test(text)) {
     reject('github-notification-publication-text-invalid');
   }
@@ -58,12 +58,10 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
   }
   if (
     redactSensitiveText(text) !== text ||
-    /(?:https?|ftp):\/\/|www\.|\bgithub\.com\b|\b[A-Z][A-Z0-9_]{2,}=|@[A-Za-z0-9]/iu.test(text) ||
+    /\b[A-Z][A-Z0-9_]{2,}=|@[A-Za-z0-9]/iu.test(text) ||
     /(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-|AKIA)[A-Za-z0-9_-]+/u.test(text) ||
     /\b[A-Za-z0-9_=-]{32,}\b/u.test(text) ||
-    /(?:^|\s)(?:~?\/|[A-Za-z]:\\|file:)|\/(?:Users|home)\/|\\\\/u.test(text) ||
-    ['`', '<', '>', '[', ']', '{', '}', '|'].some((character) => text.includes(character)) ||
-    /^\s*(?:[-+*#>]|\d+[.)])/mu.test(text)
+    /(?:^|\s)(?:~?\/|[A-Za-z]:\\|file:)|\/(?:Users|home)\/|\\\\/u.test(text)
   ) {
     reject('github-notification-publication-secret-safety-rejected');
   }

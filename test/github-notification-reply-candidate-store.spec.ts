@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import GitHubNotificationReplyCandidateStore, {
   GitHubNotificationReplyCandidateStoreError,
 } from '../channels/github/publication/reply-candidate-store.ts';
+import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 
 const identity = {
   agentId: 'tanaabot',
@@ -99,6 +100,29 @@ describe('channels/github/publication/reply-candidate-store', () => {
         hasCode('reply-turn-expired'),
       );
       await assert.rejects(store.stage(identity.agentId, 'late'), hasCode('reply-turn-missing'));
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('should enforce the shared reply length boundary', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-reply-length-'));
+    const rootDir = join(temporaryDirectory, 'state');
+    try {
+      const store = new GitHubNotificationReplyCandidateStore({ rootDir });
+      const maximum = 'a'.repeat(maximumGitHubNotificationReplyLength);
+      const acceptedTurn = await store.begin(identity);
+
+      await store.attestPromptSelection(identity);
+      await store.stage(identity.agentId, maximum);
+      assert.deepEqual(await store.finish({ ...identity, turnId: acceptedTurn }), [maximum]);
+
+      await store.begin(identity);
+      await store.attestPromptSelection(identity);
+      await assert.rejects(
+        store.stage(identity.agentId, `${maximum}a`),
+        hasCode('reply-turn-state-invalid'),
+      );
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });
     }

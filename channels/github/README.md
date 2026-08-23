@@ -32,6 +32,9 @@ lifecycle session and publishes the accepted public part of the response.
 - Each completed comment turn keeps its private response in the session and may
   publish one validated public reply to GitHub. Missing or invalid public replies
   are withheld without discarding the private response.
+- Public replies are concise conversational comments and may use GitHub-flavored
+  Markdown when it improves clarity. Publication still rejects secrets,
+  credentials, local paths, hidden context, and model-authored mentions.
 - Pull-request comments, GitHub assignment acknowledgments, initial planning
   turns, Plan and Auto modes, mode transitions, and chat-originated publication
   remain intentionally dormant.

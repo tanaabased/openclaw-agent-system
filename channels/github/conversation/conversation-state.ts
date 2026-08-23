@@ -7,6 +7,7 @@ import {
 } from '../lifecycles/types.ts';
 import { isGitHubNotificationEventId, type GitHubNotificationEventId } from '../events/types.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
+import { maximumGitHubNotificationReplyLength } from '../publication/limits.ts';
 import { parseGitHubNotificationPublicationTarget } from '../publication/publication.ts';
 
 export type GitHubNotificationCommentTurnStatus =
@@ -123,7 +124,7 @@ function validPublication(value: unknown, conversationId: string): boolean {
     ]) ||
     typeof value.publicText !== 'string' ||
     value.publicText.length < 1 ||
-    value.publicText.length > 800 ||
+    value.publicText.length > maximumGitHubNotificationReplyLength ||
     value.publicText.includes('\0') ||
     !digest(value.publicTextDigest) ||
     value.publicTextDigest !== githubNotificationPublicTextDigest(value.publicText) ||

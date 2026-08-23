@@ -7,6 +7,7 @@ import {
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
 } from '../channels/github/publication/publication.ts';
+import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 describe('channels/github/publication/publication', () => {
@@ -41,14 +42,48 @@ describe('channels/github/publication/publication', () => {
       "Gladly — I've picked this one up.",
     );
     assert.equal(
-      githubNotificationPublicationText('github-reply', [{ text: 'The first pass is ready.' }]),
-      'The first pass is ready.',
+      githubNotificationPublicationText('github-reply', [
+        {
+          text: [
+            '## Result',
+            '',
+            'The `notification` flow is ready.',
+            '',
+            '| Check | Status |',
+            '| --- | --- |',
+            '| [Build](https://github.com/tanaabased/example/actions) | Passing |',
+          ].join('\n'),
+        },
+      ]),
+      [
+        '## Result',
+        '',
+        'The `notification` flow is ready.',
+        '',
+        '| Check | Status |',
+        '| --- | --- |',
+        '| [Build](https://github.com/tanaabased/example/actions) | Passing |',
+      ].join('\n'),
     );
     assert.equal(
       githubNotificationPublicationText('planning-outcome', [
         { text: 'I reviewed the assignment and have a plan ready.' },
       ]),
       'I reviewed the assignment and have a plan ready.',
+    );
+  });
+
+  it('should enforce the shared reply length boundary', () => {
+    const maximum = Array.from({ length: maximumGitHubNotificationReplyLength }, (_, index) =>
+      index % 2 === 0 ? 'a' : ' ',
+    )
+      .join('')
+      .replace(/ $/u, 'a');
+
+    assert.equal(githubNotificationPublicationText('github-reply', [{ text: maximum }]), maximum);
+    assert.throws(
+      () => githubNotificationPublicationText('github-reply', [{ text: `${maximum}a` }]),
+      /not safe to publish/u,
     );
   });
 
@@ -66,6 +101,13 @@ describe('channels/github/publication/publication', () => {
     );
     assert.throws(
       () => githubNotificationPublicationText('github-reply', [{ text: 'See @pirog.' }]),
+      /not safe to publish/u,
+    );
+    assert.throws(
+      () =>
+        githubNotificationPublicationText('github-reply', [
+          { text: 'Read `/Users/pirog/private.txt`.' },
+        ]),
       /not safe to publish/u,
     );
     assert.throws(
