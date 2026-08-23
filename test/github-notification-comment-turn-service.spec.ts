@@ -67,7 +67,7 @@ function turnContracts() {
     lifecycles,
     modes,
   });
-  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
+  return new GitHubNotificationTurnContractResolver({ turns });
 }
 
 function assertTurnContractOptions(options: Record<string, unknown>) {

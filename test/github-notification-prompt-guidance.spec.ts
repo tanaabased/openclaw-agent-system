@@ -35,7 +35,7 @@ function resolver() {
     lifecycles,
     modes,
   });
-  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
+  return new GitHubNotificationTurnContractResolver({ turns });
 }
 
 describe('channels/github/conversation/prompt-guidance', () => {

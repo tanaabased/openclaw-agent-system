@@ -1,15 +1,11 @@
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
-import type GitHubNotificationEventRegistry from '../events/registry.ts';
-import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
-import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
-import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
 import resolveGitHubNotificationModeCapability from '../modes/capability.ts';
-import type GitHubNotificationModeRegistry from '../modes/registry.ts';
 import type { ResolvedGitHubNotificationMode } from '../modes/types.ts';
 import composeGitHubNotificationPrompt from './prompts/compose.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
+import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 
 export interface GitHubNotificationTurnContract {
@@ -30,18 +26,19 @@ export interface GitHubNotificationTurnDispatchOptions {
 }
 
 export interface GitHubNotificationTurnContractResolverDependencies {
-  events: Pick<GitHubNotificationEventRegistry, 'resolve'>;
-  lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
-  modes: Pick<GitHubNotificationModeRegistry, 'resolve'>;
   turns: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
 }
 
-export class GitHubNotificationTurnContractError extends Error {
-  override name = 'GitHubNotificationTurnContractError';
-
-  constructor(readonly code: string) {
-    super('The GitHub notification turn contract is unavailable.');
-  }
+function turnInstructions(turn: GitHubNotificationTurnDefinition): string {
+  return composeGitHubNotificationPrompt({
+    eventInstructions: turn.eventTurn.instructions,
+    lifecycleInstructions: turn.lifecycle.instructions,
+    modeInstructions: turn.mode.instructions,
+    ...(turn.modeSupport.instructions === undefined
+      ? {}
+      : { modeLifecycleInstructions: turn.modeSupport.instructions }),
+    responseInstructions: turn.eventTurn.responseInstructions,
+  });
 }
 
 /** Project one resolved turn contract into the channel dispatch boundary. */
@@ -69,24 +66,7 @@ export default class GitHubNotificationTurnContractResolver {
   }
 
   instructions(identity: GitHubNotificationTurnIdentity): string {
-    const turn = this.#dependencies.turns.resolve(identity);
-    const lifecycle = this.#dependencies.lifecycles.resolve(turn.lifecycleId);
-    const mode = this.#dependencies.modes.resolve(turn.modeId);
-    const support = resolveGitHubNotificationLifecycleModeSupport(lifecycle, turn.modeId);
-    resolveGitHubNotificationLifecycleEventSupport(lifecycle, turn.eventId);
-    const event = this.#dependencies.events.resolve(turn.eventId);
-    if (event.turn.kind !== 'model') {
-      throw new GitHubNotificationTurnContractError('github-notification-event-unimplemented');
-    }
-    return composeGitHubNotificationPrompt({
-      eventInstructions: event.turn.instructions,
-      lifecycleInstructions: lifecycle.instructions,
-      modeInstructions: mode.instructions,
-      ...(support.instructions === undefined
-        ? {}
-        : { modeLifecycleInstructions: support.instructions }),
-      responseInstructions: event.turn.responseInstructions,
-    });
+    return turnInstructions(this.#dependencies.turns.resolve(identity));
   }
 
   resolve(
@@ -95,17 +75,11 @@ export default class GitHubNotificationTurnContractResolver {
     agentId: string,
   ): GitHubNotificationTurnContract {
     const turn = this.#dependencies.turns.resolve(identity);
-    const lifecycle = this.#dependencies.lifecycles.resolve(turn.lifecycleId);
-    const mode = resolveGitHubNotificationModeCapability(
-      this.#dependencies.modes.resolve(turn.modeId),
-      config,
-      agentId,
-    );
     return {
-      identity: turn,
-      instructions: this.instructions(turn),
-      lifecycle,
-      mode,
+      identity: turn.identity,
+      instructions: turnInstructions(turn),
+      lifecycle: turn.lifecycle,
+      mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
     };
   }
 }

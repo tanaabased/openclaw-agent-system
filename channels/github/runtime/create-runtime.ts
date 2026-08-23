@@ -106,12 +106,7 @@ export default function createGitHubNotificationRuntime(
     turns: turnCatalog,
   });
   const initialMode = modeRegistry.resolve('work');
-  const turnContracts = new GitHubNotificationTurnContractResolver({
-    events: eventRegistry,
-    lifecycles: lifecycleRegistry,
-    modes: modeRegistry,
-    turns: turnCatalog,
-  });
+  const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
 
   return {
     lifecycleContribution: createNotificationLifecycleContribution({

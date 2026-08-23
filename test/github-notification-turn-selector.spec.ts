@@ -39,7 +39,7 @@ describe('channels/github/conversation/turn-selector', () => {
       turns: {
         resolve(identity) {
           resolved.push(identity);
-          return identity;
+          return { identity };
         },
       },
     });
@@ -70,7 +70,7 @@ describe('channels/github/conversation/turn-selector', () => {
       logger: { warn() {} },
       turns: {
         resolve(identity) {
-          return identity;
+          return { identity };
         },
       },
     });
@@ -120,7 +120,7 @@ describe('channels/github/conversation/turn-selector', () => {
       logger: { warn: (message) => warnings.push(message) },
       turns: {
         resolve(identity) {
-          return identity;
+          return { identity };
         },
       },
     });

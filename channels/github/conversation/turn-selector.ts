@@ -4,13 +4,17 @@ import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
 
 import type { Logger } from '../../../core/logger.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
-import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
+import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 
 export interface GitHubNotificationTurnSelectorDependencies {
   conversations: Pick<GitHubNotificationConversationStateStore, 'read'>;
   logger: Pick<Logger, 'warn'>;
-  turns: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
+  turns: {
+    resolve(
+      identity: GitHubNotificationTurnIdentity,
+    ): Pick<GitHubNotificationTurnDefinition, 'identity'>;
+  };
 }
 
 function normalizedAgentId(context: PluginHookAgentContext): string | undefined {
@@ -57,7 +61,7 @@ export default class GitHubNotificationTurnSelector {
         eventId: conversation.activeTurn.eventId,
         lifecycleId: conversation.lifecycleId,
         modeId: conversation.mode,
-      });
+      }).identity;
     } catch {
       this.#dependencies.logger.warn(
         'github-notifications: turn selection failed code=github-notification-turn-selection-failed',

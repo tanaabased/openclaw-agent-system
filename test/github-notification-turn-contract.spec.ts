@@ -38,7 +38,7 @@ function resolver() {
     lifecycles,
     modes,
   });
-  return new GitHubNotificationTurnContractResolver({ events, lifecycles, modes, turns });
+  return new GitHubNotificationTurnContractResolver({ turns });
 }
 
 const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;

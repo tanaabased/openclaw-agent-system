@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnCatalog, {
   GitHubNotificationTurnCatalogError,
-  githubNotificationCurrentTurnIdentity,
+  githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationSupportedTurnIdentities,
 } from '../channels/github/conversation/turn-catalog.ts';
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
@@ -43,10 +43,12 @@ describe('channels/github/conversation/turn-catalog', () => {
       definitions(),
     );
 
-    assert.deepEqual(
-      catalog.resolve(githubNotificationCurrentTurnIdentity),
-      githubNotificationCurrentTurnIdentity,
-    );
+    const definition = catalog.resolve(githubNotificationIssueWorkCommentTurnIdentity);
+
+    assert.deepEqual(definition.identity, githubNotificationIssueWorkCommentTurnIdentity);
+    assert.equal(definition.eventTurn.kind, 'model');
+    assert.equal(definition.lifecycle.id, 'issue');
+    assert.equal(definition.mode.policy.id, 'work');
     assert.throws(
       () =>
         catalog.resolve({
@@ -90,7 +92,10 @@ describe('channels/github/conversation/turn-catalog', () => {
     assert.throws(
       () =>
         new GitHubNotificationTurnCatalog(
-          [githubNotificationCurrentTurnIdentity, githubNotificationCurrentTurnIdentity],
+          [
+            githubNotificationIssueWorkCommentTurnIdentity,
+            githubNotificationIssueWorkCommentTurnIdentity,
+          ],
           definitions(),
         ),
       /Duplicate GitHub notification model turn issue:work:comment/u,
