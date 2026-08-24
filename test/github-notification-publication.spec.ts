@@ -76,9 +76,9 @@ describe('channels/github/publication/publication', () => {
     );
   });
 
-  it('should allow path references that contain no credential material', () => {
+  it('should allow harmless paths and long repository identifiers', () => {
     const text =
-      'I reviewed `/Users/runner/work/example/channels/github/publication.ts` and will update `channels/github/publication.ts`.';
+      'I reviewed `/Users/runner/work/example/channels/github/publication.ts`, will create `assignment-fixture-32681544592-1.txt`, and based the plan on commit `0123456789abcdef0123456789abcdef01234567`.';
 
     assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
   });
@@ -123,7 +123,6 @@ describe('channels/github/publication/publication', () => {
       ['OPENAI_API_KEY=value', 'environment-assignment'],
       ['See @pirog.', 'mention'],
       ['Token ghp_abcdef', 'credential-prefix'],
-      ['Token abcdefghijklmnopqrstuvwxyz123456', 'token-shape'],
     ] as const) {
       assert.throws(
         () => githubNotificationPublicationText('github-reply', [{ text }]),
