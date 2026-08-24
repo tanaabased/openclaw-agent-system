@@ -15,6 +15,9 @@ jobs:
     name: ${{ matrix.scenario }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    concurrency:
+      group: openai-live-tests-${{ matrix.model-slot }}
+      queue: max
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -29,8 +32,21 @@ jobs:
           - issue-work-comment
           - issue-work-retirement
         include:
+          - os: ubuntu-24.04
+            scenario: issue-work-implementation
+            model-slot: 1
+          - os: ubuntu-24.04
+            scenario: issue-work-pull-request
+            model-slot: 2
+          - os: ubuntu-24.04
+            scenario: issue-work-comment
+            model-slot: 1
+          - os: ubuntu-24.04
+            scenario: issue-work-retirement
+            model-slot: 1
           - os: macos-26
             scenario: issue-work-assignment
+            model-slot: 2
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
