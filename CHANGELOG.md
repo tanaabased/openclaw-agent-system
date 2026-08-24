@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Separated CI-only GitHub notification acceptance scenarios from general Leia examples with independent workflow and check identities. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake.
 - Added linked GitHub assignment cards, varied acknowledgments, active user-centric Work plans, and durable private implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation while keeping worktree checkpoints and comment reconciliation independent from response failures. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
