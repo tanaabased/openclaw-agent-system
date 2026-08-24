@@ -11,8 +11,10 @@ const prompt = [
   'Before your final response, call `agent_system_github_reply` exactly once',
 ].join('\n');
 
-describe('github notification model proof evidence', () => {
-  it('normalizes one strict tool loop into stable evidence', () => {
+describe('scripts/github-notification-model-proof-evidence', () => {
+  it('should normalize one strict tool loop across accepted responses paths', () => {
+    assert.match(githubNotificationModelProofCallId, /^call_[A-Za-z0-9_-]{1,59}$/u);
+
     const evidence = githubNotificationModelProofEvidence([
       {
         body: {
@@ -21,7 +23,7 @@ describe('github notification model proof evidence', () => {
           tools: [{ function: { name: 'agent_system_github_reply' } }],
         },
         method: 'POST',
-        path: '/v1/responses',
+        path: '/responses',
         response: {
           fixture: {
             response: {
@@ -74,12 +76,12 @@ describe('github notification model proof evidence', () => {
     });
   });
 
-  it('reports unmatched requests without inventing successful proof signals', () => {
+  it('should report unmatched requests without inventing successful proof signals', () => {
     const evidence = githubNotificationModelProofEvidence([
       {
         body: { messages: [], model: 'unexpected-model', tools: [] },
         method: 'POST',
-        path: '/v1/responses',
+        path: '/responses',
         response: { fixture: null, status: 503 },
       },
     ]);

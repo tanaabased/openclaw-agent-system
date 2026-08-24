@@ -1,4 +1,4 @@
-export const githubNotificationModelProofCallId = 'agent-system-notification-proof-reply';
+export const githubNotificationModelProofCallId = 'call_agent_system_notification_proof_reply';
 
 export const githubNotificationModelProofCandidate =
   "This issue needs a deterministic notification test that keeps the real OpenClaw and GitHub lifecycle while removing live model variability. I'm going to prove the assignment turn with a fixed mock tool call and response, repeat the evidence in isolation, and document the supported boundary to resolve the issue.";
@@ -125,7 +125,8 @@ export default function githubNotificationModelProofEvidence(
     ).length,
     requestCount: requests.length,
     responsesApiRequestCount: requests.filter(
-      (entry) => entry.method === 'POST' && entry.path === '/v1/responses',
+      (entry) =>
+        entry.method === 'POST' && (entry.path === '/responses' || entry.path === '/v1/responses'),
     ).length,
     schemaVersion: 1,
     strictMissCount: requests.filter((entry) => entry.response.fixture === null).length,
