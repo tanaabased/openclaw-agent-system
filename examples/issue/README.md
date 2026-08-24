@@ -152,7 +152,6 @@ responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent noti
 response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
-jq -e '.body | test("I.m going to|I will|I.ll"; "i")' <<< "$response"
 
 # should leave the planning-only assignment worktree unchanged
 cd "$TMPDIR/agent-system-notifications"
@@ -165,7 +164,7 @@ status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notifi
 test -z "$status"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD > "$TMPDIR/implementation-base-sha"
 
-# should complete the next reconciliation for the published work plan
+# should complete the next reconciliation and create the assignment fixture
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 refresh_result="$(
@@ -177,6 +176,8 @@ refresh_result="$(
     --timeout 420
 )"
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"
+test -f "$worktree_path/assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
 
 # should commit only the validated assignment fixture
 cd "$TMPDIR/agent-system-notifications"

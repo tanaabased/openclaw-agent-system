@@ -11,6 +11,7 @@
 
 ### Bug Fixes
 
+- Fixed Work assignment continuation to use trusted lifecycle state instead of parsing model-authored report headings. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths.
 
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)

@@ -111,13 +111,13 @@ function implementationResult(): GitHubNotificationModelTurnCoordinatorResult {
   };
 }
 
-function questionResult(): GitHubNotificationModelTurnCoordinatorResult {
+function unstructuredPlanResult(): GitHubNotificationModelTurnCoordinatorResult {
   return {
     ...candidateResult(),
     privateText:
-      '## Assessment\n\nThe requested outcome is unclear.\n\n## Questions\n\nWhich fixture should be added?',
+      'The user needs the missing fixture. I will add the exact file, validate it, and keep the change scoped.',
     publication: {
-      publicText: 'I need to confirm which fixture you want before I can plan this safely.',
+      publicText: "The fixture is missing. I'm going to add and validate it to resolve the issue.",
       status: 'candidate',
     },
   };
@@ -416,8 +416,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
     });
   });
 
-  it('should not schedule implementation for published blocking questions', async () => {
-    const scenario = harness({ assignmentResult: questionResult() });
+  it('should schedule implementation without parsing model-authored report formatting', async () => {
+    const scenario = harness({ assignmentResult: unstructuredPlanResult() });
 
     await scenario.prepare();
     await scenario.prepare();
@@ -425,15 +425,17 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 2,
       assignmentTurns: 1,
-      deliveries: 0,
-      implementationTurns: 0,
+      deliveries: 1,
+      implementationTurns: 1,
       publications: 1,
     });
     assert.equal(
       scenario.state().conversations[conversationId]?.assignmentResponse?.status,
       'published',
     );
-    assert.equal(scenario.state().conversations[conversationId]?.implementation, undefined);
+    assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
+      status: 'completed',
+    });
   });
 
   it('should checkpoint a withheld response without publication', async () => {

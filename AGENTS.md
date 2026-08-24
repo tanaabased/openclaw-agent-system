@@ -76,6 +76,7 @@
 
 - Test `validate` as deterministic and side-effect free, `doctor` as read-only inspection, and `install` as explicit reconciliation with unchanged outcomes.
 - Assert exact values only for stable public, schema, and security contracts. For human messages and logs, assert semantic signal and stable diagnostic codes.
+- Never derive lifecycle state, scheduling, authorization, or deterministic test control from model-authored prose, headings, or formatting. Use trusted structured state for transitions; live Leia may assert bounded publication envelopes and durable side effects, not exact model wording.
 - Fake injected OpenClaw, 1Password, GitHub CLI, and remote boundaries in unit tests. Do not re-test third-party behavior or rely on network, timing, or live host state in the default suite.
 - Use `tanaabased/big-test-bucket` as the default hosted repository for manual and GitHub-backed tests that can use a Tanaab organization repository.
 - Use `pirog/me` only when a test specifically requires a non-organization, user-owned repository.

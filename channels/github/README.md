@@ -27,9 +27,10 @@ part of the response.
   OpenClaw lifecycle session. The session begins with a compact assignment card,
   then the channel publishes one deterministic, varied acknowledgment before
   running the registered `issue`, `work`, and `assignment` turn. The turn keeps
-  its private assessment and plan or blocking questions in the session and may
-  publish one bounded conversational response. A published plan registers a
-  pending `issue`, `work`, and `implementation` turn. The next reconciliation
+  its private assessment and plan in the session and may publish one bounded
+  conversational response. A valid published assignment response deterministically
+  registers a pending `issue`, `work`, and `implementation` turn from trusted
+  tuple state rather than model-authored report formatting. The next reconciliation
   carries out the plan and validates it in the same session and worktree, then
   creates one local commit without publishing another GitHub response. Durable
   lifecycle delivery prepends the trusted issue number to that commit, performs
@@ -223,10 +224,9 @@ reference.
   `work`, and `assignment`, `implementation`, or `comment` combination; its
   registry rejects unsupported combinations, and the trusted Work policy
   requires the configured `coding` profile.
-- When material information is missing, assignment instructions tell the agent
-  to ask the smallest complete set of blocking questions and stop. A later
-  admitted comment resumes the same session; no separate clarification phase is
-  persisted.
+- The current Work assignment slice requires an implementation-ready plan and
+  does not yet expose a clarification pause as a structured lifecycle outcome.
+  The target clarification behavior remains documented in `DESIGN.md`.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the exact source author and destination before loading credentials, substitutes
   only that verified commenter mention, and publishes idempotently. Assignment

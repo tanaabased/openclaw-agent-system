@@ -137,10 +137,6 @@ function modelTurnContext(input: ModelTurnContextInput) {
   });
 }
 
-function privateAssignmentContainsPlan(privateText: string): boolean {
-  return /^## Plan\s*$/mu.test(privateText) && !/^## Questions\s*$/mu.test(privateText);
-}
-
 /** Prepare and run one lifecycle assignment through the shared model-turn boundary. */
 export default class GitHubNotificationAssignmentSessionService {
   readonly #dependencies: GitHubNotificationAssignmentSessionServiceDependencies;
@@ -250,13 +246,7 @@ export default class GitHubNotificationAssignmentSessionService {
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       sourceId: assignmentEventId,
     });
-    await this.#checkpointResponse(
-      input,
-      conversationId,
-      assignmentEventId,
-      turn.privateText,
-      turn.publication,
-    );
+    await this.#checkpointResponse(input, conversationId, assignmentEventId, turn.publication);
     if (turn.publication.status === 'candidate') {
       await this.#publish(input.agentId, conversationId, input.signal);
     }
@@ -384,7 +374,6 @@ export default class GitHubNotificationAssignmentSessionService {
     input: GitHubNotificationAssignmentSessionInput,
     conversationId: string,
     assignmentEventId: string,
-    privateText: string,
     publication: Awaited<ReturnType<GitHubNotificationModelTurnCoordinator['run']>>['publication'],
   ): Promise<void> {
     const { conversation, state } = await this.#conversation(input, conversationId);
@@ -415,7 +404,7 @@ export default class GitHubNotificationAssignmentSessionService {
     const updatedConversation = next.conversations[conversationId]!;
     delete updatedConversation.activeTurn;
     updatedConversation.assignmentResponse = response;
-    if (publication.status === 'candidate' && privateAssignmentContainsPlan(privateText)) {
+    if (publication.status === 'candidate') {
       updatedConversation.implementation = { status: 'pending' };
     }
     await this.#dependencies.conversationStateStore.write(next);

@@ -96,15 +96,9 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.match(contract.instructions, /implementation-ready plan/u);
     assert.match(contract.instructions, /Do not call agent_system_git_worktree/u);
     assert.match(contract.instructions, /Do not create, edit, move, or delete files/u);
-    assert.match(
-      contract.instructions,
-      /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
-    );
+    assert.match(contract.instructions, /using `## Assessment` followed by `## Plan`/u);
     assert.match(contract.instructions, /concise, conversational GitHub comment/u);
-    assert.match(
-      contract.instructions,
-      /smallest complete set of currently known blocking questions/u,
-    );
+    assert.match(contract.instructions, /does not pause for clarification questions/u);
     assert.match(contract.instructions, /Use forward-looking language/u);
     assert.match(contract.instructions, /active first-person commitment/u);
     assert.match(contract.instructions, /resolve or complete the issue/u);
