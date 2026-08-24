@@ -92,7 +92,7 @@ openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/big-test-bucket \
   --title "add assignment fixture file $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
-  --body "Add a root file named assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt containing exactly: assignment fixture ready. Do not change any other files." \
+  --body "Create assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment fixture ready." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 

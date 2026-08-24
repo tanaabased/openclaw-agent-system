@@ -184,12 +184,13 @@ but publication never depends on that rendering.
 
 The GitHub-facing candidate is a conversational comment, not a report. It may
 use GitHub-flavored Markdown when structure improves clarity, while deterministic
-publication validation continues to reject secrets, credentials, local paths,
-hidden context, and literal model-authored mentions. The model may place the
-reserved `{{commenter}}` token once wherever addressing the source author reads
-naturally. After exact-source reauthorization, the publisher substitutes only
-that provider-verified login. If the token is omitted, publication prefixes the
-same trusted mention as a deterministic fallback.
+publication validation continues to reject secrets, credentials, hidden context,
+and literal model-authored mentions. File references should use
+repository-relative paths instead of absolute worktree paths. The model may
+place the reserved `{{commenter}}` token once wherever addressing the source
+author reads naturally. After exact-source reauthorization, the publisher
+substitutes only that provider-verified login. If the token is omitted,
+publication prefixes the same trusted mention as a deterministic fallback.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
@@ -246,7 +247,7 @@ selection fails closed instead of falling back to a different prompt.
   text without model regeneration.
 
 Private responses, structured context, hidden instructions, tool output,
-credentials, and local paths remain outside GitHub publication.
+credentials, and private machine details remain outside GitHub publication.
 
 ## Implementation Map
 

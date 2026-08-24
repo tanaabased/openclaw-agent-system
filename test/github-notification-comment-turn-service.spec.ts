@@ -381,6 +381,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     assert.deepEqual(result.publication, {
       status: 'withheld',
       code: 'github-notification-publication-secret-safety-rejected',
+      safetyCategory: 'mention',
     });
   });
 });

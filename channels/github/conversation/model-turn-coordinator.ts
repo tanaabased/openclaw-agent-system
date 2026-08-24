@@ -9,6 +9,7 @@ import {
 import {
   GitHubNotificationPublicationError,
   githubNotificationPublicationText,
+  type GitHubNotificationPublicationSafetyCategory,
 } from '../publication/publication.ts';
 import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
@@ -18,7 +19,12 @@ import { githubNotificationPrivateResponse } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
-  { status: 'candidate'; publicText: string } | { status: 'withheld'; code: string };
+  | { status: 'candidate'; publicText: string }
+  | {
+      status: 'withheld';
+      code: string;
+      safetyCategory?: GitHubNotificationPublicationSafetyCategory;
+    };
 
 export type GitHubNotificationModelTurnCoordinatorErrorCode =
   | 'github-notification-model-turn-prompt-selection-missing'
@@ -88,6 +94,9 @@ function publication(
         error instanceof GitHubNotificationPublicationError
           ? error.code
           : 'github-notification-publication-validation-failed',
+      ...(error instanceof GitHubNotificationPublicationError && error.safetyCategory
+        ? { safetyCategory: error.safetyCategory }
+        : {}),
     };
   }
 }
@@ -207,6 +216,9 @@ export default class GitHubNotificationModelTurnCoordinator {
       `candidates=${publicCandidates.length}`,
       `publication=${responsePublication.status}`,
       ...(responsePublication.status === 'withheld' ? [`code=${responsePublication.code}`] : []),
+      ...(responsePublication.status === 'withheld' && responsePublication.safetyCategory
+        ? [`safety=${responsePublication.safetyCategory}`]
+        : []),
       `aborted=${Boolean(input.signal?.aborted)}`,
       `duration-ms=${Date.now() - startedAt}`,
     ].join(' ');

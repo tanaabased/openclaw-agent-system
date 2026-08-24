@@ -191,6 +191,44 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
+  it('should report a value-free publication safety category', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return ['See @pirog for the private result.'];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
+            finalPayloads: [{ text: 'Complete private response.' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    assert.deepEqual((await coordinator.run(input())).publication, {
+      code: 'github-notification-publication-secret-safety-rejected',
+      safetyCategory: 'mention',
+      status: 'withheld',
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /publication=withheld code=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
+    );
+    assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
+  });
+
   it('should classify a missing prompt-selection attestation', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {

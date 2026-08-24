@@ -14,6 +14,9 @@ export const githubNotificationCommenterToken = '{{commenter}}';
 export type GitHubNotificationPublicationIntent =
   'assignment-response' | 'github-reply' | 'initial-acknowledgment';
 
+export type GitHubNotificationPublicationSafetyCategory =
+  'credential-prefix' | 'environment-assignment' | 'mention' | 'redaction' | 'token-shape';
+
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'assignment-response',
   'github-reply',
@@ -23,13 +26,16 @@ const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
 export class GitHubNotificationPublicationError extends Error {
   override name = 'GitHubNotificationPublicationError';
 
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly safetyCategory?: GitHubNotificationPublicationSafetyCategory,
+  ) {
     super('The GitHub notification message was not safe to publish.');
   }
 }
 
-function reject(code: string): never {
-  throw new GitHubNotificationPublicationError(code);
+function reject(code: string, safetyCategory?: GitHubNotificationPublicationSafetyCategory): never {
+  throw new GitHubNotificationPublicationError(code, safetyCategory);
 }
 
 function intent(value: string): GitHubNotificationPublicationIntent {
@@ -70,15 +76,16 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
   ) {
     reject('github-notification-publication-commenter-token-invalid');
   }
-  if (
-    redactSensitiveText(text) !== text ||
-    /\b[A-Z][A-Z0-9_]{2,}=|@[A-Za-z0-9]/iu.test(text) ||
-    /(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-|AKIA)[A-Za-z0-9_-]+/u.test(text) ||
-    /\b[A-Za-z0-9_=-]{32,}\b/u.test(text) ||
-    /(?:^|\s)(?:~?\/|[A-Za-z]:\\|file:)|\/(?:Users|home)\/|\\\\/u.test(text)
-  ) {
-    reject('github-notification-publication-secret-safety-rejected');
+  const secretSafetyCode = 'github-notification-publication-secret-safety-rejected';
+  if (/\b[A-Z][A-Z0-9_]{2,}=/u.test(text)) {
+    reject(secretSafetyCode, 'environment-assignment');
   }
+  if (/@[A-Za-z0-9]/iu.test(text)) reject(secretSafetyCode, 'mention');
+  if (/(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-|AKIA)[A-Za-z0-9_-]+/u.test(text)) {
+    reject(secretSafetyCode, 'credential-prefix');
+  }
+  if (/\b[A-Za-z0-9_=-]{32,}\b/u.test(text)) reject(secretSafetyCode, 'token-shape');
+  if (redactSensitiveText(text) !== text) reject(secretSafetyCode, 'redaction');
   return text;
 }
 

@@ -46,9 +46,10 @@ and publishes the accepted public part of the response.
   responses are withheld without discarding the private response.
 - Public replies are concise conversational comments and may use GitHub-flavored
   Markdown when it improves clarity. Publication still rejects secrets,
-  credentials, local paths, hidden context, and literal model-authored mentions.
-  The model can position one reserved commenter placeholder naturally; after
-  exact-source reauthorization, Agent System replaces it with the verified
+  credentials, hidden context, and literal model-authored mentions. File
+  references should use repository-relative paths instead of absolute worktree
+  paths. The model can position one reserved commenter placeholder naturally;
+  after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
 - Pull-request comments, Plan and Auto modes, mode transitions, implementation
   after the initial assignment plan, and chat-originated publication remain

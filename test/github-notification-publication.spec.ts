@@ -76,6 +76,13 @@ describe('channels/github/publication/publication', () => {
     );
   });
 
+  it('should allow path references that contain no credential material', () => {
+    const text =
+      'I reviewed `/Users/runner/work/example/channels/github/publication.ts` and will update `channels/github/publication.ts`.';
+
+    assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
+  });
+
   it('should substitute the verified commenter wherever the reserved token reads naturally', () => {
     assert.equal(
       githubNotificationAttributedReplyText(
@@ -111,6 +118,24 @@ describe('channels/github/publication/publication', () => {
     );
   });
 
+  it('should classify secret safety rejections without retaining candidate text', () => {
+    for (const [text, safetyCategory] of [
+      ['OPENAI_API_KEY=value', 'environment-assignment'],
+      ['See @pirog.', 'mention'],
+      ['Token ghp_abcdef', 'credential-prefix'],
+      ['Token abcdefghijklmnopqrstuvwxyz123456', 'token-shape'],
+    ] as const) {
+      assert.throws(
+        () => githubNotificationPublicationText('github-reply', [{ text }]),
+        (error: unknown) =>
+          error instanceof GitHubNotificationPublicationError &&
+          error.code === 'github-notification-publication-secret-safety-rejected' &&
+          error.safetyCategory === safetyCategory &&
+          !error.message.includes(text),
+      );
+    }
+  });
+
   it('should reject unsupported shapes and secret-sensitive text', () => {
     assert.throws(
       () =>
@@ -141,13 +166,6 @@ describe('channels/github/publication/publication', () => {
           error.code === 'github-notification-publication-commenter-token-invalid',
       );
     }
-    assert.throws(
-      () =>
-        githubNotificationPublicationText('github-reply', [
-          { text: 'Read `/Users/pirog/private.txt`.' },
-        ]),
-      /not safe to publish/u,
-    );
     assert.throws(
       () => githubNotificationPublicationText('github-reply', [{ mediaUrl: '/tmp/result.png' }]),
       /not safe to publish/u,
