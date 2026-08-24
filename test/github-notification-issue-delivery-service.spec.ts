@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubNotificationIssueDeliveryService from '../channels/github/conversation/issue-delivery-service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import type { GitToolConfiguration } from '../tools/git/config-schema.ts';
+import { classifyGitOperation } from '../tools/git/operation-classifier.ts';
+import { authorizeGitOperation } from '../tools/git/policy.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 const agentId = 'tanaabot';
@@ -15,6 +18,7 @@ const manifest: AgentManifest = {
   github: { token: 'GITHUB_TOKEN', username: 'tanaabot' },
   schemaVersion: 1,
 };
+const gitConfiguration: GitToolConfiguration = { agent: {}, git: {} };
 
 function cliResult(stdout = ''): AgentSystemCliResult {
   return { exitCode: 0, stderr: '', stdout, timedOut: false, truncated: false };
@@ -90,13 +94,18 @@ function serviceHarness(
     },
     git: {
       async execute(input) {
+        assert.deepEqual(
+          await authorizeGitOperation(classifyGitOperation({ argv: input.argv }), gitConfiguration),
+          { status: 'allowed' },
+          input.argv.join(' '),
+        );
         gitRequests.push({
           argv: input.argv,
           ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
           workspaceDir: input.workspaceDir,
         });
         const command = input.argv[0];
-        if (command === 'symbolic-ref') return cliResult(`${worktree.branch}\n`);
+        if (command === 'branch') return cliResult(`${worktree.branch}\n`);
         if (command === 'status') return cliResult();
         if (command === 'rev-list') return cliResult('1\n');
         if (command === 'rev-parse') return cliResult(`${amended ? normalizedSha : originalSha}\n`);

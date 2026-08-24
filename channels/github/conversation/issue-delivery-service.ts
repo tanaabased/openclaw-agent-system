@@ -145,7 +145,7 @@ export default class GitHubNotificationIssueDeliveryService {
     if (input.item.lifecycleId !== 'issue' || input.item.itemType !== 'issue') {
       throw new Error('Issue delivery requires an issue lifecycle item.');
     }
-    const branch = (await this.#git(input, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+    const branch = (await this.#git(input, ['branch', '--show-current'])).trim();
     if (branch !== input.worktree.branch) {
       throw new Error('The implementation worktree is not on its lifecycle-managed branch.');
     }

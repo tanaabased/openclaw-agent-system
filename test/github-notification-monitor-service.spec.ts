@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import AgentSystemToolError from '../api/error.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../channels/github/intake/assignment-orchestrator.ts';
@@ -186,9 +187,16 @@ describe('channels/github/intake/monitor/service', () => {
           operations.push('assignment-response');
           executionSurfaces.push(executionSurface ?? 'missing');
           controller.abort();
-          throw Object.assign(new Error('private assignment response failure'), {
-            code: 'github-notification-model-turn-dispatch-failed',
-          });
+          throw new GitHubNotificationAssignmentOrchestratorError(
+            'github-notification-assignment-session-recording-failed',
+            'The assignment response could not be reconciled.',
+            {
+              cause: new AgentSystemToolError(
+                'operation_unclassified',
+                'private assignment response failure',
+              ),
+            },
+          );
         },
       },
       clock: () => 1_000,
@@ -217,7 +225,13 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(executionSurfaces, ['cli-one-shot']);
     assert.deepEqual(commentExecutions, ['cli-one-shot']);
     assert.deepEqual(operations, ['comment', 'assignment-response']);
-    assert.ok(warnings.some((message) => message.includes('model-turn-dispatch-failed')));
+    assert.ok(
+      warnings.some(
+        (message) =>
+          message.includes('github-notification-assignment-session-recording-failed') &&
+          message.includes('causeCode=operation_unclassified'),
+      ),
+    );
     assert.ok(
       warnings.every((message) => !message.includes('private assignment response failure')),
     );

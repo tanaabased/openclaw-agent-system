@@ -2,6 +2,7 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 
+import AgentSystemToolError from '../../../../api/error.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
 import {
   GitHubAccountClientError,
@@ -101,6 +102,11 @@ function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
     return { code: error.code };
   }
   return { code: 'github-notification-monitor-failed' };
+}
+
+function toolCauseCode(error: unknown): string | undefined {
+  const cause = error instanceof Error ? error.cause : undefined;
+  return cause instanceof AgentSystemToolError ? cause.code : undefined;
 }
 
 function matchesSelector(
@@ -557,8 +563,9 @@ export default class GitHubNotificationMonitorService {
         );
       } catch (error) {
         const diagnostic = diagnosticCode(error);
+        const causeCode = toolCauseCode(error);
         this.#dependencies.logger.warn(
-          `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}`,
+          `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
         );
       }
     }
