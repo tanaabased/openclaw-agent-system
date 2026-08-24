@@ -17,6 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The live issue example stays paused while #49 and #50 establish deterministic notification coverage.
         os:
           - macos-26
           - ubuntu-24.04
@@ -35,9 +36,6 @@ jobs:
           - routing
           - tool
           - security
-        include:
-          - os: macos-26
-            example: issue
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

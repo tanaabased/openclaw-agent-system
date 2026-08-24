@@ -1,8 +1,9 @@
 name: Notification tests
 
-run-name: notifications / ${{ inputs.lifecycle }} / ${{ inputs.mode }} / ${{ inputs.scenario }}
+run-name: ${{ github.event_name == 'pull_request' && format('notifications / pr {0} / issue / work / assignment-provider-proof', github.event.pull_request.number) || format('notifications / {0} / {1} / {2}', inputs.lifecycle, inputs.mode, inputs.scenario) }}
 
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       lifecycle:
@@ -26,6 +27,7 @@ on:
         default: all
         options:
           - assignment
+          - assignment-provider-proof
           - implementation
           - pr
           - comment
@@ -41,17 +43,32 @@ env:
 
 jobs:
   notifications:
-    name: ${{ inputs.lifecycle }}-${{ inputs.mode }}-${{ matrix.scenario }} (ubuntu-24.04)
+    name: ${{ format('{0}-{1}-{2}{3} (ubuntu-24.04)', matrix.lifecycle, matrix.mode, matrix.scenario, matrix.repeat == 2 && '-repeat-2' || '') }}
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
-      group: openai-live-tests-${{ (matrix.scenario == 'assignment' || matrix.scenario == 'pr') && '2' || '1' }}
+      group: ${{ matrix.scenario == 'assignment-provider-proof' && 'aimock-notification-proof' || format('openai-live-tests-{0}', (matrix.scenario == 'assignment' || matrix.scenario == 'pr') && '2' || '1') }}
       queue: max
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        lifecycle: ${{ github.event_name == 'pull_request' && fromJSON('["issue"]') || fromJSON(format('["{0}"]', inputs.lifecycle)) }}
+        mode: ${{ github.event_name == 'pull_request' && fromJSON('["work"]') || fromJSON(format('["{0}"]', inputs.mode)) }}
+        scenario: ${{ github.event_name == 'pull_request' && fromJSON('["assignment-provider-proof"]') || inputs.scenario == 'all' && fromJSON('["assignment","assignment-provider-proof","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        repeat: ${{ (github.event_name == 'pull_request' || inputs.scenario == 'all' || inputs.scenario == 'assignment-provider-proof') && fromJSON('[1,2]') || fromJSON('[1]') }}
+        exclude:
+          - scenario: assignment
+            repeat: 2
+          - scenario: implementation
+            repeat: 2
+          - scenario: pr
+            repeat: 2
+          - scenario: comment
+            repeat: 2
+          - scenario: retirement
+            repeat: 2
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -97,7 +114,8 @@ jobs:
           archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
           test -n "$archive_name"
           echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
-      - name: Run Leia-backed notification scenario
+      - name: Run live Leia-backed notification scenario
+        if: matrix.scenario != 'assignment-provider-proof'
         shell: bash
         env:
           DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
@@ -111,8 +129,27 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-        run: bun run leia "scenarios/${{ inputs.lifecycle }}-${{ inputs.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
+        run: bun run leia "scenarios/${{ matrix.lifecycle }}-${{ matrix.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
+      - name: Run mock-provider Leia-backed notification proof
+        if: matrix.scenario == 'assignment-provider-proof'
+        shell: bash
+        env:
+          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
+          DEFAULT_CREDENTIAL_STORE: secret-service
+          NOTIFICATION_PROOF_REPEAT: ${{ matrix.repeat }}
+          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
+          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
+          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
+        run: bun run leia "scenarios/${{ matrix.lifecycle }}-${{ matrix.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
-        run: openclaw-diagnostics
+        run: |
+          openclaw-diagnostics
+          if test -f "$RUNNER_TEMP/notification-model-proof.log"; then
+            tail -n 120 "$RUNNER_TEMP/notification-model-proof.log" >&2
+          fi
