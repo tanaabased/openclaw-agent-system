@@ -38,11 +38,11 @@ describe('channels/github/events/presentation', () => {
 
   it('should render the private implementation continuation through the shared card grammar', () => {
     assert.equal(
-      githubNotificationImplementationCard(),
+      githubNotificationImplementationCard(12),
       [
         '## 🛠️ Implementation started',
         '',
-        'The public plan is published. Carry it out now in `work` mode.',
+        'The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
       ].join('\n'),
     );
   });

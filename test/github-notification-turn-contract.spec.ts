@@ -131,15 +131,20 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.match(contract.instructions, /Do not call agent_system_git_worktree/u);
     assert.match(contract.instructions, /use agent_system_git/u);
     assert.match(contract.instructions, /prepared worktree path as cwd on every call/u);
-    assert.match(contract.instructions, /create exactly one commit/u);
-    assert.match(contract.instructions, /`#<issue-number>:`/u);
-    assert.match(contract.instructions, /ordinary non-force upstream tracking/u);
+    assert.match(contract.instructions, /create exactly one local commit/u);
+    assert.match(contract.instructions, /concise natural commit message/u);
+    assert.match(contract.instructions, /lifecycle will prepend its trusted issue number/u);
+    assert.match(contract.instructions, /perform the first ordinary push/u);
     assert.match(contract.instructions, /Do not use exec or direct git commands/u);
-    assert.match(contract.instructions, /force push, delete remote refs, open a pull request/u);
+    assert.match(contract.instructions, /push or delete remote refs/u);
+    assert.match(contract.instructions, /open or update a pull request/u);
     assert.match(contract.instructions, /Do not call `agent_system_github_reply`/u);
     assert.match(contract.instructions, /`## Implementation`/u);
     assert.match(contract.instructions, /`## Validation`/u);
     assert.match(contract.instructions, /`## Delivery`/u);
-    assert.match(contract.instructions, /Do not claim a pull request or GitHub publication/u);
+    assert.match(
+      contract.instructions,
+      /Do not claim a push, pull request, or GitHub publication/u,
+    );
   });
 });

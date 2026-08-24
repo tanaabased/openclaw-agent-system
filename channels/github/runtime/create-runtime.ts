@@ -10,6 +10,9 @@ import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import GitHubNotificationIssueDeliveryService, {
+  type GitHubNotificationGitExecutor,
+} from '../conversation/issue-delivery-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
@@ -144,7 +147,7 @@ export default function createGitHubNotificationRuntime(
       },
     },
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
-    assemble(manifestService: AgentManifestService) {
+    assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
       const assignmentProvider = new GitHubNotificationAssignmentProvider({
         accountClient: dependencies.accountClient,
         manifestService,
@@ -168,6 +171,11 @@ export default function createGitHubNotificationRuntime(
         acknowledgments: assignmentAcknowledgmentService,
         conversationStateStore,
         coordinator: turnCoordinator,
+        deliveries: new GitHubNotificationIssueDeliveryService({
+          accountClient: dependencies.accountClient,
+          git,
+          manifestService,
+        }),
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,

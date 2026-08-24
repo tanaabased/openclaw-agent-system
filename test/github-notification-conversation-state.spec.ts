@@ -27,7 +27,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 5,
+      schemaVersion: 6,
     });
   });
 
@@ -50,7 +50,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 5,
+      schemaVersion: 6,
     });
   });
 
@@ -72,7 +72,7 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
-      schemaVersion: 5,
+      schemaVersion: 6,
     });
   });
 
@@ -94,7 +94,42 @@ describe('channels/github/conversation/conversation-state', () => {
 
     assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
       ...legacy,
+      schemaVersion: 6,
+    });
+  });
+
+  it('should migrate completed implementation state without inventing delivery receipts', () => {
+    const legacy = {
+      agentId: 'notification-data',
+      conversations: {
+        'github:issue:R_repo:12': {
+          assignmentResponse: {
+            commentDatabaseId: 44,
+            commentNodeId: 'IC_assignment-response',
+            publicText: 'I have a plan.',
+            publicTextDigest: githubNotificationPublicTextDigest('I have a plan.'),
+            status: 'published',
+            target: githubNotificationPublicationTarget({
+              intent: 'assignment-response',
+              item: approvedNotificationItem(),
+              publicationId: 'EV_assignment',
+            }),
+          },
+          baselineEstablished: true,
+          implementation: { status: 'completed' },
+          itemKey: 'github:R_repo:12',
+          lifecycleId: 'issue',
+          mode: 'work',
+          revisions: {},
+        },
+      },
       schemaVersion: 5,
+      workspaceDir: '/workspace',
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
+      ...legacy,
+      schemaVersion: 6,
     });
   });
 
@@ -194,7 +229,9 @@ describe('channels/github/conversation/conversation-state', () => {
     };
 
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
-    state.conversations['github:issue:R_repo:12']!.implementation = { status: 'completed' };
+    state.conversations['github:issue:R_repo:12']!.implementation = {
+      status: 'delivery-pending',
+    };
     assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
     const response = state.conversations['github:issue:R_repo:12']!.assignmentResponse;
     if (response?.status !== 'pending') throw new Error('missing pending assignment response');
@@ -203,6 +240,10 @@ describe('channels/github/conversation/conversation-state', () => {
       commentDatabaseId: 44,
       commentNodeId: 'IC_assignment-response',
       status: 'published',
+    };
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+    state.conversations['github:issue:R_repo:12']!.implementation = {
+      status: 'completed',
     };
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
     (

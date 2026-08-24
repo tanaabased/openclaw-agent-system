@@ -2,7 +2,7 @@ import { isAbsolute, relative } from 'node:path';
 
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
-import type { AgentSystemCliResult } from '../../api/types.ts';
+import type { AgentSystemCliResult, AgentSystemCliToolDefinition } from '../../api/types.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 import resolveGitAllowedSignersFile from './allowed-signers-file.ts';
 import type {
@@ -203,9 +203,16 @@ function readConfiguration(manifest: AgentManifest): GitToolConfiguration | unde
   };
 }
 
-/** Define the fixed-executable Git tool over one agent-scoped identity. */
-export function createGitTool(dependencies: GitToolDependencies = {}) {
-  return defineAgentSystemCliTool({
+/** Build the fixed-executable Git definition shared by model and trusted lifecycle calls. */
+export function createGitToolDefinition(
+  dependencies: GitToolDependencies = {},
+): AgentSystemCliToolDefinition<
+  typeof gitToolSchema,
+  GitToolConfiguration,
+  ResolvedGitConfiguration,
+  GitCommandResult
+> {
+  return {
     apiVersion: 1,
     id: 'git',
     authorization: {
@@ -315,5 +322,12 @@ export function createGitTool(dependencies: GitToolDependencies = {}) {
       parameters: gitToolSchema,
       validate: validateInput,
     },
-  });
+  };
+}
+
+export type GitToolDefinition = ReturnType<typeof createGitToolDefinition>;
+
+/** Define the fixed-executable Git tool over one agent-scoped identity. */
+export function createGitTool(dependencies: GitToolDependencies = {}) {
+  return defineAgentSystemCliTool(createGitToolDefinition(dependencies));
 }

@@ -4,6 +4,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import GitHubNotificationAssignmentSessionService from '../channels/github/conversation/assignment-session-service.ts';
+import type { GitHubNotificationIssueDeliveryInput } from '../channels/github/conversation/issue-delivery-service.ts';
 import {
   createGitHubNotificationConversationState,
   type GitHubNotificationConversationState,
@@ -72,6 +73,9 @@ const input = {
   workspaceDir,
   worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
 };
+const deliveryReceipt = {
+  pullRequestNumber: 45,
+};
 
 function initialState(): GitHubNotificationConversationState {
   const state = createGitHubNotificationConversationState(agentId, workspaceDir);
@@ -122,10 +126,12 @@ function questionResult(): GitHubNotificationModelTurnCoordinatorResult {
 interface HarnessOptions {
   assignmentFailures?: number;
   assignmentResult?: GitHubNotificationModelTurnCoordinatorResult;
+  deliveryFailures?: number;
   initialActiveTurn?: GitHubNotificationConversationState['conversations'][string]['activeTurn'];
   implementationFailures?: number;
   publicationFailures?: number;
   verifyAssignment?(input: GitHubNotificationModelTurnCoordinatorInput): void;
+  verifyDelivery?(input: GitHubNotificationIssueDeliveryInput): void;
   verifyImplementation?(input: GitHubNotificationModelTurnCoordinatorInput): void;
 }
 
@@ -137,6 +143,7 @@ function harness(options: HarnessOptions = {}) {
   const counts = {
     acknowledgments: 0,
     assignmentTurns: 0,
+    deliveries: 0,
     implementationTurns: 0,
     publications: 0,
   };
@@ -177,6 +184,16 @@ function harness(options: HarnessOptions = {}) {
           throw new Error('implementation turn interrupted');
         }
         return implementationResult();
+      },
+    },
+    deliveries: {
+      async deliver(deliveryInput) {
+        counts.deliveries += 1;
+        options.verifyDelivery?.(deliveryInput);
+        if (counts.deliveries <= (options.deliveryFailures ?? 0)) {
+          throw new Error('delivery interrupted');
+        }
+        return deliveryReceipt;
       },
     },
     logger: { error() {}, info() {}, warn() {} },
@@ -243,6 +260,13 @@ describe('channels/github/conversation/assignment-session-service', () => {
         assert.equal(turnInput.ctxPayload.Provider, githubNotificationChannelId);
         assert.match(turnInput.ctxPayload.Body ?? '', /Implementation started/u);
         assert.match(turnInput.ctxPayload.Body ?? '', /published.*`work` mode/u);
+        assert.match(turnInput.ctxPayload.Body ?? '', /one local commit/u);
+      },
+      verifyDelivery(deliveryInput) {
+        assert.equal(deliveryInput.agentId, agentId);
+        assert.equal(deliveryInput.item, item);
+        assert.equal(deliveryInput.workspaceDir, workspaceDir);
+        assert.equal(deliveryInput.worktree, input.worktree);
       },
     });
 
@@ -250,6 +274,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 1,
       assignmentTurns: 1,
+      deliveries: 0,
       implementationTurns: 0,
       publications: 1,
     });
@@ -271,6 +296,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 3,
       assignmentTurns: 1,
+      deliveries: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -293,6 +319,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 2,
       assignmentTurns: 1,
+      deliveries: 1,
       implementationTurns: 1,
       publications: 2,
     });
@@ -316,6 +343,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 3,
       assignmentTurns: 2,
+      deliveries: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -331,6 +359,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 1,
       assignmentTurns: 0,
+      deliveries: 0,
       implementationTurns: 0,
       publications: 0,
     });
@@ -354,10 +383,34 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 3,
       assignmentTurns: 1,
+      deliveries: 1,
       implementationTurns: 2,
       publications: 1,
     });
     assert.equal(scenario.state().conversations[conversationId]?.activeTurn, undefined);
+    assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
+      status: 'completed',
+    });
+  });
+
+  it('should retry delivery without another implementation model turn', async () => {
+    const scenario = harness({ deliveryFailures: 1 });
+
+    await scenario.prepare();
+    await assert.rejects(scenario.prepare(), /delivery interrupted/u);
+    assert.equal(scenario.state().conversations[conversationId]?.activeTurn, undefined);
+    assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
+      status: 'delivery-pending',
+    });
+    await scenario.prepare();
+
+    assert.deepEqual(scenario.counts, {
+      acknowledgments: 3,
+      assignmentTurns: 1,
+      deliveries: 2,
+      implementationTurns: 1,
+      publications: 1,
+    });
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'completed',
     });
@@ -372,6 +425,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 2,
       assignmentTurns: 1,
+      deliveries: 0,
       implementationTurns: 0,
       publications: 1,
     });
@@ -399,6 +453,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.counts, {
       acknowledgments: 2,
       assignmentTurns: 1,
+      deliveries: 0,
       implementationTurns: 0,
       publications: 0,
     });

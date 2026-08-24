@@ -238,7 +238,24 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     channel: notificationChannel,
     monitorService: notificationMonitorService,
     statusService: notificationStatusService,
-  } = notificationRuntime.assemble(manifestService);
+  } = notificationRuntime.assemble(manifestService, {
+    async execute(input) {
+      const result = await toolRuntime.executeCli(
+        gitCapability.definition,
+        {
+          argv: input.argv,
+          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+        },
+        {
+          agentId: input.agentId,
+          source: 'command',
+          workspaceDir: input.workspaceDir,
+        },
+        input.signal,
+      );
+      return result.commandResult;
+    },
+  });
 
   api.registerChannel({
     plugin: notificationChannel,

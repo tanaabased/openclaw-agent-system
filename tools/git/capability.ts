@@ -1,12 +1,13 @@
 import { join } from 'node:path';
 
 import type { AgentSystemCapability } from '../../api/capability.ts';
+import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import defineAgentSystemSemanticTool from '../../api/define-semantic-tool.ts';
 import type WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import createGitExtensionResolver from './extension.ts';
 import createGitLifecycleContribution from './lifecycle.ts';
 import GitSshResourceService from './ssh-resource-service.ts';
-import { createGitTool } from './tool.ts';
+import { createGitToolDefinition, type GitToolDefinition } from './tool.ts';
 import TrustedGitWorktreeService, {
   type TrustedGitWorktreeServiceDependencies,
 } from './trusted-worktree-service.ts';
@@ -27,6 +28,7 @@ export interface GitCapabilityDependencies {
 }
 
 export interface GitCapability extends AgentSystemCapability {
+  definition: GitToolDefinition;
   trustedWorktreeService: TrustedGitWorktreeService;
 }
 
@@ -68,8 +70,13 @@ export default function createGitCapability(
     runnerFactory,
     service: worktreeService,
   });
+  const definition = createGitToolDefinition({
+    extensionAvailable,
+    sshResourceService,
+  });
 
   return {
+    definition,
     lifecycleContributions: [
       createGitLifecycleContribution({
         sshResourceService,
@@ -82,10 +89,7 @@ export default function createGitCapability(
       manifestService: dependencies.manifestService,
     }),
     tools: [
-      createGitTool({
-        extensionAvailable,
-        sshResourceService,
-      }),
+      defineAgentSystemCliTool(definition),
       defineAgentSystemSemanticTool(worktreeDefinition),
     ],
   };

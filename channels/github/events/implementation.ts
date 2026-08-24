@@ -4,10 +4,10 @@ import githubNotificationImplementationResponseInstructions from '../conversatio
 import type { GitHubNotificationEvent } from './types.ts';
 
 /** Render the private continuation that follows one published Work plan. */
-export function githubNotificationImplementationCard(): string {
+export function githubNotificationImplementationCard(issueNumber: number): string {
   return githubNotificationCard({
     emoji: '🛠️',
-    summary: 'The public plan is published. Carry it out now in `work` mode.',
+    summary: `The public plan for issue #${issueNumber} is published. Carry it out now in \`work\` mode, ending with one local commit. Lifecycle delivery follows.`,
     title: 'Implementation started',
   });
 }

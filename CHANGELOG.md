@@ -4,7 +4,7 @@
 
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake.
-- Added linked GitHub assignment cards, varied acknowledgments, active user-centric Work plans, and durable private implementation continuations that commit and push through the managed Git tool while keeping worktree checkpoints and comment reconciliation independent from response failures. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added linked GitHub assignment cards, varied acknowledgments, active user-centric Work plans, and durable private implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation while keeping worktree checkpoints and comment reconciliation independent from response failures. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
 - Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety.

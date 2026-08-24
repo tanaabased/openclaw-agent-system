@@ -54,7 +54,7 @@ export type GitHubNotificationAssignmentAcknowledgmentState =
   GitHubNotificationPublicationPendingState | GitHubNotificationPublicationPublishedState;
 
 export interface GitHubNotificationImplementationState {
-  status: 'completed' | 'pending';
+  status: 'completed' | 'delivery-pending' | 'pending';
 }
 
 export interface GitHubNotificationCommentRevisionState {
@@ -82,7 +82,7 @@ export interface GitHubNotificationConversation {
 export interface GitHubNotificationConversationState {
   agentId: string;
   conversations: Record<string, GitHubNotificationConversation>;
-  schemaVersion: 5;
+  schemaVersion: 6;
   workspaceDir: string;
 }
 
@@ -213,21 +213,29 @@ function validActiveTurn(value: unknown): boolean {
   );
 }
 
-function validImplementation(value: unknown): value is GitHubNotificationImplementationState {
+function validImplementation(
+  value: unknown,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
+): value is GitHubNotificationImplementationState {
+  if (!record(value)) return false;
   return (
-    record(value) &&
     onlyKeys(value, ['status']) &&
-    (value.status === 'pending' || value.status === 'completed')
+    (value.status === 'pending' ||
+      value.status === 'completed' ||
+      (schemaVersion >= 6 && value.status === 'delivery-pending'))
   );
 }
 
 function validImplementationRelationship(
   implementation: unknown,
   assignmentResponse: unknown,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
 ): boolean {
   if (implementation === undefined) return true;
-  if (!validImplementation(implementation) || !record(assignmentResponse)) return false;
-  return implementation.status === 'completed'
+  if (!validImplementation(implementation, schemaVersion) || !record(assignmentResponse)) {
+    return false;
+  }
+  return implementation.status === 'completed' || implementation.status === 'delivery-pending'
     ? assignmentResponse.status === 'published'
     : assignmentResponse.status === 'pending' || assignmentResponse.status === 'published';
 }
@@ -235,7 +243,7 @@ function validImplementationRelationship(
 function validConversation(
   value: unknown,
   conversationId: string,
-  schemaVersion: 1 | 2 | 3 | 4 | 5,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
 ): boolean {
   if (
     !record(value) ||
@@ -243,7 +251,7 @@ function validConversation(
       ...(schemaVersion >= 3 ? ['acknowledgment'] : []),
       ...(schemaVersion >= 2 ? ['activeTurn'] : []),
       ...(schemaVersion >= 4 ? ['assignmentResponse'] : []),
-      ...(schemaVersion === 5 ? ['implementation'] : []),
+      ...(schemaVersion >= 5 ? ['implementation'] : []),
       'baselineEstablished',
       'itemKey',
       'lifecycleId',
@@ -256,7 +264,11 @@ function validConversation(
     (value.assignmentResponse !== undefined &&
       !validPublication(value.assignmentResponse, conversationId, 'assignment-response')) ||
     typeof value.baselineEstablished !== 'boolean' ||
-    !validImplementationRelationship(value.implementation, value.assignmentResponse) ||
+    !validImplementationRelationship(
+      value.implementation,
+      value.assignmentResponse,
+      schemaVersion,
+    ) ||
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
     !isGitHubNotificationLifecycleId(value.lifecycleId) ||
@@ -283,7 +295,8 @@ export function decodeGitHubNotificationConversationState(
       value.schemaVersion !== 2 &&
       value.schemaVersion !== 3 &&
       value.schemaVersion !== 4 &&
-      value.schemaVersion !== 5) ||
+      value.schemaVersion !== 5 &&
+      value.schemaVersion !== 6) ||
     value.agentId !== expectedAgentId ||
     typeof value.agentId !== 'string' ||
     !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
@@ -298,12 +311,12 @@ export function decodeGitHubNotificationConversationState(
     !Object.entries(value.conversations).every(
       ([key, conversation]) =>
         /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(key) &&
-        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4 | 5),
+        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4 | 5 | 6),
     )
   ) {
     return undefined;
   }
-  if (value.schemaVersion === 5) {
+  if (value.schemaVersion === 6) {
     return value as unknown as GitHubNotificationConversationState;
   }
   return {
@@ -314,7 +327,7 @@ export function decodeGitHubNotificationConversationState(
         { ...(conversation as GitHubNotificationConversation) },
       ]),
     ),
-    schemaVersion: 5,
+    schemaVersion: 6,
     workspaceDir: value.workspaceDir,
   } as GitHubNotificationConversationState;
 }
@@ -323,5 +336,5 @@ export function createGitHubNotificationConversationState(
   agentId: string,
   workspaceDir: string,
 ): GitHubNotificationConversationState {
-  return { agentId, conversations: {}, schemaVersion: 5, workspaceDir };
+  return { agentId, conversations: {}, schemaVersion: 6, workspaceDir };
 }

@@ -33,11 +33,13 @@ import type GitHubNotificationConversationStateStore from './conversation-state-
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnCoordinator from './model-turn-coordinator.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
+import type GitHubNotificationIssueDeliveryService from './issue-delivery-service.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
   acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
+  deliveries: Pick<GitHubNotificationIssueDeliveryService, 'deliver'>;
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
@@ -222,6 +224,8 @@ export default class GitHubNotificationAssignmentSessionService {
           route,
           session: input,
         });
+      } else if (reconciled.conversation.implementation?.status === 'delivery-pending') {
+        await this.#deliver(input, conversationId, repository);
       }
       return;
     }
@@ -277,7 +281,7 @@ export default class GitHubNotificationAssignmentSessionService {
       input.route.agentId,
     );
     const messageId = `implementation:${input.assignmentEventId}`;
-    const body = githubNotificationImplementationCard();
+    const body = githubNotificationImplementationCard(input.session.item.number);
     const turn = await this.#dependencies.coordinator.run({
       config: input.config,
       contract,
@@ -303,13 +307,35 @@ export default class GitHubNotificationAssignmentSessionService {
       ...(input.session.signal === undefined ? {} : { signal: input.session.signal }),
       sourceId: input.assignmentEventId,
     });
-    await this.#checkpointImplementationCompleted(
+    await this.#checkpointImplementationReadyForDelivery(
       input.session,
       input.conversationId,
       input.assignmentEventId,
     );
     this.#dependencies.logger.info(
-      `github-notifications: assignment implementation completed agent=${input.route.agentId} item=${input.repository}#${input.session.item.number} publication=${turn.publication.status}`,
+      `github-notifications: assignment implementation prepared agent=${input.route.agentId} item=${input.repository}#${input.session.item.number} publication=${turn.publication.status}`,
+    );
+    await this.#deliver(input.session, input.conversationId, input.repository);
+  }
+
+  async #deliver(
+    input: GitHubNotificationAssignmentSessionInput,
+    conversationId: string,
+    repository: string,
+  ): Promise<void> {
+    if (!input.worktree) {
+      throw new Error('The GitHub assignment delivery worktree is missing.');
+    }
+    const receipt = await this.#dependencies.deliveries.deliver({
+      agentId: input.agentId,
+      item: input.item,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
+      worktree: input.worktree,
+    });
+    await this.#checkpointImplementationCompleted(input, conversationId);
+    this.#dependencies.logger.info(
+      `github-notifications: assignment delivery completed agent=${input.agentId} item=${repository}#${input.item.number} pr=${receipt.pullRequestNumber}`,
     );
   }
 
@@ -418,7 +444,7 @@ export default class GitHubNotificationAssignmentSessionService {
     await this.#dependencies.conversationStateStore.write(next);
   }
 
-  async #checkpointImplementationCompleted(
+  async #checkpointImplementationReadyForDelivery(
     input: GitHubNotificationAssignmentSessionInput,
     conversationId: string,
     assignmentEventId: string,
@@ -435,7 +461,24 @@ export default class GitHubNotificationAssignmentSessionService {
     const next = structuredClone(state);
     const updatedConversation = next.conversations[conversationId]!;
     delete updatedConversation.activeTurn;
-    updatedConversation.implementation = { status: 'completed' };
+    updatedConversation.implementation = { status: 'delivery-pending' };
+    await this.#dependencies.conversationStateStore.write(next);
+  }
+
+  async #checkpointImplementationCompleted(
+    input: GitHubNotificationAssignmentSessionInput,
+    conversationId: string,
+  ): Promise<void> {
+    const { conversation, state } = await this.#conversation(input, conversationId);
+    if (
+      conversation.activeTurn !== undefined ||
+      conversation.assignmentResponse?.status !== 'published' ||
+      conversation.implementation?.status !== 'delivery-pending'
+    ) {
+      throw new Error('The GitHub assignment delivery checkpoint is missing.');
+    }
+    const next = structuredClone(state);
+    next.conversations[conversationId]!.implementation = { status: 'completed' };
     await this.#dependencies.conversationStateStore.write(next);
   }
 

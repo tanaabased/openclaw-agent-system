@@ -11,9 +11,11 @@ acknowledgment, then run one initial assignment turn that keeps its full report
 in the OpenClaw session and publishes a bounded conversational response. A
 published Work plan schedules one private implementation turn in the same
 session and worktree on the next reconciliation. That turn implements,
-validates, commits, and pushes the managed branch without opening a pull
-request. For prepared issues, the channel also admits new approved comments
-into that session and publishes the accepted public part of the response.
+validates, and creates one local commit. The lifecycle then prepends the trusted
+issue number, performs the first ordinary push, and creates or normalizes one
+pull request assigned to the issue author. For prepared issues, the channel also
+admits new approved comments into that session and publishes the accepted public
+part of the response.
 
 ## Current Behavior
 
@@ -29,9 +31,12 @@ into that session and publishes the accepted public part of the response.
   publish one bounded conversational response. A published plan registers a
   pending `issue`, `work`, and `implementation` turn. The next reconciliation
   carries out the plan and validates it in the same session and worktree, then
-  creates one commit and pushes the managed branch without opening a pull
-  request or publishing another GitHub response. Pull-request assignments
-  retain bounded head metadata without creating a worktree.
+  creates one local commit without publishing another GitHub response. Durable
+  lifecycle delivery prepends the trusted issue number to that commit, performs
+  the first ordinary push, and creates or normalizes one open pull request with
+  the issue title, default base branch, closing reference, and issue-author
+  assignee. Pull-request assignments retain bounded head metadata without
+  creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
   issue session with an attributed comment card as its direct message. The card
@@ -60,9 +65,9 @@ into that session and publishes the accepted public part of the response.
   paths. The model can position one reserved commenter placeholder naturally;
   after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, Plan and Auto modes, mode transitions, pull-request
-  creation after implementation, and chat-originated publication remain
-  intentionally dormant.
+- Pull-request comments, Plan and Auto modes, mode transitions, issue-to-pull-
+  request session handoff, and chat-originated publication remain intentionally
+  dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 

@@ -8,8 +8,9 @@ publishes one assignment acknowledgment, runs the registered issue/Work/assignme
 planning turn, publishes one bounded user-centric active Work plan without
 changing the worktree, carries that published plan out through the registered
 issue/Work/implementation turn on the next reconciliation, commits the validated
-change through Agent System Git, pushes the managed branch without opening a
-pull request, delivers one approved comment through the registered
+change through Agent System Git, lets the lifecycle prepend the trusted issue
+number, pushes the managed branch, creates a normalized pull request assigned
+to the issue author, delivers one approved comment through the registered
 issue/Work/comment turn contract with its installed identity card, publishes one
 reply, and retires the assignment without deleting the worktree.
 
@@ -216,11 +217,13 @@ remote_sha="$(printf '%s\n' "$remote_line" | cut -f1)"
 test -n "$remote_sha"
 test "$remote_sha" = "$head_sha"
 
-# should leave pull request creation for the next lifecycle slice
+# should create one normalized pull request for the managed branch
 cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
 worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
-pull_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state all --json number --jq length)"
-test "$pull_count" -eq 0
+pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state open --json assignees,author,baseRefName,body,headRefName,number,state,title,url --jq 'select(length == 1) | .[0]')"
+jq -e --arg branch "$worktree_branch" --arg title "add assignment fixture file $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" --argjson issue "$issue_number" '.state == "OPEN" and .baseRefName == "main" and .headRefName == $branch and .title == $title and (.body | contains("Closes #" + ($issue | tostring))) and .author.login == "tanaabot" and ([.assignees[].login] | index("emoriwan") != null) and (.url | test("/pull/[1-9][0-9]*$"))' <<< "$pull_request"
+jq -r '.number' <<< "$pull_request" > "$TMPDIR/approved-pull-request-number"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
@@ -279,6 +282,10 @@ openclaw agent-system notifications wait \
 # should remove only the pushed scenario branch
 if test -f "$TMPDIR/approved-worktree-branch"; then
   cd "$TMPDIR/agent-system-notifications"
+  if test -f "$TMPDIR/approved-pull-request-number"; then
+    pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr close "$pull_request_number" --repo tanaabased/big-test-bucket
+  fi
   worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
   if OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --silent --method GET "/repos/tanaabased/big-test-bucket/git/ref/heads/$worktree_branch"; then
     OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method DELETE "/repos/tanaabased/big-test-bucket/git/refs/heads/$worktree_branch"
