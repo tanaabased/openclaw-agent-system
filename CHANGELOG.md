@@ -12,6 +12,7 @@
 
 ### Bug Fixes
 
+- Fixed provider-verified GitHub repository renames to refresh notification coordinates and reconcile managed clone origins without weakening ordinary origin pinning. [big-test-bucket#316](https://github.com/tanaabased/big-test-bucket/issues/316)
 - Fixed Work assignment continuation to use trusted lifecycle state instead of parsing model-authored report headings. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths.
 

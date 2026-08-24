@@ -16,6 +16,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
   readonly calls: Array<{ argv: string[]; cwd: string }> = [];
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
+  fetchFails = false;
   removeFails = false;
   readonly worktrees = new Map<string, FakeWorktree>();
 
@@ -42,6 +43,12 @@ class FakeGitRunner implements GitWorktreeGitRunner {
         this.origins.get(input.cwd) ??
         [...this.origins].find(([path]) => path.startsWith(`${input.cwd}.`))?.[1];
       return { exitCode: value ? 0 : 1, stderr: '', stdout: value ? `${value}\n` : '' };
+    }
+    if (command === 'remote' && argv[0] === 'set-url') {
+      this.origins.set(input.cwd, argv[2] ?? '');
+    }
+    if (command === 'fetch' && this.fetchFails) {
+      return { exitCode: 1, stderr: 'fetch failed', stdout: '' };
     }
     if (command === 'show-ref') {
       const branch = argv.at(-1)?.replace(/^refs\/heads\//u, '');
@@ -233,6 +240,73 @@ describe('tools/git/worktree-service', () => {
       await assert.rejects(
         service.remove(context, 'repository', 'missing'),
         /worktree is unavailable/u,
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should reconcile a trusted managed origin without disturbing existing worktrees', async () => {
+    const { context, git, repositoryRoot, service, workspaceDir } = await fixture();
+    try {
+      const repositoryId = 'github-7';
+      const oldOrigin = 'git@github.com:tanaabased/old-name.git';
+      const newOrigin = 'git@github.com:tanaabased/new-name.git';
+      const first = await service.prepare(context, {
+        baseRef: 'origin/main',
+        cloneUrl: oldOrigin,
+        repositoryId,
+        workId: 'first',
+      });
+
+      const second = await service.prepare(context, {
+        baseRef: 'origin/main',
+        cloneUrl: newOrigin,
+        reconcileOrigin: true,
+        repositoryId,
+        workId: 'second',
+      });
+
+      const managedRepository = join(
+        repositoryRoot,
+        gitWorktreeRepositoryDirectoryName(repositoryId),
+      );
+      assert.equal(git.origins.get(managedRepository), newOrigin);
+      assert.equal(git.worktrees.has(first.path), true);
+      assert.equal(git.worktrees.has(second.path), true);
+      assert.equal(git.calls.filter(({ argv }) => argv[0] === 'fetch').length, 1);
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should restore a managed origin when trusted reconciliation cannot fetch', async () => {
+    const { context, git, repositoryRoot, service, workspaceDir } = await fixture();
+    try {
+      const repositoryId = 'github-7';
+      const oldOrigin = 'git@github.com:tanaabased/old-name.git';
+      await service.prepare(context, {
+        baseRef: 'origin/main',
+        cloneUrl: oldOrigin,
+        repositoryId,
+        workId: 'first',
+      });
+      git.fetchFails = true;
+
+      await assert.rejects(
+        service.prepare(context, {
+          baseRef: 'origin/main',
+          cloneUrl: 'git@github.com:tanaabased/new-name.git',
+          reconcileOrigin: true,
+          repositoryId,
+          workId: 'second',
+        }),
+        /origin could not be reconciled/u,
+      );
+
+      assert.equal(
+        git.origins.get(join(repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId))),
+        oldOrigin,
       );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });

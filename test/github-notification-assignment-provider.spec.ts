@@ -9,7 +9,6 @@ import {
   approvedNotificationItem,
   notificationAccount,
   notificationActor,
-  notificationOwner,
   notificationRepository,
 } from './github-notification-fixtures.ts';
 
@@ -57,6 +56,7 @@ function provider(
   routeReady = true,
   onConnect = () => undefined,
   pullRequest = false,
+  canonicalRepository = notificationRepository,
 ) {
   const itemNumber = pullRequest ? 13 : 12;
   return new GitHubNotificationAssignmentProvider({
@@ -128,13 +128,13 @@ function provider(
             }
             return response({
               archived: false,
-              cloneUrl: notificationRepository.cloneUrl,
-              databaseId: notificationRepository.databaseId,
-              defaultBranch: notificationRepository.defaultBranch,
+              cloneUrl: canonicalRepository.cloneUrl,
+              databaseId: canonicalRepository.databaseId,
+              defaultBranch: canonicalRepository.defaultBranch,
               disabled: false,
-              name: notificationRepository.name,
-              nodeId: notificationRepository.nodeId,
-              owner: notificationOwner,
+              name: canonicalRepository.name,
+              nodeId: canonicalRepository.nodeId,
+              owner: canonicalRepository.owner,
             });
           },
         };
@@ -169,7 +169,26 @@ function input() {
 
 describe('channels/github/intake/assignment-provider', () => {
   it('should recheck the exact approved assignment from canonical control facts', async () => {
-    assert.deepEqual(await provider().inspect(input()), { authorized: true });
+    assert.deepEqual(await provider().inspect(input()), {
+      authorized: true,
+      permission: 'write',
+      repository: notificationRepository,
+    });
+  });
+
+  it('should return renamed canonical coordinates for the same repository identity', async () => {
+    const renamed = {
+      ...notificationRepository,
+      cloneUrl: 'https://github.com/tanaabased/big-test-bucket.git',
+      defaultBranch: 'trunk',
+      name: 'big-test-bucket',
+    };
+
+    assert.deepEqual(await provider(true, true, () => undefined, false, renamed).inspect(input()), {
+      authorized: true,
+      permission: 'write',
+      repository: renamed,
+    });
   });
 
   it('should revoke intake when the account is no longer assigned', async () => {

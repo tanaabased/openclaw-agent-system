@@ -69,6 +69,11 @@ part of the response.
 - Pull-request comments, Plan and Auto modes, mode transitions, issue-to-pull-
   request session handoff, and chat-originated publication remain intentionally
   dormant.
+- A provider-verified repository rename refreshes the tracked canonical name,
+  owner login, clone URL, default branch, and permission. Issue worktree
+  preparation may then reconcile the shared managed clone origin after matching
+  the immutable repository and owner identities; ordinary worktree callers
+  cannot retarget a managed repository.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 

@@ -202,14 +202,21 @@ export default class TrustedGitWorktreeService {
         return resolution.value;
       },
     });
-    return this.#dependencies.definition.execute(executionInput, configuration, {
+    const scope = {
       agentId,
-      resolveEnvironment(name) {
+      resolveEnvironment(name: string) {
         return values[name];
       },
       ...(signal === undefined ? {} : { signal }),
-      source: 'command',
+      source: 'command' as const,
       workspaceDir: loaded.scope.workspaceDir,
-    });
+    };
+    return executionInput.action === 'prepare'
+      ? this.#dependencies.definition.executeTrustedGitHubPrepare(
+          executionInput,
+          configuration,
+          scope,
+        )
+      : this.#dependencies.definition.execute(executionInput, configuration, scope);
   }
 }

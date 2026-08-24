@@ -30,6 +30,7 @@ export interface GitWorktreeServiceContext {
 export interface GitWorktreePrepareInput {
   baseRef: string;
   cloneUrl?: string;
+  reconcileOrigin?: boolean;
   repositoryId: string;
   workId: string;
 }
@@ -123,6 +124,7 @@ export default class GitWorktreeService {
       layout,
       input.repositoryId,
       input.cloneUrl,
+      input.reconcileOrigin ?? false,
     );
     const branch = gitWorktreeDirectoryName(input.repositoryId, input.workId);
     const path = this.#worktreePath(layout, input.repositoryId, branch);
@@ -330,6 +332,7 @@ export default class GitWorktreeService {
     layout: GitWorktreeLayout,
     repositoryId: string,
     cloneUrl?: string,
+    reconcileOrigin = false,
   ): Promise<ResolvedRepository> {
     const localPath = getOwn(layout.localRepositories, repositoryId);
     if (localPath) return { path: localPath, refreshBeforeCreate: false, repositoryId };
@@ -352,7 +355,11 @@ export default class GitWorktreeService {
           await this.#run(context, path, ['remote', 'get-url', 'origin']),
         ).stdout.trim();
         if (normalizeGitWorktreeRemote(origin) !== source) {
-          throw new Error('The managed Git repository uses another origin.');
+          if (!reconcileOrigin) {
+            throw new Error('The managed Git repository uses another origin.');
+          }
+          await this.#reconcileManagedOrigin(context, path, origin, source);
+          return { path, refreshBeforeCreate: false, repositoryId };
         }
       }
       return { path, refreshBeforeCreate: true, repositoryId };
@@ -386,6 +393,42 @@ export default class GitWorktreeService {
     } catch (error) {
       await rm(temporaryPath, { force: true, recursive: true }).catch(() => undefined);
       throw error;
+    }
+  }
+
+  async #reconcileManagedOrigin(
+    context: GitWorktreeServiceContext,
+    path: string,
+    currentOrigin: string,
+    nextOrigin: string,
+  ): Promise<void> {
+    const previous = normalizeGitWorktreeRemote(currentOrigin);
+    requireGitSuccess(
+      'origin reconciliation',
+      await this.#run(context, path, ['remote', 'set-url', 'origin', nextOrigin]),
+    );
+    try {
+      const verified = requireGitSuccess(
+        'origin reconciliation verification',
+        await this.#run(context, path, ['remote', 'get-url', 'origin']),
+      ).stdout.trim();
+      if (normalizeGitWorktreeRemote(verified) !== nextOrigin) {
+        throw new Error('Git retained an unexpected managed repository origin.');
+      }
+      requireGitSuccess(
+        'origin reconciliation fetch',
+        await this.#run(context, path, ['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*']),
+      );
+    } catch (error) {
+      const rollback = await this.#run(context, path, ['remote', 'set-url', 'origin', previous]);
+      if (rollback.exitCode !== 0) {
+        throw new Error('The managed Git repository origin could not be restored.', {
+          cause: error,
+        });
+      }
+      throw new Error('The managed Git repository origin could not be reconciled.', {
+        cause: error,
+      });
     }
   }
 

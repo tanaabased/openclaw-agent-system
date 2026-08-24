@@ -26,6 +26,8 @@ export type GitHubNotificationAssignmentInspection<Client = GitHubNotificationPr
       authorized: true;
       client: Client;
       configuration: GitHubNotificationsConfiguration;
+      permission?: Awaited<ReturnType<GitHubNotificationProviderClient['getPermission']>>;
+      repository?: Awaited<ReturnType<GitHubNotificationProviderClient['getRepository']>>;
     };
 
 export interface GitHubNotificationAssignmentProviderAuthority<
@@ -48,10 +50,14 @@ export default class GitHubNotificationAssignmentProvider
 
   async inspect(
     input: GitHubNotificationLifecycleBoundaryInput,
-  ): Promise<{ authorized: boolean; reasonCode?: string }> {
+  ): Promise<Awaited<ReturnType<GitHubNotificationAssignmentAuthority['inspect']>>> {
     const inspection = await this.open(input);
     return inspection.authorized
-      ? { authorized: true }
+      ? {
+          authorized: true,
+          ...(inspection.permission === undefined ? {} : { permission: inspection.permission }),
+          ...(inspection.repository === undefined ? {} : { repository: inspection.repository }),
+        }
       : {
           authorized: false,
           ...(inspection.reasonCode === undefined ? {} : { reasonCode: inspection.reasonCode }),
@@ -107,8 +113,6 @@ export default class GitHubNotificationAssignmentProvider
         repository.databaseId !== input.item.repositoryDatabaseId ||
         repository.nodeId !== input.item.repositoryNodeId ||
         repository.owner.nodeId !== input.item.repositoryOwnerNodeId ||
-        repository.cloneUrl !== input.item.repositoryCloneUrl ||
-        repository.defaultBranch !== input.item.repositoryDefaultBranch ||
         item.databaseId !== input.item.itemDatabaseId ||
         item.nodeId !== input.item.itemNodeId ||
         item.itemType !== input.item.itemType ||
@@ -164,6 +168,8 @@ export default class GitHubNotificationAssignmentProvider
         authorized: true,
         client: context.client,
         configuration: context.configuration,
+        permission,
+        repository,
       };
     } catch (error) {
       if (

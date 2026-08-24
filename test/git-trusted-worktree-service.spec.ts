@@ -16,6 +16,7 @@ function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = 
   const prepared: Array<{
     baseRef: string;
     cloneUrl?: string;
+    reconcileOrigin?: boolean;
     repositoryId: string;
     workId: string;
   }> = [];
@@ -159,6 +160,7 @@ describe('tools/git/trusted-worktree-service', () => {
       {
         baseRef: 'origin/main',
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+        reconcileOrigin: true,
         repositoryId: 'github-7',
         workId: 'issue-3',
       },

@@ -473,4 +473,34 @@ describe('channels/github/intake/monitor/poller', () => {
       assert.equal(Object.values(result.state.items)[0]?.reasonCode, entry.expected);
     }
   });
+
+  it('should refresh mutable repository coordinates without retiring the assignment', async () => {
+    const state = notificationMonitorState();
+    const renamed = {
+      ...repository,
+      cloneUrl: 'https://github.com/tanaab-renamed/big-test-bucket.git',
+      defaultBranch: 'trunk',
+      name: 'big-test-bucket',
+      owner: { ...repository.owner, login: 'tanaab-renamed' },
+    };
+
+    const result = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ permission: 'maintain', repository: renamed }),
+      configuration,
+      now: baselineAt + 600_000,
+      state,
+      workspaceDir: '/workspace',
+    });
+
+    const refreshed = Object.values(result.state.items)[0];
+    assert.equal(result.retired, 0);
+    assert.equal(refreshed?.disposition, 'approved');
+    assert.equal(refreshed?.repositoryCloneUrl, renamed.cloneUrl);
+    assert.equal(refreshed?.repositoryDefaultBranch, renamed.defaultBranch);
+    assert.equal(refreshed?.repositoryName, renamed.name);
+    assert.equal(refreshed?.repositoryOwner, renamed.owner.login);
+    assert.equal(refreshed?.repositoryPermission, 'maintain');
+    assert.deepEqual(refreshed?.intake, Object.values(state.items)[0]?.intake);
+  });
 });
