@@ -14,9 +14,6 @@ jobs:
   examples:
     name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    concurrency:
-      group: ${{ matrix.model-slot && format('openai-live-tests-{0}', matrix.model-slot) || format('example-tests-{0}-{1}-{2}', github.run_id, matrix.os, matrix.example) }}
-      queue: max
     strategy:
       fail-fast: false
       matrix:
@@ -39,33 +36,8 @@ jobs:
           - tool
           - security
         include:
-          - os: ubuntu-24.04
-            example: agent
-            model-slot: 1
-          - os: macos-26
-            example: agent
-            model-slot: 2
-          - os: ubuntu-24.04
-            example: path
-            model-slot: 1
-          - os: macos-26
-            example: path
-            model-slot: 2
-          - os: ubuntu-24.04
-            example: github
-            model-slot: 1
-          - os: macos-26
-            example: github
-            model-slot: 2
-          - os: ubuntu-24.04
-            example: security
-            model-slot: 1
-          - os: macos-26
-            example: security
-            model-slot: 2
           - os: macos-26
             example: issue
-            model-slot: 2
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
