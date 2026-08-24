@@ -8,7 +8,7 @@ const githubNotificationResponseInstructions = [
   '## Style',
   'Write the candidate as a concise, conversational GitHub comment. GitHub-flavored Markdown is allowed when it improves clarity, including headings, lists, tables, blockquotes, code formatting, and links. Prefer natural prose and minimal structure; this is a comment, not a report.',
   '## Publication safety',
-  `Do not include secrets, credentials, local paths, raw tool output, hidden or private context, or literal \`@mentions\`. Use only the ${githubNotificationCommenterToken} placeholder for the original commenter. Agent System validates the candidate and reauthorizes its destination before publication.`,
+  `Do not include secrets, credentials, raw tool output, hidden or private context, private machine details, or literal \`@mentions\`. When mentioning files, prefer repository-relative paths over absolute worktree paths. Use only the ${githubNotificationCommenterToken} placeholder for the original commenter. Agent System validates the candidate and reauthorizes its destination before publication.`,
   '## Clarification',
   'Only when missing information materially prevents a safe or correct response, use that GitHub-facing response to ask exactly one precise clarification question and stop. Otherwise, do not ask a question solely to satisfy this instruction. Do not guess, continue blocked work, or claim a lifecycle-state transition; the next admitted comment will continue the same conversation.',
   '## Private response',

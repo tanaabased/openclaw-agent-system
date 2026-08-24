@@ -57,14 +57,20 @@ describe('channels/github/conversation/prompt-guidance', () => {
     );
   });
 
-  it('should compose the identity returned by the trusted selector', async () => {
+  it('should compose and attest the assignment identity returned by the trusted selector', async () => {
+    const turnContracts = createGitHubNotificationTurnContractResolver();
     let selectorContext: unknown;
-    let selected: unknown;
     let attested: unknown;
     const context = {
       agentId: 'tanaabot',
       channelId: 'github:issue:R_repo:12',
       messageProvider: githubNotificationChannelId,
+    };
+    const selected = {
+      agentId: 'tanaabot',
+      conversationId: 'github:issue:R_repo:12',
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' } as const,
+      sourceId: 'EV_assignment',
     };
     const instructions = await githubNotificationPromptGuidance(context, {
       candidates: {
@@ -72,37 +78,45 @@ describe('channels/github/conversation/prompt-guidance', () => {
           attested = attestation;
         },
       },
-      turnContracts: {
-        instructions(identity) {
-          selected = identity;
-          return 'current instructions';
-        },
-      },
+      turnContracts,
       turnSelector: {
         async select(receivedContext) {
           selectorContext = receivedContext;
-          return {
-            agentId: 'tanaabot',
-            conversationId: 'github:issue:R_repo:12',
-            identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
-            sourceId: 'revision-1',
-          };
+          return selected;
         },
       },
     });
 
-    assert.equal(instructions, 'current instructions');
+    assert.equal(instructions, turnContracts.instructions(selected.identity));
     assert.equal(selectorContext, context);
-    assert.deepEqual(selected, {
-      eventId: 'comment',
-      lifecycleId: 'issue',
-      modeId: 'work',
-    });
-    assert.deepEqual(attested, {
+    assert.deepEqual(attested, selected);
+  });
+
+  it('should compose and attest the private implementation identity', async () => {
+    const turnContracts = createGitHubNotificationTurnContractResolver();
+    const selected = {
       agentId: 'tanaabot',
       conversationId: 'github:issue:R_repo:12',
-      identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
-      sourceId: 'revision-1',
-    });
+      identity: { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' } as const,
+      sourceId: 'EV_assignment',
+    };
+    const attestations: unknown[] = [];
+
+    const instructions = await githubNotificationPromptGuidance(
+      { messageProvider: githubNotificationChannelId },
+      {
+        candidates: {
+          async attestPromptSelection(attestation) {
+            attestations.push(attestation);
+          },
+        },
+        turnContracts,
+        turnSelector: { select: async () => selected },
+      },
+    );
+
+    assert.equal(instructions, turnContracts.instructions(selected.identity));
+    assert.match(instructions ?? '', /Carry out that plan now/u);
+    assert.deepEqual(attestations, [selected]);
   });
 });

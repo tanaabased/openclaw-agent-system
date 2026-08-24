@@ -14,7 +14,7 @@ export interface GitHubNotificationTurnContract {
   instructions: string;
   lifecycle: GitHubNotificationLifecycle;
   mode: ResolvedGitHubNotificationMode;
-  publicationIntent: GitHubNotificationPublicationIntent;
+  publicationIntent?: GitHubNotificationPublicationIntent;
 }
 
 export interface GitHubNotificationTurnModelOptions {
@@ -82,7 +82,9 @@ export default class GitHubNotificationTurnContractResolver {
       instructions: turnInstructions(turn),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
-      publicationIntent: turn.eventTurn.publicationIntent,
+      ...(turn.eventTurn.publicationIntent === undefined
+        ? {}
+        : { publicationIntent: turn.eventTurn.publicationIntent }),
     };
   }
 }

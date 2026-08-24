@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnCatalog, {
   GitHubNotificationTurnCatalogError,
+  githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
+  githubNotificationIssueWorkImplementationTurnIdentity,
   githubNotificationSupportedTurnIdentities,
 } from '../channels/github/conversation/turn-catalog.ts';
 import { GitHubNotificationLifecycleModeSupportError } from '../channels/github/lifecycles/mode-support.ts';
@@ -13,7 +15,7 @@ function definitions() {
 }
 
 describe('channels/github/conversation/turn-catalog', () => {
-  it('should admit only the declared model-turn tuple', () => {
+  it('should admit only the declared model-turn tuples', () => {
     const catalog = new GitHubNotificationTurnCatalog(
       githubNotificationSupportedTurnIdentities,
       definitions(),
@@ -25,25 +27,32 @@ describe('channels/github/conversation/turn-catalog', () => {
     assert.equal(definition.eventTurn.kind, 'model');
     assert.equal(definition.lifecycle.id, 'issue');
     assert.equal(definition.mode.policy.id, 'work');
-    assert.throws(
-      () =>
-        catalog.resolve({
-          eventId: 'assignment',
-          lifecycleId: 'issue',
-          modeId: 'work',
-        }),
-      (error: unknown) =>
-        error instanceof GitHubNotificationTurnCatalogError &&
-        error.code === 'github-notification-turn-unsupported',
+    assert.deepEqual(
+      catalog.resolve(githubNotificationIssueWorkAssignmentTurnIdentity).identity,
+      githubNotificationIssueWorkAssignmentTurnIdentity,
+    );
+    assert.deepEqual(
+      catalog.resolve(githubNotificationIssueWorkImplementationTurnIdentity).identity,
+      githubNotificationIssueWorkImplementationTurnIdentity,
     );
   });
 
   it('should reject an observe-only event declared as a model turn', () => {
+    const base = definitions();
     assert.throws(
       () =>
         new GitHubNotificationTurnCatalog(
           [{ eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' }],
-          definitions(),
+          {
+            ...base,
+            events: {
+              resolve(id: 'assignment' | 'comment') {
+                return id === 'assignment'
+                  ? ({ id, turn: { kind: 'observe-only' } } as const)
+                  : base.events.resolve(id);
+              },
+            },
+          },
         ),
       (error: unknown) =>
         error instanceof GitHubNotificationTurnCatalogError &&

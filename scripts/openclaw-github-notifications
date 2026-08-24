@@ -3,7 +3,7 @@
 set -euo pipefail
 
 command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=examples/.bin/openclaw-common.sh
+# shellcheck source=scripts/openclaw-common.sh
 source "$command_dir/openclaw-common.sh"
 
 subcommand=''

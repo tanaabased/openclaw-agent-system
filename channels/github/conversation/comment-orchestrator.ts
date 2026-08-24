@@ -201,7 +201,7 @@ export default class GitHubNotificationCommentOrchestrator {
         'github-notification-comments-truncated',
       );
     }
-    if (!existingConversation) {
+    if (!existingConversation?.baselineEstablished) {
       const revisions = Object.fromEntries(
         sortedComments(page.comments).map((comment) => {
           const revision = githubCommentRevision(comment);
@@ -219,6 +219,7 @@ export default class GitHubNotificationCommentOrchestrator {
       );
       state = structuredClone(state);
       state.conversations[conversationId] = {
+        ...(existingConversation ?? {}),
         baselineEstablished: true,
         itemKey,
         lifecycleId: item.lifecycleId,

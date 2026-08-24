@@ -6,8 +6,16 @@
 
 The GitHub notifications channel currently owns trusted polling, assignment
 admission, durable deduplication, routing, and managed issue-worktree intake.
-For prepared issues, it also admits new approved comments into one OpenClaw
-lifecycle session and publishes the accepted public part of the response.
+Accepted issues receive a private assignment card and an immediate public
+acknowledgment, then run one initial assignment turn that keeps its full report
+in the OpenClaw session and publishes a bounded conversational response. A
+published Work plan schedules one private implementation turn in the same
+session and worktree on the next reconciliation. That turn implements,
+validates, and creates one local commit. The lifecycle then prepends the trusted
+issue number, performs the first ordinary push, and creates or normalizes one
+pull request assigned to the issue author. For prepared issues, the channel also
+admits new approved comments into that session and publishes the accepted public
+part of the response.
 
 ## Current Behavior
 
@@ -16,8 +24,20 @@ lifecycle session and publishes the accepted public part of the response.
 - Later polling or `notifications refresh` discovers new issue and pull-request
   assignments and admits only authorized actors, repositories, and events.
 - Accepted issues create or reuse one deterministic managed worktree and one
-  OpenClaw lifecycle session. Pull-request assignments retain bounded head
-  metadata without creating a worktree.
+  OpenClaw lifecycle session. The session begins with a compact assignment card,
+  then the channel publishes one deterministic, varied acknowledgment before
+  running the registered `issue`, `work`, and `assignment` turn. The turn keeps
+  its private assessment and plan in the session and may publish one bounded
+  conversational response. A valid published assignment response deterministically
+  registers a pending `issue`, `work`, and `implementation` turn from trusted
+  tuple state rather than model-authored report formatting. The next reconciliation
+  carries out the plan and validates it in the same session and worktree, then
+  creates one local commit without publishing another GitHub response. Durable
+  lifecycle delivery prepends the trusted issue number to that commit, performs
+  the first ordinary push, and creates or normalizes one open pull request with
+  the issue title, default base branch, closing reference, and issue-author
+  assignee. Pull-request assignments retain bounded head metadata without
+  creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
   issue session with an attributed comment card as its direct message. The card
@@ -30,22 +50,25 @@ lifecycle session and publishes the accepted public part of the response.
   OpenClaw. Each lifecycle projects its own bounded source, repository, and
   resource facts as private structured context. The current comment flow
   requires the agent's `coding` profile.
-- Hidden instructions for the current comment flow are composed from the
-  registered `issue`, `work`, and `comment` definitions, selected from the
-  private active-turn descriptor, and injected through the prompt hook. Missing
-  or unsupported selection does not fall back to a different prompt.
-- Each completed comment turn keeps its private response in the session and may
-  publish one validated public reply to GitHub. Missing or invalid public replies
-  are withheld without discarding the private response.
+- Hidden instructions for assignment, implementation, and comment turns are
+  composed from their registered lifecycle, mode, and event definitions,
+  selected from the private active-turn descriptor, and injected through the
+  prompt hook. Missing or unsupported selection does not fall back to a
+  different prompt.
+- Each completed model turn keeps its private response in the session. Turns
+  with a publication intent may publish one validated public response to GitHub;
+  the implementation continuation has no publication intent. Missing or invalid
+  public responses are withheld without discarding the private response.
 - Public replies are concise conversational comments and may use GitHub-flavored
   Markdown when it improves clarity. Publication still rejects secrets,
-  credentials, local paths, hidden context, and literal model-authored mentions.
-  The model can position one reserved commenter placeholder naturally; after
-  exact-source reauthorization, Agent System replaces it with the verified
+  credentials, hidden context, and literal model-authored mentions. File
+  references should use repository-relative paths instead of absolute worktree
+  paths. The model can position one reserved commenter placeholder naturally;
+  after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, GitHub assignment acknowledgments, initial planning
-  turns, Plan and Auto modes, mode transitions, and chat-originated publication
-  remain intentionally dormant.
+- Pull-request comments, Plan and Auto modes, mode transitions, issue-to-pull-
+  request session handoff, and chat-originated publication remain intentionally
+  dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
 
@@ -88,11 +111,14 @@ environment:
 
 git:
   worktrees: {}
+  ssh:
+    private-keys: ~/.ssh/id_ed25519
 
 github:
   host: github.com
   username: tanaabot
   token: GH_TOKEN_TANAABOT
+  ssh-keys: ~/.ssh/id_ed25519.pub
   notifications:
     assignment-types:
       - issue
@@ -117,9 +143,11 @@ GitHub node id. Node ids must be unique within each list. The optional owner
 filter does not grant repository access or approve that owner's members.
 
 `github.token` names an environment variable and never accepts a literal token.
-For private repositories, configure
-[`git.ssh`](../../tools/git/README.md#gitsshprivate-keys) so worktree
-preparation does not embed a token in a clone URL.
+Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
+for the authenticated branch push. The matching public key must already belong
+to the configured GitHub account, or `github.ssh-keys` can declare it for
+`install` to reconcile. SSH configuration also keeps private-repository
+worktree preparation free of credential-bearing clone URLs.
 
 ## Usage
 
@@ -192,16 +220,20 @@ reference.
 - Comment reads are bounded, and conversation state retains revision digests
   rather than incoming provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
-  The current channel-owned turn identity selects the one supported `issue`,
-  `work`, and `comment` combination; its registry rejects unsupported
-  combinations, and the trusted Work policy requires the configured `coding`
-  profile.
-- When material information is missing, the current turn instructions tell the
-  agent to ask one precise public question and stop. A later admitted comment
-  resumes the same session; no separate clarification phase is persisted.
+  The current channel-owned turn identity selects the registered `issue`,
+  `work`, and `assignment`, `implementation`, or `comment` combination; its
+  registry rejects unsupported combinations, and the trusted Work policy
+  requires the configured `coding` profile.
+- The current Work assignment slice requires an implementation-ready plan and
+  does not yet expose a clarification pause as a structured lifecycle outcome.
+  The target clarification behavior remains documented in `DESIGN.md`.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
   the exact source author and destination before loading credentials, substitutes
-  only that verified commenter mention, and publishes idempotently.
+  only that verified commenter mention, and publishes idempotently. Assignment
+  acknowledgments pass through the same publication safety, authorization,
+  marker, and reconciliation boundary without model-authored text. Assignment
+  responses use the model-turn candidate boundary and are reauthorized before
+  publication.
 - Private monitor and conversation state contain no tokens.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without

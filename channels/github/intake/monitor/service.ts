@@ -2,6 +2,7 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 
+import AgentSystemToolError from '../../../../api/error.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
 import {
   GitHubAccountClientError,
@@ -32,6 +33,12 @@ export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: {
     reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
+    respond(
+      agentId: string,
+      itemKey: string,
+      signal?: AbortSignal,
+      executionSurface?: GitHubNotificationExecutionSurface,
+    ): Promise<void>;
   };
   commentOrchestrator?: {
     reconcile(
@@ -95,6 +102,11 @@ function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
     return { code: error.code };
   }
   return { code: 'github-notification-monitor-failed' };
+}
+
+function toolCauseCode(error: unknown): string | undefined {
+  const cause = error instanceof Error ? error.cause : undefined;
+  return cause instanceof AgentSystemToolError ? cause.code : undefined;
 }
 
 function matchesSelector(
@@ -373,6 +385,26 @@ export default class GitHubNotificationMonitorService {
         await this.#dependencies.stateStore.write(current);
       } else if (pollDeferred) {
         await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
+        const commentFailure = await this.#reconcileCommentsSafely(
+          agentId,
+          options.selector,
+          executionSurface,
+          signal,
+        );
+        await this.#reconcileAssignmentResponses(
+          agentId,
+          options.selector,
+          executionSurface,
+          signal,
+        );
+        if (commentFailure) {
+          return {
+            agentId,
+            code: commentFailure.code,
+            ...monitorStateMetadata(current),
+            status: 'failed',
+          };
+        }
         return {
           agentId,
           code: 'github-notification-pending-reconciled',
@@ -410,21 +442,21 @@ export default class GitHubNotificationMonitorService {
         pendingIntakeItemKeys(result.state, options.selector),
         signal,
       );
-      try {
-        await this.#reconcileComments(agentId, options.selector, executionSurface, signal);
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        const diagnostic = diagnosticCode(error);
-        this.#dependencies.logger.warn(
-          `github-notifications: comment reconciliation failed agent=${agentId} code=${diagnostic.code}`,
-        );
+      const commentFailure = await this.#reconcileCommentsSafely(
+        agentId,
+        options.selector,
+        executionSurface,
+        signal,
+      );
+      await this.#reconcileAssignmentResponses(agentId, options.selector, executionSurface, signal);
+      if (commentFailure) {
         return {
           agentId,
           approved: result.approved,
           baseline: result.baseline,
           baselineAt: result.state.baselineAt,
           baselineEstablished: result.baselineEstablished,
-          code: diagnostic.code,
+          code: commentFailure.code,
           duplicates: result.duplicates,
           lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
           nextPollAt: result.state.nextPollAt,
@@ -513,6 +545,32 @@ export default class GitHubNotificationMonitorService {
     }
   }
 
+  async #reconcileAssignmentResponses(
+    agentId: string,
+    selector: GitHubNotificationItemSelector | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const state = await this.#dependencies.stateStore.read(agentId);
+    for (const itemKey of preparedIssueItemKeys(state, selector)) {
+      if (signal?.aborted) return;
+      try {
+        await this.#dependencies.assignmentOrchestrator.respond(
+          agentId,
+          itemKey,
+          signal,
+          executionSurface,
+        );
+      } catch (error) {
+        const diagnostic = diagnosticCode(error);
+        const causeCode = toolCauseCode(error);
+        this.#dependencies.logger.warn(
+          `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
+        );
+      }
+    }
+  }
+
   async #reconcileComments(
     agentId: string,
     selector: GitHubNotificationItemSelector | undefined,
@@ -527,6 +585,24 @@ export default class GitHubNotificationMonitorService {
         executionSurface,
         ...(signal === undefined ? {} : { signal }),
       });
+    }
+  }
+
+  async #reconcileCommentsSafely(
+    agentId: string,
+    selector: GitHubNotificationItemSelector | undefined,
+    executionSurface: GitHubNotificationExecutionSurface,
+    signal?: AbortSignal,
+  ): Promise<{ code: string } | undefined> {
+    try {
+      await this.#reconcileComments(agentId, selector, executionSurface, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      const diagnostic = diagnosticCode(error);
+      this.#dependencies.logger.warn(
+        `github-notifications: comment reconciliation failed agent=${agentId} code=${diagnostic.code}`,
+      );
+      return diagnostic;
     }
   }
 

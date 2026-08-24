@@ -1,0 +1,118 @@
+name: Notification tests
+
+run-name: notifications / ${{ inputs.lifecycle }} / ${{ inputs.mode }} / ${{ inputs.scenario }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      lifecycle:
+        description: GitHub lifecycle
+        required: true
+        type: choice
+        default: issue
+        options:
+          - issue
+      mode:
+        description: Execution mode
+        required: true
+        type: choice
+        default: work
+        options:
+          - work
+      scenario:
+        description: Scenario focus
+        required: true
+        type: choice
+        default: all
+        options:
+          - assignment
+          - implementation
+          - pr
+          - comment
+          - retirement
+          - all
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  NO_COLOR: '1'
+
+jobs:
+  notifications:
+    name: ${{ inputs.lifecycle }}-${{ inputs.mode }}-${{ matrix.scenario }} (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: openai-live-tests-${{ (matrix.scenario == 'assignment' || matrix.scenario == 'pr') && '2' || '1' }}
+      queue: max
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Brew updates
+        shell: bash
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+          brew install coreutils
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          version: dev
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Pack prepared plugin
+        shell: bash
+        run: |
+          bun run plugin:check
+          bun run format:check
+          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          test -n "$archive_name"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
+      - name: Run Leia-backed notification scenario
+        shell: bash
+        env:
+          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
+          DEFAULT_CREDENTIAL_STORE: secret-service
+          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
+          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
+          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+          OPENAI_MODEL: gpt-5.4-nano
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
+        run: bun run leia "scenarios/${{ inputs.lifecycle }}-${{ inputs.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
+        if: failure()
+        shell: bash
+        run: openclaw-diagnostics

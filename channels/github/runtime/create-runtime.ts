@@ -8,7 +8,11 @@ import type AgentManifestService from '../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
+import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import GitHubNotificationIssueDeliveryService, {
+  type GitHubNotificationGitExecutor,
+} from '../conversation/issue-delivery-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
@@ -22,6 +26,7 @@ import GitHubNotificationTurnCatalog, {
 import GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
+import githubNotificationImplementationEvent from '../events/implementation.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
@@ -96,6 +101,7 @@ export default function createGitHubNotificationRuntime(
   const eventRegistry = new GitHubNotificationEventRegistry([
     githubNotificationAssignmentEvent,
     githubNotificationCommentEvent,
+    githubNotificationImplementationEvent,
   ]);
   const turnCatalog = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
     events: eventRegistry,
@@ -116,6 +122,7 @@ export default function createGitHubNotificationRuntime(
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
     candidates,
     dispatcher: turnDispatcher,
+    logger: dependencies.lifecycleLogger,
   });
 
   return {
@@ -140,16 +147,39 @@ export default function createGitHubNotificationRuntime(
       },
     },
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
-    assemble(manifestService: AgentManifestService) {
+    assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
       const assignmentProvider = new GitHubNotificationAssignmentProvider({
         accountClient: dependencies.accountClient,
         manifestService,
         readConfig: dependencies.readRuntimeConfig,
       });
-      const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
-        logger: dependencies.lifecycleLogger,
+      const commentPublicationService = new GitHubNotificationCommentPublicationService({
+        assignmentAuthority: assignmentProvider,
+        conversationStateStore,
+        manifestService,
+        monitorStateStore,
+        publicationLeaseStore,
         readConfig: dependencies.readRuntimeConfig,
-        recordInboundSession: dependencies.recordInboundSession,
+      });
+      const assignmentAcknowledgmentService = new GitHubNotificationAssignmentAcknowledgmentService(
+        {
+          conversationStateStore,
+          publications: commentPublicationService,
+        },
+      );
+      const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
+        acknowledgments: assignmentAcknowledgmentService,
+        conversationStateStore,
+        coordinator: turnCoordinator,
+        deliveries: new GitHubNotificationIssueDeliveryService({
+          accountClient: dependencies.accountClient,
+          git,
+          manifestService,
+        }),
+        logger: dependencies.lifecycleLogger,
+        publications: commentPublicationService,
+        readConfig: dependencies.readRuntimeConfig,
+        turnContracts,
       });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
         authority: assignmentProvider,
@@ -163,14 +193,6 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         turnContracts,
-      });
-      const commentPublicationService = new GitHubNotificationCommentPublicationService({
-        assignmentAuthority: assignmentProvider,
-        conversationStateStore,
-        manifestService,
-        monitorStateStore,
-        publicationLeaseStore,
-        readConfig: dependencies.readRuntimeConfig,
       });
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,

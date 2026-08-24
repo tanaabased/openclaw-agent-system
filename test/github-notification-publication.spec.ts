@@ -69,11 +69,18 @@ describe('channels/github/publication/publication', () => {
       ].join('\n'),
     );
     assert.equal(
-      githubNotificationPublicationText('planning-outcome', [
+      githubNotificationPublicationText('assignment-response', [
         { text: 'I reviewed the assignment and have a plan ready.' },
       ]),
       'I reviewed the assignment and have a plan ready.',
     );
+  });
+
+  it('should allow harmless paths and long repository identifiers', () => {
+    const text =
+      'I reviewed `/Users/runner/work/example/channels/github/publication.ts`, will create `assignment-fixture-32681544592-1.txt`, and based the plan on commit `0123456789abcdef0123456789abcdef01234567`.';
+
+    assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
   });
 
   it('should substitute the verified commenter wherever the reserved token reads naturally', () => {
@@ -111,6 +118,23 @@ describe('channels/github/publication/publication', () => {
     );
   });
 
+  it('should classify secret safety rejections without retaining candidate text', () => {
+    for (const [text, safetyCategory] of [
+      ['OPENAI_API_KEY=value', 'environment-assignment'],
+      ['See @pirog.', 'mention'],
+      ['Token ghp_abcdef', 'credential-prefix'],
+    ] as const) {
+      assert.throws(
+        () => githubNotificationPublicationText('github-reply', [{ text }]),
+        (error: unknown) =>
+          error instanceof GitHubNotificationPublicationError &&
+          error.code === 'github-notification-publication-secret-safety-rejected' &&
+          error.safetyCategory === safetyCategory &&
+          !error.message.includes(text),
+      );
+    }
+  });
+
   it('should reject unsupported shapes and secret-sensitive text', () => {
     assert.throws(
       () =>
@@ -141,13 +165,6 @@ describe('channels/github/publication/publication', () => {
           error.code === 'github-notification-publication-commenter-token-invalid',
       );
     }
-    assert.throws(
-      () =>
-        githubNotificationPublicationText('github-reply', [
-          { text: 'Read `/Users/pirog/private.txt`.' },
-        ]),
-      /not safe to publish/u,
-    );
     assert.throws(
       () => githubNotificationPublicationText('github-reply', [{ mediaUrl: '/tmp/result.png' }]),
       /not safe to publish/u,

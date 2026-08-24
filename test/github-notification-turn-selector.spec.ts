@@ -4,7 +4,11 @@ import {
   createGitHubNotificationConversationState,
   type GitHubNotificationConversationState,
 } from '../channels/github/conversation/conversation-state.ts';
+import GitHubNotificationTurnCatalog, {
+  githubNotificationSupportedTurnIdentities,
+} from '../channels/github/conversation/turn-catalog.ts';
 import GitHubNotificationTurnSelector from '../channels/github/conversation/turn-selector.ts';
+import { createGitHubNotificationTurnDefinitions } from './github-notification-turn-fixtures.ts';
 
 const agentId = 'tanaabot';
 const conversationId = 'github:issue:R_repo:12';
@@ -60,6 +64,54 @@ describe('channels/github/conversation/turn-selector', () => {
     );
     assert.deepEqual(reads, [agentId]);
     assert.deepEqual(resolved, [{ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }]);
+  });
+
+  it('should select the registered assignment tuple from durable state', async () => {
+    const state = conversationState();
+    state.conversations[conversationId]!.activeTurn = {
+      eventId: 'assignment',
+      sourceId: 'EV_assignment',
+    };
+    const catalog = new GitHubNotificationTurnCatalog(
+      githubNotificationSupportedTurnIdentities,
+      createGitHubNotificationTurnDefinitions(),
+    );
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: catalog,
+    });
+
+    assert.deepEqual(await selector.select({ agentId, channelId: conversationId }), {
+      agentId,
+      conversationId,
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' },
+      sourceId: 'EV_assignment',
+    });
+  });
+
+  it('should select the registered implementation tuple from durable state', async () => {
+    const state = conversationState();
+    state.conversations[conversationId]!.activeTurn = {
+      eventId: 'implementation',
+      sourceId: 'EV_assignment',
+    };
+    const catalog = new GitHubNotificationTurnCatalog(
+      githubNotificationSupportedTurnIdentities,
+      createGitHubNotificationTurnDefinitions(),
+    );
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: catalog,
+    });
+
+    assert.deepEqual(await selector.select({ agentId, channelId: conversationId }), {
+      agentId,
+      conversationId,
+      identity: { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' },
+      sourceId: 'EV_assignment',
+    });
   });
 
   it('should decline missing, conflicting, or cross-workspace selection', async () => {

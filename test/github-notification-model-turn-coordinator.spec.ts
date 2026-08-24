@@ -43,6 +43,7 @@ function input() {
 describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should coordinate one private response and one typed public candidate', async () => {
     const calls: unknown[] = [];
+    const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin(candidateIdentity) {
@@ -65,6 +66,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
             finalPayloads: [{ text: 'Complete private response.' }],
           };
         },
+      },
+      logger: {
+        info: (message) => messages.push(message),
+        warn() {},
       },
     });
 
@@ -99,11 +104,85 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         },
       ],
     ]);
+    assert.match(
+      messages[0] ?? '',
+      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=gateway/u,
+    );
+    assert.match(
+      messages[1] ?? '',
+      /model turn completed .*final-payloads=1 block=0 final=1 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
+    );
+  });
+
+  it('should coordinate a private turn without requiring a publication candidate', async () => {
+    const messages: string[] = [];
+    const warnings: string[] = [];
+    const stagedCandidates: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [...stagedCandidates];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 2 }, queuedFinal: false },
+            finalPayloads: [{ text: '## Implementation\n\nComplete.' }],
+          };
+        },
+      },
+      logger: {
+        info: (message) => messages.push(message),
+        warn: (message) => warnings.push(message),
+      },
+    });
+    const privateContract = {
+      ...contract,
+      identity: { ...identity, eventId: 'implementation' as const },
+      publicationIntent: undefined,
+    };
+
+    const result = await coordinator.run({
+      ...input(),
+      contract: privateContract,
+      messageId: 'implementation:EV_assignment',
+      sourceId: 'EV_assignment',
+    });
+
+    assert.equal(result.privateText, '## Implementation\n\nComplete.');
+    assert.deepEqual(result.publication, { status: 'none' });
+    assert.match(messages[1] ?? '', /event=implementation .*candidates=0 publication=none/u);
+
+    stagedCandidates.push('This must not be published.');
+    assert.deepEqual(
+      (
+        await coordinator.run({
+          ...input(),
+          contract: privateContract,
+          messageId: 'implementation:EV_other',
+          sourceId: 'EV_other',
+        })
+      ).publication,
+      {
+        code: 'github-notification-publication-candidate-unexpected',
+        status: 'withheld',
+      },
+    );
+    assert.match(
+      warnings[0] ?? '',
+      /event=implementation .*candidates=1 publication=withheld code=github-notification-publication-candidate-unexpected/u,
+    );
   });
 
   it('should cancel the candidate handoff when model dispatch fails', async () => {
     const failure = new Error('dispatch failed');
     let cancellation: unknown;
+    const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
         async begin() {
@@ -121,6 +200,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
           throw failure;
         },
       },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
     });
 
     await assert.rejects(coordinator.run(input()), (error: unknown) => error === failure);
@@ -131,6 +214,84 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       sourceId: 'revision-1',
       turnId: 'turn-1',
     });
+    assert.match(
+      warnings[0] ?? '',
+      /model turn failed .*event=comment .*phase=dispatch code=unclassified aborted=false/u,
+    );
+  });
+
+  it('should warn with bounded diagnostics when publication is withheld', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 2, final: 1, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'Complete private response.' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    assert.deepEqual((await coordinator.run(input())).publication, {
+      code: 'github-notification-publication-candidate-missing',
+      status: 'withheld',
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /model turn completed .*final-payloads=1 block=2 final=1 tool=0 queued-final=false candidates=0 publication=withheld code=github-notification-publication-candidate-missing aborted=false/u,
+    );
+  });
+
+  it('should report a value-free publication safety category', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return ['See @pirog for the private result.'];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
+            finalPayloads: [{ text: 'Complete private response.' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    assert.deepEqual((await coordinator.run(input())).publication, {
+      code: 'github-notification-publication-secret-safety-rejected',
+      safetyCategory: 'mention',
+      status: 'withheld',
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /publication=withheld code=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
+    );
+    assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
   });
 
   it('should classify a missing prompt-selection attestation', async () => {
@@ -154,6 +315,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
           };
         },
       },
+      logger: { info() {}, warn() {} },
     });
 
     await assert.rejects(

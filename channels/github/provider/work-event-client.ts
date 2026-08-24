@@ -736,7 +736,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     marker: string,
   ): Promise<GitHubIssueCommentReconciliationReceipt | undefined> {
     if (
-      !/^<!-- agent-system-github-publication:(?:github-reply|initial-acknowledgment|planning-outcome):[a-f0-9]{32} -->$/u.test(
+      !/^<!-- agent-system-github-publication:(?:assignment-response|github-reply|initial-acknowledgment):[a-f0-9]{32} -->$/u.test(
         marker,
       )
     ) {

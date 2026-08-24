@@ -6,9 +6,9 @@ This scenario installs the prepared Agent System package on a fresh GitHub Actio
 
 ```bash
 # should configure an unauthenticated local openclaw profile with the packed plugin
-OPENCLAW_SETUP_WORKSPACE="$TMPDIR/main" \
-OPENCLAW_SETUP_AGENT_SYSTEM_PLUGIN="$AGENT_SYSTEM_PACKAGE" \
-  openclaw-setup
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 
 # should prepare an isolated install workspace
 mkdir -p "$TMPDIR/install-data"

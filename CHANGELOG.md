@@ -2,14 +2,17 @@
 
 ### New Features
 
+- Separated CI-only GitHub notification acceptance scenarios from general Leia examples with independent workflow and check identities. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake.
+- Added linked GitHub assignment cards, varied acknowledgments, active user-centric Work plans, and durable private implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation while keeping worktree checkpoints and comment reconciliation independent from response failures. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
 - Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety.
 
 ### Bug Fixes
 
+- Fixed Work assignment continuation to use trusted lifecycle state instead of parsing model-authored report headings. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths.
 
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)

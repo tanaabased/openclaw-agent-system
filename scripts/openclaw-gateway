@@ -3,7 +3,7 @@
 set -euo pipefail
 
 command_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=examples/.bin/openclaw-common.sh
+# shellcheck source=scripts/openclaw-common.sh
 source "$command_dir/openclaw-common.sh"
 
 action=''
@@ -89,11 +89,33 @@ esac
 pid_path="$state_dir/gateway.pid"
 log_path="$state_dir/gateway.log"
 call_log_path="$state_dir/gateway-call.log"
+lifecycle_log_path="$state_dir/gateway-lifecycle.log"
 debug "gateway action=$action state-dir=$state_dir"
+
+capture_lifecycle_diagnostics() {
+  local capture_path
+  capture_path="$(mktemp "$state_dir/gateway-lifecycle.XXXXXX")"
+  if openclaw logs \
+    --plain \
+    --no-color \
+    --utc \
+    --limit 500 \
+    --max-bytes 500000 \
+    --timeout 10000 2> /dev/null | \
+    grep -F '[agent-system] github-notifications:' > "$capture_path"; then
+    mv "$capture_path" "$lifecycle_log_path"
+    return
+  fi
+  rm -f "$capture_path"
+}
 
 tail_diagnostics() {
   if [[ -f "$call_log_path" ]]; then
     tail -n 40 "$call_log_path" >&2
+  fi
+  if [[ -f "$lifecycle_log_path" ]]; then
+    printf '%s\n' 'github notification lifecycle logs' >&2
+    tail -n 80 "$lifecycle_log_path" >&2
   fi
   if [[ -f "$log_path" ]]; then
     grep -F 'github-notifications:' "$log_path" | tail -n 80 >&2 || true
@@ -158,7 +180,7 @@ start_gateway() {
 
 stop_gateway() {
   local stop_timeout="$1"
-  local deadline=$((SECONDS + stop_timeout))
+  local deadline
   if [[ ! -f "$pid_path" ]]; then
     return 0
   fi
@@ -167,6 +189,8 @@ stop_gateway() {
     rm -f "$pid_path"
     return 0
   fi
+  capture_lifecycle_diagnostics
+  deadline=$((SECONDS + stop_timeout))
   debug "stopping gateway pid=$gateway_pid timeout-seconds=$stop_timeout"
   if ! kill -TERM "$gateway_pid" 2>/dev/null; then
     if ! kill -0 "$gateway_pid" 2>/dev/null; then
@@ -216,6 +240,9 @@ case "$action" in
     stop_gateway "$timeout_seconds"
     ;;
   diagnostics)
+    if [[ -f "$pid_path" ]] && gateway_is_running; then
+      capture_lifecycle_diagnostics
+    fi
     tail_diagnostics
     ;;
 esac

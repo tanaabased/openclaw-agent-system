@@ -39,8 +39,22 @@ export const githubNotificationIssueWorkCommentTurnIdentity = {
   modeId: 'work',
 } as const satisfies GitHubNotificationTurnIdentity;
 
+export const githubNotificationIssueWorkAssignmentTurnIdentity = {
+  eventId: 'assignment',
+  lifecycleId: 'issue',
+  modeId: 'work',
+} as const satisfies GitHubNotificationTurnIdentity;
+
+export const githubNotificationIssueWorkImplementationTurnIdentity = {
+  eventId: 'implementation',
+  lifecycleId: 'issue',
+  modeId: 'work',
+} as const satisfies GitHubNotificationTurnIdentity;
+
 export const githubNotificationSupportedTurnIdentities = [
+  githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
+  githubNotificationIssueWorkImplementationTurnIdentity,
 ] as const satisfies readonly GitHubNotificationTurnIdentity[];
 
 function turnKey(identity: GitHubNotificationTurnIdentity): string {

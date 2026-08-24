@@ -18,7 +18,7 @@ openclaw-setup \
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
-cp "$GITHUB_WORKSPACE/examples/git/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should store access and install the scenario-owned agent through agent system
@@ -28,7 +28,7 @@ openclaw agent-system install
 
 # should register only the generated public key for tanaabot
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/agent-system-test-ssh.pub")" --jq .id > "$TMPDIR/agent-system-test-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-git-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/big-test-bucket-ssh.key-id"
 ```
 
 ## Testing
@@ -44,7 +44,7 @@ openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") 
 
 # should run one explicitly allowed external git extension
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-PATH="$GITHUB_WORKSPACE/examples/git/tanaabot/bin:$PATH" "$GITHUB_WORKSPACE/bin/git" agent-system-test | grep -Fx 'agent-system-extension'
+PATH="$GITHUB_WORKSPACE/examples/git/tanaabot/bin:$PATH" "$GITHUB_WORKSPACE/bin/git" big-test-bucket | grep -Fx 'agent-system-extension'
 
 # should deny an alternate force push before git execution
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
@@ -88,7 +88,7 @@ cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 ```bash
 # should remove only the generated tanaabot public key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-key_id="$(cat "$TMPDIR/agent-system-test-ssh.key-id")"
+key_id="$(cat "$TMPDIR/big-test-bucket-ssh.key-id")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
 remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select(.id == $key_id) | .id")"
 test -z "$remaining"

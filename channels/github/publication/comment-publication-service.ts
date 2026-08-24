@@ -5,9 +5,9 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
 import { admitGitHubComment, githubCommentRevision } from '../conversation/comment-admission.ts';
 import type {
-  GitHubNotificationCommentPublicationState,
   GitHubNotificationCommentRevisionState,
   GitHubNotificationConversationState,
+  GitHubNotificationPublicationState,
 } from '../conversation/conversation-state.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import {
@@ -25,19 +25,32 @@ import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-st
 import type GitHubNotificationPublicationLeaseStore from './publication-lease.ts';
 import type { GitHubNotificationPublicationClient } from '../provider/work-event-client.ts';
 
-type PublishablePublication = Exclude<
-  GitHubNotificationCommentPublicationState,
-  { status: 'withheld' }
->;
+type PublishablePublication = Exclude<GitHubNotificationPublicationState, { status: 'withheld' }>;
 
-interface PublicationMatch {
-  commentNodeId: string;
+interface LocalPublicationMatchBase {
   conversationId: string;
-  item: GitHubNotificationItemState;
   itemKey: string;
-  revision: GitHubNotificationCommentRevisionState & { publication: PublishablePublication };
-  state: GitHubNotificationConversationState;
 }
+
+type LocalPublicationMatch = LocalPublicationMatchBase &
+  (
+    | {
+        kind: 'assignment-response' | 'initial-acknowledgment';
+        publication: PublishablePublication;
+      }
+    | {
+        commentNodeId: string;
+        kind: 'reply';
+        revision: GitHubNotificationCommentRevisionState & {
+          publication: PublishablePublication;
+        };
+      }
+  );
+
+type PublicationMatch = LocalPublicationMatch & {
+  item: GitHubNotificationItemState;
+  state: GitHubNotificationConversationState;
+};
 
 export interface GitHubNotificationCommentPublicationServiceDependencies {
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationPublicationClient>;
@@ -78,14 +91,28 @@ function accountId(value: string): string {
 function publicationMatches(
   state: GitHubNotificationConversationState,
   target: string,
-): Array<{
-  commentNodeId: string;
-  conversationId: string;
-  itemKey: string;
-  revision: GitHubNotificationCommentRevisionState & { publication: PublishablePublication };
-}> {
-  const matches = [];
+): LocalPublicationMatch[] {
+  const matches: LocalPublicationMatch[] = [];
   for (const [conversationId, conversation] of Object.entries(state.conversations)) {
+    if (conversation.acknowledgment?.target === target) {
+      matches.push({
+        conversationId,
+        itemKey: conversation.itemKey,
+        kind: 'initial-acknowledgment',
+        publication: conversation.acknowledgment,
+      });
+    }
+    if (
+      conversation.assignmentResponse?.status !== 'withheld' &&
+      conversation.assignmentResponse?.target === target
+    ) {
+      matches.push({
+        conversationId,
+        itemKey: conversation.itemKey,
+        kind: 'assignment-response',
+        publication: conversation.assignmentResponse,
+      });
+    }
     for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
       const publication = revision.publication;
       if (
@@ -98,6 +125,7 @@ function publicationMatches(
           commentNodeId,
           conversationId,
           itemKey: conversation.itemKey,
+          kind: 'reply',
           revision: { ...revision, publication },
         });
       }
@@ -106,7 +134,7 @@ function publicationMatches(
   return matches;
 }
 
-/** Reauthorize and publish only accepted lifecycle-owned GitHub reply text. */
+/** Reauthorize and publish only accepted lifecycle-owned GitHub comment text. */
 export default class GitHubNotificationCommentPublicationService {
   readonly #dependencies: GitHubNotificationCommentPublicationServiceDependencies;
 
@@ -146,6 +174,9 @@ export default class GitHubNotificationCommentPublicationService {
         });
         if (!opened.authorized) {
           fail(opened.reasonCode ?? 'github-notification-publication-authority-revoked');
+        }
+        if (authorized.kind !== 'reply') {
+          return { client: opened.client };
         }
         const exact = await opened.client.getIssueComment(
           authorized.item.repositoryOwner,
@@ -187,14 +218,22 @@ export default class GitHubNotificationCommentPublicationService {
 
   async #publicationInput(input: GitHubNotificationCommentPublicationServiceInput) {
     const match = await this.#authorizeLocal(input);
+    if (match.kind === 'reply') {
+      return {
+        intent: 'github-reply' as const,
+        item: match.item,
+        source: {
+          commentDatabaseId: match.revision.commentDatabaseId,
+          revisionId: match.revision.revisionId,
+        },
+        text: match.revision.publication.publicText,
+      };
+    }
     return {
-      intent: 'github-reply' as const,
+      intent: match.kind,
       item: match.item,
-      source: {
-        commentDatabaseId: match.revision.commentDatabaseId,
-        revisionId: match.revision.revisionId,
-      },
-      text: match.revision.publication.publicText,
+      publicationId: match.item.intake!.assignmentEventId,
+      text: match.publication.publicText,
     };
   }
 
@@ -202,11 +241,8 @@ export default class GitHubNotificationCommentPublicationService {
     input: GitHubNotificationCommentPublicationServiceInput,
   ): Promise<PublicationMatch> {
     const normalizedAccountId = accountId(input.accountId);
-    const text = githubNotificationPublicationText('github-reply', [{ text: input.text }]);
     const parsed = parseGitHubNotificationPublicationTarget(input.target);
-    if (parsed.intent !== 'github-reply') {
-      fail('github-notification-publication-intent-unsupported');
-    }
+    const text = githubNotificationPublicationText(parsed.intent, [{ text: input.text }]);
     const [conversationState, monitorState, config, loaded] = await Promise.all([
       this.#dependencies.conversationStateStore.read(normalizedAccountId),
       this.#dependencies.monitorStateStore.read(normalizedAccountId),
@@ -230,21 +266,43 @@ export default class GitHubNotificationCommentPublicationService {
     }
     const candidate = matches[0];
     const item = monitorState.items[candidate.itemKey];
+    const conversation = conversationState.conversations[candidate.conversationId];
+    const intakeReady =
+      item?.intake !== undefined &&
+      (parsed.intent === 'initial-acknowledgment'
+        ? item.intake.stage === 'admitted' || item.intake.stage === 'prepared'
+        : item.intake.stage === 'prepared');
+    const targetMatches =
+      item && parsed.intent === 'github-reply' && candidate.kind === 'reply'
+        ? githubNotificationPublicationTarget({
+            intent: 'github-reply',
+            item,
+            source: {
+              commentDatabaseId: candidate.revision.commentDatabaseId,
+              revisionId: candidate.revision.revisionId,
+            },
+          }) === input.target
+        : item && parsed.intent !== 'github-reply' && candidate.kind === parsed.intent
+          ? githubNotificationPublicationTarget({
+              intent: parsed.intent,
+              item,
+              publicationId: item.intake?.assignmentEventId ?? '',
+            }) === input.target
+          : false;
+    const publicText =
+      candidate.kind === 'reply'
+        ? candidate.revision.publication.publicText
+        : candidate.publication.publicText;
     if (
       !item ||
       item.disposition !== 'approved' ||
-      item.intake?.stage !== 'prepared' ||
-      item.lifecycleId !== 'issue' ||
+      !intakeReady ||
+      (parsed.intent !== 'initial-acknowledgment' && item.lifecycleId !== 'issue') ||
       candidate.conversationId !== parsed.conversationId ||
-      candidate.revision.publication?.publicText !== text ||
-      githubNotificationPublicationTarget({
-        intent: 'github-reply',
-        item,
-        source: {
-          commentDatabaseId: candidate.revision.commentDatabaseId,
-          revisionId: candidate.revision.revisionId,
-        },
-      }) !== input.target
+      conversation?.itemKey !== candidate.itemKey ||
+      conversation.lifecycleId !== item.lifecycleId ||
+      publicText !== text ||
+      !targetMatches
     ) {
       fail('github-notification-publication-target-not-admitted');
     }

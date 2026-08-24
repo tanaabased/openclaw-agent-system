@@ -5,12 +5,15 @@
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
-- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml` plus `.bin` for shared example commands; keep other examples-level files limited to `AGENTS.md` and `package.json`.
+- Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep other examples-level files limited to `AGENTS.md` and `package.json`.
+- Keep `examples/issue` as the single broad automatic live smoke for the GitHub `issue` + `work` lifecycle; leave focused notification acceptance behavior in `scenarios/`.
+- Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
 ## OpenClaw Runtime
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
 - Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, use `--yolo` only when a live-agent scenario requires unattended tool execution, omit `--model` for model-free scenarios, and pass a complete provider/model reference only when the scenario invokes a live agent. Treat successful setup as proof that the resulting OpenClaw configuration is valid and any supplied Agent System pack is enabled and runtime-loadable; keep scenario assertions focused on behavior beyond those shared postconditions.
+- Pass scenario-owned inputs to shared Leia helpers as command-line options. Reserve environment variables for the process or underlying runtime rather than using helper-specific environment aliases in scenario READMEs.
 - Register named agents explicitly and bind them to scenario-owned workspaces; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
 - Keep static agent workspaces and message inputs checked in beside their owning README and use them in place on fresh GitHub Actions runners. Copy a fixture only when isolation from a tested mutation is part of the scenario contract.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
@@ -31,8 +34,9 @@
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
 - Keep runtime-derived state beneath the scenario's `TMPDIR` and keep generated state out of version control.
 - Keep scenario-specific expected values visible in the README or checked-in fixture; use helpers only for bounded process coordination or structured validation.
+- For the broad issue smoke, assert stable publication markers and final provider or repository side effects. Do not assert model wording, headings, intermediate lifecycle states, or exact commit prose.
 
 ## Boundaries
 
 - Do not use literal backticks, braced shell expansions, or numeric backreferences inside executable Leia blocks.
-- Never run Leia scenarios locally. They are operational tests owned exclusively by `.github/workflows/pr-examples-tests.yml` on fresh GitHub Actions runners.
+- Never run Leia examples locally. They are operational tests owned exclusively by `.github/workflows/pr-examples-tests.yml` on fresh GitHub Actions runners.
