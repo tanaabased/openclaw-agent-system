@@ -111,7 +111,20 @@ openclaw-github-issue create-and-assign \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 
-# should classify the approved issue and prepare its lifecycle-owned worktree
+# should complete one approved assignment reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+
+# should expose the prepared lifecycle-owned issue worktree
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
@@ -120,8 +133,7 @@ openclaw agent-system notifications wait \
   --kind issue \
   --number "$issue_number" \
   --for worktree-ready \
-  --refresh \
-  --timeout 180 \
+  --timeout 30 \
   --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/big-test-bucket" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
 
 # should publish exactly one bounded assignment acknowledgment
@@ -135,19 +147,8 @@ jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 
 # should publish exactly one bounded assignment response
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-response=
-deadline=$((SECONDS + 180))
-while test "$SECONDS" -lt "$deadline"; do
-  responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
-  response_count="$(jq -sc 'length' <<< "$responses")"
-  test "$response_count" -le 1
-  if test "$response_count" -eq 1; then
-    response="$(jq -sc '.[0]' <<< "$responses")"
-    break
-  fi
-  sleep 5
-done
-test -n "$response"
+responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
+response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
 jq -e '.body | test("I.m going to|I will|I.ll"; "i")' <<< "$response"
@@ -163,16 +164,18 @@ status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notifi
 test -z "$status"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD > "$TMPDIR/implementation-base-sha"
 
-# should carry out and deliver the published work plan on the next reconciliation
+# should complete the next reconciliation for the published work plan
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw agent-system notifications refresh \
-  --agent notification-data \
-  --repository tanaabased/big-test-bucket \
-  --kind issue \
-  --number "$issue_number" \
-  --timeout 300 \
-  --json | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 
 # should commit only the validated assignment fixture
 cd "$TMPDIR/agent-system-notifications"
