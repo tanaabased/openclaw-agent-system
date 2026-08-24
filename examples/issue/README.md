@@ -91,8 +91,8 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/big-test-bucket \
-  --title "agent system approved notification $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
-  --body 'Untrusted fixture content must not affect assignment classification.' \
+  --title "add assignment fixture file $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body "Add a root file named assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt containing exactly: assignment fixture ready. Do not change any other files." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 
@@ -120,8 +120,19 @@ jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 
 # should publish exactly one bounded assignment response
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
-response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
+response=
+deadline=$((SECONDS + 180))
+while test "$SECONDS" -lt "$deadline"; do
+  responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
+  response_count="$(jq -sc 'length' <<< "$responses")"
+  test "$response_count" -le 1
+  if test "$response_count" -eq 1; then
+    response="$(jq -sc '.[0]' <<< "$responses")"
+    break
+  fi
+  sleep 5
+done
+test -n "$response"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
 
