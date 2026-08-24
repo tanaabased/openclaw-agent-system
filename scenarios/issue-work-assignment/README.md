@@ -1,6 +1,6 @@
 # GitHub Issue Work Assignment Scenario
 
-This macOS-only scenario proves the `issue` + `work` + `assignment` turn. It
+This GitHub Actions-only scenario proves the `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, one bounded assessment and plan, and the planning-only worktree
 checkpoint. It does not continue into implementation.

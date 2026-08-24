@@ -1,6 +1,6 @@
 # GitHub Issue Work Comment Scenario
 
-This macOS-only scenario proves the `issue` + `work` + `comment` turn. Its setup
+This GitHub Actions-only scenario proves the `issue` + `work` + `comment` turn. Its setup
 establishes and completes a real issue assignment so the comment is reconciled
 against a durable active lifecycle; its assertions cover only the admitted
 comment and one published reply.

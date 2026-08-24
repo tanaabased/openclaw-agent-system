@@ -1,6 +1,6 @@
 # GitHub Issue Work Pull Request Scenario
 
-This macOS-only scenario proves the pull-request delivery outcome of an
+This GitHub Actions-only scenario proves the pull-request delivery outcome of an
 `issue` + `work` lifecycle. Its setup establishes a real planned assignment;
 its assertions cover only lifecycle-managed branch delivery and normalized
 pull-request shape.

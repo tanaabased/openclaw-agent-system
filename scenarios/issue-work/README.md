@@ -1,6 +1,6 @@
 # GitHub Issue Notification Intake Scenario
 
-This macOS-only scenario runs the prepared Agent System package in the default
+This GitHub Actions-only scenario runs the prepared Agent System package in the default
 Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,

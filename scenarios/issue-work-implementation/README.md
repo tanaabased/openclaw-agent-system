@@ -1,6 +1,6 @@
 # GitHub Issue Work Implementation Scenario
 
-This macOS-only scenario proves the `issue` + `work` + `implementation` turn.
+This GitHub Actions-only scenario proves the `issue` + `work` + `implementation` turn.
 Its setup establishes a real planned assignment; its assertions cover only the
 exact repository change, lifecycle-normalized commit, and managed branch push.
 

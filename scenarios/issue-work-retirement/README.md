@@ -1,6 +1,6 @@
 # GitHub Issue Work Retirement Scenario
 
-This macOS-only scenario proves assignment retirement for an `issue` + `work`
+This GitHub Actions-only scenario proves assignment retirement for an `issue` + `work`
 lifecycle. Its setup establishes a planned assignment and verifies that its
 worktree checkpoint survives a Gateway restart; its assertions cover only
 unassignment, retirement state, and retained worktree ownership.
