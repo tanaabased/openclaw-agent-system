@@ -21,7 +21,13 @@ jobs:
         os:
           - macos-26
         scenario:
-          - issue-work
+          # known-green broad lifecycle retained while bounded scenarios converge
+          # - issue-work
+          - issue-work-assignment
+          - issue-work-implementation
+          - issue-work-pull-request
+          - issue-work-comment
+          - issue-work-retirement
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

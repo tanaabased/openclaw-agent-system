@@ -6,6 +6,7 @@
 - Name notification scenarios from their supported lifecycle, mode, and event or bounded outcome; keep prerequisite setup separate from the behavior asserted by the scenario.
 - Keep scenario setup, deterministic assertions, bounded disposable GitHub fixtures, and cleanup in the owning directory.
 - Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-notification-tests.yml`; keep other scenario-level files limited to `AGENTS.md` and `package.json`.
+- During bounded feature development, a known-green broad scenario may remain as an explicitly commented matrix row while its extracted scenarios converge; remove or reactivate that reference before merge.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside a scenario.
 
 ## Runtime

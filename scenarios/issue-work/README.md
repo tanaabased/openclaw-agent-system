@@ -38,8 +38,8 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should prepare notification and approved-actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
-cp "$GITHUB_WORKSPACE/scenarios/issue-work/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
-cp "$GITHUB_WORKSPACE/scenarios/issue-work/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
+cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
+cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation

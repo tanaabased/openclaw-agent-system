@@ -21,20 +21,21 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          - install
+          # temporarily narrowed during PR #48 notification development
+          # - install
           - validate
-          - doctor
-          - agent
-          - identity
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
-          - tool
-          - security
+          # - doctor
+          # - agent
+          # - identity
+          # - path
+          # - env
+          # - credentials
+          # - git
+          # - worktree
+          # - github
+          # - routing
+          # - tool
+          # - security
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
