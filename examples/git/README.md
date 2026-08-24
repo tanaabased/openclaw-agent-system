@@ -18,7 +18,7 @@ openclaw-setup \
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
-cp "$GITHUB_WORKSPACE/examples/git/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should store access and install the scenario-owned agent through agent system

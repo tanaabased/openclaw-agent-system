@@ -7,13 +7,15 @@ prepares an approved issue worktree, preserves the checkpoint across restart,
 publishes one assignment acknowledgment, runs the registered issue/Work/assignment
 planning turn, publishes one bounded user-centric active Work plan without
 changing the worktree, carries that published plan out through the registered
-issue/Work/implementation turn on the next reconciliation without committing it,
-delivers one approved comment through the registered issue/Work/comment turn
-contract with its installed identity card, publishes one reply, and retires the
-assignment without deleting the worktree.
+issue/Work/implementation turn on the next reconciliation, commits the validated
+change through Agent System Git, pushes the managed branch without opening a
+pull request, delivers one approved comment through the registered
+issue/Work/comment turn contract with its installed identity card, publishes one
+reply, and retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
-`tanaabased/big-test-bucket`.
+`tanaabased/big-test-bucket`. It registers one generated SSH key for the isolated
+run and removes that key and the pushed branch during cleanup.
 
 ## Setup
 
@@ -23,7 +25,14 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL" \
+  --needs-ssh-key \
   --yolo
+
+# should trust the github host key for the prepared ssh identity
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+chmod 600 "$HOME/.ssh/known_hosts"
 
 # should prepare notification and approved-actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
@@ -45,6 +54,10 @@ openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == 
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
+
+# should register only the generated public key for tanaabot
+cd "$TMPDIR/agent-system-notifications"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-issue-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
@@ -148,8 +161,9 @@ test ! -e "$fixture_path"
 cd "$worktree_path"
 status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
 test -z "$status"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD > "$TMPDIR/implementation-base-sha"
 
-# should carry out the published work plan on the next reconciliation
+# should carry out and deliver the published work plan on the next reconciliation
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications refresh \
@@ -159,8 +173,12 @@ openclaw agent-system notifications refresh \
   --number "$issue_number" \
   --timeout 300 \
   --json | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+
+# should commit only the validated assignment fixture
+cd "$TMPDIR/agent-system-notifications"
 worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
 worktree_path="$(jq -re 'select(length == 1) | .[0].path' <<< "$worktrees")"
+worktree_branch="$(jq -re 'select(length == 1) | .[0].branch' <<< "$worktrees")"
 fixture_name="assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
 fixture_path="$worktree_path/$fixture_name"
 expected_fixture="$TMPDIR/expected-assignment-fixture"
@@ -168,7 +186,38 @@ printf 'assignment fixture ready.\n' > "$expected_fixture"
 cmp -s "$expected_fixture" "$fixture_path"
 cd "$worktree_path"
 status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
-test "$status" = "?? $fixture_name"
+test -z "$status"
+printf '%s' "$worktree_branch" > "$TMPDIR/approved-worktree-branch"
+
+# should create one issue-referenced commit as tanaabot
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"
+cd "$worktree_path"
+base_sha="$(cat "$TMPDIR/implementation-base-sha")"
+commit_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-list --count "$base_sha..HEAD")"
+test "$commit_count" -eq 1
+author="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- log -1 --format='%an <%ae>')"
+test "$author" = 'Tanaabot <tanaabot@tanaab.dev>'
+subject="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- log -1 --format=%s)"
+[[ "$subject" == "#$issue_number: "* ]]
+
+# should push the managed branch at the exact local commit
+cd "$TMPDIR/agent-system-notifications"
+worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"
+worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
+cd "$worktree_path"
+head_sha="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD)"
+remote_line="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- ls-remote --heads origin "refs/heads/$worktree_branch")"
+remote_sha="$(printf '%s\n' "$remote_line" | cut -f1)"
+test -n "$remote_sha"
+test "$remote_sha" = "$head_sha"
+
+# should leave pull request creation for the next lifecycle slice
+cd "$TMPDIR/agent-system-notification-actor"
+worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
+pull_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state all --json number --jq length)"
+test "$pull_count" -eq 0
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
@@ -224,6 +273,24 @@ openclaw agent-system notifications wait \
 ## Cleanup
 
 ```bash
+# should remove only the pushed scenario branch
+if test -f "$TMPDIR/approved-worktree-branch"; then
+  cd "$TMPDIR/agent-system-notifications"
+  worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
+  if OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --silent --method GET "/repos/tanaabased/big-test-bucket/git/ref/heads/$worktree_branch"; then
+    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method DELETE "/repos/tanaabased/big-test-bucket/git/refs/heads/$worktree_branch"
+  fi
+  remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method GET "/repos/tanaabased/big-test-bucket/git/matching-refs/heads/$worktree_branch" --jq length)"
+  test "$remaining" -eq 0
+fi
+
+# should remove only the generated tanaabot public key
+cd "$TMPDIR/agent-system-notifications"
+key_id="$(cat "$TMPDIR/notification-ssh.key-id")"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method DELETE "/user/keys/$key_id"
+remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --paginate /user/keys --jq ".[] | select(.id == $key_id) | .id")"
+test -z "$remaining"
+
 # should close the remote issue fixtures without deleting local proof
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"

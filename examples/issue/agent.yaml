@@ -2,8 +2,8 @@ schema-version: 1
 
 agent:
   id: notification-data
-  name: Notification Data
-  email: notification-data@tanaab.dev
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
   emoji: 📬
 
 environment:
@@ -11,6 +11,9 @@ environment:
 
 git:
   worktrees: {}
+  ssh:
+    private-keys:
+      - path: ~/.ssh/big-test-bucket-ssh
 
 github:
   host: github.com

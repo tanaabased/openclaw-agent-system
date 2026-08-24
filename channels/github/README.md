@@ -10,9 +10,10 @@ Accepted issues receive a private assignment card and an immediate public
 acknowledgment, then run one initial assignment turn that keeps its full report
 in the OpenClaw session and publishes a bounded conversational response. A
 published Work plan schedules one private implementation turn in the same
-session and worktree on the next reconciliation. For prepared issues, the
-channel also admits new approved comments into that session and publishes the
-accepted public part of the response.
+session and worktree on the next reconciliation. That turn implements,
+validates, commits, and pushes the managed branch without opening a pull
+request. For prepared issues, the channel also admits new approved comments
+into that session and publishes the accepted public part of the response.
 
 ## Current Behavior
 
@@ -27,10 +28,10 @@ accepted public part of the response.
   its private assessment and plan or blocking questions in the session and may
   publish one bounded conversational response. A published plan registers a
   pending `issue`, `work`, and `implementation` turn. The next reconciliation
-  carries out the plan and validates it in the same session and worktree without
-  committing, pushing, opening a pull request, or publishing another GitHub
-  response. Pull-request assignments retain bounded head metadata without
-  creating a worktree.
+  carries out the plan and validates it in the same session and worktree, then
+  creates one commit and pushes the managed branch without opening a pull
+  request or publishing another GitHub response. Pull-request assignments
+  retain bounded head metadata without creating a worktree.
 - Prepared issues establish a comment baseline without replaying history. A new
   or edited exact-mention comment from an approved human resumes the existing
   issue session with an attributed comment card as its direct message. The card
@@ -59,8 +60,8 @@ accepted public part of the response.
   paths. The model can position one reserved commenter placeholder naturally;
   after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, Plan and Auto modes, mode transitions, commit/push/pull-
-  request delivery after implementation, and chat-originated publication remain
+- Pull-request comments, Plan and Auto modes, mode transitions, pull-request
+  creation after implementation, and chat-originated publication remain
   intentionally dormant.
 - Closing, merging, unassigning, or otherwise losing authority retires the
   tracked item logically without deleting an existing issue worktree.
@@ -104,11 +105,14 @@ environment:
 
 git:
   worktrees: {}
+  ssh:
+    private-keys: ~/.ssh/id_ed25519
 
 github:
   host: github.com
   username: tanaabot
   token: GH_TOKEN_TANAABOT
+  ssh-keys: ~/.ssh/id_ed25519.pub
   notifications:
     assignment-types:
       - issue
@@ -133,9 +137,11 @@ GitHub node id. Node ids must be unique within each list. The optional owner
 filter does not grant repository access or approve that owner's members.
 
 `github.token` names an environment variable and never accepts a literal token.
-For private repositories, configure
-[`git.ssh`](../../tools/git/README.md#gitsshprivate-keys) so worktree
-preparation does not embed a token in a clone URL.
+Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
+for the authenticated branch push. The matching public key must already belong
+to the configured GitHub account, or `github.ssh-keys` can declare it for
+`install` to reconcile. SSH configuration also keeps private-repository
+worktree preparation free of credential-bearing clone URLs.
 
 ## Usage
 
