@@ -12,6 +12,7 @@ import type {
 } from '../lifecycles/types.ts';
 import type GitHubNotificationMonitorStateStore from './monitor/state-store.ts';
 import planGitHubNotificationIntake, {
+  type GitHubNotificationIntakeAuthority,
   type GitHubNotificationIntakeObservation,
 } from './intake-plan.ts';
 import type {
@@ -23,7 +24,7 @@ import type {
 export interface GitHubNotificationAssignmentAuthority {
   inspect(
     input: GitHubNotificationLifecycleBoundaryInput,
-  ): Promise<{ authorized: boolean; reasonCode?: string }>;
+  ): Promise<GitHubNotificationIntakeAuthority>;
 }
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
@@ -120,6 +121,9 @@ export default class GitHubNotificationAssignmentOrchestrator {
         intake,
         signal,
       );
+      if (await this.#checkpointCanonicalRepository(state, itemKey, observation.authority)) {
+        continue;
+      }
       const action = planGitHubNotificationIntake(intake, observation, lifecycle.worktree.required);
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
@@ -297,13 +301,55 @@ export default class GitHubNotificationAssignmentOrchestrator {
           workspaceDir,
         }),
     );
-    if (authority.authorized) return true;
+    if (authority.authorized) {
+      return !(await this.#checkpointCanonicalRepository(state, itemKey, authority));
+    }
     await this.#requestRetirement(
       state,
       itemKey,
       authority.reasonCode ?? 'github-notification-authority-revoked',
     );
     return false;
+  }
+
+  async #checkpointCanonicalRepository(
+    state: GitHubNotificationMonitorState,
+    itemKey: string,
+    authority: GitHubNotificationIntakeAuthority,
+  ): Promise<boolean> {
+    if (!authority.authorized || !authority.repository || !authority.permission) return false;
+    const item = state.items[itemKey];
+    if (!item) return false;
+    const repository = authority.repository;
+    if (
+      repository.databaseId !== item.repositoryDatabaseId ||
+      repository.nodeId !== item.repositoryNodeId ||
+      repository.owner.nodeId !== item.repositoryOwnerNodeId
+    ) {
+      throw new GitHubNotificationAssignmentOrchestratorError(
+        'github-notification-authority-inspection-failed',
+        'The notification assignment authority returned another repository identity.',
+      );
+    }
+    if (
+      repository.cloneUrl === item.repositoryCloneUrl &&
+      repository.defaultBranch === item.repositoryDefaultBranch &&
+      repository.name === item.repositoryName &&
+      repository.owner.login === item.repositoryOwner &&
+      authority.permission === item.repositoryPermission
+    ) {
+      return false;
+    }
+    state.items[itemKey] = {
+      ...item,
+      repositoryCloneUrl: repository.cloneUrl,
+      repositoryDefaultBranch: repository.defaultBranch,
+      repositoryName: repository.name,
+      repositoryOwner: repository.owner.login,
+      repositoryPermission: authority.permission,
+    };
+    await this.#writeState(state);
+    return true;
   }
 
   async #diagnosticBoundary<T>(

@@ -1,8 +1,21 @@
 import type { GitHubNotificationLifecycleWorktree } from '../lifecycles/types.ts';
 import type { GitHubNotificationIntakeState } from './monitor/state.ts';
+import type {
+  GitHubRepositoryIdentity,
+  GitHubRepositoryPermission,
+} from '../provider/work-item.ts';
+
+export type GitHubNotificationIntakeAuthority =
+  | { authorized: false; reasonCode?: string }
+  | {
+      authorized: true;
+      permission?: GitHubRepositoryPermission;
+      reasonCode?: never;
+      repository?: GitHubRepositoryIdentity;
+    };
 
 export interface GitHubNotificationIntakeObservation {
-  authority: { authorized: boolean; reasonCode?: string };
+  authority: GitHubNotificationIntakeAuthority;
   retirementReasonCode?: string;
   retirementRequested?: boolean;
   worktree?: GitHubNotificationLifecycleWorktree;

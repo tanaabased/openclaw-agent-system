@@ -346,8 +346,7 @@ export async function pollGitHubNotifications(
         const identityChanged =
           repository.databaseId !== current.repositoryDatabaseId ||
           repository.nodeId !== current.repositoryNodeId ||
-          repository.owner.login !== current.repositoryOwner ||
-          repository.name !== current.repositoryName ||
+          repository.owner.nodeId !== current.repositoryOwnerNodeId ||
           item.databaseId !== current.itemDatabaseId ||
           item.nodeId !== current.itemNodeId ||
           item.itemType !== current.itemType ||
@@ -379,6 +378,11 @@ export async function pollGitHubNotifications(
           const next: GitHubNotificationItemState = {
             ...current,
             lastObservedAt: input.now,
+            repositoryCloneUrl: repository.cloneUrl,
+            repositoryDefaultBranch: repository.defaultBranch,
+            repositoryName: repository.name,
+            repositoryOwner: repository.owner.login,
+            repositoryPermission: permission,
             ...(item.itemType === 'pull-request' && current.pullRequest === undefined
               ? { pullRequest: pullRequestState(item.pullRequest) }
               : {}),

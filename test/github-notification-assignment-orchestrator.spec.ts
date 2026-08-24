@@ -95,6 +95,51 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     assert.equal(sessionPreparations, 1);
   });
 
+  it('should checkpoint canonical repository coordinates before preparing a worktree', async () => {
+    const store = memoryStore();
+    const item = store.state().items[itemKey];
+    assert.ok(item);
+    const repository = {
+      archived: false,
+      cloneUrl: 'https://github.com/tanaabased/big-test-bucket.git',
+      databaseId: item.repositoryDatabaseId,
+      defaultBranch: 'trunk',
+      disabled: false,
+      name: 'big-test-bucket',
+      nodeId: item.repositoryNodeId,
+      owner: {
+        login: item.repositoryOwner,
+        nodeId: item.repositoryOwnerNodeId,
+        type: 'Organization',
+      },
+    };
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: {
+        inspect: async () => ({ authorized: true, permission: 'maintain', repository }),
+      },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({
+        inspect: async () => undefined,
+        async prepare(input) {
+          assert.equal(input.cloneUrl, repository.cloneUrl);
+          assert.equal(input.defaultBranch, repository.defaultBranch);
+          assert.equal(store.state().items[itemKey]?.repositoryName, repository.name);
+          return worktree;
+        },
+      }),
+      sessions: { prepare: async () => undefined },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    const refreshed = store.state().items[itemKey];
+    assert.equal(refreshed?.repositoryCloneUrl, repository.cloneUrl);
+    assert.equal(refreshed?.repositoryDefaultBranch, repository.defaultBranch);
+    assert.equal(refreshed?.repositoryPermission, 'maintain');
+    assert.equal(refreshed?.intake?.stage, 'prepared');
+  });
+
   it('should preserve prepared intake when its assignment response fails', async () => {
     const store = memoryStore();
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({

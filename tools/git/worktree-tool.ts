@@ -28,12 +28,23 @@ export interface GitWorktreeToolDependencies {
   service: Pick<GitWorktreeService, 'list' | 'prepare' | 'remove'>;
 }
 
-export type GitWorktreeToolDefinition = AgentSystemSemanticToolDefinition<
+type GitWorktreeToolDefinitionBase = AgentSystemSemanticToolDefinition<
   typeof gitWorktreeToolSchema,
   GitToolConfiguration,
   ResolvedGitWorktreeToolConfiguration,
   GitWorktreeResult | GitWorktreeResult[]
 >;
+
+type GitWorktreePrepareToolInput = Extract<GitWorktreeToolInput, { action: 'prepare' }>;
+type GitWorktreeToolExecutionScope = Parameters<GitWorktreeToolDefinitionBase['execute']>[2];
+
+export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
+  executeTrustedGitHubPrepare(
+    input: GitWorktreePrepareToolInput,
+    configuration: ResolvedGitWorktreeToolConfiguration,
+    scope: GitWorktreeToolExecutionScope,
+  ): Promise<GitWorktreeResult>;
+};
 
 function readConfiguration(manifest: AgentManifest): GitToolConfiguration | undefined {
   if (!manifest.git?.worktrees) return undefined;
@@ -141,6 +152,66 @@ function normalizeToolError(error: unknown): AgentSystemToolError {
 export function createGitWorktreeToolDefinition(
   dependencies: GitWorktreeToolDependencies,
 ): GitWorktreeToolDefinition {
+  async function execute(
+    input: GitWorktreeToolInput,
+    configuration: ResolvedGitWorktreeToolConfiguration,
+    scope: GitWorktreeToolExecutionScope,
+    reconcileOrigin: boolean,
+  ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
+    const lease = await dependencies.runnerFactory.acquire(
+      configuration,
+      {
+        resolveEnvironment: scope.resolveEnvironment,
+        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+        workspaceDir: scope.workspaceDir,
+      },
+      { authentication: input.action === 'prepare' },
+    );
+    const context = {
+      configuration: configuration.worktrees,
+      git: lease.git,
+      ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+      workspaceDir: scope.workspaceDir,
+    };
+    let operationError: AgentSystemToolError | undefined;
+    let result: GitWorktreeResult | GitWorktreeResult[] | undefined;
+    try {
+      if (input.action === 'prepare') {
+        result = await dependencies.service.prepare(context, {
+          baseRef: input.baseRef,
+          ...(input.repository.cloneUrl === undefined
+            ? {}
+            : { cloneUrl: input.repository.cloneUrl }),
+          ...(reconcileOrigin ? { reconcileOrigin: true } : {}),
+          repositoryId: input.repository.id,
+          workId: input.workId,
+        });
+      } else if (input.action === 'list') {
+        result = await dependencies.service.list(context, input.repositoryId);
+      } else {
+        result = await dependencies.service.remove(context, input.repositoryId, input.workId);
+      }
+    } catch (error) {
+      operationError = normalizeToolError(error);
+    }
+    try {
+      await lease.dispose();
+    } catch {
+      throw new AgentSystemToolError(
+        'resource_cleanup_failed',
+        'The Git worktree tool could not clean up invocation resources.',
+      );
+    }
+    if (operationError) throw operationError;
+    if (result === undefined) {
+      throw new AgentSystemToolError(
+        'execution_failed',
+        'The Git worktree request returned no result.',
+      );
+    }
+    return result;
+  }
+
   return {
     apiVersion: 1,
     id: 'git-worktree',
@@ -159,55 +230,15 @@ export function createGitWorktreeToolDefinition(
         };
       },
     },
-    async execute(input, configuration, scope) {
-      const lease = await dependencies.runnerFactory.acquire(
-        configuration,
-        {
-          resolveEnvironment: scope.resolveEnvironment,
-          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-          workspaceDir: scope.workspaceDir,
-        },
-        { authentication: input.action === 'prepare' },
-      );
-      const context = {
-        configuration: configuration.worktrees,
-        git: lease.git,
-        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-        workspaceDir: scope.workspaceDir,
-      };
-      let operationError: AgentSystemToolError | undefined;
-      let result: GitWorktreeResult | GitWorktreeResult[] | undefined;
-      try {
-        if (input.action === 'prepare') {
-          result = await dependencies.service.prepare(context, {
-            baseRef: input.baseRef,
-            ...(input.repository.cloneUrl === undefined
-              ? {}
-              : { cloneUrl: input.repository.cloneUrl }),
-            repositoryId: input.repository.id,
-            workId: input.workId,
-          });
-        } else if (input.action === 'list') {
-          result = await dependencies.service.list(context, input.repositoryId);
-        } else {
-          result = await dependencies.service.remove(context, input.repositoryId, input.workId);
-        }
-      } catch (error) {
-        operationError = normalizeToolError(error);
-      }
-      try {
-        await lease.dispose();
-      } catch {
-        throw new AgentSystemToolError(
-          'resource_cleanup_failed',
-          'The Git worktree tool could not clean up invocation resources.',
-        );
-      }
-      if (operationError) throw operationError;
-      if (result === undefined) {
+    execute(input, configuration, scope) {
+      return execute(input, configuration, scope, false);
+    },
+    async executeTrustedGitHubPrepare(input, configuration, scope) {
+      const result = await execute(input, configuration, scope, true);
+      if (Array.isArray(result)) {
         throw new AgentSystemToolError(
           'execution_failed',
-          'The Git worktree request returned no result.',
+          'The trusted GitHub worktree request returned an unexpected result.',
         );
       }
       return result;
