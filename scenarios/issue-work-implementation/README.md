@@ -15,6 +15,7 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL" \
+  --needs-secret-service \
   --needs-ssh-key \
   --yolo
 
@@ -101,9 +102,8 @@ refresh_result="$(
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"
 fixture_path="$worktree_path/implementation-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
-expected_fixture="$TMPDIR/expected-implementation-fixture"
-printf 'implementation fixture ready.\n' > "$expected_fixture"
-cmp -s "$expected_fixture" "$fixture_path"
+fixture_contents="$(< "$fixture_path")"
+test "$fixture_contents" = 'implementation fixture ready.'
 cd "$worktree_path"
 status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
 test -z "$status"

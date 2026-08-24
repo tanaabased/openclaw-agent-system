@@ -16,6 +16,7 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL" \
+  --needs-secret-service \
   --needs-ssh-key \
   --yolo
 

@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-26
+          - ubuntu-24.04
         scenario:
           # known-green broad lifecycle retained while bounded scenarios converge
           # - issue-work
@@ -28,6 +28,9 @@ jobs:
           - issue-work-pull-request
           - issue-work-comment
           - issue-work-retirement
+        include:
+          - os: macos-26
+            scenario: issue-work-assignment
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -76,7 +79,8 @@ jobs:
       - name: Run Leia-backed notification scenario
         shell: bash
         env:
-          DEFAULT_CREDENTIAL_STORE: keychain
+          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
+          DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
