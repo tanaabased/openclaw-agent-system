@@ -282,9 +282,9 @@ openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/
 
 The optional repository, kind, and number selector is all-or-nothing and limits
 the cycle to that exact item. A refresh may prepare a managed issue worktree,
-establish its comment baseline, or process one new approved exact-mention
-comment. Deferred and failed cycles return nonzero. The default timeout is 300
-seconds.
+establish its comment baseline, carry out one pending published Work plan, or
+process one new approved exact-mention comment. Deferred and failed cycles
+return nonzero. The default timeout is 300 seconds.
 
 ### `openclaw agent-system notifications status`
 

@@ -19,6 +19,7 @@ import { githubNotificationPrivateResponse } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
+  | { status: 'none' }
   | { status: 'candidate'; publicText: string }
   | {
       status: 'withheld';
@@ -70,6 +71,14 @@ function publication(
   candidates: readonly string[],
   intent: GitHubNotificationTurnContract['publicationIntent'],
 ): GitHubNotificationModelTurnPublication {
+  if (intent === undefined) {
+    return candidates.length === 0
+      ? { status: 'none' }
+      : {
+          status: 'withheld',
+          code: 'github-notification-publication-candidate-unexpected',
+        };
+  }
   if (candidates.length === 0) {
     return {
       status: 'withheld',

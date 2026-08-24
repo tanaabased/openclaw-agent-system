@@ -57,9 +57,12 @@ export interface GitHubNotificationLifecycleAssignmentEventSupport {
 
 export type GitHubNotificationLifecycleCommentEventSupport = Record<string, never>;
 
+export type GitHubNotificationLifecycleImplementationEventSupport = Record<string, never>;
+
 export interface GitHubNotificationLifecycleEventSupportMap {
   assignment?: GitHubNotificationLifecycleAssignmentEventSupport;
   comment?: GitHubNotificationLifecycleCommentEventSupport;
+  implementation?: GitHubNotificationLifecycleImplementationEventSupport;
 }
 
 export type GitHubNotificationLifecycleWorktreeOwner =

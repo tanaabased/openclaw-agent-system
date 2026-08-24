@@ -90,6 +90,30 @@ describe('channels/github/conversation/turn-selector', () => {
     });
   });
 
+  it('should select the registered implementation tuple from durable state', async () => {
+    const state = conversationState();
+    state.conversations[conversationId]!.activeTurn = {
+      eventId: 'implementation',
+      sourceId: 'EV_assignment',
+    };
+    const catalog = new GitHubNotificationTurnCatalog(
+      githubNotificationSupportedTurnIdentities,
+      createGitHubNotificationTurnDefinitions(),
+    );
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: catalog,
+    });
+
+    assert.deepEqual(await selector.select({ agentId, channelId: conversationId }), {
+      agentId,
+      conversationId,
+      identity: { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' },
+      sourceId: 'EV_assignment',
+    });
+  });
+
   it('should decline missing, conflicting, or cross-workspace selection', async () => {
     const state = conversationState();
     let reads = 0;

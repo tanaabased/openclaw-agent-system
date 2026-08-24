@@ -3,6 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationAssignmentCard } from '../events/assignment.ts';
+import { githubNotificationImplementationCard } from '../events/implementation.ts';
 import githubNotificationAssignmentContext from './context/assignment.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type {
@@ -13,7 +14,11 @@ import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-
 import resolveGitHubNotificationLifecycleModeSupport from '../lifecycles/mode-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
-import { githubNotificationChannelId, resolveNotificationRoute } from '../routing/routing.ts';
+import {
+  githubNotificationChannelId,
+  resolveNotificationRoute,
+  type ResolvedNotificationRoute,
+} from '../routing/routing.ts';
 import { githubWorkItemKey } from '../provider/work-item.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
@@ -53,6 +58,85 @@ export interface GitHubNotificationAssignmentSessionInput {
 interface AssignmentConversationCheckpoint {
   conversation: GitHubNotificationConversation;
   state: GitHubNotificationConversationState;
+}
+
+interface ModelTurnContextInput {
+  body: string;
+  lifecycleContext: Readonly<Record<string, unknown>>;
+  messageId: string;
+  repository: string;
+  route: ResolvedNotificationRoute;
+  sender: {
+    from: string;
+    id: string;
+    isBot: boolean;
+    isSelf: boolean;
+    label: string;
+  };
+  timestamp: number;
+}
+
+interface AssignmentImplementationInput {
+  assignmentEventId: string;
+  config: OpenClawConfig;
+  conversationId: string;
+  lifecycleContext: Readonly<Record<string, unknown>>;
+  projectionTimestamp: number;
+  repository: string;
+  route: ResolvedNotificationRoute;
+  session: GitHubNotificationAssignmentSessionInput;
+}
+
+function modelTurnContext(input: ModelTurnContextInput) {
+  return buildChannelInboundEventContext({
+    accountId: input.route.accountId,
+    channel: githubNotificationChannelId,
+    channelContext: {
+      chat: { id: input.route.conversationId },
+      sender: { id: input.sender.id },
+    },
+    conversation: {
+      id: input.route.conversationId,
+      kind: 'direct',
+      label: input.repository,
+      routePeer: { id: input.route.conversationId, kind: 'direct' },
+    },
+    extra: {
+      UntrustedStructuredContext: [
+        githubNotificationAssignmentContext({ lifecycleContext: input.lifecycleContext }),
+      ],
+    },
+    from: input.sender.from,
+    message: {
+      body: input.body,
+      bodyForAgent: input.body,
+      commandBody: '',
+      inboundEventKind: 'user_request',
+      rawBody: input.body,
+    },
+    messageId: input.messageId,
+    reply: { sourceReplyDeliveryMode: 'none', to: input.route.conversationId },
+    route: {
+      accountId: input.route.accountId,
+      agentId: input.route.agentId,
+      createIfMissing: true,
+      routeSessionKey: input.route.sessionKey,
+    },
+    sender: {
+      displayLabel: input.sender.label,
+      id: input.sender.id,
+      isBot: input.sender.isBot,
+      isSelf: input.sender.isSelf,
+      name: input.sender.label,
+      username: input.sender.label,
+    },
+    surface: githubNotificationChannelId,
+    timestamp: input.timestamp,
+  });
+}
+
+function privateAssignmentContainsPlan(privateText: string): boolean {
+  return /^## Plan\s*$/mu.test(privateText) && !/^## Questions\s*$/mu.test(privateText);
 }
 
 /** Prepare and run one lifecycle assignment through the shared model-turn boundary. */
@@ -95,47 +179,19 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment turn is missing its intake identity.');
     }
     const messageId = `assignment:${assignmentEventId}`;
-    const ctxPayload = buildChannelInboundEventContext({
-      accountId: route.accountId,
-      channel: githubNotificationChannelId,
-      channelContext: {
-        chat: { id: route.conversationId },
-        sender: { id: projection.sender.id },
-      },
-      conversation: {
-        id: route.conversationId,
-        kind: 'direct',
-        label: `${repository}#${input.item.number}`,
-        routePeer: { id: route.conversationId, kind: 'direct' },
-      },
-      extra: {
-        UntrustedStructuredContext: [githubNotificationAssignmentContext({ lifecycleContext })],
-      },
-      from: `github:${projection.sender.id}`,
-      message: {
-        body,
-        bodyForAgent: body,
-        commandBody: '',
-        inboundEventKind: 'user_request',
-        rawBody: body,
-      },
+    const ctxPayload = modelTurnContext({
+      body,
+      lifecycleContext,
       messageId,
-      reply: { sourceReplyDeliveryMode: 'none', to: route.conversationId },
-      route: {
-        accountId: route.accountId,
-        agentId: route.agentId,
-        createIfMissing: true,
-        routeSessionKey: route.sessionKey,
-      },
+      repository: `${repository}#${input.item.number}`,
+      route,
       sender: {
-        displayLabel: projection.sender.label,
+        from: `github:${projection.sender.id}`,
         id: projection.sender.id,
         isBot: false,
         isSelf: false,
-        name: projection.sender.label,
-        username: projection.sender.label,
+        label: projection.sender.label,
       },
-      surface: githubNotificationChannelId,
       timestamp: projection.timestamp,
     });
     await this.#dependencies.acknowledgments.publish({
@@ -150,6 +206,22 @@ export default class GitHubNotificationAssignmentSessionService {
     if (current.conversation.assignmentResponse) {
       if (current.conversation.assignmentResponse.status === 'pending') {
         await this.#publish(input.agentId, conversationId, input.signal);
+      }
+      const reconciled = await this.#conversation(input, conversationId);
+      if (
+        reconciled.conversation.assignmentResponse?.status === 'published' &&
+        reconciled.conversation.implementation?.status === 'pending'
+      ) {
+        await this.#implement({
+          assignmentEventId,
+          config,
+          conversationId,
+          lifecycleContext,
+          projectionTimestamp: projection.timestamp,
+          repository,
+          route,
+          session: input,
+        });
       }
       return;
     }
@@ -174,12 +246,70 @@ export default class GitHubNotificationAssignmentSessionService {
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       sourceId: assignmentEventId,
     });
-    await this.#checkpointResponse(input, conversationId, assignmentEventId, turn.publication);
+    await this.#checkpointResponse(
+      input,
+      conversationId,
+      assignmentEventId,
+      turn.privateText,
+      turn.publication,
+    );
     if (turn.publication.status === 'candidate') {
       await this.#publish(input.agentId, conversationId, input.signal);
     }
     this.#dependencies.logger.info(
       `github-notifications: assignment response prepared agent=${route.agentId} item=${repository}#${input.item.number} publication=${turn.publication.status}`,
+    );
+  }
+
+  async #implement(input: AssignmentImplementationInput): Promise<void> {
+    await this.#checkpointImplementationActiveTurn(
+      input.session,
+      input.conversationId,
+      input.assignmentEventId,
+    );
+    const contract = this.#dependencies.turnContracts.resolve(
+      {
+        eventId: 'implementation',
+        lifecycleId: input.session.item.lifecycleId,
+        modeId: input.session.mode.policy.id,
+      },
+      input.config,
+      input.route.agentId,
+    );
+    const messageId = `implementation:${input.assignmentEventId}`;
+    const body = githubNotificationImplementationCard();
+    const turn = await this.#dependencies.coordinator.run({
+      config: input.config,
+      contract,
+      createIfMissing: true,
+      ctxPayload: modelTurnContext({
+        body,
+        lifecycleContext: input.lifecycleContext,
+        messageId,
+        repository: `${input.repository}#${input.session.item.number}`,
+        route: input.route,
+        sender: {
+          from: 'agent-system:github-notifications',
+          id: 'agent-system',
+          isBot: true,
+          isSelf: false,
+          label: 'Agent System',
+        },
+        timestamp: input.projectionTimestamp,
+      }),
+      executionSurface: input.session.executionSurface,
+      messageId,
+      route: input.route,
+      ...(input.session.signal === undefined ? {} : { signal: input.session.signal }),
+      sourceId: input.assignmentEventId,
+    });
+    await this.#checkpointImplementationCompleted(
+      input.session,
+      input.conversationId,
+      input.assignmentEventId,
+    );
+    this.#dependencies.logger.info(
+      `github-notifications: assignment implementation completed agent=${input.route.agentId} item=${input.repository}#${input.session.item.number} publication=${turn.publication.status}`,
     );
   }
 
@@ -208,7 +338,14 @@ export default class GitHubNotificationAssignmentSessionService {
     conversationId: string,
     assignmentEventId: string,
   ): Promise<void> {
-    const { state } = await this.#conversation(input, conversationId);
+    const { conversation, state } = await this.#conversation(input, conversationId);
+    if (
+      conversation.activeTurn &&
+      (conversation.activeTurn.eventId !== 'assignment' ||
+        conversation.activeTurn.sourceId !== assignmentEventId)
+    ) {
+      throw new Error('Another GitHub notification model turn is active.');
+    }
     const next = structuredClone(state);
     next.conversations[conversationId]!.activeTurn = {
       eventId: 'assignment',
@@ -221,6 +358,7 @@ export default class GitHubNotificationAssignmentSessionService {
     input: GitHubNotificationAssignmentSessionInput,
     conversationId: string,
     assignmentEventId: string,
+    privateText: string,
     publication: Awaited<ReturnType<GitHubNotificationModelTurnCoordinator['run']>>['publication'],
   ): Promise<void> {
     const { conversation, state } = await this.#conversation(input, conversationId);
@@ -231,7 +369,9 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment active-turn checkpoint is missing.');
     }
     let response: GitHubNotificationPublicationState;
-    if (publication.status === 'withheld') {
+    if (publication.status === 'none') {
+      throw new Error('The GitHub assignment response is missing its publication intent.');
+    } else if (publication.status === 'withheld') {
       response = { reasonCode: publication.code, status: 'withheld' };
     } else {
       response = {
@@ -249,6 +389,53 @@ export default class GitHubNotificationAssignmentSessionService {
     const updatedConversation = next.conversations[conversationId]!;
     delete updatedConversation.activeTurn;
     updatedConversation.assignmentResponse = response;
+    if (publication.status === 'candidate' && privateAssignmentContainsPlan(privateText)) {
+      updatedConversation.implementation = { status: 'pending' };
+    }
+    await this.#dependencies.conversationStateStore.write(next);
+  }
+
+  async #checkpointImplementationActiveTurn(
+    input: GitHubNotificationAssignmentSessionInput,
+    conversationId: string,
+    assignmentEventId: string,
+  ): Promise<void> {
+    const { conversation, state } = await this.#conversation(input, conversationId);
+    if (
+      conversation.assignmentResponse?.status !== 'published' ||
+      conversation.implementation?.status !== 'pending' ||
+      (conversation.activeTurn !== undefined &&
+        (conversation.activeTurn.eventId !== 'implementation' ||
+          conversation.activeTurn.sourceId !== assignmentEventId))
+    ) {
+      throw new Error('The GitHub assignment implementation checkpoint is missing.');
+    }
+    const next = structuredClone(state);
+    next.conversations[conversationId]!.activeTurn = {
+      eventId: 'implementation',
+      sourceId: assignmentEventId,
+    };
+    await this.#dependencies.conversationStateStore.write(next);
+  }
+
+  async #checkpointImplementationCompleted(
+    input: GitHubNotificationAssignmentSessionInput,
+    conversationId: string,
+    assignmentEventId: string,
+  ): Promise<void> {
+    const { conversation, state } = await this.#conversation(input, conversationId);
+    if (
+      conversation.activeTurn?.eventId !== 'implementation' ||
+      conversation.activeTurn.sourceId !== assignmentEventId ||
+      conversation.assignmentResponse?.status !== 'published' ||
+      conversation.implementation?.status !== 'pending'
+    ) {
+      throw new Error('The GitHub assignment implementation active-turn checkpoint is missing.');
+    }
+    const next = structuredClone(state);
+    const updatedConversation = next.conversations[conversationId]!;
+    delete updatedConversation.activeTurn;
+    updatedConversation.implementation = { status: 'completed' };
     await this.#dependencies.conversationStateStore.write(next);
   }
 
@@ -270,7 +457,8 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment response publication checkpoint has changed.');
     }
     const next = structuredClone(current);
-    next.conversations[conversationId]!.assignmentResponse = {
+    const conversation = next.conversations[conversationId]!;
+    conversation.assignmentResponse = {
       ...currentPublication,
       commentDatabaseId: result.receipt.databaseId,
       commentNodeId: result.receipt.nodeId,

@@ -5,10 +5,12 @@ Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
 publishes one assignment acknowledgment, runs the registered issue/Work/assignment
-planning turn, publishes one bounded user-centric assignment response without
-changing the worktree, delivers one approved comment through the registered
-issue/Work/comment turn contract with its installed identity card, publishes one
-reply, and retires the assignment without deleting the worktree.
+planning turn, publishes one bounded user-centric active Work plan without
+changing the worktree, carries that published plan out through the registered
+issue/Work/implementation turn on the next reconciliation without committing it,
+delivers one approved comment through the registered issue/Work/comment turn
+contract with its installed identity card, publishes one reply, and retires the
+assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
 `tanaabased/big-test-bucket`.
@@ -135,6 +137,7 @@ done
 test -n "$response"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+jq -e '.body | test("I.m going to|I will|I.ll"; "i")' <<< "$response"
 
 # should leave the planning-only assignment worktree unchanged
 cd "$TMPDIR/agent-system-notifications"
@@ -145,6 +148,27 @@ test ! -e "$fixture_path"
 cd "$worktree_path"
 status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
 test -z "$status"
+
+# should carry out the published work plan on the next reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw agent-system notifications refresh \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$issue_number" \
+  --timeout 300 \
+  --json | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+worktree_path="$(jq -re 'select(length == 1) | .[0].path' <<< "$worktrees")"
+fixture_name="assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+fixture_path="$worktree_path/$fixture_name"
+expected_fixture="$TMPDIR/expected-assignment-fixture"
+printf 'assignment fixture ready.\n' > "$expected_fixture"
+cmp -s "$expected_fixture" "$fixture_path"
+cd "$worktree_path"
+status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
+test "$status" = "?? $fixture_name"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart

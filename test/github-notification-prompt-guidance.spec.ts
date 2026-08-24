@@ -91,4 +91,32 @@ describe('channels/github/conversation/prompt-guidance', () => {
     assert.equal(selectorContext, context);
     assert.deepEqual(attested, selected);
   });
+
+  it('should compose and attest the private implementation identity', async () => {
+    const turnContracts = createGitHubNotificationTurnContractResolver();
+    const selected = {
+      agentId: 'tanaabot',
+      conversationId: 'github:issue:R_repo:12',
+      identity: { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' } as const,
+      sourceId: 'EV_assignment',
+    };
+    const attestations: unknown[] = [];
+
+    const instructions = await githubNotificationPromptGuidance(
+      { messageProvider: githubNotificationChannelId },
+      {
+        candidates: {
+          async attestPromptSelection(attestation) {
+            attestations.push(attestation);
+          },
+        },
+        turnContracts,
+        turnSelector: { select: async () => selected },
+      },
+    );
+
+    assert.equal(instructions, turnContracts.instructions(selected.identity));
+    assert.match(instructions ?? '', /Carry out that plan now/u);
+    assert.deepEqual(attestations, [selected]);
+  });
 });

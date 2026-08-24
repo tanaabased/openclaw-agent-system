@@ -5,6 +5,7 @@ import githubNotificationAssignmentAcknowledgment, {
 } from '../channels/github/events/assignment-acknowledgment.ts';
 import { githubNotificationAssignmentCard } from '../channels/github/events/assignment.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/events/comment.ts';
+import { githubNotificationImplementationCard } from '../channels/github/events/implementation.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication.ts';
 
 describe('channels/github/events/presentation', () => {
@@ -31,6 +32,17 @@ describe('channels/github/events/presentation', () => {
         '## 📥 Issue assigned',
         '',
         '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
+      ].join('\n'),
+    );
+  });
+
+  it('should render the private implementation continuation through the shared card grammar', () => {
+    assert.equal(
+      githubNotificationImplementationCard(),
+      [
+        '## 🛠️ Implementation started',
+        '',
+        'The public plan is published. Carry it out now in `work` mode.',
       ].join('\n'),
     );
   });

@@ -67,6 +67,18 @@ Use the agent's configured emoji and fall back to `🤖` when it has none. Keep
 the original GitHub comment as the raw inbound body even though the visible and
 model-facing message uses this presentation.
 
+## Implementation Card
+
+```markdown
+## 🛠️ Implementation started
+
+The public plan is published. Carry it out now in `work` mode.
+```
+
+Keep the following private result report-like with stable implementation and
+validation sections. Do not add a second GitHub-facing response merely because
+implementation began.
+
 ## Response
 
 ```markdown

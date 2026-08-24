@@ -52,7 +52,7 @@ export interface GitHubNotificationCommentTurnResult {
   config: OpenClawConfig;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   privateText: string;
-  publication: GitHubNotificationModelTurnPublication;
+  publication: Exclude<GitHubNotificationModelTurnPublication, { status: 'none' }>;
 }
 
 export class GitHubNotificationCommentTurnError extends Error {
@@ -254,6 +254,11 @@ export default class GitHubNotificationCommentTurnService {
       throw classified;
     }
     const { dispatch, finalPayloadCount } = turnResult;
+    if (turnResult.publication.status === 'none') {
+      throw new GitHubNotificationCommentTurnError(
+        'github-notification-comment-publication-intent-missing',
+      );
+    }
     this.#dependencies.logger.info(
       [
         'github-notifications: comment dispatch complete',

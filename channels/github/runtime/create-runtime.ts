@@ -23,6 +23,7 @@ import GitHubNotificationTurnCatalog, {
 import GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
+import githubNotificationImplementationEvent from '../events/implementation.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
@@ -97,6 +98,7 @@ export default function createGitHubNotificationRuntime(
   const eventRegistry = new GitHubNotificationEventRegistry([
     githubNotificationAssignmentEvent,
     githubNotificationCommentEvent,
+    githubNotificationImplementationEvent,
   ]);
   const turnCatalog = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
     events: eventRegistry,

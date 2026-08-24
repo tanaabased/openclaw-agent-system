@@ -114,6 +114,71 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
+  it('should coordinate a private turn without requiring a publication candidate', async () => {
+    const messages: string[] = [];
+    const warnings: string[] = [];
+    const stagedCandidates: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [...stagedCandidates];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 2 }, queuedFinal: false },
+            finalPayloads: [{ text: '## Implementation\n\nComplete.' }],
+          };
+        },
+      },
+      logger: {
+        info: (message) => messages.push(message),
+        warn: (message) => warnings.push(message),
+      },
+    });
+    const privateContract = {
+      ...contract,
+      identity: { ...identity, eventId: 'implementation' as const },
+      publicationIntent: undefined,
+    };
+
+    const result = await coordinator.run({
+      ...input(),
+      contract: privateContract,
+      messageId: 'implementation:EV_assignment',
+      sourceId: 'EV_assignment',
+    });
+
+    assert.equal(result.privateText, '## Implementation\n\nComplete.');
+    assert.deepEqual(result.publication, { status: 'none' });
+    assert.match(messages[1] ?? '', /event=implementation .*candidates=0 publication=none/u);
+
+    stagedCandidates.push('This must not be published.');
+    assert.deepEqual(
+      (
+        await coordinator.run({
+          ...input(),
+          contract: privateContract,
+          messageId: 'implementation:EV_other',
+          sourceId: 'EV_other',
+        })
+      ).publication,
+      {
+        code: 'github-notification-publication-candidate-unexpected',
+        status: 'withheld',
+      },
+    );
+    assert.match(
+      warnings[0] ?? '',
+      /event=implementation .*candidates=1 publication=withheld code=github-notification-publication-candidate-unexpected/u,
+    );
+  });
+
   it('should cancel the candidate handoff when model dispatch fails', async () => {
     const failure = new Error('dispatch failed');
     let cancellation: unknown;
