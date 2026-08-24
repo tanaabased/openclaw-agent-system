@@ -63,6 +63,9 @@ jobs:
           - os: macos-26
             example: security
             model-slot: 2
+          - os: macos-26
+            example: issue
+            model-slot: 2
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

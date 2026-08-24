@@ -1,22 +1,22 @@
-# GitHub Issue Work Pull Request Scenario
+# GitHub Issue Work Smoke
 
-This GitHub Actions-only scenario proves the pull-request delivery outcome of an
-`issue` + `work` lifecycle. Its setup establishes a real planned assignment;
-its assertions cover only lifecycle-managed branch delivery and normalized
-pull-request shape.
+This GitHub Actions-only macOS example proves the broad live path from an
+approved `issue` + `work` assignment through planning, implementation, branch
+delivery, and PR creation. It deliberately asserts only stable
+publication markers and final GitHub or repository side effects.
 
-The scenario creates one disposable issue in `tanaabased/big-test-bucket` and
-removes its pull request, branch, generated SSH key, and issue during cleanup.
+The example creates one disposable issue in `tanaabased/big-test-bucket`,
+registers one generated SSH key for the isolated run, and removes the resulting
+PR, branch, issue, and key during cleanup.
 
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
+# should configure the default profile for unattended live issue work
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
   --needs-ssh-key \
   --yolo
 
@@ -36,7 +36,7 @@ printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
-# should install the route and establish the first baseline synchronously
+# should install the notification route and establish its baseline
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
@@ -48,69 +48,104 @@ openclaw-github-notifications wait-route \
 
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-pull-request-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-issue-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install
-
-# should prepare one planned issue for pull request delivery
-cd "$TMPDIR/agent-system-notification-actor"
-agent_login="$(cat "$TMPDIR/notification-agent-login")"
-openclaw-github-issue create-and-assign \
-  --creator-agent notification-actor \
-  --repository tanaabased/big-test-bucket \
-  --title "add pull request fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
-  --body "Create pull-request-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: pull request fixture ready." \
-  --assignee "$agent_login" \
-  --issue-number-path "$TMPDIR/approved-issue-number"
-cd "$TMPDIR/agent-system-notifications"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-refresh_result="$(
-  openclaw-github-notifications refresh-completed \
-    --agent notification-data \
-    --repository tanaabased/big-test-bucket \
-    --kind issue \
-    --number "$issue_number" \
-    --timeout 420
-)"
-jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
-worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
-worktree_branch="$(jq -re 'select(length == 1) | .[0].branch' <<< "$worktrees")"
-printf '%s' "$worktree_branch" > "$TMPDIR/approved-worktree-branch"
-
-# should complete implementation before pull request reconciliation
-cd "$TMPDIR/agent-system-notifications"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-refresh_result="$(
-  openclaw-github-notifications refresh-completed \
-    --agent notification-data \
-    --repository tanaabased/big-test-bucket \
-    --kind issue \
-    --number "$issue_number" \
-    --timeout 420
-)"
-jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 ```
 
 ## Testing
 
 ```bash
-# should create one normalized pull request for the managed branch
+# should expose one ready empty notification baseline before assignment intake
+cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --for baseline-ready \
+  --timeout 30 \
+  --json | jq -e '.status == "completed" and .code == "github-notification-baseline-ready" and .observation.status == "ready" and .observation.baseline.status == "ready" and (.observation.items | length) == 0'
+
+# should create one trivial approved issue assignment
+cd "$TMPDIR/agent-system-notification-actor"
+agent_login="$(cat "$TMPDIR/notification-agent-login")"
+openclaw-github-issue create-and-assign \
+  --creator-agent notification-actor \
+  --repository tanaabased/big-test-bucket \
+  --title "add issue smoke fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body "Create issue-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: issue smoke ready." \
+  --assignee "$agent_login" \
+  --issue-number-path "$TMPDIR/approved-issue-number"
+
+# should complete the live assignment and planning reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+
+# should record the disposable lifecycle branch for bounded cleanup
+cd "$TMPDIR/agent-system-notifications"
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+worktree_branch="$(jq -re 'select(length == 1) | .[0].branch' <<< "$worktrees")"
+printf '%s' "$worktree_branch" > "$TMPDIR/approved-worktree-branch"
+
+# should complete the live implementation and delivery reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+
+# should publish exactly one acknowledgment and one assignment response
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+comments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot") | {body, id}')"
+jq -sce '([.[] | select(.body | contains("agent-system-github-publication:initial-acknowledgment"))] | length) == 1 and ([.[] | select(.body | contains("agent-system-github-publication:assignment-response"))] | length) == 1' <<< "$comments"
+
+# should create exactly one open pull request that closes the assigned issue
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
-pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state open --json assignees,author,baseRefName,body,headRefName,number,state,title,url --jq 'select(length == 1) | .[0]')"
-jq -e --arg branch "$worktree_branch" --arg title "add pull request fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" --argjson issue "$issue_number" '.state == "OPEN" and .baseRefName == "main" and .headRefName == $branch and .title == $title and (.body | contains("Closes #" + ($issue | tostring))) and .author.login == "tanaabot" and ([.assignees[].login] | index("emoriwan") != null) and (.url | test("/pull/[1-9][0-9]*$"))' <<< "$pull_request"
-jq -r '.number' <<< "$pull_request" > "$TMPDIR/approved-pull-request-number"
+pull_requests="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state open --json body,headRefName,number,state)"
+jq -e --arg branch "$worktree_branch" --argjson issue "$issue_number" 'length == 1 and (.[0] | .state == "OPEN" and .headRefName == $branch and (.body | contains("Closes #" + ($issue | tostring))))' <<< "$pull_requests"
+jq -r '.[0].number' <<< "$pull_requests" > "$TMPDIR/approved-pull-request-number"
 
+# should push the exact committed fixture contents to the pull request branch
+cd "$TMPDIR/agent-system-notifications"
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+worktree_path="$(jq -re 'select(length == 1) | .[0].path' <<< "$worktrees")"
+worktree_branch="$(jq -re 'select(length == 1) | .[0].branch' <<< "$worktrees")"
+fixture_name="issue-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+fixture_contents="$(< "$worktree_path/$fixture_name")"
+test "$fixture_contents" = 'issue smoke ready.'
+cd "$worktree_path"
+status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
+test -z "$status"
+head_sha="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- rev-parse HEAD)"
+remote_line="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- ls-remote --heads origin "refs/heads/$worktree_branch")"
+remote_sha="$(printf '%s\n' "$remote_line" | cut -f1)"
+test -n "$remote_sha"
+test "$remote_sha" = "$head_sha"
 ```
 
 ## Cleanup
 
 ```bash
-# should remove only the pushed scenario branch and pull request
+# should remove only the generated pull request and managed branch
 if test -f "$TMPDIR/approved-worktree-branch"; then
   cd "$TMPDIR/agent-system-notifications"
   if test -f "$TMPDIR/approved-pull-request-number"; then
@@ -134,7 +169,7 @@ if test -f "$TMPDIR/notification-ssh.key-id"; then
   test -z "$remaining"
 fi
 
-# should close the remote issue fixture
+# should close only the generated issue fixture
 if test -f "$TMPDIR/approved-issue-number"; then
   cd "$TMPDIR/agent-system-notification-actor"
   issue_number="$(cat "$TMPDIR/approved-issue-number")"
