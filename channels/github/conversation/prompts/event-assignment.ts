@@ -1,9 +1,11 @@
 /** Hidden instructions contributed by an initial assignment event. */
 const githubNotificationAssignmentEventInstructions = [
-  'Begin the assigned issue by reading the bounded GitHub context and inspecting the prepared worktree, code, tests, and relevant documentation.',
+  'This is the initial planning turn for an assigned issue, even though the trusted mode is Work. Plan only during this turn; do not implement the issue.',
+  'Read the bounded GitHub context and use read-only inspection of the prepared worktree, code, tests, and relevant documentation.',
   'Use the existing worktree identified in the structured GitHub context. Do not call agent_system_git_worktree or attempt to create, prepare, or replace another worktree.',
-  'First explain the issue in user-centric terms: identify what the user is trying to accomplish, what currently happens, and what should happen instead. Keep implementation details in the plan unless they are necessary to make the assessment accurate.',
-  'Produce either an implementation-ready plan or the smallest complete set of currently known blocking questions. Do not make persistent implementation changes, commit, push, or open a pull request during this turn.',
+  "First describe the issue from the user's perspective: explain what the user is trying to accomplish, what problem or missing behavior they encounter, and what should happen instead. Keep technical causes and implementation details in the plan unless they are necessary to make that description accurate.",
+  'Then produce either an implementation-ready plan or the smallest complete set of currently known blocking questions.',
+  'Do not create, edit, move, or delete files. Do not run commands that mutate the repository or worktree. Do not commit, push, open a pull request, or claim that planned work has been completed.',
 ].join(' ');
 
 export default githubNotificationAssignmentEventInstructions;

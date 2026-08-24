@@ -89,9 +89,13 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.equal(contract.lifecycle.id, 'issue');
     assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
     assert.equal(contract.publicationIntent, 'assignment-response');
-    assert.match(contract.instructions, /explain the issue in user-centric terms/u);
+    assert.match(contract.instructions, /initial planning turn/u);
+    assert.match(contract.instructions, /Plan only during this turn/u);
+    assert.match(contract.instructions, /describe the issue from the user's perspective/u);
+    assert.match(contract.instructions, /problem or missing behavior/u);
     assert.match(contract.instructions, /implementation-ready plan/u);
     assert.match(contract.instructions, /Do not call agent_system_git_worktree/u);
+    assert.match(contract.instructions, /Do not create, edit, move, or delete files/u);
     assert.match(
       contract.instructions,
       /exactly `## Assessment` followed by either `## Plan` or `## Questions`/u,
@@ -101,7 +105,8 @@ describe('channels/github/conversation/turn-contract', () => {
       contract.instructions,
       /smallest complete set of currently known blocking questions/u,
     );
-    assert.match(contract.instructions, /Do not make persistent implementation changes/u);
+    assert.match(contract.instructions, /Use forward-looking language/u);
+    assert.match(contract.instructions, /Do not describe planned work as completed/u);
     assert.doesNotMatch(contract.instructions, /\{\{commenter\}\}/u);
     assert.doesNotMatch(contract.instructions, /exactly one precise clarification question/u);
   });

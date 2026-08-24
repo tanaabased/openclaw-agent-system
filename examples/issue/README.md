@@ -5,10 +5,10 @@ Gateway and proves the issue-assignment intake lifecycle plus one short comment
 exchange. It establishes the polling baseline, rejects a self-authored assignment,
 prepares an approved issue worktree, preserves the checkpoint across restart,
 publishes one assignment acknowledgment, runs the registered issue/Work/assignment
-turn, publishes one bounded assignment response, delivers one approved comment
-through the registered issue/Work/comment turn contract with its installed
-identity card, publishes one reply, and retires the assignment without deleting
-the worktree.
+planning turn, publishes one bounded user-centric assignment response without
+changing the worktree, delivers one approved comment through the registered
+issue/Work/comment turn contract with its installed identity card, publishes one
+reply, and retires the assignment without deleting the worktree.
 
 Scenario setup creates and updates uniquely named issues in
 `tanaabased/big-test-bucket`.
@@ -135,6 +135,16 @@ done
 test -n "$response"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+
+# should leave the planning-only assignment worktree unchanged
+cd "$TMPDIR/agent-system-notifications"
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+worktree_path="$(jq -re 'select(length == 1) | .[0].path' <<< "$worktrees")"
+fixture_path="$worktree_path/assignment-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+test ! -e "$fixture_path"
+cd "$worktree_path"
+status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
+test -z "$status"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
