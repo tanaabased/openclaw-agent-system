@@ -7,6 +7,7 @@ import githubNotificationModelProofEvidence, {
   githubNotificationModelProofCallId,
   githubNotificationModelProofCandidate,
   githubNotificationModelProofFinalResponse,
+  hasGithubNotificationModelProofReplyToolResult,
 } from './github-notification-model-proof-evidence.ts';
 
 const { values: options } = parseArgs({
@@ -67,8 +68,8 @@ mock.on(
   {
     hasToolResult: true,
     model: /^(?:aimock\/)?gpt-5\.5$/u,
+    predicate: (request) => hasGithubNotificationModelProofReplyToolResult(request.messages),
     systemMessage: promptSignals,
-    toolCallId: githubNotificationModelProofCallId,
   },
   {
     content: githubNotificationModelProofFinalResponse,

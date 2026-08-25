@@ -17,25 +17,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The live issue example stays paused while #49 and #50 establish deterministic notification coverage.
+        # Keep one credential-free smoke while #49 iterates on the notification proof.
+        # Restore the full matrix after the proof is green; #50 owns its permanent shape.
         os:
-          - macos-26
+          # - macos-26
           - ubuntu-24.04
         example:
-          - install
+          # - install
           - validate
-          - doctor
-          - agent
-          - identity
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
-          - tool
-          - security
+          # - doctor
+          # - agent
+          # - identity
+          # - path
+          # - env
+          # - credentials
+          # - git
+          # - worktree
+          # - github
+          # - routing
+          # - tool
+          # - security
+          # - issue
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

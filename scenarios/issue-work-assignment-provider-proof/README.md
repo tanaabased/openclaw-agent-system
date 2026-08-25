@@ -7,10 +7,9 @@ OpenClaw still builds the trusted prompt, executes the real
 `agent_system_github_reply` tool, and returns the private report, while Agent
 System still owns the worktree, lifecycle, authorization, and GitHub publication.
 
-The workflow runs this proof twice in isolated jobs. Each run compares its
-normalized provider journal with `expected-evidence.json`; the two jobs therefore
-have one identical, bounded evidence contract despite different disposable issue
-numbers and GitHub timestamps.
+The workflow runs this proof once in an isolated job and compares its normalized
+provider journal with `expected-evidence.json`. The evidence contract excludes
+the disposable issue number and GitHub timestamps.
 
 The scenario creates one uniquely named disposable issue in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -99,7 +98,7 @@ openclaw-github-notifications wait-route \
 ```bash
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-provider-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$NOTIFICATION_PROOF_REPEAT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-provider-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
 ```
 
 ```bash
@@ -128,7 +127,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/big-test-bucket \
-  --title "prove deterministic notification provider $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $NOTIFICATION_PROOF_REPEAT $RUNNER_OS" \
+  --title "prove deterministic notification provider $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
   --body 'Prove that the installed notification lifecycle can publish one deterministic assignment response without a live model credential.' \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
@@ -175,7 +174,7 @@ cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
 response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
-expected="This issue needs a deterministic notification test that keeps the real OpenClaw and GitHub lifecycle while removing live model variability. I'm going to prove the assignment turn with a fixed mock tool call and response, repeat the evidence in isolation, and document the supported boundary to resolve the issue."
+expected="This issue needs a deterministic notification test that keeps the real OpenClaw and GitHub lifecycle while removing live model variability. I'm going to prove one complete assignment turn with a fixed mock tool call and response, verify the resulting publication, and document the supported boundary to resolve the issue."
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e --arg expected "$expected" '.body | split("\n\n") as $parts | ($parts | length) == 2 and $parts[0] == $expected and ($parts[1] | contains("agent-system-github-publication:assignment-response"))' <<< "$response"
 ```

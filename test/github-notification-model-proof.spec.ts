@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import githubNotificationModelProofEvidence, {
   githubNotificationModelProofCallId,
   githubNotificationModelProofFinalResponse,
+  hasGithubNotificationModelProofReplyToolResult,
 } from '../scripts/github-notification-model-proof-evidence.ts';
 
 const prompt = [
@@ -12,6 +13,26 @@ const prompt = [
 ].join('\n');
 
 describe('scripts/github-notification-model-proof-evidence', () => {
+  it('should recognize the exact reply tool result before later response references', () => {
+    assert.equal(
+      hasGithubNotificationModelProofReplyToolResult([
+        {
+          role: 'tool',
+          tool_call_id: githubNotificationModelProofCallId,
+        },
+        { role: 'assistant' },
+      ]),
+      true,
+    );
+    assert.equal(
+      hasGithubNotificationModelProofReplyToolResult([
+        { role: 'assistant' },
+        { role: 'tool', tool_call_id: 'call_other' },
+      ]),
+      false,
+    );
+  });
+
   it('should normalize one strict tool loop across accepted responses paths', () => {
     assert.match(githubNotificationModelProofCallId, /^call_[A-Za-z0-9_-]{1,59}$/u);
 

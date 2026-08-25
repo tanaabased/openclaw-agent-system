@@ -36,8 +36,21 @@ interface NotificationWorkflow {
   };
 }
 
+interface ExampleWorkflow {
+  jobs?: {
+    examples?: {
+      strategy?: {
+        matrix?: {
+          example?: string[];
+          os?: string[];
+        };
+      };
+    };
+  };
+}
+
 describe('github notification provider proof workflow', () => {
-  it('should repeat the mock proof on trusted pull requests without a live model credential', async () => {
+  it('should run one mock proof on trusted pull requests without a live model credential', async () => {
     const source = await readFile('.github/workflows/notification-tests.yml', 'utf8');
     const workflow = parse(source) as NotificationWorkflow;
     const notifications = workflow.jobs?.notifications;
@@ -59,7 +72,7 @@ describe('github notification provider proof workflow', () => {
     assert.match(notifications?.strategy?.matrix?.lifecycle ?? '', /\["issue"\]/u);
     assert.match(notifications?.strategy?.matrix?.mode ?? '', /\["work"\]/u);
     assert.match(notifications?.strategy?.matrix?.scenario ?? '', /assignment-provider-proof/u);
-    assert.match(notifications?.strategy?.matrix?.repeat ?? '', /\[1,2\]/u);
+    assert.equal(notifications?.strategy?.matrix?.repeat, undefined);
     assert.match(notifications?.concurrency?.group ?? '', /aimock-notification-proof/u);
     assert.equal(mockStep?.if, "matrix.scenario == 'assignment-provider-proof'");
     assert.equal(mockStep?.env?.OPENAI_API_KEY, undefined);
@@ -73,9 +86,14 @@ describe('github notification provider proof workflow', () => {
     assert.equal(liveStep?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
   });
 
-  it('should leave the live issue example out of pull request validation', async () => {
+  it('should keep one credential free example smoke during provider proof iteration', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
-    assert.doesNotMatch(source, /^\s+example: issue$/mu);
-    assert.match(source, /live issue example stays paused/u);
+    const workflow = parse(source) as ExampleWorkflow;
+
+    assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
+      example: ['validate'],
+      os: ['ubuntu-24.04'],
+    });
+    assert.match(source, /Restore the full matrix after the proof is green/u);
   });
 });

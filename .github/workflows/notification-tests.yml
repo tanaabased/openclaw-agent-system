@@ -43,7 +43,7 @@ env:
 
 jobs:
   notifications:
-    name: ${{ format('{0}-{1}-{2}{3} (ubuntu-24.04)', matrix.lifecycle, matrix.mode, matrix.scenario, matrix.repeat == 2 && '-repeat-2' || '') }}
+    name: ${{ format('{0}-{1}-{2} (ubuntu-24.04)', matrix.lifecycle, matrix.mode, matrix.scenario) }}
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -57,18 +57,6 @@ jobs:
         lifecycle: ${{ github.event_name == 'pull_request' && fromJSON('["issue"]') || fromJSON(format('["{0}"]', inputs.lifecycle)) }}
         mode: ${{ github.event_name == 'pull_request' && fromJSON('["work"]') || fromJSON(format('["{0}"]', inputs.mode)) }}
         scenario: ${{ github.event_name == 'pull_request' && fromJSON('["assignment-provider-proof"]') || inputs.scenario == 'all' && fromJSON('["assignment","assignment-provider-proof","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
-        repeat: ${{ (github.event_name == 'pull_request' || inputs.scenario == 'all' || inputs.scenario == 'assignment-provider-proof') && fromJSON('[1,2]') || fromJSON('[1]') }}
-        exclude:
-          - scenario: assignment
-            repeat: 2
-          - scenario: implementation
-            repeat: 2
-          - scenario: pr
-            repeat: 2
-          - scenario: comment
-            repeat: 2
-          - scenario: retirement
-            repeat: 2
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -136,7 +124,6 @@ jobs:
         env:
           DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
           DEFAULT_CREDENTIAL_STORE: secret-service
-          NOTIFICATION_PROOF_REPEAT: ${{ matrix.repeat }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}

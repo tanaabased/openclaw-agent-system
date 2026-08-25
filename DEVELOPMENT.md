@@ -110,9 +110,9 @@ The executable [Leia](https://github.com/lando/leia) material under [`examples/`
 The notification workflow automatically selects the
 `issue` + `work` + `assignment-provider-proof` scenario for same-repository pull
 requests and keeps the scenario available to manual dispatch. Fork and
-Dependabot pull requests skip this credential-bearing job. The proof runs twice
-in isolated jobs without `OPENAI_API_KEY`, and each job compares the same
-bounded provider journal with the checked-in expected evidence. The installed
+Dependabot pull requests skip this credential-bearing job. The proof runs once
+in an isolated job without `OPENAI_API_KEY` and compares its bounded provider
+journal with the checked-in expected evidence. The installed
 OpenClaw Gateway still selects the trusted lifecycle-mode-event prompt, executes
 the real `agent_system_github_reply` tool, and returns the private turn response.
 Agent System still prepares the worktree and publishes the staged candidate to

@@ -1,7 +1,7 @@
 export const githubNotificationModelProofCallId = 'call_agent_system_notification_proof_reply';
 
 export const githubNotificationModelProofCandidate =
-  "This issue needs a deterministic notification test that keeps the real OpenClaw and GitHub lifecycle while removing live model variability. I'm going to prove the assignment turn with a fixed mock tool call and response, repeat the evidence in isolation, and document the supported boundary to resolve the issue.";
+  "This issue needs a deterministic notification test that keeps the real OpenClaw and GitHub lifecycle while removing live model variability. I'm going to prove one complete assignment turn with a fixed mock tool call and response, verify the resulting publication, and document the supported boundary to resolve the issue.";
 
 export const githubNotificationModelProofFinalResponse = [
   '## Assessment',
@@ -78,6 +78,15 @@ function fixtureResponse(entry: GitHubNotificationModelProofEntry): Record<strin
   return record(entry.response.fixture?.response) ?? {};
 }
 
+export function hasGithubNotificationModelProofReplyToolResult(
+  messages: readonly { role: string; tool_call_id?: string }[],
+): boolean {
+  return messages.some(
+    (message) =>
+      message.role === 'tool' && message.tool_call_id === githubNotificationModelProofCallId,
+  );
+}
+
 function isReplyToolCallResponse(entry: GitHubNotificationModelProofEntry): boolean {
   const toolCalls = fixtureResponse(entry).toolCalls;
   return (
@@ -118,10 +127,7 @@ export default function githubNotificationModelProofEvidence(
       (entry.body?.tools ?? []).some((tool) => tool.function?.name === githubReplyToolName),
     ).length,
     replyToolResultRequestCount: requests.filter((entry) =>
-      (entry.body?.messages ?? []).some(
-        (message) =>
-          message.role === 'tool' && message.tool_call_id === githubNotificationModelProofCallId,
-      ),
+      hasGithubNotificationModelProofReplyToolResult(entry.body?.messages ?? []),
     ).length,
     requestCount: requests.length,
     responsesApiRequestCount: requests.filter(
