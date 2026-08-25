@@ -4,6 +4,7 @@ import type {
   GitHubNotificationItemState,
 } from '../intake/monitor/state.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
+import type { GitHubNotificationItemContext } from '../provider/work-event-client.ts';
 
 export const githubNotificationLifecycleIds = [
   'issue',
@@ -34,6 +35,7 @@ export interface GitHubNotificationLifecycleWorktree {
 
 export interface GitHubNotificationLifecycleContextInput {
   item: GitHubNotificationItemState;
+  itemContext?: GitHubNotificationItemContext;
   worktree?: GitHubNotificationLifecycleWorktree;
 }
 
@@ -51,7 +53,9 @@ export type GitHubNotificationLifecycleModeSupportMap = Partial<
 
 export interface GitHubNotificationLifecycleAssignmentEventSupport {
   session?: {
-    project(item: GitHubNotificationItemState): GitHubNotificationAssignmentEventProjection;
+    project(
+      input: GitHubNotificationLifecycleContextInput,
+    ): GitHubNotificationAssignmentEventProjection;
   };
 }
 

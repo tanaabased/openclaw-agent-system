@@ -3,7 +3,9 @@
 This GitHub Actions-only scenario proves the `issue` + `work` + `comment` turn. Its setup
 establishes and completes a real issue assignment so the comment is reconciled
 against a durable active lifecycle; its assertions cover only the admitted
-comment and one published reply.
+comment and one published reply. The same lifecycle contract runs against the
+deterministic mock provider on pull requests and the live provider through
+workflow dispatch.
 
 The scenario creates one disposable issue in `tanaabased/big-test-bucket` and
 removes its pull request, branch, generated SSH key, and issue during cleanup.
@@ -11,15 +13,15 @@ removes its pull request, branch, generated SSH key, and issue during cleanup.
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
-openclaw-setup \
+# should prepare the selected notification model and isolated profile
+openclaw-notification-setup prepare \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario comment \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
-  --needs-ssh-key \
-  --yolo
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+```
 
+```bash
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -115,6 +117,14 @@ jq -e '.id | type == "number" and . > 0' <<< "$reply"
 jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains($token)' <<< "$reply"
 ```
 
+```bash
+# should expose bounded evidence for the selected notification model
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario comment \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-comment/expected-evidence.json"
+```
+
 ## Cleanup
 
 ```bash
@@ -153,4 +163,9 @@ fi
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+```
+
+```bash
+# should stop the local model provider cleanly
+openclaw-notification-setup stop --model "$NOTIFICATION_MODEL"
 ```

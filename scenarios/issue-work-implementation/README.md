@@ -1,8 +1,11 @@
 # GitHub Issue Work Implementation Scenario
 
 This GitHub Actions-only scenario proves the `issue` + `work` + `implementation` turn.
-Its setup establishes a real planned assignment; its assertions cover only the
-exact repository change, lifecycle-normalized commit, and managed branch push.
+It establishes a real planned assignment, continues the same lifecycle through one
+deterministic implementation, and asserts the exact repository change,
+lifecycle-normalized commit, and managed branch push. The same lifecycle contract
+runs against the deterministic mock provider on pull requests and the live provider
+through workflow dispatch.
 
 The scenario creates one disposable issue in `tanaabased/big-test-bucket` and
 removes its pull request, branch, generated SSH key, and issue during cleanup.
@@ -10,15 +13,15 @@ removes its pull request, branch, generated SSH key, and issue during cleanup.
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
-openclaw-setup \
+# should prepare the selected notification model and isolated profile
+openclaw-notification-setup prepare \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario implementation \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
-  --needs-ssh-key \
-  --yolo
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+```
 
+```bash
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -133,6 +136,14 @@ test -n "$remote_sha"
 test "$remote_sha" = "$head_sha"
 ```
 
+```bash
+# should expose bounded evidence for the selected notification model
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario implementation \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-implementation/expected-evidence.json"
+```
+
 ## Cleanup
 
 ```bash
@@ -171,4 +182,9 @@ fi
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+```
+
+```bash
+# should stop the local model provider cleanly
+openclaw-notification-setup stop --model "$NOTIFICATION_MODEL"
 ```

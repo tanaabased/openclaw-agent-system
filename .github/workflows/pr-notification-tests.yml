@@ -1,0 +1,27 @@
+name: Notification Tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  notifications:
+    name: ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - assignment
+          - implementation
+          - pr
+          - comment
+          - retirement
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      runner: ubuntu-24.04
+      scenario: ${{ matrix.scenario }}
+    secrets:
+      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

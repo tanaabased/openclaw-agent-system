@@ -118,6 +118,9 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.57.1"
   },
+  "overrides": {
+    "hono": "4.13.4"
+  },
   "optionalDependencies": {
     "@napi-rs/keyring": "1.3.0"
   }

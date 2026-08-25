@@ -1,7 +1,22 @@
-name: Example tests
+name: Reusable notification test
 
 on:
-  pull_request:
+  workflow_call:
+    inputs:
+      provider:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      scenario:
+        required: true
+        type: string
+    secrets:
+      openai_api_key:
+        required: false
+      op_service_account_token:
+        required: true
 
 permissions:
   contents: read
@@ -9,32 +24,13 @@ permissions:
 env:
   HOMEBREW_NO_AUTO_UPDATE: '1'
   NO_COLOR: '1'
+  OPENAI_MODEL: gpt-5.4-nano
 
 jobs:
-  examples:
-    name: ${{ matrix.example }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-26
-          - ubuntu-24.04
-        example:
-          - install
-          - validate
-          - doctor
-          - agent
-          - identity
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
-          - tool
-          - security
+  notification:
+    name: ${{ inputs.provider == 'mock' && 'mock-ai' || 'live-ai' }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -80,22 +76,26 @@ jobs:
           archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
           test -n "$archive_name"
           echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
-      - name: Run Leia-backed example
+      - name: Run Leia-backed notification scenario
         shell: bash
         env:
-          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
+          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
+          NOTIFICATION_MODEL: ${{ inputs.provider == 'live' && format('openai/{0}', env.OPENAI_MODEL) || 'aimock/gpt-5.5' }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
           OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
           OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
-          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-        run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+          OPENAI_API_KEY: ${{ secrets.openai_api_key }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.op_service_account_token }}
+        run: bun run leia "scenarios/issue-work-${{ inputs.scenario }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
-        run: openclaw-diagnostics
+        run: |
+          openclaw-diagnostics
+          if test -f "$RUNNER_TEMP/notification-model.log"; then
+            tail -n 120 "$RUNNER_TEMP/notification-model.log" >&2
+          fi

@@ -1,9 +1,11 @@
 # GitHub Issue Work PR Scenario
 
-This GitHub Actions-only scenario proves the PR delivery outcome of an
-`issue` + `work` lifecycle. Its setup establishes a real planned assignment;
-its assertions cover only lifecycle-managed branch delivery and normalized
-PR shape.
+This GitHub Actions-only scenario proves the pull-request delivery outcome of an
+`issue` + `work` lifecycle. It establishes a real planned assignment, continues
+the same lifecycle through one deterministic implementation, and asserts the
+lifecycle-managed branch delivery and normalized pull-request shape. The same
+lifecycle contract runs against the deterministic mock provider on pull requests
+and the live provider through workflow dispatch.
 
 The scenario creates one disposable issue in `tanaabased/big-test-bucket` and
 removes its PR, branch, generated SSH key, and issue during cleanup.
@@ -11,15 +13,15 @@ removes its PR, branch, generated SSH key, and issue during cleanup.
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
-openclaw-setup \
+# should prepare the selected notification model and isolated profile
+openclaw-notification-setup prepare \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario pr \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
-  --needs-ssh-key \
-  --yolo
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+```
 
+```bash
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -104,7 +106,14 @@ worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
 pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$worktree_branch" --state open --json assignees,author,baseRefName,body,headRefName,number,state,title,url --jq 'select(length == 1) | .[0]')"
 jq -e --arg branch "$worktree_branch" --arg title "add pull request fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" --argjson issue "$issue_number" '.state == "OPEN" and .baseRefName == "main" and .headRefName == $branch and .title == $title and (.body | contains("Closes #" + ($issue | tostring))) and .author.login == "tanaabot" and ([.assignees[].login] | index("emoriwan") != null) and (.url | test("/pull/[1-9][0-9]*$"))' <<< "$pull_request"
 jq -r '.number' <<< "$pull_request" > "$TMPDIR/approved-pull-request-number"
+```
 
+```bash
+# should expose bounded evidence for the selected notification model
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario pr \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-pr/expected-evidence.json"
 ```
 
 ## Cleanup
@@ -145,4 +154,9 @@ fi
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+```
+
+```bash
+# should stop the local model provider cleanly
+openclaw-notification-setup stop --model "$NOTIFICATION_MODEL"
 ```

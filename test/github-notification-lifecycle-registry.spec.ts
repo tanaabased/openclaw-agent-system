@@ -30,6 +30,13 @@ describe('channels/github/lifecycles', () => {
       new GitHubPullRequestLifecycle(),
     ]);
     const selected = registry.resolve(issue.lifecycleId);
+    const itemContext = {
+      body: 'Create the requested fixture.',
+      comments: [],
+      labels: ['feature'],
+      title: 'add assignment fixture',
+      truncated: false,
+    };
 
     assert.equal(selected.id, 'issue');
     assert.equal(selected.worktree.required, true);
@@ -53,6 +60,7 @@ describe('channels/github/lifecycles', () => {
     assert.deepEqual(
       lifecycle.context.project({
         item: issue,
+        itemContext,
         worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
       }),
       {
@@ -62,13 +70,30 @@ describe('channels/github/lifecycles', () => {
           repositoryName: issue.repositoryName,
           repositoryOwner: issue.repositoryOwner,
         },
+        issue: itemContext,
         worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
       },
     );
-    assert.equal(
-      typeof resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'assignment').session
-        ?.project,
-      'function',
+    assert.deepEqual(
+      resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'assignment').session?.project({
+        item: issue,
+        itemContext,
+        worktree: { branch: 'issue-7', path: '/workspace/worktrees/issue-7' },
+      }),
+      {
+        emoji: '📥',
+        item: {
+          kind: 'Issue',
+          label: `tanaabased/example#${issue.number} — add assignment fixture`,
+          url: `https://github.com/tanaabased/example/issues/${issue.number}`,
+        },
+        sender: {
+          id: issue.assignmentActorNodeId,
+          label: issue.assignmentActorLogin,
+          url: `https://github.com/${issue.assignmentActorLogin}`,
+        },
+        timestamp: issue.lastObservedAt,
+      },
     );
     assert.deepEqual(resolveGitHubNotificationLifecycleEventSupport(lifecycle, 'comment'), {});
     assert.equal(githubNotificationLifecycleSupportsEvent(lifecycle, 'comment'), true);

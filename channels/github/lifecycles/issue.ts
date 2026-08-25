@@ -60,6 +60,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
       }
       return {
         item: githubNotificationItemContext(input, 'issue'),
+        ...(input.itemContext === undefined ? {} : { issue: input.itemContext }),
         worktree: input.worktree,
       };
     },
@@ -67,10 +68,11 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
   readonly eventSupport = {
     assignment: {
       session: {
-        project(item: GitHubNotificationLifecycleContextInput['item']) {
+        project(input: GitHubNotificationLifecycleContextInput) {
+          const { item, itemContext } = input;
           const actorLogin = item.assignmentActorLogin?.trim();
           const actorNodeId = item.assignmentActorNodeId?.trim();
-          if (item.itemType !== 'issue' || !actorLogin || !actorNodeId) {
+          if (item.itemType !== 'issue' || !actorLogin || !actorNodeId || !itemContext) {
             throw new Error('The GitHub issue assignment is missing trusted assignment context.');
           }
           const repository = `${item.repositoryOwner}/${item.repositoryName}`;
@@ -78,7 +80,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
             emoji: '📥',
             item: {
               kind: 'Issue',
-              label: `${repository}#${item.number}`,
+              label: `${repository}#${item.number} — ${itemContext.title}`,
               url: issueUrl(item),
             },
             sender: { id: actorNodeId, label: actorLogin, url: actorUrl(actorLogin) },

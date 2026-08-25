@@ -24,12 +24,14 @@ part of the response.
 - Later polling or `notifications refresh` discovers new issue and pull-request
   assignments and admits only authorized actors, repositories, and events.
 - Accepted issues create or reuse one deterministic managed worktree and one
-  OpenClaw lifecycle session. The session begins with a compact assignment card,
-  then the channel publishes one deterministic, varied acknowledgment before
-  running the registered `issue`, `work`, and `assignment` turn. The turn keeps
-  its private assessment and plan in the session and may publish one bounded
-  conversational response. A valid published assignment response deterministically
-  registers a pending `issue`, `work`, and `implementation` turn from trusted
+  OpenClaw lifecycle session. The session begins with a compact assignment card
+  that names the current issue title, then the channel publishes one deterministic,
+  varied acknowledgment before running the registered `issue`, `work`, and
+  `assignment` turn. The turn receives bounded title, body, labels, and recent
+  comments as private structured context, keeps its private assessment and plan in
+  the session, and may publish one bounded conversational response. A valid
+  published assignment response deterministically registers a pending `issue`,
+  `work`, and `implementation` turn from trusted
   tuple state rather than model-authored report formatting. The next reconciliation
   carries out the plan and validates it in the same session and worktree, then
   creates one local commit without publishing another GitHub response. Durable
@@ -222,8 +224,9 @@ reference.
 - Admission requires the authenticated assigned account, an approved immutable
   assigning actor, an eligible repository owner, and sufficient repository
   access.
-- Comment reads are bounded, and conversation state retains revision digests
-  rather than incoming provider prose.
+- Assignment and comment reads are bounded. Assignment content is reauthorized at
+  model-turn time, and monitor and conversation state do not retain incoming
+  provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
   The current channel-owned turn identity selects the registered `issue`,
   `work`, and `assignment`, `implementation`, or `comment` combination; its

@@ -2,20 +2,22 @@
 
 ### New Features
 
-- Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance.
-- Added canonical GitHub issue forms for Task, Bug, and Feature intake.
-- Added a deterministic notification PR gate with installed-Gateway evidence and no live OpenAI credential, replacing the live issue PR job. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49)
-- Added linked GitHub assignment cards, varied acknowledgments, active user-centric Work plans, and durable private implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation while keeping worktree checkpoints and comment reconciliation independent from response failures. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source.
+- Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
+- Added bounded GitHub issue content to assignment cards and private assignment and implementation turn context. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
+- Added canonical GitHub issue forms for Task, Bug, and Feature intake. [#47](https://github.com/tanaabased/openclaw-agent-system/pull/47)
+- Added five provider-neutral GitHub notification scenarios for deterministic mock PR checks and live manual dispatch. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
+- Added linked GitHub assignment cards, varied acknowledgments, and active user-centric Work plans. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added private Work implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
-- Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety.
-- Separated CI-only GitHub notification acceptance scenarios from general Leia examples with independent workflow and check identities. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added resilient Work checkpoints that keep response, worktree, and comment reconciliation failures independent. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 
 ### Bug Fixes
 
+- Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
 - Fixed provider-verified GitHub repository renames to refresh notification coordinates and reconcile managed clone origins without weakening ordinary origin pinning. [big-test-bucket#316](https://github.com/tanaabased/big-test-bucket/issues/316)
 - Fixed Work assignment continuation to use trusted lifecycle state instead of parsing model-authored report headings. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths.
 
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)
 

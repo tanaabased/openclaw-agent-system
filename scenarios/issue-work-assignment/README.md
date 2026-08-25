@@ -2,8 +2,10 @@
 
 This GitHub Actions-only scenario proves the `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
-acknowledgment, one bounded assessment and plan, and the planning-only worktree
-checkpoint. It does not continue into implementation.
+acknowledgment, delivery of the created issue title and body as bounded private
+context, one assessment and plan, and the planning-only worktree checkpoint. The same
+lifecycle contract runs against the deterministic mock provider on pull requests and
+the live provider through workflow dispatch. It does not continue into implementation.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -11,15 +13,15 @@ The scenario creates uniquely named disposable issues in
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
-openclaw-setup \
+# should prepare the selected notification model and isolated profile
+openclaw-notification-setup prepare \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario assignment \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
-  --needs-ssh-key \
-  --yolo
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+```
 
+```bash
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -138,7 +140,17 @@ responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent noti
 response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+```
 
+```bash
+# should expose bounded evidence for the selected notification model
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario assignment \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-assignment/expected-evidence.json"
+```
+
+```bash
 # should leave the planning only assignment worktree unchanged
 cd "$TMPDIR/agent-system-notifications"
 worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
@@ -180,4 +192,9 @@ fi
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+```
+
+```bash
+# should stop the local model provider cleanly
+openclaw-notification-setup stop --model "$NOTIFICATION_MODEL"
 ```
