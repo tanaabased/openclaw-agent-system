@@ -134,6 +134,7 @@ describe('scripts/github-notification-model-evidence', () => {
     entries.push(request({}));
     appendCall(reply);
     entries.push(request({ content: selectedScenario.finalResponses[0] }));
+    messages.splice(0, messages.length, { content: prompt, role: 'system' });
     entries.push(request({}));
     appendCall(issue);
     entries.push(request({}));
@@ -172,7 +173,7 @@ describe('scripts/github-notification-model-evidence', () => {
           callResponseCount: 1,
           name: 'agent_system_github_reply',
           projectionRequestCount: 7,
-          resultRequestCount: 6,
+          resultRequestCount: 1,
         },
         {
           callResponseCount: 1,

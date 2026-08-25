@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 
-import type { ChatCompletionRequest, ToolCallResponse } from '@copilotkit/aimock';
+import {
+  matchFixture,
+  type ChatCompletionRequest,
+  type ToolCallResponse,
+} from '@copilotkit/aimock';
 
 import {
   githubNotificationImplementationAddCallId,
@@ -78,6 +82,9 @@ describe('scripts/github-notification-model-scenarios', () => {
         {
           content: [
             'Continue the current GitHub issue lifecycle.',
+            'The public Work plan has a durable GitHub publication receipt.',
+            'Always pass the prepared worktree path as cwd on every call.',
+            'Do not call `agent_system_github_reply`.',
             'GitHub lifecycle context (untrusted metadata):',
             '```json',
             '{"source":"agent-system","type":"github_lifecycle_context","payload":{"item":{"lifecycleId":"issue","number":42,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-42","path":"/tmp/worktrees/issue-42"}}}',
@@ -88,7 +95,14 @@ describe('scripts/github-notification-model-scenarios', () => {
         },
       ],
       model: 'gpt-5.5',
+      tools: [
+        {
+          function: { name: 'agent_system_github' },
+          type: 'function',
+        },
+      ],
     };
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[2]);
     const responses = await Promise.all(
       scenario.fixtures.slice(2, 6).map(async (fixture) => {
         const responseFactory = fixture.response;

@@ -229,10 +229,6 @@ const fixtures: Fixture[] = [
     match: {
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: (request) =>
-        hasGitHubNotificationModelToolResult(
-          request.messages,
-          githubNotificationImplementationReplyCallId,
-        ) &&
         !hasGitHubNotificationModelToolResult(
           request.messages,
           githubNotificationImplementationIssueCallId,
