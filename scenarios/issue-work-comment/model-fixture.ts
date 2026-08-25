@@ -49,8 +49,16 @@ function messageText(message: ChatCompletionRequest['messages'][number]): string
   return message.content.map((part) => (typeof part.text === 'string' ? part.text : '')).join('');
 }
 
+function requestText(request: ChatCompletionRequest): string {
+  return request.messages.map(messageText).join('\n');
+}
+
+function hasCommentReplyToken(request: ChatCompletionRequest): boolean {
+  return commentReplyTokenPattern.test(requestText(request));
+}
+
 function commentReplyToken(request: ChatCompletionRequest): string {
-  const token = request.messages.map(messageText).join('\n').match(commentReplyTokenPattern)?.[0];
+  const token = requestText(request).match(commentReplyTokenPattern)?.[0];
   if (!token) throw new Error('The comment model request is missing its bounded reply token.');
   return token;
 }
@@ -75,10 +83,14 @@ const issueWorkScenario = createGitHubNotificationIssueWorkScenario({
 const commentFixtures: Fixture[] = [
   {
     match: {
-      hasToolResult: false,
       model: /^(?:aimock\/)?gpt-5\.5$/u,
+      predicate: (request) =>
+        hasCommentReplyToken(request) &&
+        !hasGitHubNotificationModelToolResult(
+          request.messages,
+          githubNotificationCommentReplyCallId,
+        ),
       toolName: 'agent_system_github_reply',
-      userMessage: commentReplyTokenPattern,
     },
     response: (request): ToolCallResponse => ({
       id: 'agent-system-notification-comment-reply-response',
@@ -93,14 +105,13 @@ const commentFixtures: Fixture[] = [
   },
   {
     match: {
-      hasToolResult: true,
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: (request) =>
+        hasCommentReplyToken(request) &&
         hasGitHubNotificationModelToolResult(
           request.messages,
           githubNotificationCommentReplyCallId,
         ),
-      userMessage: commentReplyTokenPattern,
     },
     response: {
       content: githubNotificationCommentFinalResponse,

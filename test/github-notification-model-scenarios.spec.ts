@@ -220,7 +220,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     }
   });
 
-  it('should derive the comment reply from the admitted request token', async () => {
+  it('should derive the comment reply from the admitted token across continuation history', async () => {
     const scenario = resolveGitHubNotificationModelScenario('comment');
     const request: ChatCompletionRequest = {
       messages: [
@@ -234,6 +234,26 @@ describe('scripts/github-notification-model-scenarios', () => {
         } as unknown as ChatCompletionRequest['messages'][number],
         {
           content: '@tanaabot Reply briefly with ready-123-4.',
+          role: 'user',
+        },
+        {
+          content: null,
+          role: 'assistant',
+          tool_calls: [
+            {
+              function: { arguments: '{}', name: 'unrelated_tool' },
+              id: 'call_unrelated_history',
+              type: 'function',
+            },
+          ],
+        },
+        {
+          content: '{"status":"complete"}',
+          role: 'tool',
+          tool_call_id: 'call_unrelated_history',
+        },
+        {
+          content: 'Continue the admitted comment turn.',
           role: 'user',
         },
       ],
