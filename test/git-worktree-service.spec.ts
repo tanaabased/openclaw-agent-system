@@ -16,6 +16,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
   readonly calls: Array<{ argv: string[]; cwd: string }> = [];
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
+  dirty = false;
   fetchFails = false;
   removeFails = false;
   readonly worktrees = new Map<string, FakeWorktree>();
@@ -57,6 +58,9 @@ class FakeGitRunner implements GitWorktreeGitRunner {
         stderr: '',
         stdout: '',
       };
+    }
+    if (command === 'status') {
+      return { exitCode: 0, stderr: '', stdout: this.dirty ? ' M tracked.txt\n' : '' };
     }
     if (command === 'worktree' && argv[0] === 'add') {
       const createsBranch = argv[1] === '-b';
@@ -240,6 +244,36 @@ describe('tools/git/worktree-service', () => {
       await assert.rejects(
         service.remove(context, 'repository', 'missing'),
         /worktree is unavailable/u,
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should remove only a clean deterministic worktree during lifecycle cleanup', async () => {
+    const { context, git, service, workspaceDir } = await fixture();
+    try {
+      const input = {
+        baseRef: 'main',
+        cloneUrl: 'https://example.com/one.git',
+        repositoryId: 'repository',
+        workId: 'one',
+      };
+      await service.prepare(context, input);
+      git.dirty = true;
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId)).status,
+        'dirty',
+      );
+      assert.equal(git.worktrees.size, 1);
+      git.dirty = false;
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId)).status,
+        'removed',
+      );
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId)).status,
+        'missing',
       );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });

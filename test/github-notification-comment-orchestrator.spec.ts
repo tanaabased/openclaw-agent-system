@@ -140,6 +140,9 @@ function memoryStateStore(initial?: GitHubNotificationConversationState) {
 function lifecycles() {
   return new GitHubNotificationLifecycleRegistry([
     new GitHubIssueLifecycle({
+      async cleanupGitHub() {
+        return { status: 'missing' };
+      },
       async inspectGitHub() {
         return undefined;
       },

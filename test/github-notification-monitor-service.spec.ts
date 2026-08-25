@@ -457,6 +457,9 @@ describe('channels/github/intake/monitor/service', () => {
       initialMode: githubNotificationWorkMode,
       lifecycles: new GitHubNotificationLifecycleRegistry([
         new GitHubIssueLifecycle({
+          async cleanupGitHub() {
+            return { status: 'missing' };
+          },
           async inspectGitHub() {
             worktreeOperations += 1;
             return worktree;

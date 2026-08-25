@@ -8,7 +8,7 @@ import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
 import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
 import { gitWorktreeDirectoryName } from './worktree-names.ts';
 import { githubSshWorktreeRemote } from './worktree-remote.ts';
-import type { GitWorktreeResult } from './worktree-service.ts';
+import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 
 export interface TrustedGitHubWorktreeInput {
   agentId: string;
@@ -22,6 +22,10 @@ export interface TrustedGitHubWorktreeInput {
 
 export interface TrustedGitHubWorktreeResult extends GitWorktreeResult {
   workId: string;
+}
+
+export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
+  worktree: { branch: string; path: string };
 }
 
 export interface TrustedGitWorktreeServiceDependencies {
@@ -136,6 +140,108 @@ export default class TrustedGitWorktreeService {
       );
     }
     return { ...result, workId };
+  }
+
+  public async cleanupGitHub(
+    input: TrustedGitHubWorktreeCleanupInput,
+  ): Promise<GitWorktreeCleanupResult> {
+    const observed = await this.inspectGitHub(input);
+    const repositoryId = `github-${positiveInteger(
+      input.repositoryDatabaseId,
+      'The GitHub repository database id',
+    )}`;
+    const workId = `${input.itemType}-${positiveInteger(
+      input.itemDatabaseId,
+      'The GitHub work-item database id',
+    )}`;
+    if (!observed) {
+      return {
+        branch: input.worktree.branch,
+        path: input.worktree.path,
+        repositoryId,
+        status: 'missing',
+        workId,
+      };
+    }
+    if (observed.branch !== input.worktree.branch || observed.path !== input.worktree.path) {
+      return {
+        branch: input.worktree.branch,
+        path: input.worktree.path,
+        repositoryId,
+        status: 'unsafe',
+        workId,
+      };
+    }
+    return this.#executeCleanup(input.agentId, repositoryId, workId, input.signal);
+  }
+
+  async #executeCleanup(
+    agentId: string,
+    repositoryId: string,
+    workId: string,
+    signal?: AbortSignal,
+  ): Promise<GitWorktreeCleanupResult> {
+    const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
+    if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
+      throw unavailable(agentId, 'the trusted manifest is not loaded');
+    }
+    const declared = this.#dependencies.definition.configuration.read(loaded.manifest);
+    if (!declared) throw unavailable(agentId, 'Git worktrees are not configured');
+    const operation = {
+      action: 'git.worktree.remove',
+      risk: 'write' as const,
+      resources: [
+        { type: 'git-repository', id: repositoryId },
+        { type: 'git-worktree', id: workId },
+      ],
+      summary: 'Remove a clean retired GitHub worktree',
+    };
+    const authorization = await this.#dependencies.definition.authorization?.authorize?.(
+      operation,
+      declared,
+    );
+    if (authorization?.status !== 'allowed') {
+      throw new AgentSystemToolError(
+        'approval_denied',
+        authorization?.reason ?? 'Git worktree cleanup is not authorized.',
+      );
+    }
+    const environment = await this.#dependencies.environmentService.loadForAgentId(
+      agentId,
+      'service',
+    );
+    if (
+      environment.status !== 'loaded' ||
+      resolve(environment.scope.workspaceDir) !== resolve(loaded.scope.workspaceDir)
+    ) {
+      throw new AgentSystemToolError(
+        'credential_unavailable',
+        `The Git worktree environment is unavailable for agent ${agentId}.`,
+      );
+    }
+    const values = environment.environment.values;
+    const configuration = this.#dependencies.definition.configuration.resolve(declared, {
+      resolve(value, fieldPath) {
+        const resolution = resolveManifestValue(value, values, fieldPath);
+        if (resolution.status === 'invalid') {
+          throw new AgentSystemToolError('credential_unavailable', resolution.diagnostic.message);
+        }
+        return resolution.value;
+      },
+    });
+    return this.#dependencies.definition.executeTrustedGitHubCleanup(
+      { repositoryId, workId },
+      configuration,
+      {
+        agentId,
+        resolveEnvironment(name: string) {
+          return values[name];
+        },
+        ...(signal === undefined ? {} : { signal }),
+        source: 'command',
+        workspaceDir: loaded.scope.workspaceDir,
+      },
+    );
   }
 
   async #execute(

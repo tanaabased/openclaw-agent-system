@@ -194,6 +194,7 @@ describe('channels/github/intake/assignment-provider', () => {
   it('should revoke intake when the account is no longer assigned', async () => {
     assert.deepEqual(await provider(false).inspect(input()), {
       authorized: false,
+      providerVerified: true,
       reasonCode: 'item-unassigned',
     });
   });
@@ -206,6 +207,7 @@ describe('channels/github/intake/assignment-provider', () => {
       }).inspect(input()),
       {
         authorized: false,
+        providerVerified: false,
         reasonCode: 'github-notification-route-revoked',
       },
     );

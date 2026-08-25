@@ -4,6 +4,7 @@ import {
   GitHubNotificationPollError,
   pollGitHubNotifications,
 } from '../channels/github/intake/monitor/poller.ts';
+import decodeGitHubNotificationMonitorState from '../channels/github/intake/monitor/state-codec.ts';
 import {
   type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
@@ -83,7 +84,9 @@ function client(
     assigned?: boolean;
     candidates?: Array<typeof candidate | typeof pullRequestCandidate>;
     identity?: typeof account;
-    item?: typeof item | (Omit<typeof pullRequestItem, 'state'> & { state: 'closed' | 'open' });
+    item?:
+      | (Omit<typeof item, 'state'> & { state: 'closed' | 'open' })
+      | (Omit<typeof pullRequestItem, 'state'> & { state: 'closed' | 'open' });
     permission?: GitHubRepositoryPermission;
     repository?: typeof repository;
     resourceMissing?: boolean;
@@ -326,6 +329,34 @@ describe('channels/github/intake/monitor/poller', () => {
     }
   });
 
+  it('should retire a closed issue with provider verification', async () => {
+    const state = notificationMonitorState();
+    const current = Object.values(state.items)[0]!;
+    current.intake = {
+      ...current.intake!,
+      stage: 'prepared',
+      worktreeBranch: 'issue-12',
+      worktreePath: '/worktrees/issue-12',
+    };
+    const retired = await pollGitHubNotifications({
+      agentId: 'tanaabot',
+      client: client({ item: { ...item, state: 'closed' } }),
+      configuration,
+      now: baselineAt + 600_000,
+      state,
+      workspaceDir: '/workspace',
+    });
+
+    const retiredItem = Object.values(retired.state.items)[0];
+    assert.equal(retired.retired, 1);
+    assert.equal(retiredItem?.reasonCode, 'item-closed');
+    assert.equal(retiredItem?.intake?.stage, 'retired');
+    assert.equal(retiredItem?.intake?.providerRetirementVerifiedAt, baselineAt + 600_000);
+    assert.equal(retiredItem?.intake?.worktreeBranch, 'issue-12');
+    assert.equal(retiredItem?.intake?.worktreePath, '/worktrees/issue-12');
+    assert.equal(decodeGitHubNotificationMonitorState(retired.state, 'tanaabot')?.status, 'ready');
+  });
+
   it('should retire an admitted item when canonical assignment is revoked', async () => {
     const baseline = await pollGitHubNotifications({
       agentId: 'tanaabot',
@@ -354,7 +385,12 @@ describe('channels/github/intake/monitor/poller', () => {
     assert.equal(retired.retired, 1);
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
-    assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'admitted');
+    assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'retired');
+    assert.equal(
+      Object.values(retired.state.items)[0]?.intake?.providerRetirementVerifiedAt,
+      baselineAt + 600_000,
+    );
+    assert.equal(decodeGitHubNotificationMonitorState(retired.state, 'tanaabot')?.status, 'ready');
   });
 
   it('should fail closed when discovery is truncated', async () => {

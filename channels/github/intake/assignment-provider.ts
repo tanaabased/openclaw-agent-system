@@ -21,7 +21,7 @@ export interface GitHubNotificationAssignmentProviderDependencies {
 }
 
 export type GitHubNotificationAssignmentInspection<Client = GitHubNotificationProviderClient> =
-  | { authorized: false; reasonCode?: string }
+  | { authorized: false; providerVerified: boolean; reasonCode?: string }
   | {
       authorized: true;
       client: Client;
@@ -60,6 +60,7 @@ export default class GitHubNotificationAssignmentProvider
         }
       : {
           authorized: false,
+          providerVerified: inspection.providerVerified,
           ...(inspection.reasonCode === undefined ? {} : { reasonCode: inspection.reasonCode }),
         };
   }
@@ -75,7 +76,11 @@ export default class GitHubNotificationAssignmentProvider
       input.intake.assignmentEventId !== input.item.assignmentEventNodeId ||
       !lifecycleMatchesItem
     ) {
-      return { authorized: false, reasonCode: 'github-notification-intake-state-invalid' };
+      return {
+        authorized: false,
+        providerVerified: false,
+        reasonCode: 'github-notification-intake-state-invalid',
+      };
     }
     try {
       resolveNotificationRoute(
@@ -88,11 +93,19 @@ export default class GitHubNotificationAssignmentProvider
         }),
       );
     } catch {
-      return { authorized: false, reasonCode: 'github-notification-route-revoked' };
+      return {
+        authorized: false,
+        providerVerified: false,
+        reasonCode: 'github-notification-route-revoked',
+      };
     }
     const context = await this.#connect(input);
     if (!context) {
-      return { authorized: false, reasonCode: 'github-notification-configuration-revoked' };
+      return {
+        authorized: false,
+        providerVerified: false,
+        reasonCode: 'github-notification-configuration-revoked',
+      };
     }
     try {
       const repository = await context.client.getRepository(
@@ -128,7 +141,11 @@ export default class GitHubNotificationAssignmentProvider
             item.pullRequest.headRepositoryNodeId !== input.item.pullRequest.headRepositoryNodeId ||
             item.pullRequest.author?.nodeId !== input.item.pullRequest.authorNodeId))
       ) {
-        return { authorized: false, reasonCode: 'github-notification-resource-changed' };
+        return {
+          authorized: false,
+          providerVerified: true,
+          reasonCode: 'github-notification-resource-changed',
+        };
       }
       const eventPage = await context.client.listAssignmentEvents(
         input.item.repositoryOwner,
@@ -158,6 +175,7 @@ export default class GitHubNotificationAssignmentProvider
       ) {
         return {
           authorized: false,
+          providerVerified: true,
           reasonCode:
             admission.disposition === 'approved'
               ? 'github-notification-assignment-changed'
@@ -176,7 +194,7 @@ export default class GitHubNotificationAssignmentProvider
         error instanceof GitHubWorkEventClientError &&
         error.code === 'github-notification-resource-missing'
       ) {
-        return { authorized: false, reasonCode: error.code };
+        return { authorized: false, providerVerified: true, reasonCode: error.code };
       }
       throw error;
     }

@@ -10,6 +10,9 @@ import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
 import GitHubNotificationAssignmentAcknowledgmentService from '../conversation/assignment-acknowledgment-service.ts';
 import GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import GitHubNotificationSessionArchiveService, {
+  type GitHubNotificationSessionRuntime,
+} from '../conversation/session-archive-service.ts';
 import GitHubNotificationIssueDeliveryService, {
   type GitHubNotificationGitExecutor,
 } from '../conversation/issue-delivery-service.ts';
@@ -29,6 +32,7 @@ import githubNotificationCommentEvent from '../events/comment.ts';
 import githubNotificationImplementationEvent from '../events/implementation.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
+import GitHubNotificationAssignmentCleanupService from '../intake/assignment-cleanup-service.ts';
 import GitHubNotificationAssignmentProvider from '../intake/assignment-provider.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../intake/monitor/cycle-lease.ts';
 import GitHubNotificationMonitorService from '../intake/monitor/service.ts';
@@ -63,6 +67,7 @@ export interface GitHubNotificationRuntimeDependencies {
   readRuntimeConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
   replyToolLogger: Pick<Logger, 'debug'>;
+  sessionRuntime: GitHubNotificationSessionRuntime;
   worktrees: GitHubIssueLifecycleWorktreeService;
 }
 
@@ -86,6 +91,9 @@ export default function createGitHubNotificationRuntime(
   const monitorStateStore = new GitHubNotificationMonitorStateStore(stateOptions);
   const monitorCycleLeaseStore = new GitHubNotificationMonitorCycleLeaseStore(stateOptions);
   const conversationStateStore = new GitHubNotificationConversationStateStore(stateOptions);
+  const sessionArchiveService = new GitHubNotificationSessionArchiveService({
+    runtime: dependencies.sessionRuntime,
+  });
   const publicationLeaseStore = new GitHubNotificationPublicationLeaseStore(stateOptions);
   const routingService = new NotificationRoutingService({
     mutateConfigFile: dependencies.mutateConfigFile,
@@ -184,6 +192,11 @@ export default function createGitHubNotificationRuntime(
       });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
         authority: assignmentProvider,
+        cleanup: new GitHubNotificationAssignmentCleanupService({
+          conversations: conversationStateStore,
+          readConfig: dependencies.readRuntimeConfig,
+          sessions: sessionArchiveService,
+        }),
         initialMode,
         lifecycles: lifecycleRegistry,
         sessions: assignmentSessionService,

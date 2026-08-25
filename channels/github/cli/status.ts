@@ -85,6 +85,14 @@ export default async function statusNotificationsAgentSystem(
             item.disposition,
             `stage=${item.stage ?? 'none'}`,
             `worktree=${item.worktree}`,
+            ...(item.cleanup === undefined
+              ? []
+              : [
+                  `cleanup=${item.cleanup.status}`,
+                  `session=${item.cleanup.session}`,
+                  `cleanup-worktree=${item.cleanup.worktree}`,
+                  `cleanup-reason=${item.cleanup.reasonCode}`,
+                ]),
           ].join(' '),
         })),
       ],

@@ -33,6 +33,15 @@ Polling discovers candidate events. Admission verifies the agent, actor,
 repository, permission, and lifecycle type before creating or resuming the
 session and any required worktree. Comments return to that same session.
 
+Provider-verified retirement first checkpoints the logical lifecycle state,
+then independently reconciles resource cleanup. Cleanup requires a completed
+implementation and no active turn. It archives the exact unpinned OpenClaw
+session through the injected canonical session runtime and asks the lifecycle
+owner to remove only its exact clean managed worktree. Missing resources are
+idempotent completion; pinned, incomplete, dirty, and unsafe resources remain
+intact with explicit retry-safe outcomes. Disabling notification routing alone
+does not authorize resource deletion.
+
 ## Vocabulary
 
 Machine IDs are lowercase kebab-case and remain distinct across lifecycle type,
@@ -60,6 +69,8 @@ facts and resources:
 - validate that the classified item belongs to the lifecycle and project
   bounded provider facts;
 - declare lifecycle-specific resources, such as the issue worktree;
+- inspect and clean up lifecycle-specific resources through their trusted
+  owner without deleting branches or remote refs;
 - declare which registered modes the lifecycle supports;
 - supply lifecycle facts for shared presentation, structured context, hidden
   instructions, and completion evidence through small capabilities.

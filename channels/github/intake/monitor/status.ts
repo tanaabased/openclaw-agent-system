@@ -2,6 +2,7 @@ import type {
   GitHubNotificationIntakeStage,
   GitHubNotificationItemDisposition,
   GitHubNotificationMonitorState,
+  GitHubNotificationCleanupState,
 } from './state.ts';
 import {
   githubNotificationItemMatchesSelector,
@@ -22,6 +23,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 ]);
 
 export interface GitHubNotificationStatusItem {
+  cleanup?: GitHubNotificationCleanupState;
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
   itemType: 'issue' | 'pull-request';
@@ -82,6 +84,7 @@ export function githubNotificationMonitorStatus(
     .map((item): GitHubNotificationStatusItem => {
       const intake = item.intake;
       return {
+        ...(intake?.cleanup === undefined ? {} : { cleanup: intake.cleanup }),
         disposition: item.disposition,
         ...(intake?.failureCode === undefined ? {} : { failureCode: intake.failureCode }),
         itemType: item.itemType,

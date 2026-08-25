@@ -5,6 +5,15 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 
 export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
 
+export type GitHubNotificationCleanupStatus = 'completed' | 'failed' | 'skipped';
+
+export interface GitHubNotificationCleanupState {
+  reasonCode: string;
+  session: 'archived' | 'failed' | 'missing' | 'pinned';
+  status: GitHubNotificationCleanupStatus;
+  worktree: 'dirty' | 'failed' | 'missing' | 'not-applicable' | 'removed' | 'unsafe';
+}
+
 export interface GitHubNotificationPullRequestState {
   authorNodeId?: string;
   baseRef: string;
@@ -17,7 +26,9 @@ export interface GitHubNotificationPullRequestState {
 
 export interface GitHubNotificationIntakeState {
   assignmentEventId: string;
+  cleanup?: GitHubNotificationCleanupState;
   failureCode?: string;
+  providerRetirementVerifiedAt?: number;
   stage: GitHubNotificationIntakeStage;
   worktreeBranch?: string;
   worktreePath?: string;
@@ -59,7 +70,7 @@ export interface GitHubNotificationMonitorState {
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
   processedEventNodeIds: string[];
-  schemaVersion: 4;
+  schemaVersion: 5;
   searchBoundary?: string;
   workspaceDir: string;
 }
@@ -73,18 +84,24 @@ export function createGitHubNotificationMonitorState(
     failureCount: 0,
     items: {},
     processedEventNodeIds: [],
-    schemaVersion: 4,
+    schemaVersion: 5,
     workspaceDir,
   };
 }
 
-/** List intake records that still require local retirement. */
+/** List intake records that still require logical retirement or provider-authorized cleanup. */
 export function githubNotificationRetirementItemKeys(
   state: GitHubNotificationMonitorState | undefined,
 ): string[] {
   if (!state) return [];
   return Object.entries(state.items)
-    .filter(([, item]) => item.intake !== undefined && item.intake.stage !== 'retired')
+    .filter(
+      ([, item]) =>
+        item.intake !== undefined &&
+        (item.intake.stage !== 'retired' ||
+          (item.intake.providerRetirementVerifiedAt !== undefined &&
+            item.intake.cleanup?.status !== 'completed')),
+    )
     .map(([itemKey]) => itemKey)
     .sort();
 }

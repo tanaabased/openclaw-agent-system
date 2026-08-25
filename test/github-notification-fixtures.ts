@@ -98,7 +98,7 @@ export function notificationMonitorState(): GitHubNotificationMonitorState {
     failureCount: 0,
     items: { [notificationItemKey]: approvedNotificationItem() },
     processedEventNodeIds: ['EV_assignment'],
-    schemaVersion: 4,
+    schemaVersion: 5,
     workspaceDir: '/workspace',
   };
 }

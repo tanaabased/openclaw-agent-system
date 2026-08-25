@@ -33,6 +33,10 @@ export interface GitHubNotificationLifecycleWorktree {
   path: string;
 }
 
+export interface GitHubNotificationLifecycleWorktreeCleanup {
+  status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe';
+}
+
 export interface GitHubNotificationLifecycleContextInput {
   item: GitHubNotificationItemState;
   itemContext?: GitHubNotificationItemContext;
@@ -72,6 +76,11 @@ export interface GitHubNotificationLifecycleEventSupportMap {
 export type GitHubNotificationLifecycleWorktreeOwner =
   | { required: false }
   | {
+      cleanup(
+        input: GitHubNotificationLifecycleBoundaryInput & {
+          worktree: GitHubNotificationLifecycleWorktree;
+        },
+      ): Promise<GitHubNotificationLifecycleWorktreeCleanup>;
       inspect(
         input: GitHubNotificationLifecycleBoundaryInput,
       ): Promise<GitHubNotificationLifecycleWorktree | undefined>;

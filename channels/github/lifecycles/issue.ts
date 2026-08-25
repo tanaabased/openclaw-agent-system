@@ -8,6 +8,16 @@ import type {
 } from './types.ts';
 
 export interface GitHubIssueLifecycleWorktreeService {
+  cleanupGitHub(input: {
+    agentId: string;
+    cloneUrl: string;
+    defaultBranch: string;
+    itemDatabaseId: number;
+    itemType: 'issue';
+    repositoryDatabaseId: number;
+    signal?: AbortSignal;
+    worktree: GitHubNotificationLifecycleWorktree;
+  }): Promise<{ status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe' }>;
   inspectGitHub(input: {
     agentId: string;
     cloneUrl: string;
@@ -99,6 +109,11 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
 
   constructor(worktrees: GitHubIssueLifecycleWorktreeService) {
     this.worktree = {
+      cleanup: (
+        input: GitHubNotificationLifecycleBoundaryInput & {
+          worktree: GitHubNotificationLifecycleWorktree;
+        },
+      ) => worktrees.cleanupGitHub({ ...worktreeInput(input), worktree: input.worktree }),
       inspect: (input: GitHubNotificationLifecycleBoundaryInput) =>
         worktrees.inspectGitHub(worktreeInput(input)),
       prepare: (input: GitHubNotificationLifecycleBoundaryInput) =>

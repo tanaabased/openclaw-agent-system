@@ -68,6 +68,31 @@ describe('channels/github/intake/monitor/status', () => {
     });
   });
 
+  it('should project redacted cleanup checkpoints without managed resource values', () => {
+    const state = notificationMonitorState();
+    const item = state.items[notificationItemKey]!;
+    item.disposition = 'retired';
+    item.intake = {
+      ...item.intake!,
+      cleanup: {
+        reasonCode: 'github-notification-cleanup-worktree-dirty',
+        session: 'archived',
+        status: 'skipped',
+        worktree: 'dirty',
+      },
+      providerRetirementVerifiedAt: 10,
+      stage: 'retired',
+      worktreeBranch: 'agent/tanaabot/issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+
+    const result = githubNotificationMonitorStatus('tanaabot', state);
+
+    assert.deepEqual(result.items[0]?.cleanup, item.intake.cleanup);
+    assert.equal(JSON.stringify(result).includes('/workspace/worktrees'), false);
+    assert.equal(JSON.stringify(result).includes('agent/tanaabot'), false);
+  });
+
   it('should report baseline and assignment rejection checkpoints', () => {
     const state = notificationMonitorState();
     state.lastSuccessfulPollAt = 2;

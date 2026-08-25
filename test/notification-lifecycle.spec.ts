@@ -115,7 +115,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       items: {},
       lastSuccessfulPollAt: 1,
       processedEventNodeIds: [],
-      schemaVersion: 4,
+      schemaVersion: 5,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [
