@@ -127,9 +127,9 @@ response. Agent System still prepares the worktree, publishes the staged assignm
 candidate, normalizes the implementation commit, and pushes the managed branch.
 AIMock replaces only the model's tool selection, tool arguments, and final text.
 
-The pull-request example workflow runs the restored non-notification matrix on
-macOS and Ubuntu. It deliberately does not select the long-running live
-`examples/issue` material; that example remains available for focused manual use.
+The pull-request example workflow runs the non-notification matrix on macOS and
+Ubuntu. GitHub notification acceptance remains exclusively owned by the shared
+scenarios above, with mock-backed pull-request checks and live manual dispatch.
 
 The scenario-selectable harness uses `@copilotkit/aimock` directly as an exact
 dev dependency and a strict OpenAI Responses-compatible local provider. OpenClaw 2026.7.1-2 exposes

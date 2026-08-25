@@ -6,7 +6,6 @@
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
 - Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
 - Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep other examples-level files limited to `AGENTS.md` and `package.json`.
-- Keep `examples/issue` as the single broad automatic live smoke for the GitHub `issue` + `work` lifecycle; leave focused notification acceptance behavior in `scenarios/`.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
 ## OpenClaw Runtime
@@ -34,7 +33,6 @@
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
 - Keep runtime-derived state beneath the scenario's `TMPDIR` and keep generated state out of version control.
 - Keep scenario-specific expected values visible in the README or checked-in fixture; use helpers only for bounded process coordination or structured validation.
-- For the broad issue smoke, assert stable publication markers and final provider or repository side effects. Do not assert model wording, headings, intermediate lifecycle states, or exact commit prose.
 
 ## Boundaries
 

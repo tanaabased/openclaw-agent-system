@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 import { parse } from 'yaml';
 
@@ -271,9 +271,14 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should restore the non-notification example matrix without live issue work', async () => {
+  it('should keep every general example in the non-notification pull request matrix', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
+    const examples = workflow.jobs?.examples?.strategy?.matrix?.example ?? [];
+    const exampleDirectories = (await readdir('examples', { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
 
     assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
       example: [
@@ -294,6 +299,6 @@ describe('github notification workflows', () => {
       ],
       os: ['macos-26', 'ubuntu-24.04'],
     });
-    assert.doesNotMatch(source, /- issue/u);
+    assert.deepEqual(exampleDirectories, [...examples].sort());
   });
 });
