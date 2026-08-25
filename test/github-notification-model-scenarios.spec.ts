@@ -5,9 +5,10 @@ import resolveGitHubNotificationModelScenario, {
 } from '../scripts/github-notification-model-scenarios.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the converted assignment and transitional proof scenarios', () => {
+  it('should resolve the converted scenarios and transitional proof', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
+      'retirement',
       'assignment-provider-proof',
     ]);
 

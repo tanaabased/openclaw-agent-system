@@ -142,7 +142,7 @@ describe('github notification workflows', () => {
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);
     assert.deepEqual(notifications?.strategy?.matrix, {
-      scenario: ['assignment', 'assignment-provider-proof'],
+      scenario: ['assignment', 'retirement', 'assignment-provider-proof'],
     });
     assert.deepEqual(notifications?.with, {
       provider: 'mock',
@@ -223,6 +223,24 @@ describe('github notification workflows', () => {
     assert.match(source, /length\) <= 800/u);
     assert.equal(source.includes(githubNotificationAssignmentCandidate), false);
     assert.equal(expectedEvidence.scenario, 'assignment');
+  });
+
+  it('should keep retirement as one provider-neutral lifecycle scenario', async () => {
+    const source = await readFile('scenarios/issue-work-retirement/README.md', 'utf8');
+    const expectedEvidence = JSON.parse(
+      await readFile('scenarios/issue-work-retirement/expected-evidence.json', 'utf8'),
+    ) as { scenario?: string };
+
+    assert.match(source, /openclaw-notification-setup prepare/u);
+    assert.match(source, /openclaw-notification-setup evidence/u);
+    assert.match(source, /openclaw-notification-setup stop/u);
+    assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
+    assert.match(source, /--scenario retirement/u);
+    assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
+    assert.ok(
+      source.indexOf('--for retired') < source.indexOf('openclaw-notification-setup evidence'),
+    );
+    assert.equal(expectedEvidence.scenario, 'retirement');
   });
 
   it('should keep one credential free example smoke during scenario conversion', async () => {

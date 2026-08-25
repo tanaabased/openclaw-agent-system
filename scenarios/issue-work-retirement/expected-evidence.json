@@ -1,0 +1,20 @@
+{
+  "finalResponseCount": 1,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 2,
+  "provider": "aimock",
+  "requestCount": 2,
+  "responsesApiRequestCount": 2,
+  "scenario": "retirement",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 2,
+  "tools": [
+    {
+      "callResponseCount": 1,
+      "name": "agent_system_github_reply",
+      "projectionRequestCount": 2,
+      "resultRequestCount": 1
+    }
+  ]
+}

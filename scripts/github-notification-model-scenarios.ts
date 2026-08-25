@@ -2,6 +2,7 @@ import type { Fixture } from '@copilotkit/aimock';
 
 import { assignmentScenario } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import { assignmentProviderProof } from '../scenarios/issue-work-assignment-provider-proof/model-fixture.ts';
+import { retirementScenario } from '../scenarios/issue-work-retirement/model-fixture.ts';
 
 export interface GitHubNotificationModelToolCall {
   id: string;
@@ -22,6 +23,7 @@ export interface GitHubNotificationModelScenario {
 
 const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [assignmentScenario.id, assignmentScenario],
+  [retirementScenario.id, retirementScenario],
   [assignmentProviderProof.id, assignmentProviderProof],
 ]);
 

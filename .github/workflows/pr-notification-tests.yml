@@ -14,6 +14,7 @@ jobs:
       matrix:
         scenario:
           - assignment
+          - retirement
           - assignment-provider-proof
     uses: ./.github/workflows/reusable-notification-test.yml
     with:

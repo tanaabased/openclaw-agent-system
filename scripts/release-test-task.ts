@@ -179,6 +179,8 @@ try {
       'scenarios/issue-work-assignment/model-fixture.ts',
       'scenarios/issue-work-assignment-provider-proof/expected-evidence.json',
       'scenarios/issue-work-assignment-provider-proof/model-fixture.ts',
+      'scenarios/issue-work-retirement/expected-evidence.json',
+      'scenarios/issue-work-retirement/model-fixture.ts',
       'scripts/github-notification-model-server.ts',
       'scripts/openclaw-notification-setup',
       'test/encode.spec.ts',

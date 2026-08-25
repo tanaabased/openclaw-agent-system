@@ -11,14 +11,12 @@ removes its generated SSH key and issue during cleanup.
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
-openclaw-setup \
+# should prepare the selected notification model and isolated profile
+openclaw-notification-setup prepare \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario retirement \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
-  --needs-secret-service \
-  --needs-ssh-key \
-  --yolo
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
@@ -111,6 +109,14 @@ openclaw agent-system notifications wait \
   --json | jq -e '.status == "completed" and .code == "github-notification-retired" and (.observation.items[0] | .disposition == "retired" and .reasonCode == "item-unassigned" and .stage == "retired" and .worktree == "ready")'
 ```
 
+```bash
+# should expose bounded evidence for the selected notification model
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario retirement \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-retirement/expected-evidence.json"
+```
+
 ## Cleanup
 
 ```bash
@@ -132,4 +138,9 @@ fi
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+```
+
+```bash
+# should stop the selected notification model cleanly
+openclaw-notification-setup stop --model "$NOTIFICATION_MODEL"
 ```
