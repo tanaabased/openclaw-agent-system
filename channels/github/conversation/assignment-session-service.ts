@@ -6,8 +6,10 @@ import { githubNotificationAssignmentCard } from '../events/assignment.ts';
 import { githubNotificationImplementationCard } from '../events/implementation.ts';
 import githubNotificationAssignmentContext from './context/assignment.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type {
   GitHubNotificationLifecycle,
+  GitHubNotificationLifecycleContextInput,
   GitHubNotificationLifecycleWorktree,
 } from '../lifecycles/types.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
@@ -20,6 +22,7 @@ import {
   type ResolvedNotificationRoute,
 } from '../routing/routing.ts';
 import { githubWorkItemKey } from '../provider/work-item.ts';
+import type { GitHubNotificationItemContextClient } from '../provider/work-event-client.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import type GitHubNotificationAssignmentAcknowledgmentService from './assignment-acknowledgment-service.ts';
@@ -37,6 +40,7 @@ import type GitHubNotificationIssueDeliveryService from './issue-delivery-servic
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
   acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
+  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationItemContextClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   deliveries: Pick<GitHubNotificationIssueDeliveryService, 'deliver'>;
@@ -154,11 +158,6 @@ export default class GitHubNotificationAssignmentSessionService {
     if (!assignmentSupport.session) {
       throw new Error('The GitHub lifecycle does not support assignment sessions.');
     }
-    const projection = assignmentSupport.session.project(input.item);
-    const lifecycleContext = input.lifecycle.context.project({
-      item: input.item,
-      ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
-    });
     const config = await this.#dependencies.readConfig();
     const conversationId = githubNotificationConversationId({
       itemNumber: input.item.number,
@@ -171,27 +170,10 @@ export default class GitHubNotificationAssignmentSessionService {
       conversationId,
     );
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
-    const body = githubNotificationAssignmentCard(projection, input.mode.policy.id);
     const assignmentEventId = input.item.intake?.assignmentEventId;
     if (!assignmentEventId || assignmentEventId !== input.item.assignmentEventNodeId) {
       throw new Error('The GitHub assignment turn is missing its intake identity.');
     }
-    const messageId = `assignment:${assignmentEventId}`;
-    const ctxPayload = modelTurnContext({
-      body,
-      lifecycleContext,
-      messageId,
-      repository: `${repository}#${input.item.number}`,
-      route,
-      sender: {
-        from: `github:${projection.sender.id}`,
-        id: projection.sender.id,
-        isBot: false,
-        isSelf: false,
-        label: projection.sender.label,
-      },
-      timestamp: projection.timestamp,
-    });
     await this.#dependencies.acknowledgments.publish({
       agentId: input.agentId,
       item: input.item,
@@ -210,11 +192,13 @@ export default class GitHubNotificationAssignmentSessionService {
         reconciled.conversation.assignmentResponse?.status === 'published' &&
         reconciled.conversation.implementation?.status === 'pending'
       ) {
+        const contextInput = await this.#context(input);
+        const projection = assignmentSupport.session.project(contextInput);
         await this.#implement({
           assignmentEventId,
           config,
           conversationId,
-          lifecycleContext,
+          lifecycleContext: input.lifecycle.context.project(contextInput),
           projectionTimestamp: projection.timestamp,
           repository,
           route,
@@ -225,6 +209,26 @@ export default class GitHubNotificationAssignmentSessionService {
       }
       return;
     }
+    const contextInput = await this.#context(input);
+    const projection = assignmentSupport.session.project(contextInput);
+    const lifecycleContext = input.lifecycle.context.project(contextInput);
+    const body = githubNotificationAssignmentCard(projection, input.mode.policy.id);
+    const messageId = `assignment:${assignmentEventId}`;
+    const ctxPayload = modelTurnContext({
+      body,
+      lifecycleContext,
+      messageId,
+      repository: `${repository}#${input.item.number}`,
+      route,
+      sender: {
+        from: `github:${projection.sender.id}`,
+        id: projection.sender.id,
+        isBot: false,
+        isSelf: false,
+        label: projection.sender.label,
+      },
+      timestamp: projection.timestamp,
+    });
     await this.#checkpointActiveTurn(input, conversationId, assignmentEventId);
     const contract = this.#dependencies.turnContracts.resolve(
       {
@@ -253,6 +257,38 @@ export default class GitHubNotificationAssignmentSessionService {
     this.#dependencies.logger.info(
       `github-notifications: assignment response prepared agent=${route.agentId} item=${repository}#${input.item.number} publication=${turn.publication.status}`,
     );
+  }
+
+  async #context(
+    input: GitHubNotificationAssignmentSessionInput,
+  ): Promise<GitHubNotificationLifecycleContextInput> {
+    const intake = input.item.intake;
+    if (!intake) {
+      throw new Error('The GitHub assignment context is missing its intake identity.');
+    }
+    const opened = await this.#dependencies.assignmentAuthority.open({
+      agentId: input.agentId,
+      intake,
+      item: input.item,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
+    });
+    if (!opened.authorized) {
+      throw new Error(
+        `The GitHub assignment context is not currently authorized (${opened.reasonCode ?? 'github-notification-assignment-authority-revoked'}).`,
+      );
+    }
+    const itemContext = await opened.client.getItemContext(
+      input.item.repositoryOwner,
+      input.item.repositoryName,
+      input.item.number,
+      input.item.itemType,
+    );
+    return {
+      item: input.item,
+      itemContext,
+      ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+    };
   }
 
   async #implement(input: AssignmentImplementationInput): Promise<void> {

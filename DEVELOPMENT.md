@@ -119,7 +119,9 @@ selects the configured model, delegates common profile preparation to
 `openclaw-setup`, and owns mock-server readiness, AIMock configuration, evidence
 comparison, and shutdown. It also disables the unrelated default-agent heartbeat
 so notification evidence includes only scenario-owned model requests. The
-scenario READMEs remain lifecycle-focused. The installed OpenClaw Gateway still
+assignment fixture additionally requires the created issue title and body in the
+model request, while the scenario READMEs remain lifecycle-focused. The installed
+OpenClaw Gateway still
 selects the trusted lifecycle-mode-event prompt, executes the real
 `agent_system_github_reply`, `agent_system_github`, `apply_patch`, and
 `agent_system_git` tools selected by each scenario, and returns the private turn

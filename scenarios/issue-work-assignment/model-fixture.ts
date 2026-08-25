@@ -21,6 +21,9 @@ const assignmentPromptSignals = [
   'Continue the current GitHub issue lifecycle',
   'This is the initial planning turn for an assigned issue',
   'Before your final response, call `agent_system_github_reply` exactly once',
+  'add assignment planning fixture',
+  'Create assignment-planning-',
+  'assignment planning ready.',
 ] as const;
 
 const fixtures: Fixture[] = [

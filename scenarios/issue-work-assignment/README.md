@@ -2,10 +2,10 @@
 
 This GitHub Actions-only scenario proves the `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
-acknowledgment, one bounded assessment and plan, and the planning-only worktree
-checkpoint. The same lifecycle contract runs against the deterministic mock provider
-on pull requests and the live provider through workflow dispatch. It does not continue
-into implementation.
+acknowledgment, delivery of the created issue title and body as bounded private
+context, one assessment and plan, and the planning-only worktree checkpoint. The same
+lifecycle contract runs against the deterministic mock provider on pull requests and
+the live provider through workflow dispatch. It does not continue into implementation.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.

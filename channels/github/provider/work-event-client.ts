@@ -28,6 +28,7 @@ export type {
   GitHubIssueCommentReconciliationReceipt,
   GitHubNotificationCommentClient,
   GitHubNotificationIntakeClient,
+  GitHubNotificationItemContextClient,
   GitHubNotificationItemContext,
   GitHubNotificationItemContextComment,
   GitHubNotificationItemContextFile,

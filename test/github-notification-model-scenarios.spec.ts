@@ -6,6 +6,7 @@ import {
   type ToolCallResponse,
 } from '@copilotkit/aimock';
 
+import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
   githubNotificationImplementationAddCallId,
   githubNotificationImplementationCommitCallId,
@@ -122,6 +123,37 @@ describe('scripts/github-notification-model-scenarios', () => {
       () => resolveGitHubNotificationModelScenario('unsupported'),
       /Unsupported GitHub notification model scenario: unsupported/u,
     );
+  });
+
+  it('should require bounded issue content for the assignment fixture', () => {
+    const scenario = resolveGitHubNotificationModelScenario('assignment');
+    const request: ChatCompletionRequest = {
+      messages: [
+        {
+          content: scenario.promptSignals.join('\n'),
+          role: 'system',
+        },
+      ],
+      model: 'gpt-5.5',
+      tools: [
+        {
+          function: { name: 'agent_system_github_reply' },
+          type: 'function',
+        },
+      ],
+    };
+
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    assert.deepEqual(scenario.toolCalls, [
+      {
+        id: githubNotificationAssignmentCallId,
+        name: 'agent_system_github_reply',
+      },
+    ]);
+    request.messages[0]!.content = scenario.promptSignals
+      .filter((signal) => signal !== 'Create assignment-planning-')
+      .join('\n');
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
   });
 
   it('should derive issue work tool arguments from bounded request context', async () => {

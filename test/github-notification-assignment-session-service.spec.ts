@@ -76,6 +76,19 @@ const input = {
 const deliveryReceipt = {
   pullRequestNumber: 45,
 };
+const itemContext = {
+  body: 'Create assignment-planning-123-4.txt with the exact requested contents.',
+  comments: [
+    {
+      authorLogin: 'pirog',
+      body: 'Keep the assignment planning-only.',
+      createdAt: '2026-08-25T12:00:00.000Z',
+    },
+  ],
+  labels: ['feature'],
+  title: 'add assignment planning fixture 123 4 Linux',
+  truncated: false,
+};
 
 function initialState(): GitHubNotificationConversationState {
   const state = createGitHubNotificationConversationState(agentId, workspaceDir);
@@ -137,6 +150,7 @@ interface HarnessOptions {
 
 function harness(options: HarnessOptions = {}) {
   let state = initialState();
+  let contextReads = 0;
   if (options.initialActiveTurn) {
     state.conversations[conversationId]!.activeTurn = options.initialActiveTurn;
   }
@@ -153,6 +167,32 @@ function harness(options: HarnessOptions = {}) {
         counts.acknowledgments += 1;
         assert.equal(acknowledgment.item, item);
         assert.equal(acknowledgment.modeId, 'work');
+      },
+    },
+    assignmentAuthority: {
+      async open(authorityInput) {
+        assert.equal(authorityInput.agentId, agentId);
+        assert.equal(authorityInput.intake, item.intake);
+        assert.equal(authorityInput.item, item);
+        assert.equal(authorityInput.workspaceDir, workspaceDir);
+        return {
+          authorized: true,
+          client: {
+            async getItemContext(owner, name, number, itemType) {
+              contextReads += 1;
+              assert.deepEqual(
+                [owner, name, number, itemType],
+                ['tanaabased', 'example', 12, 'issue'],
+              );
+              return structuredClone(itemContext);
+            },
+          },
+          configuration: {
+            approvedActors: [],
+            assignmentTypes: ['issue', 'pull-request'],
+            intervalMinutes: 5,
+          },
+        };
       },
     },
     conversationStateStore: {
@@ -231,6 +271,7 @@ function harness(options: HarnessOptions = {}) {
   });
   return {
     counts,
+    contextReads: () => contextReads,
     prepare: () => service.prepare(input),
     state: () => state,
   };
@@ -250,6 +291,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
           turnInput.ctxPayload.Body ?? '',
           /Please begin working on it in `work` mode\./u,
         );
+        assert.match(turnInput.ctxPayload.Body ?? '', /add assignment planning fixture/u);
         assert.deepEqual(turnInput.ctxPayload.UntrustedStructuredContext, [
           {
             label: 'GitHub lifecycle context',
@@ -260,6 +302,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
                 repositoryName: 'example',
                 repositoryOwner: 'tanaabased',
               },
+              issue: itemContext,
               worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
             },
             source: 'agent-system',
@@ -277,6 +320,21 @@ describe('channels/github/conversation/assignment-session-service', () => {
         assert.match(turnInput.ctxPayload.Body ?? '', /Implementation started/u);
         assert.match(turnInput.ctxPayload.Body ?? '', /published.*`work` mode/u);
         assert.match(turnInput.ctxPayload.Body ?? '', /one local commit/u);
+        assert.deepEqual(turnInput.ctxPayload.UntrustedStructuredContext?.[0], {
+          label: 'GitHub lifecycle context',
+          payload: {
+            item: {
+              lifecycleId: 'issue',
+              number: 12,
+              repositoryName: 'example',
+              repositoryOwner: 'tanaabased',
+            },
+            issue: itemContext,
+            worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
+          },
+          source: 'agent-system',
+          type: 'github_lifecycle_context',
+        });
       },
       verifyDelivery(deliveryInput) {
         assert.equal(deliveryInput.agentId, agentId);
@@ -294,6 +352,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       implementationTurns: 0,
       publications: 1,
     });
+    assert.equal(scenario.contextReads(), 1);
     const response = scenario.state().conversations[conversationId]?.assignmentResponse;
     assert.equal(scenario.state().conversations[conversationId]?.activeTurn, undefined);
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
@@ -316,6 +375,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       implementationTurns: 1,
       publications: 1,
     });
+    assert.equal(scenario.contextReads(), 2);
     assert.equal(scenario.state().conversations[conversationId]?.activeTurn, undefined);
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'completed',

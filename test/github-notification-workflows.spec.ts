@@ -78,6 +78,7 @@ describe('github notification workflows', () => {
     const notifications = workflow.jobs?.notifications;
     const inputs = workflow.on?.workflow_dispatch?.inputs ?? {};
 
+    assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.deepEqual(Object.keys(inputs), ['scenario', 'runner']);
     assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications']);
@@ -144,6 +145,7 @@ describe('github notification workflows', () => {
     const notification = workflow.jobs?.notification;
     const steps = notification?.steps ?? [];
     const leiaStep = steps.find((step) => step.name === 'Run Leia-backed notification scenario');
+    const diagnosticsStep = steps.find((step) => step.name === 'Run level three diagnostics');
     const credentialSteps = steps.filter((step) => JSON.stringify(step).includes('secrets.'));
 
     assert.equal(workflow.runName, undefined);
@@ -160,6 +162,7 @@ describe('github notification workflows', () => {
     assert.equal(notification?.concurrency, undefined);
     assert.equal(notification?.strategy, undefined);
     assert.equal(notification?.['runs-on'], '${{ inputs.runner }}');
+    assert.ok(diagnosticsStep);
     assert.deepEqual(credentialSteps, [leiaStep]);
     assert.equal(workflow.env?.OPENAI_MODEL, 'gpt-5.4-nano');
     assert.equal(
@@ -300,5 +303,7 @@ describe('github notification workflows', () => {
       os: ['macos-26', 'ubuntu-24.04'],
     });
     assert.deepEqual(exampleDirectories, [...examples].sort());
+    assert.match(source, /name: Run level three diagnostics/u);
+    assert.doesNotMatch(source, /RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 });

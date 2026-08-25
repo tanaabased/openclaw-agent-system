@@ -69,6 +69,15 @@ export interface GitHubNotificationIntakeClient {
   ): Promise<{ events: GitHubAssignmentEvent[]; truncated: boolean }>;
 }
 
+export interface GitHubNotificationItemContextClient {
+  getItemContext(
+    owner: string,
+    name: string,
+    number: number,
+    itemType?: 'issue' | 'pull-request',
+  ): Promise<GitHubNotificationItemContext>;
+}
+
 export interface GitHubNotificationCommentClient {
   readonly identity: GitHubIdentity;
   getIssueComment(
@@ -105,5 +114,6 @@ export interface GitHubNotificationPublicationClient {
 export interface GitHubNotificationProviderClient
   extends
     GitHubNotificationIntakeClient,
+    GitHubNotificationItemContextClient,
     GitHubNotificationCommentClient,
     GitHubNotificationPublicationClient {}

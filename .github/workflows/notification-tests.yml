@@ -1,4 +1,4 @@
-name: Notification tests
+name: Notification Tests
 
 on:
   workflow_dispatch:
