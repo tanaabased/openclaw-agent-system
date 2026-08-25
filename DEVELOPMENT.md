@@ -117,7 +117,9 @@ credential and compares its bounded provider journal with checked-in expected
 evidence. The provider-neutral `openclaw-notification-setup` helper selects the
 configured model, delegates common profile preparation to `openclaw-setup`, and
 owns mock-server readiness, AIMock configuration, evidence comparison, and
-shutdown so scenario READMEs remain lifecycle-focused. The installed
+shutdown. It also disables the unrelated default-agent heartbeat so notification
+evidence includes only scenario-owned model requests. The scenario READMEs remain
+lifecycle-focused. The installed
 OpenClaw Gateway still selects the trusted lifecycle-mode-event prompt, executes
 the real `agent_system_github_reply` tool, and returns the private turn response.
 Agent System still prepares the worktree and publishes the staged candidate to

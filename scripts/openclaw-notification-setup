@@ -172,6 +172,11 @@ configure_mock_model() {
   openclaw config validate --json | jq -e '.valid == true'
 }
 
+configure_notification_profile() {
+  debug 'disabling the unrelated default-agent heartbeat for notification acceptance'
+  openclaw config set agents.defaults.heartbeat.every 0m
+}
+
 prepare_notification() {
   local -a setup_args=(
     --workspace "$workspace"
@@ -191,9 +196,14 @@ prepare_notification() {
   if [[ "$model_provider" == mock ]]; then
     start_mock_provider
     "$command_dir/openclaw-setup" "${setup_args[@]}"
-    configure_mock_model
   else
     "$command_dir/openclaw-setup" "${setup_args[@]}" --model "$model"
+  fi
+
+  configure_notification_profile
+
+  if [[ "$model_provider" == mock ]]; then
+    configure_mock_model
   fi
 }
 

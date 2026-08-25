@@ -28,6 +28,7 @@ interface CallerJob {
 
 interface CallerWorkflow {
   jobs?: { mock?: CallerJob; notifications?: CallerJob };
+  name?: string;
   on?: {
     pull_request?: unknown;
     workflow_dispatch?: {
@@ -131,11 +132,12 @@ describe('github notification workflows', () => {
     const workflow = parse(source) as CallerWorkflow;
     const notifications = workflow.jobs?.notifications;
 
+    assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.equal(Object.hasOwn(workflow.on ?? {}, 'pull_request'), true);
     assert.equal(notifications?.if, undefined);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
-    assert.equal(notifications?.name, undefined);
+    assert.equal(notifications?.name, '${{ matrix.scenario }}');
     assert.equal(notifications?.concurrency, undefined);
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);

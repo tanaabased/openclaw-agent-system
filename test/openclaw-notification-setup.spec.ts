@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -29,6 +30,16 @@ describe('scripts/openclaw-notification-setup', () => {
         );
         return true;
       },
+    );
+  });
+
+  it('should disable unrelated default-agent heartbeats for notification runs', async () => {
+    const source = await readFile(command, 'utf8');
+
+    assert.match(source, /openclaw config set agents\.defaults\.heartbeat\.every 0m/u);
+    assert.match(
+      source,
+      /configure_notification_profile\n\n {2}if \[\[ "\$model_provider" == mock \]\]/u,
     );
   });
 });

@@ -1,4 +1,4 @@
-name: PR notification tests
+name: Notification Tests
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   notifications:
+    name: ${{ matrix.scenario }}
     strategy:
       fail-fast: false
       matrix:
