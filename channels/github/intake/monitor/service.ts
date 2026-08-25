@@ -2,51 +2,34 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
 import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
 
-import AgentSystemToolError from '../../../../api/error.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
-import {
-  GitHubAccountClientError,
-  type default as GitHubAccountClient,
-} from '../../../../core/github-account-client.ts';
+import type GitHubAccountClient from '../../../../core/github-account-client.ts';
 import type { Logger } from '../../../../core/logger.ts';
 import {
-  createGitHubNotificationMonitorState,
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
 } from './state.ts';
-import {
-  githubNotificationItemMatchesSelector,
-  type GitHubNotificationItemSelector,
-} from '../../provider/work-item.ts';
+import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
-import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './state-store.ts';
-import { GitHubNotificationPollError, pollGitHubNotifications } from './poller.ts';
+import { pollGitHubNotifications } from './poller.ts';
 import type NotificationRoutingService from '../../routing/service.ts';
 import GitHubWorkEventClient from '../../provider/work-event-client.ts';
+import { githubNotificationDiagnostic } from './diagnostic.ts';
+import createGitHubNotificationFailureState from './failure-state.ts';
+import { pendingGitHubNotificationItemKeys } from './item-queries.ts';
+import GitHubNotificationMonitorReconciler, {
+  type GitHubNotificationAssignmentReconciler,
+  type GitHubNotificationCommentReconciler,
+} from './reconciler.ts';
 
 const schedulerIntervalMs = 30_000;
-const maximumFailureBackoffMs = 60 * 60 * 1000;
 
 export interface GitHubNotificationMonitorServiceDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
-  assignmentOrchestrator: {
-    reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void>;
-    respond(
-      agentId: string,
-      itemKey: string,
-      signal?: AbortSignal,
-      executionSurface?: GitHubNotificationExecutionSurface,
-    ): Promise<void>;
-  };
-  commentOrchestrator?: {
-    reconcile(
-      agentId: string,
-      itemKey: string,
-      options?: GitHubNotificationCommentReconcileOptions,
-    ): Promise<void>;
-  };
+  assignmentOrchestrator: GitHubNotificationAssignmentReconciler;
+  commentOrchestrator?: GitHubNotificationCommentReconciler;
   clock?: () => number;
   cycleLeaseStore: Pick<GitHubNotificationMonitorCycleLeaseStore, 'acquire'>;
   logger: Logger;
@@ -88,72 +71,6 @@ export type GitHubNotificationMonitorCycleListener = (
   result: GitHubNotificationMonitorRunResult,
 ) => Promise<void> | void;
 
-function diagnosticCode(error: unknown): { code: string; retryAt?: number } {
-  if (error instanceof GitHubNotificationPollError) {
-    return { code: error.code, ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }) };
-  }
-  if (error instanceof GitHubAccountClientError) return { code: error.code };
-  if (
-    error instanceof Error &&
-    'code' in error &&
-    typeof error.code === 'string' &&
-    error.code.startsWith('github-notification-')
-  ) {
-    return { code: error.code };
-  }
-  return { code: 'github-notification-monitor-failed' };
-}
-
-function toolCauseCode(error: unknown): string | undefined {
-  const cause = error instanceof Error ? error.cause : undefined;
-  return cause instanceof AgentSystemToolError ? cause.code : undefined;
-}
-
-function matchesSelector(
-  item: GitHubNotificationMonitorState['items'][string],
-  selector: GitHubNotificationItemSelector,
-): boolean {
-  return githubNotificationItemMatchesSelector(
-    item,
-    `${item.repositoryOwner}/${item.repositoryName}`,
-    selector,
-  );
-}
-
-function pendingIntakeItemKeys(
-  state: GitHubNotificationMonitorState | undefined,
-  selector?: GitHubNotificationItemSelector,
-): string[] {
-  if (!state) return [];
-  return Object.entries(state.items)
-    .filter(
-      ([, item]) =>
-        (selector === undefined || matchesSelector(item, selector)) &&
-        item.intake !== undefined &&
-        ((item.disposition === 'approved' && item.intake.stage === 'admitted') ||
-          (item.disposition === 'retired' && item.intake.stage !== 'retired')),
-    )
-    .map(([itemKey]) => itemKey)
-    .sort();
-}
-
-function preparedIssueItemKeys(
-  state: GitHubNotificationMonitorState | undefined,
-  selector?: GitHubNotificationItemSelector,
-): string[] {
-  if (!state) return [];
-  return Object.entries(state.items)
-    .filter(
-      ([, item]) =>
-        (selector === undefined || matchesSelector(item, selector)) &&
-        item.disposition === 'approved' &&
-        item.lifecycleId === 'issue' &&
-        item.intake?.stage === 'prepared',
-    )
-    .map(([itemKey]) => itemKey)
-    .sort();
-}
-
 function monitorStateMetadata(state: GitHubNotificationMonitorState | undefined) {
   if (!state) return {};
   return {
@@ -174,9 +91,18 @@ function isRoutingDiagnostic(code: string | undefined): boolean {
 export default class GitHubNotificationMonitorService {
   readonly #dependencies: GitHubNotificationMonitorServiceDependencies;
   readonly #inFlight = new Map<string, Promise<GitHubNotificationMonitorRunResult>>();
+  readonly #reconciler: GitHubNotificationMonitorReconciler;
 
   constructor(dependencies: GitHubNotificationMonitorServiceDependencies) {
     this.#dependencies = dependencies;
+    this.#reconciler = new GitHubNotificationMonitorReconciler({
+      assignmentOrchestrator: dependencies.assignmentOrchestrator,
+      ...(dependencies.commentOrchestrator === undefined
+        ? {}
+        : { commentOrchestrator: dependencies.commentOrchestrator }),
+      logger: dependencies.logger,
+      stateStore: dependencies.stateStore,
+    });
   }
 
   async runOnce(
@@ -312,10 +238,10 @@ export default class GitHubNotificationMonitorService {
       let current = loadedState.status === 'missing' ? undefined : loadedState.state;
       const notifications = loaded.manifest.github?.notifications;
       if (!notifications) {
-        await this.#retireDisabledAssignments(agentId, current, now, signal);
+        await this.#reconciler.retireDisabledAssignments(agentId, current, now, signal);
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
-      const pendingItemKeys = pendingIntakeItemKeys(current, options.selector);
+      const pendingItemKeys = pendingGitHubNotificationItemKeys(current, options.selector);
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       const pollDeferred =
         intervalDeferred && (!bypassInterval || (current?.failureCount ?? 0) > 0);
@@ -356,7 +282,7 @@ export default class GitHubNotificationMonitorService {
             status: 'skipped',
           };
         }
-        await this.#reconcileAssignments(
+        await this.#reconciler.reconcileAssignments(
           agentId,
           githubNotificationRetirementItemKeys(current),
           signal,
@@ -384,14 +310,14 @@ export default class GitHubNotificationMonitorService {
         current.nextPollAt = now;
         await this.#dependencies.stateStore.write(current);
       } else if (pollDeferred) {
-        await this.#reconcileAssignments(agentId, pendingItemKeys, signal);
-        const commentFailure = await this.#reconcileCommentsSafely(
+        await this.#reconciler.reconcileAssignments(agentId, pendingItemKeys, signal);
+        const commentFailure = await this.#reconciler.reconcileCommentsSafely(
           agentId,
           options.selector,
           executionSurface,
           signal,
         );
-        await this.#reconcileAssignmentResponses(
+        await this.#reconciler.reconcileAssignmentResponses(
           agentId,
           options.selector,
           executionSurface,
@@ -437,18 +363,23 @@ export default class GitHubNotificationMonitorService {
       result.state.lastSuccessfulPollAt = now;
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
       await this.#dependencies.stateStore.write(result.state);
-      await this.#reconcileAssignments(
+      await this.#reconciler.reconcileAssignments(
         agentId,
-        pendingIntakeItemKeys(result.state, options.selector),
+        pendingGitHubNotificationItemKeys(result.state, options.selector),
         signal,
       );
-      const commentFailure = await this.#reconcileCommentsSafely(
+      const commentFailure = await this.#reconciler.reconcileCommentsSafely(
         agentId,
         options.selector,
         executionSurface,
         signal,
       );
-      await this.#reconcileAssignmentResponses(agentId, options.selector, executionSurface, signal);
+      await this.#reconciler.reconcileAssignmentResponses(
+        agentId,
+        options.selector,
+        executionSurface,
+        signal,
+      );
       if (commentFailure) {
         return {
           agentId,
@@ -494,7 +425,7 @@ export default class GitHubNotificationMonitorService {
         };
       }
       const now = (this.#dependencies.clock ?? Date.now)();
-      const diagnostic = diagnosticCode(error);
+      const diagnostic = githubNotificationDiagnostic(error);
       try {
         if (workspaceDir) {
           const current = await this.#dependencies.stateStore.read(agentId);
@@ -534,120 +465,23 @@ export default class GitHubNotificationMonitorService {
     }
   }
 
-  async #reconcileAssignments(
-    agentId: string,
-    itemKeys: readonly string[],
-    signal?: AbortSignal,
-  ): Promise<void> {
-    for (const itemKey of itemKeys) {
-      if (signal?.aborted) return;
-      await this.#dependencies.assignmentOrchestrator.reconcile(agentId, itemKey, signal);
-    }
-  }
-
-  async #reconcileAssignmentResponses(
-    agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const state = await this.#dependencies.stateStore.read(agentId);
-    for (const itemKey of preparedIssueItemKeys(state, selector)) {
-      if (signal?.aborted) return;
-      try {
-        await this.#dependencies.assignmentOrchestrator.respond(
-          agentId,
-          itemKey,
-          signal,
-          executionSurface,
-        );
-      } catch (error) {
-        const diagnostic = diagnosticCode(error);
-        const causeCode = toolCauseCode(error);
-        this.#dependencies.logger.warn(
-          `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
-        );
-      }
-    }
-  }
-
-  async #reconcileComments(
-    agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.#dependencies.commentOrchestrator) return;
-    const state = await this.#dependencies.stateStore.read(agentId);
-    for (const itemKey of preparedIssueItemKeys(state, selector)) {
-      if (signal?.aborted) return;
-      await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, {
-        executionSurface,
-        ...(signal === undefined ? {} : { signal }),
-      });
-    }
-  }
-
-  async #reconcileCommentsSafely(
-    agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
-    executionSurface: GitHubNotificationExecutionSurface,
-    signal?: AbortSignal,
-  ): Promise<{ code: string } | undefined> {
-    try {
-      await this.#reconcileComments(agentId, selector, executionSurface, signal);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      const diagnostic = diagnosticCode(error);
-      this.#dependencies.logger.warn(
-        `github-notifications: comment reconciliation failed agent=${agentId} code=${diagnostic.code}`,
-      );
-      return diagnostic;
-    }
-  }
-
-  async #retireDisabledAssignments(
-    agentId: string,
-    current: GitHubNotificationMonitorState | undefined,
-    now: number,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const itemKeys = githubNotificationRetirementItemKeys(current);
-    if (itemKeys.length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
-      return;
-    }
-    const retryDeferred =
-      current?.nextPollAt !== undefined &&
-      current.nextPollAt > now &&
-      itemKeys.some((itemKey) => current.items[itemKey]?.intake?.failureCode !== undefined);
-    if (retryDeferred) return;
-
-    await this.#reconcileAssignments(agentId, itemKeys, signal);
-    const reconciled = await this.#dependencies.stateStore.read(agentId);
-    if (githubNotificationRetirementItemKeys(reconciled).length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
-    }
-  }
-
   async #saveFailure(
     agentId: string,
     workspaceDir: string,
     current: GitHubNotificationMonitorState | undefined,
     now: number,
     code: string,
-    retryAt = 0,
+    retryAt?: number,
   ): Promise<GitHubNotificationMonitorState> {
-    const state = current ?? createGitHubNotificationMonitorState(agentId, workspaceDir);
-    state.diagnosticCode = code;
-    state.failureCount += 1;
-    state.lastPollAt = now;
-    const exponential = Math.min(
-      maximumFailureBackoffMs,
-      30_000 * 2 ** Math.min(state.failureCount - 1, 7),
-    );
-    const jitter = 0.9 + (this.#dependencies.random ?? Math.random)() * 0.2;
-    state.nextPollAt = Math.max(now + Math.floor(exponential * jitter), retryAt);
+    const state = createGitHubNotificationFailureState({
+      agentId,
+      code,
+      current,
+      now,
+      random: this.#dependencies.random ?? Math.random,
+      ...(retryAt === undefined ? {} : { retryAt }),
+      workspaceDir,
+    });
     await this.#dependencies.stateStore.write(state);
     return state;
   }
