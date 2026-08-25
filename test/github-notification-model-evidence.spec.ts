@@ -9,7 +9,9 @@ const scenario = resolveGitHubNotificationModelScenario('assignment-provider-pro
 
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
-    for (const scenarioId of githubNotificationModelScenarioIds) {
+    for (const scenarioId of githubNotificationModelScenarioIds.filter(
+      (id) => id !== 'implementation',
+    )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPrompt = selectedScenario.promptSignals.join('\n');
       const callId = selectedScenario.toolCalls[0]?.id ?? '';
@@ -39,6 +41,16 @@ describe('scripts/github-notification-model-evidence', () => {
           body: {
             messages: [
               { content: selectedPrompt, role: 'system' },
+              {
+                content: null,
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    function: { name: 'agent_system_github_reply' },
+                    id: callId,
+                  },
+                ],
+              },
               {
                 content: '{"status":"staged"}',
                 role: 'tool',
@@ -78,6 +90,98 @@ describe('scripts/github-notification-model-evidence', () => {
         ],
       });
     }
+  });
+
+  it('should normalize one assignment and implementation tool loop', () => {
+    const selectedScenario = resolveGitHubNotificationModelScenario('implementation');
+    const prompt = selectedScenario.promptSignals.join('\n');
+    const [reply, issue, patch, add, commit] = selectedScenario.toolCalls;
+    const toolNames = [
+      'agent_system_github_reply',
+      'agent_system_github',
+      'apply_patch',
+      'agent_system_git',
+    ];
+    type EvidenceEntry = Parameters<typeof githubNotificationModelEvidence>[1][number];
+    const messages: NonNullable<EvidenceEntry['body']>['messages'] = [
+      { content: prompt, role: 'system' },
+    ];
+    const entries: EvidenceEntry[] = [];
+    const request = (response: Record<string, unknown>): EvidenceEntry => ({
+      body: {
+        messages: structuredClone(messages),
+        model: 'gpt-5.5',
+        tools: toolNames.map((name) => ({ function: { name } })),
+      },
+      method: 'POST',
+      path: '/v1/responses',
+      response: { fixture: { response }, status: 200 },
+    });
+    const appendCall = (call: (typeof selectedScenario.toolCalls)[number]): void => {
+      messages?.push(
+        {
+          content: null,
+          role: 'assistant',
+          tool_calls: [{ function: { name: call.name }, id: call.id }],
+        },
+        { content: '{"status":"completed"}', role: 'tool', tool_call_id: call.id },
+      );
+    };
+    if (!reply || !issue || !patch || !add || !commit || !messages) {
+      throw new Error('The implementation scenario tool contract is incomplete.');
+    }
+
+    entries.push(request({}));
+    appendCall(reply);
+    entries.push(request({ content: selectedScenario.finalResponses[0] }));
+    entries.push(request({}));
+    appendCall(issue);
+    entries.push(request({}));
+    appendCall(patch);
+    entries.push(request({}));
+    appendCall(add);
+    entries.push(request({}));
+    appendCall(commit);
+    entries.push(request({ content: selectedScenario.finalResponses[1] }));
+
+    assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
+      finalResponseCount: 2,
+      model: 'aimock/gpt-5.5',
+      promptRequestCount: 7,
+      provider: 'aimock',
+      requestCount: 7,
+      responsesApiRequestCount: 7,
+      scenario: 'implementation',
+      schemaVersion: 2,
+      strictMissCount: 0,
+      successfulFixtureResponseCount: 7,
+      tools: [
+        {
+          callResponseCount: 2,
+          name: 'agent_system_git',
+          projectionRequestCount: 7,
+          resultRequestCount: 3,
+        },
+        {
+          callResponseCount: 1,
+          name: 'agent_system_github',
+          projectionRequestCount: 7,
+          resultRequestCount: 4,
+        },
+        {
+          callResponseCount: 1,
+          name: 'agent_system_github_reply',
+          projectionRequestCount: 7,
+          resultRequestCount: 6,
+        },
+        {
+          callResponseCount: 1,
+          name: 'apply_patch',
+          projectionRequestCount: 7,
+          resultRequestCount: 3,
+        },
+      ],
+    });
   });
 
   it('should report unmatched requests without inventing successful evidence', () => {

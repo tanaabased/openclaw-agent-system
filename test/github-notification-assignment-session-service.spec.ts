@@ -250,6 +250,22 @@ describe('channels/github/conversation/assignment-session-service', () => {
           turnInput.ctxPayload.Body ?? '',
           /Please begin working on it in `work` mode\./u,
         );
+        assert.deepEqual(turnInput.ctxPayload.UntrustedStructuredContext, [
+          {
+            label: 'GitHub lifecycle context',
+            payload: {
+              item: {
+                lifecycleId: 'issue',
+                number: 12,
+                repositoryName: 'example',
+                repositoryOwner: 'tanaabased',
+              },
+              worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
+            },
+            source: 'agent-system',
+            type: 'github_lifecycle_context',
+          },
+        ]);
       },
       verifyImplementation(turnInput) {
         assert.equal(turnInput.contract, implementationContract);

@@ -3,6 +3,10 @@ import type { GitHubNotificationModelScenario } from './github-notification-mode
 interface EvidenceMessage {
   content: unknown;
   role: string;
+  tool_calls?: Array<{
+    function?: { name?: string };
+    id?: string;
+  }>;
   tool_call_id?: string;
 }
 
@@ -64,11 +68,25 @@ function fixtureResponse(entry: GitHubNotificationModelJournalEntry): Record<str
   return record(entry.response.fixture?.response) ?? {};
 }
 
-function fixtureToolCalls(entry: GitHubNotificationModelJournalEntry): Record<string, unknown>[] {
-  const toolCalls = fixtureResponse(entry).toolCalls;
-  return Array.isArray(toolCalls)
-    ? toolCalls.map(record).filter((value): value is Record<string, unknown> => value !== undefined)
-    : [];
+function observedToolCallIds(
+  requests: readonly GitHubNotificationModelJournalEntry[],
+  name: string,
+  acceptedCallIds: readonly string[],
+): Set<string> {
+  return new Set(
+    requests.flatMap((entry) =>
+      (entry.body?.messages ?? []).flatMap((message) =>
+        (message.tool_calls ?? [])
+          .filter(
+            (toolCall) =>
+              toolCall.function?.name === name &&
+              typeof toolCall.id === 'string' &&
+              acceptedCallIds.includes(toolCall.id),
+          )
+          .map((toolCall) => toolCall.id as string),
+      ),
+    ),
+  );
 }
 
 function hasToolResult(messages: readonly EvidenceMessage[], callId: string): boolean {
@@ -121,17 +139,7 @@ export default function githubNotificationModelEvidence(
         .filter((toolCall) => toolCall.name === name)
         .map(({ id }) => id);
       return {
-        callResponseCount: requests.reduce(
-          (count, entry) =>
-            count +
-            fixtureToolCalls(entry).filter(
-              (toolCall) =>
-                toolCall.name === name &&
-                typeof toolCall.id === 'string' &&
-                callIds.includes(toolCall.id),
-            ).length,
-          0,
-        ),
+        callResponseCount: observedToolCallIds(requests, name, callIds).size,
         name,
         projectionRequestCount: requests.filter((entry) =>
           (entry.body?.tools ?? []).some((tool) => tool.function?.name === name),

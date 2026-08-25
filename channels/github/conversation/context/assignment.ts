@@ -6,5 +6,10 @@ export interface GitHubNotificationAssignmentContextInput {
 export default function githubNotificationAssignmentContext(
   input: GitHubNotificationAssignmentContextInput,
 ) {
-  return { ...input.lifecycleContext };
+  return {
+    label: 'GitHub lifecycle context',
+    payload: { ...input.lifecycleContext },
+    source: 'agent-system',
+    type: 'github_lifecycle_context',
+  };
 }

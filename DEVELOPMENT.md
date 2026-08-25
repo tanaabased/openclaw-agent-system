@@ -108,10 +108,10 @@ The executable [Leia](https://github.com/lando/leia) material under [`examples/`
 #### Deterministic Notification Scenarios
 
 The pull-request notification workflow runs an Ubuntu mock-provider matrix for
-the provider-neutral `issue` + `work` assignment and retirement scenarios plus
-the retained `assignment-provider-proof` parity scenario. The manual notification
-workflow keeps every scenario available for focused dispatch and can select
-Ubuntu or macOS, with Ubuntu as the default. Both call one reusable
+the provider-neutral `issue` + `work` assignment, implementation, and retirement
+scenarios plus the retained `assignment-provider-proof` parity scenario. The manual
+notification workflow keeps every scenario available for focused dispatch and can
+select Ubuntu or macOS, with Ubuntu as the default. Both call one reusable
 single-scenario workflow. Each mock scenario runs in an isolated job without a
 live OpenAI credential and compares its bounded provider journal with checked-in
 expected evidence. The provider-neutral `openclaw-notification-setup` helper
@@ -121,10 +121,11 @@ comparison, and shutdown. It also disables the unrelated default-agent heartbeat
 so notification evidence includes only scenario-owned model requests. The
 scenario READMEs remain lifecycle-focused. The installed OpenClaw Gateway still
 selects the trusted lifecycle-mode-event prompt, executes the real
-`agent_system_github_reply` tool, and returns the private turn response.
-Agent System still prepares the worktree and publishes the staged candidate to
-the disposable GitHub issue. AIMock replaces only the model's tool selection,
-tool arguments, and final text.
+`agent_system_github_reply`, `agent_system_github`, `apply_patch`, and
+`agent_system_git` tools selected by each scenario, and returns the private turn
+response. Agent System still prepares the worktree, publishes the staged assignment
+candidate, normalizes the implementation commit, and pushes the managed branch.
+AIMock replaces only the model's tool selection, tool arguments, and final text.
 
 The pull-request example workflow no longer selects the long-running live
 `examples/issue` material. That example remains checked in until
