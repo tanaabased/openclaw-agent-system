@@ -98,6 +98,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
+    "@copilotkit/aimock": "1.35.0",
     "@eslint/js": "^10.0.1",
     "@lando/leia": "^1.0.0-beta.4",
     "@types/bun": "^1.3.14",
