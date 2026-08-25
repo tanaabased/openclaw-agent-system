@@ -1,75 +1,51 @@
-import type { Fixture } from '@copilotkit/aimock';
+import createGitHubNotificationIssueWorkScenario from '../../scripts/github-notification-model-issue-work-scenario.ts';
 
-import hasGitHubNotificationModelToolResult from '../../scripts/github-notification-model-tool-result.ts';
-
-export const githubNotificationRetirementCallId = 'call_agent_system_retirement_reply';
+export const githubNotificationRetirementReplyCallId = 'call_agent_system_retirement_reply';
+export const githubNotificationRetirementIssueCallId = 'call_agent_system_github_retirement_issue';
+export const githubNotificationRetirementPatchCallId = 'call_apply_patch_retirement_fixture';
+export const githubNotificationRetirementAddCallId = 'call_agent_system_git_retirement_add';
+export const githubNotificationRetirementCommitCallId = 'call_agent_system_git_retirement_commit';
 
 export const githubNotificationRetirementCandidate =
-  "This assignment asks for a small retirement fixture. I'm going to assess the prepared worktree and plan the bounded change before the later unassignment proves that retirement preserves managed worktree ownership.";
+  "This assignment asks for one bounded retirement fixture. I'm going to verify the prepared worktree, implement only the exact requested file when the lifecycle continues, and preserve managed resources until provider-verified completion permits cleanup.";
 
-export const githubNotificationRetirementFinalResponse = [
+export const githubNotificationRetirementAssignmentFinalResponse = [
   '## Assessment',
   '',
   'The requested retirement fixture is bounded and the prepared worktree is ready for the later lifecycle transition.',
   '',
   '## Plan',
   '',
-  'Keep this turn planning-only, then verify that removing the assignment retires the lifecycle without deleting its managed worktree.',
+  'Create and validate only the exact fixture when implementation continues, then let provider-verified retirement determine whether managed resources are retained or cleaned up.',
 ].join('\n');
 
-const retirementPromptSignals = [
-  'Continue the current GitHub issue lifecycle',
-  'This is the initial planning turn for an assigned issue',
-  'Before your final response, call `agent_system_github_reply` exactly once',
-] as const;
+export const githubNotificationRetirementFinalResponse = [
+  '## Implementation',
+  '',
+  'Created the requested completed retirement fixture with the exact assigned contents.',
+  '',
+  '## Validation',
+  '',
+  'Confirmed the bounded file change before staging it.',
+  '',
+  '## Delivery',
+  '',
+  'Created one local commit in the prepared lifecycle worktree for managed pull request delivery.',
+].join('\n');
 
-const fixtures: Fixture[] = [
-  {
-    match: {
-      hasToolResult: false,
-      model: /^(?:aimock\/)?gpt-5\.5$/u,
-      systemMessage: [...retirementPromptSignals],
-      toolName: 'agent_system_github_reply',
-    },
-    response: {
-      id: 'agent-system-notification-retirement-tool-response',
-      toolCalls: [
-        {
-          arguments: JSON.stringify({ body: githubNotificationRetirementCandidate }),
-          id: githubNotificationRetirementCallId,
-          name: 'agent_system_github_reply',
-        },
-      ],
-    },
+export const retirementScenario = createGitHubNotificationIssueWorkScenario({
+  assignmentFinalResponse: githubNotificationRetirementAssignmentFinalResponse,
+  callIds: {
+    add: githubNotificationRetirementAddCallId,
+    commit: githubNotificationRetirementCommitCallId,
+    issue: githubNotificationRetirementIssueCallId,
+    patch: githubNotificationRetirementPatchCallId,
+    reply: githubNotificationRetirementReplyCallId,
   },
-  {
-    match: {
-      hasToolResult: true,
-      model: /^(?:aimock\/)?gpt-5\.5$/u,
-      predicate: (request) =>
-        hasGitHubNotificationModelToolResult(request.messages, githubNotificationRetirementCallId),
-      systemMessage: [...retirementPromptSignals],
-    },
-    response: {
-      content: githubNotificationRetirementFinalResponse,
-      id: 'agent-system-notification-retirement-final-response',
-    },
-  },
-];
-
-export const retirementScenario = {
-  finalResponses: [githubNotificationRetirementFinalResponse],
-  fixtures,
+  candidate: githubNotificationRetirementCandidate,
+  commitMessage: 'add completed retirement fixture',
+  fileContents: 'completed retirement fixture ready.',
+  filenamePattern: /\bcompleted-retirement-fixture-[0-9]+-[0-9]+\.txt\b/u,
+  finalResponse: githubNotificationRetirementFinalResponse,
   id: 'retirement',
-  model: {
-    match: /^(?:aimock\/)?gpt-5\.5$/u,
-    reference: 'aimock/gpt-5.5',
-  },
-  systemPromptSignals: retirementPromptSignals,
-  toolCalls: [
-    {
-      id: githubNotificationRetirementCallId,
-      name: 'agent_system_github_reply',
-    },
-  ],
-};
+});

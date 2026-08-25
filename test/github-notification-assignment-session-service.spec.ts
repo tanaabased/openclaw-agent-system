@@ -44,6 +44,9 @@ const config: OpenClawConfig = {
   },
 };
 const lifecycle = new GitHubIssueLifecycle({
+  async cleanupGitHub() {
+    return { status: 'missing' };
+  },
   async inspectGitHub() {
     return undefined;
   },

@@ -96,10 +96,11 @@
 - Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
 - Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
 - Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-- Project monitor-state schema 3 into schema 4 by retaining assignment, lifecycle,
-  worktree, failure, and retirement facts while dropping its removed session,
-  publication, mode, and comment-tracking fields. Do not restore those fields to
-  the active intake schema for compatibility.
+- Project monitor-state schema 3 into current schema 5 by retaining assignment,
+  lifecycle, worktree, failure, and retirement facts while dropping its removed
+  session, publication, mode, and comment-tracking fields. Project schema 4 into
+  schema 5 without inventing provider-retirement proof or cleanup outcomes. Do
+  not restore removed fields to the active intake schema for compatibility.
 - Keep bounded item/comment reads, comment admission, public-candidate parsing,
   and idempotent comment publication as lifecycle-neutral provider primitives.
   Do not wire them into intake state or restore legacy comment tracking; a

@@ -2,6 +2,7 @@ import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
 
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import type GitHubNotificationAssignmentCleanupService from './assignment-cleanup-service.ts';
 import type { GitHubNotificationExecutionSurface } from '../conversation/execution.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type { GitHubNotificationMode } from '../modes/types.ts';
@@ -29,6 +30,8 @@ export interface GitHubNotificationAssignmentAuthority {
 
 export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
+  cleanup?: Pick<GitHubNotificationAssignmentCleanupService, 'cleanup'>;
+  clock?: () => number;
   initialMode: Pick<GitHubNotificationMode, 'policy'>;
   lifecycles: GitHubNotificationLifecycleRegistry;
   sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
@@ -112,6 +115,24 @@ export default class GitHubNotificationAssignmentOrchestrator {
       if (!loaded) return;
       const { intake, item, state } = loaded;
       const lifecycle = this.#dependencies.lifecycles.resolve(item.lifecycleId);
+      if (intake.stage === 'retired') {
+        if (
+          intake.cleanup?.status === 'completed' ||
+          intake.providerRetirementVerifiedAt === undefined ||
+          !this.#dependencies.cleanup
+        ) {
+          return;
+        }
+        const cleanup = await this.#dependencies.cleanup.cleanup({
+          agentId,
+          item,
+          lifecycle,
+          ...(signal === undefined ? {} : { signal }),
+          workspaceDir: state.workspaceDir,
+        });
+        await this.#checkpointIntake(state, itemKey, { ...intake, cleanup });
+        return;
+      }
 
       const observation = await this.#observe(
         lifecycle,
@@ -127,8 +148,13 @@ export default class GitHubNotificationAssignmentOrchestrator {
       const action = planGitHubNotificationIntake(intake, observation, lifecycle.worktree.required);
       if (action.kind === 'none') return;
       if (action.kind === 'retire') {
-        await this.#retire(state, itemKey, action.reasonCode);
-        return;
+        await this.#retire(
+          state,
+          itemKey,
+          action.reasonCode,
+          !observation.authority.authorized && observation.authority.providerVerified,
+        );
+        continue;
       }
       if (action.kind === 'mark-prepared') {
         await this.#checkpointPrepared(state, itemKey, action.worktree);
@@ -308,6 +334,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       state,
       itemKey,
       authority.reasonCode ?? 'github-notification-authority-revoked',
+      authority.providerVerified,
     );
     return false;
   }
@@ -369,11 +396,26 @@ export default class GitHubNotificationAssignmentOrchestrator {
     state: GitHubNotificationMonitorState,
     itemKey: string,
     reasonCode: string,
+    providerVerified: boolean,
   ): Promise<void> {
     const item = state.items[itemKey];
     if (!item?.intake) return;
     if (item.disposition === 'retired' && item.reasonCode === reasonCode) return;
-    state.items[itemKey] = { ...item, disposition: 'retired', reasonCode };
+    state.items[itemKey] = {
+      ...item,
+      disposition: 'retired',
+      intake: {
+        ...item.intake,
+        ...(providerVerified
+          ? {
+              providerRetirementVerifiedAt:
+                item.intake.providerRetirementVerifiedAt ??
+                (this.#dependencies.clock ?? Date.now)(),
+            }
+          : {}),
+      },
+      reasonCode,
+    };
     await this.#writeState(state);
   }
 
@@ -451,12 +493,23 @@ export default class GitHubNotificationAssignmentOrchestrator {
     state: GitHubNotificationMonitorState,
     itemKey: string,
     reasonCode: string,
+    providerVerified: boolean,
   ): Promise<void> {
     const item = state.items[itemKey];
     if (!item?.intake) return;
     state.items[itemKey] = {
       ...item,
-      intake: { ...withoutFailure(item.intake), stage: 'retired' },
+      intake: {
+        ...withoutFailure(item.intake),
+        ...(providerVerified
+          ? {
+              providerRetirementVerifiedAt:
+                item.intake.providerRetirementVerifiedAt ??
+                (this.#dependencies.clock ?? Date.now)(),
+            }
+          : {}),
+        stage: 'retired',
+      },
       disposition: 'retired',
       reasonCode,
     };

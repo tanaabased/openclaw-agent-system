@@ -64,6 +64,18 @@ function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = 
             ]
           : [];
       },
+      async cleanup(_context, repositoryId, workId) {
+        events.push('cleanup');
+        assert.equal(repositoryId, 'github-7');
+        assert.equal(workId, 'issue-3');
+        return {
+          branch: gitWorktreeDirectoryName(repositoryId, workId),
+          path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+          repositoryId,
+          status: 'removed' as const,
+          workId,
+        };
+      },
       async prepare(_context, input) {
         events.push('prepare');
         prepared.push(input);
@@ -221,6 +233,45 @@ describe('tools/git/trusted-worktree-service', () => {
       'environment',
       'acquire-read',
       'list',
+      'dispose',
+    ]);
+  });
+
+  it('should re-inspect the exact checkpoint before trusted cleanup', async () => {
+    const { events, service } = fixture({ listed: true });
+    const expected = {
+      branch: gitWorktreeDirectoryName('github-7', 'issue-3'),
+      path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+    };
+
+    const result = await service.cleanupGitHub({
+      agentId: 'data',
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemType: 'issue',
+      repositoryDatabaseId: 7,
+      worktree: expected,
+    });
+
+    assert.deepEqual(result, {
+      ...expected,
+      repositoryId: 'github-7',
+      status: 'removed',
+      workId: 'issue-3',
+    });
+    assert.deepEqual(events, [
+      'manifest',
+      'authorize',
+      'environment',
+      'acquire-read',
+      'list',
+      'dispose',
+      'manifest',
+      'authorize',
+      'environment',
+      'acquire-read',
+      'cleanup',
       'dispose',
     ]);
   });

@@ -269,7 +269,7 @@ describe('channels/github/publication/comment-publication-service', () => {
     const service = publicationService(fixture, {
       async open() {
         opened += 1;
-        return { authorized: false } as const;
+        return { authorized: false, providerVerified: false } as const;
       },
     });
 

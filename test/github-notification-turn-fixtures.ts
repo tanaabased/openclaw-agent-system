@@ -23,6 +23,9 @@ export function createGitHubNotificationTurnDefinitions(options?: {
     ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([
       new GitHubIssueLifecycle({
+        async cleanupGitHub() {
+          return { status: 'missing' };
+        },
         async inspectGitHub() {
           return undefined;
         },

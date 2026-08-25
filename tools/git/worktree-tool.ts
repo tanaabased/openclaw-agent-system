@@ -13,7 +13,7 @@ import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
-import type { GitWorktreeResult } from './worktree-service.ts';
+import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
 
 export interface ResolvedGitWorktreeToolConfiguration {
@@ -25,7 +25,8 @@ export interface ResolvedGitWorktreeToolConfiguration {
 
 export interface GitWorktreeToolDependencies {
   runnerFactory: Pick<GitWorktreeGitRunnerFactory, 'acquire'>;
-  service: Pick<GitWorktreeService, 'list' | 'prepare' | 'remove'>;
+  service: Pick<GitWorktreeService, 'list' | 'prepare' | 'remove'> &
+    Partial<Pick<GitWorktreeService, 'cleanup'>>;
 }
 
 type GitWorktreeToolDefinitionBase = AgentSystemSemanticToolDefinition<
@@ -39,6 +40,11 @@ type GitWorktreePrepareToolInput = Extract<GitWorktreeToolInput, { action: 'prep
 type GitWorktreeToolExecutionScope = Parameters<GitWorktreeToolDefinitionBase['execute']>[2];
 
 export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
+  executeTrustedGitHubCleanup(
+    input: { repositoryId: string; workId: string },
+    configuration: ResolvedGitWorktreeToolConfiguration,
+    scope: GitWorktreeToolExecutionScope,
+  ): Promise<GitWorktreeCleanupResult>;
   executeTrustedGitHubPrepare(
     input: GitWorktreePrepareToolInput,
     configuration: ResolvedGitWorktreeToolConfiguration,
@@ -212,6 +218,42 @@ export function createGitWorktreeToolDefinition(
     return result;
   }
 
+  async function executeCleanup(
+    input: { repositoryId: string; workId: string },
+    configuration: ResolvedGitWorktreeToolConfiguration,
+    scope: GitWorktreeToolExecutionScope,
+  ): Promise<GitWorktreeCleanupResult> {
+    if (!dependencies.service.cleanup) {
+      throw new AgentSystemToolError(
+        'execution_failed',
+        'Trusted Git worktree cleanup is unavailable.',
+      );
+    }
+    const lease = await dependencies.runnerFactory.acquire(
+      configuration,
+      {
+        resolveEnvironment: scope.resolveEnvironment,
+        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+        workspaceDir: scope.workspaceDir,
+      },
+      { authentication: false },
+    );
+    try {
+      return await dependencies.service.cleanup(
+        {
+          configuration: configuration.worktrees,
+          git: lease.git,
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+          workspaceDir: scope.workspaceDir,
+        },
+        input.repositoryId,
+        input.workId,
+      );
+    } finally {
+      await lease.dispose();
+    }
+  }
+
   return {
     apiVersion: 1,
     id: 'git-worktree',
@@ -233,6 +275,7 @@ export function createGitWorktreeToolDefinition(
     execute(input, configuration, scope) {
       return execute(input, configuration, scope, false);
     },
+    executeTrustedGitHubCleanup: executeCleanup,
     async executeTrustedGitHubPrepare(input, configuration, scope) {
       const result = await execute(input, configuration, scope, true);
       if (Array.isArray(result)) {

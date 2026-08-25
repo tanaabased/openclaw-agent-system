@@ -26,7 +26,10 @@ export function pendingGitHubNotificationItemKeys(
         (selector === undefined || matchesSelector(item, selector)) &&
         item.intake !== undefined &&
         ((item.disposition === 'approved' && item.intake.stage === 'admitted') ||
-          (item.disposition === 'retired' && item.intake.stage !== 'retired')),
+          (item.disposition === 'retired' &&
+            (item.intake.stage !== 'retired' ||
+              (item.intake.providerRetirementVerifiedAt !== undefined &&
+                item.intake.cleanup?.status !== 'completed')))),
     )
     .map(([itemKey]) => itemKey)
     .sort();

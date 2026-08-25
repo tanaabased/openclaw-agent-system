@@ -53,7 +53,9 @@ const sharedItemKeys = [
 const itemKeys = new Set([...sharedItemKeys, 'intake', 'lifecycleId']);
 const intakeKeys = new Set([
   'assignmentEventId',
+  'cleanup',
   'failureCode',
+  'providerRetirementVerifiedAt',
   'stage',
   'worktreeBranch',
   'worktreePath',
@@ -144,6 +146,21 @@ function validDiagnosticCode(value: unknown): boolean {
   );
 }
 
+function validCleanup(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (record(value) &&
+      hasOnlyKeys(value, new Set(['reasonCode', 'session', 'status', 'worktree'])) &&
+      validDiagnosticCode(value.reasonCode) &&
+      value.reasonCode !== undefined &&
+      ['archived', 'failed', 'missing', 'pinned'].includes(String(value.session)) &&
+      ['completed', 'failed', 'skipped'].includes(String(value.status)) &&
+      ['dirty', 'failed', 'missing', 'not-applicable', 'removed', 'unsafe'].includes(
+        String(value.worktree),
+      ))
+  );
+}
+
 function validPullRequest(value: unknown): boolean {
   if (!record(value) || !hasOnlyKeys(value, pullRequestKeys)) return false;
   const hasHeadRepositoryDatabaseId = value.headRepositoryDatabaseId !== undefined;
@@ -227,13 +244,22 @@ function validIntake(
   if (!record(value) || !hasOnlyKeys(value, intakeKeys)) return false;
   if (
     !validNodeId(value.assignmentEventId) ||
+    !validCleanup(value.cleanup) ||
     !validDiagnosticCode(value.failureCode) ||
+    !optionalFiniteNumber(value.providerRetirementVerifiedAt) ||
     !['admitted', 'prepared', 'retired'].includes(String(value.stage)) ||
     !validWorktree(value)
   ) {
     return false;
   }
   const hasWorktree = typeof value.worktreePath === 'string';
+  if (
+    value.stage !== 'retired' &&
+    (value.cleanup !== undefined || value.providerRetirementVerifiedAt !== undefined)
+  ) {
+    return false;
+  }
+  if (value.cleanup !== undefined && value.providerRetirementVerifiedAt === undefined) return false;
   if (value.stage === 'admitted') return !hasWorktree;
   if (value.stage === 'prepared' && item.lifecycleId === 'issue') return hasWorktree;
   if (value.stage === 'prepared') return !hasWorktree;
@@ -292,7 +318,7 @@ function validStateFields(value: Record<string, unknown>): boolean {
 }
 
 function validCurrentState(value: unknown): value is GitHubNotificationMonitorState {
-  if (!record(value) || !hasOnlyKeys(value, stateKeys) || value.schemaVersion !== 4) return false;
+  if (!record(value) || !hasOnlyKeys(value, stateKeys) || value.schemaVersion !== 5) return false;
   return (
     validStateFields(value) &&
     record(value.items) &&
@@ -388,16 +414,24 @@ function migrateSchemaThree(value: unknown): GitHubNotificationMonitorState | un
         .filter(([, field]) => field !== undefined),
     ),
     items,
-    schemaVersion: 4,
+    schemaVersion: 5,
   };
   return validCurrentState(state) ? state : undefined;
 }
 
-/** Validate current state or project supported schema-three intake facts into schema four. */
+function migrateSchemaFour(value: unknown): GitHubNotificationMonitorState | undefined {
+  if (!record(value) || value.schemaVersion !== 4) return undefined;
+  const migrated = { ...value, schemaVersion: 5 };
+  return validCurrentState(migrated) ? migrated : undefined;
+}
+
+/** Validate current state or project supported legacy intake facts into schema five. */
 export default function decodeGitHubNotificationMonitorState(
   value: unknown,
   agentId: string,
 ): GitHubNotificationMonitorStateDecodeResult | undefined {
-  const state = validCurrentState(value) ? value : migrateSchemaThree(value);
+  const state = validCurrentState(value)
+    ? value
+    : (migrateSchemaFour(value) ?? migrateSchemaThree(value));
   return state?.agentId === agentId ? { state, status: 'ready' } : undefined;
 }

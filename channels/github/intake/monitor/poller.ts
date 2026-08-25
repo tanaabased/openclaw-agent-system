@@ -370,6 +370,14 @@ export async function pollGitHubNotifications(
           state.items[key] = {
             ...current,
             disposition: 'retired',
+            ...(current.intake === undefined
+              ? {}
+              : {
+                  intake: {
+                    ...current.intake,
+                    providerRetirementVerifiedAt: input.now,
+                  },
+                }),
             lastObservedAt: input.now,
             reasonCode: reason,
           };
@@ -397,6 +405,14 @@ export async function pollGitHubNotifications(
           state.items[key] = {
             ...current,
             disposition: 'retired',
+            ...(current.intake === undefined
+              ? {}
+              : {
+                  intake: {
+                    ...current.intake,
+                    providerRetirementVerifiedAt: input.now,
+                  },
+                }),
             lastObservedAt: input.now,
             reasonCode: 'github-notification-resource-missing',
           };

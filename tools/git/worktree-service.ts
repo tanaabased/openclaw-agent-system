@@ -43,6 +43,14 @@ export interface GitWorktreeResult {
   workId?: string;
 }
 
+export interface GitWorktreeCleanupResult {
+  branch: string;
+  path: string;
+  repositoryId: string;
+  status: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe';
+  workId: string;
+}
+
 interface ResolvedRepository {
   path: string;
   refreshBeforeCreate: boolean;
@@ -240,6 +248,41 @@ export default class GitWorktreeService {
       await this.#run(context, repository.path, ['worktree', 'remove', path]),
     );
     return this.#result(repositoryId, workId, existing, 'removed');
+  }
+
+  async cleanup(
+    context: GitWorktreeServiceContext,
+    repositoryId: string,
+    workId: string,
+  ): Promise<GitWorktreeCleanupResult> {
+    validateIdentifier(repositoryId, 'repository id');
+    validateIdentifier(workId, 'work id');
+    const layout = await this.#readyLayout(context);
+    const branch = gitWorktreeDirectoryName(repositoryId, workId);
+    const path = this.#worktreePath(layout, repositoryId, branch);
+    const base = { branch, path, repositoryId, workId };
+    const repository = await this.#resolveRepository(context, layout, repositoryId);
+    const existing = (await this.#registeredWorktrees(context, repository)).find(
+      (worktree) => worktree.path === path,
+    );
+    const kind = await pathKind(path);
+    if (!existing) return { ...base, status: kind === 'absent' ? 'missing' : 'unsafe' };
+    if (
+      existing.branch !== branch ||
+      kind !== 'directory' ||
+      !isPathContained(layout.worktreeRoot, path)
+    ) {
+      return { ...base, status: 'unsafe' };
+    }
+    const status = await this.#run(context, path, [
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+    ]);
+    if (status.exitCode !== 0) return { ...base, status: 'failed' };
+    if (status.stdout.trim()) return { ...base, status: 'dirty' };
+    const removed = await this.#run(context, repository.path, ['worktree', 'remove', path]);
+    return { ...base, status: removed.exitCode === 0 ? 'removed' : 'failed' };
   }
 
   #result(

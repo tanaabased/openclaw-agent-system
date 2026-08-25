@@ -77,7 +77,12 @@ part of the response.
   the immutable repository and owner identities; ordinary worktree callers
   cannot retarget a managed repository.
 - Closing, merging, unassigning, or otherwise losing authority retires the
-  tracked item logically without deleting an existing issue worktree.
+  tracked item immediately. When that retirement is provider-verified and the
+  implementation is complete, the channel archives the unpinned lifecycle
+  session and removes only its clean deterministic worktree. Pinned sessions,
+  active or incomplete conversations, and dirty or unsafe worktrees are
+  retained. Redacted cleanup outcomes remain visible through notification
+  status and are retried idempotently.
 
 The target lifecycle, modes, states, and response boundary are documented in
 [Design](./DESIGN.md). Visible component definitions live in

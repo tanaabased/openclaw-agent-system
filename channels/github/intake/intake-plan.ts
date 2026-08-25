@@ -6,7 +6,7 @@ import type {
 } from '../provider/work-item.ts';
 
 export type GitHubNotificationIntakeAuthority =
-  | { authorized: false; reasonCode?: string }
+  | { authorized: false; providerVerified: boolean; reasonCode?: string }
   | {
       authorized: true;
       permission?: GitHubRepositoryPermission;

@@ -355,6 +355,10 @@ describe('channels/github/intake/monitor/poller', () => {
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
     assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'admitted');
+    assert.equal(
+      Object.values(retired.state.items)[0]?.intake?.providerRetirementVerifiedAt,
+      baselineAt + 600_000,
+    );
   });
 
   it('should fail closed when discovery is truncated', async () => {

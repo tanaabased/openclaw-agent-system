@@ -17,6 +17,9 @@ describe('channels/github/lifecycles', () => {
     const calls: unknown[] = [];
     const issue = approvedNotificationItem();
     const lifecycle = new GitHubIssueLifecycle({
+      async cleanupGitHub() {
+        return { status: 'missing' };
+      },
       async inspectGitHub(input) {
         calls.push(input);
         return { branch: 'issue-7', path: '/workspace/worktrees/issue-7' };

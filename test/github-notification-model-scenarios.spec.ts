@@ -28,6 +28,13 @@ import {
   githubNotificationPullRequestPatchCallId,
   githubNotificationPullRequestReplyCallId,
 } from '../scenarios/issue-work-pr/model-fixture.ts';
+import {
+  githubNotificationRetirementAddCallId,
+  githubNotificationRetirementCommitCallId,
+  githubNotificationRetirementIssueCallId,
+  githubNotificationRetirementPatchCallId,
+  githubNotificationRetirementReplyCallId,
+} from '../scenarios/issue-work-retirement/model-fixture.ts';
 import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
 } from '../scripts/github-notification-model-scenarios.ts';
@@ -42,7 +49,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       'retirement',
     ]);
 
-    const planningScenarioIds = ['assignment', 'retirement'] as const;
+    const planningScenarioIds = ['assignment'] as const;
     const callIds = planningScenarioIds.map((scenarioId) => {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
       assert.equal(scenario.id, scenarioId);
@@ -89,6 +96,16 @@ describe('scripts/github-notification-model-scenarios', () => {
           githubNotificationCommentCommitCallId,
         ],
         id: 'comment',
+      },
+      {
+        callIds: [
+          githubNotificationRetirementReplyCallId,
+          githubNotificationRetirementIssueCallId,
+          githubNotificationRetirementPatchCallId,
+          githubNotificationRetirementAddCallId,
+          githubNotificationRetirementCommitCallId,
+        ],
+        id: 'retirement',
       },
     ] as const;
     for (const executionScenario of executionScenarios) {
@@ -182,6 +199,12 @@ describe('scripts/github-notification-model-scenarios', () => {
         fileContents: 'comment fixture ready.',
         filename: 'comment-fixture-123-4.txt',
         id: 'comment',
+      },
+      {
+        commitMessage: 'add completed retirement fixture',
+        fileContents: 'completed retirement fixture ready.',
+        filename: 'completed-retirement-fixture-123-4.txt',
+        id: 'retirement',
       },
     ] as const;
 

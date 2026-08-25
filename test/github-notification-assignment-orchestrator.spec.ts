@@ -41,6 +41,9 @@ function lifecycles(worktrees: {
 }) {
   return new GitHubNotificationLifecycleRegistry([
     new GitHubIssueLifecycle({
+      async cleanupGitHub() {
+        return { status: 'missing' };
+      },
       inspectGitHub: worktrees.inspect,
       prepareGitHub: worktrees.prepare,
     }),
@@ -242,8 +245,13 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     const store = memoryStore();
     const orchestrator = new GitHubNotificationAssignmentOrchestrator({
       authority: {
-        inspect: async () => ({ authorized: false, reasonCode: 'item-unassigned' }),
+        inspect: async () => ({
+          authorized: false,
+          providerVerified: true,
+          reasonCode: 'item-unassigned',
+        }),
       },
+      clock: () => 10,
       initialMode: githubNotificationWorkMode,
       lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
       sessions: { prepare: async () => undefined },
@@ -254,7 +262,46 @@ describe('channels/github/intake/assignment-orchestrator', () => {
 
     assert.equal(store.state().items[itemKey]?.disposition, 'retired');
     assert.equal(store.state().items[itemKey]?.intake?.stage, 'retired');
+    assert.equal(store.state().items[itemKey]?.intake?.providerRetirementVerifiedAt, 10);
     assert.equal(store.state().items[itemKey]?.reasonCode, 'item-unassigned');
+  });
+
+  it('should keep local retirement separate from provider cleanup authority', async () => {
+    const store = memoryStore();
+    let cleanupCalls = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: {
+        inspect: async () => ({
+          authorized: false,
+          providerVerified: false,
+          reasonCode: 'github-notification-route-revoked',
+        }),
+      },
+      cleanup: {
+        async cleanup() {
+          cleanupCalls += 1;
+          return {
+            reasonCode: 'github-notification-cleanup-worktree-removed',
+            session: 'archived',
+            status: 'completed',
+            worktree: 'removed',
+          };
+        },
+      },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    const retired = store.state().items[itemKey];
+    assert.equal(retired?.disposition, 'retired');
+    assert.equal(retired?.intake?.stage, 'retired');
+    assert.equal(retired?.intake?.providerRetirementVerifiedAt, undefined);
+    assert.equal(retired?.intake?.cleanup, undefined);
+    assert.equal(cleanupCalls, 0);
   });
 
   it('should preserve worktree proof while retiring prepared intake', async () => {
@@ -285,6 +332,55 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     assert.equal(retired?.disposition, 'retired');
     assert.equal(retired?.reasonCode, 'item-closed');
     assert.deepEqual(retired?.intake, { ...preparedIntake, stage: 'retired' });
+  });
+
+  it('should retry provider-authorized cleanup until it completes', async () => {
+    const state = monitorState();
+    const item = state.items[itemKey];
+    assert.ok(item?.intake);
+    item.disposition = 'retired';
+    item.reasonCode = 'item-closed';
+    item.intake = {
+      ...item.intake,
+      providerRetirementVerifiedAt: 10,
+      stage: 'retired',
+      worktreeBranch: worktree.branch,
+      worktreePath: worktree.path,
+    };
+    const store = memoryStore(state);
+    let cleanupCalls = 0;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      cleanup: {
+        async cleanup() {
+          cleanupCalls += 1;
+          return cleanupCalls === 1
+            ? {
+                reasonCode: 'github-notification-cleanup-worktree-dirty',
+                session: 'archived',
+                status: 'skipped',
+                worktree: 'dirty',
+              }
+            : {
+                reasonCode: 'github-notification-cleanup-worktree-removed',
+                session: 'archived',
+                status: 'completed',
+                worktree: 'removed',
+              };
+        },
+      },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({ inspect: async () => worktree, prepare: async () => worktree }),
+      sessions: { prepare: async () => undefined },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+    assert.equal(store.state().items[itemKey]?.intake?.cleanup?.status, 'skipped');
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+    assert.equal(store.state().items[itemKey]?.intake?.cleanup?.status, 'completed');
+    assert.equal(cleanupCalls, 2);
   });
 
   it('should classify value-free intake boundary failures', async () => {

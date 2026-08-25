@@ -7,7 +7,7 @@ const admitted: GitHubNotificationIntakeState = {
   assignmentEventId: 'EV_assignment',
   stage: 'admitted',
 };
-const authority = { authorized: true };
+const authority = { authorized: true } as const;
 
 describe('channels/github/intake/intake-plan', () => {
   it('should prepare a lifecycle that owns no worktree', () => {
@@ -35,7 +35,13 @@ describe('channels/github/intake/intake-plan', () => {
     assert.deepEqual(
       planGitHubNotificationIntake(
         admitted,
-        { authority: { authorized: false, reasonCode: 'item-unassigned' } },
+        {
+          authority: {
+            authorized: false,
+            providerVerified: true,
+            reasonCode: 'item-unassigned',
+          },
+        },
         true,
       ),
       { kind: 'retire', reasonCode: 'item-unassigned' },

@@ -199,6 +199,11 @@ origin after GitHub reports new canonical coordinates for the same immutable
 repository and owner identities. It verifies and fetches the new origin before
 continuing, restores the prior origin on failure, and never exposes this
 retargeting behavior through the model-facing worktree tool or operator command.
+On provider-verified completed assignment retirement, the same trusted path
+inspects the exact deterministic checkout, runs a full porcelain status check,
+and uses ordinary non-forced Git worktree removal only when it is clean.
+Missing worktrees complete idempotently; dirty, unsafe, or failed inspections
+leave the checkout, local branch, and every remote ref untouched.
 
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored

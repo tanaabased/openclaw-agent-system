@@ -10,7 +10,7 @@ const scenario = resolveGitHubNotificationModelScenario('assignment');
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
-      (id) => !['implementation', 'pr', 'comment'].includes(id),
+      (id) => !['implementation', 'pr', 'comment', 'retirement'].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPromptMessages = [
@@ -105,8 +105,8 @@ describe('scripts/github-notification-model-evidence', () => {
     }
   });
 
-  it('should normalize assignment, implementation, and comment tool loops', () => {
-    for (const scenarioId of ['implementation', 'pr', 'comment']) {
+  it('should normalize execution tool loops, including repeated retirement assignments', () => {
+    for (const scenarioId of ['implementation', 'pr', 'comment', 'retirement']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const prompt = selectedScenario.systemPromptSignals.join('\n');
       const [reply, issue, patch, add, commit, commentReply] = selectedScenario.toolCalls;
@@ -156,6 +156,12 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({}));
       appendCall(reply);
       entries.push(request({ content: selectedScenario.finalResponses[0] }));
+      if (scenarioId === 'retirement') {
+        messages.splice(0, messages.length, { content: prompt, role: 'system' });
+        entries.push(request({}));
+        appendCall(reply);
+        entries.push(request({ content: selectedScenario.finalResponses[0] }));
+      }
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({}));
       appendCall(issue);
@@ -173,10 +179,11 @@ describe('scripts/github-notification-model-evidence', () => {
         entries.push(request({ content: selectedScenario.finalResponses[2] }));
       }
 
-      const requestCount = scenarioId === 'comment' ? 9 : 7;
+      const hasThirdResponse = scenarioId === 'comment' || scenarioId === 'retirement';
+      const requestCount = hasThirdResponse ? 9 : 7;
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
-        finalResponseCount: scenarioId === 'comment' ? 3 : 2,
+        finalResponseCount: hasThirdResponse ? 3 : 2,
         model: 'aimock/gpt-5.5',
         promptRequestCount: requestCount,
         provider: 'aimock',
@@ -203,7 +210,7 @@ describe('scripts/github-notification-model-evidence', () => {
             callResponseCount: scenarioId === 'comment' ? 2 : 1,
             name: 'agent_system_github_reply',
             projectionRequestCount: requestCount,
-            resultRequestCount: scenarioId === 'comment' ? 2 : 1,
+            resultRequestCount: hasThirdResponse ? 2 : 1,
           },
           {
             callResponseCount: 1,
