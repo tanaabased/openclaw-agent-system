@@ -1,0 +1,97 @@
+name: Reusable notification test
+
+on:
+  workflow_call:
+    inputs:
+      provider:
+        required: true
+        type: string
+      scenario:
+        required: true
+        type: string
+    secrets:
+      openai_api_key:
+        required: false
+      op_service_account_token:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  NO_COLOR: '1'
+
+jobs:
+  notification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Brew updates
+        shell: bash
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+          brew install coreutils
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          version: dev
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Pack prepared plugin
+        shell: bash
+        run: |
+          bun run plugin:check
+          bun run format:check
+          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          test -n "$archive_name"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
+      - name: Run Leia-backed notification scenario
+        shell: bash
+        env:
+          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
+          DEFAULT_CREDENTIAL_STORE: secret-service
+          NOTIFICATION_MODEL_PROVIDER: ${{ inputs.provider }}
+          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
+          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
+          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
+          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
+          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
+          OPENAI_API_KEY: ${{ secrets.openai_api_key }}
+          OPENAI_MODEL: ${{ inputs.provider == 'live' && 'gpt-5.4-nano' || '' }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.op_service_account_token }}
+        run: bun run leia "scenarios/issue-work-${{ inputs.scenario }}/README.md" --stdin --retry 0
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
+        if: failure()
+        shell: bash
+        run: |
+          openclaw-diagnostics
+          if test -f "$RUNNER_TEMP/notification-model-proof.log"; then
+            tail -n 120 "$RUNNER_TEMP/notification-model-proof.log" >&2
+          fi

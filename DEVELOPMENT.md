@@ -107,12 +107,13 @@ The executable [Leia](https://github.com/lando/leia) material under [`examples/`
 
 #### Deterministic Notification Provider Proof
 
-The notification workflow automatically selects the
+The pull-request notification workflow automatically selects the
 `issue` + `work` + `assignment-provider-proof` scenario for same-repository pull
-requests and keeps the scenario available to manual dispatch. Fork and
-Dependabot pull requests skip this credential-bearing job. The proof runs once
-in an isolated job without `OPENAI_API_KEY` and compares its bounded provider
-journal with the checked-in expected evidence. The installed
+requests, while the manual notification workflow keeps every scenario available
+for focused dispatch. Both call one reusable single-scenario workflow. Fork and
+Dependabot pull requests skip the credential-bearing job. The proof runs once
+in an isolated job without a live OpenAI credential and compares its bounded
+provider journal with the checked-in expected evidence. The installed
 OpenClaw Gateway still selects the trusted lifecycle-mode-event prompt, executes
 the real `agent_system_github_reply` tool, and returns the private turn response.
 Agent System still prepares the worktree and publishes the staged candidate to
@@ -124,8 +125,8 @@ The pull-request example workflow no longer selects the long-running live
 [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) decides the
 shared live and mocked scenario shape.
 
-The proof uses `@copilotkit/aimock` directly as an exact dev dependency and a
-strict OpenAI Responses-compatible local provider. OpenClaw 2026.7.1-2 exposes
+The scenario-selectable harness uses `@copilotkit/aimock` directly as an exact
+dev dependency and a strict OpenAI Responses-compatible local provider. OpenClaw 2026.7.1-2 exposes
 its QA AIMock and mock-provider entrypoints only from an OpenClaw source
 checkout; they are absent from the installed npm package used by third-party
 plugins. Its stock AIMock entrypoint also returns a catch-all text response, so

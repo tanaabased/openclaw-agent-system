@@ -176,7 +176,8 @@ try {
       'AGENTS.md',
       'examples/install/README.md',
       'scenarios/issue-work-assignment-provider-proof/expected-evidence.json',
-      'scripts/github-notification-model-proof-server.ts',
+      'scenarios/issue-work-assignment-provider-proof/model-fixture.ts',
+      'scripts/github-notification-model-server.ts',
       'test/encode.spec.ts',
     ]) {
       assert.equal(packedPaths.has(path), false, `packed plugin must exclude ${path}`);

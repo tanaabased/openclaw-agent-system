@@ -1,25 +1,8 @@
 name: Notification tests
 
-run-name: ${{ github.event_name == 'pull_request' && format('notifications / pr {0} / issue / work / assignment-provider-proof', github.event.pull_request.number) || format('notifications / {0} / {1} / {2}', inputs.lifecycle, inputs.mode, inputs.scenario) }}
-
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
-      lifecycle:
-        description: GitHub lifecycle
-        required: true
-        type: choice
-        default: issue
-        options:
-          - issue
-      mode:
-        description: Execution mode
-        required: true
-        type: choice
-        default: work
-        options:
-          - work
       scenario:
         description: Scenario focus
         required: true
@@ -37,106 +20,25 @@ on:
 permissions:
   contents: read
 
-env:
-  HOMEBREW_NO_AUTO_UPDATE: '1'
-  NO_COLOR: '1'
-
 jobs:
   notifications:
-    name: ${{ format('{0}-{1}-{2} (ubuntu-24.04)', matrix.lifecycle, matrix.mode, matrix.scenario) }}
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    concurrency:
-      group: ${{ matrix.scenario == 'assignment-provider-proof' && 'aimock-notification-proof' || format('openai-live-tests-{0}', (matrix.scenario == 'assignment' || matrix.scenario == 'pr') && '2' || '1') }}
-      queue: max
+    if: inputs.scenario != 'assignment-provider-proof'
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
-        lifecycle: ${{ github.event_name == 'pull_request' && fromJSON('["issue"]') || fromJSON(format('["{0}"]', inputs.lifecycle)) }}
-        mode: ${{ github.event_name == 'pull_request' && fromJSON('["work"]') || fromJSON(format('["{0}"]', inputs.mode)) }}
-        scenario: ${{ github.event_name == 'pull_request' && fromJSON('["assignment-provider-proof"]') || inputs.scenario == 'all' && fromJSON('["assignment","assignment-provider-proof","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: PATH updates
-        shell: bash
-        run: |
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
-          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
-          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
-      - name: Brew updates
-        shell: bash
-        run: |
-          HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
-          brew install coreutils
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Prepare release-shaped build
-        uses: tanaabased/prepare-release-action@v1
-        with:
-          version: dev
-          sync: false
-          commands: |
-            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
-            bun run format:write
-            bun run build
-      - name: Pack prepared plugin
-        shell: bash
-        run: |
-          bun run plugin:check
-          bun run format:check
-          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
-          test -n "$archive_name"
-          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
-      - name: Run live Leia-backed notification scenario
-        if: matrix.scenario != 'assignment-provider-proof'
-        shell: bash
-        env:
-          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
-          DEFAULT_CREDENTIAL_STORE: secret-service
-          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
-          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
-          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
-          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
-          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
-          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
-          OPENAI_API_KEY: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
-          OPENAI_MODEL: gpt-5.4-nano
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-        run: bun run leia "scenarios/${{ matrix.lifecycle }}-${{ matrix.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
-      - name: Run mock-provider Leia-backed notification proof
-        if: matrix.scenario == 'assignment-provider-proof'
-        shell: bash
-        env:
-          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
-          DEFAULT_CREDENTIAL_STORE: secret-service
-          OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
-          OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
-          OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
-          OPENCLAW_DEBUG_SSE: ${{ runner.debug == '1' && 'events' || '' }}
-          OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
-          OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
-        run: bun run leia "scenarios/${{ matrix.lifecycle }}-${{ matrix.mode }}-${{ matrix.scenario }}/README.md" --stdin --retry 0
-      - name: RUNNING A LEVEL THREE DIAGNOSTICS
-        if: failure()
-        shell: bash
-        run: |
-          openclaw-diagnostics
-          if test -f "$RUNNER_TEMP/notification-model-proof.log"; then
-            tail -n 120 "$RUNNER_TEMP/notification-model-proof.log" >&2
-          fi
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: live
+      scenario: ${{ matrix.scenario }}
+    secrets:
+      openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+  mock:
+    if: inputs.scenario == 'assignment-provider-proof' || inputs.scenario == 'all'
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      scenario: assignment-provider-proof
+    secrets:
+      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

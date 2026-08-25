@@ -1,47 +1,26 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationModelProofEvidence, {
+import githubNotificationModelEvidence from '../scripts/github-notification-model-evidence.ts';
+import resolveGitHubNotificationModelScenario from '../scripts/github-notification-model-scenarios.ts';
+import {
   githubNotificationModelProofCallId,
   githubNotificationModelProofFinalResponse,
-  hasGithubNotificationModelProofReplyToolResult,
-} from '../scripts/github-notification-model-proof-evidence.ts';
+} from '../scenarios/issue-work-assignment-provider-proof/model-fixture.ts';
 
-const prompt = [
-  'Continue the current GitHub issue lifecycle',
-  'This is the initial planning turn for an assigned issue',
-  'Before your final response, call `agent_system_github_reply` exactly once',
-].join('\n');
+const scenario = resolveGitHubNotificationModelScenario('assignment-provider-proof');
+const prompt = scenario.promptSignals.join('\n');
 
-describe('scripts/github-notification-model-proof-evidence', () => {
-  it('should recognize the exact reply tool result before later response references', () => {
-    assert.equal(
-      hasGithubNotificationModelProofReplyToolResult([
-        {
-          role: 'tool',
-          tool_call_id: githubNotificationModelProofCallId,
-        },
-        { role: 'assistant' },
-      ]),
-      true,
-    );
-    assert.equal(
-      hasGithubNotificationModelProofReplyToolResult([
-        { role: 'assistant' },
-        { role: 'tool', tool_call_id: 'call_other' },
-      ]),
-      false,
-    );
-  });
-
+describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
-    assert.match(githubNotificationModelProofCallId, /^call_[A-Za-z0-9_-]{1,59}$/u);
-
-    const evidence = githubNotificationModelProofEvidence([
+    const evidence = githubNotificationModelEvidence(scenario, [
       {
         body: {
           messages: [{ content: prompt, role: 'system' }],
           model: 'gpt-5.5',
-          tools: [{ function: { name: 'agent_system_github_reply' } }],
+          tools: [
+            { function: { name: 'agent_system_github_reply' } },
+            { function: { name: 'read' } },
+          ],
         },
         method: 'POST',
         path: '/responses',
@@ -82,23 +61,29 @@ describe('scripts/github-notification-model-proof-evidence', () => {
     ]);
 
     assert.deepEqual(evidence, {
-      assignmentPromptRequestCount: 2,
       finalResponseCount: 1,
       model: 'aimock/gpt-5.5',
+      promptRequestCount: 2,
       provider: 'aimock',
-      replyToolCallResponseCount: 1,
-      replyToolProjectionRequestCount: 2,
-      replyToolResultRequestCount: 1,
       requestCount: 2,
       responsesApiRequestCount: 2,
-      schemaVersion: 1,
+      scenario: 'assignment-provider-proof',
+      schemaVersion: 2,
       strictMissCount: 0,
       successfulFixtureResponseCount: 2,
+      tools: [
+        {
+          callResponseCount: 1,
+          name: 'agent_system_github_reply',
+          projectionRequestCount: 2,
+          resultRequestCount: 1,
+        },
+      ],
     });
   });
 
-  it('should report unmatched requests without inventing successful proof signals', () => {
-    const evidence = githubNotificationModelProofEvidence([
+  it('should report unmatched requests without inventing successful evidence', () => {
+    const evidence = githubNotificationModelEvidence(scenario, [
       {
         body: { messages: [], model: 'unexpected-model', tools: [] },
         method: 'POST',
@@ -108,18 +93,24 @@ describe('scripts/github-notification-model-proof-evidence', () => {
     ]);
 
     assert.deepEqual(evidence, {
-      assignmentPromptRequestCount: 0,
       finalResponseCount: 0,
       model: 'unexpected-model',
+      promptRequestCount: 0,
       provider: 'aimock',
-      replyToolCallResponseCount: 0,
-      replyToolProjectionRequestCount: 0,
-      replyToolResultRequestCount: 0,
       requestCount: 1,
       responsesApiRequestCount: 1,
-      schemaVersion: 1,
+      scenario: 'assignment-provider-proof',
+      schemaVersion: 2,
       strictMissCount: 1,
       successfulFixtureResponseCount: 0,
+      tools: [
+        {
+          callResponseCount: 0,
+          name: 'agent_system_github_reply',
+          projectionRequestCount: 0,
+          resultRequestCount: 0,
+        },
+      ],
     });
   });
 });

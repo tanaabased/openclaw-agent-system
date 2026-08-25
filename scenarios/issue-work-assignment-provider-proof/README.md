@@ -17,18 +17,18 @@ The scenario creates one uniquely named disposable issue in
 ## Setup
 
 ```bash
-# should keep live model credentials and the proof harness outside the runtime package
-if env | grep -q '^OPENAI_API_KEY='; then
+# should keep live model credentials and the mock harness outside the runtime package
+if test -n "$(printenv OPENAI_API_KEY 2> /dev/null || true)"; then
   exit 1
 fi
-if tar -tzf "$AGENT_SYSTEM_PACKAGE" | grep -Eq 'scripts/github-notification-model-proof|scenarios/issue-work-assignment-provider-proof'; then
+if tar -tzf "$AGENT_SYSTEM_PACKAGE" | grep -Eq 'scripts/github-notification-model|scenarios/issue-work-assignment-provider-proof'; then
   exit 1
 fi
 ```
 
 ```bash
 # should start the strict local model provider
-node --import tsx "$GITHUB_WORKSPACE/scripts/github-notification-model-proof-server.ts" --host 127.0.0.1 --port 4010 > "$TMPDIR/notification-model-proof.url" 2> "$TMPDIR/notification-model-proof.log" &
+node --import tsx "$GITHUB_WORKSPACE/scripts/github-notification-model-server.ts" --scenario assignment-provider-proof --host 127.0.0.1 --port 4010 > "$TMPDIR/notification-model-proof.url" 2> "$TMPDIR/notification-model-proof.log" &
 printf '%s\n' "$!" > "$TMPDIR/notification-model-proof.pid"
 provider_ready=''
 for attempt in $(seq 1 30); do
@@ -182,7 +182,7 @@ jq -e --arg expected "$expected" '.body | split("\n\n") as $parts | ($parts | le
 ```bash
 # should expose the exact bounded provider proof evidence
 curl --fail --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/notification-provider-proof-evidence.json"
-jq -e '.schemaVersion == 1 and .provider == "aimock" and .model == "aimock/gpt-5.5" and .requestCount == 2 and .responsesApiRequestCount == 2 and .assignmentPromptRequestCount == 2 and .replyToolProjectionRequestCount == 2 and .replyToolCallResponseCount == 1 and .replyToolResultRequestCount == 1 and .finalResponseCount == 1 and .successfulFixtureResponseCount == 2 and .strictMissCount == 0' "$TMPDIR/notification-provider-proof-evidence.json"
+jq -e '.schemaVersion == 2 and .scenario == "assignment-provider-proof" and .provider == "aimock" and .model == "aimock/gpt-5.5" and .requestCount == 2 and .responsesApiRequestCount == 2 and .promptRequestCount == 2 and .finalResponseCount == 1 and .successfulFixtureResponseCount == 2 and .strictMissCount == 0 and .tools == [{"callResponseCount":1,"name":"agent_system_github_reply","projectionRequestCount":2,"resultRequestCount":1}]' "$TMPDIR/notification-provider-proof-evidence.json"
 cmp "$GITHUB_WORKSPACE/scenarios/issue-work-assignment-provider-proof/expected-evidence.json" "$TMPDIR/notification-provider-proof-evidence.json"
 ```
 
