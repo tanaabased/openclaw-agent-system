@@ -139,6 +139,7 @@ printf '%s' "$completed_branch" > "$TMPDIR/completed-worktree-branch"
 
 # should merge its completion pull request and retire the closed issue
 cd "$TMPDIR/agent-system-notification-actor"
+completed_issue_number="$(cat "$TMPDIR/completed-issue-number")"
 completed_branch="$(cat "$TMPDIR/completed-worktree-branch")"
 pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$completed_branch" --state open --json body,number,state --jq 'select(length == 1) | .[0]')"
 pull_request_number="$(jq -re '.number' <<< "$pull_request")"
@@ -148,6 +149,7 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-acto
 
 # should archive its unpinned session and remove only its clean worktree
 cd "$TMPDIR/agent-system-notifications"
+completed_issue_number="$(cat "$TMPDIR/completed-issue-number")"
 openclaw agent-system notifications wait \
   --agent notification-data \
   --repository tanaabased/big-test-bucket \

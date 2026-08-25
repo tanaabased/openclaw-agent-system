@@ -4,6 +4,7 @@ import {
   GitHubNotificationPollError,
   pollGitHubNotifications,
 } from '../channels/github/intake/monitor/poller.ts';
+import decodeGitHubNotificationMonitorState from '../channels/github/intake/monitor/state-codec.ts';
 import {
   type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
@@ -354,11 +355,12 @@ describe('channels/github/intake/monitor/poller', () => {
     assert.equal(retired.retired, 1);
     assert.equal(Object.values(retired.state.items)[0]?.disposition, 'retired');
     assert.equal(Object.values(retired.state.items)[0]?.reasonCode, 'item-unassigned');
-    assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'admitted');
+    assert.equal(Object.values(retired.state.items)[0]?.intake?.stage, 'retired');
     assert.equal(
       Object.values(retired.state.items)[0]?.intake?.providerRetirementVerifiedAt,
       baselineAt + 600_000,
     );
+    assert.equal(decodeGitHubNotificationMonitorState(retired.state, 'tanaabot')?.status, 'ready');
   });
 
   it('should fail closed when discovery is truncated', async () => {

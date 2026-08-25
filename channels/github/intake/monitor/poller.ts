@@ -376,6 +376,7 @@ export async function pollGitHubNotifications(
                   intake: {
                     ...current.intake,
                     providerRetirementVerifiedAt: input.now,
+                    stage: 'retired',
                   },
                 }),
             lastObservedAt: input.now,
@@ -411,6 +412,7 @@ export async function pollGitHubNotifications(
                   intake: {
                     ...current.intake,
                     providerRetirementVerifiedAt: input.now,
+                    stage: 'retired',
                   },
                 }),
             lastObservedAt: input.now,
