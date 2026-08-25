@@ -10,7 +10,7 @@ const scenario = resolveGitHubNotificationModelScenario('assignment-provider-pro
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
-      (id) => !['implementation', 'pr'].includes(id),
+      (id) => !['implementation', 'pr', 'comment'].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPrompt = selectedScenario.promptSignals.join('\n');
@@ -92,11 +92,11 @@ describe('scripts/github-notification-model-evidence', () => {
     }
   });
 
-  it('should normalize assignment and implementation tool loops', () => {
-    for (const scenarioId of ['implementation', 'pr']) {
+  it('should normalize assignment, implementation, and comment tool loops', () => {
+    for (const scenarioId of ['implementation', 'pr', 'comment']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const prompt = selectedScenario.promptSignals.join('\n');
-      const [reply, issue, patch, add, commit] = selectedScenario.toolCalls;
+      const [reply, issue, patch, add, commit, commentReply] = selectedScenario.toolCalls;
       const toolNames = [
         'agent_system_github_reply',
         'agent_system_github',
@@ -128,7 +128,15 @@ describe('scripts/github-notification-model-evidence', () => {
           { content: '{"status":"completed"}', role: 'tool', tool_call_id: call.id },
         );
       };
-      if (!reply || !issue || !patch || !add || !commit || !messages) {
+      if (
+        !reply ||
+        !issue ||
+        !patch ||
+        !add ||
+        !commit ||
+        !messages ||
+        (scenarioId === 'comment' && !commentReply)
+      ) {
         throw new Error(`The ${scenarioId} scenario tool contract is incomplete.`);
       }
 
@@ -145,41 +153,49 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({}));
       appendCall(commit);
       entries.push(request({ content: selectedScenario.finalResponses[1] }));
+      if (scenarioId === 'comment' && commentReply) {
+        messages.splice(0, messages.length, { content: prompt, role: 'system' });
+        entries.push(request({}));
+        appendCall(commentReply);
+        entries.push(request({ content: selectedScenario.finalResponses[2] }));
+      }
+
+      const requestCount = scenarioId === 'comment' ? 9 : 7;
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
-        finalResponseCount: 2,
+        finalResponseCount: scenarioId === 'comment' ? 3 : 2,
         model: 'aimock/gpt-5.5',
-        promptRequestCount: 7,
+        promptRequestCount: requestCount,
         provider: 'aimock',
-        requestCount: 7,
-        responsesApiRequestCount: 7,
+        requestCount,
+        responsesApiRequestCount: requestCount,
         scenario: scenarioId,
         schemaVersion: 2,
         strictMissCount: 0,
-        successfulFixtureResponseCount: 7,
+        successfulFixtureResponseCount: requestCount,
         tools: [
           {
             callResponseCount: 2,
             name: 'agent_system_git',
-            projectionRequestCount: 7,
+            projectionRequestCount: requestCount,
             resultRequestCount: 3,
           },
           {
             callResponseCount: 1,
             name: 'agent_system_github',
-            projectionRequestCount: 7,
+            projectionRequestCount: requestCount,
             resultRequestCount: 4,
           },
           {
-            callResponseCount: 1,
+            callResponseCount: scenarioId === 'comment' ? 2 : 1,
             name: 'agent_system_github_reply',
-            projectionRequestCount: 7,
-            resultRequestCount: 1,
+            projectionRequestCount: requestCount,
+            resultRequestCount: scenarioId === 'comment' ? 2 : 1,
           },
           {
             callResponseCount: 1,
             name: 'apply_patch',
-            projectionRequestCount: 7,
+            projectionRequestCount: requestCount,
             resultRequestCount: 3,
           },
         ],

@@ -16,6 +16,7 @@ jobs:
           - assignment
           - implementation
           - pr
+          - comment
           - retirement
           - assignment-provider-proof
     uses: ./.github/workflows/reusable-notification-test.yml
