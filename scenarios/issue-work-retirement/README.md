@@ -3,7 +3,8 @@
 This GitHub Actions-only scenario proves assignment retirement for an `issue` + `work`
 lifecycle. Its setup establishes a planned assignment and verifies that its
 worktree checkpoint survives a Gateway restart. Its assertions cover both
-incomplete-work retention and completed-work cleanup.
+incomplete-work retention and completed-work cleanup through the same
+provider-verified unassignment signal, without requiring merge authority.
 
 The scenario creates two disposable issues in `tanaabased/big-test-bucket` and
 removes its generated SSH key, issues, pull request, and branch during cleanup.
@@ -137,19 +138,22 @@ incomplete_branch="$(cat "$TMPDIR/incomplete-worktree-branch")"
 completed_branch="$(jq -re --arg incomplete "$incomplete_branch" '[.[] | select(.branch != $incomplete)] | select(length == 1) | .[0].branch' <<< "$worktrees")"
 printf '%s' "$completed_branch" > "$TMPDIR/completed-worktree-branch"
 
-# should merge its completion pull request and retire the closed issue
+# should retire its completed assignment without requiring merge authority
 cd "$TMPDIR/agent-system-notification-actor"
 completed_issue_number="$(cat "$TMPDIR/completed-issue-number")"
 completed_branch="$(cat "$TMPDIR/completed-worktree-branch")"
+agent_login="$(cat "$TMPDIR/notification-agent-login")"
 pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr list --repo tanaabased/big-test-bucket --head "$completed_branch" --state open --json body,number,state --jq 'select(length == 1) | .[0]')"
 pull_request_number="$(jq -re '.number' <<< "$pull_request")"
 jq -e --argjson issue "$completed_issue_number" '.state == "OPEN" and (.body | contains("Closes #" + ($issue | tostring)))' <<< "$pull_request"
 printf '%s' "$pull_request_number" > "$TMPDIR/completed-pull-request-number"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr merge "$pull_request_number" --repo tanaabased/big-test-bucket --squash
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$completed_issue_number" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
 
 # should archive its unpinned session and remove only its clean worktree
 cd "$TMPDIR/agent-system-notifications"
 completed_issue_number="$(cat "$TMPDIR/completed-issue-number")"
+completed_branch="$(cat "$TMPDIR/completed-worktree-branch")"
+pull_request_number="$(cat "$TMPDIR/completed-pull-request-number")"
 openclaw agent-system notifications wait \
   --agent notification-data \
   --repository tanaabased/big-test-bucket \
@@ -158,11 +162,13 @@ openclaw agent-system notifications wait \
   --for retired \
   --refresh \
   --timeout 180 \
-  --json | jq -e '.status == "completed" and (.observation.items[0] | .reasonCode == "item-closed" and .stage == "retired" and .cleanup.status == "completed" and .cleanup.session == "archived" and .cleanup.worktree == "removed")'
+  --json | jq -e '.status == "completed" and (.observation.items[0] | .reasonCode == "item-unassigned" and .stage == "retired" and .cleanup.status == "completed" and .cleanup.session == "archived" and .cleanup.worktree == "removed")'
 worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
 test "$(jq length <<< "$worktrees")" -eq 1
 remaining_branch="$(jq -r '.[0].branch' <<< "$worktrees")"
 test "$remaining_branch" = "$(cat "$TMPDIR/incomplete-worktree-branch")"
+test "$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json state --jq .state)" = "OPEN"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --silent --method GET "/repos/tanaabased/big-test-bucket/git/ref/heads/$completed_branch"
 ```
 
 ```bash
