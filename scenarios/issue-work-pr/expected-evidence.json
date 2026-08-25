@@ -1,0 +1,38 @@
+{
+  "finalResponseCount": 2,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 7,
+  "provider": "aimock",
+  "requestCount": 7,
+  "responsesApiRequestCount": 7,
+  "scenario": "pr",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 7,
+  "tools": [
+    {
+      "callResponseCount": 2,
+      "name": "agent_system_git",
+      "projectionRequestCount": 7,
+      "resultRequestCount": 3
+    },
+    {
+      "callResponseCount": 1,
+      "name": "agent_system_github",
+      "projectionRequestCount": 7,
+      "resultRequestCount": 4
+    },
+    {
+      "callResponseCount": 1,
+      "name": "agent_system_github_reply",
+      "projectionRequestCount": 7,
+      "resultRequestCount": 1
+    },
+    {
+      "callResponseCount": 1,
+      "name": "apply_patch",
+      "projectionRequestCount": 7,
+      "resultRequestCount": 3
+    }
+  ]
+}

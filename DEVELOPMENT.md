@@ -108,8 +108,9 @@ The executable [Leia](https://github.com/lando/leia) material under [`examples/`
 #### Deterministic Notification Scenarios
 
 The pull-request notification workflow runs an Ubuntu mock-provider matrix for
-the provider-neutral `issue` + `work` assignment, implementation, and retirement
-scenarios plus the retained `assignment-provider-proof` parity scenario. The manual
+the provider-neutral `issue` + `work` assignment, implementation, pull-request
+delivery, and retirement scenarios plus the retained `assignment-provider-proof`
+parity scenario. The manual
 notification workflow keeps every scenario available for focused dispatch and can
 select Ubuntu or macOS, with Ubuntu as the default. Both call one reusable
 single-scenario workflow. Each mock scenario runs in an isolated job without a

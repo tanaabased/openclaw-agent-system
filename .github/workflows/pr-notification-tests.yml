@@ -15,6 +15,7 @@ jobs:
         scenario:
           - assignment
           - implementation
+          - pr
           - retirement
           - assignment-provider-proof
     uses: ./.github/workflows/reusable-notification-test.yml
