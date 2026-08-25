@@ -32,17 +32,16 @@ import resolveGitHubNotificationModelScenario, {
 } from '../scripts/github-notification-model-scenarios.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the converted scenarios and transitional proof', () => {
+  it('should resolve the five provider-neutral scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
       'implementation',
       'pr',
       'comment',
       'retirement',
-      'assignment-provider-proof',
     ]);
 
-    const planningScenarioIds = ['assignment', 'retirement', 'assignment-provider-proof'] as const;
+    const planningScenarioIds = ['assignment', 'retirement'] as const;
     const callIds = planningScenarioIds.map((scenarioId) => {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
       assert.equal(scenario.id, scenarioId);

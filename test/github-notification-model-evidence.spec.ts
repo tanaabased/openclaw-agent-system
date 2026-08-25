@@ -5,7 +5,7 @@ import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
 } from '../scripts/github-notification-model-scenarios.ts';
 
-const scenario = resolveGitHubNotificationModelScenario('assignment-provider-proof');
+const scenario = resolveGitHubNotificationModelScenario('assignment');
 
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
@@ -220,7 +220,7 @@ describe('scripts/github-notification-model-evidence', () => {
       provider: 'aimock',
       requestCount: 1,
       responsesApiRequestCount: 1,
-      scenario: 'assignment-provider-proof',
+      scenario: 'assignment',
       schemaVersion: 2,
       strictMissCount: 1,
       successfulFixtureResponseCount: 0,

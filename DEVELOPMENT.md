@@ -109,9 +109,8 @@ The executable [Leia](https://github.com/lando/leia) material under [`examples/`
 
 The pull-request notification workflow runs an Ubuntu mock-provider matrix for
 the provider-neutral `issue` + `work` assignment, implementation, pull-request
-delivery, comment, and retirement scenarios plus the retained
-`assignment-provider-proof` parity scenario. The manual
-notification workflow keeps every scenario available for focused dispatch and can
+delivery, comment, and retirement scenarios. The manual notification workflow
+keeps every scenario available for focused dispatch and can
 select Ubuntu or macOS, with Ubuntu as the default. Both call one reusable
 single-scenario workflow. Each mock scenario runs in an isolated job without a
 live OpenAI credential and compares its bounded provider journal with checked-in
@@ -128,10 +127,9 @@ response. Agent System still prepares the worktree, publishes the staged assignm
 candidate, normalizes the implementation commit, and pushes the managed branch.
 AIMock replaces only the model's tool selection, tool arguments, and final text.
 
-The pull-request example workflow no longer selects the long-running live
-`examples/issue` material. That example remains checked in until
-[#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) decides the
-shared live and mocked scenario shape.
+The pull-request example workflow runs the restored non-notification matrix on
+macOS and Ubuntu. It deliberately does not select the long-running live
+`examples/issue` material; that example remains available for focused manual use.
 
 The scenario-selectable harness uses `@copilotkit/aimock` directly as an exact
 dev dependency and a strict OpenAI Responses-compatible local provider. OpenClaw 2026.7.1-2 exposes
@@ -142,18 +140,13 @@ it cannot call Agent System's repository-owned reply tool. Depending on that
 private CLI was therefore rejected in favor of the direct protocol-level
 harness.
 
-The transitional proof remains a parity checkpoint during broader mock
-conversion, not a replacement for every live test. A passing mock scenario
-covers Gateway dispatch, central
+A passing mock scenario covers Gateway dispatch, central
 `before_prompt_build` guidance, tool projection and execution, lifecycle state,
 and real publication. It does not evaluate model reasoning, unplanned tool
 choice, live provider authentication, capacity, latency, or provider-specific
 format drift. If the installed Gateway cannot satisfy a strict fixture, keep
 that detailed scenario manual and live while diagnosing the external-provider
 boundary without adding a production-only hook or publishing the test harness.
-Convert the remaining scenarios under
-[#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) one at a
-time after each preceding mock scenario is green.
 
 ## Coding Standards
 

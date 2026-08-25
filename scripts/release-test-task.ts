@@ -177,8 +177,6 @@ try {
       'examples/install/README.md',
       'scenarios/issue-work-assignment/expected-evidence.json',
       'scenarios/issue-work-assignment/model-fixture.ts',
-      'scenarios/issue-work-assignment-provider-proof/expected-evidence.json',
-      'scenarios/issue-work-assignment-provider-proof/model-fixture.ts',
       'scenarios/issue-work-comment/expected-evidence.json',
       'scenarios/issue-work-comment/model-fixture.ts',
       'scenarios/issue-work-implementation/expected-evidence.json',
