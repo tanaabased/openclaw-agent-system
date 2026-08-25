@@ -95,7 +95,7 @@ jobs:
           OPENAI_MODEL: gpt-5.4-nano
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Run level three diagnostics
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
         run: openclaw-diagnostics

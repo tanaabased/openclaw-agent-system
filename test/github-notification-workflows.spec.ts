@@ -145,7 +145,7 @@ describe('github notification workflows', () => {
     const notification = workflow.jobs?.notification;
     const steps = notification?.steps ?? [];
     const leiaStep = steps.find((step) => step.name === 'Run Leia-backed notification scenario');
-    const diagnosticsStep = steps.find((step) => step.name === 'Run level three diagnostics');
+    const diagnosticsStep = steps.find((step) => step.name === 'RUNNING A LEVEL THREE DIAGNOSTICS');
     const credentialSteps = steps.filter((step) => JSON.stringify(step).includes('secrets.'));
 
     assert.equal(workflow.runName, undefined);
@@ -303,7 +303,6 @@ describe('github notification workflows', () => {
       os: ['macos-26', 'ubuntu-24.04'],
     });
     assert.deepEqual(exampleDirectories, [...examples].sort());
-    assert.match(source, /name: Run level three diagnostics/u);
-    assert.doesNotMatch(source, /RUNNING A LEVEL THREE DIAGNOSTICS/u);
+    assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 });
