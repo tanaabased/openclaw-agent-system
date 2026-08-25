@@ -8,10 +8,16 @@ permissions:
 
 jobs:
   notifications:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - assignment
+          - assignment-provider-proof
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: mock
-      scenario: assignment-provider-proof
+      runner: ubuntu-24.04
+      scenario: ${{ matrix.scenario }}
     secrets:
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

@@ -16,6 +16,14 @@ on:
           - comment
           - retirement
           - all
+      runner:
+        description: Runner
+        required: true
+        type: choice
+        default: ubuntu-24.04
+        options:
+          - ubuntu-24.04
+          - macos-26
 
 permissions:
   contents: read
@@ -30,6 +38,7 @@ jobs:
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: live
+      runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:
       openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
@@ -39,6 +48,7 @@ jobs:
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: mock
+      runner: ${{ inputs.runner }}
       scenario: assignment-provider-proof
     secrets:
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

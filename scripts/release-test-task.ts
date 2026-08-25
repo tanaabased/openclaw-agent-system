@@ -175,9 +175,12 @@ try {
     for (const path of [
       'AGENTS.md',
       'examples/install/README.md',
+      'scenarios/issue-work-assignment/expected-evidence.json',
+      'scenarios/issue-work-assignment/model-fixture.ts',
       'scenarios/issue-work-assignment-provider-proof/expected-evidence.json',
       'scenarios/issue-work-assignment-provider-proof/model-fixture.ts',
       'scripts/github-notification-model-server.ts',
+      'scripts/openclaw-notification-setup',
       'test/encode.spec.ts',
     ]) {
       assert.equal(packedPaths.has(path), false, `packed plugin must exclude ${path}`);

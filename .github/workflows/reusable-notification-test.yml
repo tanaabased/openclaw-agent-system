@@ -6,6 +6,9 @@ on:
       provider:
         required: true
         type: string
+      runner:
+        required: true
+        type: string
       scenario:
         required: true
         type: string
@@ -21,10 +24,11 @@ permissions:
 env:
   HOMEBREW_NO_AUTO_UPDATE: '1'
   NO_COLOR: '1'
+  OPENAI_MODEL: gpt-5.4-nano
 
 jobs:
   notification:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -74,9 +78,9 @@ jobs:
       - name: Run Leia-backed notification scenario
         shell: bash
         env:
-          DBUS_SESSION_BUS_ADDRESS: ${{ format('unix:path={0}/secret-service-bus', runner.temp) }}
-          DEFAULT_CREDENTIAL_STORE: secret-service
-          NOTIFICATION_MODEL_PROVIDER: ${{ inputs.provider }}
+          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
+          DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
+          NOTIFICATION_MODEL: ${{ inputs.provider == 'live' && format('openai/{0}', env.OPENAI_MODEL) || 'aimock/gpt-5.5' }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
@@ -84,7 +88,6 @@ jobs:
           OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
           OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
           OPENAI_API_KEY: ${{ secrets.openai_api_key }}
-          OPENAI_MODEL: ${{ inputs.provider == 'live' && 'gpt-5.4-nano' || '' }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.op_service_account_token }}
         run: bun run leia "scenarios/issue-work-${{ inputs.scenario }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
@@ -92,6 +95,6 @@ jobs:
         shell: bash
         run: |
           openclaw-diagnostics
-          if test -f "$RUNNER_TEMP/notification-model-proof.log"; then
-            tail -n 120 "$RUNNER_TEMP/notification-model-proof.log" >&2
+          if test -f "$RUNNER_TEMP/notification-model.log"; then
+            tail -n 120 "$RUNNER_TEMP/notification-model.log" >&2
           fi
