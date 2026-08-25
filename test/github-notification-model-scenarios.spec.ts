@@ -230,8 +230,8 @@ describe('scripts/github-notification-model-scenarios', () => {
             'The approved inbound comment is the current user request.',
             'Place the exact {{commenter}} placeholder once.',
           ].join('\n'),
-          role: 'system',
-        },
+          role: 'developer',
+        } as unknown as ChatCompletionRequest['messages'][number],
         {
           content: '@tanaabot Reply briefly with ready-123-4.',
           role: 'user',

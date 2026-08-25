@@ -41,11 +41,7 @@ export const githubNotificationCommentImplementationFinalResponse = [
 export const githubNotificationCommentFinalResponse =
   'Staged one concise response for the approved GitHub comment.';
 
-const commentPromptSignals = [
-  'Continue the current GitHub issue lifecycle',
-  'The approved inbound comment is the current user request',
-  'Place the exact {{commenter}} placeholder once',
-] as const;
+const commentReplyTokenPattern = /\bready-[0-9]+-[0-9]+\b/u;
 
 function messageText(message: ChatCompletionRequest['messages'][number]): string {
   if (typeof message.content === 'string') return message.content;
@@ -54,10 +50,7 @@ function messageText(message: ChatCompletionRequest['messages'][number]): string
 }
 
 function commentReplyToken(request: ChatCompletionRequest): string {
-  const token = request.messages
-    .map(messageText)
-    .join('\n')
-    .match(/\bready-[0-9]+-[0-9]+\b/u)?.[0];
+  const token = request.messages.map(messageText).join('\n').match(commentReplyTokenPattern)?.[0];
   if (!token) throw new Error('The comment model request is missing its bounded reply token.');
   return token;
 }
@@ -84,8 +77,8 @@ const commentFixtures: Fixture[] = [
     match: {
       hasToolResult: false,
       model: /^(?:aimock\/)?gpt-5\.5$/u,
-      systemMessage: [...commentPromptSignals],
       toolName: 'agent_system_github_reply',
+      userMessage: commentReplyTokenPattern,
     },
     response: (request): ToolCallResponse => ({
       id: 'agent-system-notification-comment-reply-response',
@@ -107,7 +100,7 @@ const commentFixtures: Fixture[] = [
           request.messages,
           githubNotificationCommentReplyCallId,
         ),
-      systemMessage: [...commentPromptSignals],
+      userMessage: commentReplyTokenPattern,
     },
     response: {
       content: githubNotificationCommentFinalResponse,

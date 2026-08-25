@@ -179,7 +179,7 @@ describe('github notification workflows', () => {
       'openai_api_key',
       'op_service_account_token',
     ]);
-    assert.equal(notification?.name, undefined);
+    assert.equal(notification?.name, "${{ inputs.provider == 'mock' && 'mock-ai' || 'live-ai' }}");
     assert.equal(notification?.concurrency, undefined);
     assert.equal(notification?.strategy, undefined);
     assert.equal(notification?.['runs-on'], '${{ inputs.runner }}');
