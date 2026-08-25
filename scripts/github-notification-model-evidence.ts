@@ -64,6 +64,13 @@ function messageText(message: EvidenceMessage): string {
     .join('');
 }
 
+function roleText(messages: readonly EvidenceMessage[], role: string): string {
+  return messages
+    .filter((message) => message.role === role)
+    .map(messageText)
+    .join('\n');
+}
+
 function fixtureResponse(entry: GitHubNotificationModelJournalEntry): Record<string, unknown> {
   return record(entry.response.fixture?.response) ?? {};
 }
@@ -116,11 +123,13 @@ export default function githubNotificationModelEvidence(
     }).length,
     model: normalizedModel(requests[0]?.body?.model, scenario),
     promptRequestCount: requests.filter((entry) => {
-      const systemText = (entry.body?.messages ?? [])
-        .filter((message) => message.role === 'system')
-        .map(messageText)
-        .join('\n');
-      return scenario.promptSignals.every((signal) => systemText.includes(signal));
+      const messages = entry.body?.messages ?? [];
+      const systemText = roleText(messages, 'system');
+      const userText = roleText(messages, 'user');
+      return (
+        scenario.systemPromptSignals.every((signal) => systemText.includes(signal)) &&
+        (scenario.userPromptSignals ?? []).every((signal) => userText.includes(signal))
+      );
     }).length,
     provider: 'aimock',
     requestCount: requests.length,

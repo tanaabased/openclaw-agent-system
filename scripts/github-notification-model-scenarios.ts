@@ -19,8 +19,9 @@ export interface GitHubNotificationModelScenario {
     match: RegExp;
     reference: string;
   };
-  promptSignals: readonly string[];
+  systemPromptSignals: readonly string[];
   toolCalls: readonly GitHubNotificationModelToolCall[];
+  userPromptSignals?: readonly string[];
 }
 
 const scenarios = new Map<string, GitHubNotificationModelScenario>([

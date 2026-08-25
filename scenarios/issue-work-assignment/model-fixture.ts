@@ -1,4 +1,4 @@
-import type { Fixture } from '@copilotkit/aimock';
+import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import hasGitHubNotificationModelToolResult from '../../scripts/github-notification-model-tool-result.ts';
 
@@ -17,21 +17,33 @@ export const githubNotificationAssignmentFinalResponse = [
   'Create the requested root fixture with the exact contents, verify the worktree change, and deliver it through the assigned issue lifecycle.',
 ].join('\n');
 
-const assignmentPromptSignals = [
+const assignmentSystemPromptSignals = [
   'Continue the current GitHub issue lifecycle',
   'This is the initial planning turn for an assigned issue',
   'Before your final response, call `agent_system_github_reply` exactly once',
+] as const;
+
+const assignmentUserPromptSignals = [
   'add assignment planning fixture',
   'Create assignment-planning-',
   'assignment planning ready.',
 ] as const;
+
+function hasAssignmentUserPrompt(request: ChatCompletionRequest): boolean {
+  const userText = request.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => getTextContent(message.content) ?? '')
+    .join('\n');
+  return assignmentUserPromptSignals.every((signal) => userText.includes(signal));
+}
 
 const fixtures: Fixture[] = [
   {
     match: {
       hasToolResult: false,
       model: /^(?:aimock\/)?gpt-5\.5$/u,
-      systemMessage: [...assignmentPromptSignals],
+      predicate: hasAssignmentUserPrompt,
+      systemMessage: [...assignmentSystemPromptSignals],
       toolName: 'agent_system_github_reply',
     },
     response: {
@@ -50,8 +62,9 @@ const fixtures: Fixture[] = [
       hasToolResult: true,
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: (request) =>
+        hasAssignmentUserPrompt(request) &&
         hasGitHubNotificationModelToolResult(request.messages, githubNotificationAssignmentCallId),
-      systemMessage: [...assignmentPromptSignals],
+      systemMessage: [...assignmentSystemPromptSignals],
     },
     response: {
       content: githubNotificationAssignmentFinalResponse,
@@ -68,11 +81,12 @@ export const assignmentScenario = {
     match: /^(?:aimock\/)?gpt-5\.5$/u,
     reference: 'aimock/gpt-5.5',
   },
-  promptSignals: assignmentPromptSignals,
+  systemPromptSignals: assignmentSystemPromptSignals,
   toolCalls: [
     {
       id: githubNotificationAssignmentCallId,
       name: 'agent_system_github_reply',
     },
   ],
+  userPromptSignals: assignmentUserPromptSignals,
 };

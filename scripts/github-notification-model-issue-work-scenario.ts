@@ -270,7 +270,7 @@ export default function createGitHubNotificationIssueWorkScenario(
       match: /^(?:aimock\/)?gpt-5\.5$/u,
       reference: 'aimock/gpt-5.5',
     },
-    promptSignals: ['Continue the current GitHub issue lifecycle'],
+    systemPromptSignals: ['Continue the current GitHub issue lifecycle'],
     toolCalls: [
       { id: options.callIds.reply, name: 'agent_system_github_reply' },
       { id: options.callIds.issue, name: 'agent_system_github' },

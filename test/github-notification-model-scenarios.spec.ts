@@ -127,12 +127,19 @@ describe('scripts/github-notification-model-scenarios', () => {
 
   it('should require bounded issue content for the assignment fixture', () => {
     const scenario = resolveGitHubNotificationModelScenario('assignment');
+    const userPromptSignals = scenario.userPromptSignals ?? [];
+    assert.deepEqual(userPromptSignals, [
+      'add assignment planning fixture',
+      'Create assignment-planning-',
+      'assignment planning ready.',
+    ]);
     const request: ChatCompletionRequest = {
       messages: [
         {
-          content: scenario.promptSignals.join('\n'),
+          content: scenario.systemPromptSignals.join('\n'),
           role: 'system',
         },
+        { content: userPromptSignals.join('\n'), role: 'user' },
       ],
       model: 'gpt-5.5',
       tools: [
@@ -150,7 +157,7 @@ describe('scripts/github-notification-model-scenarios', () => {
         name: 'agent_system_github_reply',
       },
     ]);
-    request.messages[0]!.content = scenario.promptSignals
+    request.messages[1]!.content = userPromptSignals
       .filter((signal) => signal !== 'Create assignment-planning-')
       .join('\n');
     assert.equal(matchFixture([...scenario.fixtures], request), null);

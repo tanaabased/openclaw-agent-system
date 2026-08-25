@@ -13,13 +13,26 @@ describe('scripts/github-notification-model-evidence', () => {
       (id) => !['implementation', 'pr', 'comment'].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
-      const selectedPrompt = selectedScenario.promptSignals.join('\n');
+      const selectedPromptMessages = [
+        {
+          content: selectedScenario.systemPromptSignals.join('\n'),
+          role: 'system' as const,
+        },
+        ...(selectedScenario.userPromptSignals === undefined
+          ? []
+          : [
+              {
+                content: selectedScenario.userPromptSignals.join('\n'),
+                role: 'user' as const,
+              },
+            ]),
+      ];
       const callId = selectedScenario.toolCalls[0]?.id ?? '';
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
       const evidence = githubNotificationModelEvidence(selectedScenario, [
         {
           body: {
-            messages: [{ content: selectedPrompt, role: 'system' }],
+            messages: structuredClone(selectedPromptMessages),
             model: 'gpt-5.5',
             tools: [
               { function: { name: 'agent_system_github_reply' } },
@@ -40,7 +53,7 @@ describe('scripts/github-notification-model-evidence', () => {
         {
           body: {
             messages: [
-              { content: selectedPrompt, role: 'system' },
+              ...structuredClone(selectedPromptMessages),
               {
                 content: null,
                 role: 'assistant',
@@ -95,7 +108,7 @@ describe('scripts/github-notification-model-evidence', () => {
   it('should normalize assignment, implementation, and comment tool loops', () => {
     for (const scenarioId of ['implementation', 'pr', 'comment']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
-      const prompt = selectedScenario.promptSignals.join('\n');
+      const prompt = selectedScenario.systemPromptSignals.join('\n');
       const [reply, issue, patch, add, commit, commentReply] = selectedScenario.toolCalls;
       const toolNames = [
         'agent_system_github_reply',

@@ -65,7 +65,7 @@ export const retirementScenario = {
     match: /^(?:aimock\/)?gpt-5\.5$/u,
     reference: 'aimock/gpt-5.5',
   },
-  promptSignals: retirementPromptSignals,
+  systemPromptSignals: retirementPromptSignals,
   toolCalls: [
     {
       id: githubNotificationRetirementCallId,
