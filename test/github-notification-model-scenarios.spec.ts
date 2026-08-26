@@ -6,6 +6,10 @@ import {
   type ToolCallResponse,
 } from '@copilotkit/aimock';
 
+import githubNotificationAssignmentEventInstructions from '../channels/github/conversation/prompts/event-assignment.ts';
+import githubNotificationIssueLifecycleInstructions from '../channels/github/conversation/prompts/lifecycle-issue.ts';
+import githubNotificationWorkModeInstructions from '../channels/github/conversation/prompts/mode-work.ts';
+import githubNotificationAssignmentResponseInstructions from '../channels/github/conversation/prompts/response-assignment.ts';
 import { githubNotificationGuidedAssignmentFinalResponse } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
@@ -212,6 +216,29 @@ describe('scripts/github-notification-model-scenarios', () => {
     assert.deepEqual(scenario.toolCalls, []);
     request.messages[1]!.content = 'missing guided assignment evidence';
     assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should match current work assignment guidance across execution scenarios', () => {
+    const request: ChatCompletionRequest = {
+      messages: [
+        {
+          content: [
+            githubNotificationIssueLifecycleInstructions,
+            githubNotificationWorkModeInstructions,
+            githubNotificationAssignmentEventInstructions,
+            githubNotificationAssignmentResponseInstructions,
+          ].join('\n\n'),
+          role: 'system',
+        },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
+      const scenario = resolveGitHubNotificationModelScenario(scenarioId);
+      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    }
   });
 
   it('should derive issue work tool arguments from bounded request context', async () => {

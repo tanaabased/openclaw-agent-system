@@ -30,8 +30,8 @@ export interface GitHubNotificationIssueWorkScenarioOptions {
 
 const assignmentPromptSignals = [
   'Continue the current GitHub issue lifecycle',
-  'This is the initial planning turn for an assigned issue',
-  'Before your final response, call `agent_system_github_reply` exactly once',
+  'This is the initial turn for an assigned issue',
+  'In a mode that advances automatically, call `agent_system_github_reply` exactly once',
 ] as const;
 
 const implementationPromptSignals = [
