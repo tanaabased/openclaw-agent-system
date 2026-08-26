@@ -11,7 +11,7 @@
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 - Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
 - Added resilient Work checkpoints that keep response, worktree, and comment reconciliation failures independent. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Added seven provider-neutral GitHub notification scenarios for mock PR checks and live dispatch, including separate PR handoff, continuation, and retirement. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54) [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
+- Added five provider-neutral GitHub notification scenarios for mock PR checks and live dispatch, including one sequential delivery pull-request lifecycle proof. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54) [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
 - Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 
 ### Bug Fixes

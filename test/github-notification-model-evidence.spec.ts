@@ -10,15 +10,7 @@ const scenario = resolveGitHubNotificationModelScenario('assignment');
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
-      (id) =>
-        ![
-          'implementation',
-          'pr-handoff',
-          'pr-continuation',
-          'pr-retirement',
-          'comment',
-          'retirement',
-        ].includes(id),
+      (id) => !['implementation', 'pr-lifecycle', 'comment', 'retirement'].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPromptMessages = [
@@ -114,16 +106,9 @@ describe('scripts/github-notification-model-evidence', () => {
   });
 
   it('should normalize execution tool loops, including repeated retirement assignments', () => {
-    for (const scenarioId of [
-      'implementation',
-      'pr-handoff',
-      'pr-continuation',
-      'pr-retirement',
-      'comment',
-      'retirement',
-    ]) {
+    for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
-      const hasComment = scenarioId === 'pr-continuation' || scenarioId === 'comment';
+      const hasComment = scenarioId === 'pr-lifecycle' || scenarioId === 'comment';
       const prompt = selectedScenario.systemPromptSignals.join('\n');
       const [reply, issue, patch, add, commit, commentReply] = selectedScenario.toolCalls;
       const toolNames = [
