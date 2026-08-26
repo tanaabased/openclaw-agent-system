@@ -228,6 +228,6 @@ tools, and unrelated host processes can bypass it.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
-- [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
+- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
 - [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md): model-facing GitHub guidance

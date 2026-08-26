@@ -2,30 +2,22 @@
 
 ### New Features
 
-- Added a mode-neutral GitHub Update skill that reconciles private notification progress with the owning public issue and publishes one safe, concise update only when material context is missing. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
-- Added an operator-led Guided GitHub notification mode that prepares the normal issue session and worktree, publishes one waiting acknowledgment, and defers implementation until explicit input. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
-- Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
-- Added bounded GitHub issue content to assignment cards and private assignment and implementation turn context. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
+- Added a mode-neutral GitHub Update skill that publishes missing material progress from the private issue session. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
+- Added an operator-led Guided mode that acknowledges assignments and waits for explicit direction before implementation. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
+- Added attributed GitHub comment cards and source-affine replies with verified commenter mentions. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake. [#47](https://github.com/tanaabased/openclaw-agent-system/pull/47)
-- Added issue-owned delivery pull-request handoffs with a private registered event turn, source-affine replies, close recovery, and merge-driven retirement. [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
-- Added linked GitHub assignment cards, varied acknowledgments, and active user-centric Work plans. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Added private Work implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
-- Added registered GitHub lifecycle-mode-event turn contracts with durable prompt selection and file-backed reply candidates. [#44](https://github.com/tanaabased/openclaw-agent-system/pull/44)
-- Added resilient Work checkpoints that keep response, worktree, and comment reconciliation failures independent. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Added five provider-neutral GitHub notification scenarios for mock PR checks and live dispatch, including one sequential delivery pull-request lifecycle proof. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54) [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
-- Added structured GitHub turn guidance and conversational GitHub-flavored Markdown replies with deterministic publication safety. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
+- Added issue-owned delivery pull-request handoffs with source-affine comments, close recovery, and merge retirement. [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
+- Added linked GitHub assignment cards with bounded issue context and user-focused Work plans. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
+- Added resilient Work checkpoints so response, worktree, and comment failures recover independently. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
+- Added six provider-neutral GitHub notification scenarios, including Guided assignment and one sequential delivery pull-request lifecycle. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#52](https://github.com/tanaabased/openclaw-agent-system/pull/52) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54) [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57) [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
+- Added Work implementation continuations that validate, commit, push, and open delivery pull requests. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 
 ### Bug Fixes
 
 - Fixed delivery pull-request identity to use stable GitHub node and number coordinates, and kept completed delivery durable while handoff presentation retries independently. [#57](https://github.com/tanaabased/openclaw-agent-system/pull/57)
-- Fixed `devguard.json` to watch every active TypeScript owner without referencing removed paths. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
-- Fixed provider-verified GitHub repository renames to refresh notification coordinates and reconcile managed clone origins without weakening ordinary origin pinning. [big-test-bucket#316](https://github.com/tanaabased/big-test-bucket/issues/316)
+- Fixed provider-verified GitHub repository renames while preserving ordinary managed-origin pinning. [#51](https://github.com/tanaabased/openclaw-agent-system/pull/51) [big-test-bucket#316](https://github.com/tanaabased/big-test-bucket/issues/316)
+- Fixed provider-verified retirement to archive unpinned sessions and remove only clean managed worktrees with retry-safe outcomes. [#53](https://github.com/tanaabased/openclaw-agent-system/issues/53) [#56](https://github.com/tanaabased/openclaw-agent-system/pull/56)
 - Fixed Work assignment continuation to use trusted lifecycle state instead of parsing model-authored report headings. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
-- Retired provider-verified completed GitHub assignments now archive unpinned
-  OpenClaw sessions and remove only clean managed worktrees, with durable
-  retry-safe outcomes for pinned, incomplete, dirty, unsafe, and missing
-  resources. [#53](https://github.com/tanaabased/openclaw-agent-system/issues/53)
 
 ## v0.4.0 - [August 22, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.4.0)
 

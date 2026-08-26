@@ -105,50 +105,20 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) material under [`examples/`](./examples/) and [`scenarios/`](./scenarios/) runs only through GitHub Actions. General examples cover macOS and Ubuntu where supported; notification acceptance scenarios use their own workflow and runner matrix. Both install plugins or mutate isolated OpenClaw and provider state, so neither suite may be run locally.
 
-#### Deterministic Notification Scenarios
+#### GitHub Notification Scenarios
 
-The pull-request notification workflow runs an Ubuntu mock-provider matrix for
-the provider-neutral `issue` + `work` assignment, implementation, pull-request
-delivery, comment, and retirement scenarios. The manual notification workflow
-keeps every scenario available for focused dispatch and can
-select Ubuntu or macOS, with Ubuntu as the default. Both call one reusable
-single-scenario workflow. Each mock scenario runs in an isolated job without a
-live OpenAI credential and compares its bounded provider journal with checked-in
-expected evidence. The provider-neutral `openclaw-notification-setup` helper
-selects the configured model, delegates common profile preparation to
-`openclaw-setup`, and owns mock-server readiness, AIMock configuration, evidence
-comparison, and shutdown. It also disables the unrelated default-agent heartbeat
-so notification evidence includes only scenario-owned model requests. The
-assignment fixture additionally requires the created issue title and body in the
-model request, while the scenario READMEs remain lifecycle-focused. The installed
-OpenClaw Gateway still
-selects the trusted lifecycle-mode-event prompt, executes the real
-`agent_system_github_reply`, `agent_system_github`, `apply_patch`, and
-`agent_system_git` tools selected by each scenario, and returns the private turn
-response. Agent System still prepares the worktree, publishes the staged assignment
-candidate, normalizes the implementation commit, and pushes the managed branch.
-AIMock replaces only the model's tool selection, tool arguments, and final text.
+The pull-request workflow runs six deterministic mock-provider scenarios on
+Ubuntu: Work assignment, Guided assignment, implementation, pull-request
+lifecycle, comment, and retirement. The manual workflow can run any one of those
+scenarios, or the complete matrix, with a live provider on Ubuntu or macOS.
 
-The pull-request example workflow runs the non-notification matrix on macOS and
-Ubuntu. GitHub notification acceptance remains exclusively owned by the shared
-scenarios above, with mock-backed pull-request checks and live manual dispatch.
-
-The scenario-selectable harness uses `@copilotkit/aimock` directly as an exact
-dev dependency and a strict OpenAI Responses-compatible local provider. OpenClaw 2026.7.1-2 exposes
-its QA AIMock and mock-provider entrypoints only from an OpenClaw source
-checkout; they are absent from the installed npm package used by third-party
-plugins. Its stock AIMock entrypoint also returns a catch-all text response, so
-it cannot call Agent System's repository-owned reply tool. Depending on that
-private CLI was therefore rejected in favor of the direct protocol-level
-harness.
-
-A passing mock scenario covers Gateway dispatch, central
-`before_prompt_build` guidance, tool projection and execution, lifecycle state,
-and real publication. It does not evaluate model reasoning, unplanned tool
-choice, live provider authentication, capacity, latency, or provider-specific
-format drift. If the installed Gateway cannot satisfy a strict fixture, keep
-that detailed scenario manual and live while diagnosing the external-provider
-boundary without adding a production-only hook or publishing the test harness.
+Each scenario exercises a release-shaped Agent System package through the
+installed OpenClaw Gateway. Mock pull-request checks compare lifecycle, tool,
+and publication behavior with checked-in evidence without requiring a live model.
+They do not evaluate model reasoning, provider authentication, capacity, latency,
+or provider-specific format drift. Keep scenario-specific setup, fixtures, and
+expected evidence in [`scenarios/`](./scenarios/) and the owning workflows rather
+than duplicating those mechanics here.
 
 ## Coding Standards
 

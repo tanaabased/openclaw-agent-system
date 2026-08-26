@@ -37,12 +37,13 @@ Today, Agent System:
 
 ### Tools
 
-- [`git`](./tools/git/README.md) — Runs ordinary Git commands and manages durable worktrees with the agent's identity, SSH configuration, signing, and operation policy.
-- [`gh`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+- [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
+- [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
+- [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, prepares managed issue worktrees, and keeps approved issue and linked delivery pull-request comments in the same lifecycle session with source-affine replies.
+- [`agent-system-github`](./channels/github/README.md) — Polls and admits approved GitHub assignments, prepares managed issue worktrees, and keeps issue and delivery pull-request comments in one lifecycle session.
 
 ### Skills
 
@@ -120,7 +121,7 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. See [Advanced](./ADVANCED.md) for the complete manifest and CLI references.
+`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
 
 ## Development
 

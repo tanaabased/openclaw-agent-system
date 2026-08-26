@@ -5,13 +5,18 @@ configuration, CLI, environment, and path behavior. Start with the
 [README](./README.md) for installation and the common workflow; use
 [DEVELOPMENT.md](./DEVELOPMENT.md) when changing Agent System itself.
 
-Capability-specific configuration, CLI, and routing documentation:
+Public components own their capability-specific configuration, CLI, behavior,
+and security documentation:
 
-- [`git`](./tools/git/README.md)
-- [`gh`](./tools/github/README.md)
-- [GitHub notifications channel](./channels/github/README.md)
-- [GitHub notification target design](./channels/github/DESIGN.md)
-- [GitHub notification presentation components](./channels/github/PRESENTATION.md)
+| Type    | ID                          | Display name          | Guide                                               |
+| ------- | --------------------------- | --------------------- | --------------------------------------------------- |
+| tool    | `agent_system_git`          | Git CLI               | [Git tools](./tools/git/README.md)                  |
+| tool    | `agent_system_git_worktree` | Managed Git worktrees | [Git tools](./tools/git/README.md)                  |
+| tool    | `agent_system_github`       | GitHub CLI            | [GitHub CLI](./tools/github/README.md)              |
+| channel | `agent-system-github`       | GitHub notifications  | [GitHub notifications](./channels/github/README.md) |
+
+These IDs come from distinct OpenClaw registries: tool IDs use underscores,
+while the channel ID uses hyphens.
 
 ## Manifest
 
@@ -43,13 +48,13 @@ environment:
 ```
 
 See [Configuration](#configuration) for the complete core manifest and
-tool-provided sections.
+component-provided sections.
 
 ## Configuration
 
 Agent System currently owns no global plugin settings. Its public configuration
-is the per-workspace manifest plus any configured tool sections. When
-[`github.notifications`](./channels/github/README.md#configuration) is present,
+is the per-workspace manifest plus any configured component sections. When
+[`github.notifications`](./channels/github/README.md#configuration-reference) is present,
 `install` projects only a non-secret channel account and exact agent binding into
 global OpenClaw configuration; notification policy and credentials remain
 workspace-owned.
@@ -136,16 +141,19 @@ identifiers remain literal and are never casing-converted. See
 [Environment](#environment) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
 
-### Tool Configuration
+### Component Configuration
 
-Tools own their manifest schemas and document them beside their implementation:
+Components own their manifest schemas and document them beside their
+implementation:
 
-| Tool  | Manifest key | Configuration                                                               |
-| ----- | ------------ | --------------------------------------------------------------------------- |
-| `git` | `git`        | [Configuration reference](./tools/git/README.md#configuration-reference)    |
-| `gh`  | `github`     | [Configuration reference](./tools/github/README.md#configuration-reference) |
+| Type    | ID                          | Manifest key           | Configuration                                                                  |
+| ------- | --------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)       |
+| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                  |
+| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)    |
+| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/README.md#configuration-reference) |
 
-Adding a tool to this table does not enable it globally; the corresponding
+Adding a component to this table does not enable it globally; the corresponding
 manifest section opts the workspace into that capability.
 
 ## CLI
@@ -271,46 +279,16 @@ Doctor reports all findings, returns nonzero for failing drift, and recommends
 responsibility. It also reports tool-access and execution-boundary findings;
 tool-specific checks are documented in each tool guide.
 
-### `openclaw agent-system notifications refresh`
+### `openclaw agent-system notifications`
 
-Runs one GitHub notification intake cycle for the current workspace agent or an
-explicitly selected installed agent.
-
-```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
-```
-
-The optional repository, kind, and number selector is all-or-nothing and limits
-the cycle to that exact item. A refresh may prepare a managed issue worktree,
-establish its comment baseline, carry out one pending published Work plan, or
-process one new approved exact-mention comment. Deferred and failed cycles
-return nonzero. The default timeout is 300 seconds.
-
-### `openclaw agent-system notifications status`
-
-Reads private monitor state and returns a redacted intake projection.
+Runs the command family owned by the `agent-system-github` channel.
 
 ```text
-openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+openclaw agent-system notifications <refresh|status|wait> [options]
 ```
 
-Results report redacted assignment and intake status. A durable monitor
-diagnostic returns `degraded` and sets a nonzero exit code.
-
-### `openclaw agent-system notifications wait`
-
-Waits for one durable intake checkpoint without parsing chat history or
-presentation.
-
-```text
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
-```
-
-Supported targets are `baseline-ready`, `assignment-rejected`, `prepared`,
-`worktree-ready`, and `retired`. Every non-baseline target requires the full
-item selector. `--refresh` explicitly advances provider-owned intake while
-waiting. The default timeout is 300 seconds, and terminal diagnostics fail
-immediately.
+See the channel's [complete CLI reference](./channels/github/README.md#cli) for
+command syntax, selectors, wait targets, output, and exit behavior.
 
 ### `openclaw agent-system tool`
 
@@ -324,11 +302,11 @@ planned in [Tool API](./API.md).
 openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 ```
 
-| Tool           | Command    | CLI                                   | Shim                                           |
-| -------------- | ---------- | ------------------------------------- | ---------------------------------------------- |
-| `git`          | `git`      | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
-| `git-worktree` | `worktree` | [Usage](./tools/git/README.md#cli)    | none                                           |
-| `gh`           | `gh`       | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
+| ID                          | Command    | CLI                                   | Shim                                           |
+| --------------------------- | ---------- | ------------------------------------- | ---------------------------------------------- |
+| `agent_system_git`          | `git`      | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
+| `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)    | none                                           |
+| `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
 
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.
 

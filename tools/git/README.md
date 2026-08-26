@@ -322,7 +322,7 @@ replaced `PATH` values, and unrelated host processes can bypass it.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
-- [Advanced](../../ADVANCED.md): complete manifest, configuration, CLI, environment, and path references
+- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
 - [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 - [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance
