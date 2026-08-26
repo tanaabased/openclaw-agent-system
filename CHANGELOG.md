@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.5.2 - [August 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.2)
+
 ### New Features
 
 - Added `agent-system-github-update` for publishing missing material progress from an issue's private session. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
