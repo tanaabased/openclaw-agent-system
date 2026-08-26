@@ -12,7 +12,10 @@ import type { GitHubNotificationAssignmentInspection } from '../channels/github/
 import GitHubNotificationCommentOrchestrator, {
   GitHubNotificationCommentOrchestratorError,
 } from '../channels/github/conversation/comment-orchestrator.ts';
-import type { GitHubNotificationCommentClient } from '../channels/github/provider/work-event-client.ts';
+import type {
+  GitHubNotificationCommentClient,
+  GitHubNotificationIntakeClient,
+} from '../channels/github/provider/work-event-client.ts';
 import {
   githubCommentRevision,
   type GitHubCanonicalIssueComment,
@@ -40,6 +43,8 @@ import { createGitHubNotificationTurnDefinitions } from './github-notification-t
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
+type CommentClient = GitHubNotificationCommentClient &
+  Pick<GitHubNotificationIntakeClient, 'getItem'>;
 type DeliverInboundReply = (
   input: DurableInboundReplyDeliveryParams,
 ) => Promise<DurableInboundReplyDeliveryResult>;
@@ -88,9 +93,9 @@ function authority(
   comments: GitHubCanonicalIssueComment[],
   truncated = false,
 ): {
-  open(): Promise<GitHubNotificationAssignmentInspection<GitHubNotificationCommentClient>>;
+  open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
 } {
-  const client: GitHubNotificationCommentClient = {
+  const client: CommentClient = {
     identity: notificationAccount,
     async getIssueComment(
       _owner: string,
@@ -105,10 +110,57 @@ function authority(
     async listIssueComments() {
       return { comments: structuredClone(comments), truncated };
     },
+    async getItem() {
+      throw new Error('unexpected delivery pull request read');
+    },
   };
   return {
     async open() {
       return { authorized: true, client, configuration };
+    },
+  };
+}
+
+function terminalAuthority(merged: boolean): {
+  open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
+} {
+  return {
+    async open() {
+      return {
+        authorized: true,
+        client: {
+          identity: notificationAccount,
+          async getIssueComment() {
+            throw new Error('unexpected comment read');
+          },
+          async getItem() {
+            return {
+              assignees: [],
+              databaseId: 45,
+              itemType: 'pull-request' as const,
+              nodeId: 'PR_delivery',
+              number: 45,
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: 3,
+                baseRepositoryNodeId: 'R_repo',
+                draft: false,
+                headRef: 'issue-12',
+                headRepositoryDatabaseId: 3,
+                headRepositoryNodeId: 'R_repo',
+                headSha: 'a'.repeat(40),
+                merged,
+              },
+              state: 'closed' as const,
+              updatedAt: '2026-08-25T12:00:00.000Z',
+            };
+          },
+          async listIssueComments() {
+            throw new Error('terminal transitions must stop before comment reads');
+          },
+        },
+        configuration,
+      };
     },
   };
 }
@@ -132,6 +184,21 @@ function memoryStateStore(initial?: GitHubNotificationConversationState) {
       return state === undefined ? undefined : structuredClone(state);
     },
     async write(next: GitHubNotificationConversationState) {
+      state = structuredClone(next);
+    },
+  };
+}
+
+function monitorStateStore(initial: GitHubNotificationMonitorState) {
+  let state = structuredClone(initial);
+  return {
+    async read() {
+      return structuredClone(state);
+    },
+    snapshot() {
+      return structuredClone(state);
+    },
+    async write(next: GitHubNotificationMonitorState) {
       state = structuredClone(next);
     },
   };
@@ -188,7 +255,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
       turnCatalog,
       turns: {
@@ -269,7 +336,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       lifecycles: lifecycles(),
       deliver,
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
       turnCatalog,
       turns: {
@@ -313,6 +380,227 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     });
   });
 
+  it('should admit a delivery pull request comment into the issue session and retain its source', async () => {
+    const monitor = preparedMonitor();
+    const item = monitor.items[notificationItemKey]!;
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        itemDatabaseId: 45,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const incoming = comment('@tanaabot reply from the pull request', {
+      databaseId: 145,
+      nodeId: 'IC_pr_comment',
+    });
+    const store = memoryStateStore(state);
+    const listedNumbers: number[] = [];
+    let destinationTarget = '';
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: {
+        async open() {
+          return {
+            authorized: true,
+            client: {
+              identity: notificationAccount,
+              async getIssueComment(_owner, _repository, number) {
+                assert.equal(number, 45);
+                return structuredClone(incoming);
+              },
+              async getItem(_owner, _repository, number) {
+                assert.equal(number, 45);
+                return {
+                  assignees: [],
+                  databaseId: 45,
+                  itemType: 'pull-request' as const,
+                  nodeId: 'PR_delivery',
+                  number: 45,
+                  pullRequest: {
+                    baseRef: 'main',
+                    baseRepositoryDatabaseId: 3,
+                    baseRepositoryNodeId: 'R_repo',
+                    draft: false,
+                    headRef: 'issue-12',
+                    headRepositoryDatabaseId: 3,
+                    headRepositoryNodeId: 'R_repo',
+                    headSha: 'a'.repeat(40),
+                    merged: false,
+                  },
+                  state: 'open' as const,
+                  updatedAt: '2026-08-25T12:00:00.000Z',
+                };
+              },
+              async listIssueComments(_owner, _repository, number) {
+                listedNumbers.push(number);
+                return {
+                  comments: number === 45 ? [structuredClone(incoming)] : [],
+                  truncated: false,
+                };
+              },
+            },
+            configuration,
+          };
+        },
+      },
+      conversationStateStore: store,
+      deliver: async (delivery) => {
+        destinationTarget = delivery.to ?? '';
+        return {
+          delivery: {
+            messageIds: ['201'],
+            receipt: createMessageReceiptFromOutboundResults({
+              kind: 'text',
+              results: [
+                {
+                  channel: githubNotificationChannelId,
+                  conversationId: id,
+                  messageId: '201',
+                  meta: { nodeId: 'IC_pr_reply' },
+                },
+              ],
+            }),
+            visibleReplySent: true,
+          },
+          status: 'handled_visible',
+        };
+      },
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitorStateStore(monitor),
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
+      turns: {
+        async respond(turn) {
+          assert.deepEqual(turn.item, item);
+          assert.deepEqual(turn.source, { itemType: 'pull-request', number: 45 });
+          return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
+            privateText: 'Private pull request response.',
+            publication: { status: 'candidate', publicText: 'ready on the pull request' },
+          };
+        },
+      },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(listedNumbers, [12, 45]);
+    assert.match(destinationTarget, /^github:issue:R_repo:12:publication:github-reply:/u);
+    const revision = store.snapshot()?.conversations[id]?.revisions.IC_pr_comment;
+    assert.deepEqual(revision?.source, { itemType: 'pull-request', number: 45 });
+    assert.equal(revision?.publication?.status, 'published');
+  });
+
+  it('should unlink a closed unmerged pull request without retiring the issue conversation', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        itemDatabaseId: 45,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      implementation: { status: 'completed' },
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const conversations = memoryStateStore(state);
+    const monitors = monitorStateStore(monitor);
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: terminalAuthority(false),
+      conversationStateStore: conversations,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitors,
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
+      turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(conversations.snapshot()?.conversations[id]?.deliveryPullRequest, {
+      baselineEstablished: false,
+      eventRecorded: true,
+      itemDatabaseId: 45,
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'closed',
+    });
+    assert.equal(monitors.snapshot().items[notificationItemKey]?.disposition, 'approved');
+  });
+
+  it('should retire the issue-owned session when the delivery pull request is merged', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        itemDatabaseId: 45,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      implementation: { status: 'completed' },
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const conversations = memoryStateStore(state);
+    const monitors = monitorStateStore(monitor);
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: terminalAuthority(true),
+      clock: () => 1_755_259_200_000,
+      conversationStateStore: conversations,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitors,
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
+      turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.equal(
+      conversations.snapshot()?.conversations[id]?.deliveryPullRequest?.status,
+      'merged',
+    );
+    const retired = monitors.snapshot().items[notificationItemKey];
+    assert.equal(retired?.disposition, 'retired');
+    assert.equal(retired?.reasonCode, 'pull-request-merged');
+    assert.equal(retired?.intake?.stage, 'retired');
+    assert.equal(retired?.intake?.providerRetirementVerifiedAt, 1_755_259_200_000);
+  });
+
   it('should retain the active turn when response dispatch remains retryable', async () => {
     const monitor = preparedMonitor();
     const state = createGitHubNotificationConversationState(agentId, workspaceDir);
@@ -333,7 +621,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
       turnCatalog,
       turns: {
@@ -365,6 +653,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       failureCode: 'github-notification-comment-reconciliation-failed',
       reasonCode: 'comment-approved',
       revisionId: revision.revisionId,
+      source: { itemType: 'issue', number: 12 },
       status: 'admitted',
     });
   });
@@ -393,7 +682,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
         throw new Error('unexpected delivery');
       },
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
       turnCatalog,
       turns: {
@@ -425,6 +714,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       },
       reasonCode: 'comment-approved',
       revisionId: githubCommentRevision(incoming).revisionId,
+      source: { itemType: 'issue', number: 12 },
       status: 'responded',
     });
   });
@@ -459,7 +749,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
         status: 'handled_visible',
       }),
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
       turnCatalog,
       turns: {
@@ -512,7 +802,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
       turnCatalog,
       turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
@@ -536,7 +826,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
-      monitorStateStore: { read: async () => structuredClone(monitor) },
+      monitorStateStore: monitorStateStore(monitor),
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
       turnCatalog,
       turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },

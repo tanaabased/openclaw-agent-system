@@ -12,7 +12,7 @@ const markerPrefix = 'agent-system-github-publication';
 export const githubNotificationCommenterToken = '{{commenter}}';
 
 export type GitHubNotificationPublicationIntent =
-  'assignment-response' | 'github-reply' | 'initial-acknowledgment';
+  'assignment-response' | 'github-reply' | 'initial-acknowledgment' | 'pull-request-handoff';
 
 export type GitHubNotificationPublicationSafetyCategory =
   'credential-prefix' | 'environment-assignment' | 'mention' | 'redaction';
@@ -21,6 +21,7 @@ const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'assignment-response',
   'github-reply',
   'initial-acknowledgment',
+  'pull-request-handoff',
 ]);
 
 export class GitHubNotificationPublicationError extends Error {
@@ -137,18 +138,27 @@ export interface GitHubNotificationPublicationSource {
   revisionId: string;
 }
 
-type GitHubNotificationPublicationTargetInput = {
-  item: Pick<GitHubNotificationItemState, 'lifecycleId' | 'number' | 'repositoryNodeId'>;
-} & (
+type GitHubNotificationPublicationConversation =
   | {
-      intent: 'github-reply';
-      source: GitHubNotificationPublicationSource;
+      conversationId: string;
+      item?: never;
     }
   | {
-      intent: 'assignment-response' | 'initial-acknowledgment';
-      publicationId: string;
-    }
-);
+      conversationId?: never;
+      item: Pick<GitHubNotificationItemState, 'lifecycleId' | 'number' | 'repositoryNodeId'>;
+    };
+
+type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationConversation &
+  (
+    | {
+        intent: 'github-reply';
+        source: GitHubNotificationPublicationSource;
+      }
+    | {
+        intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
+        publicationId: string;
+      }
+  );
 
 /** Build an opaque durable target for exactly one canonical GitHub publication. */
 export function githubNotificationPublicationTarget(
@@ -171,11 +181,19 @@ export function githubNotificationPublicationTarget(
     }
   }
   const digest = createHash('sha256').update(identity).digest('hex').slice(0, 32);
-  return `${githubNotificationConversationId({
-    itemNumber: input.item.number,
-    lifecycleId: input.item.lifecycleId,
-    repositoryId: input.item.repositoryNodeId,
-  })}:publication:${input.intent}:${digest}`;
+  const conversationId =
+    input.conversationId ??
+    githubNotificationConversationId({
+      itemNumber: input.item.number,
+      lifecycleId: input.item.lifecycleId,
+      repositoryId: input.item.repositoryNodeId,
+    });
+  if (
+    !/^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(conversationId)
+  ) {
+    throw new Error('GitHub notification conversation ids are invalid.');
+  }
+  return `${conversationId}:publication:${input.intent}:${digest}`;
 }
 
 /** Parse only targets minted by the Agent System publication entry point. */
@@ -204,7 +222,7 @@ export function githubNotificationPublicationMarker(target: string): string {
 export function githubNotificationPublicationComment(text: string, marker: string): string {
   if (
     !new RegExp(
-      `^<!-- ${markerPrefix}:(?:assignment-response|github-reply|initial-acknowledgment):[a-f0-9]{32} -->$`,
+      `^<!-- ${markerPrefix}:(?:assignment-response|github-reply|initial-acknowledgment|pull-request-handoff):[a-f0-9]{32} -->$`,
       'u',
     ).test(marker)
   ) {

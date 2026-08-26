@@ -6,6 +6,10 @@ import githubNotificationAssignmentAcknowledgment, {
 import { githubNotificationAssignmentCard } from '../channels/github/events/assignment.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/events/comment.ts';
 import { githubNotificationImplementationCard } from '../channels/github/events/implementation.ts';
+import {
+  githubNotificationPullRequestHandoffComment,
+  githubNotificationPullRequestOpenedCard,
+} from '../channels/github/events/pull-request-opened.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication.ts';
 
 describe('channels/github/events/presentation', () => {
@@ -45,6 +49,29 @@ describe('channels/github/events/presentation', () => {
         'The public plan for issue #12 is published. Carry it out now in `work` mode, ending with one local commit. Lifecycle delivery follows.',
       ].join('\n'),
     );
+  });
+
+  it('should render the pull request handoff for private and github surfaces', () => {
+    assert.equal(
+      githubNotificationPullRequestOpenedCard({
+        issueNumber: 12,
+        pullRequestNumber: 45,
+        repository: 'tanaabased/example',
+      }),
+      [
+        '## 🔀 Pull request opened',
+        '',
+        '- **Issue:** tanaabased/example#12',
+        '- **Pull request:** tanaabased/example#45',
+        '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
+      ].join('\n'),
+    );
+    const publicText = githubNotificationPullRequestHandoffComment(45);
+    assert.equal(
+      githubNotificationPublicationText('pull-request-handoff', [{ text: publicText }]),
+      publicText,
+    );
+    assert.match(publicText, /Replies.*originated/u);
   });
 
   it('should select varied safe acknowledgments deterministically by assignment', () => {

@@ -244,7 +244,7 @@ describe('github notification workflows', () => {
     const source = await readFile('scenarios/issue-work-pr/README.md', 'utf8');
     const expectedEvidence = JSON.parse(
       await readFile('scenarios/issue-work-pr/expected-evidence.json', 'utf8'),
-    ) as { scenario?: string };
+    ) as { finalResponseCount?: number; requestCount?: number; scenario?: string };
 
     assert.match(source, /openclaw-notification-setup prepare/u);
     assert.match(source, /openclaw-notification-setup evidence/u);
@@ -254,7 +254,22 @@ describe('github notification workflows', () => {
     assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
     assert.match(source, /\.body \| contains\("Closes #"/u);
     assert.match(source, /index\("emoriwan"\) != null/u);
+    assert.match(
+      source,
+      /--json mergedAt,state \| jq -e '\.state == "CLOSED" and \.mergedAt == null'/u,
+    );
+    assert.match(
+      source,
+      /\.disposition == "approved" and \.reasonCode == "assignment-approved" and \.stage == "prepared" and \.worktree == "ready"/u,
+    );
+    const closureAssertionIndex = source.indexOf('--json mergedAt,state');
+    const activeStatusIndex = source.indexOf('.disposition == "approved"');
+    const evidenceIndex = source.indexOf('openclaw-notification-setup evidence');
+    assert.ok(closureAssertionIndex < activeStatusIndex);
+    assert.ok(activeStatusIndex < evidenceIndex);
     assert.equal(expectedEvidence.scenario, 'pr');
+    assert.equal(expectedEvidence.requestCount, 9);
+    assert.equal(expectedEvidence.finalResponseCount, 3);
   });
 
   it('should keep comment continuation as one provider-neutral lifecycle scenario', async () => {

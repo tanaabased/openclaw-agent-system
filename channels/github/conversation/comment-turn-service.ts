@@ -26,6 +26,7 @@ import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
+import type { GitHubNotificationConversationSource } from './conversation-state.ts';
 
 export interface GitHubNotificationCommentTurnServiceDependencies {
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
@@ -43,6 +44,7 @@ export interface GitHubNotificationCommentTurnInput {
   modeId: GitHubNotificationModeId;
   revision: GitHubCommentRevision;
   signal?: AbortSignal;
+  source: GitHubNotificationConversationSource;
   workspaceDir: string;
 }
 
@@ -106,9 +108,13 @@ function controlUiAgentsPath(config: OpenClawConfig): string {
   return `${rooted}/agents`;
 }
 
-function commentPermalink(item: GitHubNotificationItemState, databaseId: number): string {
-  const path = item.itemType === 'pull-request' ? 'pull' : 'issues';
-  return `https://github.com/${item.repositoryOwner}/${item.repositoryName}/${path}/${item.number}#issuecomment-${databaseId}`;
+function commentPermalink(
+  item: GitHubNotificationItemState,
+  source: GitHubNotificationConversationSource,
+  databaseId: number,
+): string {
+  const path = source.itemType === 'pull-request' ? 'pull' : 'issues';
+  return `https://github.com/${item.repositoryOwner}/${item.repositoryName}/${path}/${source.number}#issuecomment-${databaseId}`;
 }
 
 /** Dispatch one admitted direct comment and retain the complete private response. */
@@ -164,8 +170,8 @@ export default class GitHubNotificationCommentTurnService {
       },
       body: input.comment.body,
       item: {
-        label: `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.item.number}`,
-        url: commentPermalink(input.item, input.comment.databaseId),
+        label: `${input.item.repositoryOwner}/${input.item.repositoryName}#${input.source.number}`,
+        url: commentPermalink(input.item, input.source, input.comment.databaseId),
       },
       mentions: input.mentions,
     });
@@ -188,6 +194,7 @@ export default class GitHubNotificationCommentTurnService {
             comment: input.comment,
             lifecycleContext,
             revision: input.revision,
+            source: input.source,
           }),
         ],
       },

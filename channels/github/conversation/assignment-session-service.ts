@@ -37,6 +37,7 @@ import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnCoordinator from './model-turn-coordinator.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type GitHubNotificationIssueDeliveryService from './issue-delivery-service.ts';
+import type GitHubNotificationPullRequestHandoffService from './pull-request-handoff-service.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
   acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
@@ -44,6 +45,7 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   deliveries: Pick<GitHubNotificationIssueDeliveryService, 'deliver'>;
+  handoffs: Pick<GitHubNotificationPullRequestHandoffService, 'link'>;
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
@@ -358,6 +360,14 @@ export default class GitHubNotificationAssignmentSessionService {
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       workspaceDir: input.workspaceDir,
       worktree: input.worktree,
+    });
+    await this.#dependencies.handoffs.link({
+      agentId: input.agentId,
+      item: input.item,
+      lifecycle: input.lifecycle,
+      pullRequest: receipt,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
     });
     await this.#checkpointImplementationCompleted(input, conversationId);
     this.#dependencies.logger.info(

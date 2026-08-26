@@ -67,6 +67,21 @@ Use the agent's configured emoji and fall back to `🤖` when it has none. Keep
 the original GitHub comment as the raw inbound body even though the visible and
 model-facing message uses this presentation.
 
+## Pull Request Opened Card
+
+```markdown
+## 🔀 Pull request opened
+
+- **Issue:** tanaabased/example#7
+- **Pull request:** tanaabased/example#18
+- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
+```
+
+This observe-only card appears in the issue-owned private session after managed
+delivery records its pull request. It does not start a model turn. The deterministic
+GitHub handoff uses the same compact fact-list grammar on the issue, while later
+comment responses use the ordinary direct-message and `To GitHub` components.
+
 ## Implementation Card
 
 ```markdown

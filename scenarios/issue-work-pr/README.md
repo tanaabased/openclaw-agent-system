@@ -1,9 +1,11 @@
 # GitHub Issue Work PR Scenario
 
-This GitHub Actions-only scenario proves the pull-request delivery outcome of an
-`issue` + `work` lifecycle. It establishes a real planned assignment, continues
-the same lifecycle through one deterministic implementation, and asserts the
-lifecycle-managed branch delivery and normalized pull-request shape. The same
+This GitHub Actions-only scenario proves delivery pull-request creation, comment
+continuation, and closed-unmerged recovery for an `issue` + `work` lifecycle. It
+establishes a real planned assignment, continues the same lifecycle through one
+deterministic implementation, and asserts the lifecycle-managed branch delivery,
+normalized pull-request shape, deterministic issue handoff, one source-affine
+pull-request reply, and recovery of the issue-owned session. The same
 lifecycle contract runs against the deterministic mock provider on pull requests
 and the live provider through workflow dispatch.
 
@@ -109,6 +111,76 @@ jq -r '.number' <<< "$pull_request" > "$TMPDIR/approved-pull-request-number"
 ```
 
 ```bash
+# should record the delivery pull request in the issue-owned session with one deterministic handoff
+cd "$TMPDIR/agent-system-notification-actor"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+handoffs="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff"))) | {body, id}')"
+handoff="$(jq -sce 'select(length == 1) | .[0]' <<< "$handoffs")"
+jq -e --arg pull_request "#$pull_request_number" '.id | type == "number" and . > 0' <<< "$handoff"
+jq -e --arg pull_request "#$pull_request_number" '.body | contains("## Pull request opened") and contains("**Pull request:** " + $pull_request) and contains("**Conversation:**") and contains("**Replies:**")' <<< "$handoff"
+issue_reply_count_before="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
+printf '%s' "$issue_reply_count_before" > "$TMPDIR/issue-reply-count-before-pr-comment"
+```
+
+```bash
+# should answer an approved pull request comment on its exact source item
+cd "$TMPDIR/agent-system-notification-actor"
+pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+reply_token="pr-ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr comment "$pull_request_number" --repo tanaabased/big-test-bucket --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 180
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+cd "$TMPDIR/agent-system-notification-actor"
+pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$pull_request_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
+reply="$(jq -sce 'select(length == 1) | .[0]' <<< "$replies")"
+jq -e '.id | type == "number" and . > 0' <<< "$reply"
+jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains($token)' <<< "$reply"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+issue_reply_count_after="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
+test "$issue_reply_count_after" -eq "$(cat "$TMPDIR/issue-reply-count-before-pr-comment")"
+```
+
+```bash
+# should close the delivery pull request without merging it
+cd "$TMPDIR/agent-system-notification-actor"
+pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr close "$pull_request_number" --repo tanaabased/big-test-bucket
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json mergedAt,state | jq -e '.state == "CLOSED" and .mergedAt == null'
+```
+
+```bash
+# should keep the issue-owned session prepared after its delivery pull request closes unmerged
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 180
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+openclaw agent-system notifications status \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$issue_number" \
+  --json | jq -e --argjson issue "$issue_number" '.status == "ready" and .code == "github-notification-status-ready" and (.items | length == 1) and (.items[0] | .repository == "tanaabased/big-test-bucket" and .itemType == "issue" and .lifecycleId == "issue" and .number == $issue and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
+```
+
+```bash
 # should expose bounded evidence for the selected notification model
 openclaw-notification-setup evidence \
   --model "$NOTIFICATION_MODEL" \
@@ -124,7 +196,10 @@ if test -f "$TMPDIR/approved-worktree-branch"; then
   cd "$TMPDIR/agent-system-notifications"
   if test -f "$TMPDIR/approved-pull-request-number"; then
     pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
-    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr close "$pull_request_number" --repo tanaabased/big-test-bucket
+    pull_request_state="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json state --jq .state)"
+    if [[ "$pull_request_state" == 'OPEN' ]]; then
+      OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr close "$pull_request_number" --repo tanaabased/big-test-bucket
+    fi
   fi
   worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
   if OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --silent --method GET "/repos/tanaabased/big-test-bucket/git/ref/heads/$worktree_branch"; then

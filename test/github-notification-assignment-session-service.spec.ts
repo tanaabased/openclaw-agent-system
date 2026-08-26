@@ -77,6 +77,8 @@ const input = {
   worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
 };
 const deliveryReceipt = {
+  pullRequestDatabaseId: 45,
+  pullRequestNodeId: 'PR_delivery',
   pullRequestNumber: 45,
 };
 const itemContext = {
@@ -161,6 +163,7 @@ function harness(options: HarnessOptions = {}) {
     acknowledgments: 0,
     assignmentTurns: 0,
     deliveries: 0,
+    handoffs: 0,
     implementationTurns: 0,
     publications: 0,
   };
@@ -237,6 +240,16 @@ function harness(options: HarnessOptions = {}) {
           throw new Error('delivery interrupted');
         }
         return deliveryReceipt;
+      },
+    },
+    handoffs: {
+      async link(handoffInput) {
+        counts.handoffs += 1;
+        assert.equal(handoffInput.agentId, agentId);
+        assert.equal(handoffInput.item, item);
+        assert.equal(handoffInput.lifecycle, input.lifecycle);
+        assert.equal(handoffInput.pullRequest, deliveryReceipt);
+        assert.equal(handoffInput.workspaceDir, workspaceDir);
       },
     },
     logger: { error() {}, info() {}, warn() {} },
@@ -352,6 +365,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 1,
     });
@@ -375,6 +389,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -399,6 +414,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 2,
     });
@@ -423,6 +439,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 2,
       deliveries: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -439,6 +456,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 1,
       assignmentTurns: 0,
       deliveries: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 0,
     });
@@ -463,6 +481,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffs: 1,
       implementationTurns: 2,
       publications: 1,
     });
@@ -487,6 +506,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 2,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -505,6 +525,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -535,6 +556,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 0,
     });

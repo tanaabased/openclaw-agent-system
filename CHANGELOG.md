@@ -6,6 +6,7 @@
 - Added bounded GitHub issue content to assignment cards and private assignment and implementation turn context. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake. [#47](https://github.com/tanaabased/openclaw-agent-system/pull/47)
 - Added five provider-neutral GitHub notification scenarios for deterministic mock PR checks and live manual dispatch. [#49](https://github.com/tanaabased/openclaw-agent-system/issues/49) [#50](https://github.com/tanaabased/openclaw-agent-system/issues/50) [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
+- Added issue-owned delivery pull-request handoffs with source-affine replies, close recovery, and merge-driven retirement.
 - Added linked GitHub assignment cards, varied acknowledgments, and active user-centric Work plans. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added private Work implementation continuations with lifecycle-owned commit normalization, first push, and pull-request reconciliation. [#48](https://github.com/tanaabased/openclaw-agent-system/pull/48)
 - Added provider-verified commenter mentions with natural placeholder placement, deterministic fallback attribution, and preserved incoming Markdown source. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)

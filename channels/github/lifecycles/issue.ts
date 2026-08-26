@@ -101,6 +101,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
     },
     comment: {},
     implementation: {},
+    'pull-request-opened': {},
   };
   readonly id = 'issue' as const;
   readonly instructions = githubNotificationIssueLifecycleInstructions;

@@ -151,6 +151,7 @@ async function respondWithCandidates(
     mentions: incomingMentions(comment),
     modeId: 'work',
     revision: githubCommentRevision(comment),
+    source: { itemType: 'issue', number: item.number },
     workspaceDir,
   });
 }
@@ -231,6 +232,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       mentions: incomingMentions(comment),
       modeId: 'work',
       revision,
+      source: { itemType: 'issue', number: item.number },
       workspaceDir,
     });
 
@@ -250,6 +252,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
           nodeId: 'IC_comment',
           revisionId: revision.revisionId,
         },
+        source: { itemType: 'issue', number: 12 },
         item: {
           lifecycleId: 'issue',
           number: 12,
@@ -261,7 +264,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     ]);
     assert.equal(
       JSON.stringify(result.ctxPayload.UntrustedStructuredContext),
-      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
+      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"source":{"itemType":"issue","number":12},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
     );
   });
 
@@ -302,6 +305,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
         mentions: incomingMentions(comment),
         modeId: 'work',
         revision: githubCommentRevision(comment),
+        source: { itemType: 'issue', number: item.number },
         workspaceDir,
       }),
       (error: unknown) =>

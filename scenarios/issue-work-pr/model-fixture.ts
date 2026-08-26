@@ -5,6 +5,7 @@ export const githubNotificationPullRequestIssueCallId = 'call_agent_system_githu
 export const githubNotificationPullRequestPatchCallId = 'call_apply_patch_pr_fixture';
 export const githubNotificationPullRequestAddCallId = 'call_agent_system_git_pr_add';
 export const githubNotificationPullRequestCommitCallId = 'call_agent_system_git_pr_commit';
+export const githubNotificationPullRequestCommentReplyCallId = 'call_agent_system_pr_comment_reply';
 
 export const githubNotificationPullRequestCandidate =
   "This assignment asks for one exact pull request fixture. I'm going to verify the prepared worktree, create and commit only that file, and let the issue lifecycle deliver the managed branch as a normalized pull request.";
@@ -33,6 +34,9 @@ export const githubNotificationPullRequestFinalResponse = [
   'Created one local commit in the prepared lifecycle worktree for managed pull request delivery.',
 ].join('\n');
 
+export const githubNotificationPullRequestCommentFinalResponse =
+  'Staged one concise response for the approved pull request comment.';
+
 export const pullRequestScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationPullRequestAssignmentFinalResponse,
   callIds: {
@@ -43,6 +47,11 @@ export const pullRequestScenario = createGitHubNotificationIssueWorkScenario({
     reply: githubNotificationPullRequestReplyCallId,
   },
   candidate: githubNotificationPullRequestCandidate,
+  comment: {
+    finalResponse: githubNotificationPullRequestCommentFinalResponse,
+    replyCallId: githubNotificationPullRequestCommentReplyCallId,
+    replyTokenPattern: /\bpr-ready-[0-9]+-[0-9]+\b/u,
+  },
   commitMessage: 'add pull request fixture',
   fileContents: 'pull request fixture ready.',
   filenamePattern: /\bpull-request-fixture-[0-9]+-[0-9]+\.txt\b/u,

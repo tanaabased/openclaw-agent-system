@@ -18,6 +18,7 @@ type PublicationItem = Pick<
 >;
 
 export type GitHubNotificationCommentPublicationInput = {
+  conversationId?: string;
   item: PublicationItem;
   text: string;
 } & (
@@ -26,7 +27,7 @@ export type GitHubNotificationCommentPublicationInput = {
       source: GitHubNotificationPublicationSource;
     }
   | {
-      intent: 'assignment-response' | 'initial-acknowledgment';
+      intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
       publicationId: string;
     }
 );
@@ -51,7 +52,7 @@ export interface GitHubNotificationCommentPublisherDependencies {
           target: string;
         }
       | {
-          intent: 'assignment-response' | 'initial-acknowledgment';
+          intent: 'assignment-response' | 'initial-acknowledgment' | 'pull-request-handoff';
           item: PublicationItem;
           publicationId: string;
           target: string;
@@ -110,16 +111,19 @@ export default class GitHubNotificationCommentPublisher {
     create: boolean,
   ): Promise<GitHubNotificationCommentPublicationResult | undefined> {
     const text = githubNotificationPublicationText(input.intent, [{ text: input.text }]);
+    const conversation = input.conversationId
+      ? ({ conversationId: input.conversationId } as const)
+      : ({ item: input.item } as const);
     const target =
       input.intent === 'github-reply'
         ? githubNotificationPublicationTarget({
+            ...conversation,
             intent: input.intent,
-            item: input.item,
             source: input.source,
           })
         : githubNotificationPublicationTarget({
+            ...conversation,
             intent: input.intent,
-            item: input.item,
             publicationId: input.publicationId,
           });
     const marker = githubNotificationPublicationMarker(target);
