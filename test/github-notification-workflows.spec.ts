@@ -326,13 +326,20 @@ describe('github notification workflows', () => {
     assert.match(source, /--json state --jq \.state \| grep -Fx OPEN/u);
     assert.match(
       source,
-      /\.reasonCode == "pull-request-merged" and \.stage == "retired" and \.cleanup\.status == "completed" and \.cleanup\.session == "archived" and \.cleanup\.worktree == "removed"/u,
+      /\.disposition == "retired" and \.reasonCode == "pull-request-merged" and \.stage == "retired"/u,
     );
+    assert.match(
+      source,
+      /\.cleanup\.status == "completed" and \.cleanup\.session == "archived" and \.cleanup\.worktree == "removed"/u,
+    );
+    assert.equal(source.match(/--for retired/gu)?.length, 2);
     const mergeAssertionIndex = source.indexOf('.mergedBy.login == "emoriwan"');
     const retirementAssertionIndex = source.indexOf('.reasonCode == "pull-request-merged"');
+    const cleanupAssertionIndex = source.indexOf('.cleanup.status == "completed"');
     const evidenceIndex = source.indexOf('openclaw-notification-setup evidence');
     assert.ok(mergeAssertionIndex < retirementAssertionIndex);
-    assert.ok(retirementAssertionIndex < evidenceIndex);
+    assert.ok(retirementAssertionIndex < cleanupAssertionIndex);
+    assert.ok(cleanupAssertionIndex < evidenceIndex);
     assert.equal(expectedEvidence.scenario, 'pr-retirement');
     assert.equal(expectedEvidence.requestCount, 8);
     assert.equal(expectedEvidence.finalResponseCount, 3);

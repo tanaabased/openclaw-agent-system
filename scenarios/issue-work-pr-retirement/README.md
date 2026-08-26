@@ -154,7 +154,7 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-acto
 ```
 
 ```bash
-# should retire the issue-owned session and remove only its clean worktree
+# should checkpoint logical retirement from the merged delivery pull request
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
@@ -165,7 +165,22 @@ openclaw agent-system notifications wait \
   --for retired \
   --refresh \
   --timeout 180 \
-  --json | jq -e '.status == "completed" and (.observation.items[0] | .reasonCode == "pull-request-merged" and .stage == "retired" and .cleanup.status == "completed" and .cleanup.session == "archived" and .cleanup.worktree == "removed")'
+  --json | jq -e '.status == "completed" and .code == "github-notification-retired" and (.observation.items[0] | .disposition == "retired" and .reasonCode == "pull-request-merged" and .stage == "retired")'
+```
+
+```bash
+# should independently archive the session and remove only its clean worktree
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw agent-system notifications wait \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$issue_number" \
+  --for retired \
+  --refresh \
+  --timeout 180 \
+  --json | jq -e '.status == "completed" and (.observation.items[0] | .cleanup.status == "completed" and .cleanup.session == "archived" and .cleanup.worktree == "removed")'
 worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
 test "$(jq length <<< "$worktrees")" -eq 0
 ```
