@@ -273,10 +273,13 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       mode: 'work',
       revisions: {},
     };
+    const warnings: string[] = [];
     const service = new GitHubNotificationPullRequestHandoffService({
       assignmentAuthority: {
         async open() {
-          throw new Error('provider read failed');
+          throw Object.assign(new Error('provider read failed'), {
+            code: 'github-notification-provider-read-failed',
+          });
         },
       },
       conversationStateStore: {
@@ -288,7 +291,13 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         },
       },
       coordinator: { run: async () => Promise.reject(new Error('unexpected turn')) },
-      logger: { error() {}, info() {}, warn() {} },
+      logger: {
+        error() {},
+        info() {},
+        warn(message) {
+          warnings.push(message);
+        },
+      },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
       readConfig: async () => config,
       turnContracts: { resolve: () => Promise.reject(new Error('unexpected contract')) as never },
@@ -306,5 +315,8 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         error instanceof GitHubNotificationPullRequestHandoffError &&
         error.code === 'github-notification-pull-request-handoff-baseline-failed',
     );
+    assert.deepEqual(warnings, [
+      'github-notifications: pull request handoff failed phase=baseline code=github-notification-pull-request-handoff-baseline-failed causeCode=github-notification-provider-read-failed',
+    ]);
   });
 });

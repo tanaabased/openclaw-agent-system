@@ -89,6 +89,18 @@ function sortedComments<T extends { createdAt: string; databaseId: number }>(
   );
 }
 
+function nestedDiagnosticCode(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    /^[a-z0-9][a-z0-9_-]{0,127}$/u.test(error.code)
+  ) {
+    return error.code;
+  }
+  return undefined;
+}
+
 /** Link one delivered pull request to its issue-owned session and publish the handoff event. */
 export default class GitHubNotificationPullRequestHandoffService {
   readonly #clock: () => number;
@@ -408,8 +420,9 @@ export default class GitHubNotificationPullRequestHandoffService {
       await operation();
     } catch (error) {
       if (error instanceof GitHubNotificationPullRequestHandoffError) throw error;
+      const causeCode = nestedDiagnosticCode(error);
       this.#dependencies.logger.warn(
-        `github-notifications: pull request handoff failed phase=${code.replace('github-notification-pull-request-handoff-', '').replace('-failed', '')} code=${code}`,
+        `github-notifications: pull request handoff failed phase=${code.replace('github-notification-pull-request-handoff-', '').replace('-failed', '')} code=${code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
       );
       throw new GitHubNotificationPullRequestHandoffError(code, { cause: error });
     }
