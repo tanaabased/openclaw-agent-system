@@ -1,0 +1,9 @@
+interface:
+  display_name: 'Agent System GitHub Update'
+  short_description: 'Reconcile private progress with a public GitHub issue'
+  icon_small: '../../assets/github-icon-small.svg'
+  icon_large: '../../assets/github-icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: "Use $agent-system-github-update to reconcile the current notification task's private progress with its public GitHub issue and publish one safe, concise update when material progress is missing."
+policy:
+  allow_implicit_invocation: true

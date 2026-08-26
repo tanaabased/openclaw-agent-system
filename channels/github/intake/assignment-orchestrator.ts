@@ -32,7 +32,13 @@ export interface GitHubNotificationAssignmentOrchestratorDependencies {
   authority: GitHubNotificationAssignmentAuthority;
   cleanup?: Pick<GitHubNotificationAssignmentCleanupService, 'cleanup'>;
   clock?: () => number;
-  initialMode: Pick<GitHubNotificationMode, 'policy'>;
+  initialMode:
+    | Pick<GitHubNotificationMode, 'policy'>
+    | ((input: {
+        agentId: string;
+        workspaceDir: string;
+      }) =>
+        Pick<GitHubNotificationMode, 'policy'> | Promise<Pick<GitHubNotificationMode, 'policy'>>);
   lifecycles: GitHubNotificationLifecycleRegistry;
   sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
@@ -242,6 +248,10 @@ export default class GitHubNotificationAssignmentOrchestrator {
         'The GitHub assignment session is missing its lifecycle context.',
       );
     }
+    const mode =
+      typeof this.#dependencies.initialMode === 'function'
+        ? await this.#dependencies.initialMode({ agentId, workspaceDir: state.workspaceDir })
+        : this.#dependencies.initialMode;
     await this.#diagnosticBoundary(
       'github-notification-assignment-session-recording-failed',
       'The GitHub assignment session could not be prepared.',
@@ -251,7 +261,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
           executionSurface,
           item,
           lifecycle,
-          mode: this.#dependencies.initialMode,
+          mode,
           ...(signal === undefined ? {} : { signal }),
           workspaceDir: state.workspaceDir,
           ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),

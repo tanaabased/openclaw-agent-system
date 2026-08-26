@@ -90,7 +90,12 @@ jobs:
           OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
           OPENAI_API_KEY: ${{ secrets.openai_api_key }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.op_service_account_token }}
-        run: bun run leia "scenarios/issue-work-${{ inputs.scenario }}/README.md" --stdin --retry 0
+        run: |
+          scenario_path="issue-work-${{ inputs.scenario }}"
+          if test "${{ inputs.scenario }}" = guided-assignment; then
+            scenario_path=issue-guided-assignment
+          fi
+          bun run leia "scenarios/$scenario_path/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

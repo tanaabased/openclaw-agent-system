@@ -109,11 +109,12 @@ review identifiers and target commit without changing the coordinator.
 
 A mode determines what the agent may do inside the lifecycle session.
 
-| Name | Machine ID | Capability                                                                                                                                                                                |
-| ---- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan | `plan`     | Investigate, inspect code and documentation, research, run safe disposable experiments, ask questions, and produce an implementation-ready plan without persistent implementation changes |
-| Work | `work`     | Plan and clarify, then implement, validate, commit, open or update the authorized pull request, and report completion                                                                     |
-| Auto | `auto`     | Apply a future bounded policy for choosing and advancing work                                                                                                                             |
+| Name   | Machine ID | Capability                                                                                                                                                                                |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Guided | `guided`   | Prepare the lifecycle session and worktree, acknowledge the assignment, then wait for explicit operator or approved-comment direction while retaining Work capabilities for that request  |
+| Plan   | `plan`     | Investigate, inspect code and documentation, research, run safe disposable experiments, ask questions, and produce an implementation-ready plan without persistent implementation changes |
+| Work   | `work`     | Plan and clarify, then implement, validate, commit, open or update the authorized pull request, and report completion                                                                     |
+| Auto   | `auto`     | Apply a future bounded policy for choosing and advancing work                                                                                                                             |
 
 The target `agent.yaml` notification configuration selects the initial mode.
 Mode transitions are trusted lifecycle actions; GitHub prose cannot select or
@@ -139,6 +140,9 @@ authorization. A turn may narrow those boundaries but never widen them.
   provider mutation. A disposable experiment capability may add shell access
   only inside an isolated workspace whose source is read-only, whose outputs
   are disposable, and whose provider mutations are unavailable.
+- **Guided** retains the configured coding capability but does not schedule an
+  implementation continuation from assignment alone. Later operator input or
+  an approved comment supplies the current request.
 - **Work** may use the configured agent's coding capability and Agent System
   tools after a trusted mode transition. It does not imply OpenClaw's
   unrestricted `full` profile.
@@ -215,6 +219,14 @@ place the reserved `{{commenter}}` token once wherever addressing the source
 author reads naturally. After exact-source reauthorization, the publisher
 substitutes only that provider-verified login. If the token is omitted,
 publication prefixes the same trusted mention as a deterministic fallback.
+
+The optional GitHub Update skill is an explicit, mode-neutral reconciliation
+workflow around this channel, not another lifecycle event. It compares the
+current private session with the stable owning issue and does not mutate the
+active mode, schedule work, or derive authority from public prose. During an
+admitted issue-comment turn it may use the typed channel-owned candidate path.
+Outside that turn it uses the agent-scoped GitHub integration for the authorized
+issue write and must retain the same bounded public-content restrictions.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.

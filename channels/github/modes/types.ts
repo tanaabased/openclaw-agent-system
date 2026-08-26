@@ -1,4 +1,4 @@
-export const githubNotificationModeIds = ['auto', 'plan', 'work'] as const;
+export const githubNotificationModeIds = ['auto', 'guided', 'plan', 'work'] as const;
 
 export type GitHubNotificationModeId = (typeof githubNotificationModeIds)[number];
 
@@ -17,6 +17,7 @@ export type GitHubNotificationToolProjection =
     };
 
 export interface GitHubNotificationModePolicy {
+  assignmentContinuation: 'implementation' | 'wait-for-input';
   id: GitHubNotificationModeId;
   label: string;
   toolProjection: GitHubNotificationToolProjection;

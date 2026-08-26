@@ -8,6 +8,7 @@ import GitHubIssueLifecycle, {
 } from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
+import githubNotificationGuidedMode from '../channels/github/modes/guided.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import type { GitHubNotificationMonitorState } from '../channels/github/intake/monitor/state.ts';
 import {
@@ -96,6 +97,30 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     await orchestrator.respond('tanaabot', itemKey);
 
     assert.equal(sessionPreparations, 1);
+  });
+
+  it('should resolve the configured initial mode when preparing the session', async () => {
+    const store = memoryStore();
+    let observedMode: string | undefined;
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      async initialMode(input) {
+        assert.deepEqual(input, { agentId: 'tanaabot', workspaceDir: '/workspace' });
+        return githubNotificationGuidedMode;
+      },
+      lifecycles: lifecycles({ inspect: async () => undefined, prepare: async () => worktree }),
+      sessions: {
+        async prepare(input) {
+          observedMode = input.mode.policy.id;
+        },
+      },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+    await orchestrator.respond('tanaabot', itemKey);
+
+    assert.equal(observedMode, 'guided');
   });
 
   it('should checkpoint canonical repository coordinates before preparing a worktree', async () => {

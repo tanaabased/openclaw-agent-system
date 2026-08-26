@@ -14,10 +14,9 @@ jobs:
       matrix:
         scenario:
           - assignment
+          - guided-assignment
           - implementation
-          - pr-handoff
-          - pr-continuation
-          - pr-retirement
+          - pr-lifecycle
           - comment
           - retirement
     uses: ./.github/workflows/reusable-notification-test.yml

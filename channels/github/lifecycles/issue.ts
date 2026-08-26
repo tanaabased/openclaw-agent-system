@@ -105,7 +105,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
   };
   readonly id = 'issue' as const;
   readonly instructions = githubNotificationIssueLifecycleInstructions;
-  readonly modeSupport = { work: {} } as const;
+  readonly modeSupport = { guided: {}, work: {} } as const;
   readonly worktree;
 
   constructor(worktrees: GitHubIssueLifecycleWorktreeService) {

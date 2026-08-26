@@ -457,7 +457,10 @@ export default class GitHubNotificationAssignmentSessionService {
     }
     let response: GitHubNotificationPublicationState;
     if (publication.status === 'none') {
-      throw new Error('The GitHub assignment response is missing its publication intent.');
+      if (input.mode.policy.assignmentContinuation !== 'wait-for-input') {
+        throw new Error('The GitHub assignment response is missing its publication intent.');
+      }
+      response = { reasonCode: 'github-notification-guided-waiting', status: 'withheld' };
     } else if (publication.status === 'withheld') {
       response = { reasonCode: publication.code, status: 'withheld' };
     } else {
@@ -476,7 +479,10 @@ export default class GitHubNotificationAssignmentSessionService {
     const updatedConversation = next.conversations[conversationId]!;
     delete updatedConversation.activeTurn;
     updatedConversation.assignmentResponse = response;
-    if (publication.status === 'candidate') {
+    if (
+      publication.status === 'candidate' &&
+      input.mode.policy.assignmentContinuation === 'implementation'
+    ) {
       updatedConversation.implementation = { status: 'pending' };
     }
     await this.#dependencies.conversationStateStore.write(next);

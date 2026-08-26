@@ -34,6 +34,7 @@ export const externalGitHubNotificationsSchema = Type.Object(
         uniqueItems: true,
       }),
     ),
+    'initial-mode': Type.Optional(Type.Union([Type.Literal('guided'), Type.Literal('work')])),
     'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
   },
   { additionalProperties: false },
@@ -50,6 +51,7 @@ export interface GitHubNotificationsConfiguration {
   assignmentTypes: Array<'issue' | 'pull-request'>;
   approvedActors: GitHubIdentityPin[];
   allowedRepositoryOwners?: GitHubIdentityPin[];
+  initialMode?: 'guided' | 'work';
   intervalMinutes: number;
 }
 
@@ -72,6 +74,7 @@ export function decodeGitHubNotifications(
       : {
           allowedRepositoryOwners: value['allowed-repository-owners'].map(decodeIdentity),
         }),
+    initialMode: value['initial-mode'] ?? 'work',
     intervalMinutes: value['interval-minutes'] ?? 5,
   };
 }

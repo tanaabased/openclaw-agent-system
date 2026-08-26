@@ -257,6 +257,30 @@ function lifecycles() {
 }
 
 describe('channels/github/conversation/comment-orchestrator', () => {
+  it('should checkpoint the configured guided mode when establishing a conversation', async () => {
+    const monitor = preparedMonitor();
+    const store = memoryStateStore();
+    const id = conversationId(monitor);
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([]),
+      conversationStateStore: store,
+      async initialModeId(input) {
+        assert.deepEqual(input, { agentId, workspaceDir });
+        return 'guided' as const;
+      },
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitorStateStore(monitor),
+      publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      turnCatalog,
+      turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.equal(store.snapshot()?.conversations[id]?.mode, 'guided');
+  });
+
   it('should persist an empty baseline without dispatching a turn', async () => {
     const monitor = preparedMonitor();
     const item = monitor.items[notificationItemKey]!;

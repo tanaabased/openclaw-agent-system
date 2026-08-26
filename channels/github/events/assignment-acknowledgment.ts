@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import type { GitHubNotificationModeId } from '../modes/types.ts';
 import { githubNotificationPublicationText } from '../publication/publication.ts';
 
 export const githubNotificationAssignmentAcknowledgments = [
@@ -37,15 +38,35 @@ export const githubNotificationAssignmentAcknowledgments = [
   "I'm on this now and getting started.",
 ] as const;
 
+export const githubNotificationGuidedAssignmentAcknowledgments = [
+  "I've got the assignment and I'm waiting for your direction.",
+  "Assignment received — I'm ready when you are.",
+  "I've got this set up and I'm waiting for next steps.",
+  "Received — I'll wait for your direction before proceeding.",
+  "The assignment is ready, and I'm standing by for instructions.",
+  "I've picked this up and will wait for your guidance.",
+  'Got it — everything is ready when you want to continue.',
+  "This is set up, and I'm waiting to hear what you'd like me to do.",
+  "Acknowledged — I'm ready for your next instruction.",
+  "I've received the assignment and I'm standing by.",
+  "The assignment is in hand; I'll wait for your direction.",
+  "Got the assignment — I'm ready for whatever comes next.",
+] as const;
+
 /** Select one safe acknowledgment deterministically for an admitted assignment. */
 export default function githubNotificationAssignmentAcknowledgment(
   agentId: string,
   assignmentEventId: string,
+  modeId: GitHubNotificationModeId = 'work',
 ): string {
+  const acknowledgments =
+    modeId === 'guided'
+      ? githubNotificationGuidedAssignmentAcknowledgments
+      : githubNotificationAssignmentAcknowledgments;
   const index =
     createHash('sha256').update(`${agentId}\0${assignmentEventId}`).digest().readUInt32BE(0) %
-    githubNotificationAssignmentAcknowledgments.length;
+    acknowledgments.length;
   return githubNotificationPublicationText('initial-acknowledgment', [
-    { text: githubNotificationAssignmentAcknowledgments[index] },
+    { text: acknowledgments[index] },
   ]);
 }

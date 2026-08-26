@@ -49,6 +49,7 @@ Today, Agent System:
 - [Git CLI](./skills/git-cli/SKILL.md) — Guides agents through ordinary Git operations with `agent_system_git`.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Guides agents through preparing, reusing, and removing managed worktrees.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guides agents through GitHub operations with `agent_system_github`.
+- [GitHub Update](./skills/github-update/SKILL.md) — Reconciles private notification progress with the owning public issue and publishes one safe, concise update when needed.
 
 ## Installation
 

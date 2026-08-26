@@ -450,6 +450,23 @@ describe('channels/github/conversation/conversation-state', () => {
     assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
   });
 
+  it('should retain one guided waiting conversation', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    state.conversations['github:issue:R_repo:12'] = {
+      assignmentResponse: {
+        reasonCode: 'github-notification-guided-waiting',
+        status: 'withheld',
+      },
+      baselineEstablished: true,
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'guided',
+      revisions: {},
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
   it('should retain a withheld publication without storing private response text', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     state.conversations['github:issue:R_repo:12'] = {

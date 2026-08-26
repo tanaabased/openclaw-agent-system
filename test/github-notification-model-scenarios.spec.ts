@@ -6,6 +6,11 @@ import {
   type ToolCallResponse,
 } from '@copilotkit/aimock';
 
+import githubNotificationAssignmentEventInstructions from '../channels/github/conversation/prompts/event-assignment.ts';
+import githubNotificationIssueLifecycleInstructions from '../channels/github/conversation/prompts/lifecycle-issue.ts';
+import githubNotificationWorkModeInstructions from '../channels/github/conversation/prompts/mode-work.ts';
+import githubNotificationAssignmentResponseInstructions from '../channels/github/conversation/prompts/response-assignment.ts';
+import { githubNotificationGuidedAssignmentFinalResponse } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
   githubNotificationImplementationAddCallId,
@@ -22,27 +27,13 @@ import {
   githubNotificationCommentReplyCallId,
 } from '../scenarios/issue-work-comment/model-fixture.ts';
 import {
-  githubNotificationPullRequestContinuationAddCallId,
-  githubNotificationPullRequestContinuationCommentReplyCallId,
-  githubNotificationPullRequestContinuationCommitCallId,
-  githubNotificationPullRequestContinuationIssueCallId,
-  githubNotificationPullRequestContinuationPatchCallId,
-  githubNotificationPullRequestContinuationReplyCallId,
-} from '../scenarios/issue-work-pr-continuation/model-fixture.ts';
-import {
-  githubNotificationPullRequestHandoffAddCallId,
-  githubNotificationPullRequestHandoffCommitCallId,
-  githubNotificationPullRequestHandoffIssueCallId,
-  githubNotificationPullRequestHandoffPatchCallId,
-  githubNotificationPullRequestHandoffReplyCallId,
-} from '../scenarios/issue-work-pr-handoff/model-fixture.ts';
-import {
-  githubNotificationPullRequestRetirementAddCallId,
-  githubNotificationPullRequestRetirementCommitCallId,
-  githubNotificationPullRequestRetirementIssueCallId,
-  githubNotificationPullRequestRetirementPatchCallId,
-  githubNotificationPullRequestRetirementReplyCallId,
-} from '../scenarios/issue-work-pr-retirement/model-fixture.ts';
+  githubNotificationPullRequestLifecycleAddCallId,
+  githubNotificationPullRequestLifecycleCommentReplyCallId,
+  githubNotificationPullRequestLifecycleCommitCallId,
+  githubNotificationPullRequestLifecycleIssueCallId,
+  githubNotificationPullRequestLifecyclePatchCallId,
+  githubNotificationPullRequestLifecycleReplyCallId,
+} from '../scenarios/issue-work-pr-lifecycle/model-fixture.ts';
 import {
   githubNotificationRetirementAddCallId,
   githubNotificationRetirementCommitCallId,
@@ -56,13 +47,12 @@ import resolveGitHubNotificationModelScenario, {
 import { githubNotificationPullRequestOpenedFinalResponse } from '../scripts/github-notification-model-issue-work-scenario.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the seven provider-neutral scenarios', () => {
+  it('should resolve the six provider-neutral scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
+      'guided-assignment',
       'implementation',
-      'pr-handoff',
-      'pr-continuation',
-      'pr-retirement',
+      'pr-lifecycle',
       'comment',
       'retirement',
     ]);
@@ -84,6 +74,13 @@ describe('scripts/github-notification-model-scenarios', () => {
     });
     assert.equal(new Set(callIds).size, callIds.length);
 
+    const guidedAssignment = resolveGitHubNotificationModelScenario('guided-assignment');
+    assert.equal(guidedAssignment.fixtures.length, 1);
+    assert.deepEqual(guidedAssignment.finalResponses, [
+      githubNotificationGuidedAssignmentFinalResponse,
+    ]);
+    assert.deepEqual(guidedAssignment.toolCalls, []);
+
     const executionScenarios = [
       {
         callIds: [
@@ -97,33 +94,13 @@ describe('scripts/github-notification-model-scenarios', () => {
       },
       {
         callIds: [
-          githubNotificationPullRequestHandoffReplyCallId,
-          githubNotificationPullRequestHandoffIssueCallId,
-          githubNotificationPullRequestHandoffPatchCallId,
-          githubNotificationPullRequestHandoffAddCallId,
-          githubNotificationPullRequestHandoffCommitCallId,
+          githubNotificationPullRequestLifecycleReplyCallId,
+          githubNotificationPullRequestLifecycleIssueCallId,
+          githubNotificationPullRequestLifecyclePatchCallId,
+          githubNotificationPullRequestLifecycleAddCallId,
+          githubNotificationPullRequestLifecycleCommitCallId,
         ],
-        id: 'pr-handoff',
-      },
-      {
-        callIds: [
-          githubNotificationPullRequestContinuationReplyCallId,
-          githubNotificationPullRequestContinuationIssueCallId,
-          githubNotificationPullRequestContinuationPatchCallId,
-          githubNotificationPullRequestContinuationAddCallId,
-          githubNotificationPullRequestContinuationCommitCallId,
-        ],
-        id: 'pr-continuation',
-      },
-      {
-        callIds: [
-          githubNotificationPullRequestRetirementReplyCallId,
-          githubNotificationPullRequestRetirementIssueCallId,
-          githubNotificationPullRequestRetirementPatchCallId,
-          githubNotificationPullRequestRetirementAddCallId,
-          githubNotificationPullRequestRetirementCommitCallId,
-        ],
-        id: 'pr-retirement',
+        id: 'pr-lifecycle',
       },
       {
         callIds: [
@@ -150,7 +127,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
       assert.equal(
         scenario.fixtures.length,
-        executionScenario.id === 'comment' || executionScenario.id === 'pr-continuation' ? 10 : 8,
+        executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle' ? 10 : 8,
       );
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
@@ -159,12 +136,12 @@ describe('scripts/github-notification-model-scenarios', () => {
         { id: executionScenario.callIds[3], name: 'agent_system_git' },
         { id: executionScenario.callIds[4], name: 'agent_system_git' },
       ];
-      if (executionScenario.id === 'comment' || executionScenario.id === 'pr-continuation') {
+      if (executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle') {
         expectedToolCalls.push({
           id:
             executionScenario.id === 'comment'
               ? githubNotificationCommentReplyCallId
-              : githubNotificationPullRequestContinuationCommentReplyCallId,
+              : githubNotificationPullRequestLifecycleCommentReplyCallId,
           name: 'agent_system_github_reply',
         });
       }
@@ -224,6 +201,46 @@ describe('scripts/github-notification-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], request), null);
   });
 
+  it('should require guided assignment context without a public reply tool call', () => {
+    const scenario = resolveGitHubNotificationModelScenario('guided-assignment');
+    const request: ChatCompletionRequest = {
+      messages: [
+        { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
+        { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    assert.deepEqual(scenario.toolCalls, []);
+    request.messages[1]!.content = 'missing guided assignment evidence';
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should match current work assignment guidance across execution scenarios', () => {
+    const request: ChatCompletionRequest = {
+      messages: [
+        {
+          content: [
+            githubNotificationIssueLifecycleInstructions,
+            githubNotificationWorkModeInstructions,
+            githubNotificationAssignmentEventInstructions,
+            githubNotificationAssignmentResponseInstructions,
+          ].join('\n\n'),
+          role: 'system',
+        },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
+      const scenario = resolveGitHubNotificationModelScenario(scenarioId);
+      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    }
+  });
+
   it('should derive issue work tool arguments from bounded request context', async () => {
     const executionScenarios = [
       {
@@ -233,22 +250,10 @@ describe('scripts/github-notification-model-scenarios', () => {
         id: 'implementation',
       },
       {
-        commitMessage: 'add pull request fixture',
-        fileContents: 'pull request fixture ready.',
-        filename: 'pull-request-fixture-123-4.txt',
-        id: 'pr-handoff',
-      },
-      {
-        commitMessage: 'add pull request fixture',
-        fileContents: 'pull request fixture ready.',
-        filename: 'pull-request-fixture-123-4.txt',
-        id: 'pr-continuation',
-      },
-      {
-        commitMessage: 'add pull request retirement fixture',
-        fileContents: 'pull request retirement fixture ready.',
-        filename: 'pull-request-retirement-fixture-123-4.txt',
-        id: 'pr-retirement',
+        commitMessage: 'add pull request lifecycle fixture',
+        fileContents: 'pull request lifecycle fixture ready.',
+        filename: 'pull-request-lifecycle-fixture-123-4.txt',
+        id: 'pr-lifecycle',
       },
       {
         commitMessage: 'add comment fixture',
@@ -338,14 +343,7 @@ describe('scripts/github-notification-model-scenarios', () => {
   });
 
   it('should provide one deterministic private response for the pull request opened event', () => {
-    for (const scenarioId of [
-      'implementation',
-      'pr-handoff',
-      'pr-continuation',
-      'pr-retirement',
-      'comment',
-      'retirement',
-    ]) {
+    for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
       const request: ChatCompletionRequest = {
         messages: [
@@ -378,8 +376,8 @@ describe('scripts/github-notification-model-scenarios', () => {
         token: 'ready-123-4',
       },
       {
-        callId: githubNotificationPullRequestContinuationCommentReplyCallId,
-        scenarioId: 'pr-continuation',
+        callId: githubNotificationPullRequestLifecycleCommentReplyCallId,
+        scenarioId: 'pr-lifecycle',
         token: 'pr-ready-123-4',
       },
     ] as const;

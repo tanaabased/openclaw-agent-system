@@ -16,6 +16,8 @@ import type {
 } from '../channels/github/conversation/model-turn-coordinator.ts';
 import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
+import githubNotificationGuidedMode from '../channels/github/modes/guided.ts';
+import type { GitHubNotificationMode } from '../channels/github/modes/types.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import { githubWorkItemKey } from '../channels/github/provider/work-item.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
@@ -69,6 +71,12 @@ const implementationContract = {
   lifecycle,
   mode: { disableTools: false, id: 'work' },
 } as GitHubNotificationTurnContract;
+const guidedAssignmentContract = {
+  identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'guided' },
+  instructions: 'trusted guided assignment instructions',
+  lifecycle,
+  mode: { disableTools: false, id: 'guided' },
+} as GitHubNotificationTurnContract;
 const input = {
   agentId,
   executionSurface: 'cli-one-shot' as const,
@@ -96,13 +104,13 @@ const itemContext = {
   truncated: false,
 };
 
-function initialState(): GitHubNotificationConversationState {
+function initialState(modeId: 'guided' | 'work' = 'work'): GitHubNotificationConversationState {
   const state = createGitHubNotificationConversationState(agentId, workspaceDir);
   state.conversations[conversationId] = {
     baselineEstablished: false,
     itemKey: githubWorkItemKey(item.repositoryNodeId, item.number),
     lifecycleId: 'issue',
-    mode: 'work',
+    mode: modeId,
     revisions: {},
   };
   return state;
@@ -142,6 +150,14 @@ function unstructuredPlanResult(): GitHubNotificationModelTurnCoordinatorResult 
   };
 }
 
+function guidedResult(): GitHubNotificationModelTurnCoordinatorResult {
+  return {
+    ...candidateResult(),
+    privateText: 'The assignment context is prepared. I am waiting for your direction.',
+    publication: { status: 'none' },
+  };
+}
+
 interface HarnessOptions {
   assignmentFailures?: number;
   assignmentResult?: GitHubNotificationModelTurnCoordinatorResult;
@@ -149,6 +165,7 @@ interface HarnessOptions {
   handoffFailures?: number;
   initialActiveTurn?: GitHubNotificationConversationState['conversations'][string]['activeTurn'];
   implementationFailures?: number;
+  mode?: GitHubNotificationMode;
   publicationFailures?: number;
   verifyAssignment?(input: GitHubNotificationModelTurnCoordinatorInput): void;
   verifyDelivery?(input: GitHubNotificationIssueDeliveryInput): void;
@@ -156,7 +173,10 @@ interface HarnessOptions {
 }
 
 function harness(options: HarnessOptions = {}) {
-  let state = initialState();
+  const mode = options.mode ?? githubNotificationWorkMode;
+  const expectedAssignmentContract =
+    mode.policy.id === 'guided' ? guidedAssignmentContract : assignmentContract;
+  let state = initialState(mode.policy.id === 'guided' ? 'guided' : 'work');
   let contextReads = 0;
   if (options.initialActiveTurn) {
     state.conversations[conversationId]!.activeTurn = options.initialActiveTurn;
@@ -175,7 +195,7 @@ function harness(options: HarnessOptions = {}) {
       async publish(acknowledgment) {
         counts.acknowledgments += 1;
         assert.equal(acknowledgment.item, item);
-        assert.equal(acknowledgment.modeId, 'work');
+        assert.equal(acknowledgment.modeId, mode.policy.id);
       },
     },
     assignmentAuthority: {
@@ -320,8 +340,8 @@ function harness(options: HarnessOptions = {}) {
         assert.equal(resolvedConfig, config);
         assert.equal(resolvedAgentId, agentId);
         if (identity.eventId === 'assignment') {
-          assert.deepEqual(identity, assignmentContract.identity);
-          return assignmentContract;
+          assert.deepEqual(identity, expectedAssignmentContract.identity);
+          return expectedAssignmentContract;
         }
         assert.deepEqual(identity, implementationContract.identity);
         return implementationContract;
@@ -331,7 +351,7 @@ function harness(options: HarnessOptions = {}) {
   return {
     counts,
     contextReads: () => contextReads,
-    prepare: () => service.prepare(input),
+    prepare: () => service.prepare({ ...input, mode }),
     state: () => state,
   };
 }
@@ -443,6 +463,38 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'completed',
     });
+  });
+
+  it('should prepare guided mode without scheduling automatic implementation', async () => {
+    const scenario = harness({
+      assignmentResult: guidedResult(),
+      mode: githubNotificationGuidedMode,
+      verifyAssignment(turnInput) {
+        assert.equal(turnInput.contract, guidedAssignmentContract);
+        assert.match(
+          turnInput.ctxPayload.Body ?? '',
+          /workspace is prepared; wait for operator direction in `guided` mode/u,
+        );
+      },
+    });
+
+    await scenario.prepare();
+    await scenario.prepare();
+
+    assert.deepEqual(scenario.counts, {
+      acknowledgments: 2,
+      assignmentTurns: 1,
+      deliveries: 0,
+      handoffCheckpoints: 0,
+      handoffs: 0,
+      implementationTurns: 0,
+      publications: 0,
+    });
+    assert.deepEqual(scenario.state().conversations[conversationId]?.assignmentResponse, {
+      reasonCode: 'github-notification-guided-waiting',
+      status: 'withheld',
+    });
+    assert.equal(scenario.state().conversations[conversationId]?.implementation, undefined);
   });
 
   it('should retry a pending publication without another assignment turn', async () => {

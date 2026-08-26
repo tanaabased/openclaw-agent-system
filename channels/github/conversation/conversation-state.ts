@@ -348,7 +348,7 @@ function validConversation(
     (schemaVersion >= 7 &&
       value.deliveryPullRequest !== undefined &&
       !validDeliveryPullRequest(value.deliveryPullRequest, conversationId)) ||
-    value.mode !== 'work' ||
+    (value.mode !== 'guided' && value.mode !== 'work') ||
     !record(value.revisions) ||
     Object.keys(value.revisions).length > maximumRevisions
   ) {

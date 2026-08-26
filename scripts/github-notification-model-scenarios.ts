@@ -1,11 +1,10 @@
 import type { Fixture } from '@copilotkit/aimock';
 
+import { guidedAssignmentScenario } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { assignmentScenario } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import { commentScenario } from '../scenarios/issue-work-comment/model-fixture.ts';
 import { implementationScenario } from '../scenarios/issue-work-implementation/model-fixture.ts';
-import { pullRequestContinuationScenario } from '../scenarios/issue-work-pr-continuation/model-fixture.ts';
-import { pullRequestHandoffScenario } from '../scenarios/issue-work-pr-handoff/model-fixture.ts';
-import { pullRequestRetirementScenario } from '../scenarios/issue-work-pr-retirement/model-fixture.ts';
+import { pullRequestLifecycleScenario } from '../scenarios/issue-work-pr-lifecycle/model-fixture.ts';
 import { retirementScenario } from '../scenarios/issue-work-retirement/model-fixture.ts';
 
 export interface GitHubNotificationModelToolCall {
@@ -28,10 +27,9 @@ export interface GitHubNotificationModelScenario {
 
 const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [assignmentScenario.id, assignmentScenario],
+  [guidedAssignmentScenario.id, guidedAssignmentScenario],
   [implementationScenario.id, implementationScenario],
-  [pullRequestHandoffScenario.id, pullRequestHandoffScenario],
-  [pullRequestContinuationScenario.id, pullRequestContinuationScenario],
-  [pullRequestRetirementScenario.id, pullRequestRetirementScenario],
+  [pullRequestLifecycleScenario.id, pullRequestLifecycleScenario],
   [commentScenario.id, commentScenario],
   [retirementScenario.id, retirementScenario],
 ]);
