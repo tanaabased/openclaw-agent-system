@@ -4,7 +4,7 @@ import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 
 const publicationMarker =
-  '<!-- agent-system-github-publication:assignment-response:0123456789abcdef0123456789abcdef -->';
+  '<!-- agent-system-github-publication:pull-request-handoff:0123456789abcdef0123456789abcdef -->';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -344,7 +344,7 @@ describe('channels/github/provider/work-event-client', () => {
     assert.ok(requests[0]?.includes('per_page=100'));
   });
 
-  it('should reconcile and publish marked comments without putting bodies in argv', async () => {
+  it('should reconcile and publish pull request handoffs without putting bodies in argv', async () => {
     const body = `On it.\n\n${publicationMarker}`;
     const requests: Array<{ argv: string[]; stdin?: string }> = [];
     const client = new GitHubWorkEventClient({
