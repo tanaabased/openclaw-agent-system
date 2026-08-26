@@ -14,6 +14,12 @@
 
 Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, reconcile its supported configuration, and equip its managed tools to operate with that agent's own environment and credentials instead of a shared global identity.
 
+**Current cool capabilities:**
+
+- **1Password-backed per-agent SSH private keys are never written to disk.**
+- **Each agent gets its own Git authorship, signing, and GitHub identity.**
+- **Work mode turns an assigned GitHub issue into a delivery pull request.**
+
 > [!NOTE]
 > Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
 
