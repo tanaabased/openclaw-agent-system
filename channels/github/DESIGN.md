@@ -260,8 +260,9 @@ selection fails closed instead of falling back to a different prompt.
   result privately and publicly.
 - **Pull-request handoff:** Successful issue delivery checkpoints the pull request
   as the delivery comment source, baselines its existing comments, records one
-  observe-only private card, and publishes one deterministic handoff comment to
-  the owning issue.
+  private card through the registered `pull-request-opened` model turn, retains
+  its private response in the issue-owned session, and publishes one deterministic
+  handoff comment to the owning issue.
 - **Comments:** An admitted comment enters as an attributed direct-message card
   in the existing session and inherits its lifecycle type, current mode, and
   capability. The event presentation replaces only admitted account mentions,

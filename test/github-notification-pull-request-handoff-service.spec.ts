@@ -8,9 +8,11 @@ import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
 } from '../channels/github/conversation/conversation-state.ts';
-import GitHubNotificationPullRequestHandoffService from '../channels/github/conversation/pull-request-handoff-service.ts';
-import githubNotificationPullRequestOpenedEvent from '../channels/github/events/pull-request-opened.ts';
-import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
+import type { GitHubNotificationModelTurnCoordinatorResult } from '../channels/github/conversation/model-turn-coordinator.ts';
+import GitHubNotificationPullRequestHandoffService, {
+  GitHubNotificationPullRequestHandoffError,
+} from '../channels/github/conversation/pull-request-handoff-service.ts';
+import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
@@ -23,7 +25,6 @@ import {
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
 const pullRequest = {
-  pullRequestDatabaseId: 45,
   pullRequestNodeId: 'PR_delivery',
   pullRequestNumber: 45,
 };
@@ -56,8 +57,17 @@ function issueLifecycle() {
   });
 }
 
+function privateEventResult(): GitHubNotificationModelTurnCoordinatorResult {
+  return {
+    dispatch: { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false },
+    finalPayloadCount: 1,
+    privateText: 'The delivery pull request is linked to this session.',
+    publication: { status: 'none' },
+  };
+}
+
 describe('channels/github/conversation/pull-request-handoff-service', () => {
-  it('should baseline, record, and publish one idempotent issue-owned pull request handoff', async () => {
+  it('should checkpoint, baseline, dispatch, and publish one idempotent issue-owned handoff', async () => {
     const item = approvedNotificationItem();
     item.intake = {
       ...item.intake!,
@@ -65,6 +75,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       worktreeBranch: 'issue-12',
       worktreePath: '/workspace/worktrees/issue-12',
     };
+    const lifecycle = issueLifecycle();
     const conversationId = githubNotificationConversationId({
       itemNumber: item.number,
       lifecycleId: item.lifecycleId,
@@ -102,9 +113,14 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       updatedAt: '2026-08-25T12:00:00.000Z',
     };
     let baselineReads = 0;
-    let eventRecords = 0;
+    let eventTurns = 0;
     let publications = 0;
-    const recordInboundSession = async () => undefined;
+    const contract = {
+      identity: { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+      instructions: 'trusted pull request opened instructions',
+      lifecycle,
+      mode: { disableTools: false, id: 'work' },
+    } as GitHubNotificationTurnContract;
     const service = new GitHubNotificationPullRequestHandoffService({
       assignmentAuthority: {
         async open() {
@@ -138,7 +154,24 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
           state = structuredClone(next);
         },
       },
-      events: new GitHubNotificationEventRegistry([githubNotificationPullRequestOpenedEvent]),
+      coordinator: {
+        async run(input) {
+          eventTurns += 1;
+          assert.equal(input.contract, contract);
+          assert.equal(input.createIfMissing, false);
+          assert.equal(input.executionSurface, 'cli-one-shot');
+          assert.equal(input.messageId, 'pull-request-opened:PR_delivery');
+          assert.equal(input.sourceId, 'PR_delivery');
+          assert.equal(input.ctxPayload.Provider, githubNotificationChannelId);
+          assert.match(input.ctxPayload.Body ?? '', /Pull request opened/u);
+          assert.match(input.ctxPayload.Body ?? '', /originating item/u);
+          assert.deepEqual(state.conversations[conversationId]?.activeTurn, {
+            eventId: 'pull-request-opened',
+            sourceId: 'PR_delivery',
+          });
+          return privateEventResult();
+        },
+      },
       logger: { error() {}, info() {}, warn() {} },
       publications: {
         async publish(input) {
@@ -155,32 +188,40 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         },
       },
       readConfig: async () => config,
-      recordInboundSession,
-      async runPreparedReply(input) {
-        eventRecords += 1;
-        assert.equal(input.admission?.kind, 'observeOnly');
-        assert.equal(input.recordInboundSession, recordInboundSession);
-        assert.equal(input.record?.createIfMissing, false);
-        assert.match(input.ctxPayload.Body ?? '', /Pull request opened/u);
-        assert.match(input.ctxPayload.Body ?? '', /originating item/u);
-        input.record?.trackSessionMetaTask?.(Promise.resolve({ sessionId: 'session-1' }));
-        await input.afterRecord?.();
+      turnContracts: {
+        resolve(identity, resolvedConfig, resolvedAgentId) {
+          assert.deepEqual(identity, contract.identity);
+          assert.equal(resolvedConfig, config);
+          assert.equal(resolvedAgentId, agentId);
+          return contract;
+        },
       },
     });
-    const input = {
+    const checkpointInput = {
       agentId,
+      executionSurface: 'cli-one-shot' as const,
       item,
-      lifecycle: issueLifecycle(),
+      lifecycle,
       pullRequest,
       workspaceDir,
     };
+    const reconcileInput = {
+      agentId,
+      executionSurface: 'cli-one-shot' as const,
+      item,
+      lifecycle,
+      workspaceDir,
+    };
 
-    await service.link(input);
-    await service.link(input);
+    await service.checkpoint(checkpointInput);
+    state.conversations[conversationId]!.implementation = { status: 'completed' };
+    await service.reconcile(reconcileInput);
+    await service.reconcile(reconcileInput);
 
     assert.equal(baselineReads, 1);
-    assert.equal(eventRecords, 1);
+    assert.equal(eventTurns, 1);
     assert.equal(publications, 1);
+    assert.equal(state.conversations[conversationId]?.activeTurn, undefined);
     const source = state.conversations[conversationId]?.deliveryPullRequest;
     assert.deepEqual(source, {
       baselineEstablished: true,
@@ -194,7 +235,6 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         status: 'published',
         target: source?.handoff?.status === 'published' ? source.handoff.target : '',
       },
-      itemDatabaseId: 45,
       nodeId: 'PR_delivery',
       number: 45,
       status: 'open',
@@ -207,5 +247,64 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       source: { itemType: 'pull-request', number: 45 },
       status: 'baseline',
     });
+  });
+
+  it('should report the exact handoff phase when the pull request baseline fails', async () => {
+    const item = approvedNotificationItem();
+    const lifecycle = issueLifecycle();
+    const conversationId = githubNotificationConversationId({
+      itemNumber: item.number,
+      lifecycleId: item.lifecycleId,
+      repositoryId: item.repositoryNodeId,
+    });
+    let state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    state.conversations[conversationId] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: false,
+        eventRecorded: false,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      implementation: { status: 'completed' },
+      itemKey: `github:${item.repositoryNodeId}:${item.number}`,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const service = new GitHubNotificationPullRequestHandoffService({
+      assignmentAuthority: {
+        async open() {
+          throw new Error('provider read failed');
+        },
+      },
+      conversationStateStore: {
+        async read() {
+          return structuredClone(state);
+        },
+        async write(next) {
+          state = structuredClone(next);
+        },
+      },
+      coordinator: { run: async () => Promise.reject(new Error('unexpected turn')) },
+      logger: { error() {}, info() {}, warn() {} },
+      publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      readConfig: async () => config,
+      turnContracts: { resolve: () => Promise.reject(new Error('unexpected contract')) as never },
+    });
+
+    await assert.rejects(
+      service.reconcile({
+        agentId,
+        executionSurface: 'gateway',
+        item,
+        lifecycle,
+        workspaceDir,
+      }),
+      (error: unknown) =>
+        error instanceof GitHubNotificationPullRequestHandoffError &&
+        error.code === 'github-notification-pull-request-handoff-baseline-failed',
+    );
   });
 });

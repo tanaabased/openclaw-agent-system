@@ -15,7 +15,8 @@ jobs:
         scenario:
           - assignment
           - implementation
-          - pr
+          - pr-handoff
+          - pr-continuation
           - comment
           - retirement
     uses: ./.github/workflows/reusable-notification-test.yml

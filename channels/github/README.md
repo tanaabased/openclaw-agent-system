@@ -15,8 +15,9 @@ validates, and creates one local commit. The lifecycle then prepends the trusted
 issue number, performs the first ordinary push, and creates or normalizes one
 pull request assigned to the issue author. For prepared issues, the channel also
 links that delivered pull request to the issue-owned session, publishes a
-deterministic handoff on the issue, admits new approved comments from either item,
-and publishes each accepted response back to its exact source item.
+private `pull-request-opened` turn and deterministic handoff on the issue, admits
+new approved comments from either item, and publishes each accepted response back
+to its exact source item.
 
 ## Current Behavior
 
@@ -40,10 +41,10 @@ and publishes each accepted response back to its exact source item.
   the first ordinary push, and creates or normalizes one open pull request with
   the issue title, default base branch, closing reference, and issue-author
   assignee. Delivery checkpoints that pull request as the bounded delivery source,
-  baselines its existing comments without replaying them, records a private
-  `Pull request opened` card without a model turn, and publishes one deterministic
-  handoff comment on the issue. Pull-request assignments retain bounded head
-  metadata without creating a worktree.
+  baselines its existing comments without replaying them, runs the registered
+  `issue`, `work`, and `pull-request-opened` turn with a private card and response,
+  and publishes one deterministic handoff comment on the issue. Pull-request
+  assignments retain bounded head metadata without creating a worktree.
 - Each prepared issue and its open delivery pull request establish independent
   comment baselines without replaying history. A new or edited exact-mention
   comment from an approved human on either item resumes the existing issue-owned
@@ -58,7 +59,7 @@ and publishes each accepted response back to its exact source item.
   OpenClaw. Each lifecycle projects its own bounded source, repository, and
   resource facts as private structured context. The current comment flow
   requires the agent's `coding` profile.
-- Hidden instructions for assignment, implementation, and comment turns are
+- Hidden instructions for assignment, implementation, pull-request-opened, and comment turns are
   composed from their registered lifecycle, mode, and event definitions,
   selected from the private active-turn descriptor, and injected through the
   prompt hook. Missing or unsupported selection does not fall back to a

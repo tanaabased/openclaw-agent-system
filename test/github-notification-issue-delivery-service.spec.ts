@@ -30,7 +30,6 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     body: 'Closes #12',
     headRef: worktree.branch,
     headRepository: 'tanaabased/example',
-    itemDatabaseId: 45,
     itemNodeId: 'PR_delivery',
     number: 45,
     state: 'open',
@@ -153,7 +152,6 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     });
 
     assert.deepEqual(receipt, {
-      pullRequestDatabaseId: 45,
       pullRequestNodeId: 'PR_delivery',
       pullRequestNumber: 45,
     });

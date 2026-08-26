@@ -270,7 +270,6 @@ describe('channels/github/publication/comment-publication-service', () => {
     conversation.deliveryPullRequest = {
       baselineEstablished: true,
       eventRecorded: true,
-      itemDatabaseId: 45,
       nodeId: 'PR_delivery',
       number: 45,
       status: 'open',
@@ -421,7 +420,6 @@ describe('channels/github/publication/comment-publication-service', () => {
         status: 'pending',
         target,
       },
-      itemDatabaseId: 45,
       nodeId: 'PR_delivery',
       number: 45,
       status: 'open',

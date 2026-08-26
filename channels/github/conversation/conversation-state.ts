@@ -31,7 +31,6 @@ export interface GitHubNotificationDeliveryPullRequestState {
   baselineEstablished: boolean;
   eventRecorded: boolean;
   handoff?: GitHubNotificationPublicationPendingState | GitHubNotificationPublicationPublishedState;
-  itemDatabaseId: number;
   nodeId: string;
   number: number;
   status: 'closed' | 'merged' | 'open';
@@ -171,7 +170,6 @@ function validDeliveryPullRequest(
       'baselineEstablished',
       'eventRecorded',
       'handoff',
-      'itemDatabaseId',
       'nodeId',
       'number',
       'status',
@@ -179,8 +177,6 @@ function validDeliveryPullRequest(
     typeof value.baselineEstablished === 'boolean' &&
     typeof value.eventRecorded === 'boolean' &&
     validPullRequestHandoff(value.handoff, conversationId) &&
-    Number.isSafeInteger(value.itemDatabaseId) &&
-    Number(value.itemDatabaseId) > 0 &&
     nodeId(value.nodeId) &&
     Number.isSafeInteger(value.number) &&
     Number(value.number) > 0 &&

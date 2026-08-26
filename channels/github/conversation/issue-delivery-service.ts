@@ -7,7 +7,6 @@ import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type { GitHubNotificationLifecycleWorktree } from '../lifecycles/types.ts';
 
 export interface GitHubNotificationIssueDeliveryReceipt {
-  pullRequestDatabaseId: number;
   pullRequestNodeId: string;
   pullRequestNumber: number;
 }
@@ -46,7 +45,6 @@ interface PullRequestIdentity {
   body: string;
   headRef: string;
   headRepository: string;
-  itemDatabaseId: number;
   itemNodeId: string;
   number: number;
   state: string;
@@ -116,7 +114,6 @@ function parsePullRequest(value: unknown): PullRequestIdentity {
         : boundedString(pullRequest.body, 'pull request body', 65_536),
     headRef: requiredString(pullRequest.headRef, 'pull request head ref', 255),
     headRepository: requiredString(pullRequest.headRepository, 'pull request head repository', 255),
-    itemDatabaseId: positiveInteger(pullRequest.itemDatabaseId, 'pull request database id'),
     itemNodeId: requiredString(pullRequest.itemNodeId, 'pull request node id', 255),
     number: positiveInteger(pullRequest.number, 'pull request number'),
     state: requiredString(pullRequest.state, 'pull request state', 32),
@@ -134,7 +131,7 @@ function normalizedCommitMessage(message: string, issueNumber: number): string {
 }
 
 function pullRequestProjection() {
-  return '{baseRef:.base.ref,body,headRef:.head.ref,headRepository:(.head.repo.full_name//""),itemDatabaseId:.id,itemNodeId:.node_id,number,state,title}';
+  return '{baseRef:.base.ref,body,headRef:.head.ref,headRepository:(.head.repo.full_name//""),itemNodeId:.node_id,number,state,title}';
 }
 
 /** Normalize one local issue commit, perform its first push, and reconcile its pull request. */
@@ -338,7 +335,6 @@ export default class GitHubNotificationIssueDeliveryService {
       throw new Error('GitHub did not retain the normalized pull request shape.');
     }
     return {
-      pullRequestDatabaseId: pullRequest.itemDatabaseId,
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
     };

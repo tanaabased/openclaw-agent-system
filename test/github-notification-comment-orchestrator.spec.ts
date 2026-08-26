@@ -124,7 +124,7 @@ function authority(
 function deliveryPullRequestItem(merged: boolean, state: 'closed' | 'open') {
   return {
     assignees: [],
-    databaseId: 45,
+    databaseId: 145,
     itemType: 'pull-request' as const,
     nodeId: 'PR_delivery',
     number: 45,
@@ -416,7 +416,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     });
   });
 
-  it('should admit a delivery pull request comment into the issue session and retain its source', async () => {
+  it('should admit a delivery pull request comment by stable node and number identity', async () => {
     const monitor = preparedMonitor();
     const item = monitor.items[notificationItemKey]!;
     const state = createGitHubNotificationConversationState(agentId, workspaceDir);
@@ -426,7 +426,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       deliveryPullRequest: {
         baselineEstablished: true,
         eventRecorded: true,
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'open',
@@ -458,7 +457,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
                 assert.equal(number, 45);
                 return {
                   assignees: [],
-                  databaseId: 45,
+                  databaseId: 145,
                   itemType: 'pull-request' as const,
                   nodeId: 'PR_delivery',
                   number: 45,
@@ -551,7 +550,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       deliveryPullRequest: {
         baselineEstablished: true,
         eventRecorded: true,
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'open',
@@ -581,7 +579,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     assert.deepEqual(conversations.snapshot()?.conversations[id]?.deliveryPullRequest, {
       baselineEstablished: false,
       eventRecorded: true,
-      itemDatabaseId: 45,
       nodeId: 'PR_delivery',
       number: 45,
       status: 'closed',
@@ -598,7 +595,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       deliveryPullRequest: {
         baselineEstablished: false,
         eventRecorded: true,
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'closed',
@@ -639,7 +635,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     assert.deepEqual(conversations.snapshot()?.conversations[id]?.deliveryPullRequest, {
       baselineEstablished: false,
       eventRecorded: true,
-      itemDatabaseId: 45,
       nodeId: 'PR_delivery',
       number: 45,
       status: 'open',
@@ -675,7 +670,6 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       deliveryPullRequest: {
         baselineEstablished: true,
         eventRecorded: true,
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'open',

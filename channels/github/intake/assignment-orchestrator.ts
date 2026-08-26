@@ -56,6 +56,18 @@ function withoutFailure(intake: GitHubNotificationIntakeState): GitHubNotificati
   return next;
 }
 
+function nestedDiagnosticCode(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    /^github-notification-[a-z0-9-]+$/u.test(error.code)
+  ) {
+    return error.code;
+  }
+  return undefined;
+}
+
 /** Reconcile one agent's assignments serially through durable, value-free checkpoints. */
 export default class GitHubNotificationAssignmentOrchestrator {
   readonly #dependencies: GitHubNotificationAssignmentOrchestratorDependencies;
@@ -388,7 +400,11 @@ export default class GitHubNotificationAssignmentOrchestrator {
       return await operation();
     } catch (error) {
       if (error instanceof GitHubNotificationAssignmentOrchestratorError) throw error;
-      throw new GitHubNotificationAssignmentOrchestratorError(code, message, { cause: error });
+      throw new GitHubNotificationAssignmentOrchestratorError(
+        nestedDiagnosticCode(error) ?? code,
+        message,
+        { cause: error },
+      );
     }
   }
 

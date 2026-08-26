@@ -35,7 +35,7 @@ describe('channels/github/events/registry', () => {
       registry.resolve('pull-request-opened'),
       githubNotificationPullRequestOpenedEvent,
     );
-    assert.equal(registry.resolve('pull-request-opened').turn.kind, 'observe-only');
+    assert.equal(registry.resolve('pull-request-opened').turn.kind, 'model');
   });
 
   it('should reject duplicate and unimplemented events', () => {

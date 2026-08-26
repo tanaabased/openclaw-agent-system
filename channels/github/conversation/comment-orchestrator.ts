@@ -390,7 +390,6 @@ export default class GitHubNotificationCommentOrchestrator {
     if (
       observed.itemType !== 'pull-request' ||
       observed.nodeId !== source.nodeId ||
-      observed.databaseId !== source.itemDatabaseId ||
       observed.number !== source.number
     ) {
       throw new GitHubNotificationCommentOrchestratorError(

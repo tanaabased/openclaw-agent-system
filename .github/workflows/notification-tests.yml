@@ -11,7 +11,8 @@ on:
         options:
           - assignment
           - implementation
-          - pr
+          - pr-handoff
+          - pr-continuation
           - comment
           - retirement
           - all
@@ -32,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","implementation","pr","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","implementation","pr-handoff","pr-continuation","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: live

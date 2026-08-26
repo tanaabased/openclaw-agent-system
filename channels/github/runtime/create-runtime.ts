@@ -181,11 +181,11 @@ export default function createGitHubNotificationRuntime(
       const pullRequestHandoffService = new GitHubNotificationPullRequestHandoffService({
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
-        events: eventRegistry,
+        coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,
-        recordInboundSession: dependencies.recordInboundSession,
+        turnContracts,
       });
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
         acknowledgments: assignmentAcknowledgmentService,

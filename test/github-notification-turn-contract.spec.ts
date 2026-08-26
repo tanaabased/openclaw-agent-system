@@ -141,4 +141,21 @@ describe('channels/github/conversation/turn-contract', () => {
       /Do not claim a push, pull request, or GitHub publication/u,
     );
   });
+
+  it('should compose one private pull request opened event contract', () => {
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+      contractConfig,
+      'tanaabot',
+    );
+
+    assert.equal(contract.lifecycle.id, 'issue');
+    assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
+    assert.equal(contract.publicationIntent, undefined);
+    assert.match(contract.instructions, /delivery pull request has been linked/u);
+    assert.match(contract.instructions, /both supply later approved comments/u);
+    assert.match(contract.instructions, /Do not inspect files, call tools/u);
+    assert.match(contract.instructions, /Respond privately with one brief acknowledgment/u);
+    assert.match(contract.instructions, /Do not call `agent_system_github_reply`/u);
+  });
 });

@@ -77,10 +77,12 @@ model-facing message uses this presentation.
 - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 
-This observe-only card appears in the issue-owned private session after managed
-delivery records its pull request. It does not start a model turn. The deterministic
-GitHub handoff uses the same compact fact-list grammar on the issue, while later
-comment responses use the ordinary direct-message and `To GitHub` components.
+This card is the inbound message for the registered `pull-request-opened` model
+turn after managed delivery records its pull request. The host-owned lifecycle
+retains both the card and its brief private response in the issue-owned session.
+The deterministic GitHub handoff uses the same compact fact-list grammar on the
+issue, while later comment responses use the ordinary direct-message and `To
+GitHub` components.
 
 ## Implementation Card
 

@@ -321,7 +321,6 @@ describe('channels/github/conversation/conversation-state', () => {
             publicationId: 'PR_delivery',
           }),
         },
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'open',
@@ -383,7 +382,6 @@ describe('channels/github/conversation/conversation-state', () => {
       deliveryPullRequest: {
         baselineEstablished: true,
         eventRecorded: true,
-        itemDatabaseId: 45,
         nodeId: 'PR_delivery',
         number: 45,
         status: 'open',

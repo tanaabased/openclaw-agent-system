@@ -85,7 +85,8 @@ describe('github notification workflows', () => {
     assert.deepEqual(inputs.scenario?.options, [
       'assignment',
       'implementation',
-      'pr',
+      'pr-handoff',
+      'pr-continuation',
       'comment',
       'retirement',
       'all',
@@ -127,7 +128,14 @@ describe('github notification workflows', () => {
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);
     assert.deepEqual(notifications?.strategy?.matrix, {
-      scenario: ['assignment', 'implementation', 'pr', 'comment', 'retirement'],
+      scenario: [
+        'assignment',
+        'implementation',
+        'pr-handoff',
+        'pr-continuation',
+        'comment',
+        'retirement',
+      ],
     });
     assert.deepEqual(notifications?.with, {
       provider: 'mock',
@@ -240,20 +248,42 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'implementation');
   });
 
-  it('should keep pull request delivery as one provider-neutral lifecycle scenario', async () => {
-    const source = await readFile('scenarios/issue-work-pr/README.md', 'utf8');
+  it('should isolate pull request handoff as one provider-neutral lifecycle scenario', async () => {
+    const source = await readFile('scenarios/issue-work-pr-handoff/README.md', 'utf8');
     const expectedEvidence = JSON.parse(
-      await readFile('scenarios/issue-work-pr/expected-evidence.json', 'utf8'),
+      await readFile('scenarios/issue-work-pr-handoff/expected-evidence.json', 'utf8'),
     ) as { finalResponseCount?: number; requestCount?: number; scenario?: string };
 
     assert.match(source, /openclaw-notification-setup prepare/u);
     assert.match(source, /openclaw-notification-setup evidence/u);
     assert.match(source, /openclaw-notification-setup stop/u);
     assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
-    assert.match(source, /--scenario pr/u);
+    assert.match(source, /--scenario pr-handoff/u);
     assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
     assert.match(source, /\.body \| contains\("Closes #"/u);
     assert.match(source, /index\("emoriwan"\) != null/u);
+    assert.match(source, /agent-system-github-publication:pull-request-handoff/u);
+    assert.match(source, /contains\("## Pull request opened"\)/u);
+    assert.doesNotMatch(source, /pr comment|--json mergedAt,state/u);
+    assert.equal(expectedEvidence.scenario, 'pr-handoff');
+    assert.equal(expectedEvidence.requestCount, 8);
+    assert.equal(expectedEvidence.finalResponseCount, 3);
+  });
+
+  it('should isolate pull request continuation and recovery as one lifecycle scenario', async () => {
+    const source = await readFile('scenarios/issue-work-pr-continuation/README.md', 'utf8');
+    const expectedEvidence = JSON.parse(
+      await readFile('scenarios/issue-work-pr-continuation/expected-evidence.json', 'utf8'),
+    ) as { finalResponseCount?: number; requestCount?: number; scenario?: string };
+
+    assert.match(source, /openclaw-notification-setup prepare/u);
+    assert.match(source, /openclaw-notification-setup evidence/u);
+    assert.match(source, /openclaw-notification-setup stop/u);
+    assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
+    assert.match(source, /--scenario pr-continuation/u);
+    assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
+    assert.match(source, /agent-system-github-publication:github-reply/u);
+    assert.match(source, /pr comment/u);
     assert.match(
       source,
       /--json mergedAt,state \| jq -e '\.state == "CLOSED" and \.mergedAt == null'/u,
@@ -267,9 +297,9 @@ describe('github notification workflows', () => {
     const evidenceIndex = source.indexOf('openclaw-notification-setup evidence');
     assert.ok(closureAssertionIndex < activeStatusIndex);
     assert.ok(activeStatusIndex < evidenceIndex);
-    assert.equal(expectedEvidence.scenario, 'pr');
-    assert.equal(expectedEvidence.requestCount, 9);
-    assert.equal(expectedEvidence.finalResponseCount, 3);
+    assert.equal(expectedEvidence.scenario, 'pr-continuation');
+    assert.equal(expectedEvidence.requestCount, 10);
+    assert.equal(expectedEvidence.finalResponseCount, 4);
   });
 
   it('should keep comment continuation as one provider-neutral lifecycle scenario', async () => {

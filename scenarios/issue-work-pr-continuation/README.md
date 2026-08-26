@@ -1,11 +1,12 @@
-# GitHub Issue Work PR Scenario
+# GitHub Issue Work PR Continuation Scenario
 
-This GitHub Actions-only scenario proves delivery pull-request creation, comment
-continuation, and closed-unmerged recovery for an `issue` + `work` lifecycle. It
+This GitHub Actions-only scenario proves pull-request comment continuation and
+closed-unmerged recovery for an `issue` + `work` lifecycle. Its setup
 establishes a real planned assignment, continues the same lifecycle through one
-deterministic implementation, and asserts the lifecycle-managed branch delivery,
-normalized pull-request shape, deterministic issue handoff, one source-affine
-pull-request reply, and recovery of the issue-owned session. The same
+deterministic implementation, and its assertions cover the lifecycle-managed
+pull request, one source-affine pull-request reply, and recovery of the
+issue-owned session. The separate `issue-work-pr-handoff` scenario owns the
+private `pull-request-opened` turn and deterministic issue handoff. The same
 lifecycle contract runs against the deterministic mock provider on pull requests
 and the live provider through workflow dispatch.
 
@@ -18,7 +19,7 @@ removes its PR, branch, generated SSH key, and issue during cleanup.
 # should prepare the selected notification model and isolated profile
 openclaw-notification-setup prepare \
   --model "$NOTIFICATION_MODEL" \
-  --scenario pr \
+  --scenario pr-continuation \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 ```
@@ -52,7 +53,7 @@ openclaw-github-notifications wait-route \
 
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-pull-request-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-pull-request-continuation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
@@ -111,14 +112,9 @@ jq -r '.number' <<< "$pull_request" > "$TMPDIR/approved-pull-request-number"
 ```
 
 ```bash
-# should record the delivery pull request in the issue-owned session with one deterministic handoff
+# should retain the issue reply count before pull request continuation
 cd "$TMPDIR/agent-system-notification-actor"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
-handoffs="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff"))) | {body, id}')"
-handoff="$(jq -sce 'select(length == 1) | .[0]' <<< "$handoffs")"
-jq -e --arg pull_request "#$pull_request_number" '.id | type == "number" and . > 0' <<< "$handoff"
-jq -e --arg pull_request "#$pull_request_number" '.body | contains("## Pull request opened") and contains("**Pull request:** " + $pull_request) and contains("**Conversation:**") and contains("**Replies:**")' <<< "$handoff"
 issue_reply_count_before="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
 printf '%s' "$issue_reply_count_before" > "$TMPDIR/issue-reply-count-before-pr-comment"
 ```
@@ -184,8 +180,8 @@ openclaw agent-system notifications status \
 # should expose bounded evidence for the selected notification model
 openclaw-notification-setup evidence \
   --model "$NOTIFICATION_MODEL" \
-  --scenario pr \
-  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-pr/expected-evidence.json"
+  --scenario pr-continuation \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-pr-continuation/expected-evidence.json"
 ```
 
 ## Cleanup

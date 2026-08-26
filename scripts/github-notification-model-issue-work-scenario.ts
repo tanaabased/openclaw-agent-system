@@ -41,6 +41,15 @@ const implementationPromptSignals = [
   'Do not call `agent_system_github_reply`',
 ] as const;
 
+const pullRequestOpenedPromptSignals = [
+  'Continue the current GitHub issue lifecycle',
+  'A delivery pull request has been linked to the current issue-owned work session',
+  'Respond privately with one brief acknowledgment',
+] as const;
+
+export const githubNotificationPullRequestOpenedFinalResponse =
+  'The delivery pull request is linked. Later issue or pull request comments will continue in this session and reply to their originating item.';
+
 function messageText(message: ChatCompletionRequest['messages'][number]): string {
   if (typeof message.content === 'string') return message.content;
   if (!Array.isArray(message.content)) return '';
@@ -274,6 +283,16 @@ export default function createGitHubNotificationIssueWorkScenario(
         id: `agent-system-notification-${options.id}-final-response`,
       },
     },
+    {
+      match: {
+        model: /^(?:aimock\/)?gpt-5\.5$/u,
+        systemMessage: [...pullRequestOpenedPromptSignals],
+      },
+      response: {
+        content: githubNotificationPullRequestOpenedFinalResponse,
+        id: `agent-system-notification-${options.id}-pull-request-opened-final-response`,
+      },
+    },
   ];
 
   if (options.comment) {
@@ -319,6 +338,7 @@ export default function createGitHubNotificationIssueWorkScenario(
     finalResponses: [
       options.assignmentFinalResponse,
       options.finalResponse,
+      githubNotificationPullRequestOpenedFinalResponse,
       ...(options.comment ? [options.comment.finalResponse] : []),
     ],
     fixtures,

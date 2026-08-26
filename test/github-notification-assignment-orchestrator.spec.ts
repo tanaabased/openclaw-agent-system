@@ -170,6 +170,32 @@ describe('channels/github/intake/assignment-orchestrator', () => {
     assert.equal(store.state().items[itemKey]?.intake?.failureCode, undefined);
   });
 
+  it('should preserve a bounded nested handoff diagnostic code', async () => {
+    const store = memoryStore();
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({ inspect: async () => undefined, prepare: async () => worktree }),
+      sessions: {
+        async prepare() {
+          throw Object.assign(new Error('private handoff detail'), {
+            code: 'github-notification-pull-request-handoff-event-failed',
+          });
+        },
+      },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+    await assert.rejects(
+      orchestrator.respond('tanaabot', itemKey),
+      (error: unknown) =>
+        error instanceof GitHubNotificationAssignmentOrchestratorError &&
+        error.code === 'github-notification-pull-request-handoff-event-failed' &&
+        !error.message.includes('private'),
+    );
+  });
+
   it('should complete pull-request intake without a worktree', async () => {
     const state = monitorState();
     state.items = {
