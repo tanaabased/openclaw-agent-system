@@ -86,7 +86,8 @@ export function createGitHubNotificationChannel(
       selectionLabel: 'Agent System GitHub Notifications',
       docsPath:
         'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
-      blurb: 'Admits authorized GitHub assignments and relays approved issue comments.',
+      blurb:
+        'Admits authorized GitHub assignments and relays approved issue and linked delivery pull-request comments.',
       exposure: { configured: true, docs: true, setup: false },
       forceAccountBinding: true,
     },
