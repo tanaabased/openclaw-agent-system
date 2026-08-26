@@ -13,6 +13,7 @@ export interface GitHubNotificationModelToolCall {
 }
 
 export interface GitHubNotificationModelScenario {
+  dynamicFinalResponseFixtures?: readonly Fixture[];
   finalResponses: readonly string[];
   fixtures: readonly Fixture[];
   id: string;

@@ -195,6 +195,7 @@ function issueWorkToolResponse(
 export default function createGitHubNotificationIssueWorkScenario(
   options: GitHubNotificationIssueWorkScenarioOptions,
 ) {
+  const dynamicFinalResponseFixtures: Fixture[] = [];
   const fixtures: Fixture[] = [
     {
       match: {
@@ -296,7 +297,7 @@ export default function createGitHubNotificationIssueWorkScenario(
 
   if (options.comment) {
     const comment = options.comment;
-    fixtures.push({
+    const commentFinalResponseFixture: Fixture = {
       match: {
         model: /^(?:aimock\/)?gpt-5\.5$/u,
         predicate: (request) => comment.replyTokenPattern.test(requestText(request)),
@@ -306,10 +307,13 @@ export default function createGitHubNotificationIssueWorkScenario(
         content: `{{commenter}}, ${commentReplyToken(request, options)}`,
         id: `agent-system-notification-${options.id}-comment-final-response`,
       }),
-    });
+    };
+    fixtures.push(commentFinalResponseFixture);
+    dynamicFinalResponseFixtures.push(commentFinalResponseFixture);
   }
 
   return {
+    dynamicFinalResponseFixtures,
     finalResponses: [
       options.assignmentFinalResponse,
       options.finalResponse,

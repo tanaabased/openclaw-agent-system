@@ -164,7 +164,9 @@ describe('scripts/github-notification-model-evidence', () => {
         { content: prompt, role: 'system' },
       ];
       const entries: EvidenceEntry[] = [];
-      const request = (response: Record<string, unknown>): EvidenceEntry => ({
+      const requestForFixture = (
+        fixture: NonNullable<EvidenceEntry['response']['fixture']>,
+      ): EvidenceEntry => ({
         body: {
           messages: structuredClone(messages),
           model: 'gpt-5.5',
@@ -172,8 +174,10 @@ describe('scripts/github-notification-model-evidence', () => {
         },
         method: 'POST',
         path: '/v1/responses',
-        response: { fixture: { response }, status: 200 },
+        response: { fixture, status: 200 },
       });
+      const request = (response: Record<string, unknown>): EvidenceEntry =>
+        requestForFixture({ response });
       const appendCall = (call: (typeof selectedScenario.toolCalls)[number]): void => {
         messages?.push(
           {
@@ -210,8 +214,12 @@ describe('scripts/github-notification-model-evidence', () => {
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({ content: selectedScenario.finalResponses[2] }));
       if (hasComment) {
+        const dynamicFinalResponseFixture = selectedScenario.dynamicFinalResponseFixtures?.[0];
+        if (!dynamicFinalResponseFixture) {
+          throw new Error(`The ${scenarioId} scenario dynamic final response is missing.`);
+        }
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
-        entries.push(request({ content: '{{commenter}}, dynamic-comment-reply-token' }));
+        entries.push(requestForFixture(dynamicFinalResponseFixture));
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';
@@ -256,6 +264,31 @@ describe('scripts/github-notification-model-evidence', () => {
         ],
       });
     }
+  });
+
+  it('should count only scenario-owned static and dynamic final responses', () => {
+    const selectedScenario = resolveGitHubNotificationModelScenario('comment');
+    const dynamicFinalResponseFixture = selectedScenario.dynamicFinalResponseFixtures?.[0];
+    if (!dynamicFinalResponseFixture) {
+      throw new Error('The comment scenario dynamic final response is missing.');
+    }
+    const entry = (
+      fixture: Parameters<typeof githubNotificationModelEvidence>[1][number]['response']['fixture'],
+    ) => ({
+      body: { messages: [], model: 'gpt-5.5', tools: [] },
+      method: 'POST',
+      path: '/responses',
+      response: { fixture, status: 200 },
+    });
+
+    const evidence = githubNotificationModelEvidence(selectedScenario, [
+      entry({ response: { content: selectedScenario.finalResponses[0] } }),
+      entry({ response: { content: 'unrelated string response' } }),
+      entry(dynamicFinalResponseFixture),
+      entry({ response: dynamicFinalResponseFixture.response }),
+    ]);
+
+    assert.equal(evidence.finalResponseCount, 2);
   });
 
   it('should report unmatched requests without inventing successful evidence', () => {
