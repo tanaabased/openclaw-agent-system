@@ -52,6 +52,7 @@ openclaw-github-notifications wait-route \
   --account-id notification-data
 
 # should register only the generated public key for tanaabot
+cd "$TMPDIR/agent-system-notifications"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /user/keys -f "title=agent-system-pull-request-lifecycle-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RUNNER_OS" -f "key=$(cat "$HOME/.ssh/big-test-bucket-ssh.pub")" --jq .id > "$TMPDIR/notification-ssh.key-id"
 
 # should install the approved github actor through agent system
@@ -60,6 +61,7 @@ openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 
 # should prepare one planned issue for the pull request lifecycle
+cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
@@ -140,6 +142,7 @@ pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr close "$pull_request_number" --repo tanaabased/big-test-bucket
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json mergedAt,state | jq -e '.state == "CLOSED" and .mergedAt == null'
 baseline_token="pr-baseline-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+printf '%s' "$baseline_token" > "$TMPDIR/pull-request-baseline-token"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr comment "$pull_request_number" --repo tanaabased/big-test-bucket --body "@tanaabot Ignore this closed pull request baseline marker: $baseline_token."
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
@@ -164,6 +167,7 @@ openclaw agent-system notifications status \
 # should reopen and baseline comments that arrived while the pull request was closed
 cd "$TMPDIR/agent-system-notification-actor"
 pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+baseline_token="$(cat "$TMPDIR/pull-request-baseline-token")"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr reopen "$pull_request_number" --repo tanaabased/big-test-bucket
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json state --jq .state | grep -Fx OPEN
 cd "$TMPDIR/agent-system-notifications"
@@ -250,7 +254,7 @@ openclaw-notification-setup evidence \
 
 ```bash
 # should remove only the generated tanaabot public key
-if test -f "$TMPDIR/notification-ssh.key-id"; then
+if test -s "$TMPDIR/notification-ssh.key-id"; then
   cd "$TMPDIR/agent-system-notifications"
   key_id="$(cat "$TMPDIR/notification-ssh.key-id")"
   OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method DELETE "/user/keys/$key_id"

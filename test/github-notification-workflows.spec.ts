@@ -252,6 +252,14 @@ describe('github notification workflows', () => {
     assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
     assert.match(source, /--scenario pr-lifecycle/u);
     assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
+    assert.match(
+      source,
+      /# should register only the generated public key for tanaabot\ncd "\$TMPDIR\/agent-system-notifications"\nOPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh/u,
+    );
+    assert.match(
+      source,
+      /# should prepare one planned issue for the pull request lifecycle\ncd "\$TMPDIR\/agent-system-notification-actor"/u,
+    );
     assert.match(source, /\.body \| contains\("Closes #"/u);
     assert.match(source, /index\("emoriwan"\) != null/u);
     assert.match(source, /agent-system-github-publication:pull-request-handoff/u);
@@ -267,6 +275,11 @@ describe('github notification workflows', () => {
       /\.disposition == "approved" and \.reasonCode == "assignment-approved" and \.stage == "prepared" and \.worktree == "ready"/u,
     );
     assert.match(source, /pr reopen "\$pull_request_number"/u);
+    assert.match(
+      source,
+      /printf '%s' "\$baseline_token" > "\$TMPDIR\/pull-request-baseline-token"/u,
+    );
+    assert.match(source, /baseline_token="\$\(cat "\$TMPDIR\/pull-request-baseline-token"\)"/u);
     assert.match(source, /test "\$baseline_replies" -eq 0/u);
     assert.match(source, /agent-system-pr-lifecycle-base-/u);
     assert.match(source, /pr edit "\$pull_request_number".*--base "\$retirement_base"/u);
@@ -284,6 +297,7 @@ describe('github notification workflows', () => {
       /\.cleanup\.status == "completed" and \.cleanup\.session == "archived" and \.cleanup\.worktree == "removed"/u,
     );
     assert.equal(source.match(/--for retired/gu)?.length, 2);
+    assert.match(source, /if test -s "\$TMPDIR\/notification-ssh\.key-id"/u);
     const handoffAssertionIndex = source.indexOf('## Pull request opened');
     const replyAssertionIndex = source.indexOf('contains("@emoriwan")');
     const closureAssertionIndex = source.indexOf('--json mergedAt,state');
