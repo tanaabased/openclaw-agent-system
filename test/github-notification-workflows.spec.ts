@@ -87,6 +87,7 @@ describe('github notification workflows', () => {
       'implementation',
       'pr-handoff',
       'pr-continuation',
+      'pr-retirement',
       'comment',
       'retirement',
       'all',
@@ -133,6 +134,7 @@ describe('github notification workflows', () => {
         'implementation',
         'pr-handoff',
         'pr-continuation',
+        'pr-retirement',
         'comment',
         'retirement',
       ],
@@ -300,6 +302,40 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'pr-continuation');
     assert.equal(expectedEvidence.requestCount, 10);
     assert.equal(expectedEvidence.finalResponseCount, 4);
+  });
+
+  it('should isolate pull request merge retirement as one lifecycle scenario', async () => {
+    const source = await readFile('scenarios/issue-work-pr-retirement/README.md', 'utf8');
+    const expectedEvidence = JSON.parse(
+      await readFile('scenarios/issue-work-pr-retirement/expected-evidence.json', 'utf8'),
+    ) as { finalResponseCount?: number; requestCount?: number; scenario?: string };
+
+    assert.match(source, /openclaw-notification-setup prepare/u);
+    assert.match(source, /openclaw-notification-setup evidence/u);
+    assert.match(source, /openclaw-notification-setup stop/u);
+    assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
+    assert.match(source, /--scenario pr-retirement/u);
+    assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
+    assert.match(source, /agent-system-github-publication:pull-request-handoff/u);
+    assert.match(source, /agent-system-pr-retirement-base-/u);
+    assert.match(source, /pr edit "\$pull_request_number".*--base "\$retirement_base"/u);
+    assert.match(source, /--json mergeable --jq \.mergeable/u);
+    assert.match(source, /test "\$mergeable" = MERGEABLE/u);
+    assert.match(source, /pr merge "\$pull_request_number".*--merge/u);
+    assert.match(source, /\.mergedBy\.login == "emoriwan"/u);
+    assert.match(source, /--json state --jq \.state \| grep -Fx OPEN/u);
+    assert.match(
+      source,
+      /\.reasonCode == "pull-request-merged" and \.stage == "retired" and \.cleanup\.status == "completed" and \.cleanup\.session == "archived" and \.cleanup\.worktree == "removed"/u,
+    );
+    const mergeAssertionIndex = source.indexOf('.mergedBy.login == "emoriwan"');
+    const retirementAssertionIndex = source.indexOf('.reasonCode == "pull-request-merged"');
+    const evidenceIndex = source.indexOf('openclaw-notification-setup evidence');
+    assert.ok(mergeAssertionIndex < retirementAssertionIndex);
+    assert.ok(retirementAssertionIndex < evidenceIndex);
+    assert.equal(expectedEvidence.scenario, 'pr-retirement');
+    assert.equal(expectedEvidence.requestCount, 8);
+    assert.equal(expectedEvidence.finalResponseCount, 3);
   });
 
   it('should keep comment continuation as one provider-neutral lifecycle scenario', async () => {

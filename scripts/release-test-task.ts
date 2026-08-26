@@ -185,6 +185,8 @@ try {
       'scenarios/issue-work-pr-continuation/model-fixture.ts',
       'scenarios/issue-work-pr-handoff/expected-evidence.json',
       'scenarios/issue-work-pr-handoff/model-fixture.ts',
+      'scenarios/issue-work-pr-retirement/expected-evidence.json',
+      'scenarios/issue-work-pr-retirement/model-fixture.ts',
       'scenarios/issue-work-retirement/expected-evidence.json',
       'scenarios/issue-work-retirement/model-fixture.ts',
       'scripts/github-notification-model-issue-work-scenario.ts',

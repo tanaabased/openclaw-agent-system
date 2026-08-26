@@ -5,6 +5,7 @@ import { commentScenario } from '../scenarios/issue-work-comment/model-fixture.t
 import { implementationScenario } from '../scenarios/issue-work-implementation/model-fixture.ts';
 import { pullRequestContinuationScenario } from '../scenarios/issue-work-pr-continuation/model-fixture.ts';
 import { pullRequestHandoffScenario } from '../scenarios/issue-work-pr-handoff/model-fixture.ts';
+import { pullRequestRetirementScenario } from '../scenarios/issue-work-pr-retirement/model-fixture.ts';
 import { retirementScenario } from '../scenarios/issue-work-retirement/model-fixture.ts';
 
 export interface GitHubNotificationModelToolCall {
@@ -30,6 +31,7 @@ const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [implementationScenario.id, implementationScenario],
   [pullRequestHandoffScenario.id, pullRequestHandoffScenario],
   [pullRequestContinuationScenario.id, pullRequestContinuationScenario],
+  [pullRequestRetirementScenario.id, pullRequestRetirementScenario],
   [commentScenario.id, commentScenario],
   [retirementScenario.id, retirementScenario],
 ]);

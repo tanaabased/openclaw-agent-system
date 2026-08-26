@@ -11,7 +11,14 @@ describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
       (id) =>
-        !['implementation', 'pr-handoff', 'pr-continuation', 'comment', 'retirement'].includes(id),
+        ![
+          'implementation',
+          'pr-handoff',
+          'pr-continuation',
+          'pr-retirement',
+          'comment',
+          'retirement',
+        ].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPromptMessages = [
@@ -111,6 +118,7 @@ describe('scripts/github-notification-model-evidence', () => {
       'implementation',
       'pr-handoff',
       'pr-continuation',
+      'pr-retirement',
       'comment',
       'retirement',
     ]) {

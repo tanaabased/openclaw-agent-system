@@ -17,6 +17,7 @@ jobs:
           - implementation
           - pr-handoff
           - pr-continuation
+          - pr-retirement
           - comment
           - retirement
     uses: ./.github/workflows/reusable-notification-test.yml

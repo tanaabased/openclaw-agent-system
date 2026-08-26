@@ -37,6 +37,13 @@ import {
   githubNotificationPullRequestHandoffReplyCallId,
 } from '../scenarios/issue-work-pr-handoff/model-fixture.ts';
 import {
+  githubNotificationPullRequestRetirementAddCallId,
+  githubNotificationPullRequestRetirementCommitCallId,
+  githubNotificationPullRequestRetirementIssueCallId,
+  githubNotificationPullRequestRetirementPatchCallId,
+  githubNotificationPullRequestRetirementReplyCallId,
+} from '../scenarios/issue-work-pr-retirement/model-fixture.ts';
+import {
   githubNotificationRetirementAddCallId,
   githubNotificationRetirementCommitCallId,
   githubNotificationRetirementIssueCallId,
@@ -49,12 +56,13 @@ import resolveGitHubNotificationModelScenario, {
 import { githubNotificationPullRequestOpenedFinalResponse } from '../scripts/github-notification-model-issue-work-scenario.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the six provider-neutral scenarios', () => {
+  it('should resolve the seven provider-neutral scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
       'implementation',
       'pr-handoff',
       'pr-continuation',
+      'pr-retirement',
       'comment',
       'retirement',
     ]);
@@ -106,6 +114,16 @@ describe('scripts/github-notification-model-scenarios', () => {
           githubNotificationPullRequestContinuationCommitCallId,
         ],
         id: 'pr-continuation',
+      },
+      {
+        callIds: [
+          githubNotificationPullRequestRetirementReplyCallId,
+          githubNotificationPullRequestRetirementIssueCallId,
+          githubNotificationPullRequestRetirementPatchCallId,
+          githubNotificationPullRequestRetirementAddCallId,
+          githubNotificationPullRequestRetirementCommitCallId,
+        ],
+        id: 'pr-retirement',
       },
       {
         callIds: [
@@ -227,6 +245,12 @@ describe('scripts/github-notification-model-scenarios', () => {
         id: 'pr-continuation',
       },
       {
+        commitMessage: 'add pull request retirement fixture',
+        fileContents: 'pull request retirement fixture ready.',
+        filename: 'pull-request-retirement-fixture-123-4.txt',
+        id: 'pr-retirement',
+      },
+      {
         commitMessage: 'add comment fixture',
         fileContents: 'comment fixture ready.',
         filename: 'comment-fixture-123-4.txt',
@@ -318,6 +342,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       'implementation',
       'pr-handoff',
       'pr-continuation',
+      'pr-retirement',
       'comment',
       'retirement',
     ]) {
