@@ -25,6 +25,7 @@ const contract = {
   lifecycle: {},
   mode: { disableTools: false, id: 'work' },
   publicationIntent: 'github-reply',
+  publicationSource: 'final',
 } as GitHubNotificationTurnContract;
 const ctxPayload = {} as AssembledInboundReply['ctxPayload'];
 
@@ -41,7 +42,7 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
-  it('should coordinate one private response and one typed public candidate', async () => {
+  it('should publish the ordinary final response and retain it privately', async () => {
     const calls: unknown[] = [];
     const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
@@ -79,7 +80,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       privateText: 'Complete private response.',
       publication: {
         status: 'candidate',
-        publicText: '## Ready\n\n- `notification` checks passed',
+        publicText: 'Complete private response.',
       },
     });
     assert.deepEqual(calls, [
@@ -145,6 +146,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       ...contract,
       identity: { ...identity, eventId: 'implementation' as const },
       publicationIntent: undefined,
+      publicationSource: undefined,
     };
 
     const result = await coordinator.run({
@@ -246,13 +248,23 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       },
     });
 
-    assert.deepEqual((await coordinator.run(input())).publication, {
-      code: 'github-notification-publication-candidate-missing',
-      status: 'withheld',
-    });
+    const candidateContract = {
+      ...contract,
+      identity: { ...identity, eventId: 'assignment' as const },
+      publicationIntent: 'assignment-response' as const,
+      publicationSource: 'candidate' as const,
+    };
+
+    assert.deepEqual(
+      (await coordinator.run({ ...input(), contract: candidateContract })).publication,
+      {
+        code: 'github-notification-publication-candidate-missing',
+        status: 'withheld',
+      },
+    );
     assert.match(
       warnings[0] ?? '',
-      /model turn completed .*final-payloads=1 block=2 final=1 tool=0 queued-final=false candidates=0 publication=withheld code=github-notification-publication-candidate-missing aborted=false/u,
+      /event=assignment .*final-payloads=1 block=2 final=1 tool=0 queued-final=false candidates=0 publication=withheld code=github-notification-publication-candidate-missing aborted=false/u,
     );
   });
 
@@ -282,14 +294,64 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       },
     });
 
-    assert.deepEqual((await coordinator.run(input())).publication, {
-      code: 'github-notification-publication-secret-safety-rejected',
-      safetyCategory: 'mention',
-      status: 'withheld',
-    });
+    const candidateContract = {
+      ...contract,
+      identity: { ...identity, eventId: 'assignment' as const },
+      publicationIntent: 'assignment-response' as const,
+      publicationSource: 'candidate' as const,
+    };
+
+    assert.deepEqual(
+      (await coordinator.run({ ...input(), contract: candidateContract })).publication,
+      {
+        code: 'github-notification-publication-secret-safety-rejected',
+        safetyCategory: 'mention',
+        status: 'withheld',
+      },
+    );
     assert.match(
       warnings[0] ?? '',
       /publication=withheld code=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
+    );
+    assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
+  });
+
+  it('should publish a safe notice when an ordinary final response fails safety validation', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'See @pirog for the private result.' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    assert.deepEqual((await coordinator.run(input())).publication, {
+      fallbackCode: 'github-notification-publication-secret-safety-rejected',
+      publicText:
+        "I received your comment, but I couldn't safely publish the detailed response. I've kept it in the linked private session for review.",
+      safetyCategory: 'mention',
+      status: 'candidate',
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /publication=candidate fallback=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
     );
     assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
   });

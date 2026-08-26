@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Bug Fixes
+
+- Fixed approved GitHub issue and pull request comments to publish ordinary final responses, fall back safely instead of going silent, and drain bounded queued replies.
+
 ## v0.5.2 - [August 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.2)
 
 ### New Features

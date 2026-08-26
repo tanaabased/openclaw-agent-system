@@ -6,7 +6,6 @@ export const githubNotificationCommentIssueCallId = 'call_agent_system_github_co
 export const githubNotificationCommentPatchCallId = 'call_apply_patch_comment_fixture';
 export const githubNotificationCommentAddCallId = 'call_agent_system_git_comment_add';
 export const githubNotificationCommentCommitCallId = 'call_agent_system_git_comment_commit';
-export const githubNotificationCommentReplyCallId = 'call_agent_system_comment_reply';
 
 export const githubNotificationCommentCandidate =
   "This assignment asks for one exact comment fixture. I'm going to verify the prepared worktree, create and commit only that file, and let the issue lifecycle deliver the managed branch before responding to the follow-up comment.";
@@ -36,7 +35,7 @@ export const githubNotificationCommentImplementationFinalResponse = [
 ].join('\n');
 
 export const githubNotificationCommentFinalResponse =
-  'Staged one concise response for the approved GitHub comment.';
+  '{{commenter}}, the approved GitHub comment received a direct response.';
 
 export const commentScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationCommentAssignmentFinalResponse,
@@ -50,7 +49,6 @@ export const commentScenario = createGitHubNotificationIssueWorkScenario({
   candidate: githubNotificationCommentCandidate,
   comment: {
     finalResponse: githubNotificationCommentFinalResponse,
-    replyCallId: githubNotificationCommentReplyCallId,
     replyTokenPattern: /\bready-[0-9]+-[0-9]+\b/u,
   },
   commitMessage: 'add comment fixture',

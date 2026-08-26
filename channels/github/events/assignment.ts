@@ -44,6 +44,7 @@ const githubNotificationAssignmentEvent = {
     instructions: githubNotificationAssignmentEventInstructions,
     kind: 'model',
     publicationIntent: 'assignment-response',
+    publicationSource: 'candidate',
     responseInstructions: githubNotificationAssignmentResponseInstructions,
   },
 } as const satisfies GitHubNotificationEvent;

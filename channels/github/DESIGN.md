@@ -20,7 +20,7 @@ GitHub notification
         |
      model turn <---------------------------+
         |                                   |
- private response + typed GitHub candidate  |
+ private lifecycle result or comment reply  |
         |                                   |
  validate and publish GitHub response       |
         |                                   |
@@ -190,43 +190,44 @@ publication, or conversation progress back to monitor state.
 
 Each model-backed turn keeps these layers separate:
 
-| Layer              | Purpose                                                                  | Visibility                                      |
-| ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| Presentation       | Assignment card, attributed comment card, and response components        | Visible in the session                          |
-| Structured context | Bounded GitHub content, provenance, and recorded state                   | Model-only current-turn context                 |
-| Instructions       | Trusted guidance selected by lifecycle type, mode, and event             | Hidden from the conversation                    |
-| Capability         | Tool and mutation boundary selected from trusted mode state              | Runtime-enforced                                |
-| Private response   | Complete local response                                                  | Private session only                            |
-| GitHub response    | Concise conversational GFM candidate, separate from the private response | Channel-owned; optionally rendered or published |
+| Layer              | Purpose                                                                | Visibility                      |
+| ------------------ | ---------------------------------------------------------------------- | ------------------------------- |
+| Presentation       | Assignment card, attributed comment card, and response components      | Visible in the session          |
+| Structured context | Bounded GitHub content, provenance, and recorded state                 | Model-only current-turn context |
+| Instructions       | Trusted guidance selected by lifecycle type, mode, and event           | Hidden from the conversation    |
+| Capability         | Tool and mutation boundary selected from trusted mode state            | Runtime-enforced                |
+| Private response   | Complete lifecycle result or mirrored ordinary comment reply           | Private session                 |
+| GitHub response    | Typed lifecycle candidate or validated ordinary comment final response | Channel-owned publication       |
 
 This contract must work through both the built-in OpenClaw agent harness and
 the native Codex app-server harness. Their prompt, context, hook, and tool
 projections may differ, but they must preserve the same visible presentation,
 hidden instruction, capability, response, and publication boundaries.
 
-The model writes the private response as ordinary Markdown. It supplies the
-GitHub-facing candidate through a typed channel-owned interface rather than
-recreating a Markdown envelope for the host to parse. A host may render the two
-parts with the [private and public composition](./PRESENTATION.md#private-and-public-composition),
-but publication never depends on that rendering.
+Lifecycle turns that need different private and public content use a typed
+channel-owned candidate instead of recreating a Markdown envelope for the host
+to parse. An admitted issue or delivery pull-request comment follows the normal
+conversation contract: the model's one final response remains in the private
+session and becomes the public reply after validation and exact-source
+reauthorization. Publication never depends on presentation rendering.
 
-The GitHub-facing candidate is a conversational comment, not a report. It may
+The GitHub-facing response is a conversational comment, not a report. It may
 use GitHub-flavored Markdown when structure improves clarity, while deterministic
 publication validation continues to reject secrets, credentials, hidden context,
 and literal model-authored mentions. File references should use
-repository-relative paths instead of absolute worktree paths. The model may
-place the reserved `{{commenter}}` token once wherever addressing the source
-author reads naturally. After exact-source reauthorization, the publisher
-substitutes only that provider-verified login. If the token is omitted,
-publication prefixes the same trusted mention as a deterministic fallback.
+repository-relative paths instead of absolute worktree paths. Typed candidates
+may place the reserved `{{commenter}}` token once wherever addressing the source
+author reads naturally. Ordinary comment finals omit literal mentions; after
+exact-source reauthorization, publication prefixes the provider-verified login.
 
 The optional GitHub Update skill is an explicit, mode-neutral reconciliation
 workflow around this channel, not another lifecycle event. It compares the
 current private session with the stable owning issue and does not mutate the
 active mode, schedule work, or derive authority from public prose. During an
-admitted issue-comment turn it may use the typed channel-owned candidate path.
-Outside that turn it uses the agent-scoped GitHub integration for the authorized
-issue write and must retain the same bounded public-content restrictions.
+admitted issue-comment turn, the ordinary final-response path already owns the
+public reply. Outside that turn, the skill uses the agent-scoped GitHub
+integration for the authorized issue write and must retain the same bounded
+public-content restrictions.
 
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
@@ -240,11 +241,12 @@ by channel-owned turn identity.
 The central `before_prompt_build` hook is the supported cross-harness transport
 for hidden channel instructions. Turn dispatch options project capability only;
 they do not carry lifecycle, mode, or event prompts through
-`extraSystemPrompt`. Typed GitHub reply candidates use their separate
-channel-owned file-backed handoff and are not inferred from response Markdown.
+`extraSystemPrompt`. Typed lifecycle candidates use their separate channel-owned
+file-backed handoff. Ordinary admitted comments use the captured final payload
+without parsing a Markdown envelope.
 
 The prompt composer renders lifecycle, lifecycle-mode, mode, event, response,
-style, publication-safety, clarification, and private-response guidance under
+style, publication-safety, and clarification guidance under
 stable Markdown headings. Those headings clarify trusted ownership without
 changing selection, capability, or publication authority.
 
@@ -262,8 +264,9 @@ selection fails closed instead of falling back to a different prompt.
   The acknowledgment may be deterministic and does not wait for the main turn.
 - **Turn:** Bounded provider context, hidden instructions, and enforced
   capability start the mode-specific model turn.
-- **Response:** Every agent-authored outcome keeps its complete private response
-  separate from one typed GitHub-facing candidate.
+- **Response:** Lifecycle turns may keep a complete private result separate from
+  one typed GitHub-facing candidate. Ordinary comment turns use one answer for
+  both the private session and source-affine GitHub reply.
 - **Plan:** The agent investigates the item, discussion, code, and documentation.
   It returns a plan or asks one concise public question and ends the turn. An
   admitted answer resumes the same Plan session.
@@ -282,12 +285,14 @@ selection fails closed instead of falling back to a different prompt.
   remaining Markdown source, and retains the unchanged provider comment as the
   raw inbound body. The issue and its active delivery pull request are independent
   bounded sources; the durable revision freezes its source, and publication derives
-  the destination from that source rather than selecting a mutable conversation target.
-- **Publication:** Only the typed GitHub candidate or a trusted
-  provider-constructed message may be published. Publication validates the
-  payload, reauthorizes the exact source author and destination, substitutes its
-  verified commenter token, records a durable receipt, and retries the accepted
-  text without model regeneration.
+  the destination from that source rather than selecting a mutable conversation
+  target. One poll may answer a bounded pair serially before yielding.
+- **Publication:** Only a typed lifecycle candidate, validated ordinary comment
+  final, or trusted provider-constructed message may be published. Publication
+  validates the payload, reauthorizes the exact source author and destination,
+  applies the verified commenter identity, records a durable receipt, and retries
+  accepted text without model regeneration. A rejected ordinary comment final
+  produces a deterministic safe notice rather than silence.
 
 Private responses, structured context, hidden instructions, tool output,
 credentials, and private machine details remain outside GitHub publication.

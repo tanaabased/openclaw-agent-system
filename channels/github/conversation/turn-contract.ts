@@ -15,6 +15,7 @@ export interface GitHubNotificationTurnContract {
   lifecycle: GitHubNotificationLifecycle;
   mode: ResolvedGitHubNotificationMode;
   publicationIntent?: GitHubNotificationPublicationIntent;
+  publicationSource?: 'candidate' | 'final';
 }
 
 export interface GitHubNotificationTurnModelOptions {
@@ -82,12 +83,18 @@ export default class GitHubNotificationTurnContractResolver {
       turn.mode.policy.assignmentContinuation === 'wait-for-input'
         ? undefined
         : turn.eventTurn.publicationIntent;
+    const publicationSource =
+      publicationIntent === undefined ? undefined : turn.eventTurn.publicationSource;
+    if (publicationIntent !== undefined && publicationSource === undefined) {
+      throw new Error('GitHub notification publication sources are required.');
+    }
     return {
       identity: turn.identity,
       instructions: turnInstructions(turn),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
       ...(publicationIntent === undefined ? {} : { publicationIntent }),
+      ...(publicationSource === undefined ? {} : { publicationSource }),
     };
   }
 }

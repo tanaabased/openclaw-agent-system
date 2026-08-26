@@ -117,7 +117,7 @@ function commentPermalink(
   return `https://github.com/${item.repositoryOwner}/${item.repositoryName}/${path}/${source.number}#issuecomment-${databaseId}`;
 }
 
-/** Dispatch one admitted direct comment and retain the complete private response. */
+/** Dispatch one admitted direct comment for mirrored private and public response handling. */
 export default class GitHubNotificationCommentTurnService {
   readonly #dependencies: GitHubNotificationCommentTurnServiceDependencies;
 

@@ -23,7 +23,6 @@ export interface GitHubNotificationIssueWorkScenarioOptions {
   id: string;
   comment?: {
     finalResponse: string;
-    replyCallId: string;
     replyTokenPattern: RegExp;
   };
 }
@@ -297,41 +296,17 @@ export default function createGitHubNotificationIssueWorkScenario(
 
   if (options.comment) {
     const comment = options.comment;
-    fixtures.push(
-      {
-        match: {
-          model: /^(?:aimock\/)?gpt-5\.5$/u,
-          predicate: (request) =>
-            comment.replyTokenPattern.test(requestText(request)) &&
-            !hasGitHubNotificationModelToolResult(request.messages, comment.replyCallId),
-          toolName: 'agent_system_github_reply',
-        },
-        response: (request): ToolCallResponse => ({
-          id: `agent-system-notification-${options.id}-comment-reply-response`,
-          toolCalls: [
-            {
-              arguments: JSON.stringify({
-                body: `{{commenter}}, ${commentReplyToken(request, options)}`,
-              }),
-              id: comment.replyCallId,
-              name: 'agent_system_github_reply',
-            },
-          ],
-        }),
+    fixtures.push({
+      match: {
+        model: /^(?:aimock\/)?gpt-5\.5$/u,
+        predicate: (request) => comment.replyTokenPattern.test(requestText(request)),
+        systemMessage: ['Your final response is published back to the exact source comment'],
       },
-      {
-        match: {
-          model: /^(?:aimock\/)?gpt-5\.5$/u,
-          predicate: (request) =>
-            comment.replyTokenPattern.test(requestText(request)) &&
-            hasGitHubNotificationModelToolResult(request.messages, comment.replyCallId),
-        },
-        response: {
-          content: comment.finalResponse,
-          id: `agent-system-notification-${options.id}-comment-final-response`,
-        },
-      },
-    );
+      response: (request) => ({
+        content: `{{commenter}}, ${commentReplyToken(request, options)}`,
+        id: `agent-system-notification-${options.id}-comment-final-response`,
+      }),
+    });
   }
 
   return {
@@ -354,9 +329,6 @@ export default function createGitHubNotificationIssueWorkScenario(
       { id: options.callIds.patch, name: 'apply_patch' },
       { id: options.callIds.add, name: 'agent_system_git' },
       { id: options.callIds.commit, name: 'agent_system_git' },
-      ...(options.comment
-        ? [{ id: options.comment.replyCallId, name: 'agent_system_github_reply' }]
-        : []),
     ],
   };
 }

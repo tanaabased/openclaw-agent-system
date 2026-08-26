@@ -1,5 +1,6 @@
 import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
 import type { Logger } from '../../../core/logger.ts';
 import {
@@ -20,7 +21,12 @@ import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
   | { status: 'none' }
-  | { status: 'candidate'; publicText: string }
+  | {
+      status: 'candidate';
+      publicText: string;
+      fallbackCode?: string;
+      safetyCategory?: GitHubNotificationPublicationSafetyCategory;
+    }
   | {
       status: 'withheld';
       code: string;
@@ -67,9 +73,29 @@ export interface GitHubNotificationModelTurnCoordinatorResult {
   publication: GitHubNotificationModelTurnPublication;
 }
 
+const githubNotificationSafeReplyFallback =
+  "I received your comment, but I couldn't safely publish the detailed response. I've kept it in the linked private session for review.";
+
+function publicationFailure(error: unknown): {
+  code: string;
+  safetyCategory?: GitHubNotificationPublicationSafetyCategory;
+} {
+  return {
+    code:
+      error instanceof GitHubNotificationPublicationError
+        ? error.code
+        : 'github-notification-publication-validation-failed',
+    ...(error instanceof GitHubNotificationPublicationError && error.safetyCategory
+      ? { safetyCategory: error.safetyCategory }
+      : {}),
+  };
+}
+
 function publication(
   candidates: readonly string[],
+  finalPayloads: readonly ReplyPayload[],
   intent: GitHubNotificationTurnContract['publicationIntent'],
+  source: GitHubNotificationTurnContract['publicationSource'],
 ): GitHubNotificationModelTurnPublication {
   if (intent === undefined) {
     return candidates.length === 0
@@ -78,6 +104,34 @@ function publication(
           status: 'withheld',
           code: 'github-notification-publication-candidate-unexpected',
         };
+  }
+  if (source === 'final') {
+    try {
+      return {
+        status: 'candidate',
+        publicText: githubNotificationPublicationText(intent, finalPayloads),
+      };
+    } catch (error) {
+      const failure = publicationFailure(error);
+      return intent === 'github-reply'
+        ? {
+            status: 'candidate',
+            publicText: githubNotificationPublicationText('github-reply', [
+              { text: githubNotificationSafeReplyFallback },
+            ]),
+            fallbackCode: failure.code,
+            ...(failure.safetyCategory === undefined
+              ? {}
+              : { safetyCategory: failure.safetyCategory }),
+          }
+        : { status: 'withheld', ...failure };
+    }
+  }
+  if (source !== 'candidate') {
+    return {
+      status: 'withheld',
+      code: 'github-notification-publication-source-missing',
+    };
   }
   if (candidates.length === 0) {
     return {
@@ -99,13 +153,7 @@ function publication(
   } catch (error) {
     return {
       status: 'withheld',
-      code:
-        error instanceof GitHubNotificationPublicationError
-          ? error.code
-          : 'github-notification-publication-validation-failed',
-      ...(error instanceof GitHubNotificationPublicationError && error.safetyCategory
-        ? { safetyCategory: error.safetyCategory }
-        : {}),
+      ...publicationFailure(error),
     };
   }
 }
@@ -213,7 +261,13 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
-    const responsePublication = publication(publicCandidates, input.contract.publicationIntent);
+    const privateText = githubNotificationPrivateResponse(turnResult.finalPayloads);
+    const responsePublication = publication(
+      publicCandidates,
+      turnResult.finalPayloads,
+      input.contract.publicationIntent,
+      input.contract.publicationSource,
+    );
     const completion = [
       'github-notifications: model turn completed',
       details,
@@ -225,13 +279,22 @@ export default class GitHubNotificationModelTurnCoordinator {
       `candidates=${publicCandidates.length}`,
       `publication=${responsePublication.status}`,
       ...(responsePublication.status === 'withheld' ? [`code=${responsePublication.code}`] : []),
+      ...(responsePublication.status === 'candidate' && responsePublication.fallbackCode
+        ? [`fallback=${responsePublication.fallbackCode}`]
+        : []),
       ...(responsePublication.status === 'withheld' && responsePublication.safetyCategory
+        ? [`safety=${responsePublication.safetyCategory}`]
+        : []),
+      ...(responsePublication.status === 'candidate' && responsePublication.safetyCategory
         ? [`safety=${responsePublication.safetyCategory}`]
         : []),
       `aborted=${Boolean(input.signal?.aborted)}`,
       `duration-ms=${Date.now() - startedAt}`,
     ].join(' ');
-    if (responsePublication.status === 'withheld') {
+    if (
+      responsePublication.status === 'withheld' ||
+      (responsePublication.status === 'candidate' && responsePublication.fallbackCode)
+    ) {
       this.#dependencies.logger.warn(completion);
     } else {
       this.#dependencies.logger.info(completion);
@@ -240,7 +303,7 @@ export default class GitHubNotificationModelTurnCoordinator {
     return {
       dispatch: turnResult.dispatch,
       finalPayloadCount: turnResult.finalPayloads.length,
-      privateText: githubNotificationPrivateResponse(turnResult.finalPayloads),
+      privateText,
       publication: responsePublication,
     };
   }
