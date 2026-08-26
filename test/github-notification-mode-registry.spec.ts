@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import resolveGitHubNotificationModeCapability from '../channels/github/modes/capability.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
 import type { GitHubNotificationMode } from '../channels/github/modes/types.ts';
+import githubNotificationGuidedMode from '../channels/github/modes/guided.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 describe('channels/github/modes/registry', () => {
@@ -42,10 +43,25 @@ describe('channels/github/modes/registry', () => {
     );
   });
 
+  it('should retain coding capabilities without automatic implementation in guided mode', () => {
+    const registry = new GitHubNotificationModeRegistry([githubNotificationGuidedMode]);
+
+    assert.deepEqual(
+      resolveGitHubNotificationModeCapability(
+        registry.resolve('guided'),
+        { agents: { list: [{ id: 'notification-data', tools: { profile: 'coding' } }] } },
+        'notification-data',
+      ),
+      { disableTools: false, id: 'guided' },
+    );
+    assert.equal(registry.resolve('guided').policy.assignmentContinuation, 'wait-for-input');
+  });
+
   it('should project a declared allowlist without reading configured tools', () => {
     const planMode: GitHubNotificationMode = {
       instructions: 'Plan the current request.',
       policy: {
+        assignmentContinuation: 'wait-for-input',
         id: 'plan',
         label: 'Plan',
         toolProjection: { kind: 'allowlist', tools: ['agent_system_github_reply'] },

@@ -10,7 +10,7 @@ const scenario = resolveGitHubNotificationModelScenario('assignment');
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
-      (id) => !['implementation', 'pr-lifecycle', 'comment', 'retirement'].includes(id),
+      (id) => id === 'assignment',
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPromptMessages = [
@@ -103,6 +103,48 @@ describe('scripts/github-notification-model-evidence', () => {
         ],
       });
     }
+  });
+
+  it('should normalize one guided assignment without a public reply tool call', () => {
+    const selectedScenario = resolveGitHubNotificationModelScenario('guided-assignment');
+    const promptMessages = [
+      { content: selectedScenario.systemPromptSignals.join('\n'), role: 'system' as const },
+      {
+        content: selectedScenario.userPromptSignals?.join('\n') ?? '',
+        role: 'user' as const,
+      },
+    ];
+
+    assert.deepEqual(
+      githubNotificationModelEvidence(selectedScenario, [
+        {
+          body: {
+            messages: promptMessages,
+            model: 'gpt-5.5',
+            tools: [{ function: { name: 'agent_system_github_reply' } }],
+          },
+          method: 'POST',
+          path: '/responses',
+          response: {
+            fixture: { response: { content: selectedScenario.finalResponses[0] } },
+            status: 200,
+          },
+        },
+      ]),
+      {
+        finalResponseCount: 1,
+        model: 'aimock/gpt-5.5',
+        promptRequestCount: 1,
+        provider: 'aimock',
+        requestCount: 1,
+        responsesApiRequestCount: 1,
+        scenario: 'guided-assignment',
+        schemaVersion: 2,
+        strictMissCount: 0,
+        successfulFixtureResponseCount: 1,
+        tools: [],
+      },
+    );
   });
 
   it('should normalize execution tool loops, including repeated retirement assignments', () => {

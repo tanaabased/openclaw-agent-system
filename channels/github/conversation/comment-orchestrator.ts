@@ -46,7 +46,12 @@ export interface GitHubNotificationCommentOrchestratorDependencies {
   clock?: () => number;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
-  initialModeId: GitHubNotificationModeId;
+  initialModeId:
+    | GitHubNotificationModeId
+    | ((input: {
+        agentId: string;
+        workspaceDir: string;
+      }) => GitHubNotificationModeId | Promise<GitHubNotificationModeId>);
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
   monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
@@ -192,7 +197,12 @@ export default class GitHubNotificationCommentOrchestrator {
         return;
       }
     }
-    const modeId = existingConversation?.mode ?? this.#dependencies.initialModeId;
+    const configuredInitialModeId = this.#dependencies.initialModeId;
+    const modeId =
+      existingConversation?.mode ??
+      (typeof configuredInitialModeId === 'function'
+        ? await configuredInitialModeId({ agentId, workspaceDir: monitor.workspaceDir })
+        : configuredInitialModeId);
     this.#dependencies.turnCatalog.resolve({
       eventId: 'comment',
       lifecycleId: item.lifecycleId,

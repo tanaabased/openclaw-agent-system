@@ -7,10 +7,12 @@
 The GitHub notifications channel currently owns trusted polling, assignment
 admission, durable deduplication, routing, and managed issue-worktree intake.
 Accepted issues receive a private assignment card and an immediate public
-acknowledgment, then run one initial assignment turn that keeps its full report
-in the OpenClaw session and publishes a bounded conversational response. A
-published Work plan schedules one private implementation turn in the same
-session and worktree on the next reconciliation. That turn implements,
+acknowledgment, then run one initial assignment turn in the configured mode.
+Work keeps its full report in the OpenClaw session, publishes a bounded plan,
+and schedules one private implementation turn in the same session and worktree
+on the next reconciliation. Guided keeps a brief waiting acknowledgment in the
+private session, uses the deterministic acknowledgment as its complete public
+response, and waits for operator or approved-comment direction. A Work implementation turn implements,
 validates, and creates one local commit. The lifecycle then prepends the trusted
 issue number, performs the first ordinary push, and creates or normalizes one
 pull request assigned to the issue author. For prepared issues, the channel also
@@ -28,14 +30,16 @@ to its exact source item.
 - Accepted issues create or reuse one deterministic managed worktree and one
   OpenClaw lifecycle session. The session begins with a compact assignment card
   that names the current issue title, then the channel publishes one deterministic,
-  varied acknowledgment before running the registered `issue`, `work`, and
-  `assignment` turn. The turn receives bounded title, body, labels, and recent
-  comments as private structured context, keeps its private assessment and plan in
-  the session, and may publish one bounded conversational response. A valid
-  published assignment response deterministically registers a pending `issue`,
-  `work`, and `implementation` turn from trusted
-  tuple state rather than model-authored report formatting. The next reconciliation
-  carries out the plan and validates it in the same session and worktree, then
+  varied acknowledgment before running the registered issue, configured-mode,
+  and assignment turn. The turn receives bounded title, body, labels, and recent
+  comments as private structured context. Work keeps its private assessment and
+  plan in the session and may publish one bounded conversational response. A
+  valid published Work response deterministically registers a pending `issue`,
+  `work`, and `implementation` turn from trusted tuple state rather than
+  model-authored report formatting. Guided records a brief private waiting
+  response, publishes no additional assignment comment, and schedules no
+  implementation until later operator input or an approved comment. The next
+  Work reconciliation carries out the plan and validates it in the same session and worktree, then
   creates one local commit without publishing another GitHub response. Durable
   lifecycle delivery prepends the trusted issue number to that commit, performs
   the first ordinary push, and creates or normalizes one open pull request with
@@ -142,6 +146,7 @@ github:
   notifications:
     assignment-types:
       - issue
+    initial-mode: work
     interval-minutes: 5
     approved-actors:
       - login: pirog
@@ -151,12 +156,13 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-| Field                       | Required | Default                    | Purpose                                 |
-| --------------------------- | -------- | -------------------------- | --------------------------------------- |
-| `assignment-types`          | no       | `issue` and `pull-request` | Selects assignment kinds to discover    |
-| `approved-actors`           | yes      | none                       | GitHub users allowed to assign work     |
-| `allowed-repository-owners` | no       | any                        | Filters assignments by repository owner |
-| `interval-minutes`          | no       | `5`                        | Sets polling from 1 to 1440 minutes     |
+| Field                       | Required | Default                    | Purpose                                  |
+| --------------------------- | -------- | -------------------------- | ---------------------------------------- |
+| `assignment-types`          | no       | `issue` and `pull-request` | Selects assignment kinds to discover     |
+| `approved-actors`           | yes      | none                       | GitHub users allowed to assign work      |
+| `allowed-repository-owners` | no       | any                        | Filters assignments by repository owner  |
+| `initial-mode`              | no       | `work`                     | Starts accepted issues in Work or Guided |
+| `interval-minutes`          | no       | `5`                        | Sets polling from 1 to 1440 minutes      |
 
 Every approved actor and allowed owner requires a GitHub login and immutable
 GitHub node id. Node ids must be unique within each list. The optional owner
@@ -241,10 +247,10 @@ reference.
   model-turn time, and monitor and conversation state do not retain incoming
   provider prose.
 - An approved actor may enter the conversation but cannot select capabilities.
-  The current channel-owned turn identity selects the registered `issue`,
-  `work`, and `assignment`, `implementation`, or `comment` combination; its
-  registry rejects unsupported combinations, and the trusted Work policy
-  requires the configured `coding` profile.
+  The current channel-owned turn identity selects the registered issue,
+  configured mode, and assignment, implementation, or comment combination; its
+  registry rejects unsupported combinations, and both trusted Work and Guided
+  policies require the configured `coding` profile.
 - The current Work assignment slice requires an implementation-ready plan and
   does not yet expose a clarification pause as a structured lifecycle outcome.
   The target clarification behavior remains documented in `DESIGN.md`.

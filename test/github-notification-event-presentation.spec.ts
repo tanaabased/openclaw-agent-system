@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import githubNotificationAssignmentAcknowledgment, {
   githubNotificationAssignmentAcknowledgments,
+  githubNotificationGuidedAssignmentAcknowledgments,
 } from '../channels/github/events/assignment-acknowledgment.ts';
 import { githubNotificationAssignmentCard } from '../channels/github/events/assignment.ts';
 import { githubNotificationCommentPresentation } from '../channels/github/events/comment.ts';
@@ -37,6 +38,29 @@ describe('channels/github/events/presentation', () => {
         '',
         '[@pirog](https://github.com/pirog) assigned you to [tanaabased/example#12](https://github.com/tanaabased/example/issues/12). Please begin working on it in `work` mode.',
       ].join('\n'),
+    );
+  });
+
+  it('should render a guided assignment as prepared and waiting', () => {
+    assert.match(
+      githubNotificationAssignmentCard(
+        {
+          emoji: '📥',
+          item: {
+            kind: 'Issue',
+            label: 'tanaabased/example#12',
+            url: 'https://github.com/tanaabased/example/issues/12',
+          },
+          sender: {
+            id: 'U_actor',
+            label: 'pirog',
+            url: 'https://github.com/pirog',
+          },
+          timestamp: 1_755_259_200_000,
+        },
+        'guided',
+      ),
+      /workspace is prepared; wait for operator direction in `guided` mode/u,
     );
   });
 
@@ -83,6 +107,15 @@ describe('channels/github/events/presentation', () => {
     for (const text of githubNotificationAssignmentAcknowledgments) {
       assert.equal(githubNotificationPublicationText('initial-acknowledgment', [{ text }]), text);
     }
+    assert.equal(githubNotificationGuidedAssignmentAcknowledgments.length, 12);
+    assert.equal(
+      new Set(githubNotificationGuidedAssignmentAcknowledgments).size,
+      githubNotificationGuidedAssignmentAcknowledgments.length,
+    );
+    for (const text of githubNotificationGuidedAssignmentAcknowledgments) {
+      assert.equal(githubNotificationPublicationText('initial-acknowledgment', [{ text }]), text);
+      assert.match(text, /wait|ready|standing by/u);
+    }
     const selected = githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_assignment');
     assert.equal(githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_assignment'), selected);
     assert.ok(
@@ -91,6 +124,10 @@ describe('channels/github/events/presentation', () => {
           githubNotificationAssignmentAcknowledgment('tanaabot', `EV_assignment_${index}`),
         ),
       ).size >= 16,
+    );
+    assert.equal(
+      githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_guided', 'guided'),
+      githubNotificationAssignmentAcknowledgment('tanaabot', 'EV_guided', 'guided'),
     );
   });
 

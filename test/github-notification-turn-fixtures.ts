@@ -11,6 +11,7 @@ import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../channels/github/modes/registry.ts';
+import githubNotificationGuidedMode from '../channels/github/modes/guided.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 
 export function createGitHubNotificationTurnDefinitions(options?: {
@@ -37,7 +38,10 @@ export function createGitHubNotificationTurnDefinitions(options?: {
       }),
       ...(options?.includePullRequest ? [new GitHubPullRequestLifecycle()] : []),
     ]),
-    modes: new GitHubNotificationModeRegistry([githubNotificationWorkMode]),
+    modes: new GitHubNotificationModeRegistry([
+      githubNotificationGuidedMode,
+      githubNotificationWorkMode,
+    ]),
   };
 }
 

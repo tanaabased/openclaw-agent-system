@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import type {
   AssembledInboundReply,
   PreparedInboundReply,
@@ -46,6 +48,7 @@ import GitHubIssueLifecycle, {
 import GitHubPullRequestLifecycle from '../lifecycles/pull-request.ts';
 import GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import GitHubNotificationModeRegistry from '../modes/registry.ts';
+import githubNotificationGuidedMode from '../modes/guided.ts';
 import githubNotificationWorkMode from '../modes/work.ts';
 import GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import createGitHubNotificationMessageAdapter from '../publication/message-adapter.ts';
@@ -107,7 +110,10 @@ export default function createGitHubNotificationRuntime(
     new GitHubIssueLifecycle(dependencies.worktrees),
     new GitHubPullRequestLifecycle(),
   ]);
-  const modeRegistry = new GitHubNotificationModeRegistry([githubNotificationWorkMode]);
+  const modeRegistry = new GitHubNotificationModeRegistry([
+    githubNotificationGuidedMode,
+    githubNotificationWorkMode,
+  ]);
   const eventRegistry = new GitHubNotificationEventRegistry([
     githubNotificationAssignmentEvent,
     githubNotificationCommentEvent,
@@ -124,7 +130,6 @@ export default function createGitHubNotificationRuntime(
     logger: dependencies.lifecycleLogger,
     turns: turnCatalog,
   });
-  const initialMode = modeRegistry.resolve('work');
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
   const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
     dispatchReplyWithBufferedBlockDispatcher: dependencies.dispatchReplyWithBufferedBlockDispatcher,
@@ -159,6 +164,18 @@ export default function createGitHubNotificationRuntime(
     },
     replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
     assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
+      const initialMode = async (input: { agentId: string; workspaceDir: string }) => {
+        const loaded = await manifestService.loadForAgentId(input.agentId, 'service');
+        if (
+          loaded.status !== 'loaded' ||
+          loaded.manifest.agent.id !== input.agentId ||
+          resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir) ||
+          !loaded.manifest.github?.notifications
+        ) {
+          throw new Error('The GitHub notification initial mode configuration is unavailable.');
+        }
+        return modeRegistry.resolve(loaded.manifest.github.notifications.initialMode ?? 'work');
+      };
       const assignmentProvider = new GitHubNotificationAssignmentProvider({
         accountClient: dependencies.accountClient,
         manifestService,
@@ -224,7 +241,7 @@ export default function createGitHubNotificationRuntime(
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
-        initialModeId: initialMode.policy.id,
+        initialModeId: async (input) => (await initialMode(input)).policy.id,
         lifecycles: lifecycleRegistry,
         logger: dependencies.lifecycleLogger,
         monitorStateStore,

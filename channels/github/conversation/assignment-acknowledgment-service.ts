@@ -74,6 +74,7 @@ export default class GitHubNotificationAssignmentAcknowledgmentService {
       const publicText = githubNotificationAssignmentAcknowledgment(
         input.agentId,
         intake.assignmentEventId,
+        input.modeId,
       );
       acknowledgment = {
         publicText,

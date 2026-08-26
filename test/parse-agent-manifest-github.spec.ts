@@ -96,8 +96,27 @@ github:
       assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_kgDOB9x7Qw' }],
       allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
+      initialMode: 'work',
       intervalMinutes: 5,
     });
+  });
+
+  it('should parse a guided github notification initial mode', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    initial-mode: guided
+    approved-actors:
+      - login: pirog
+        node-id: U_1
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status !== 'valid') return;
+    assert.equal(result.manifest.github?.notifications?.initialMode, 'guided');
   });
 
   it('should reject unsafe github notification configuration', () => {

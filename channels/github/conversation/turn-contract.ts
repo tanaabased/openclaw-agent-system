@@ -77,14 +77,17 @@ export default class GitHubNotificationTurnContractResolver {
     agentId: string,
   ): GitHubNotificationTurnContract {
     const turn = this.#dependencies.turns.resolve(identity);
+    const publicationIntent =
+      identity.eventId === 'assignment' &&
+      turn.mode.policy.assignmentContinuation === 'wait-for-input'
+        ? undefined
+        : turn.eventTurn.publicationIntent;
     return {
       identity: turn.identity,
       instructions: turnInstructions(turn),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
-      ...(turn.eventTurn.publicationIntent === undefined
-        ? {}
-        : { publicationIntent: turn.eventTurn.publicationIntent }),
+      ...(publicationIntent === undefined ? {} : { publicationIntent }),
     };
   }
 }

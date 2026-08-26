@@ -1,0 +1,13 @@
+{
+  "finalResponseCount": 1,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 1,
+  "provider": "aimock",
+  "requestCount": 1,
+  "responsesApiRequestCount": 1,
+  "scenario": "guided-assignment",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 1,
+  "tools": []
+}

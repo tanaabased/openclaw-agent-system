@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added an operator-led Guided GitHub notification mode that prepares the normal issue session and worktree, publishes one waiting acknowledgment, and defers implementation until explicit input. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 - Added bounded GitHub issue content to assignment cards and private assignment and implementation turn context. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)
 - Added canonical GitHub issue forms for Task, Bug, and Feature intake. [#47](https://github.com/tanaabased/openclaw-agent-system/pull/47)

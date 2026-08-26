@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import GitHubNotificationTurnCatalog, {
   GitHubNotificationTurnCatalogError,
+  githubNotificationIssueGuidedAssignmentTurnIdentity,
+  githubNotificationIssueGuidedCommentTurnIdentity,
   githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationIssueWorkImplementationTurnIdentity,
@@ -28,6 +30,14 @@ describe('channels/github/conversation/turn-catalog', () => {
     assert.equal(definition.eventTurn.kind, 'model');
     assert.equal(definition.lifecycle.id, 'issue');
     assert.equal(definition.mode.policy.id, 'work');
+    assert.deepEqual(
+      catalog.resolve(githubNotificationIssueGuidedAssignmentTurnIdentity).identity,
+      githubNotificationIssueGuidedAssignmentTurnIdentity,
+    );
+    assert.deepEqual(
+      catalog.resolve(githubNotificationIssueGuidedCommentTurnIdentity).identity,
+      githubNotificationIssueGuidedCommentTurnIdentity,
+    );
     assert.deepEqual(
       catalog.resolve(githubNotificationIssueWorkAssignmentTurnIdentity).identity,
       githubNotificationIssueWorkAssignmentTurnIdentity,

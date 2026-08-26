@@ -14,6 +14,7 @@ jobs:
       matrix:
         scenario:
           - assignment
+          - guided-assignment
           - implementation
           - pr-lifecycle
           - comment

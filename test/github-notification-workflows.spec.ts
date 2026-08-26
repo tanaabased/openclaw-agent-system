@@ -84,6 +84,7 @@ describe('github notification workflows', () => {
     assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications']);
     assert.deepEqual(inputs.scenario?.options, [
       'assignment',
+      'guided-assignment',
       'implementation',
       'pr-lifecycle',
       'comment',
@@ -127,7 +128,14 @@ describe('github notification workflows', () => {
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);
     assert.deepEqual(notifications?.strategy?.matrix, {
-      scenario: ['assignment', 'implementation', 'pr-lifecycle', 'comment', 'retirement'],
+      scenario: [
+        'assignment',
+        'guided-assignment',
+        'implementation',
+        'pr-lifecycle',
+        'comment',
+        'retirement',
+      ],
     });
     assert.deepEqual(notifications?.with, {
       provider: 'mock',
@@ -182,7 +190,8 @@ describe('github notification workflows', () => {
       leiaStep?.env?.OP_SERVICE_ACCOUNT_TOKEN,
       '${{ secrets.op_service_account_token }}',
     );
-    assert.match(leiaStep?.run ?? '', /scenarios\/issue-work-\$\{\{ inputs\.scenario \}\}/u);
+    assert.match(leiaStep?.run ?? '', /scenario_path="issue-work-\$\{\{ inputs\.scenario \}\}"/u);
+    assert.match(leiaStep?.run ?? '', /scenario_path=issue-guided-assignment/u);
     assert.match(source, /HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed/u);
     assert.match(source, /bun install --frozen-lockfile --ignore-scripts/u);
   });
@@ -202,6 +211,22 @@ describe('github notification workflows', () => {
     assert.match(source, /length\) <= 800/u);
     assert.equal(source.includes(githubNotificationAssignmentCandidate), false);
     assert.equal(expectedEvidence.scenario, 'assignment');
+  });
+
+  it('should keep guided assignment as one provider-neutral waiting scenario', async () => {
+    const source = await readFile('scenarios/issue-guided-assignment/README.md', 'utf8');
+    const expectedEvidence = JSON.parse(
+      await readFile('scenarios/issue-guided-assignment/expected-evidence.json', 'utf8'),
+    ) as { requestCount?: number; scenario?: string; tools?: unknown[] };
+
+    assert.match(source, /--scenario guided-assignment/u);
+    assert.match(source, /initial-mode: guided/u);
+    assert.match(source, /agent-system-github-publication:initial-acknowledgment/u);
+    assert.match(source, /test "\$response_count" -eq 0/u);
+    assert.match(source, /test -z "\$status"/u);
+    assert.equal(expectedEvidence.scenario, 'guided-assignment');
+    assert.equal(expectedEvidence.requestCount, 1);
+    assert.deepEqual(expectedEvidence.tools, []);
   });
 
   it('should keep retirement as one provider-neutral lifecycle scenario', async () => {

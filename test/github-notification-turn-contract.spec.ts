@@ -89,8 +89,8 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.equal(contract.lifecycle.id, 'issue');
     assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
     assert.equal(contract.publicationIntent, 'assignment-response');
-    assert.match(contract.instructions, /initial planning turn/u);
-    assert.match(contract.instructions, /Plan only during this turn/u);
+    assert.match(contract.instructions, /initial turn for an assigned issue/u);
+    assert.match(contract.instructions, /do not implement the issue during this turn/u);
     assert.match(contract.instructions, /describe the issue from the user's perspective/u);
     assert.match(contract.instructions, /problem or missing behavior/u);
     assert.match(contract.instructions, /implementation-ready plan/u);
@@ -105,6 +105,35 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.match(contract.instructions, /Do not describe planned work as completed/u);
     assert.doesNotMatch(contract.instructions, /\{\{commenter\}\}/u);
     assert.doesNotMatch(contract.instructions, /exactly one precise clarification question/u);
+  });
+
+  it('should compose an operator-led guided assignment contract', () => {
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      { eventId: 'assignment', lifecycleId: 'issue', modeId: 'guided' },
+      contractConfig,
+      'tanaabot',
+    );
+
+    assert.deepEqual(contract.mode, { disableTools: false, id: 'guided' });
+    assert.equal(contract.publicationIntent, undefined);
+    assert.match(contract.instructions, /initial assignment authorizes setup and acknowledgment/u);
+    assert.match(contract.instructions, /waiting for direction/u);
+    assert.match(contract.instructions, /deterministic assignment acknowledgment/u);
+    assert.match(contract.instructions, /do not call the tool/u);
+    assert.match(contract.instructions, /one brief acknowledgment/u);
+    assert.doesNotMatch(contract.instructions, /Carry out that plan now/u);
+  });
+
+  it('should retain guided mode for later approved comments', () => {
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      { eventId: 'comment', lifecycleId: 'issue', modeId: 'guided' },
+      contractConfig,
+      'tanaabot',
+    );
+
+    assert.deepEqual(contract.mode, { disableTools: false, id: 'guided' });
+    assert.equal(contract.publicationIntent, 'github-reply');
+    assert.match(contract.instructions, /act only on that current request/u);
   });
 
   it('should compose one private implementation continuation contract', () => {

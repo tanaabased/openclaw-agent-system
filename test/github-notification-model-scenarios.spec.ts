@@ -6,6 +6,7 @@ import {
   type ToolCallResponse,
 } from '@copilotkit/aimock';
 
+import { githubNotificationGuidedAssignmentFinalResponse } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
   githubNotificationImplementationAddCallId,
@@ -42,9 +43,10 @@ import resolveGitHubNotificationModelScenario, {
 import { githubNotificationPullRequestOpenedFinalResponse } from '../scripts/github-notification-model-issue-work-scenario.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the five provider-neutral scenarios', () => {
+  it('should resolve the six provider-neutral scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
+      'guided-assignment',
       'implementation',
       'pr-lifecycle',
       'comment',
@@ -67,6 +69,13 @@ describe('scripts/github-notification-model-scenarios', () => {
       return toolCall?.id;
     });
     assert.equal(new Set(callIds).size, callIds.length);
+
+    const guidedAssignment = resolveGitHubNotificationModelScenario('guided-assignment');
+    assert.equal(guidedAssignment.fixtures.length, 1);
+    assert.deepEqual(guidedAssignment.finalResponses, [
+      githubNotificationGuidedAssignmentFinalResponse,
+    ]);
+    assert.deepEqual(guidedAssignment.toolCalls, []);
 
     const executionScenarios = [
       {
@@ -185,6 +194,23 @@ describe('scripts/github-notification-model-scenarios', () => {
     request.messages[1]!.content = userPromptSignals
       .filter((signal) => signal !== 'Create assignment-planning-')
       .join('\n');
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should require guided assignment context without a public reply tool call', () => {
+    const scenario = resolveGitHubNotificationModelScenario('guided-assignment');
+    const request: ChatCompletionRequest = {
+      messages: [
+        { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
+        { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    assert.deepEqual(scenario.toolCalls, []);
+    request.messages[1]!.content = 'missing guided assignment evidence';
     assert.equal(matchFixture([...scenario.fixtures], request), null);
   });
 

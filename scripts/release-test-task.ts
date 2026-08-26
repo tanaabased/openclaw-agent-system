@@ -175,6 +175,8 @@ try {
     for (const path of [
       'AGENTS.md',
       'examples/install/README.md',
+      'scenarios/issue-guided-assignment/expected-evidence.json',
+      'scenarios/issue-guided-assignment/model-fixture.ts',
       'scenarios/issue-work-assignment/expected-evidence.json',
       'scenarios/issue-work-assignment/model-fixture.ts',
       'scenarios/issue-work-comment/expected-evidence.json',

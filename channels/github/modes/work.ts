@@ -5,6 +5,7 @@ import type { GitHubNotificationMode } from './types.ts';
 const githubNotificationWorkMode: GitHubNotificationMode = {
   instructions: githubNotificationWorkModeInstructions,
   policy: {
+    assignmentContinuation: 'implementation',
     id: 'work',
     label: 'Work',
     toolProjection: { kind: 'inherit-configured', requiredProfile: 'coding' },

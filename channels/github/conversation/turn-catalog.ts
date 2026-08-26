@@ -39,6 +39,18 @@ export const githubNotificationIssueWorkCommentTurnIdentity = {
   modeId: 'work',
 } as const satisfies GitHubNotificationTurnIdentity;
 
+export const githubNotificationIssueGuidedCommentTurnIdentity = {
+  eventId: 'comment',
+  lifecycleId: 'issue',
+  modeId: 'guided',
+} as const satisfies GitHubNotificationTurnIdentity;
+
+export const githubNotificationIssueGuidedAssignmentTurnIdentity = {
+  eventId: 'assignment',
+  lifecycleId: 'issue',
+  modeId: 'guided',
+} as const satisfies GitHubNotificationTurnIdentity;
+
 export const githubNotificationIssueWorkAssignmentTurnIdentity = {
   eventId: 'assignment',
   lifecycleId: 'issue',
@@ -58,6 +70,8 @@ export const githubNotificationIssueWorkPullRequestOpenedTurnIdentity = {
 } as const satisfies GitHubNotificationTurnIdentity;
 
 export const githubNotificationSupportedTurnIdentities = [
+  githubNotificationIssueGuidedAssignmentTurnIdentity,
+  githubNotificationIssueGuidedCommentTurnIdentity,
   githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationIssueWorkImplementationTurnIdentity,
