@@ -79,8 +79,15 @@ to its exact source item.
   paths. The model can position one reserved commenter placeholder naturally;
   after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
+- The bundled [GitHub Update skill](../../skills/github-update/SKILL.md) can be
+  invoked explicitly by the private operator or selected for an already-admitted
+  request in any supported mode. It reconciles the current private session with
+  the stable owning issue and publishes only missing material progress. This is
+  a mode-neutral operator workflow, not a lifecycle event or mode transition.
 - Plan and Auto modes, mode transitions, directly assigned pull-request comment
-  sessions, and chat-originated publication remain intentionally dormant.
+  sessions, and channel-owned chat-originated publication remain intentionally
+  dormant. The GitHub Update skill uses the agent-scoped GitHub integration for
+  an explicit private-session write when no notification reply turn is active.
 - A provider-verified repository rename refreshes the tracked canonical name,
   owner login, clone URL, default branch, and permission. Issue worktree
   preparation may then reconcile the shared managed clone origin after matching

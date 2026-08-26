@@ -154,6 +154,8 @@ try {
     'skills/git-cli/agents/openai.yaml',
     'skills/github-cli/SKILL.md',
     'skills/github-cli/agents/openai.yaml',
+    'skills/github-update/SKILL.md',
+    'skills/github-update/agents/openai.yaml',
     'assets/agent-system.png',
     'assets/git-icon-small.svg',
     'assets/git-icon-large.svg',

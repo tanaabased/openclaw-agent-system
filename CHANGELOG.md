@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added a mode-neutral GitHub Update skill that reconciles private notification progress with the owning public issue and publishes one safe, concise update only when material context is missing. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
 - Added an operator-led Guided GitHub notification mode that prepares the normal issue session and worktree, publishes one waiting acknowledgment, and defers implementation until explicit input. [#58](https://github.com/tanaabased/openclaw-agent-system/pull/58)
 - Added attributed incoming GitHub comment cards with manifest-owned agent emoji, OpenClaw identity links, and exact source-comment provenance. [#46](https://github.com/tanaabased/openclaw-agent-system/pull/46)
 - Added bounded GitHub issue content to assignment cards and private assignment and implementation turn context. [#54](https://github.com/tanaabased/openclaw-agent-system/pull/54)

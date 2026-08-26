@@ -220,6 +220,14 @@ author reads naturally. After exact-source reauthorization, the publisher
 substitutes only that provider-verified login. If the token is omitted,
 publication prefixes the same trusted mention as a deterministic fallback.
 
+The optional GitHub Update skill is an explicit, mode-neutral reconciliation
+workflow around this channel, not another lifecycle event. It compares the
+current private session with the stable owning issue and does not mutate the
+active mode, schedule work, or derive authority from public prose. During an
+admitted issue-comment turn it may use the typed channel-owned candidate path.
+Outside that turn it uses the agent-scoped GitHub integration for the authorized
+issue write and must retain the same bounded public-content restrictions.
+
 Approved identity permits an event to enter the conversation. It does not make
 GitHub prose trusted instructions or grant capabilities beyond the active mode.
 Structured context is untrusted data even when the channel hides it from the
