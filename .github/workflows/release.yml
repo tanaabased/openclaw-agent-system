@@ -154,7 +154,9 @@ jobs:
             --owner tanaab \
             --tags "${{ github.event.release.prerelease && 'edge' || 'latest,edge' }}" \
             --source-repo "${{ github.repository }}" \
-            --source-commit "${{ github.sha }}"
+            --source-commit "${{ github.sha }}" \
+            --wait \
+            --wait-timeout 1800
 
   finalize:
     name: Finalize release
