@@ -121,6 +121,29 @@ function authority(
   };
 }
 
+function deliveryPullRequestItem(merged: boolean, state: 'closed' | 'open') {
+  return {
+    assignees: [],
+    databaseId: 45,
+    itemType: 'pull-request' as const,
+    nodeId: 'PR_delivery',
+    number: 45,
+    pullRequest: {
+      baseRef: 'main',
+      baseRepositoryDatabaseId: 3,
+      baseRepositoryNodeId: 'R_repo',
+      draft: false,
+      headRef: 'issue-12',
+      headRepositoryDatabaseId: 3,
+      headRepositoryNodeId: 'R_repo',
+      headSha: 'a'.repeat(40),
+      merged,
+    },
+    state,
+    updatedAt: '2026-08-25T12:00:00.000Z',
+  };
+}
+
 function terminalAuthority(merged: boolean): {
   open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
 } {
@@ -134,29 +157,42 @@ function terminalAuthority(merged: boolean): {
             throw new Error('unexpected comment read');
           },
           async getItem() {
-            return {
-              assignees: [],
-              databaseId: 45,
-              itemType: 'pull-request' as const,
-              nodeId: 'PR_delivery',
-              number: 45,
-              pullRequest: {
-                baseRef: 'main',
-                baseRepositoryDatabaseId: 3,
-                baseRepositoryNodeId: 'R_repo',
-                draft: false,
-                headRef: 'issue-12',
-                headRepositoryDatabaseId: 3,
-                headRepositoryNodeId: 'R_repo',
-                headSha: 'a'.repeat(40),
-                merged,
-              },
-              state: 'closed' as const,
-              updatedAt: '2026-08-25T12:00:00.000Z',
-            };
+            return deliveryPullRequestItem(merged, 'closed');
           },
           async listIssueComments() {
             throw new Error('terminal transitions must stop before comment reads');
+          },
+        },
+        configuration,
+      };
+    },
+  };
+}
+
+function reopenedAuthority(
+  comments: GitHubCanonicalIssueComment[],
+  listedNumbers: number[],
+): {
+  open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
+} {
+  return {
+    async open() {
+      return {
+        authorized: true,
+        client: {
+          identity: notificationAccount,
+          async getIssueComment() {
+            throw new Error('fresh baselines must stop before exact comment reads');
+          },
+          async getItem() {
+            return deliveryPullRequestItem(false, 'open');
+          },
+          async listIssueComments(_owner: string, _repository: string, number: number) {
+            listedNumbers.push(number);
+            return {
+              comments: number === 45 ? structuredClone(comments) : [],
+              truncated: false,
+            };
           },
         },
         configuration,
@@ -551,6 +587,83 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       status: 'closed',
     });
     assert.equal(monitors.snapshot().items[notificationItemKey]?.disposition, 'approved');
+  });
+
+  it('should establish a fresh baseline before admitting comments from a reopened pull request', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: false,
+        eventRecorded: true,
+        itemDatabaseId: 45,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'closed',
+      },
+      implementation: { status: 'completed' },
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const historicComment = comment('@tanaabot historic pull request comment', {
+      databaseId: 92,
+      nodeId: 'IC_historic_pr_comment',
+    });
+    const listedNumbers: number[] = [];
+    const conversations = memoryStateStore(state);
+    let turns = 0;
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: reopenedAuthority([historicComment], listedNumbers),
+      conversationStateStore: conversations,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitorStateStore(monitor),
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
+      turns: {
+        async respond() {
+          turns += 1;
+          throw new Error('unexpected turn');
+        },
+      },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(listedNumbers, []);
+    assert.deepEqual(conversations.snapshot()?.conversations[id]?.deliveryPullRequest, {
+      baselineEstablished: false,
+      eventRecorded: true,
+      itemDatabaseId: 45,
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(listedNumbers, [12, 45]);
+    assert.equal(turns, 0);
+    assert.equal(
+      conversations.snapshot()?.conversations[id]?.deliveryPullRequest?.baselineEstablished,
+      true,
+    );
+    assert.deepEqual(
+      conversations.snapshot()?.conversations[id]?.revisions.IC_historic_pr_comment,
+      {
+        bodyDigest: githubCommentRevision(historicComment).bodyDigest,
+        commentDatabaseId: 92,
+        reasonCode: 'comment-baseline',
+        revisionId: githubCommentRevision(historicComment).revisionId,
+        source: { itemType: 'pull-request', number: 45 },
+        status: 'baseline',
+      },
+    );
   });
 
   it('should retire the issue-owned session when the delivery pull request is merged', async () => {
