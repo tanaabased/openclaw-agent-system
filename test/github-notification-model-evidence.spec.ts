@@ -211,7 +211,7 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({ content: selectedScenario.finalResponses[2] }));
       if (hasComment) {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
-        entries.push(request({ content: selectedScenario.finalResponses[3] }));
+        entries.push(request({ content: '{{commenter}}, dynamic-comment-reply-token' }));
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';

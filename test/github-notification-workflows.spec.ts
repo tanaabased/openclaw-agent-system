@@ -309,7 +309,8 @@ describe('github notification workflows', () => {
     assert.match(source, /agent-system-pr-lifecycle-base-/u);
     assert.match(source, /pr edit "\$pull_request_number".*--base "\$retirement_base"/u);
     assert.match(source, /--json mergeable --jq \.mergeable/u);
-    assert.match(source, /test "\$mergeable" = MERGEABLE/u);
+    assert.match(source, /CONFLICTING\) exit 1/u);
+    assert.match(source, /MERGEABLE \| UNKNOWN\) ;;/u);
     assert.match(source, /pr merge "\$pull_request_number".*--merge/u);
     assert.match(source, /\.mergedBy\.login == "emoriwan"/u);
     assert.match(source, /--json state --jq \.state \| grep -Fx OPEN/u);

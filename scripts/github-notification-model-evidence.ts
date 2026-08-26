@@ -117,10 +117,9 @@ export default function githubNotificationModelEvidence(
   const requests = entries.filter((entry) => entry.body !== null);
   const toolNames = [...new Set(scenario.toolCalls.map(({ name }) => name))].sort();
   return {
-    finalResponseCount: requests.filter((entry) => {
-      const content = fixtureResponse(entry).content;
-      return typeof content === 'string' && scenario.finalResponses.includes(content);
-    }).length,
+    finalResponseCount: requests.filter(
+      (entry) => typeof fixtureResponse(entry).content === 'string',
+    ).length,
     model: normalizedModel(requests[0]?.body?.model, scenario),
     promptRequestCount: requests.filter((entry) => {
       const messages = entry.body?.messages ?? [];
