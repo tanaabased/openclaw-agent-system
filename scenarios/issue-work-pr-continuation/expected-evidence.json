@@ -5,7 +5,7 @@
   "provider": "aimock",
   "requestCount": 10,
   "responsesApiRequestCount": 10,
-  "scenario": "retirement",
+  "scenario": "pr-continuation",
   "schemaVersion": 2,
   "strictMissCount": 0,
   "successfulFixtureResponseCount": 10,
@@ -23,7 +23,7 @@
       "resultRequestCount": 4
     },
     {
-      "callResponseCount": 1,
+      "callResponseCount": 2,
       "name": "agent_system_github_reply",
       "projectionRequestCount": 10,
       "resultRequestCount": 2

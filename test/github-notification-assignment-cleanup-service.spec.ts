@@ -87,7 +87,7 @@ function fixture(
               revisions: {},
             },
           },
-          schemaVersion: 6 as const,
+          schemaVersion: 7 as const,
           workspaceDir,
         };
       },

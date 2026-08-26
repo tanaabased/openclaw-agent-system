@@ -14,8 +14,10 @@ session and worktree on the next reconciliation. That turn implements,
 validates, and creates one local commit. The lifecycle then prepends the trusted
 issue number, performs the first ordinary push, and creates or normalizes one
 pull request assigned to the issue author. For prepared issues, the channel also
-admits new approved comments into that session and publishes the accepted public
-part of the response.
+links that delivered pull request to the issue-owned session, publishes a
+private `pull-request-opened` turn and deterministic handoff on the issue, admits
+new approved comments from either item, and publishes each accepted response back
+to its exact source item.
 
 ## Current Behavior
 
@@ -38,21 +40,26 @@ part of the response.
   lifecycle delivery prepends the trusted issue number to that commit, performs
   the first ordinary push, and creates or normalizes one open pull request with
   the issue title, default base branch, closing reference, and issue-author
-  assignee. Pull-request assignments retain bounded head metadata without
-  creating a worktree.
-- Prepared issues establish a comment baseline without replaying history. A new
-  or edited exact-mention comment from an approved human resumes the existing
-  issue session with an attributed comment card as its direct message. The card
+  assignee. Delivery checkpoints that pull request as the bounded delivery source,
+  baselines its existing comments without replaying them, runs the registered
+  `issue`, `work`, and `pull-request-opened` turn with a private card and response,
+  and publishes one deterministic handoff comment on the issue. Pull-request
+  assignments retain bounded head metadata without creating a worktree.
+- Each prepared issue and its open delivery pull request establish independent
+  comment baselines without replaying history. A new or edited exact-mention
+  comment from an approved human on either item resumes the existing issue-owned
+  session with an attributed comment card as its direct message. The card
   replaces admitted account mentions with the installed agent emoji and name,
   links the agent to OpenClaw's Agents page, and links its footer to the GitHub
-  author and exact source comment. Agents without an emoji use `🤖`.
+  author and exact source comment. The accepted reply is published back to that
+  same issue or pull request. Agents without an emoji use `🤖`.
 - Incoming GitHub prose remains exact apart from the presented account mention,
   including its standard Markdown source, and the untouched comment is retained
   as the raw inbound body. GitHub-specific shorthand may remain literal in
   OpenClaw. Each lifecycle projects its own bounded source, repository, and
   resource facts as private structured context. The current comment flow
   requires the agent's `coding` profile.
-- Hidden instructions for assignment, implementation, and comment turns are
+- Hidden instructions for assignment, implementation, pull-request-opened, and comment turns are
   composed from their registered lifecycle, mode, and event definitions,
   selected from the private active-turn descriptor, and injected through the
   prompt hook. Missing or unsupported selection does not fall back to a
@@ -68,21 +75,22 @@ part of the response.
   paths. The model can position one reserved commenter placeholder naturally;
   after exact-source reauthorization, Agent System replaces it with the verified
   author login or prefixes that trusted mention when the placeholder is omitted.
-- Pull-request comments, Plan and Auto modes, mode transitions, issue-to-pull-
-  request session handoff, and chat-originated publication remain intentionally
-  dormant.
+- Plan and Auto modes, mode transitions, directly assigned pull-request comment
+  sessions, and chat-originated publication remain intentionally dormant.
 - A provider-verified repository rename refreshes the tracked canonical name,
   owner login, clone URL, default branch, and permission. Issue worktree
   preparation may then reconcile the shared managed clone origin after matching
   the immutable repository and owner identities; ordinary worktree callers
   cannot retarget a managed repository.
-- Closing, merging, unassigning, or otherwise losing authority retires the
-  tracked item immediately. When that retirement is provider-verified and the
-  implementation is complete, the channel archives the unpinned lifecycle
-  session and removes only its clean deterministic worktree. Pinned sessions,
-  active or incomplete conversations, and dirty or unsafe worktrees are
-  retained. Redacted cleanup outcomes remain visible through notification
-  status and are retried idempotently.
+- Closing the delivery pull request without merging deactivates only that comment
+  source; reopening it establishes a fresh baseline before new comments are
+  admitted. Merging the delivery pull request retires the issue-owned lifecycle.
+  Closing, merging, unassigning, or otherwise losing authority still retires a
+  directly tracked item. When retirement is provider-verified and implementation
+  is complete, the channel archives the unpinned lifecycle session and removes
+  only its clean deterministic worktree. Pinned sessions, active or incomplete
+  conversations, and dirty or unsafe worktrees are retained. Redacted cleanup
+  outcomes remain visible through notification status and are retried idempotently.
 
 The target lifecycle, modes, states, and response boundary are documented in
 [Design](./DESIGN.md). Visible component definitions live in
@@ -241,8 +249,9 @@ reference.
   does not yet expose a clarification pause as a structured lifecycle outcome.
   The target clarification behavior remains documented in `DESIGN.md`.
 - A staged reply does not itself authorize publication. Agent System reauthorizes
-  the exact source author and destination before loading credentials, substitutes
-  only that verified commenter mention, and publishes idempotently. Assignment
+  the exact source author, derives its issue or delivery pull-request destination
+  from the frozen source, then loads credentials, substitutes only that verified
+  commenter mention, and publishes idempotently. Assignment
   acknowledgments pass through the same publication safety, authorization,
   marker, and reconciliation boundary without model-authored text. Assignment
   responses use the model-turn candidate boundary and are reauthorized before

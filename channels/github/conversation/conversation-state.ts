@@ -22,6 +22,20 @@ export interface GitHubNotificationActiveTurnState {
   sourceId: string;
 }
 
+export interface GitHubNotificationConversationSource {
+  itemType: 'issue' | 'pull-request';
+  number: number;
+}
+
+export interface GitHubNotificationDeliveryPullRequestState {
+  baselineEstablished: boolean;
+  eventRecorded: boolean;
+  handoff?: GitHubNotificationPublicationPendingState | GitHubNotificationPublicationPublishedState;
+  nodeId: string;
+  number: number;
+  status: 'closed' | 'merged' | 'open';
+}
+
 export interface GitHubNotificationPublicationPendingState {
   commentDatabaseId?: number;
   commentNodeId?: string;
@@ -64,6 +78,7 @@ export interface GitHubNotificationCommentRevisionState {
   publication?: GitHubNotificationPublicationState;
   reasonCode?: string;
   revisionId: string;
+  source: GitHubNotificationConversationSource;
   status: GitHubNotificationCommentTurnStatus;
 }
 
@@ -72,6 +87,7 @@ export interface GitHubNotificationConversation {
   activeTurn?: GitHubNotificationActiveTurnState;
   assignmentResponse?: GitHubNotificationPublicationState;
   baselineEstablished: boolean;
+  deliveryPullRequest?: GitHubNotificationDeliveryPullRequestState;
   implementation?: GitHubNotificationImplementationState;
   itemKey: string;
   lifecycleId: GitHubNotificationLifecycleId;
@@ -82,7 +98,7 @@ export interface GitHubNotificationConversation {
 export interface GitHubNotificationConversationState {
   agentId: string;
   conversations: Record<string, GitHubNotificationConversation>;
-  schemaVersion: 6;
+  schemaVersion: 7;
   workspaceDir: string;
 }
 
@@ -116,6 +132,56 @@ function diagnosticCode(value: unknown): value is string | undefined {
 
 function digest(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
+}
+
+function validSource(value: unknown): value is GitHubNotificationConversationSource {
+  return (
+    record(value) &&
+    onlyKeys(value, ['itemType', 'number']) &&
+    (value.itemType === 'issue' || value.itemType === 'pull-request') &&
+    Number.isSafeInteger(value.number) &&
+    Number(value.number) > 0
+  );
+}
+
+function sameSource(
+  left: GitHubNotificationConversationSource,
+  right: GitHubNotificationConversationSource,
+): boolean {
+  return left.itemType === right.itemType && left.number === right.number;
+}
+
+function validPullRequestHandoff(value: unknown, conversationId: string): boolean {
+  return (
+    value === undefined ||
+    (validPublication(value, conversationId, 'pull-request-handoff') &&
+      record(value) &&
+      value.status !== 'withheld')
+  );
+}
+
+function validDeliveryPullRequest(
+  value: unknown,
+  conversationId: string,
+): value is GitHubNotificationDeliveryPullRequestState {
+  return (
+    record(value) &&
+    onlyKeys(value, [
+      'baselineEstablished',
+      'eventRecorded',
+      'handoff',
+      'nodeId',
+      'number',
+      'status',
+    ]) &&
+    typeof value.baselineEstablished === 'boolean' &&
+    typeof value.eventRecorded === 'boolean' &&
+    validPullRequestHandoff(value.handoff, conversationId) &&
+    nodeId(value.nodeId) &&
+    Number.isSafeInteger(value.number) &&
+    Number(value.number) > 0 &&
+    (value.status === 'open' || value.status === 'closed' || value.status === 'merged')
+  );
 }
 
 export function githubNotificationPublicTextDigest(value: string): string {
@@ -176,7 +242,11 @@ function validPublication(
     : !hasReceipt;
 }
 
-function validRevision(value: unknown, conversationId: string): boolean {
+function validRevision(
+  value: unknown,
+  conversationId: string,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+): boolean {
   if (
     !record(value) ||
     !onlyKeys(value, [
@@ -186,6 +256,7 @@ function validRevision(value: unknown, conversationId: string): boolean {
       'publication',
       'reasonCode',
       'revisionId',
+      ...(schemaVersion >= 7 ? ['source'] : []),
       'status',
     ]) ||
     !digest(value.bodyDigest) ||
@@ -198,6 +269,7 @@ function validRevision(value: unknown, conversationId: string): boolean {
   ) {
     return false;
   }
+  if (schemaVersion >= 7 && !validSource(value.source)) return false;
   if (value.status === 'responded') {
     return validPublication(value.publication, conversationId, 'github-reply');
   }
@@ -215,7 +287,7 @@ function validActiveTurn(value: unknown): boolean {
 
 function validImplementation(
   value: unknown,
-  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
 ): value is GitHubNotificationImplementationState {
   if (!record(value)) return false;
   return (
@@ -229,7 +301,7 @@ function validImplementation(
 function validImplementationRelationship(
   implementation: unknown,
   assignmentResponse: unknown,
-  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
 ): boolean {
   if (implementation === undefined) return true;
   if (!validImplementation(implementation, schemaVersion) || !record(assignmentResponse)) {
@@ -243,7 +315,7 @@ function validImplementationRelationship(
 function validConversation(
   value: unknown,
   conversationId: string,
-  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6,
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
 ): boolean {
   if (
     !record(value) ||
@@ -253,6 +325,7 @@ function validConversation(
       ...(schemaVersion >= 4 ? ['assignmentResponse'] : []),
       ...(schemaVersion >= 5 ? ['implementation'] : []),
       'baselineEstablished',
+      ...(schemaVersion >= 7 ? ['deliveryPullRequest'] : []),
       'itemKey',
       'lifecycleId',
       'mode',
@@ -272,15 +345,62 @@ function validConversation(
     typeof value.itemKey !== 'string' ||
     !/^github:[^:\s\0]+:[1-9]\d*$/u.test(value.itemKey) ||
     !isGitHubNotificationLifecycleId(value.lifecycleId) ||
+    (schemaVersion >= 7 &&
+      value.deliveryPullRequest !== undefined &&
+      !validDeliveryPullRequest(value.deliveryPullRequest, conversationId)) ||
     value.mode !== 'work' ||
     !record(value.revisions) ||
     Object.keys(value.revisions).length > maximumRevisions
   ) {
     return false;
   }
-  return Object.entries(value.revisions).every(
-    ([key, revision]) => nodeId(key) && validRevision(revision, conversationId),
+  const ownerSource = conversationSource(conversationId);
+  const deliveryPullRequest =
+    schemaVersion >= 7 && record(value.deliveryPullRequest) ? value.deliveryPullRequest : undefined;
+  if (schemaVersion >= 7 && deliveryPullRequest !== undefined && value.lifecycleId !== 'issue') {
+    return false;
+  }
+  return Object.entries(value.revisions).every(([key, revision]) => {
+    if (!nodeId(key) || !validRevision(revision, conversationId, schemaVersion)) return false;
+    if (schemaVersion < 7 || !record(revision) || !validSource(revision.source)) return true;
+    const revisionSource = revision.source;
+    return (
+      sameSource(revisionSource, ownerSource) ||
+      (revisionSource.itemType === 'pull-request' &&
+        deliveryPullRequest !== undefined &&
+        Number(deliveryPullRequest.number) === revisionSource.number)
+    );
+  });
+}
+
+function conversationSource(conversationId: string): GitHubNotificationConversationSource {
+  const match = /^github:(issue|pull-request|pull-request-review):[^:\s\0]+:([1-9]\d*)$/u.exec(
+    conversationId,
   );
+  if (!match) throw new Error('GitHub notification conversation ids are invalid.');
+  return {
+    itemType: match[1] === 'issue' ? 'issue' : 'pull-request',
+    number: Number(match[2]),
+  };
+}
+
+function migrateConversation(
+  conversationId: string,
+  value: GitHubNotificationConversation,
+): GitHubNotificationConversation {
+  const source = conversationSource(conversationId);
+  return {
+    ...value,
+    revisions: Object.fromEntries(
+      Object.entries(value.revisions).map(([commentNodeId, revision]) => [
+        commentNodeId,
+        {
+          ...revision,
+          source,
+        },
+      ]),
+    ),
+  } as GitHubNotificationConversation;
 }
 
 /** Decode bounded lifecycle-conversation state without admitting provider prose. */
@@ -296,7 +416,8 @@ export function decodeGitHubNotificationConversationState(
       value.schemaVersion !== 3 &&
       value.schemaVersion !== 4 &&
       value.schemaVersion !== 5 &&
-      value.schemaVersion !== 6) ||
+      value.schemaVersion !== 6 &&
+      value.schemaVersion !== 7) ||
     value.agentId !== expectedAgentId ||
     typeof value.agentId !== 'string' ||
     !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
@@ -311,12 +432,12 @@ export function decodeGitHubNotificationConversationState(
     !Object.entries(value.conversations).every(
       ([key, conversation]) =>
         /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(key) &&
-        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4 | 5 | 6),
+        validConversation(conversation, key, value.schemaVersion as 1 | 2 | 3 | 4 | 5 | 6 | 7),
     )
   ) {
     return undefined;
   }
-  if (value.schemaVersion === 6) {
+  if (value.schemaVersion === 7) {
     return value as unknown as GitHubNotificationConversationState;
   }
   return {
@@ -324,10 +445,10 @@ export function decodeGitHubNotificationConversationState(
     conversations: Object.fromEntries(
       Object.entries(value.conversations).map(([conversationId, conversation]) => [
         conversationId,
-        { ...(conversation as GitHubNotificationConversation) },
+        migrateConversation(conversationId, conversation as GitHubNotificationConversation),
       ]),
     ),
-    schemaVersion: 6,
+    schemaVersion: 7,
     workspaceDir: value.workspaceDir,
   } as GitHubNotificationConversationState;
 }
@@ -336,5 +457,5 @@ export function createGitHubNotificationConversationState(
   agentId: string,
   workspaceDir: string,
 ): GitHubNotificationConversationState {
-  return { agentId, conversations: {}, schemaVersion: 6, workspaceDir };
+  return { agentId, conversations: {}, schemaVersion: 7, workspaceDir };
 }

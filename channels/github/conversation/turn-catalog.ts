@@ -51,10 +51,17 @@ export const githubNotificationIssueWorkImplementationTurnIdentity = {
   modeId: 'work',
 } as const satisfies GitHubNotificationTurnIdentity;
 
+export const githubNotificationIssueWorkPullRequestOpenedTurnIdentity = {
+  eventId: 'pull-request-opened',
+  lifecycleId: 'issue',
+  modeId: 'work',
+} as const satisfies GitHubNotificationTurnIdentity;
+
 export const githubNotificationSupportedTurnIdentities = [
   githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationIssueWorkImplementationTurnIdentity,
+  githubNotificationIssueWorkPullRequestOpenedTurnIdentity,
 ] as const satisfies readonly GitHubNotificationTurnIdentity[];
 
 function turnKey(identity: GitHubNotificationTurnIdentity): string {

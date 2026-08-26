@@ -42,7 +42,7 @@ Today, Agent System:
 
 ### Channels
 
-- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, prepares managed issue worktrees, and relays approved issue comments through lifecycle sessions.
+- [GitHub notifications](./channels/github/README.md) — Polls and admits approved assignments, prepares managed issue worktrees, and keeps approved issue and linked delivery pull-request comments in the same lifecycle session with source-affine replies.
 
 ### Skills
 

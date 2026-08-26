@@ -67,10 +67,13 @@ export type GitHubNotificationLifecycleCommentEventSupport = Record<string, neve
 
 export type GitHubNotificationLifecycleImplementationEventSupport = Record<string, never>;
 
+export type GitHubNotificationLifecyclePullRequestOpenedEventSupport = Record<string, never>;
+
 export interface GitHubNotificationLifecycleEventSupportMap {
   assignment?: GitHubNotificationLifecycleAssignmentEventSupport;
   comment?: GitHubNotificationLifecycleCommentEventSupport;
   implementation?: GitHubNotificationLifecycleImplementationEventSupport;
+  'pull-request-opened'?: GitHubNotificationLifecyclePullRequestOpenedEventSupport;
 }
 
 export type GitHubNotificationLifecycleWorktreeOwner =

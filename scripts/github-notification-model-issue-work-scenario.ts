@@ -21,6 +21,11 @@ export interface GitHubNotificationIssueWorkScenarioOptions {
   filenamePattern: RegExp;
   finalResponse: string;
   id: string;
+  comment?: {
+    finalResponse: string;
+    replyCallId: string;
+    replyTokenPattern: RegExp;
+  };
 }
 
 const assignmentPromptSignals = [
@@ -36,6 +41,15 @@ const implementationPromptSignals = [
   'Do not call `agent_system_github_reply`',
 ] as const;
 
+const pullRequestOpenedPromptSignals = [
+  'Continue the current GitHub issue lifecycle',
+  'A delivery pull request has been linked to the current issue-owned work session',
+  'Respond privately with one brief acknowledgment',
+] as const;
+
+export const githubNotificationPullRequestOpenedFinalResponse =
+  'The delivery pull request is linked. Later issue or pull request comments will continue in this session and reply to their originating item.';
+
 function messageText(message: ChatCompletionRequest['messages'][number]): string {
   if (typeof message.content === 'string') return message.content;
   if (!Array.isArray(message.content)) return '';
@@ -44,6 +58,15 @@ function messageText(message: ChatCompletionRequest['messages'][number]): string
 
 function requestText(request: ChatCompletionRequest): string {
   return request.messages.map(messageText).join('\n');
+}
+
+function commentReplyToken(
+  request: ChatCompletionRequest,
+  options: GitHubNotificationIssueWorkScenarioOptions,
+): string {
+  const token = requestText(request).match(options.comment?.replyTokenPattern ?? /$^/u)?.[0];
+  if (!token) throw new Error(`The ${options.id} comment request is missing its reply token.`);
+  return token;
 }
 
 interface IssueWorkContext {
@@ -260,10 +283,64 @@ export default function createGitHubNotificationIssueWorkScenario(
         id: `agent-system-notification-${options.id}-final-response`,
       },
     },
+    {
+      match: {
+        model: /^(?:aimock\/)?gpt-5\.5$/u,
+        systemMessage: [...pullRequestOpenedPromptSignals],
+      },
+      response: {
+        content: githubNotificationPullRequestOpenedFinalResponse,
+        id: `agent-system-notification-${options.id}-pull-request-opened-final-response`,
+      },
+    },
   ];
 
+  if (options.comment) {
+    const comment = options.comment;
+    fixtures.push(
+      {
+        match: {
+          model: /^(?:aimock\/)?gpt-5\.5$/u,
+          predicate: (request) =>
+            comment.replyTokenPattern.test(requestText(request)) &&
+            !hasGitHubNotificationModelToolResult(request.messages, comment.replyCallId),
+          toolName: 'agent_system_github_reply',
+        },
+        response: (request): ToolCallResponse => ({
+          id: `agent-system-notification-${options.id}-comment-reply-response`,
+          toolCalls: [
+            {
+              arguments: JSON.stringify({
+                body: `{{commenter}}, ${commentReplyToken(request, options)}`,
+              }),
+              id: comment.replyCallId,
+              name: 'agent_system_github_reply',
+            },
+          ],
+        }),
+      },
+      {
+        match: {
+          model: /^(?:aimock\/)?gpt-5\.5$/u,
+          predicate: (request) =>
+            comment.replyTokenPattern.test(requestText(request)) &&
+            hasGitHubNotificationModelToolResult(request.messages, comment.replyCallId),
+        },
+        response: {
+          content: comment.finalResponse,
+          id: `agent-system-notification-${options.id}-comment-final-response`,
+        },
+      },
+    );
+  }
+
   return {
-    finalResponses: [options.assignmentFinalResponse, options.finalResponse],
+    finalResponses: [
+      options.assignmentFinalResponse,
+      options.finalResponse,
+      githubNotificationPullRequestOpenedFinalResponse,
+      ...(options.comment ? [options.comment.finalResponse] : []),
+    ],
     fixtures,
     id: options.id,
     model: {
@@ -277,6 +354,9 @@ export default function createGitHubNotificationIssueWorkScenario(
       { id: options.callIds.patch, name: 'apply_patch' },
       { id: options.callIds.add, name: 'agent_system_git' },
       { id: options.callIds.commit, name: 'agent_system_git' },
+      ...(options.comment
+        ? [{ id: options.comment.replyCallId, name: 'agent_system_github_reply' }]
+        : []),
     ],
   };
 }

@@ -18,6 +18,7 @@ import GitHubNotificationIssueDeliveryService, {
 } from '../conversation/issue-delivery-service.ts';
 import GitHubNotificationCommentOrchestrator from '../conversation/comment-orchestrator.ts';
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
+import GitHubNotificationPullRequestHandoffService from '../conversation/pull-request-handoff-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
 import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
 import GitHubNotificationModelTurnCoordinator from '../conversation/model-turn-coordinator.ts';
@@ -30,6 +31,7 @@ import GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
 import githubNotificationImplementationEvent from '../events/implementation.ts';
+import githubNotificationPullRequestOpenedEvent from '../events/pull-request-opened.ts';
 import GitHubNotificationEventRegistry from '../events/registry.ts';
 import GitHubNotificationAssignmentOrchestrator from '../intake/assignment-orchestrator.ts';
 import GitHubNotificationAssignmentCleanupService from '../intake/assignment-cleanup-service.ts';
@@ -110,6 +112,7 @@ export default function createGitHubNotificationRuntime(
     githubNotificationAssignmentEvent,
     githubNotificationCommentEvent,
     githubNotificationImplementationEvent,
+    githubNotificationPullRequestOpenedEvent,
   ]);
   const turnCatalog = new GitHubNotificationTurnCatalog(githubNotificationSupportedTurnIdentities, {
     events: eventRegistry,
@@ -175,6 +178,15 @@ export default function createGitHubNotificationRuntime(
           publications: commentPublicationService,
         },
       );
+      const pullRequestHandoffService = new GitHubNotificationPullRequestHandoffService({
+        assignmentAuthority: assignmentProvider,
+        conversationStateStore,
+        coordinator: turnCoordinator,
+        logger: dependencies.lifecycleLogger,
+        publications: commentPublicationService,
+        readConfig: dependencies.readRuntimeConfig,
+        turnContracts,
+      });
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
         acknowledgments: assignmentAcknowledgmentService,
         assignmentAuthority: assignmentProvider,
@@ -185,6 +197,7 @@ export default function createGitHubNotificationRuntime(
           git,
           manifestService,
         }),
+        handoffs: pullRequestHandoffService,
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,

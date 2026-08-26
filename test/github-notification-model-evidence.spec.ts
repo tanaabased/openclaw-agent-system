@@ -10,7 +10,15 @@ const scenario = resolveGitHubNotificationModelScenario('assignment');
 describe('scripts/github-notification-model-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
-      (id) => !['implementation', 'pr', 'comment', 'retirement'].includes(id),
+      (id) =>
+        ![
+          'implementation',
+          'pr-handoff',
+          'pr-continuation',
+          'pr-retirement',
+          'comment',
+          'retirement',
+        ].includes(id),
     )) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const selectedPromptMessages = [
@@ -106,8 +114,16 @@ describe('scripts/github-notification-model-evidence', () => {
   });
 
   it('should normalize execution tool loops, including repeated retirement assignments', () => {
-    for (const scenarioId of ['implementation', 'pr', 'comment', 'retirement']) {
+    for (const scenarioId of [
+      'implementation',
+      'pr-handoff',
+      'pr-continuation',
+      'pr-retirement',
+      'comment',
+      'retirement',
+    ]) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
+      const hasComment = scenarioId === 'pr-continuation' || scenarioId === 'comment';
       const prompt = selectedScenario.systemPromptSignals.join('\n');
       const [reply, issue, patch, add, commit, commentReply] = selectedScenario.toolCalls;
       const toolNames = [
@@ -148,7 +164,7 @@ describe('scripts/github-notification-model-evidence', () => {
         !add ||
         !commit ||
         !messages ||
-        (scenarioId === 'comment' && !commentReply)
+        (hasComment && !commentReply)
       ) {
         throw new Error(`The ${scenarioId} scenario tool contract is incomplete.`);
       }
@@ -172,18 +188,20 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({}));
       appendCall(commit);
       entries.push(request({ content: selectedScenario.finalResponses[1] }));
-      if (scenarioId === 'comment' && commentReply) {
+      messages.splice(0, messages.length, { content: prompt, role: 'system' });
+      entries.push(request({ content: selectedScenario.finalResponses[2] }));
+      if (hasComment && commentReply) {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
         entries.push(request({}));
         appendCall(commentReply);
-        entries.push(request({ content: selectedScenario.finalResponses[2] }));
+        entries.push(request({ content: selectedScenario.finalResponses[3] }));
       }
 
-      const hasThirdResponse = scenarioId === 'comment' || scenarioId === 'retirement';
-      const requestCount = hasThirdResponse ? 9 : 7;
+      const hasFourthResponse = hasComment || scenarioId === 'retirement';
+      const requestCount = hasFourthResponse ? 10 : 8;
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
-        finalResponseCount: hasThirdResponse ? 3 : 2,
+        finalResponseCount: hasFourthResponse ? 4 : 3,
         model: 'aimock/gpt-5.5',
         promptRequestCount: requestCount,
         provider: 'aimock',
@@ -207,10 +225,10 @@ describe('scripts/github-notification-model-evidence', () => {
             resultRequestCount: 4,
           },
           {
-            callResponseCount: scenarioId === 'comment' ? 2 : 1,
+            callResponseCount: hasComment ? 2 : 1,
             name: 'agent_system_github_reply',
             projectionRequestCount: requestCount,
-            resultRequestCount: hasThirdResponse ? 2 : 1,
+            resultRequestCount: hasFourthResponse ? 2 : 1,
           },
           {
             callResponseCount: 1,

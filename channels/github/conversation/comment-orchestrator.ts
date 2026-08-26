@@ -17,6 +17,7 @@ import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
   type GitHubNotificationCommentRevisionState,
+  type GitHubNotificationConversationSource,
   type GitHubNotificationConversationState,
 } from './conversation-state.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
@@ -32,16 +33,23 @@ import type GitHubNotificationCommentTurnService from './comment-turn-service.ts
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
-import type { GitHubNotificationCommentClient } from '../provider/work-event-client.ts';
+import type {
+  GitHubNotificationCommentClient,
+  GitHubNotificationIntakeClient,
+} from '../provider/work-event-client.ts';
+
+type GitHubNotificationConversationClient = GitHubNotificationCommentClient &
+  Pick<GitHubNotificationIntakeClient, 'getItem'>;
 
 export interface GitHubNotificationCommentOrchestratorDependencies {
-  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationCommentClient>;
+  assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationConversationClient>;
+  clock?: () => number;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   deliver?: typeof deliverInboundReplyWithMessageSendContext;
   initialModeId: GitHubNotificationModeId;
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
-  monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
+  monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   turnCatalog: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
   turns: Pick<GitHubNotificationCommentTurnService, 'respond'>;
@@ -102,21 +110,33 @@ function publicationReceipt(result: DurableInboundReplyDeliveryResult): {
   return { databaseId, nodeId };
 }
 
-function sortedComments(comments: readonly GitHubCanonicalIssueComment[]) {
+interface GitHubNotificationCommentSource extends GitHubNotificationConversationSource {
+  baselineEstablished: boolean;
+  pullRequestNodeId?: string;
+}
+
+interface GitHubNotificationObservedComment {
+  comment: GitHubCanonicalIssueComment;
+  source: GitHubNotificationCommentSource;
+}
+
+function sortedComments(comments: readonly GitHubNotificationObservedComment[]) {
   return [...comments].sort(
     (left, right) =>
-      Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
-      left.databaseId - right.databaseId,
+      Date.parse(left.comment.createdAt) - Date.parse(right.comment.createdAt) ||
+      left.comment.databaseId - right.comment.databaseId,
   );
 }
 
 /** Reconcile one prepared lifecycle item's bounded comment conversation. */
 export default class GitHubNotificationCommentOrchestrator {
+  readonly #clock: () => number;
   readonly #deliver: typeof deliverInboundReplyWithMessageSendContext;
   readonly #dependencies: GitHubNotificationCommentOrchestratorDependencies;
 
   constructor(dependencies: GitHubNotificationCommentOrchestratorDependencies) {
     this.#dependencies = dependencies;
+    this.#clock = dependencies.clock ?? Date.now;
     this.#deliver = dependencies.deliver ?? deliverInboundReplyWithMessageSendContext;
   }
 
@@ -191,58 +211,115 @@ export default class GitHubNotificationCommentOrchestrator {
         opened.reasonCode ?? 'github-notification-comment-authority-revoked',
       );
     }
-    const page = await opened.client.listIssueComments(
-      item.repositoryOwner,
-      item.repositoryName,
-      item.number,
-    );
-    if (page.truncated) {
-      throw new GitHubNotificationCommentOrchestratorError(
-        'github-notification-comments-truncated',
-      );
+    if (
+      existingConversation &&
+      (await this.#reconcileDeliveryPullRequest(
+        agentId,
+        conversationId,
+        itemKey,
+        item,
+        opened.client,
+      ))
+    ) {
+      return;
     }
-    if (!existingConversation?.baselineEstablished) {
-      const revisions = Object.fromEntries(
-        sortedComments(page.comments).map((comment) => {
-          const revision = githubCommentRevision(comment);
-          return [
-            comment.nodeId,
+    const sources: GitHubNotificationCommentSource[] = [
+      {
+        baselineEstablished: existingConversation?.baselineEstablished ?? false,
+        itemType: item.itemType,
+        number: item.number,
+      },
+      ...(existingConversation?.deliveryPullRequest?.status === 'open'
+        ? [
             {
-              bodyDigest: revision.bodyDigest,
-              commentDatabaseId: comment.databaseId,
-              reasonCode: 'comment-baseline',
-              revisionId: revision.revisionId,
-              status: 'baseline' as const,
+              baselineEstablished: existingConversation.deliveryPullRequest.baselineEstablished,
+              itemType: 'pull-request' as const,
+              number: existingConversation.deliveryPullRequest.number,
+              pullRequestNodeId: existingConversation.deliveryPullRequest.nodeId,
             },
-          ];
-        }),
+          ]
+        : []),
+    ];
+    const pages: Array<{
+      comments: GitHubCanonicalIssueComment[];
+      source: GitHubNotificationCommentSource;
+    }> = [];
+    for (const source of sources) {
+      const page = await opened.client.listIssueComments(
+        item.repositoryOwner,
+        item.repositoryName,
+        source.number,
       );
+      if (page.truncated) {
+        throw new GitHubNotificationCommentOrchestratorError(
+          'github-notification-comments-truncated',
+        );
+      }
+      pages.push({ comments: page.comments, source });
+    }
+    const missingBaselines = pages.filter(({ source }) => !source.baselineEstablished);
+    if (missingBaselines.length > 0) {
       state = structuredClone(state);
       state.conversations[conversationId] = {
         ...(existingConversation ?? {}),
-        baselineEstablished: true,
+        baselineEstablished: existingConversation?.baselineEstablished ?? false,
         itemKey,
         lifecycleId: item.lifecycleId,
         mode: modeId,
-        revisions,
+        revisions: { ...(existingConversation?.revisions ?? {}) },
       };
+      const conversation = state.conversations[conversationId]!;
+      let baselineCount = 0;
+      for (const { comments, source } of missingBaselines) {
+        for (const comment of comments) {
+          const revision = githubCommentRevision(comment);
+          conversation.revisions[comment.nodeId] = {
+            bodyDigest: revision.bodyDigest,
+            commentDatabaseId: comment.databaseId,
+            reasonCode: 'comment-baseline',
+            revisionId: revision.revisionId,
+            source: { itemType: source.itemType, number: source.number },
+            status: 'baseline',
+          };
+          baselineCount += 1;
+        }
+        if (source.pullRequestNodeId) {
+          const pullRequest = conversation.deliveryPullRequest;
+          if (
+            !pullRequest ||
+            pullRequest.nodeId !== source.pullRequestNodeId ||
+            pullRequest.number !== source.number ||
+            pullRequest.status !== 'open'
+          ) {
+            throw new GitHubNotificationCommentOrchestratorError(
+              'github-notification-comment-source-changed',
+            );
+          }
+          pullRequest.baselineEstablished = true;
+        } else {
+          conversation.baselineEstablished = true;
+        }
+      }
       await this.#dependencies.conversationStateStore.write(state);
       this.#dependencies.logger.info(
-        `github-notifications: comment baseline established agent=${agentId} item=${itemKey} comments=${page.comments.length}`,
+        `github-notifications: comment baseline established agent=${agentId} item=${itemKey} sources=${missingBaselines.length} comments=${baselineCount}`,
       );
       return;
     }
 
-    for (const observed of sortedComments(page.comments)) {
+    const observations = sortedComments(
+      pages.flatMap(({ comments, source }) => comments.map((comment) => ({ comment, source }))),
+    );
+    for (const { comment: observed, source } of observations) {
       const observedRevision = githubCommentRevision(observed);
-      const current = existingConversation.revisions[observed.nodeId];
+      const current = existingConversation!.revisions[observed.nodeId];
       if (current?.revisionId === observedRevision.revisionId && current.status !== 'admitted') {
         continue;
       }
       const exact = await opened.client.getIssueComment(
         item.repositoryOwner,
         item.repositoryName,
-        item.number,
+        source.number,
         observed.databaseId,
       );
       const exactRevision = githubCommentRevision(exact);
@@ -265,6 +342,7 @@ export default class GitHubNotificationCommentOrchestrator {
           commentDatabaseId: exact.databaseId,
           reasonCode: admission.code,
           revisionId: exactRevision.revisionId,
+          source: { itemType: source.itemType, number: source.number },
           status: 'rejected',
         });
         continue;
@@ -274,6 +352,7 @@ export default class GitHubNotificationCommentOrchestrator {
         commentDatabaseId: exact.databaseId,
         reasonCode: admission.code,
         revisionId: exactRevision.revisionId,
+        source: { itemType: source.itemType, number: source.number },
         status: 'admitted',
       });
       await this.#respond(
@@ -285,11 +364,76 @@ export default class GitHubNotificationCommentOrchestrator {
         exactRevision,
         item,
         modeId,
+        { itemType: source.itemType, number: source.number },
         monitor.workspaceDir,
         signal,
       );
       return;
     }
+  }
+
+  async #reconcileDeliveryPullRequest(
+    agentId: string,
+    conversationId: string,
+    itemKey: string,
+    item: GitHubNotificationItemState,
+    client: GitHubNotificationConversationClient,
+  ): Promise<boolean> {
+    const current = await this.#dependencies.conversationStateStore.read(agentId);
+    const conversation = current?.conversations[conversationId];
+    if (!current || !conversation) return false;
+    const next = structuredClone(current);
+    const updated = next.conversations[conversationId]!;
+    const source = conversation.deliveryPullRequest;
+    if (!source || source.status === 'merged') return false;
+    const observed = await client.getItem(item.repositoryOwner, item.repositoryName, source.number);
+    if (
+      observed.itemType !== 'pull-request' ||
+      observed.nodeId !== source.nodeId ||
+      observed.number !== source.number
+    ) {
+      throw new GitHubNotificationCommentOrchestratorError(
+        'github-notification-comment-source-changed',
+      );
+    }
+    const status = observed.pullRequest.merged
+      ? 'merged'
+      : observed.state === 'closed'
+        ? 'closed'
+        : 'open';
+    if (status === source.status) return false;
+    const updatedSource = updated.deliveryPullRequest!;
+    updatedSource.status = status;
+    if (status !== 'open' || source.status === 'closed') {
+      updatedSource.baselineEstablished = false;
+    }
+    const merged = status === 'merged';
+    if (merged) {
+      const monitor = await this.#dependencies.monitorStateStore.read(agentId);
+      const monitorItem = monitor?.items[itemKey];
+      if (!monitor || !monitorItem?.intake || monitorItem.intake.stage !== 'prepared') {
+        throw new GitHubNotificationCommentOrchestratorError(
+          'github-notification-comment-retirement-state-missing',
+        );
+      }
+      const retired = structuredClone(monitor);
+      retired.items[itemKey] = {
+        ...monitorItem,
+        disposition: 'retired',
+        intake: {
+          ...monitorItem.intake,
+          providerRetirementVerifiedAt: this.#clock(),
+          stage: 'retired',
+        },
+        reasonCode: 'pull-request-merged',
+      };
+      await this.#dependencies.monitorStateStore.write(retired);
+    }
+    await this.#dependencies.conversationStateStore.write(next);
+    this.#dependencies.logger.info(
+      `github-notifications: delivery pull request state reconciled agent=${agentId} item=${itemKey} retired=${merged}`,
+    );
+    return true;
   }
 
   async #respond(
@@ -301,6 +445,7 @@ export default class GitHubNotificationCommentOrchestrator {
     revision: GitHubCommentRevision,
     item: GitHubNotificationItemState,
     modeId: GitHubNotificationModeId,
+    source: GitHubNotificationConversationSource,
     workspaceDir: string,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -315,6 +460,7 @@ export default class GitHubNotificationCommentOrchestrator {
         modeId,
         revision,
         ...(signal === undefined ? {} : { signal }),
+        source,
         workspaceDir,
       });
     } catch (error) {
@@ -324,6 +470,7 @@ export default class GitHubNotificationCommentOrchestrator {
         failureCode: errorCode(error),
         reasonCode: 'comment-approved',
         revisionId: revision.revisionId,
+        source,
         status: 'admitted',
       });
       throw error;
@@ -335,24 +482,28 @@ export default class GitHubNotificationCommentOrchestrator {
         publication: { reasonCode: response.publication.code, status: 'withheld' },
         reasonCode: 'comment-approved',
         revisionId: revision.revisionId,
+        source,
         status: 'responded',
       });
       this.#dependencies.logger.warn(
         [
           'github-notifications: comment publication withheld',
           `agent=${agentId}`,
-          `item=${item.repositoryOwner}/${item.repositoryName}#${item.number}`,
+          `item=${item.repositoryOwner}/${item.repositoryName}#${source.number}`,
           `revision=${revision.revisionId}`,
           `code=${response.publication.code}`,
         ].join(' '),
       );
       return;
     }
-    const source = { commentDatabaseId: comment.databaseId, revisionId: revision.revisionId };
+    const publicationSource = {
+      commentDatabaseId: comment.databaseId,
+      revisionId: revision.revisionId,
+    };
     const target = githubNotificationPublicationTarget({
       intent: 'github-reply',
       item,
-      source,
+      source: publicationSource,
     });
     await this.#checkpointRevision(agentId, conversationId, comment.nodeId, {
       bodyDigest: revision.bodyDigest,
@@ -365,6 +516,7 @@ export default class GitHubNotificationCommentOrchestrator {
       },
       reasonCode: 'comment-approved',
       revisionId: revision.revisionId,
+      source,
       status: 'responded',
     });
     const delivered = await this.#deliver({

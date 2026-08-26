@@ -7,6 +7,7 @@ import GitHubNotificationAssignmentSessionService from '../channels/github/conve
 import type { GitHubNotificationIssueDeliveryInput } from '../channels/github/conversation/issue-delivery-service.ts';
 import {
   createGitHubNotificationConversationState,
+  githubNotificationPublicTextDigest,
   type GitHubNotificationConversationState,
 } from '../channels/github/conversation/conversation-state.ts';
 import type {
@@ -17,6 +18,7 @@ import type { GitHubNotificationTurnContract } from '../channels/github/conversa
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import githubNotificationWorkMode from '../channels/github/modes/work.ts';
 import { githubWorkItemKey } from '../channels/github/provider/work-item.ts';
+import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
 
@@ -77,6 +79,7 @@ const input = {
   worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
 };
 const deliveryReceipt = {
+  pullRequestNodeId: 'PR_delivery',
   pullRequestNumber: 45,
 };
 const itemContext = {
@@ -143,6 +146,7 @@ interface HarnessOptions {
   assignmentFailures?: number;
   assignmentResult?: GitHubNotificationModelTurnCoordinatorResult;
   deliveryFailures?: number;
+  handoffFailures?: number;
   initialActiveTurn?: GitHubNotificationConversationState['conversations'][string]['activeTurn'];
   implementationFailures?: number;
   publicationFailures?: number;
@@ -161,6 +165,8 @@ function harness(options: HarnessOptions = {}) {
     acknowledgments: 0,
     assignmentTurns: 0,
     deliveries: 0,
+    handoffCheckpoints: 0,
+    handoffs: 0,
     implementationTurns: 0,
     publications: 0,
   };
@@ -237,6 +243,56 @@ function harness(options: HarnessOptions = {}) {
           throw new Error('delivery interrupted');
         }
         return deliveryReceipt;
+      },
+    },
+    handoffs: {
+      async checkpoint(handoffInput) {
+        counts.handoffCheckpoints += 1;
+        assert.equal(handoffInput.agentId, agentId);
+        assert.equal(handoffInput.executionSurface, input.executionSurface);
+        assert.equal(handoffInput.item, item);
+        assert.equal(handoffInput.lifecycle, input.lifecycle);
+        assert.equal(handoffInput.pullRequest, deliveryReceipt);
+        assert.equal(handoffInput.workspaceDir, workspaceDir);
+        assert.equal(
+          state.conversations[conversationId]?.implementation?.status,
+          'delivery-pending',
+        );
+        state.conversations[conversationId]!.deliveryPullRequest = {
+          baselineEstablished: false,
+          eventRecorded: false,
+          nodeId: deliveryReceipt.pullRequestNodeId,
+          number: deliveryReceipt.pullRequestNumber,
+          status: 'open',
+        };
+      },
+      async reconcile(handoffInput) {
+        counts.handoffs += 1;
+        assert.equal(handoffInput.agentId, agentId);
+        assert.equal(handoffInput.executionSurface, input.executionSurface);
+        assert.equal(handoffInput.item, item);
+        assert.equal(handoffInput.lifecycle, input.lifecycle);
+        assert.equal(handoffInput.workspaceDir, workspaceDir);
+        assert.equal(state.conversations[conversationId]?.implementation?.status, 'completed');
+        if (counts.handoffs <= (options.handoffFailures ?? 0)) {
+          throw new Error('handoff interrupted');
+        }
+        const publicText = 'Pull request linked.';
+        const source = state.conversations[conversationId]!.deliveryPullRequest!;
+        source.baselineEstablished = true;
+        source.eventRecorded = true;
+        source.handoff = {
+          commentDatabaseId: 46,
+          commentNodeId: 'IC_handoff',
+          publicText,
+          publicTextDigest: githubNotificationPublicTextDigest(publicText),
+          status: 'published',
+          target: githubNotificationPublicationTarget({
+            conversationId,
+            intent: 'pull-request-handoff',
+            publicationId: deliveryReceipt.pullRequestNodeId,
+          }),
+        };
       },
     },
     logger: { error() {}, info() {}, warn() {} },
@@ -352,6 +408,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 0,
+      handoffCheckpoints: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 1,
     });
@@ -375,6 +433,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -399,6 +459,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 2,
     });
@@ -423,6 +485,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 2,
       deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -439,6 +503,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 1,
       assignmentTurns: 0,
       deliveries: 0,
+      handoffCheckpoints: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 0,
     });
@@ -463,6 +529,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 2,
       publications: 1,
     });
@@ -487,12 +555,50 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 3,
       assignmentTurns: 1,
       deliveries: 2,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
     assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
       status: 'completed',
     });
+  });
+
+  it('should retain completed delivery while retrying pull request handoff', async () => {
+    const scenario = harness({ handoffFailures: 1 });
+
+    await scenario.prepare();
+    await assert.rejects(scenario.prepare(), /handoff interrupted/u);
+
+    assert.deepEqual(scenario.state().conversations[conversationId]?.implementation, {
+      status: 'completed',
+    });
+    assert.deepEqual(scenario.counts, {
+      acknowledgments: 2,
+      assignmentTurns: 1,
+      deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
+      implementationTurns: 1,
+      publications: 1,
+    });
+
+    await scenario.prepare();
+
+    assert.deepEqual(scenario.counts, {
+      acknowledgments: 3,
+      assignmentTurns: 1,
+      deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 2,
+      implementationTurns: 1,
+      publications: 1,
+    });
+    assert.equal(
+      scenario.state().conversations[conversationId]?.deliveryPullRequest?.handoff?.status,
+      'published',
+    );
   });
 
   it('should schedule implementation without parsing model-authored report formatting', async () => {
@@ -505,6 +611,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 1,
+      handoffCheckpoints: 1,
+      handoffs: 1,
       implementationTurns: 1,
       publications: 1,
     });
@@ -535,6 +643,8 @@ describe('channels/github/conversation/assignment-session-service', () => {
       acknowledgments: 2,
       assignmentTurns: 1,
       deliveries: 0,
+      handoffCheckpoints: 0,
+      handoffs: 0,
       implementationTurns: 0,
       publications: 0,
     });

@@ -1,6 +1,11 @@
 import type { GitHubNotificationPublicationIntent } from '../publication/publication.ts';
 
-export const githubNotificationEventIds = ['assignment', 'comment', 'implementation'] as const;
+export const githubNotificationEventIds = [
+  'assignment',
+  'comment',
+  'implementation',
+  'pull-request-opened',
+] as const;
 
 export type GitHubNotificationEventId = (typeof githubNotificationEventIds)[number];
 

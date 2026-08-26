@@ -5,6 +5,7 @@ import GitHubNotificationTurnContractResolver from '../channels/github/conversat
 import githubNotificationAssignmentEvent from '../channels/github/events/assignment.ts';
 import githubNotificationCommentEvent from '../channels/github/events/comment.ts';
 import githubNotificationImplementationEvent from '../channels/github/events/implementation.ts';
+import githubNotificationPullRequestOpenedEvent from '../channels/github/events/pull-request-opened.ts';
 import GitHubNotificationEventRegistry from '../channels/github/events/registry.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubPullRequestLifecycle from '../channels/github/lifecycles/pull-request.ts';
@@ -20,6 +21,7 @@ export function createGitHubNotificationTurnDefinitions(options?: {
       githubNotificationAssignmentEvent,
       githubNotificationCommentEvent,
       githubNotificationImplementationEvent,
+      githubNotificationPullRequestOpenedEvent,
     ]),
     lifecycles: new GitHubNotificationLifecycleRegistry([
       new GitHubIssueLifecycle({

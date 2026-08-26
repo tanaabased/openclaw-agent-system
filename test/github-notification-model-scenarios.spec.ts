@@ -22,12 +22,27 @@ import {
   githubNotificationCommentReplyCallId,
 } from '../scenarios/issue-work-comment/model-fixture.ts';
 import {
-  githubNotificationPullRequestAddCallId,
-  githubNotificationPullRequestCommitCallId,
-  githubNotificationPullRequestIssueCallId,
-  githubNotificationPullRequestPatchCallId,
-  githubNotificationPullRequestReplyCallId,
-} from '../scenarios/issue-work-pr/model-fixture.ts';
+  githubNotificationPullRequestContinuationAddCallId,
+  githubNotificationPullRequestContinuationCommentReplyCallId,
+  githubNotificationPullRequestContinuationCommitCallId,
+  githubNotificationPullRequestContinuationIssueCallId,
+  githubNotificationPullRequestContinuationPatchCallId,
+  githubNotificationPullRequestContinuationReplyCallId,
+} from '../scenarios/issue-work-pr-continuation/model-fixture.ts';
+import {
+  githubNotificationPullRequestHandoffAddCallId,
+  githubNotificationPullRequestHandoffCommitCallId,
+  githubNotificationPullRequestHandoffIssueCallId,
+  githubNotificationPullRequestHandoffPatchCallId,
+  githubNotificationPullRequestHandoffReplyCallId,
+} from '../scenarios/issue-work-pr-handoff/model-fixture.ts';
+import {
+  githubNotificationPullRequestRetirementAddCallId,
+  githubNotificationPullRequestRetirementCommitCallId,
+  githubNotificationPullRequestRetirementIssueCallId,
+  githubNotificationPullRequestRetirementPatchCallId,
+  githubNotificationPullRequestRetirementReplyCallId,
+} from '../scenarios/issue-work-pr-retirement/model-fixture.ts';
 import {
   githubNotificationRetirementAddCallId,
   githubNotificationRetirementCommitCallId,
@@ -38,13 +53,16 @@ import {
 import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
 } from '../scripts/github-notification-model-scenarios.ts';
+import { githubNotificationPullRequestOpenedFinalResponse } from '../scripts/github-notification-model-issue-work-scenario.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the five provider-neutral scenarios', () => {
+  it('should resolve the seven provider-neutral scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
       'implementation',
-      'pr',
+      'pr-handoff',
+      'pr-continuation',
+      'pr-retirement',
       'comment',
       'retirement',
     ]);
@@ -79,13 +97,33 @@ describe('scripts/github-notification-model-scenarios', () => {
       },
       {
         callIds: [
-          githubNotificationPullRequestReplyCallId,
-          githubNotificationPullRequestIssueCallId,
-          githubNotificationPullRequestPatchCallId,
-          githubNotificationPullRequestAddCallId,
-          githubNotificationPullRequestCommitCallId,
+          githubNotificationPullRequestHandoffReplyCallId,
+          githubNotificationPullRequestHandoffIssueCallId,
+          githubNotificationPullRequestHandoffPatchCallId,
+          githubNotificationPullRequestHandoffAddCallId,
+          githubNotificationPullRequestHandoffCommitCallId,
         ],
-        id: 'pr',
+        id: 'pr-handoff',
+      },
+      {
+        callIds: [
+          githubNotificationPullRequestContinuationReplyCallId,
+          githubNotificationPullRequestContinuationIssueCallId,
+          githubNotificationPullRequestContinuationPatchCallId,
+          githubNotificationPullRequestContinuationAddCallId,
+          githubNotificationPullRequestContinuationCommitCallId,
+        ],
+        id: 'pr-continuation',
+      },
+      {
+        callIds: [
+          githubNotificationPullRequestRetirementReplyCallId,
+          githubNotificationPullRequestRetirementIssueCallId,
+          githubNotificationPullRequestRetirementPatchCallId,
+          githubNotificationPullRequestRetirementAddCallId,
+          githubNotificationPullRequestRetirementCommitCallId,
+        ],
+        id: 'pr-retirement',
       },
       {
         callIds: [
@@ -110,7 +148,10 @@ describe('scripts/github-notification-model-scenarios', () => {
     ] as const;
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
-      assert.equal(scenario.fixtures.length, executionScenario.id === 'comment' ? 9 : 7);
+      assert.equal(
+        scenario.fixtures.length,
+        executionScenario.id === 'comment' || executionScenario.id === 'pr-continuation' ? 10 : 8,
+      );
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
         { id: executionScenario.callIds[1], name: 'agent_system_github' },
@@ -118,9 +159,12 @@ describe('scripts/github-notification-model-scenarios', () => {
         { id: executionScenario.callIds[3], name: 'agent_system_git' },
         { id: executionScenario.callIds[4], name: 'agent_system_git' },
       ];
-      if (executionScenario.id === 'comment') {
+      if (executionScenario.id === 'comment' || executionScenario.id === 'pr-continuation') {
         expectedToolCalls.push({
-          id: githubNotificationCommentReplyCallId,
+          id:
+            executionScenario.id === 'comment'
+              ? githubNotificationCommentReplyCallId
+              : githubNotificationPullRequestContinuationCommentReplyCallId,
           name: 'agent_system_github_reply',
         });
       }
@@ -128,7 +172,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     }
 
     const comment = resolveGitHubNotificationModelScenario('comment');
-    assert.equal(comment.fixtures.length, 9);
+    assert.equal(comment.fixtures.length, 10);
     assert.deepEqual(comment.toolCalls[5], {
       id: githubNotificationCommentReplyCallId,
       name: 'agent_system_github_reply',
@@ -192,7 +236,19 @@ describe('scripts/github-notification-model-scenarios', () => {
         commitMessage: 'add pull request fixture',
         fileContents: 'pull request fixture ready.',
         filename: 'pull-request-fixture-123-4.txt',
-        id: 'pr',
+        id: 'pr-handoff',
+      },
+      {
+        commitMessage: 'add pull request fixture',
+        fileContents: 'pull request fixture ready.',
+        filename: 'pull-request-fixture-123-4.txt',
+        id: 'pr-continuation',
+      },
+      {
+        commitMessage: 'add pull request retirement fixture',
+        fileContents: 'pull request retirement fixture ready.',
+        filename: 'pull-request-retirement-fixture-123-4.txt',
+        id: 'pr-retirement',
       },
       {
         commitMessage: 'add comment fixture',
@@ -281,84 +337,131 @@ describe('scripts/github-notification-model-scenarios', () => {
     }
   });
 
-  it('should derive the comment reply from the admitted token across continuation history', async () => {
-    const scenario = resolveGitHubNotificationModelScenario('comment');
-    const request: ChatCompletionRequest = {
-      messages: [
-        {
-          content: [
-            'Continue the current GitHub issue lifecycle.',
-            'The approved inbound comment is the current user request.',
-            'Place the exact {{commenter}} placeholder once.',
-          ].join('\n'),
-          role: 'developer',
-        } as unknown as ChatCompletionRequest['messages'][number],
-        {
-          content: '@tanaabot Reply briefly with ready-123-4.',
-          role: 'user',
-        },
+  it('should provide one deterministic private response for the pull request opened event', () => {
+    for (const scenarioId of [
+      'implementation',
+      'pr-handoff',
+      'pr-continuation',
+      'pr-retirement',
+      'comment',
+      'retirement',
+    ]) {
+      const scenario = resolveGitHubNotificationModelScenario(scenarioId);
+      const request: ChatCompletionRequest = {
+        messages: [
+          {
+            content: [
+              'Continue the current GitHub issue lifecycle.',
+              'A delivery pull request has been linked to the current issue-owned work session.',
+              'Respond privately with one brief acknowledgment.',
+            ].join('\n'),
+            role: 'system',
+          },
+        ],
+        model: 'gpt-5.5',
+      };
+
+      const fixture = scenario.fixtures[7];
+      assert.equal(matchFixture([...scenario.fixtures], request), fixture);
+      assert.deepEqual(fixture?.response, {
+        content: githubNotificationPullRequestOpenedFinalResponse,
+        id: `agent-system-notification-${scenarioId}-pull-request-opened-final-response`,
+      });
+    }
+  });
+
+  it('should derive source comment replies from admitted tokens across continuation history', async () => {
+    const cases = [
+      {
+        callId: githubNotificationCommentReplyCallId,
+        scenarioId: 'comment',
+        token: 'ready-123-4',
+      },
+      {
+        callId: githubNotificationPullRequestContinuationCommentReplyCallId,
+        scenarioId: 'pr-continuation',
+        token: 'pr-ready-123-4',
+      },
+    ] as const;
+    for (const entry of cases) {
+      const scenario = resolveGitHubNotificationModelScenario(entry.scenarioId);
+      const request: ChatCompletionRequest = {
+        messages: [
+          {
+            content: [
+              'Continue the current GitHub issue lifecycle.',
+              'The approved inbound comment is the current user request.',
+              'Place the exact {{commenter}} placeholder once.',
+            ].join('\n'),
+            role: 'developer',
+          } as unknown as ChatCompletionRequest['messages'][number],
+          {
+            content: `@tanaabot Reply briefly with ${entry.token}.`,
+            role: 'user',
+          },
+          {
+            content: null,
+            role: 'assistant',
+            tool_calls: [
+              {
+                function: { arguments: '{}', name: 'unrelated_tool' },
+                id: 'call_unrelated_history',
+                type: 'function',
+              },
+            ],
+          },
+          {
+            content: '{"status":"complete"}',
+            role: 'tool',
+            tool_call_id: 'call_unrelated_history',
+          },
+          {
+            content: 'Continue the admitted comment turn.',
+            role: 'user',
+          },
+        ],
+        model: 'gpt-5.5',
+        tools: [
+          {
+            function: { name: 'agent_system_github_reply' },
+            type: 'function',
+          },
+        ],
+      };
+      const replyFixture = scenario.fixtures[8];
+      assert.equal(matchFixture([...scenario.fixtures], request), replyFixture);
+      const responseFactory = replyFixture?.response;
+      assert.equal(typeof responseFactory, 'function');
+      if (typeof responseFactory !== 'function') {
+        throw new Error('The source comment reply fixture requires a response factory.');
+      }
+      const response = (await responseFactory(request)) as ToolCallResponse;
+      assert.deepEqual(JSON.parse(response.toolCalls[0]?.arguments ?? '{}'), {
+        body: `{{commenter}}, ${entry.token}`,
+      });
+
+      request.messages.push(
         {
           content: null,
           role: 'assistant',
           tool_calls: [
             {
-              function: { arguments: '{}', name: 'unrelated_tool' },
-              id: 'call_unrelated_history',
+              function: {
+                arguments: response.toolCalls[0]?.arguments ?? '{}',
+                name: 'agent_system_github_reply',
+              },
+              id: entry.callId,
               type: 'function',
             },
           ],
         },
         {
-          content: '{"status":"complete"}',
+          content: '{"status":"staged"}',
           role: 'tool',
-          tool_call_id: 'call_unrelated_history',
+          tool_call_id: entry.callId,
         },
-        {
-          content: 'Continue the admitted comment turn.',
-          role: 'user',
-        },
-      ],
-      model: 'gpt-5.5',
-      tools: [
-        {
-          function: { name: 'agent_system_github_reply' },
-          type: 'function',
-        },
-      ],
-    };
-    const replyFixture = scenario.fixtures[7];
-    assert.equal(matchFixture([...scenario.fixtures], request), replyFixture);
-    const responseFactory = replyFixture?.response;
-    assert.equal(typeof responseFactory, 'function');
-    if (typeof responseFactory !== 'function') {
-      throw new Error('The comment reply fixture requires a response factory.');
+      );
+      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[9]);
     }
-    const response = (await responseFactory(request)) as ToolCallResponse;
-    assert.deepEqual(JSON.parse(response.toolCalls[0]?.arguments ?? '{}'), {
-      body: '{{commenter}}, ready-123-4',
-    });
-
-    request.messages.push(
-      {
-        content: null,
-        role: 'assistant',
-        tool_calls: [
-          {
-            function: {
-              arguments: response.toolCalls[0]?.arguments ?? '{}',
-              name: 'agent_system_github_reply',
-            },
-            id: githubNotificationCommentReplyCallId,
-            type: 'function',
-          },
-        ],
-      },
-      {
-        content: '{"status":"staged"}',
-        role: 'tool',
-        tool_call_id: githubNotificationCommentReplyCallId,
-      },
-    );
-    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[8]);
   });
 });

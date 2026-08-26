@@ -74,6 +74,12 @@ describe('channels/github/publication/publication', () => {
       ]),
       'I reviewed the assignment and have a plan ready.',
     );
+    assert.equal(
+      githubNotificationPublicationText('pull-request-handoff', [
+        { text: '## Pull request opened\n\n- **Pull request:** #45' },
+      ]),
+      '## Pull request opened\n\n- **Pull request:** #45',
+    );
   });
 
   it('should allow harmless paths and long repository identifiers', () => {

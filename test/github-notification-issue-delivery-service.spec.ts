@@ -30,7 +30,7 @@ function pullRequest(overrides: Record<string, unknown> = {}) {
     body: 'Closes #12',
     headRef: worktree.branch,
     headRepository: 'tanaabased/example',
-    nodeId: 'PR_delivery',
+    itemNodeId: 'PR_delivery',
     number: 45,
     state: 'open',
     title: 'Add the missing fixture',
@@ -151,7 +151,10 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       worktree,
     });
 
-    assert.deepEqual(receipt, { pullRequestNumber: 45 });
+    assert.deepEqual(receipt, {
+      pullRequestNodeId: 'PR_delivery',
+      pullRequestNumber: 45,
+    });
     assert.equal(
       scenario.gitRequests.find(({ argv }) => argv[0] === 'commit')?.stdin,
       '#12: add fixture file\n\nvalidated locally\n',

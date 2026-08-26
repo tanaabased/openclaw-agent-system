@@ -6,6 +6,7 @@ import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tool
 import { admitGitHubComment, githubCommentRevision } from '../conversation/comment-admission.ts';
 import type {
   GitHubNotificationCommentRevisionState,
+  GitHubNotificationConversationSource,
   GitHubNotificationConversationState,
   GitHubNotificationPublicationState,
 } from '../conversation/conversation-state.ts';
@@ -39,6 +40,11 @@ type LocalPublicationMatch = LocalPublicationMatchBase &
         publication: PublishablePublication;
       }
     | {
+        kind: 'pull-request-handoff';
+        publication: PublishablePublication;
+        publicationId: string;
+      }
+    | {
         commentNodeId: string;
         kind: 'reply';
         revision: GitHubNotificationCommentRevisionState & {
@@ -48,6 +54,7 @@ type LocalPublicationMatch = LocalPublicationMatchBase &
   );
 
 type PublicationMatch = LocalPublicationMatch & {
+  destination: GitHubNotificationConversationSource;
   item: GitHubNotificationItemState;
   state: GitHubNotificationConversationState;
 };
@@ -111,6 +118,16 @@ function publicationMatches(
         itemKey: conversation.itemKey,
         kind: 'assignment-response',
         publication: conversation.assignmentResponse,
+      });
+    }
+    const pullRequest = conversation.deliveryPullRequest;
+    if (pullRequest?.handoff?.target === target) {
+      matches.push({
+        conversationId,
+        itemKey: conversation.itemKey,
+        kind: 'pull-request-handoff',
+        publication: pullRequest.handoff,
+        publicationId: pullRequest.nodeId,
       });
     }
     for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
@@ -181,7 +198,7 @@ export default class GitHubNotificationCommentPublicationService {
         const exact = await opened.client.getIssueComment(
           authorized.item.repositoryOwner,
           authorized.item.repositoryName,
-          authorized.item.number,
+          authorized.destination.number,
           authorized.revision.commentDatabaseId,
         );
         const current = githubCommentRevision(exact);
@@ -220,8 +237,9 @@ export default class GitHubNotificationCommentPublicationService {
     const match = await this.#authorizeLocal(input);
     if (match.kind === 'reply') {
       return {
+        conversationId: match.conversationId,
         intent: 'github-reply' as const,
-        item: match.item,
+        item: { ...match.item, number: match.destination.number },
         source: {
           commentDatabaseId: match.revision.commentDatabaseId,
           revisionId: match.revision.revisionId,
@@ -230,9 +248,13 @@ export default class GitHubNotificationCommentPublicationService {
       };
     }
     return {
+      conversationId: match.conversationId,
       intent: match.kind,
-      item: match.item,
-      publicationId: match.item.intake!.assignmentEventId,
+      item: { ...match.item, number: match.destination.number },
+      publicationId:
+        match.kind === 'pull-request-handoff'
+          ? match.publicationId
+          : match.item.intake!.assignmentEventId,
       text: match.publication.publicText,
     };
   }
@@ -267,6 +289,11 @@ export default class GitHubNotificationCommentPublicationService {
     const candidate = matches[0];
     const item = monitorState.items[candidate.itemKey];
     const conversation = conversationState.conversations[candidate.conversationId];
+    const destination = !item
+      ? undefined
+      : candidate.kind === 'reply'
+        ? candidate.revision.source
+        : { itemType: item.itemType, number: item.number };
     const intakeReady =
       item?.intake !== undefined &&
       (parsed.intent === 'initial-acknowledgment'
@@ -275,8 +302,8 @@ export default class GitHubNotificationCommentPublicationService {
     const targetMatches =
       item && parsed.intent === 'github-reply' && candidate.kind === 'reply'
         ? githubNotificationPublicationTarget({
+            conversationId: candidate.conversationId,
             intent: 'github-reply',
-            item,
             source: {
               commentDatabaseId: candidate.revision.commentDatabaseId,
               revisionId: candidate.revision.revisionId,
@@ -284,15 +311,27 @@ export default class GitHubNotificationCommentPublicationService {
           }) === input.target
         : item && parsed.intent !== 'github-reply' && candidate.kind === parsed.intent
           ? githubNotificationPublicationTarget({
+              conversationId: candidate.conversationId,
               intent: parsed.intent,
-              item,
-              publicationId: item.intake?.assignmentEventId ?? '',
+              publicationId:
+                candidate.kind === 'pull-request-handoff'
+                  ? candidate.publicationId
+                  : (item.intake?.assignmentEventId ?? ''),
             }) === input.target
           : false;
     const publicText =
       candidate.kind === 'reply'
         ? candidate.revision.publication.publicText
         : candidate.publication.publicText;
+    const destinationMatches =
+      item &&
+      conversation &&
+      destination &&
+      ((destination.itemType === item.itemType && destination.number === item.number) ||
+        (destination.itemType === 'pull-request' &&
+          item.lifecycleId === 'issue' &&
+          conversation.deliveryPullRequest?.number === destination.number &&
+          conversation.deliveryPullRequest.status === 'open'));
     if (
       !item ||
       item.disposition !== 'approved' ||
@@ -301,6 +340,8 @@ export default class GitHubNotificationCommentPublicationService {
       candidate.conversationId !== parsed.conversationId ||
       conversation?.itemKey !== candidate.itemKey ||
       conversation.lifecycleId !== item.lifecycleId ||
+      !destination ||
+      !destinationMatches ||
       publicText !== text ||
       !targetMatches
     ) {
@@ -319,7 +360,7 @@ export default class GitHubNotificationCommentPublicationService {
     } catch {
       fail('github-notification-publication-route-revoked');
     }
-    const endpoint = `/repos/${item.repositoryOwner}/${item.repositoryName}/issues/${item.number}/comments`;
+    const endpoint = `/repos/${item.repositoryOwner}/${item.repositoryName}/issues/${destination.number}/comments`;
     const operation = classifyGitHubOperation({
       argv: ['api', '--method', 'POST', endpoint, '--input', '-'],
     });
@@ -328,6 +369,7 @@ export default class GitHubNotificationCommentPublicationService {
     }
     return {
       ...candidate,
+      destination,
       item,
       state: conversationState,
     };

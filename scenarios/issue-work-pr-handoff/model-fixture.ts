@@ -1,10 +1,13 @@
 import createGitHubNotificationIssueWorkScenario from '../../scripts/github-notification-model-issue-work-scenario.ts';
 
-export const githubNotificationPullRequestReplyCallId = 'call_agent_system_pr_reply';
-export const githubNotificationPullRequestIssueCallId = 'call_agent_system_github_pr_issue';
-export const githubNotificationPullRequestPatchCallId = 'call_apply_patch_pr_fixture';
-export const githubNotificationPullRequestAddCallId = 'call_agent_system_git_pr_add';
-export const githubNotificationPullRequestCommitCallId = 'call_agent_system_git_pr_commit';
+export const githubNotificationPullRequestHandoffReplyCallId = 'call_agent_system_pr_handoff_reply';
+export const githubNotificationPullRequestHandoffIssueCallId =
+  'call_agent_system_github_pr_handoff_issue';
+export const githubNotificationPullRequestHandoffPatchCallId =
+  'call_apply_patch_pr_handoff_fixture';
+export const githubNotificationPullRequestHandoffAddCallId = 'call_agent_system_git_pr_handoff_add';
+export const githubNotificationPullRequestHandoffCommitCallId =
+  'call_agent_system_git_pr_handoff_commit';
 
 export const githubNotificationPullRequestCandidate =
   "This assignment asks for one exact pull request fixture. I'm going to verify the prepared worktree, create and commit only that file, and let the issue lifecycle deliver the managed branch as a normalized pull request.";
@@ -33,19 +36,19 @@ export const githubNotificationPullRequestFinalResponse = [
   'Created one local commit in the prepared lifecycle worktree for managed pull request delivery.',
 ].join('\n');
 
-export const pullRequestScenario = createGitHubNotificationIssueWorkScenario({
+export const pullRequestHandoffScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationPullRequestAssignmentFinalResponse,
   callIds: {
-    add: githubNotificationPullRequestAddCallId,
-    commit: githubNotificationPullRequestCommitCallId,
-    issue: githubNotificationPullRequestIssueCallId,
-    patch: githubNotificationPullRequestPatchCallId,
-    reply: githubNotificationPullRequestReplyCallId,
+    add: githubNotificationPullRequestHandoffAddCallId,
+    commit: githubNotificationPullRequestHandoffCommitCallId,
+    issue: githubNotificationPullRequestHandoffIssueCallId,
+    patch: githubNotificationPullRequestHandoffPatchCallId,
+    reply: githubNotificationPullRequestHandoffReplyCallId,
   },
   candidate: githubNotificationPullRequestCandidate,
   commitMessage: 'add pull request fixture',
   fileContents: 'pull request fixture ready.',
   filenamePattern: /\bpull-request-fixture-[0-9]+-[0-9]+\.txt\b/u,
   finalResponse: githubNotificationPullRequestFinalResponse,
-  id: 'pr',
+  id: 'pr-handoff',
 });

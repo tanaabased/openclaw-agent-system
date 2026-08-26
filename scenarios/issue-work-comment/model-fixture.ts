@@ -1,7 +1,4 @@
-import type { ChatCompletionRequest, Fixture, ToolCallResponse } from '@copilotkit/aimock';
-
 import createGitHubNotificationIssueWorkScenario from '../../scripts/github-notification-model-issue-work-scenario.ts';
-import hasGitHubNotificationModelToolResult from '../../scripts/github-notification-model-tool-result.ts';
 
 export const githubNotificationCommentAssignmentReplyCallId =
   'call_agent_system_comment_assignment_reply';
@@ -41,29 +38,7 @@ export const githubNotificationCommentImplementationFinalResponse = [
 export const githubNotificationCommentFinalResponse =
   'Staged one concise response for the approved GitHub comment.';
 
-const commentReplyTokenPattern = /\bready-[0-9]+-[0-9]+\b/u;
-
-function messageText(message: ChatCompletionRequest['messages'][number]): string {
-  if (typeof message.content === 'string') return message.content;
-  if (!Array.isArray(message.content)) return '';
-  return message.content.map((part) => (typeof part.text === 'string' ? part.text : '')).join('');
-}
-
-function requestText(request: ChatCompletionRequest): string {
-  return request.messages.map(messageText).join('\n');
-}
-
-function hasCommentReplyToken(request: ChatCompletionRequest): boolean {
-  return commentReplyTokenPattern.test(requestText(request));
-}
-
-function commentReplyToken(request: ChatCompletionRequest): string {
-  const token = requestText(request).match(commentReplyTokenPattern)?.[0];
-  if (!token) throw new Error('The comment model request is missing its bounded reply token.');
-  return token;
-}
-
-const issueWorkScenario = createGitHubNotificationIssueWorkScenario({
+export const commentScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationCommentAssignmentFinalResponse,
   callIds: {
     add: githubNotificationCommentAddCallId,
@@ -73,59 +48,14 @@ const issueWorkScenario = createGitHubNotificationIssueWorkScenario({
     reply: githubNotificationCommentAssignmentReplyCallId,
   },
   candidate: githubNotificationCommentCandidate,
+  comment: {
+    finalResponse: githubNotificationCommentFinalResponse,
+    replyCallId: githubNotificationCommentReplyCallId,
+    replyTokenPattern: /\bready-[0-9]+-[0-9]+\b/u,
+  },
   commitMessage: 'add comment fixture',
   fileContents: 'comment fixture ready.',
   filenamePattern: /\bcomment-fixture-[0-9]+-[0-9]+\.txt\b/u,
   finalResponse: githubNotificationCommentImplementationFinalResponse,
   id: 'comment',
 });
-
-const commentFixtures: Fixture[] = [
-  {
-    match: {
-      model: /^(?:aimock\/)?gpt-5\.5$/u,
-      predicate: (request) =>
-        hasCommentReplyToken(request) &&
-        !hasGitHubNotificationModelToolResult(
-          request.messages,
-          githubNotificationCommentReplyCallId,
-        ),
-      toolName: 'agent_system_github_reply',
-    },
-    response: (request): ToolCallResponse => ({
-      id: 'agent-system-notification-comment-reply-response',
-      toolCalls: [
-        {
-          arguments: JSON.stringify({ body: `{{commenter}}, ${commentReplyToken(request)}` }),
-          id: githubNotificationCommentReplyCallId,
-          name: 'agent_system_github_reply',
-        },
-      ],
-    }),
-  },
-  {
-    match: {
-      model: /^(?:aimock\/)?gpt-5\.5$/u,
-      predicate: (request) =>
-        hasCommentReplyToken(request) &&
-        hasGitHubNotificationModelToolResult(
-          request.messages,
-          githubNotificationCommentReplyCallId,
-        ),
-    },
-    response: {
-      content: githubNotificationCommentFinalResponse,
-      id: 'agent-system-notification-comment-final-response',
-    },
-  },
-];
-
-export const commentScenario = {
-  ...issueWorkScenario,
-  finalResponses: [...issueWorkScenario.finalResponses, githubNotificationCommentFinalResponse],
-  fixtures: [...issueWorkScenario.fixtures, ...commentFixtures],
-  toolCalls: [
-    ...issueWorkScenario.toolCalls,
-    { id: githubNotificationCommentReplyCallId, name: 'agent_system_github_reply' },
-  ],
-};

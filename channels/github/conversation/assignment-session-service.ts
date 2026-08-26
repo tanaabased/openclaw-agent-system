@@ -37,6 +37,7 @@ import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnCoordinator from './model-turn-coordinator.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type GitHubNotificationIssueDeliveryService from './issue-delivery-service.ts';
+import type GitHubNotificationPullRequestHandoffService from './pull-request-handoff-service.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
   acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
@@ -44,6 +45,7 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   deliveries: Pick<GitHubNotificationIssueDeliveryService, 'deliver'>;
+  handoffs: Pick<GitHubNotificationPullRequestHandoffService, 'checkpoint' | 'reconcile'>;
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
@@ -91,6 +93,17 @@ interface AssignmentImplementationInput {
   repository: string;
   route: ResolvedNotificationRoute;
   session: GitHubNotificationAssignmentSessionInput;
+}
+
+function handoffPending(conversation: GitHubNotificationConversation): boolean {
+  const source = conversation.deliveryPullRequest;
+  return Boolean(
+    conversation.implementation?.status === 'completed' &&
+    source &&
+    (!source.baselineEstablished ||
+      !source.eventRecorded ||
+      source.handoff?.status !== 'published'),
+  );
 }
 
 function modelTurnContext(input: ModelTurnContextInput) {
@@ -206,6 +219,8 @@ export default class GitHubNotificationAssignmentSessionService {
         });
       } else if (reconciled.conversation.implementation?.status === 'delivery-pending') {
         await this.#deliver(input, conversationId, repository);
+      } else if (handoffPending(reconciled.conversation)) {
+        await this.#reconcileHandoff(input);
       }
       return;
     }
@@ -359,10 +374,31 @@ export default class GitHubNotificationAssignmentSessionService {
       workspaceDir: input.workspaceDir,
       worktree: input.worktree,
     });
+    await this.#dependencies.handoffs.checkpoint({
+      agentId: input.agentId,
+      executionSurface: input.executionSurface,
+      item: input.item,
+      lifecycle: input.lifecycle,
+      pullRequest: receipt,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
+    });
     await this.#checkpointImplementationCompleted(input, conversationId);
+    await this.#reconcileHandoff(input);
     this.#dependencies.logger.info(
       `github-notifications: assignment delivery completed agent=${input.agentId} item=${repository}#${input.item.number} pr=${receipt.pullRequestNumber}`,
     );
+  }
+
+  async #reconcileHandoff(input: GitHubNotificationAssignmentSessionInput): Promise<void> {
+    await this.#dependencies.handoffs.reconcile({
+      agentId: input.agentId,
+      executionSurface: input.executionSurface,
+      item: input.item,
+      lifecycle: input.lifecycle,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      workspaceDir: input.workspaceDir,
+    });
   }
 
   async #conversation(

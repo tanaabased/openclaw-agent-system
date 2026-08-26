@@ -5,6 +5,7 @@ import GitHubNotificationTurnCatalog, {
   githubNotificationIssueWorkAssignmentTurnIdentity,
   githubNotificationIssueWorkCommentTurnIdentity,
   githubNotificationIssueWorkImplementationTurnIdentity,
+  githubNotificationIssueWorkPullRequestOpenedTurnIdentity,
   githubNotificationSupportedTurnIdentities,
 } from '../channels/github/conversation/turn-catalog.ts';
 import { GitHubNotificationLifecycleModeSupportError } from '../channels/github/lifecycles/mode-support.ts';
@@ -34,6 +35,10 @@ describe('channels/github/conversation/turn-catalog', () => {
     assert.deepEqual(
       catalog.resolve(githubNotificationIssueWorkImplementationTurnIdentity).identity,
       githubNotificationIssueWorkImplementationTurnIdentity,
+    );
+    assert.deepEqual(
+      catalog.resolve(githubNotificationIssueWorkPullRequestOpenedTurnIdentity).identity,
+      githubNotificationIssueWorkPullRequestOpenedTurnIdentity,
     );
   });
 

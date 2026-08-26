@@ -24,14 +24,19 @@ GitHub notification
         |                                   |
  validate and publish GitHub response       |
         |                                   |
- GitHub comment -> same lifecycle session --+
+ issue or delivery PR comment -> same session +
+        |                                   |
+ source-affine GitHub reply ----------------+
         |
  question / plan summary / work result / complete
 ```
 
 Polling discovers candidate events. Admission verifies the agent, actor,
 repository, permission, and lifecycle type before creating or resuming the
-session and any required worktree. Comments return to that same session.
+session and any required worktree. For an issue lifecycle, the issue remains the
+permanent conversation owner after delivery while its open delivery pull request
+joins the bounded source set. Comments from either item return to the same session,
+and each public response returns to the exact item where its source comment appeared.
 
 Provider-verified retirement first checkpoints the logical lifecycle state,
 then independently reconciles resource cleanup. Cleanup requires a completed
@@ -51,15 +56,23 @@ mode, and state.
 
 A lifecycle type identifies the GitHub activity that owns a session.
 
-| Name                    | Machine ID            | Session and worktree                                                                |
-| ----------------------- | --------------------- | ----------------------------------------------------------------------------------- |
-| Issue assignment        | `issue`               | One issue-scoped session and managed issue worktree                                 |
-| Pull-request assignment | `pull-request`        | One directly assigned pull-request session; worktree behavior is lifecycle-specific |
-| Pull-request review     | `pull-request-review` | One future review-request lifecycle with its own authority and worktree rules       |
+| Name                    | Machine ID            | Session and worktree                                                                 |
+| ----------------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| Issue assignment        | `issue`               | One issue-owned session, managed worktree, and optional delivery pull-request source |
+| Pull-request assignment | `pull-request`        | One directly assigned pull-request session; worktree behavior is lifecycle-specific  |
+| Pull-request review     | `pull-request-review` | One future review-request lifecycle with its own authority and worktree rules        |
 
 Pull-request assignment and pull-request review are separate lifecycle types.
 Additional types may reuse the shared flow while supplying their own context,
 instructions, worktree requirements, and completion rules.
+
+An issue lifecycle does not transfer session ownership to a pull request created
+during Work delivery. The issue remains the stable owner, while the delivered pull
+request is the delivery comment source with its own baseline and provider identity.
+Closing that pull request without merging deactivates only that source. Reopening it
+establishes a fresh baseline before new comments are admitted. Merging it retires the
+issue-owned lifecycle and lets the existing retirement cleanup reconcile its session
+and worktree.
 
 ### Lifecycle Ownership
 
@@ -245,12 +258,19 @@ selection fails closed instead of falling back to a different prompt.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
+- **Pull-request handoff:** Successful issue delivery checkpoints the pull request
+  as the delivery comment source, baselines its existing comments, records one
+  private card through the registered `pull-request-opened` model turn, retains
+  its private response in the issue-owned session, and publishes one deterministic
+  handoff comment to the owning issue.
 - **Comments:** An admitted comment enters as an attributed direct-message card
   in the existing session and inherits its lifecycle type, current mode, and
   capability. The event presentation replaces only admitted account mentions,
   links the installed agent identity and exact source comment, preserves the
   remaining Markdown source, and retains the unchanged provider comment as the
-  raw inbound body.
+  raw inbound body. The issue and its active delivery pull request are independent
+  bounded sources; the durable revision freezes its source, and publication derives
+  the destination from that source rather than selecting a mutable conversation target.
 - **Publication:** Only the typed GitHub candidate or a trusted
   provider-constructed message may be published. Publication validates the
   payload, reauthorizes the exact source author and destination, substitutes its

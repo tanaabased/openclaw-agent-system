@@ -8,6 +8,8 @@ import {
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
+const issueSource = { itemType: 'issue' as const, number: 12 };
+
 describe('channels/github/conversation/conversation-state', () => {
   it('should migrate the legacy conversation schema without inventing an active turn', () => {
     const legacy = {
@@ -25,10 +27,9 @@ describe('channels/github/conversation/conversation-state', () => {
       workspaceDir: '/workspace',
     };
 
-    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
-      ...legacy,
-      schemaVersion: 6,
-    });
+    const decoded = decodeGitHubNotificationConversationState(legacy, 'notification-data');
+    assert.equal(decoded?.schemaVersion, 7);
+    assert.equal(decoded?.conversations['github:issue:R_repo:12']?.deliveryPullRequest, undefined);
   });
 
   it('should migrate the active-turn schema without inventing an acknowledgment', () => {
@@ -48,10 +49,9 @@ describe('channels/github/conversation/conversation-state', () => {
       workspaceDir: '/workspace',
     };
 
-    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
-      ...legacy,
-      schemaVersion: 6,
-    });
+    const decoded = decodeGitHubNotificationConversationState(legacy, 'notification-data');
+    assert.equal(decoded?.schemaVersion, 7);
+    assert.equal(decoded?.conversations['github:issue:R_repo:12']?.deliveryPullRequest, undefined);
   });
 
   it('should migrate the acknowledgment schema without inventing an assignment response', () => {
@@ -70,10 +70,9 @@ describe('channels/github/conversation/conversation-state', () => {
       workspaceDir: '/workspace',
     };
 
-    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
-      ...legacy,
-      schemaVersion: 6,
-    });
+    const decoded = decodeGitHubNotificationConversationState(legacy, 'notification-data');
+    assert.equal(decoded?.schemaVersion, 7);
+    assert.equal(decoded?.conversations['github:issue:R_repo:12']?.deliveryPullRequest, undefined);
   });
 
   it('should migrate the assignment-response schema without inventing implementation work', () => {
@@ -92,10 +91,9 @@ describe('channels/github/conversation/conversation-state', () => {
       workspaceDir: '/workspace',
     };
 
-    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
-      ...legacy,
-      schemaVersion: 6,
-    });
+    const decoded = decodeGitHubNotificationConversationState(legacy, 'notification-data');
+    assert.equal(decoded?.schemaVersion, 7);
+    assert.equal(decoded?.conversations['github:issue:R_repo:12']?.deliveryPullRequest, undefined);
   });
 
   it('should migrate completed implementation state without inventing delivery receipts', () => {
@@ -127,10 +125,13 @@ describe('channels/github/conversation/conversation-state', () => {
       workspaceDir: '/workspace',
     };
 
-    assert.deepEqual(decodeGitHubNotificationConversationState(legacy, 'notification-data'), {
-      ...legacy,
-      schemaVersion: 6,
-    });
+    const decoded = decodeGitHubNotificationConversationState(legacy, 'notification-data');
+    assert.equal(decoded?.schemaVersion, 7);
+    assert.equal(
+      decoded?.conversations['github:issue:R_repo:12']?.assignmentResponse?.status,
+      'published',
+    );
+    assert.equal(decoded?.conversations['github:issue:R_repo:12']?.deliveryPullRequest, undefined);
   });
 
   it('should retain one durable assignment acknowledgment without provider prose', () => {
@@ -172,6 +173,7 @@ describe('channels/github/conversation/conversation-state', () => {
           commentDatabaseId: 91,
           reasonCode: 'comment-approved',
           revisionId: 'a'.repeat(64),
+          source: issueSource,
           status: 'admitted',
         },
       },
@@ -280,12 +282,141 @@ describe('channels/github/conversation/conversation-state', () => {
             }),
           },
           revisionId: source.revisionId,
+          source: issueSource,
           status: 'responded',
         },
       },
     };
 
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
+  it('should retain one bounded delivery pull request and source-affine publications', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    const conversationId = 'github:issue:R_repo:12';
+    const pullRequestSource = { itemType: 'pull-request' as const, number: 45 };
+    const handoffText = [
+      '## Pull request opened',
+      '',
+      '- **Pull request:** #45',
+      '- **Conversation:** Comments on this issue and the pull request now continue in the same private work session.',
+      '- **Replies:** Each response is posted back to the issue or pull request where its comment originated.',
+    ].join('\n');
+    const replyText = '{{commenter}}, the pull request comment is handled here.';
+    const revisionId = 'a'.repeat(64);
+    state.conversations[conversationId] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        handoff: {
+          commentDatabaseId: 101,
+          commentNodeId: 'IC_handoff',
+          publicText: handoffText,
+          publicTextDigest: githubNotificationPublicTextDigest(handoffText),
+          status: 'published',
+          target: githubNotificationPublicationTarget({
+            conversationId,
+            intent: 'pull-request-handoff',
+            publicationId: 'PR_delivery',
+          }),
+        },
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {
+        IC_pull_request_comment: {
+          bodyDigest: 'b'.repeat(64),
+          commentDatabaseId: 102,
+          publication: {
+            publicText: replyText,
+            publicTextDigest: githubNotificationPublicTextDigest(replyText),
+            status: 'pending',
+            target: githubNotificationPublicationTarget({
+              conversationId,
+              intent: 'github-reply',
+              source: { commentDatabaseId: 102, revisionId },
+            }),
+          },
+          revisionId,
+          source: pullRequestSource,
+          status: 'responded',
+        },
+      },
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
+  it('should retain an owner-affine direct pull request revision without delivery state', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    state.conversations['github:pull-request:R_repo:13'] = {
+      baselineEstablished: true,
+      itemKey: 'github:R_repo:13',
+      lifecycleId: 'pull-request',
+      mode: 'work',
+      revisions: {
+        IC_pull_request_comment: {
+          bodyDigest: 'b'.repeat(64),
+          commentDatabaseId: 102,
+          reasonCode: 'comment-baseline',
+          revisionId: 'a'.repeat(64),
+          source: { itemType: 'pull-request', number: 13 },
+          status: 'baseline',
+        },
+      },
+    };
+
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
+  it('should reject revisions redirected beyond the owner and delivery pull request', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    const conversationId = 'github:issue:R_repo:12';
+    state.conversations[conversationId] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {
+        IC_pull_request_comment: {
+          bodyDigest: 'b'.repeat(64),
+          commentDatabaseId: 102,
+          publication: {
+            publicText: 'This reply must stay on its source pull request.',
+            publicTextDigest: githubNotificationPublicTextDigest(
+              'This reply must stay on its source pull request.',
+            ),
+            status: 'pending',
+            target: githubNotificationPublicationTarget({
+              conversationId,
+              intent: 'github-reply',
+              source: { commentDatabaseId: 102, revisionId: 'a'.repeat(64) },
+            }),
+          },
+          revisionId: 'a'.repeat(64),
+          source: { itemType: 'pull-request', number: 46 },
+          status: 'responded',
+        },
+      },
+    };
+
+    assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
+    state.conversations[conversationId]!.revisions.IC_pull_request_comment!.source.number = 45;
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+    state.conversations[conversationId]!.lifecycleId = 'pull-request';
+    assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
   });
 
   it('should preserve an empty established baseline', () => {
@@ -336,6 +467,7 @@ describe('channels/github/conversation/conversation-state', () => {
           },
           reasonCode: 'comment-approved',
           revisionId: 'a'.repeat(64),
+          source: issueSource,
           status: 'responded',
         },
       },
@@ -357,6 +489,7 @@ describe('channels/github/conversation/conversation-state', () => {
           commentDatabaseId: 91,
           reasonCode: 'comment-approved',
           revisionId: 'a'.repeat(64),
+          source: issueSource,
           status: 'admitted',
         },
       },

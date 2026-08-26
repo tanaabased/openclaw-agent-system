@@ -50,6 +50,7 @@ describe('channels/github/channel', () => {
     assert.deepEqual(channel.reload, {
       configPrefixes: ['channels.agent-system-github'],
     });
+    assert.match(channel.meta.blurb ?? '', /issue and linked delivery pull-request comments/u);
     assert.equal(channel.outbound, undefined);
     assert.equal(channel.message, undefined);
   });

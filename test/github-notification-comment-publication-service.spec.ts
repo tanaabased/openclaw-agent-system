@@ -116,6 +116,7 @@ function stateFixture() {
         },
         reasonCode: 'comment-approved',
         revisionId: revision.revisionId,
+        source: { itemType: 'issue', number: item.number },
         status: 'responded',
       },
     },
@@ -263,6 +264,51 @@ describe('channels/github/publication/comment-publication-service', () => {
     );
   });
 
+  it('should publish a delivery pull request reply back to the exact pull request', async () => {
+    const fixture = stateFixture();
+    const conversation = Object.values(fixture.conversations.conversations)[0]!;
+    conversation.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: true,
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    };
+    const revision = conversation.revisions.IC_source!;
+    revision.source = { itemType: 'pull-request', number: 45 };
+    if (revision.publication?.status !== 'pending') throw new Error('missing pending publication');
+    const observedNumbers: number[] = [];
+    const client: PublicationClient = {
+      identity: notificationAccount,
+      async createIssueComment(_owner, _repository, number) {
+        observedNumbers.push(number);
+        return { databaseId: 101, nodeId: 'IC_reply' };
+      },
+      async findOwnIssueComment(_owner, _repository, number) {
+        observedNumbers.push(number);
+        return undefined;
+      },
+      async getIssueComment(_owner, _repository, number) {
+        observedNumbers.push(number);
+        return structuredClone(fixture.comment);
+      },
+    };
+    const service = publicationService(fixture, {
+      async open() {
+        return { authorized: true, client, configuration };
+      },
+    });
+
+    const result = await service.publish({
+      accountId: agentId,
+      target: fixture.target,
+      text: publicText,
+    });
+
+    assert.equal(result.status, 'published');
+    assert.deepEqual(observedNumbers, [45, 45, 45]);
+  });
+
   it('should reject unaccepted text before connecting credentials', async () => {
     const fixture = stateFixture();
     let opened = 0;
@@ -348,5 +394,60 @@ describe('channels/github/publication/comment-publication-service', () => {
     assert.match(publishedBody, /^I reviewed the assignment and have a plan ready\./u);
     assert.match(publishedBody, /<!-- agent-system-github-publication:assignment-response:/u);
     assert.doesNotMatch(publishedBody, /^@/u);
+  });
+
+  it('should publish a deterministic pull request handoff on the owning issue', async () => {
+    const fixture = assignmentResponseFixture();
+    const [conversationId, conversation] = Object.entries(fixture.conversations.conversations)[0]!;
+    const publicText = [
+      '## Pull request opened',
+      '',
+      '- **Pull request:** #45',
+      '- **Conversation:** Comments on this issue and the pull request now continue in the same private work session.',
+      '- **Replies:** Each response is posted back to the issue or pull request where its comment originated.',
+    ].join('\n');
+    const target = githubNotificationPublicationTarget({
+      conversationId,
+      intent: 'pull-request-handoff',
+      publicationId: 'PR_delivery',
+    });
+    conversation.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: true,
+      handoff: {
+        publicText,
+        publicTextDigest: githubNotificationPublicTextDigest(publicText),
+        status: 'pending',
+        target,
+      },
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    };
+    const observedNumbers: number[] = [];
+    const client: PublicationClient = {
+      identity: notificationAccount,
+      async createIssueComment(_owner, _repository, number) {
+        observedNumbers.push(number);
+        return { databaseId: 101, nodeId: 'IC_handoff' };
+      },
+      async findOwnIssueComment(_owner, _repository, number) {
+        observedNumbers.push(number);
+        return undefined;
+      },
+      async getIssueComment() {
+        throw new Error('handoff publication has no source comment');
+      },
+    };
+    const service = publicationService(fixture, {
+      async open() {
+        return { authorized: true, client, configuration };
+      },
+    });
+
+    const result = await service.publish({ accountId: agentId, target, text: publicText });
+
+    assert.equal(result.status, 'published');
+    assert.deepEqual(observedNumbers, [12, 12]);
   });
 });
