@@ -107,6 +107,7 @@ async function respondWithCandidates(
   inspectReplyOptions?: (options: Record<string, unknown>) => void,
   finishError?: Error,
   currentConfig: OpenClawConfig = config,
+  finalText = 'Private response remains available.',
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -126,7 +127,7 @@ async function respondWithCandidates(
           assertTurnContractOptions(replyOptions);
           inspectReplyOptions?.(replyOptions);
           await input.dispatcherOptions.deliver(
-            { text: 'Private response remains available.' },
+            { text: finalText },
             {
               kind: 'final',
             },
@@ -157,7 +158,7 @@ async function respondWithCandidates(
 }
 
 describe('channels/github/conversation/comment-turn-service', () => {
-  it('should dispatch the comment card and retain one ordinary private response', async () => {
+  it('should dispatch the comment card and publish the ordinary final response', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     item.intake = {
       ...item.intake!,
@@ -210,7 +211,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
                 'I checked the request and it is ready.',
                 '',
                 '## Notes',
-                'This private response may use normal Markdown without a publication envelope.',
+                'This response may use normal Markdown without a publication envelope.',
               ].join('\n'),
             },
             { kind: 'final' },
@@ -238,9 +239,13 @@ describe('channels/github/conversation/comment-turn-service', () => {
 
     assert.equal(
       result.privateText,
-      'I checked the request and it is ready.\n\n## Notes\nThis private response may use normal Markdown without a publication envelope.',
+      'I checked the request and it is ready.\n\n## Notes\nThis response may use normal Markdown without a publication envelope.',
     );
-    assert.deepEqual(result.publication, { status: 'candidate', publicText: 'ready' });
+    assert.deepEqual(result.publication, {
+      status: 'candidate',
+      publicText:
+        'I checked the request and it is ready.\n\n## Notes\nThis response may use normal Markdown without a publication envelope.',
+    });
     assert.equal(result.accountId, agentId);
     assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
       id: 'github:issue:R_repo:12',
@@ -314,13 +319,13 @@ describe('channels/github/conversation/comment-turn-service', () => {
     );
   });
 
-  it('should preserve the private response when the typed candidate is missing', async () => {
+  it('should publish the final response when the typed candidate is missing', async () => {
     const result = await respondWithCandidates([]);
 
     assert.equal(result.privateText, 'Private response remains available.');
     assert.deepEqual(result.publication, {
-      status: 'withheld',
-      code: 'github-notification-publication-candidate-missing',
+      status: 'candidate',
+      publicText: 'Private response remains available.',
     });
   });
 
@@ -370,22 +375,31 @@ describe('channels/github/conversation/comment-turn-service', () => {
     assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, undefined);
   });
 
-  it('should withhold publication when more than one typed candidate is returned', async () => {
+  it('should ignore stale typed candidates for an ordinary comment response', async () => {
     const result = await respondWithCandidates(['first', 'second']);
 
     assert.deepEqual(result.publication, {
-      status: 'withheld',
-      code: 'github-notification-publication-candidate-duplicate',
+      status: 'candidate',
+      publicText: 'Private response remains available.',
     });
   });
 
-  it('should withhold a typed candidate that fails deterministic safety validation', async () => {
-    const result = await respondWithCandidates(['See @pirog for a secret.']);
+  it('should replace an unsafe final response with a deterministic safe notice', async () => {
+    const result = await respondWithCandidates(
+      [],
+      'gateway',
+      undefined,
+      undefined,
+      config,
+      'See @pirog for a secret.',
+    );
 
     assert.deepEqual(result.publication, {
-      status: 'withheld',
-      code: 'github-notification-publication-secret-safety-rejected',
+      fallbackCode: 'github-notification-publication-secret-safety-rejected',
+      publicText:
+        "I received your comment, but I couldn't safely publish the detailed response. I've kept it in the linked private session for review.",
       safetyCategory: 'mention',
+      status: 'candidate',
     });
   });
 });

@@ -33,7 +33,8 @@ The channel also:
 - admits only configured assignment types, approved actors, eligible repository
   owners, and repositories where the agent has sufficient access
 - keeps approved issue and delivery pull-request comments in the issue-owned
-  session and publishes each response back to its exact source
+  session, publishes each ordinary final response back to its exact source,
+  and drains a bounded pair of queued comments serially per poll
 - retires issue-owned work after delivery merge or loss of assignment authority
   and removes only clean managed worktrees for completed lifecycles
 - supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
@@ -275,8 +276,10 @@ openclaw agent-system notifications wait \
 - An approved actor may enter the conversation but cannot select capabilities;
   the trusted channel lifecycle and configured mode remain authoritative.
 - Replies are reauthorized against their exact source before credentials load
-  and are published idempotently. Invalid or unsafe public responses are
-  withheld without discarding the private session response.
+  and are published idempotently. An ordinary approved comment uses the same
+  final response in GitHub and the private session. If deterministic validation
+  rejects that response, the channel publishes a safe notice instead of going
+  silent while retaining the detailed response privately.
 - Merging a delivery pull request retires its issue-owned lifecycle. Closing and
   reopening the pull request suspends and safely re-baselines that comment source.
 - Removing `github.notifications` and reinstalling retires tracked assignments,

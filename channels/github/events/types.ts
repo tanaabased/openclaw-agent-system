@@ -19,6 +19,7 @@ export type GitHubNotificationEventTurn =
       instructions: string;
       kind: 'model';
       publicationIntent?: GitHubNotificationPublicationIntent;
+      publicationSource?: 'candidate' | 'final';
       responseInstructions: string;
     };
 

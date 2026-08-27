@@ -10,8 +10,6 @@ export const githubNotificationPullRequestLifecycleAddCallId =
   'call_agent_system_git_pr_lifecycle_add';
 export const githubNotificationPullRequestLifecycleCommitCallId =
   'call_agent_system_git_pr_lifecycle_commit';
-export const githubNotificationPullRequestLifecycleCommentReplyCallId =
-  'call_agent_system_pr_lifecycle_comment_reply';
 
 export const githubNotificationPullRequestLifecycleCandidate =
   "This assignment asks for one exact pull request lifecycle fixture. I'm going to verify the prepared worktree, create and commit only that file, and let the issue lifecycle deliver the managed branch as a normalized pull request.";
@@ -41,7 +39,7 @@ export const githubNotificationPullRequestLifecycleFinalResponse = [
 ].join('\n');
 
 export const githubNotificationPullRequestLifecycleCommentFinalResponse =
-  'Staged one concise response for the approved pull request comment.';
+  '{{commenter}}, the approved pull request comment received a direct response.';
 
 export const pullRequestLifecycleScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationPullRequestLifecycleAssignmentFinalResponse,
@@ -55,7 +53,6 @@ export const pullRequestLifecycleScenario = createGitHubNotificationIssueWorkSce
   candidate: githubNotificationPullRequestLifecycleCandidate,
   comment: {
     finalResponse: githubNotificationPullRequestLifecycleCommentFinalResponse,
-    replyCallId: githubNotificationPullRequestLifecycleCommentReplyCallId,
     replyTokenPattern: /\bpr-ready-[0-9]+-[0-9]+\b/u,
   },
   commitMessage: 'add pull request lifecycle fixture',

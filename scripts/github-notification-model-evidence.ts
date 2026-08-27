@@ -75,6 +75,19 @@ function fixtureResponse(entry: GitHubNotificationModelJournalEntry): Record<str
   return record(entry.response.fixture?.response) ?? {};
 }
 
+function isFinalResponse(
+  scenario: GitHubNotificationModelScenario,
+  entry: GitHubNotificationModelJournalEntry,
+): boolean {
+  const fixture = entry.response.fixture;
+  if (fixture === null) return false;
+  if (scenario.dynamicFinalResponseFixtures?.some((candidate) => candidate === fixture)) {
+    return true;
+  }
+  const content = fixtureResponse(entry).content;
+  return typeof content === 'string' && scenario.finalResponses.includes(content);
+}
+
 function observedToolCallIds(
   requests: readonly GitHubNotificationModelJournalEntry[],
   name: string,
@@ -117,10 +130,7 @@ export default function githubNotificationModelEvidence(
   const requests = entries.filter((entry) => entry.body !== null);
   const toolNames = [...new Set(scenario.toolCalls.map(({ name }) => name))].sort();
   return {
-    finalResponseCount: requests.filter((entry) => {
-      const content = fixtureResponse(entry).content;
-      return typeof content === 'string' && scenario.finalResponses.includes(content);
-    }).length,
+    finalResponseCount: requests.filter((entry) => isFinalResponse(scenario, entry)).length,
     model: normalizedModel(requests[0]?.body?.model, scenario),
     promptRequestCount: requests.filter((entry) => {
       const messages = entry.body?.messages ?? [];

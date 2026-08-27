@@ -67,6 +67,7 @@ const githubNotificationCommentEvent = {
     instructions: githubNotificationCommentEventInstructions,
     kind: 'model',
     publicationIntent: 'github-reply',
+    publicationSource: 'final',
     responseInstructions: githubNotificationResponseInstructions,
   },
 } as const satisfies GitHubNotificationEvent;

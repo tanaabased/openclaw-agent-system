@@ -201,12 +201,17 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-acto
 mergeable=''
 for attempt in $(seq 1 30); do
   mergeable="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr view "$pull_request_number" --repo tanaabased/big-test-bucket --json mergeable --jq .mergeable)"
-  if [[ "$mergeable" == 'MERGEABLE' ]]; then
-    break
-  fi
-  sleep 1
+  case "$mergeable" in
+    MERGEABLE) break ;;
+    CONFLICTING) exit 1 ;;
+    UNKNOWN) sleep 1 ;;
+    *) exit 1 ;;
+  esac
 done
-test "$mergeable" = MERGEABLE
+case "$mergeable" in
+  MERGEABLE | UNKNOWN) ;;
+  *) exit 1 ;;
+esac
 ```
 
 ```bash

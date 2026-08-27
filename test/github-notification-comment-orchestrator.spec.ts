@@ -440,6 +440,101 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     });
   });
 
+  it('should drain two admitted comments serially before yielding the poll cycle', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const comments = [
+      comment('@tanaabot first', {
+        createdAt: '2026-08-15T12:00:00.000Z',
+        databaseId: 91,
+        nodeId: 'IC_first',
+        updatedAt: '2026-08-15T12:00:00.000Z',
+      }),
+      comment('@tanaabot second', {
+        createdAt: '2026-08-15T12:01:00.000Z',
+        databaseId: 92,
+        nodeId: 'IC_second',
+        updatedAt: '2026-08-15T12:01:00.000Z',
+      }),
+      comment('@tanaabot third', {
+        createdAt: '2026-08-15T12:02:00.000Z',
+        databaseId: 93,
+        nodeId: 'IC_third',
+        updatedAt: '2026-08-15T12:02:00.000Z',
+      }),
+    ];
+    const store = memoryStateStore(state);
+    const responded: number[] = [];
+    let receiptId = 200;
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority(comments),
+      conversationStateStore: store,
+      deliver: async () => {
+        receiptId += 1;
+        return {
+          delivery: {
+            messageIds: [String(receiptId)],
+            receipt: createMessageReceiptFromOutboundResults({
+              kind: 'text',
+              results: [
+                {
+                  channel: githubNotificationChannelId,
+                  conversationId: id,
+                  messageId: String(receiptId),
+                  meta: { nodeId: `IC_reply_${receiptId}` },
+                },
+              ],
+            }),
+            visibleReplySent: true,
+          },
+          status: 'handled_visible',
+        };
+      },
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: { error() {}, info() {}, warn() {} },
+      monitorStateStore: monitorStateStore(monitor),
+      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      turnCatalog,
+      turns: {
+        async respond(input) {
+          responded.push(input.comment.databaseId);
+          return {
+            accountId: agentId,
+            agentId,
+            config: {},
+            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
+            privateText: `ready-${input.comment.databaseId}`,
+            publication: {
+              status: 'candidate',
+              publicText: `ready-${input.comment.databaseId}`,
+            },
+          };
+        },
+      },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(responded, [91, 92]);
+    assert.equal(store.snapshot()?.conversations[id]?.revisions.IC_first?.status, 'responded');
+    assert.equal(store.snapshot()?.conversations[id]?.revisions.IC_second?.status, 'responded');
+    assert.equal(store.snapshot()?.conversations[id]?.revisions.IC_third, undefined);
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.deepEqual(responded, [91, 92, 93]);
+    assert.equal(store.snapshot()?.conversations[id]?.revisions.IC_third?.status, 'responded');
+  });
+
   it('should admit a delivery pull request comment by stable node and number identity', async () => {
     const monitor = preparedMonitor();
     const item = monitor.items[notificationItemKey]!;

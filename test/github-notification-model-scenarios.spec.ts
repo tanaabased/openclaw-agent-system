@@ -24,11 +24,9 @@ import {
   githubNotificationCommentCommitCallId,
   githubNotificationCommentIssueCallId,
   githubNotificationCommentPatchCallId,
-  githubNotificationCommentReplyCallId,
 } from '../scenarios/issue-work-comment/model-fixture.ts';
 import {
   githubNotificationPullRequestLifecycleAddCallId,
-  githubNotificationPullRequestLifecycleCommentReplyCallId,
   githubNotificationPullRequestLifecycleCommitCallId,
   githubNotificationPullRequestLifecycleIssueCallId,
   githubNotificationPullRequestLifecyclePatchCallId,
@@ -127,7 +125,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
       assert.equal(
         scenario.fixtures.length,
-        executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle' ? 10 : 8,
+        executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle' ? 9 : 8,
       );
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
@@ -136,24 +134,12 @@ describe('scripts/github-notification-model-scenarios', () => {
         { id: executionScenario.callIds[3], name: 'agent_system_git' },
         { id: executionScenario.callIds[4], name: 'agent_system_git' },
       ];
-      if (executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle') {
-        expectedToolCalls.push({
-          id:
-            executionScenario.id === 'comment'
-              ? githubNotificationCommentReplyCallId
-              : githubNotificationPullRequestLifecycleCommentReplyCallId,
-          name: 'agent_system_github_reply',
-        });
-      }
       assert.deepEqual(scenario.toolCalls, expectedToolCalls);
     }
 
     const comment = resolveGitHubNotificationModelScenario('comment');
-    assert.equal(comment.fixtures.length, 10);
-    assert.deepEqual(comment.toolCalls[5], {
-      id: githubNotificationCommentReplyCallId,
-      name: 'agent_system_github_reply',
-    });
+    assert.equal(comment.fixtures.length, 9);
+    assert.equal(comment.toolCalls.length, 5);
   });
 
   it('should reject an unknown scenario before starting the server', () => {
@@ -368,15 +354,13 @@ describe('scripts/github-notification-model-scenarios', () => {
     }
   });
 
-  it('should derive source comment replies from admitted tokens across continuation history', async () => {
+  it('should derive direct final replies from admitted comment tokens', async () => {
     const cases = [
       {
-        callId: githubNotificationCommentReplyCallId,
         scenarioId: 'comment',
         token: 'ready-123-4',
       },
       {
-        callId: githubNotificationPullRequestLifecycleCommentReplyCallId,
         scenarioId: 'pr-lifecycle',
         token: 'pr-ready-123-4',
       },
@@ -389,10 +373,10 @@ describe('scripts/github-notification-model-scenarios', () => {
             content: [
               'Continue the current GitHub issue lifecycle.',
               'The approved inbound comment is the current user request.',
-              'Place the exact {{commenter}} placeholder once.',
+              'Your final response is published back to the exact source comment.',
             ].join('\n'),
-            role: 'developer',
-          } as unknown as ChatCompletionRequest['messages'][number],
+            role: 'system',
+          },
           {
             content: `@tanaabot Reply briefly with ${entry.token}.`,
             role: 'user',
@@ -419,12 +403,6 @@ describe('scripts/github-notification-model-scenarios', () => {
           },
         ],
         model: 'gpt-5.5',
-        tools: [
-          {
-            function: { name: 'agent_system_github_reply' },
-            type: 'function',
-          },
-        ],
       };
       const replyFixture = scenario.fixtures[8];
       assert.equal(matchFixture([...scenario.fixtures], request), replyFixture);
@@ -433,33 +411,11 @@ describe('scripts/github-notification-model-scenarios', () => {
       if (typeof responseFactory !== 'function') {
         throw new Error('The source comment reply fixture requires a response factory.');
       }
-      const response = (await responseFactory(request)) as ToolCallResponse;
-      assert.deepEqual(JSON.parse(response.toolCalls[0]?.arguments ?? '{}'), {
-        body: `{{commenter}}, ${entry.token}`,
-      });
-
-      request.messages.push(
-        {
-          content: null,
-          role: 'assistant',
-          tool_calls: [
-            {
-              function: {
-                arguments: response.toolCalls[0]?.arguments ?? '{}',
-                name: 'agent_system_github_reply',
-              },
-              id: entry.callId,
-              type: 'function',
-            },
-          ],
-        },
-        {
-          content: '{"status":"staged"}',
-          role: 'tool',
-          tool_call_id: entry.callId,
-        },
+      const response = await responseFactory(request);
+      assert.equal(
+        'content' in response ? response.content : undefined,
+        `{{commenter}}, ${entry.token}`,
       );
-      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[9]);
     }
   });
 });

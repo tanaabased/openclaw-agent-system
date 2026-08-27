@@ -64,6 +64,7 @@ const assignmentContract = {
   lifecycle,
   mode: { disableTools: false, id: 'work' },
   publicationIntent: 'assignment-response',
+  publicationSource: 'candidate',
 } as GitHubNotificationTurnContract;
 const implementationContract = {
   identity: { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' },

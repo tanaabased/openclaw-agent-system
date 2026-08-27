@@ -13,10 +13,11 @@ notifications channel. It describes their appearance and composition only. The
 - Link canonical GitHub actors and items where they are named.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
-- Give private responses a report-like structure with stable sections for the
-  complete assessment, plan, question, or result.
+- Give private lifecycle results a report-like structure with stable sections
+  for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. Keep them shorter than their private counterparts.
+  reports. An ordinary comment response is mirrored unchanged in its private
+  session.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -81,8 +82,8 @@ This card is the inbound message for the registered `pull-request-opened` model
 turn after managed delivery records its pull request. The host-owned lifecycle
 retains both the card and its brief private response in the issue-owned session.
 The deterministic GitHub handoff uses the same compact fact-list grammar on the
-issue, while later comment responses use the ordinary direct-message and `To
-GitHub` components.
+issue. Later comment responses use the ordinary direct-message flow and mirror
+the final answer back to their exact source.
 
 ## Implementation Card
 
@@ -147,15 +148,23 @@ tables when they make the complete result easier to review.
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
 ```
 
-Render the complete GitHub-facing text as one Markdown blockquote. Multi-paragraph
-responses repeat the blockquote marker for each paragraph. Address the verified
-source commenter where it reads naturally rather than imposing a fixed mention
-position. Keep this candidate concise and conversational even when the private
-response uses a fuller report structure.
+Use this component only when a lifecycle turn intentionally separates its
+private report from a typed public candidate. Render the complete GitHub-facing
+text as one Markdown blockquote. Multi-paragraph responses repeat the blockquote
+marker for each paragraph. Address the verified source commenter where it reads
+naturally rather than imposing a fixed mention position.
+
+## Ordinary Comment Response
+
+An admitted issue or delivery pull-request comment has one concise final answer.
+The same Markdown remains visible in the private session and is published back
+to the exact source after deterministic validation and verified attribution. Do
+not wrap it in a `To GitHub` component or create a second model-authored answer.
 
 ## Private and Public Composition
 
-When a surface presents both response parts together, use this composition:
+When a lifecycle turn presents distinct private and public response parts
+together, use this composition:
 
 ```markdown
 ## 💬 Comment answered

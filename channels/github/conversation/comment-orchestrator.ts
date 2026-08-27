@@ -41,6 +41,8 @@ import type {
 type GitHubNotificationConversationClient = GitHubNotificationCommentClient &
   Pick<GitHubNotificationIntakeClient, 'getItem'>;
 
+const maximumCommentResponsesPerReconciliation = 2;
+
 export interface GitHubNotificationCommentOrchestratorDependencies {
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationConversationClient>;
   clock?: () => number;
@@ -320,6 +322,7 @@ export default class GitHubNotificationCommentOrchestrator {
     const observations = sortedComments(
       pages.flatMap(({ comments, source }) => comments.map((comment) => ({ comment, source }))),
     );
+    let responseCount = 0;
     for (const { comment: observed, source } of observations) {
       const observedRevision = githubCommentRevision(observed);
       const current = existingConversation!.revisions[observed.nodeId];
@@ -378,7 +381,8 @@ export default class GitHubNotificationCommentOrchestrator {
         monitor.workspaceDir,
         signal,
       );
-      return;
+      responseCount += 1;
+      if (responseCount >= maximumCommentResponsesPerReconciliation) return;
     }
   }
 
