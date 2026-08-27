@@ -2,7 +2,9 @@
 
 ### Bug Fixes
 
-- Fixed approved GitHub issue and pull request comments to publish ordinary final responses, fall back safely instead of going silent, and drain bounded queued replies. [#62](https://github.com/tanaabased/openclaw-agent-system/pull/62)
+- Fixed approved GitHub issue and pull request comments to publish ordinary final responses instead of requiring `agent_system_github_reply`. [#62](https://github.com/tanaabased/openclaw-agent-system/pull/62)
+- Fixed queued GitHub comments to publish up to two approved replies serially per polling reconciliation. [#62](https://github.com/tanaabased/openclaw-agent-system/pull/62)
+- Fixed unsafe GitHub comment responses to publish a deterministic safe notice instead of being silently withheld. [#62](https://github.com/tanaabased/openclaw-agent-system/pull/62)
 
 ## v0.5.2 - [August 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.2)
 
