@@ -171,6 +171,7 @@ export default function createGitHubNotificationRuntime(
       instructions(context: AgentSystemHookContext) {
         return githubNotificationPromptGuidance(context, {
           candidates,
+          logger: dependencies.lifecycleLogger,
           turnContracts,
           turnSelector,
         });
