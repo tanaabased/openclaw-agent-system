@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
+import type { ChannelInboundTurnPlan } from 'openclaw/plugin-sdk/channel-inbound';
 
 import GitHubNotificationModelTurnDispatcher, {
   GitHubNotificationModelTurnDispatcherError,
@@ -16,28 +16,36 @@ const route = {
   sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:R_repo:12',
   workspaceDir: '/workspace/tanaabot',
 } as const;
-const ctxPayload = {} as AssembledInboundReply['ctxPayload'];
+const ctxPayload = {} as ChannelInboundTurnPlan['ctxPayload'];
 
 describe('channels/github/conversation/model-turn-dispatcher', () => {
   it('should record and dispatch one resolved model turn through the shared host boundary', async () => {
     let recorded = false;
     const dispatcher = new GitHubNotificationModelTurnDispatcher({
-      async dispatchReplyWithBufferedBlockDispatcher(input) {
+      async dispatchChannelInboundTurn(input) {
+        assert.equal(input.record?.createIfMissing, true);
+        input.record?.trackSessionMetaTask?.(
+          Promise.resolve().then(() => {
+            recorded = true;
+            return { sessionId: 'session-1' };
+          }),
+        );
+        await input.afterRecord?.();
         assert.equal(recorded, true);
-        assert.equal(input.ctx.GroupSystemPrompt, 'trusted notification instructions');
+        assert.equal(input.ctxPayload.GroupSystemPrompt, 'trusted notification instructions');
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
         assert.equal(replyOptions.extraSystemPrompt, undefined);
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
-        const commentaryDelivery = await input.dispatcherOptions.deliver(
+        const commentaryDelivery = await input.delivery.deliver(
           { text: 'progress', isCommentary: true },
           {
             kind: 'block',
           },
         );
-        const finalDelivery = await input.dispatcherOptions.deliver(
+        const finalDelivery = await input.delivery.deliver(
           { text: 'complete response' },
           { kind: 'final' },
         );
@@ -49,16 +57,13 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
           suppression: { reason: 'channel_transform' },
           visibleReplySent: false,
         });
-        return { counts: { block: 1, final: 1, tool: 0 }, queuedFinal: false };
-      },
-      async recordInboundSession(input) {
-        assert.equal(input.createIfMissing, true);
-        input.trackSessionMetaTask?.(
-          Promise.resolve().then(() => {
-            recorded = true;
-            return { sessionId: 'session-1' };
-          }),
-        );
+        return {
+          admission: { kind: 'dispatch' },
+          ctxPayload: input.ctxPayload,
+          dispatched: true,
+          dispatchResult: { counts: { block: 1, final: 1, tool: 0 }, queuedFinal: false },
+          routeSessionKey: input.route.sessionKey,
+        } as never;
       },
     });
 
@@ -83,15 +88,12 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
   });
 
   it('should fail before model dispatch when the existing session is absent', async () => {
-    let dispatches = 0;
     const dispatcher = new GitHubNotificationModelTurnDispatcher({
-      async dispatchReplyWithBufferedBlockDispatcher() {
-        dispatches += 1;
-        return { counts: { block: 0, final: 0, tool: 0 }, queuedFinal: false };
-      },
-      async recordInboundSession(input) {
-        assert.equal(input.createIfMissing, false);
-        input.trackSessionMetaTask?.(Promise.resolve(null));
+      async dispatchChannelInboundTurn(input) {
+        assert.equal(input.record?.createIfMissing, false);
+        input.record?.trackSessionMetaTask?.(Promise.resolve(null));
+        await input.afterRecord?.();
+        throw new Error('unexpected model dispatch');
       },
     });
 
@@ -111,6 +113,5 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         error instanceof GitHubNotificationModelTurnDispatcherError &&
         error.code === 'github-notification-model-turn-session-missing',
     );
-    assert.equal(dispatches, 0);
   });
 });

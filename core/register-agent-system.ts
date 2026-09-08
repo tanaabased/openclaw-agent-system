@@ -145,8 +145,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationRuntime = createGitHubNotificationRuntime({
     accountClient: githubCapability.accountClient,
     ...(currentUid === undefined ? {} : { currentUid }),
-    dispatchReplyWithBufferedBlockDispatcher:
-      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
     lifecycleLogger,
     mutateConfigFile(params) {
       return api.runtime.config.mutateConfigFile(params);
@@ -154,7 +152,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(privateStateRoot === undefined ? {} : { privateStateRoot }),
     readConfig,
     readRuntimeConfig,
-    recordInboundSession: api.runtime.channel.session.recordInboundSession,
     replyToolLogger: logger,
     resolveAgentWorkspaceDir(config, agentId) {
       return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import type { ChannelInboundTurnPlan } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
@@ -13,7 +14,7 @@ import {
 } from '../channels/github/conversation/comment-admission.ts';
 import GitHubNotificationModelTurnCoordinator from '../channels/github/conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher, {
-  type GitHubNotificationModelTurnDispatcherDependencies,
+  type GitHubNotificationHostDispatchResult,
 } from '../channels/github/conversation/model-turn-dispatcher.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
@@ -105,13 +106,45 @@ function candidateStore(candidates: readonly string[], finishError?: Error) {
   };
 }
 
+interface TestModelTurnDispatchInput {
+  ctx: ChannelInboundTurnPlan['ctxPayload'];
+  dispatcherOptions: ChannelInboundTurnPlan['delivery'];
+  replyOptions: ChannelInboundTurnPlan['replyOptions'];
+  toolsAllow: ChannelInboundTurnPlan['toolsAllow'];
+}
+
+type TestSessionRecordInput = Pick<
+  NonNullable<ChannelInboundTurnPlan['record']>,
+  'createIfMissing' | 'trackSessionMetaTask'
+>;
+
 function modelTurnDispatcher(
-  dispatchReplyWithBufferedBlockDispatcher: GitHubNotificationModelTurnDispatcherDependencies['dispatchReplyWithBufferedBlockDispatcher'],
-  recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'],
+  dispatchReply: (
+    input: TestModelTurnDispatchInput,
+  ) => Promise<GitHubNotificationHostDispatchResult>,
+  recordInboundSession: (input: TestSessionRecordInput) => Promise<void>,
 ) {
   return new GitHubNotificationModelTurnDispatcher({
-    dispatchReplyWithBufferedBlockDispatcher,
-    recordInboundSession,
+    async dispatchChannelInboundTurn(input) {
+      await recordInboundSession({
+        createIfMissing: input.record?.createIfMissing,
+        trackSessionMetaTask: input.record?.trackSessionMetaTask,
+      });
+      await input.afterRecord?.();
+      const dispatchResult = await dispatchReply({
+        ctx: input.ctxPayload,
+        dispatcherOptions: input.delivery,
+        replyOptions: input.replyOptions,
+        toolsAllow: input.toolsAllow,
+      });
+      return {
+        admission: { kind: 'dispatch' },
+        ctxPayload: input.ctxPayload,
+        dispatched: true,
+        dispatchResult,
+        routeSessionKey: input.route.sessionKey,
+      } as never;
+    },
   });
 }
 
@@ -186,15 +219,14 @@ describe('channels/github/conversation/comment-turn-service', () => {
     let createIfMissing: boolean | undefined;
     let recorded = false;
     const contracts = createGitHubNotificationTurnContractResolver();
-    const recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'] =
-      async (input) => {
-        createIfMissing = input.createIfMissing;
-        const task = Promise.resolve().then(() => {
-          recorded = true;
-          return { sessionId: 'session-1' };
-        });
-        input.trackSessionMetaTask?.(task);
-      };
+    const recordInboundSession = async (input: TestSessionRecordInput) => {
+      createIfMissing = input.createIfMissing;
+      const task = Promise.resolve().then(() => {
+        recorded = true;
+        return { sessionId: 'session-1' };
+      });
+      input.trackSessionMetaTask?.(task);
+    };
     const service = new GitHubNotificationCommentTurnService({
       coordinator: new GitHubNotificationModelTurnCoordinator({
         candidates: candidateStore(['ready']),

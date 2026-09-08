@@ -1,9 +1,5 @@
 import { resolve } from 'node:path';
 
-import type {
-  AssembledInboundReply,
-  PreparedInboundReply,
-} from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
@@ -65,13 +61,11 @@ import createNotificationLifecycleContribution from './lifecycle-contribution.ts
 export interface GitHubNotificationRuntimeDependencies {
   accountClient: GitHubAccountClient;
   currentUid?: number;
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
   lifecycleLogger: Logger;
   mutateConfigFile: NotificationRoutingServiceDependencies['mutateConfigFile'];
   privateStateRoot?: string;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   readRuntimeConfig(): OpenClawConfig | Promise<OpenClawConfig>;
-  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
   replyToolLogger: Pick<Logger, 'debug'>;
   resolveAgentWorkspaceDir(config: OpenClawConfig, agentId: string): string;
   sessionRuntime: GitHubNotificationSessionRuntime;
@@ -145,10 +139,7 @@ export default function createGitHubNotificationRuntime(
     turns: turnCatalog,
   });
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
-  const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
-    dispatchReplyWithBufferedBlockDispatcher: dependencies.dispatchReplyWithBufferedBlockDispatcher,
-    recordInboundSession: dependencies.recordInboundSession,
-  });
+  const turnDispatcher = new GitHubNotificationModelTurnDispatcher();
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
     candidates,
     dispatcher: turnDispatcher,

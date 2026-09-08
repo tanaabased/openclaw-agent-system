@@ -1,11 +1,9 @@
 import {
-  dispatchChannelInboundReply,
-  type AssembledInboundReply,
-  type PreparedInboundReply,
+  dispatchChannelInboundTurn,
+  type ChannelInboundTurnPlan,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
-import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import { githubNotificationChannelId, type ResolvedNotificationRoute } from '../routing/routing.ts';
 import {
@@ -18,7 +16,7 @@ import {
 } from './turn-contract.ts';
 
 export type GitHubNotificationHostDispatchResult = Extract<
-  Awaited<ReturnType<typeof dispatchChannelInboundReply>>,
+  Awaited<ReturnType<typeof dispatchChannelInboundTurn>>,
   { dispatched: true }
 >['dispatchResult'];
 
@@ -40,15 +38,16 @@ export class GitHubNotificationModelTurnDispatcherError extends Error {
 }
 
 export interface GitHubNotificationModelTurnDispatcherDependencies {
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
-  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
+  dispatchChannelInboundTurn(
+    input: ChannelInboundTurnPlan,
+  ): ReturnType<typeof dispatchChannelInboundTurn>;
 }
 
 export interface GitHubNotificationModelTurnDispatchInput {
   config: OpenClawConfig;
   contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>;
   createIfMissing?: boolean;
-  ctxPayload: AssembledInboundReply['ctxPayload'];
+  ctxPayload: ChannelInboundTurnPlan['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
   messageId: string;
   route: ResolvedNotificationRoute;
@@ -62,7 +61,7 @@ export interface GitHubNotificationModelTurnDispatchResult {
 
 function modelContext(
   input: GitHubNotificationModelTurnDispatchInput,
-): AssembledInboundReply['ctxPayload'] {
+): ChannelInboundTurnPlan['ctxPayload'] {
   if (input.executionSurface !== 'cli-one-shot') return input.ctxPayload;
   const existing = input.ctxPayload.GroupSystemPrompt?.trim();
   return {
@@ -75,7 +74,11 @@ function modelContext(
 export default class GitHubNotificationModelTurnDispatcher {
   readonly #dependencies: GitHubNotificationModelTurnDispatcherDependencies;
 
-  constructor(dependencies: GitHubNotificationModelTurnDispatcherDependencies) {
+  constructor(
+    dependencies: GitHubNotificationModelTurnDispatcherDependencies = {
+      dispatchChannelInboundTurn,
+    },
+  ) {
     this.#dependencies = dependencies;
   }
 
@@ -87,9 +90,8 @@ export default class GitHubNotificationModelTurnDispatcher {
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
-      result = await dispatchChannelInboundReply({
+      result = await this.#dependencies.dispatchChannelInboundTurn({
         accountId: input.route.accountId,
-        agentId: input.route.agentId,
         afterRecord: async () => {
           if (!sessionRecordTask) {
             throw new GitHubNotificationModelTurnDispatcherError(
@@ -114,8 +116,6 @@ export default class GitHubNotificationModelTurnDispatcher {
             };
           },
         },
-        dispatchReplyWithBufferedBlockDispatcher:
-          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
         messageId: input.messageId,
         record: {
           createIfMissing: input.createIfMissing ?? false,
@@ -129,7 +129,6 @@ export default class GitHubNotificationModelTurnDispatcher {
             sessionRecordTask = task;
           },
         },
-        recordInboundSession: this.#dependencies.recordInboundSession,
         replyOptions: {
           ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
           ...githubNotificationReplyCleanupOptions(input.executionSurface),
@@ -139,10 +138,10 @@ export default class GitHubNotificationModelTurnDispatcher {
           suppressDefaultToolProgressMessages: true,
           suppressTyping: true,
         },
-        routeSessionKey: input.route.sessionKey,
-        storePath: resolveStorePath(input.config.session?.store, {
+        route: {
           agentId: input.route.agentId,
-        }),
+          sessionKey: input.route.sessionKey,
+        },
         ...(turnDispatch.toolsAllow === undefined ? {} : { toolsAllow: turnDispatch.toolsAllow }),
       });
     } catch (error) {
