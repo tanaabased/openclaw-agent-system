@@ -77,6 +77,7 @@ bun install
 bun run build
 openclaw plugins install --link . --accept-capabilities
 openclaw plugins enable agent-system
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
 ```

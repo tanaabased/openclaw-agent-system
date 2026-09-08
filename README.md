@@ -67,16 +67,20 @@ Install the current release from ClawHub:
 
 ```sh
 openclaw plugins install clawhub:@tanaab/openclaw-agent-system --accept-capabilities
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
 To select npm explicitly instead:
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
 Either install command accepts Agent System's declared capabilities, then
-registers and enables the `agent-system` plugin.
+registers and enables the `agent-system` plugin. The explicit conversation-access
+grant lets Agent System add manifest and GitHub lifecycle guidance through
+OpenClaw's `before_prompt_build` hook.
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 

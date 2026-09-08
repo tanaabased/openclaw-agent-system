@@ -61,15 +61,17 @@ jobs:
         run: |
           hash -r
           openclaw --version | grep -F '2026.9.3'
-          openclaw-setup --workspace "$RUNNER_TEMP/workspace"
-          openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force --accept-capabilities
-          openclaw plugins enable agent-system
+          openclaw-setup \
+            --workspace "$RUNNER_TEMP/workspace" \
+            --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
           openclaw plugins inspect agent-system --runtime --json \
             | jq -e --arg source_path "$AGENT_SYSTEM_PACKAGE" '
                 .plugin.status == "loaded"
                   and .plugin.error == null
                   and .install.sourcePath == $source_path
                   and .install.version == .plugin.version
+                  and .policy.allowConversationAccess == true
+                  and any(.typedHooks[]?; .name == "before_prompt_build")
               '
           mkdir -p "$RUNNER_TEMP/candidate-gateway"
           openclaw-gateway start --state-dir "$RUNNER_TEMP/candidate-gateway"

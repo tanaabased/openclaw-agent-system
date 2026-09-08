@@ -51,9 +51,10 @@ describe('openclaw package smoke workflow', () => {
     assert.match(install?.run ?? '', /openclaw@2026\.9\.3/u);
     assert.doesNotMatch(source, /2026\.7\.1-2|openclaw-agent-system@0\.5\.3/u);
     assert.match(candidate?.run ?? '', /openclaw-setup/u);
-    assert.match(candidate?.run ?? '', /npm-pack:\$AGENT_SYSTEM_PACKAGE/u);
-    assert.match(candidate?.run ?? '', /--accept-capabilities/u);
+    assert.match(candidate?.run ?? '', /--agent-system-plugin "\$AGENT_SYSTEM_PACKAGE"/u);
     assert.match(candidate?.run ?? '', /plugins inspect agent-system --runtime --json/u);
+    assert.match(candidate?.run ?? '', /\.policy\.allowConversationAccess == true/u);
+    assert.match(candidate?.run ?? '', /\.name == "before_prompt_build"/u);
     assert.match(candidate?.run ?? '', /openclaw-gateway start/u);
     assert.match(candidate?.run ?? '', /openclaw gateway call agents\.list/u);
     assert.match(candidate?.run ?? '', /\.agents \| type == "array"/u);
