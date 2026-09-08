@@ -36,8 +36,8 @@ openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 
 # should configure both installed agents with the ci model
-openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.list[1].model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.emori.model' "openai/$OPENAI_MODEL"
 
 # should start the default gateway as a supervised background process
 openclaw-gateway start
@@ -47,8 +47,8 @@ openclaw-gateway start
 
 ```bash
 # should grant the native github tool to each installed github agent
-openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_github") != null'
-openclaw config get agents.list --json | jq -e '.[] | select(.id == "emori") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_github") != null'
+openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_github") != null'
+openclaw config get agents.entries.emori.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_github") != null'
 ```
 
 ```bash

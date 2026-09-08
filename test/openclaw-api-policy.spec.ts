@@ -65,6 +65,18 @@ async function typescriptFiles(path: string): Promise<string[]> {
   return nested.flat();
 }
 
+async function markdownFiles(path: string): Promise<string[]> {
+  const entries = await readdir(path, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map((entry) => {
+      const entryPath = join(path, entry.name);
+      if (entry.isDirectory()) return markdownFiles(entryPath);
+      return entry.isFile() && entry.name.endsWith('.md') ? [entryPath] : [];
+    }),
+  );
+  return nested.flat();
+}
+
 function stringLiteralValue(node: ts.Node | undefined): string | undefined {
   return node && ts.isStringLiteralLike(node) ? node.text : undefined;
 }
@@ -161,6 +173,17 @@ describe('openclaw api policy', () => {
           `${file} must not call the protected ${member} surface`,
         );
       }
+    }
+  });
+
+  it('should keep installed examples on canonical keyed agent configuration', async () => {
+    for (const file of await markdownFiles('examples')) {
+      const source = await readFile(file, 'utf8');
+      assert.equal(
+        source.includes('agents.list'),
+        false,
+        `${file} must use the OpenClaw 2026.9.3 agents.entries configuration`,
+      );
     }
   });
 });

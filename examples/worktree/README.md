@@ -25,7 +25,7 @@ openclaw agent-system install
 
 ```bash
 # should grant the native managed worktree tool to the installed worktree agent
-openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_git_worktree") != null'
+openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_git_worktree") != null'
 ```
 
 ```bash
