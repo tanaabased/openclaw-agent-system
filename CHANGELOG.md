@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added a verified coordinated upgrade rehearsal from OpenClaw 2026.7.1-2 with Agent System 0.5.3 to OpenClaw 2026.9.3 with the next Agent System release. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+- Added a packed-plugin and live-Gateway smoke test for the exact supported OpenClaw 2026.9.3 release. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 
 ### Bug Fixes
 

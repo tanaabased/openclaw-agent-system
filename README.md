@@ -24,7 +24,7 @@ Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw ag
 > The next Agent System release targets OpenClaw 2026.9.3 exactly. Agent System
 > 0.5.3 remains the historical OpenClaw 2026.7.1-2 build; unlisted OpenClaw
 > releases are not implied compatible. See the
-> [compatibility table and upgrade procedure](./DEVELOPMENT.md#openclaw-compatibility).
+> [compatibility policy](./DEVELOPMENT.md#openclaw-compatibility).
 
 > [!WARNING]
 > Agent System remains a work in progress. Development and Leia coverage focus

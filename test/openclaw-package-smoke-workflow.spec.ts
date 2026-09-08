@@ -10,14 +10,16 @@ interface WorkflowStep {
   uses?: string;
 }
 
-interface CompatibilityWorkflow {
+interface PackageSmokeWorkflow {
   env?: Record<string, string>;
   jobs?: {
-    compatibility?: {
+    'package-smoke'?: {
+      name?: string;
       'runs-on'?: string;
       steps?: WorkflowStep[];
     };
   };
+  name?: string;
   on?: {
     pull_request?: unknown;
     push?: { branches?: string[] };
@@ -25,19 +27,17 @@ interface CompatibilityWorkflow {
   };
 }
 
-describe('openclaw upgrade rehearsal workflow', () => {
-  it('should rehearse the released installation and coordinated target cutover', async () => {
-    const source = await readFile('.github/workflows/pr-openclaw-upgrade-rehearsal.yml', 'utf8');
-    const workflow = parse(source) as CompatibilityWorkflow;
-    const job = workflow.jobs?.compatibility;
+describe('openclaw package smoke workflow', () => {
+  it('should install and exercise the packed candidate on the supported core', async () => {
+    const source = await readFile('.github/workflows/pr-openclaw-package-smoke.yml', 'utf8');
+    const workflow = parse(source) as PackageSmokeWorkflow;
+    const job = workflow.jobs?.['package-smoke'];
     const steps = job?.steps ?? [];
-    const historical = steps.find(
-      (step) => step.name === 'Verify released plugin on historical core',
-    );
     const pathUpdates = steps.find((step) => step.name === 'PATH updates');
-    const cutover = steps.find((step) => step.name === 'Stage coordinated core cutover');
-    const candidate = steps.find((step) => step.name === 'Verify candidate plugin and Gateway');
+    const install = steps.find((step) => step.name === 'Install OpenClaw 2026.9.3');
+    const candidate = steps.find((step) => step.name === 'Verify packed plugin and Gateway');
 
+    assert.equal(workflow.name, 'OpenClaw package smoke test');
     assert.ok(workflow.on && Object.hasOwn(workflow.on, 'pull_request'));
     assert.ok(workflow.on && Object.hasOwn(workflow.on, 'workflow_dispatch'));
     assert.deepEqual(workflow.on?.push?.branches, ['main']);
@@ -46,23 +46,18 @@ describe('openclaw upgrade rehearsal workflow', () => {
       pathUpdates?.run ?? '',
       /OPENCLAW_STATE_DIR=\$RUNNER_TEMP\/openclaw-state.*\$GITHUB_ENV/u,
     );
+    assert.equal(job?.name, 'Packed plugin / OpenClaw 2026.9.3');
     assert.equal(job?.['runs-on'], 'ubuntu-24.04');
-    assert.match(source, /openclaw@2026\.7\.1-2/u);
-    assert.match(source, /@tanaab\/openclaw-agent-system@0\.5\.3/u);
-    assert.match(historical?.run ?? '', /openclaw-gateway start/u);
-    assert.match(cutover?.run ?? '', /plugins disable agent-system/u);
-    assert.match(cutover?.run ?? '', /openclaw@2026\.9\.3/u);
-    assert.ok(
-      (cutover?.run ?? '').indexOf('plugins disable agent-system') <
-        (cutover?.run ?? '').indexOf('openclaw@2026.9.3'),
-    );
+    assert.match(install?.run ?? '', /openclaw@2026\.9\.3/u);
+    assert.doesNotMatch(source, /2026\.7\.1-2|openclaw-agent-system@0\.5\.3/u);
+    assert.match(candidate?.run ?? '', /openclaw-setup/u);
     assert.match(candidate?.run ?? '', /npm-pack:\$AGENT_SYSTEM_PACKAGE/u);
     assert.match(candidate?.run ?? '', /--accept-capabilities/u);
     assert.match(candidate?.run ?? '', /plugins inspect agent-system --runtime --json/u);
     assert.match(candidate?.run ?? '', /openclaw-gateway start/u);
     assert.match(candidate?.run ?? '', /openclaw gateway call agents\.list/u);
+    assert.match(candidate?.run ?? '', /\.agents \| type == "array"/u);
     assert.match(candidate?.run ?? '', /openclaw-gateway stop/u);
-    assert.ok(steps.indexOf(historical!) < steps.indexOf(cutover!));
-    assert.ok(steps.indexOf(cutover!) < steps.indexOf(candidate!));
+    assert.ok(steps.indexOf(install!) < steps.indexOf(candidate!));
   });
 });

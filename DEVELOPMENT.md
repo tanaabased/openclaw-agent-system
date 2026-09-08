@@ -17,25 +17,24 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Agent System tests explicit core-and-plugin pairs. A minimum version is not a
 claim that every later or intervening OpenClaw release works.
 
-| Agent System release | OpenClaw release | Support status                         |
-| -------------------- | ---------------- | -------------------------------------- |
-| 0.5.3                | 2026.7.1-2       | Historical published baseline          |
-| Next release         | 2026.9.3         | Development, build, and Gateway target |
+| Agent System release | OpenClaw release | Status                                      |
+| -------------------- | ---------------- | ------------------------------------------- |
+| Next release         | 2026.9.3         | Current development and release target      |
+| 0.5.3                | 2026.7.1-2       | Prior release record; not tested by this CI |
 
-Upgrade the controlled installation as one coordinated cutover:
+The ordinary lint, typecheck, unit, and release workflows run against the
+OpenClaw version pinned in `package.json` and `bun.lock`; they are the primary
+compatibility suite. The separate
+[OpenClaw package smoke test](./.github/workflows/pr-openclaw-package-smoke.yml)
+covers the installed-state boundary those tests cannot: it installs OpenClaw
+2026.9.3 and the packed candidate in a disposable profile, accepts the declared
+capabilities, loads the plugin runtime, and starts a real Gateway. It is not a
+historical-version matrix.
 
-1. Verify Agent System 0.5.3 on OpenClaw 2026.7.1-2, then stop the Gateway.
-2. Disable Agent System 0.5.3 before upgrading OpenClaw to 2026.9.3. Do not run
-   the upgraded Gateway with the historical plugin enabled.
-3. Install and enable the new Agent System package, validate its runtime, and
-   start the OpenClaw 2026.9.3 Gateway.
-
-The [OpenClaw upgrade rehearsal](./.github/workflows/pr-openclaw-upgrade-rehearsal.yml)
-rehearses those installed-state stages in a disposable profile. It runs on pull
-requests and on `main`; it complements rather than replaces the candidate's
-ordinary source, unit, and package tests. Before another OpenClaw release is added to the table, its focused
-Plugin SDK import inventory, unit suite, packed plugin inspection, live Gateway
-smoke test, and upgrade rehearsal must all pass.
+Before changing the supported OpenClaw release, update the dependency pin,
+plugin metadata, and reviewed Plugin SDK import inventory together. The
+ordinary suite, packed plugin inspection, and live Gateway smoke test must all
+pass on that exact release.
 
 ### Plugin SDK Inventory
 
