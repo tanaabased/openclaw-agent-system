@@ -254,7 +254,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
       id: 'github:issue:R_repo:12',
     });
-    assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
+    assert.deepEqual(result.ctxPayload.ChannelStructuredContext, [
       {
         comment: {
           databaseId: 91,
@@ -272,7 +272,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       },
     ]);
     assert.equal(
-      JSON.stringify(result.ctxPayload.UntrustedStructuredContext),
+      JSON.stringify(result.ctxPayload.ChannelStructuredContext),
       `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"source":{"itemType":"issue","number":12},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
     );
   });

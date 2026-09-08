@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 
-import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
+import type {
+  AssembledInboundReply,
+  DurableInboundReplyDeliveryParams,
+} from 'openclaw/plugin-sdk/channel-inbound';
 import {
   createMessageReceiptFromOutboundResults,
-  type DurableInboundReplyDeliveryParams,
-  type DurableInboundReplyDeliveryResult,
+  type deliverInboundReplyWithMessageSendContext,
 } from 'openclaw/plugin-sdk/channel-outbound';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
@@ -45,6 +47,9 @@ const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
 type CommentClient = GitHubNotificationCommentClient &
   Pick<GitHubNotificationIntakeClient, 'getItem'>;
+type DurableInboundReplyDeliveryResult = Awaited<
+  ReturnType<typeof deliverInboundReplyWithMessageSendContext>
+>;
 type DeliverInboundReply = (
   input: DurableInboundReplyDeliveryParams,
 ) => Promise<DurableInboundReplyDeliveryResult>;

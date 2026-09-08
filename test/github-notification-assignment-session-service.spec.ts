@@ -375,7 +375,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
           /Please begin working on it in `work` mode\./u,
         );
         assert.match(turnInput.ctxPayload.Body ?? '', /add assignment planning fixture/u);
-        assert.deepEqual(turnInput.ctxPayload.UntrustedStructuredContext, [
+        assert.deepEqual(turnInput.ctxPayload.ChannelStructuredContext, [
           {
             label: 'GitHub lifecycle context',
             payload: {
@@ -403,7 +403,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
         assert.match(turnInput.ctxPayload.Body ?? '', /Implementation started/u);
         assert.match(turnInput.ctxPayload.Body ?? '', /published.*`work` mode/u);
         assert.match(turnInput.ctxPayload.Body ?? '', /one local commit/u);
-        assert.deepEqual(turnInput.ctxPayload.UntrustedStructuredContext?.[0], {
+        assert.deepEqual(turnInput.ctxPayload.ChannelStructuredContext?.[0], {
           label: 'GitHub lifecycle context',
           payload: {
             item: {

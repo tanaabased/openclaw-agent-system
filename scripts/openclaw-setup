@@ -255,7 +255,7 @@ esac
 
 if [[ -n "$agent_system_plugin" ]]; then
   debug "installing Agent System plugin pack=$agent_system_plugin"
-  openclaw plugins install "npm-pack:$agent_system_plugin" --force
+  openclaw plugins install "npm-pack:$agent_system_plugin" --force --accept-capabilities
   openclaw plugins enable agent-system
 fi
 

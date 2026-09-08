@@ -91,7 +91,7 @@ try {
   const { archivePath, packageResult } = await check('create the npm package archive', async () => {
     const packed = await run(
       'npm',
-      ['pack', '--ignore-scripts', '--json', '--pack-destination', temporaryRoot],
+      ['pack', '--ignore-scripts', '--json', '--silent', '--pack-destination', temporaryRoot],
       { env: environment },
     );
     const result = (JSON.parse(packed.output) as PackResult[])[0];

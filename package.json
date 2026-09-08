@@ -79,7 +79,7 @@
     "lint:shellcheck": "shellcheck bin/* scripts/openclaw-*",
     "lint": "bun run lint:eslint && bun run format:check && bun run lint:shellcheck",
     "plugin:check": "bun scripts/check-plugin-task.ts",
-    "test:release": "bun scripts/release-test-task.ts",
+    "test:release": "node --import tsx scripts/release-test-task.ts",
     "test": "bun run test:unit",
     "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js \"test/**/*.spec.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json"

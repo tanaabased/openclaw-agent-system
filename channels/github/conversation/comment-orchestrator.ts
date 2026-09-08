@@ -1,7 +1,6 @@
 import {
   deliverInboundReplyWithMessageSendContext,
   resolveMessageReceiptPrimaryId,
-  type DurableInboundReplyDeliveryResult,
 } from 'openclaw/plugin-sdk/channel-outbound';
 
 import type { Logger } from '../../../core/logger.ts';
@@ -40,6 +39,10 @@ import type {
 
 type GitHubNotificationConversationClient = GitHubNotificationCommentClient &
   Pick<GitHubNotificationIntakeClient, 'getItem'>;
+
+type DurableInboundReplyDeliveryResult = Awaited<
+  ReturnType<typeof deliverInboundReplyWithMessageSendContext>
+>;
 
 const maximumCommentResponsesPerReconciliation = 2;
 

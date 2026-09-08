@@ -190,7 +190,7 @@ export default class GitHubNotificationCommentTurnService {
         routePeer: { id: route.conversationId, kind: 'direct' },
       },
       extra: {
-        UntrustedStructuredContext: [
+        ChannelStructuredContext: [
           githubNotificationCommentContext({
             comment: input.comment,
             lifecycleContext,

@@ -30,10 +30,10 @@ Upgrade the controlled installation as one coordinated cutover:
 3. Install and enable the new Agent System package, validate its runtime, and
    start the OpenClaw 2026.9.3 Gateway.
 
-The [OpenClaw compatibility workflow](./.github/workflows/pr-openclaw-compatibility.yml)
-rehearses those stages in a disposable profile. It runs on pull requests and on
-`main`, preserving evidence for the published baseline and the candidate
-cutover. Before another OpenClaw release is added to the table, its focused
+The [OpenClaw upgrade rehearsal](./.github/workflows/pr-openclaw-upgrade-rehearsal.yml)
+rehearses those installed-state stages in a disposable profile. It runs on pull
+requests and on `main`; it complements rather than replaces the candidate's
+ordinary source, unit, and package tests. Before another OpenClaw release is added to the table, its focused
 Plugin SDK import inventory, unit suite, packed plugin inspection, live Gateway
 smoke test, and upgrade rehearsal must all pass.
 
@@ -76,7 +76,7 @@ cd openclaw-agent-system
 brew bundle
 bun install
 bun run build
-openclaw plugins install --link .
+openclaw plugins install --link . --accept-capabilities
 openclaw plugins enable agent-system
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
@@ -92,7 +92,7 @@ installation.
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.
 
 ```sh
-openclaw plugins install npm:@tanaab/openclaw-devguard
+openclaw plugins install npm:@tanaab/openclaw-devguard --accept-capabilities
 openclaw plugins enable openclaw-devguard
 openclaw plugins inspect openclaw-devguard --runtime --json
 openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth

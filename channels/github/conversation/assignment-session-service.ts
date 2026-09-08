@@ -122,7 +122,7 @@ function modelTurnContext(input: ModelTurnContextInput) {
       routePeer: { id: input.route.conversationId, kind: 'direct' },
     },
     extra: {
-      UntrustedStructuredContext: [
+      ChannelStructuredContext: [
         githubNotificationAssignmentContext({ lifecycleContext: input.lifecycleContext }),
       ],
     },
