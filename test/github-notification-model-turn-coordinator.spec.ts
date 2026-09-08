@@ -67,9 +67,10 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async dispatch(dispatchInput) {
           calls.push(['dispatch', dispatchInput.messageId]);
           return {
-            dispatch: { counts: { block: 0, final: 2, tool: 1 }, queuedFinal: false },
+            dispatch: { counts: { block: 0, final: 3, tool: 1 }, queuedFinal: false },
             finalPayloads: [
               { isReasoning: true, text: 'Internal reasoning.' },
+              { isStatusNotice: true, text: 'Tool execution completed.' },
               { text: 'Complete private response.' },
             ],
           };
@@ -82,8 +83,8 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     });
 
     assert.deepEqual(await coordinator.run({ ...input(), executionSurface: 'cli-one-shot' }), {
-      dispatch: { counts: { block: 0, final: 2, tool: 1 }, queuedFinal: false },
-      finalPayloadCount: 2,
+      dispatch: { counts: { block: 0, final: 3, tool: 1 }, queuedFinal: false },
+      finalPayloadCount: 3,
       privateText: 'Complete private response.',
       publication: {
         status: 'candidate',
@@ -127,7 +128,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
     assert.match(
       messages[1] ?? '',
-      /model turn completed .*final-payloads=2 block=0 final=2 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
+      /model turn completed .*final-payloads=3 block=0 final=3 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
     );
   });
 
@@ -274,7 +275,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     await assert.rejects(coordinator.run(input()), GitHubNotificationPrivateResponseError);
     assert.match(
       warnings[0] ?? '',
-      /phase=private-response code=github-notification-private-response-invalid payload-count=2 payload-shapes=0:13:0:0:0:0:0:0:0,1:13:0:0:0:0:0:0:0 payload-shapes-truncated=false/u,
+      /phase=private-response code=github-notification-private-response-invalid payload-count=2 payload-shapes=0:13:0:0:0:0:0:0:0:0:0:0,1:13:0:0:0:0:0:0:0:0:0:0 payload-shapes-truncated=false/u,
     );
     assert.doesNotMatch(warnings[0] ?? '', /sensitive|one|two/u);
   });

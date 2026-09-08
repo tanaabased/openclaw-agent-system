@@ -8,12 +8,17 @@ export class GitHubNotificationPrivateResponseError extends Error {
   }
 }
 
-/** Keep only user-facing final payloads, excluding OpenClaw progress lanes. */
+/** Keep only user-facing final payloads, excluding OpenClaw supplemental lanes and notices. */
 export function githubNotificationOrdinaryFinalPayloads(
   payloads: readonly ReplyPayload[],
 ): ReplyPayload[] {
   return payloads.filter(
-    ({ isCommentary, isReasoning }) => isCommentary !== true && isReasoning !== true,
+    ({ isCommentary, isCompactionNotice, isFallbackNotice, isReasoning, isStatusNotice }) =>
+      isCommentary !== true &&
+      isCompactionNotice !== true &&
+      isFallbackNotice !== true &&
+      isReasoning !== true &&
+      isStatusNotice !== true,
   );
 }
 
@@ -31,6 +36,9 @@ export function githubNotificationPrivateResponseDiagnostics(
         Number(payload.isError === true),
         Number(payload.isReasoning === true),
         Number(payload.isCommentary === true),
+        Number(payload.isCompactionNotice === true),
+        Number(payload.isFallbackNotice === true),
+        Number(payload.isStatusNotice === true),
         Number(Boolean(payload.mediaUrl || payload.mediaUrls?.length)),
         Number(Boolean(payload.presentation)),
         Number(Boolean(payload.interactive)),
