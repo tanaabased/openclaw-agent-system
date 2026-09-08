@@ -14,7 +14,7 @@ interface EvidenceToolDefinition {
   function?: { name?: string };
 }
 
-interface GitHubNotificationModelJournalEntry {
+export interface GitHubNotificationModelJournalEntry {
   body: {
     messages?: EvidenceMessage[];
     model?: string;
@@ -26,6 +26,15 @@ interface GitHubNotificationModelJournalEntry {
     fixture: { response?: unknown } | null;
     status: number;
   };
+}
+
+export interface GitHubNotificationModelRequestDiagnostic {
+  assistantToolCalls: Array<{ id?: string; name?: string }>;
+  index: number;
+  matchedFixture: boolean;
+  messageRoles: string[];
+  status: number;
+  toolResultIds: string[];
 }
 
 export interface GitHubNotificationModelToolEvidence {
@@ -120,6 +129,37 @@ function normalizedModel(
   return value !== undefined && scenario.model.match.test(value)
     ? scenario.model.reference
     : (value ?? 'unknown');
+}
+
+/** Summarize mock request structure without exposing prompt or tool-result content. */
+export function githubNotificationModelRequestDiagnostics(
+  entries: readonly GitHubNotificationModelJournalEntry[],
+): GitHubNotificationModelRequestDiagnostic[] {
+  return entries
+    .filter((entry) => entry.body !== null)
+    .map((entry, index) => {
+      const messages = entry.body?.messages ?? [];
+      return {
+        assistantToolCalls: messages.flatMap((message) =>
+          (message.tool_calls ?? []).map((toolCall) => ({
+            ...(typeof toolCall.id === 'string' ? { id: toolCall.id } : {}),
+            ...(typeof toolCall.function?.name === 'string'
+              ? { name: toolCall.function.name }
+              : {}),
+          })),
+        ),
+        index,
+        matchedFixture: entry.response.fixture !== null,
+        messageRoles: messages.map(({ role }) => role),
+        status: entry.response.status,
+        toolResultIds: messages
+          .filter(
+            (message): message is EvidenceMessage & { tool_call_id: string } =>
+              message.role === 'tool' && typeof message.tool_call_id === 'string',
+          )
+          .map(({ tool_call_id }) => tool_call_id),
+      };
+    });
 }
 
 /** Project AIMock's request journal into one provider-neutral scenario report. */
