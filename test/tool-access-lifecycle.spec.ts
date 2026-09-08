@@ -100,7 +100,7 @@ describe('api/access-lifecycle', () => {
   it('should reconcile exact grants, preserve unrelated entries, and be idempotent', async () => {
     const config: OpenClawConfig = {
       agents: {
-        list: [{ id: 'emori', tools: { alsoAllow: ['message'] } }],
+        entries: { emori: { tools: { alsoAllow: ['message'] } } },
       },
     };
     const { contribution, mutations } = createHarness(config);
@@ -111,7 +111,7 @@ describe('api/access-lifecycle', () => {
       installed?.outcomes.map(({ code, status }) => ({ code, status })),
       [{ code: 'set-agent-tool-access', status: 'updated' }],
     );
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.alsoAllow, [
+    assert.deepEqual(config.agents?.entries?.emori?.tools?.alsoAllow, [
       'message',
       'agent_system_git',
       'agent_system_git_worktree',
@@ -231,9 +231,9 @@ describe('api/access-lifecycle', () => {
     assert.deepEqual(await contribution.inspect?.(context), [
       {
         code: 'agent-tool-access-denied',
-        message: 'OpenClaw agents.list[].tools.deny for emori blocks agent_system_github.',
+        message: 'OpenClaw agents.entries.emori.tools.deny blocks agent_system_github.',
         remediation:
-          'Remove the conflicting entries from agents.list[].tools.deny, then run openclaw agent-system install from this workspace.',
+          'Remove the conflicting entries from agents.entries.emori.tools.deny, then run openclaw agent-system install from this workspace.',
         status: 'blocked',
       },
     ]);

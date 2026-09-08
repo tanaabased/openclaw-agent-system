@@ -42,16 +42,15 @@ describe('agent/lifecycle', () => {
         commands.push(args);
         config =
           args[1] === 'add'
-            ? { agents: { list: [{ id: 'data', workspace: '/workspace/data' }] } }
+            ? { agents: { entries: { data: { workspace: '/workspace/data' } } } }
             : {
                 agents: {
-                  list: [
-                    {
-                      id: 'data',
+                  entries: {
+                    data: {
                       identity: { avatar: 'avatar.png', emoji: '📊', name: 'Data' },
                       workspace: '/workspace/data',
                     },
-                  ],
+                  },
                 },
               };
         return successfulResult();

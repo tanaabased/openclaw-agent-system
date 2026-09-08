@@ -38,6 +38,7 @@ import AgentSystemToolRuntime from '../api/runtime.ts';
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
+import { configuredAgentIds } from './configured-agents.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
@@ -226,7 +227,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     async resolveCodexAgentId({ codexHome, openClawStateDir }) {
       const config = api.runtime.config.current() as OpenClawConfig;
       return resolveCodexCommandAgentId({
-        agentIds: (config.agents?.list ?? []).map(({ id }) => id),
+        agentIds: configuredAgentIds(config),
         codexHome,
         ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
         resolveAgentDir: (agentId) => api.runtime.agent.resolveAgentDir(config, agentId),
