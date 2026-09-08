@@ -108,7 +108,10 @@ export default class GitHubNotificationModelTurnDispatcher {
         delivery: {
           async deliver(payload, info) {
             if (info.kind === 'final') finalPayloads.push(payload);
-            return { visibleReplySent: false };
+            return {
+              suppression: { reason: 'channel_transform' },
+              visibleReplySent: false,
+            };
           },
         },
         dispatchReplyWithBufferedBlockDispatcher:

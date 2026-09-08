@@ -31,13 +31,24 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
-        await input.dispatcherOptions.deliver(
+        const commentaryDelivery = await input.dispatcherOptions.deliver(
           { text: 'progress', isCommentary: true },
           {
             kind: 'block',
           },
         );
-        await input.dispatcherOptions.deliver({ text: 'complete response' }, { kind: 'final' });
+        const finalDelivery = await input.dispatcherOptions.deliver(
+          { text: 'complete response' },
+          { kind: 'final' },
+        );
+        assert.deepEqual(commentaryDelivery, {
+          suppression: { reason: 'channel_transform' },
+          visibleReplySent: false,
+        });
+        assert.deepEqual(finalDelivery, {
+          suppression: { reason: 'channel_transform' },
+          visibleReplySent: false,
+        });
         return { counts: { block: 1, final: 1, tool: 0 }, queuedFinal: false };
       },
       async recordInboundSession(input) {
