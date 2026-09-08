@@ -39,15 +39,17 @@ state on exit and does not require migrating the developer's OpenClaw profile.
 The separate [upgrade rehearsal](./.github/workflows/pr-openclaw-upgrade.yml)
 installs the published 0.5.3 package on OpenClaw 2026.7.1-2, creates an agent,
 verifies its installation and Gateway, then stops the Gateway. It retains the
-same profile and workspace while replacing the core with 2026.9.3 and probing
-the old plugin. A plugin-load failure is captured explicitly; it is not treated
+same profile and workspace while replacing the core with 2026.9.3, applying
+OpenClaw's `doctor --fix --non-interactive` migration, and probing the old
+plugin. A plugin-load failure is captured explicitly; it is not treated
 as a successful intermediate pair. The final stage replaces the plugin with the
 packed candidate and verifies the existing agent, unchanged installation,
 healthy doctor result, command alias, and Gateway. Reports are retained in the
 `openclaw-upgrade-evidence` artifact, with the chosen path in the run summary.
 
 For this version transition, schedule a coordinated cutover: back up the profile
-and workspaces, stop the Gateway, update OpenClaw and Agent System together,
+and workspaces, stop the Gateway, update OpenClaw, run `openclaw doctor --fix`
+to migrate its configuration and persistence, then update Agent System,
 grant `plugins.entries.agent-system.hooks.allowConversationAccess`, and inspect
 the plugin before restarting. Verify each managed workspace with
 `openclaw agent-system doctor`. Keep the prior core, plugin, and profile backup

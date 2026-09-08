@@ -82,6 +82,8 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/openclaw" openclaw@2026.9.3
           hash -r
           openclaw --version | grep -F '2026.9.3'
+          openclaw doctor --fix --non-interactive
+          openclaw config validate --json | jq -e '.valid == true'
           openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
           if openclaw plugins inspect agent-system --runtime --json > "$RUNNER_TEMP/upgrade-evidence/bridge.json" 2> "$RUNNER_TEMP/upgrade-evidence/bridge.stderr" &&
             jq -e '.plugin.status == "loaded" and .plugin.error == null' "$RUNNER_TEMP/upgrade-evidence/bridge.json"; then

@@ -123,7 +123,7 @@ describe('channels/github/conversation/turn-selector', () => {
     );
   });
 
-  it('should recover the canonical stored id from an account-scoped session route', async () => {
+  it('should recover the canonical stored id when the host shortens all chat projections', async () => {
     const state = conversationState();
     const selector = new GitHubNotificationTurnSelector({
       conversations: { read: async () => structuredClone(state) },
@@ -138,6 +138,7 @@ describe('channels/github/conversation/turn-selector', () => {
     assert.deepEqual(
       await selector.select({
         agentId,
+        channelContext: { chat: { id: 'R_repo:12' } },
         channelId: 'R_repo:12',
         chatId: 'R_repo:12',
         sessionKey: [

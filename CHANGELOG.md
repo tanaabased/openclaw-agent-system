@@ -7,6 +7,7 @@
 
 ### Bug Fixes
 
+- Fixed GitHub turn selection when OpenClaw shortens the hook's chat identifiers by resolving the full conversation from its trusted session route. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 - Hardened OpenClaw compatibility around the exact 2026.9.3 Plugin SDK, including canonical keyed agent configuration, explicit conversation-hook authorization, supported runtime capabilities, and repository-owned replacements for deprecated or private helpers. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 - Isolated unit-test OpenClaw persistence from the developer's normal profile before loading the SDK. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 

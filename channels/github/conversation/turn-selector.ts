@@ -51,10 +51,11 @@ function sessionConversationId(
 }
 
 function conversationId(context: AgentSystemHookContext, agentId: string): string | undefined {
-  const channelOwnedId = context.channelContext?.chat?.id?.trim();
-  if (channelOwnedId) return channelOwnedId;
+  // The host can overwrite channelContext.chat.id with its shortened chatId projection.
   const sessionOwnedId = sessionConversationId(context, agentId);
   if (sessionOwnedId) return sessionOwnedId;
+  const channelOwnedId = context.channelContext?.chat?.id?.trim();
+  if (channelOwnedId) return channelOwnedId;
   const candidates = [context.channelId, context.chatId]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
