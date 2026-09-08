@@ -24,9 +24,10 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
     const dispatcher = new GitHubNotificationModelTurnDispatcher({
       async dispatchReplyWithBufferedBlockDispatcher(input) {
         assert.equal(recorded, true);
+        assert.equal(input.ctx.GroupSystemPrompt, 'trusted notification instructions');
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
-        assert.equal(replyOptions.extraSystemPrompt, 'trusted notification instructions');
+        assert.equal(replyOptions.extraSystemPrompt, undefined);
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);

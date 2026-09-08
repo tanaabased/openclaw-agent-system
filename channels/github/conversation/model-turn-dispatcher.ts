@@ -60,6 +60,17 @@ export interface GitHubNotificationModelTurnDispatchResult {
   finalPayloads: ReplyPayload[];
 }
 
+function modelContext(
+  input: GitHubNotificationModelTurnDispatchInput,
+): AssembledInboundReply['ctxPayload'] {
+  if (input.executionSurface !== 'cli-one-shot') return input.ctxPayload;
+  const existing = input.ctxPayload.GroupSystemPrompt?.trim();
+  return {
+    ...input.ctxPayload,
+    GroupSystemPrompt: [existing, input.contract.instructions].filter(Boolean).join('\n\n'),
+  };
+}
+
 /** Dispatch one resolved model turn through OpenClaw's host-owned inbound lifecycle. */
 export default class GitHubNotificationModelTurnDispatcher {
   readonly #dependencies: GitHubNotificationModelTurnDispatcherDependencies;
@@ -93,7 +104,7 @@ export default class GitHubNotificationModelTurnDispatcher {
         },
         cfg: input.config,
         channel: githubNotificationChannelId,
-        ctxPayload: input.ctxPayload,
+        ctxPayload: modelContext(input),
         delivery: {
           async deliver(payload, info) {
             if (info.kind === 'final') finalPayloads.push(payload);
@@ -120,9 +131,6 @@ export default class GitHubNotificationModelTurnDispatcher {
           ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
           ...githubNotificationReplyCleanupOptions(input.executionSurface),
           commentaryPayloadsEnabled: true,
-          ...(input.executionSurface === 'cli-one-shot'
-            ? { extraSystemPrompt: input.contract.instructions }
-            : {}),
           ...turnDispatch.replyOptions,
           sourceReplyDeliveryMode: 'automatic',
           suppressDefaultToolProgressMessages: true,
