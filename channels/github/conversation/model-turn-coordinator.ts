@@ -16,7 +16,10 @@ import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnDispatcher from './model-turn-dispatcher.ts';
 import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatcher.ts';
-import { githubNotificationPrivateResponse } from './private-response.ts';
+import {
+  githubNotificationOrdinaryFinalPayloads,
+  githubNotificationPrivateResponse,
+} from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
@@ -267,10 +270,11 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
-    const privateText = githubNotificationPrivateResponse(turnResult.finalPayloads);
+    const ordinaryFinalPayloads = githubNotificationOrdinaryFinalPayloads(turnResult.finalPayloads);
+    const privateText = githubNotificationPrivateResponse(ordinaryFinalPayloads);
     const responsePublication = publication(
       publicCandidates,
-      turnResult.finalPayloads,
+      ordinaryFinalPayloads,
       input.contract.publicationIntent,
       input.contract.publicationSource,
     );

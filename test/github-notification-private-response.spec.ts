@@ -18,10 +18,11 @@ describe('channels/github/conversation/private-response', () => {
     assert.equal(githubNotificationPrivateResponse([{ text: response }]), response);
   });
 
-  it('should ignore commentary when selecting the ordinary final', () => {
+  it('should ignore commentary and reasoning when selecting the ordinary final', () => {
     assert.equal(
       githubNotificationPrivateResponse([
         { isCommentary: true, text: 'A progress update.' },
+        { isReasoning: true, text: 'Internal reasoning.' },
         { text: 'The complete private response.' },
       ]),
       'The complete private response.',
@@ -31,6 +32,7 @@ describe('channels/github/conversation/private-response', () => {
   it('should reject missing and ambiguous ordinary responses', () => {
     for (const payloads of [
       [{ isCommentary: true, text: 'Only commentary.' }],
+      [{ isReasoning: true, text: 'Only reasoning.' }],
       [{ text: '' }],
       [{ text: 'One.' }, { text: 'Two.' }],
     ]) {

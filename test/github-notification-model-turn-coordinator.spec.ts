@@ -66,8 +66,11 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async dispatch(dispatchInput) {
           calls.push(['dispatch', dispatchInput.messageId]);
           return {
-            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-            finalPayloads: [{ text: 'Complete private response.' }],
+            dispatch: { counts: { block: 0, final: 2, tool: 1 }, queuedFinal: false },
+            finalPayloads: [
+              { isReasoning: true, text: 'Internal reasoning.' },
+              { text: 'Complete private response.' },
+            ],
           };
         },
       },
@@ -78,8 +81,8 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     });
 
     assert.deepEqual(await coordinator.run({ ...input(), executionSurface: 'cli-one-shot' }), {
-      dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-      finalPayloadCount: 1,
+      dispatch: { counts: { block: 0, final: 2, tool: 1 }, queuedFinal: false },
+      finalPayloadCount: 2,
       privateText: 'Complete private response.',
       publication: {
         status: 'candidate',
@@ -123,7 +126,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
     assert.match(
       messages[1] ?? '',
-      /model turn completed .*final-payloads=1 block=0 final=1 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
+      /model turn completed .*final-payloads=2 block=0 final=2 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
     );
   });
 
