@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from 'node:path';
 
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type { Logger } from '../../../core/logger.ts';
+import type { GitHubNotificationConversationState } from './conversation-state.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
@@ -38,6 +39,19 @@ function conversationId(context: AgentSystemHookContext): string | undefined {
   return unique.length === 1 ? unique[0] : undefined;
 }
 
+function canonicalConversationId(
+  conversations: GitHubNotificationConversationState['conversations'],
+  routedConversationId: string,
+): string | undefined {
+  if (Object.hasOwn(conversations, routedConversationId)) return routedConversationId;
+  // OpenClaw can normalize flattened route ids, so recover only one canonical durable key.
+  const normalized = routedConversationId.toLowerCase();
+  const matches = Object.keys(conversations).filter(
+    (candidate) => candidate.toLowerCase() === normalized,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 /** Select one catalogued turn from trusted hook routing and private conversation state. */
 export default class GitHubNotificationTurnSelector {
   readonly #dependencies: GitHubNotificationTurnSelectorDependencies;
@@ -63,7 +77,12 @@ export default class GitHubNotificationTurnSelector {
       ) {
         return undefined;
       }
-      const conversation = state.conversations[selectedConversationId];
+      const selectedCanonicalConversationId = canonicalConversationId(
+        state.conversations,
+        selectedConversationId,
+      );
+      if (!selectedCanonicalConversationId) return undefined;
+      const conversation = state.conversations[selectedCanonicalConversationId];
       if (!conversation?.activeTurn) return undefined;
       const identity = this.#dependencies.turns.resolve({
         eventId: conversation.activeTurn.eventId,
@@ -72,7 +91,7 @@ export default class GitHubNotificationTurnSelector {
       }).identity;
       return {
         agentId,
-        conversationId: selectedConversationId,
+        conversationId: selectedCanonicalConversationId,
         identity,
         sourceId: conversation.activeTurn.sourceId,
       };
