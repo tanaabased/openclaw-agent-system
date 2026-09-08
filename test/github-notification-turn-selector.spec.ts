@@ -123,6 +123,42 @@ describe('channels/github/conversation/turn-selector', () => {
     );
   });
 
+  it('should recover the canonical stored id from an account-scoped session route', async () => {
+    const state = conversationState();
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve(identity) {
+          return { identity };
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await selector.select({
+        agentId,
+        channelId: 'R_repo:12',
+        chatId: 'R_repo:12',
+        sessionKey: [
+          'agent',
+          agentId,
+          'agent-system-github',
+          agentId,
+          'direct',
+          conversationId.toLowerCase(),
+        ].join(':'),
+        workspaceDir,
+      }),
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
+    );
+  });
+
   it('should decline an ambiguous normalized route id', async () => {
     const state = conversationState();
     state.conversations[conversationId.toLowerCase()] = structuredClone(
