@@ -3,7 +3,7 @@ import {
   type AssembledInboundReply,
   type PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 

@@ -7,10 +7,64 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.7.1-2 or newer
+- OpenClaw 2026.9.3
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
+
+## OpenClaw Compatibility
+
+Agent System tests explicit core-and-plugin pairs. A minimum version is not a
+claim that every later or intervening OpenClaw release works.
+
+| Agent System release | OpenClaw release | Support status                         |
+| -------------------- | ---------------- | -------------------------------------- |
+| 0.5.3                | 2026.7.1-2       | Historical published baseline          |
+| Next release         | 2026.9.3         | Development, build, and Gateway target |
+
+Upgrade the controlled installation as one coordinated cutover:
+
+1. Verify Agent System 0.5.3 on OpenClaw 2026.7.1-2, then stop the Gateway.
+2. Disable Agent System 0.5.3 before upgrading OpenClaw to 2026.9.3. Do not run
+   the upgraded Gateway with the historical plugin enabled.
+3. Install and enable the new Agent System package, validate its runtime, and
+   start the OpenClaw 2026.9.3 Gateway.
+
+The [OpenClaw compatibility workflow](./.github/workflows/pr-openclaw-compatibility.yml)
+rehearses those stages in a disposable profile. It runs on pull requests and on
+`main`, preserving evidence for the published baseline and the candidate
+cutover. Before another OpenClaw release is added to the table, its focused
+Plugin SDK import inventory, unit suite, packed plugin inspection, live Gateway
+smoke test, and upgrade rehearsal must all pass.
+
+### Plugin SDK Inventory
+
+Production imports are limited to these reviewed OpenClaw 2026.9.3 external
+plugin subpaths:
+
+| Public subpath            | Agent System use                     |
+| ------------------------- | ------------------------------------ |
+| `channel-core`            | Channel contracts                    |
+| `channel-inbound`         | Inbound reply dispatch               |
+| `channel-outbound`        | Outbound adapters and account status |
+| `config-contracts`        | Public configuration types           |
+| `error-runtime`           | Safe error formatting                |
+| `logging-core`            | Publication redaction                |
+| `plugin-entry`            | Plugin, tool, and logger contracts   |
+| `reply-payload`           | Reply payload contracts              |
+| `routing`                 | Session and agent route contracts    |
+| `run-command`             | Supported child OpenClaw commands    |
+| `runtime`                 | CLI presentation helpers             |
+| `runtime-config-snapshot` | Fresh configuration reads            |
+| `session-store-runtime`   | Public session store paths           |
+| `status-helpers`          | Channel status summaries             |
+
+The API policy test parses static imports, re-exports, dynamic imports, and
+import types. It fails deprecated broad barrels, private-local entrypoints, and
+any unreviewed OpenClaw subpath, including `agent-runtime`, `channel-lifecycle`,
+`config-runtime`, `infra-runtime`, `security-runtime`, `file-lock`,
+`keyed-async-queue`, and `types`. Agent System owns its narrow lock, keyed
+queue, delay, configured-agent, and hook-context primitives locally.
 
 ## Install From Source
 

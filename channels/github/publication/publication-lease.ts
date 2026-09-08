@@ -2,20 +2,19 @@ import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import {
-  FILE_LOCK_TIMEOUT_ERROR_CODE,
-  acquireFileLock,
-  type FileLockHandle,
-} from 'openclaw/plugin-sdk/file-lock';
-import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
-
+  default as acquirePrivateStateFileLock,
+  privateStateFileLockBusyErrorCode,
+  type PrivateStateFileLockHandle,
+} from '../../../core/private-state-file-lock.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
+import abortableDelay from '../../../utils/abortable-delay.ts';
 import nodeErrorCode from '../../../utils/node-error-code.ts';
 
 const defaultRetryMs = 250;
 const defaultStaleMs = 30 * 60 * 1000;
 
 export interface GitHubNotificationPublicationLeaseStoreDependencies {
-  acquireFileLock?: typeof acquireFileLock;
+  acquireFileLock?: typeof acquirePrivateStateFileLock;
   currentUid?: number;
   retryMs?: number;
   rootDir?: string;
@@ -24,14 +23,14 @@ export interface GitHubNotificationPublicationLeaseStoreDependencies {
 
 /** Serialize one publication target across Gateway and CLI processes. */
 export default class GitHubNotificationPublicationLeaseStore {
-  readonly #acquireFileLock: typeof acquireFileLock;
+  readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #currentUid: number | undefined;
   readonly #retryMs: number;
   readonly #rootDir: string | undefined;
   readonly #staleMs: number;
 
   constructor(dependencies: GitHubNotificationPublicationLeaseStoreDependencies) {
-    this.#acquireFileLock = dependencies.acquireFileLock ?? acquireFileLock;
+    this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
     this.#currentUid = dependencies.currentUid;
     this.#retryMs = dependencies.retryMs ?? defaultRetryMs;
     this.#rootDir = dependencies.rootDir ? resolve(dependencies.rootDir) : undefined;
@@ -59,15 +58,15 @@ export default class GitHubNotificationPublicationLeaseStore {
     const path = join(lockDir, digest);
     while (true) {
       if (signal?.aborted) throw new Error('The GitHub notification publication was aborted.');
-      let handle: FileLockHandle;
+      let handle: PrivateStateFileLockHandle;
       try {
         handle = await this.#acquireFileLock(path, {
           retries: { factor: 1, maxTimeout: 0, minTimeout: 0, retries: 0 },
-          stale: this.#staleMs,
+          staleMs: this.#staleMs,
         });
       } catch (error) {
-        if (nodeErrorCode(error) !== FILE_LOCK_TIMEOUT_ERROR_CODE) throw error;
-        await sleepWithAbort(this.#retryMs, signal);
+        if (nodeErrorCode(error) !== privateStateFileLockBusyErrorCode) throw error;
+        await abortableDelay(this.#retryMs, signal);
         continue;
       }
       try {

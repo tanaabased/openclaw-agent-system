@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import { githubCommentRevision } from '../channels/github/conversation/comment-admission.ts';
@@ -188,6 +190,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         },
       },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: {
         resolve(identity, resolvedConfig, resolvedAgentId) {
           assert.deepEqual(identity, contract.identity);
@@ -300,6 +303,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       },
       publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: { resolve: () => Promise.reject(new Error('unexpected contract')) as never },
     });
 

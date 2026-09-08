@@ -1,7 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 
-import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
-
+import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type { Logger } from '../../../core/logger.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
@@ -24,12 +23,12 @@ export interface GitHubNotificationSelectedTurn {
   sourceId: string;
 }
 
-function normalizedAgentId(context: PluginHookAgentContext): string | undefined {
+function normalizedAgentId(context: AgentSystemHookContext): string | undefined {
   const agentId = context.agentId?.trim().toLowerCase();
   return agentId && /^[a-z0-9][a-z0-9-]*$/u.test(agentId) ? agentId : undefined;
 }
 
-function conversationId(context: PluginHookAgentContext): string | undefined {
+function conversationId(context: AgentSystemHookContext): string | undefined {
   const candidates = [context.channelId, context.chatId, context.channelContext?.chat?.id]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
@@ -46,7 +45,7 @@ export default class GitHubNotificationTurnSelector {
   }
 
   async select(
-    context: PluginHookAgentContext,
+    context: AgentSystemHookContext,
   ): Promise<GitHubNotificationSelectedTurn | undefined> {
     const agentId = normalizedAgentId(context);
     const selectedConversationId = conversationId(context);

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import type {
@@ -222,6 +224,7 @@ function publicationService(
     monitorStateStore: { read: async () => structuredClone(fixture.monitor) },
     publicationLeaseStore: { exclusive: async (_agent, _target, _signal, run) => run() },
     readConfig: async () => config,
+    resolveNotificationRoute: resolveTestNotificationRoute,
   });
 }
 

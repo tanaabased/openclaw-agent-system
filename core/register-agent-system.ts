@@ -1,10 +1,11 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
-import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
+import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
 
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGitCapability from '../tools/git/capability.ts';
@@ -43,11 +44,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const runtimeDir = dirname(fileURLToPath(runtimeUrl));
   const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
   const logger = createAgentSystemLogger(api.logger, api.id);
-  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id);
+  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id, {
+    getChildLogger(bindings) {
+      return api.runtime.logging.getChildLogger(bindings);
+    },
+  });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
   const readConfig = () => {
     // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
-    return loadConfig({ pin: false });
+    return getRuntimeConfig();
   };
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
@@ -153,6 +158,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     readRuntimeConfig,
     recordInboundSession: api.runtime.channel.session.recordInboundSession,
     replyToolLogger: logger,
+    resolveAgentWorkspaceDir(config, agentId) {
+      return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);
+    },
     sessionRuntime: api.runtime.agent.session,
     worktrees: gitCapability.trustedWorktreeService,
   });
@@ -165,6 +173,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
       readConfig,
+      resolveAgentWorkspaceDir(config, agentId) {
+        return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);
+      },
       runOpenClawCommand(args, cwd) {
         const argv = [...openClawCommand, ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });

@@ -1,5 +1,4 @@
-import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
-
+import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type GitHubNotificationReplyCandidateStore from '../publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
@@ -13,7 +12,7 @@ export interface GitHubNotificationPromptGuidanceDependencies {
 
 /** Supply the currently shipped GitHub turn instructions through the prompt hook. */
 export default async function githubNotificationPromptGuidance(
-  context: PluginHookAgentContext,
+  context: AgentSystemHookContext,
   dependencies: GitHubNotificationPromptGuidanceDependencies,
 ): Promise<string | undefined> {
   if (context.messageProvider !== githubNotificationChannelId) return undefined;

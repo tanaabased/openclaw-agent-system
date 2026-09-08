@@ -295,15 +295,15 @@ export default function pluginMetadataFailures(
   );
   check(
     hasExactDevelopmentOpenClawVersion &&
-      packageMetadata.peerDependencies?.openclaw === `>=${developmentOpenClawVersion}`,
+      packageMetadata.peerDependencies?.openclaw === developmentOpenClawVersion,
     'peer-openclaw-version',
-    'OpenClaw peer dependency must match the development SDK',
+    'OpenClaw peer dependency must pin the tested development SDK',
   );
   check(
     hasExactDevelopmentOpenClawVersion &&
-      packageMetadata.openclaw?.compat?.pluginApi === `>=${developmentOpenClawVersion}`,
+      packageMetadata.openclaw?.compat?.pluginApi === developmentOpenClawVersion,
     'plugin-api-version',
-    'plugin API compatibility must match the development SDK',
+    'plugin API compatibility must pin the tested development SDK',
   );
   check(
     hasExactDevelopmentOpenClawVersion &&

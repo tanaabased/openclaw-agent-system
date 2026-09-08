@@ -1,5 +1,5 @@
 import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
@@ -15,7 +15,7 @@ import type { GitHubNotificationCommentClient } from '../provider/work-event-cli
 import { githubWorkItemKey } from '../provider/work-item.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
-import { githubNotificationChannelId, resolveNotificationRoute } from '../routing/routing.ts';
+import { githubNotificationChannelId, type NotificationRouteResolver } from '../routing/routing.ts';
 import { githubCommentRevision } from './comment-admission.ts';
 import {
   githubNotificationPublicTextDigest,
@@ -54,6 +54,7 @@ export interface GitHubNotificationPullRequestHandoffServiceDependencies {
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
 }
 
@@ -273,7 +274,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
 
     const config = await this.#dependencies.readConfig();
-    const route = resolveNotificationRoute(
+    const route = this.#dependencies.resolveNotificationRoute(
       config,
       { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
       this.#conversationId(input),

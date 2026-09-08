@@ -1,7 +1,8 @@
 import { resolve } from 'node:path';
 
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
 import type AgentManifestService from '../../../manifest/service.ts';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
 import { authorizeGitHubOperation, classifyGitHubOperation } from '../../../tools/github/policy.ts';
 import { admitGitHubComment, githubCommentRevision } from '../conversation/comment-admission.ts';
 import type {
@@ -16,7 +17,7 @@ import {
   githubNotificationPublicationText,
   parseGitHubNotificationPublicationTarget,
 } from './publication.ts';
-import { resolveNotificationRoute } from '../routing/routing.ts';
+import type { NotificationRouteResolver } from '../routing/routing.ts';
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationResult,
 } from './comment-publisher.ts';
@@ -66,6 +67,7 @@ export interface GitHubNotificationCommentPublicationServiceDependencies {
   monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
   publicationLeaseStore: Pick<GitHubNotificationPublicationLeaseStore, 'exclusive'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
 }
 
 export interface GitHubNotificationCommentPublicationServiceInput {
@@ -348,7 +350,7 @@ export default class GitHubNotificationCommentPublicationService {
       fail('github-notification-publication-target-not-admitted');
     }
     try {
-      resolveNotificationRoute(
+      this.#dependencies.resolveNotificationRoute(
         config,
         {
           agentId: normalizedAccountId,

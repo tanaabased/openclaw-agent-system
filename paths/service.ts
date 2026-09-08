@@ -1,7 +1,7 @@
 import { lstat, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveAgentPaths, { type AgentPathProjection } from './resolve.ts';

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
-import { acquireFileLock, type FileLockHandle } from 'openclaw/plugin-sdk/file-lock';
-
+import acquirePrivateStateFileLock, {
+  type PrivateStateFileLockHandle,
+} from '../../../core/private-state-file-lock.ts';
 import ensurePrivateStateDirectories from '../../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../../core/private-state-file.ts';
 import { isGitHubNotificationEventId } from '../events/types.ts';
@@ -57,7 +58,7 @@ export interface GitHubNotificationReplyCandidateFinishInput extends GitHubNotif
 }
 
 export interface GitHubNotificationReplyCandidateStoreDependencies {
-  acquireFileLock?: typeof acquireFileLock;
+  acquireFileLock?: typeof acquirePrivateStateFileLock;
   currentUid?: number;
   now?: () => number;
   randomId?: () => string;
@@ -160,7 +161,7 @@ function decodeState(
 
 /** Exchange one bounded reply candidate across Gateway and native harness runtimes. */
 export default class GitHubNotificationReplyCandidateStore {
-  readonly #acquireFileLock: typeof acquireFileLock;
+  readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #currentUid: number | undefined;
   readonly #now: () => number;
   readonly #randomId: () => string;
@@ -168,7 +169,7 @@ export default class GitHubNotificationReplyCandidateStore {
   readonly #ttlMs: number;
 
   constructor(dependencies: GitHubNotificationReplyCandidateStoreDependencies = {}) {
-    this.#acquireFileLock = dependencies.acquireFileLock ?? acquireFileLock;
+    this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
     this.#currentUid = dependencies.currentUid;
     this.#now = dependencies.now ?? Date.now;
     this.#randomId = dependencies.randomId ?? randomUUID;
@@ -288,11 +289,11 @@ export default class GitHubNotificationReplyCandidateStore {
 
   async #exclusive<T>(agentId: string, run: (file: PrivateStateFile) => Promise<T>): Promise<T> {
     const resources = await this.#resources(agentId);
-    let handle: FileLockHandle | undefined;
+    let handle: PrivateStateFileLockHandle | undefined;
     try {
       handle = await this.#acquireFileLock(resources.lockPath, {
         retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
-        stale: defaultTtlMs,
+        staleMs: defaultTtlMs,
       });
       return await run(resources.file);
     } finally {

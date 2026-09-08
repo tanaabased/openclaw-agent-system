@@ -1,0 +1,103 @@
+name: OpenClaw compatibility
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NO_COLOR: '1'
+  OPENCLAW_STATE_DIR: ${{ runner.temp }}/openclaw-state
+
+jobs:
+  compatibility:
+    name: 2026.7.1-2 to 2026.9.3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/openclaw/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped candidate
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          version: dev
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Pack candidate
+        shell: bash
+        run: |
+          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
+          test -n "$archive_name"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
+      - name: Install historical OpenClaw
+        run: npm install --global --prefix "$RUNNER_TEMP/openclaw" openclaw@2026.7.1-2
+      - name: Verify historical core and plugin baseline
+        shell: bash
+        run: |
+          hash -r
+          openclaw --version | grep -F '2026.7.1-2'
+          openclaw-setup --workspace "$RUNNER_TEMP/workspace"
+          openclaw plugins install npm:@tanaab/openclaw-agent-system@0.5.3
+          openclaw plugins enable agent-system
+          openclaw plugins inspect agent-system --runtime --json \
+            | jq -e '.plugin.status == "loaded" and .plugin.version == "0.5.3" and .plugin.error == null'
+          mkdir -p "$RUNNER_TEMP/historical-gateway"
+          openclaw-gateway start --state-dir "$RUNNER_TEMP/historical-gateway"
+          openclaw gateway call agents.list --json --timeout 3000 | jq -e 'type == "array"'
+          openclaw-gateway stop --state-dir "$RUNNER_TEMP/historical-gateway"
+      - name: Stage coordinated core cutover
+        shell: bash
+        run: |
+          openclaw plugins disable agent-system
+          npm install --global --prefix "$RUNNER_TEMP/openclaw" openclaw@2026.9.3
+          hash -r
+          openclaw --version | grep -F '2026.9.3'
+          openclaw plugins inspect agent-system --json \
+            | jq -e '.plugin.enabled == false and .install.version == "0.5.3"'
+      - name: Verify candidate plugin and Gateway
+        shell: bash
+        run: |
+          openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force
+          openclaw plugins enable agent-system
+          openclaw plugins inspect agent-system --runtime --json \
+            | jq -e --arg source_path "$AGENT_SYSTEM_PACKAGE" '
+                .plugin.status == "loaded"
+                  and .plugin.error == null
+                  and .install.sourcePath == $source_path
+                  and .install.version == .plugin.version
+              '
+          mkdir -p "$RUNNER_TEMP/candidate-gateway"
+          openclaw-gateway start --state-dir "$RUNNER_TEMP/candidate-gateway"
+          openclaw gateway call agents.list --json --timeout 3000 | jq -e 'type == "array"'
+          openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/candidate-gateway"
+      - name: Stop disposable Gateways
+        if: always()
+        shell: bash
+        run: |
+          openclaw-gateway stop --state-dir "$RUNNER_TEMP/historical-gateway" || true
+          openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/candidate-gateway" || true

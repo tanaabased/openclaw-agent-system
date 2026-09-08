@@ -1,5 +1,5 @@
 import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationAssignmentCard } from '../events/assignment.ts';
@@ -18,7 +18,7 @@ import type { GitHubNotificationMode } from '../modes/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import {
   githubNotificationChannelId,
-  resolveNotificationRoute,
+  type NotificationRouteResolver,
   type ResolvedNotificationRoute,
 } from '../routing/routing.ts';
 import { githubWorkItemKey } from '../provider/work-item.ts';
@@ -49,6 +49,7 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
 }
 
@@ -177,7 +178,7 @@ export default class GitHubNotificationAssignmentSessionService {
       lifecycleId: input.item.lifecycleId,
       repositoryId: input.item.repositoryNodeId,
     });
-    const route = resolveNotificationRoute(
+    const route = this.#dependencies.resolveNotificationRoute(
       config,
       { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
       conversationId,

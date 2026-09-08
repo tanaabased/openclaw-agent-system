@@ -4,9 +4,9 @@ import type {
   AssembledInboundReply,
   PreparedInboundReply,
 } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
-import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type AgentManifestService from '../../../manifest/service.ts';
+import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { createGitHubNotificationChannel } from '../channel.ts';
@@ -59,6 +59,7 @@ import NotificationRoutingReceiptStore from '../routing/receipt-store.ts';
 import NotificationRoutingService, {
   type NotificationRoutingServiceDependencies,
 } from '../routing/service.ts';
+import { resolveNotificationRoute } from '../routing/routing.ts';
 import createNotificationLifecycleContribution from './lifecycle-contribution.ts';
 
 export interface GitHubNotificationRuntimeDependencies {
@@ -72,6 +73,7 @@ export interface GitHubNotificationRuntimeDependencies {
   readRuntimeConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
   replyToolLogger: Pick<Logger, 'debug'>;
+  resolveAgentWorkspaceDir(config: OpenClawConfig, agentId: string): string;
   sessionRuntime: GitHubNotificationSessionRuntime;
   worktrees: GitHubIssueLifecycleWorktreeService;
 }
@@ -92,6 +94,17 @@ export default function createGitHubNotificationRuntime(
   dependencies: GitHubNotificationRuntimeDependencies,
 ) {
   const stateOptions = privateStateOptions(dependencies);
+  const resolveRoute = (
+    config: OpenClawConfig,
+    desired: Parameters<typeof resolveNotificationRoute>[1],
+    conversationId: string,
+  ) =>
+    resolveNotificationRoute(
+      config,
+      desired,
+      conversationId,
+      dependencies.resolveAgentWorkspaceDir,
+    );
   const candidates = new GitHubNotificationReplyCandidateStore(stateOptions);
   const monitorStateStore = new GitHubNotificationMonitorStateStore(stateOptions);
   const monitorCycleLeaseStore = new GitHubNotificationMonitorCycleLeaseStore(stateOptions);
@@ -104,6 +117,7 @@ export default function createGitHubNotificationRuntime(
     mutateConfigFile: dependencies.mutateConfigFile,
     readConfig: dependencies.readConfig,
     receiptStore: new NotificationRoutingReceiptStore(stateOptions),
+    resolveAgentWorkspaceDir: dependencies.resolveAgentWorkspaceDir,
   });
   const monitorServiceRef: { current?: GitHubNotificationMonitorService } = {};
   const lifecycleRegistry = new GitHubNotificationLifecycleRegistry([
@@ -154,7 +168,7 @@ export default function createGitHubNotificationRuntime(
       stateStore: monitorStateStore,
     }),
     promptGuidance: {
-      instructions(context: PluginHookAgentContext) {
+      instructions(context: AgentSystemHookContext) {
         return githubNotificationPromptGuidance(context, {
           candidates,
           turnContracts,
@@ -180,6 +194,7 @@ export default function createGitHubNotificationRuntime(
         accountClient: dependencies.accountClient,
         manifestService,
         readConfig: dependencies.readRuntimeConfig,
+        resolveNotificationRoute: resolveRoute,
       });
       const commentPublicationService = new GitHubNotificationCommentPublicationService({
         assignmentAuthority: assignmentProvider,
@@ -188,6 +203,7 @@ export default function createGitHubNotificationRuntime(
         monitorStateStore,
         publicationLeaseStore,
         readConfig: dependencies.readRuntimeConfig,
+        resolveNotificationRoute: resolveRoute,
       });
       const assignmentAcknowledgmentService = new GitHubNotificationAssignmentAcknowledgmentService(
         {
@@ -202,6 +218,7 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,
+        resolveNotificationRoute: resolveRoute,
         turnContracts,
       });
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
@@ -218,6 +235,7 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,
+        resolveNotificationRoute: resolveRoute,
         turnContracts,
       });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
@@ -225,6 +243,7 @@ export default function createGitHubNotificationRuntime(
         cleanup: new GitHubNotificationAssignmentCleanupService({
           conversations: conversationStateStore,
           readConfig: dependencies.readRuntimeConfig,
+          resolveNotificationRoute: resolveRoute,
           sessions: sessionArchiveService,
         }),
         initialMode,
@@ -236,6 +255,7 @@ export default function createGitHubNotificationRuntime(
         coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
+        resolveNotificationRoute: resolveRoute,
         turnContracts,
       });
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({

@@ -1,5 +1,13 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added a verified coordinated upgrade rehearsal from OpenClaw 2026.7.1-2 with Agent System 0.5.3 to OpenClaw 2026.9.3 with the next Agent System release. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+
+### Bug Fixes
+
+- Hardened OpenClaw compatibility around the exact 2026.9.3 Plugin SDK and replaced deprecated or private runtime imports with supported capabilities and repository-owned primitives. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 
 ### Bug Fixes

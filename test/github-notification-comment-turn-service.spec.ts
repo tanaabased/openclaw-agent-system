@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
@@ -142,6 +144,7 @@ async function respondWithCandidates(
     }),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => currentConfig,
+    resolveNotificationRoute: resolveTestNotificationRoute,
     turnContracts: contracts,
   });
   return service.respond({
@@ -222,6 +225,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: contracts,
     });
 
@@ -298,6 +302,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: contracts,
     });
 

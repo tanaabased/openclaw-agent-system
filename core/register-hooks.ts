@@ -1,16 +1,16 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
-import type { PluginHookAgentContext } from 'openclaw/plugin-sdk/types';
 
 import type AgentManifestService from '../manifest/service.ts';
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
+import type { AgentSystemHookContext } from './agent-hook-context.ts';
 
 type HookApi = Pick<OpenClawPluginApi, 'on'> & {
   logger?: Pick<OpenClawPluginApi['logger'], 'info' | 'warn'>;
 };
 type HookManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
 export interface AgentSystemPromptGuidance {
-  instructions(context: PluginHookAgentContext): string | undefined | Promise<string | undefined>;
+  instructions(context: AgentSystemHookContext): string | undefined | Promise<string | undefined>;
 }
 
 /** Register passive agent-aware manifest loading. */

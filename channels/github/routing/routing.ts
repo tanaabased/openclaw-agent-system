@@ -1,8 +1,9 @@
 import { resolve } from 'node:path';
 
-import { listAgentEntries, resolveAgentWorkspaceDir } from 'openclaw/plugin-sdk/agent-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { resolveAgentRoute } from 'openclaw/plugin-sdk/routing';
+
+import configuredAgentEntries from '../../../core/configured-agents.ts';
 
 export const githubNotificationChannelId = 'agent-system-github';
 export const githubNotificationBindingComment = 'managed by agent system github notifications';
@@ -42,6 +43,13 @@ export interface ResolvedNotificationRoute {
   sessionKey: string;
   workspaceDir: string;
 }
+
+export type ResolveAgentWorkspaceDir = (config: OpenClawConfig, agentId: string) => string;
+export type NotificationRouteResolver = (
+  config: OpenClawConfig,
+  desired: NotificationRoutingDesiredState,
+  conversationId: string,
+) => ResolvedNotificationRoute;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -105,8 +113,12 @@ function bindingIsExpected(
   );
 }
 
-function configuredAgentWorkspace(config: OpenClawConfig, agentId: string): string | undefined {
-  const entries = listAgentEntries(config);
+function configuredAgentWorkspace(
+  config: OpenClawConfig,
+  agentId: string,
+  resolveAgentWorkspaceDir: ResolveAgentWorkspaceDir,
+): string | undefined {
+  const entries = configuredAgentEntries(config);
   const entry = entries.find(({ id }) => normalizedAgentId(id) === agentId);
   if (!entry && !(entries.length === 0 && agentId === 'main')) return undefined;
   return resolveAgentWorkspaceDir(config, agentId);
@@ -120,6 +132,7 @@ function conflict(code: string, message: string): NotificationRoutingPlan {
 export function planNotificationRouting(
   config: OpenClawConfig,
   desired: NotificationRoutingDesiredState,
+  resolveAgentWorkspaceDir: ResolveAgentWorkspaceDir,
   receipt?: NotificationRoutingReceipt,
 ): NotificationRoutingPlan {
   const agentId = normalizedAgentId(desired.agentId);
@@ -139,7 +152,7 @@ export function planNotificationRouting(
   }
 
   if (desired.enabled) {
-    const workspaceDir = configuredAgentWorkspace(config, agentId);
+    const workspaceDir = configuredAgentWorkspace(config, agentId, resolveAgentWorkspaceDir);
     if (!workspaceDir) {
       return conflict(
         'notification-routing-agent-missing',
@@ -328,6 +341,7 @@ export function resolveNotificationRoute(
   config: OpenClawConfig,
   desired: NotificationRoutingDesiredState,
   conversationId: string,
+  resolveAgentWorkspaceDir: ResolveAgentWorkspaceDir,
 ): ResolvedNotificationRoute {
   const accountId = normalizedAgentId(desired.agentId);
   if (!desired.enabled) throw new Error('GitHub notifications are disabled for this agent.');
@@ -340,7 +354,7 @@ export function resolveNotificationRoute(
       `The exact ${githubNotificationChannelId}:${accountId} binding does not select the expected agent.`,
     );
   }
-  const workspaceDir = configuredAgentWorkspace(config, accountId);
+  const workspaceDir = configuredAgentWorkspace(config, accountId, resolveAgentWorkspaceDir);
   if (!workspaceDir || resolve(workspaceDir) !== resolve(desired.workspaceDir)) {
     throw new Error(`OpenClaw agent ${accountId} does not resolve to the expected workspace.`);
   }

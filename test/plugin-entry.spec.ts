@@ -64,6 +64,11 @@ describe('index', () => {
             return {};
           },
         },
+        logging: {
+          getChildLogger() {
+            return logger;
+          },
+        },
       },
       registerCli(
         nextRegistrar: (context: {

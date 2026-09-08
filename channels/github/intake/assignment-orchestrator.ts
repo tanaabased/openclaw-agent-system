@@ -1,5 +1,4 @@
-import { KeyedAsyncQueue } from 'openclaw/plugin-sdk/keyed-async-queue';
-
+import KeyedAsyncQueue from '../../../utils/keyed-async-queue.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
 import type GitHubNotificationAssignmentCleanupService from './assignment-cleanup-service.ts';

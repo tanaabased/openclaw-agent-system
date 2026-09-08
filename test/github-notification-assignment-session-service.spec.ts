@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import GitHubNotificationAssignmentSessionService from '../channels/github/conversation/assignment-session-service.ts';
@@ -336,6 +338,7 @@ function harness(options: HarnessOptions = {}) {
       },
     },
     readConfig: async () => config,
+    resolveNotificationRoute: resolveTestNotificationRoute,
     turnContracts: {
       resolve(identity, resolvedConfig, resolvedAgentId) {
         assert.equal(resolvedConfig, config);

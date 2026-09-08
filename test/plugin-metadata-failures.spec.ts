@@ -6,7 +6,7 @@ import pluginMetadataFailures, {
   type PluginMetadataFailureCode,
 } from '../core/plugin-metadata-failures.ts';
 
-const openclawVersion = '2026.7.1-2';
+const openclawVersion = '2099.8.7-test';
 const packageMetadata: PackageMetadata = {
   description: 'Better per-agent management for OpenClaw.',
   name: '@tanaab/openclaw-agent-system',
@@ -41,7 +41,7 @@ const packageMetadata: PackageMetadata = {
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
     compat: {
-      pluginApi: `>=${openclawVersion}`,
+      pluginApi: openclawVersion,
       minGatewayVersion: openclawVersion,
     },
     build: {
@@ -50,7 +50,7 @@ const packageMetadata: PackageMetadata = {
     },
   },
   peerDependencies: {
-    openclaw: `>=${openclawVersion}`,
+    openclaw: openclawVersion,
   },
   devDependencies: {
     openclaw: openclawVersion,
@@ -185,6 +185,26 @@ describe('core/plugin-metadata-failures', () => {
           message: 'npm package must support exactly macOS and Linux',
         },
       ],
+    );
+  });
+
+  it('should reject open-ended compatibility ranges', () => {
+    assert.deepEqual(
+      failureCodes(
+        {
+          ...packageMetadata,
+          openclaw: {
+            ...packageMetadata.openclaw,
+            compat: {
+              ...packageMetadata.openclaw?.compat,
+              pluginApi: `>=${openclawVersion}`,
+            },
+          },
+          peerDependencies: { openclaw: `>=${openclawVersion}` },
+        },
+        manifest,
+      ),
+      new Set(['peer-openclaw-version', 'plugin-api-version']),
     );
   });
 

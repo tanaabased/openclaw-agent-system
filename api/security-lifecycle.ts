@@ -1,6 +1,6 @@
-import { resolveAgentConfig } from 'openclaw/plugin-sdk/agent-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import configuredAgentEntries from '../core/configured-agents.ts';
 import type { AgentSystemLifecycleContribution } from '../core/lifecycle-registry.ts';
 
 export interface ToolSecurityLifecycleDependencies {
@@ -13,7 +13,10 @@ interface CommandIsolationPosture {
 }
 
 function inspectCommandIsolation(config: OpenClawConfig, agentId: string): CommandIsolationPosture {
-  const agent = resolveAgentConfig(config, agentId);
+  const normalizedAgentId = agentId.trim().toLowerCase();
+  const agent = configuredAgentEntries(config).find(
+    ({ id }) => id.trim().toLowerCase() === normalizedAgentId,
+  );
   const globalTools = config.tools;
   const agentTools = agent?.tools;
   const exec = { ...globalTools?.exec, ...agentTools?.exec };

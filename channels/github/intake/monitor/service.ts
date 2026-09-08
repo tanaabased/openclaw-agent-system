@@ -1,10 +1,10 @@
-import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
-import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type AgentManifestService from '../../../../manifest/service.ts';
+import { configuredAgentIds } from '../../../../core/configured-agents.ts';
 import type GitHubAccountClient from '../../../../core/github-account-client.ts';
 import type { Logger } from '../../../../core/logger.ts';
+import abortableDelay from '../../../../utils/abortable-delay.ts';
 import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
@@ -111,7 +111,7 @@ export default class GitHubNotificationMonitorService {
     const options: GitHubNotificationMonitorRunOptions =
       'aborted' in input ? { signal: input } : input;
     const config = await this.#dependencies.readConfig();
-    const agentIds = options.agentId ? [options.agentId] : listAgentIds(config);
+    const agentIds = options.agentId ? [options.agentId] : configuredAgentIds(config);
     const results: GitHubNotificationMonitorRunResult[] = [];
     for (const agentId of agentIds) {
       if (options.signal?.aborted) break;
@@ -136,7 +136,7 @@ export default class GitHubNotificationMonitorService {
         );
       }
       try {
-        await sleepWithAbort(schedulerIntervalMs, signal);
+        await abortableDelay(schedulerIntervalMs, signal);
       } catch (error) {
         if (!signal.aborted) throw error;
       }

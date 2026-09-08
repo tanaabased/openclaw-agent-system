@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
-import { redactSensitiveText } from 'openclaw/plugin-sdk/security-runtime';
+import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';
 
 import { githubNotificationConversationId } from '../channel.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
