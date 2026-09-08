@@ -26,6 +26,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         assert.equal(recorded, true);
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
+        assert.equal(replyOptions.extraSystemPrompt, 'trusted notification instructions');
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
@@ -51,7 +52,10 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
 
     const result = await dispatcher.dispatch({
       config: {},
-      contract: { mode: { disableTools: false, id: 'work' } },
+      contract: {
+        instructions: 'trusted notification instructions',
+        mode: { disableTools: false, id: 'work' },
+      },
       createIfMissing: true,
       ctxPayload,
       executionSurface: 'cli-one-shot',
@@ -82,7 +86,10 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
     await assert.rejects(
       dispatcher.dispatch({
         config: {},
-        contract: { mode: { disableTools: false, id: 'work' } },
+        contract: {
+          instructions: 'trusted notification instructions',
+          mode: { disableTools: false, id: 'work' },
+        },
         ctxPayload,
         executionSurface: 'gateway',
         messageId: 'comment:revision-1',

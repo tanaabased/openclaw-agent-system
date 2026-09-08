@@ -46,7 +46,7 @@ export interface GitHubNotificationModelTurnDispatcherDependencies {
 
 export interface GitHubNotificationModelTurnDispatchInput {
   config: OpenClawConfig;
-  contract: Pick<GitHubNotificationTurnContract, 'mode'>;
+  contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>;
   createIfMissing?: boolean;
   ctxPayload: AssembledInboundReply['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
@@ -120,6 +120,9 @@ export default class GitHubNotificationModelTurnDispatcher {
           ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
           ...githubNotificationReplyCleanupOptions(input.executionSurface),
           commentaryPayloadsEnabled: true,
+          ...(input.executionSurface === 'cli-one-shot'
+            ? { extraSystemPrompt: input.contract.instructions }
+            : {}),
           ...turnDispatch.replyOptions,
           sourceReplyDeliveryMode: 'automatic',
           suppressDefaultToolProgressMessages: true,

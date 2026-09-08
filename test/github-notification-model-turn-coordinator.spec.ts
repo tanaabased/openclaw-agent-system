@@ -47,6 +47,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection(candidateIdentity) {
+          calls.push(['attest', candidateIdentity]);
+        },
         async begin(candidateIdentity) {
           calls.push(['begin', candidateIdentity]);
           return 'turn-1';
@@ -74,7 +77,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       },
     });
 
-    assert.deepEqual(await coordinator.run(input()), {
+    assert.deepEqual(await coordinator.run({ ...input(), executionSurface: 'cli-one-shot' }), {
       dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
       finalPayloadCount: 1,
       privateText: 'Complete private response.',
@@ -86,6 +89,15 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     assert.deepEqual(calls, [
       [
         'begin',
+        {
+          agentId: 'tanaabot',
+          conversationId: route.conversationId,
+          identity,
+          sourceId: 'revision-1',
+        },
+      ],
+      [
+        'attest',
         {
           agentId: 'tanaabot',
           conversationId: route.conversationId,
@@ -107,7 +119,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     ]);
     assert.match(
       messages[0] ?? '',
-      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=gateway/u,
+      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=cli-one-shot/u,
     );
     assert.match(
       messages[1] ?? '',
@@ -121,6 +133,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const stagedCandidates: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -187,6 +202,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -226,6 +244,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -272,6 +293,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -320,6 +344,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -359,6 +386,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should classify a missing prompt-selection attestation', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },

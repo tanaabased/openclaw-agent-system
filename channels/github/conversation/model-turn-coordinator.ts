@@ -49,7 +49,10 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
-  candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
+  candidates: Pick<
+    GitHubNotificationReplyCandidateStore,
+    'attestPromptSelection' | 'begin' | 'cancel' | 'finish'
+  >;
   dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
   logger: Pick<Logger, 'info' | 'warn'>;
 }
@@ -203,6 +206,9 @@ export default class GitHubNotificationModelTurnCoordinator {
     const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
     let turnResult;
     try {
+      if (input.executionSurface === 'cli-one-shot') {
+        await this.#dependencies.candidates.attestPromptSelection(candidateIdentity);
+      }
       turnResult = await this.#dependencies.dispatcher.dispatch({
         config: input.config,
         contract: input.contract,

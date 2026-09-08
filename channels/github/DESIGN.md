@@ -238,12 +238,14 @@ by channel-owned turn identity.
 
 ### Prompt Transport
 
-The central `before_prompt_build` hook is the supported cross-harness transport
-for hidden channel instructions. Turn dispatch options project capability only;
-they do not carry lifecycle, mode, or event prompts through
-`extraSystemPrompt`. Typed lifecycle candidates use their separate channel-owned
-file-backed handoff. Ordinary admitted comments use the captured final payload
-without parsing a Markdown envelope.
+Gateway turns use the central `before_prompt_build` hook as the supported
+transport for hidden channel instructions. OpenClaw CLI commands run through a
+caller-owned plugin registry that does not activate global hooks, so one-shot
+notification turns carry the already resolved trusted turn contract through
+`extraSystemPrompt` and attest that selection before dispatch. Turn dispatch
+options otherwise project capability only. Typed lifecycle candidates use their
+separate channel-owned file-backed handoff. Ordinary admitted comments use the
+captured final payload without parsing a Markdown envelope.
 
 The prompt composer renders lifecycle, lifecycle-mode, mode, event, response,
 style, publication-safety, and clarification guidance under

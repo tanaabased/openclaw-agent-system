@@ -54,7 +54,14 @@ const config: OpenClawConfig = {
   gateway: { controlUi: { basePath: '/openclaw/' } },
 };
 
-function assertTurnContractOptions(options: Record<string, unknown>) {
+function assertTurnContractOptions(
+  options: Record<string, unknown>,
+  executionSurface: 'cli-one-shot' | 'gateway',
+) {
+  if (executionSurface === 'cli-one-shot') {
+    assert.match(String(options.extraSystemPrompt), /## Event/u);
+    return;
+  }
   assert.equal(options.extraSystemPrompt, undefined);
 }
 
@@ -78,6 +85,9 @@ function incomingMentions(comment: GitHubCanonicalIssueComment) {
 function candidateStore(candidates: readonly string[], finishError?: Error) {
   let identity: GitHubNotificationReplyCandidateTurnInput | undefined;
   return {
+    async attestPromptSelection(input: GitHubNotificationReplyCandidateTurnInput) {
+      assert.deepEqual(input, identity);
+    },
     async begin(input: GitHubNotificationReplyCandidateTurnInput) {
       identity = { ...input };
       return 'turn-1';
@@ -126,7 +136,7 @@ async function respondWithCandidates(
       dispatcher: modelTurnDispatcher(
         async (input) => {
           const replyOptions = input.replyOptions ?? {};
-          assertTurnContractOptions(replyOptions);
+          assertTurnContractOptions(replyOptions, executionSurface);
           inspectReplyOptions?.(replyOptions);
           await input.dispatcherOptions.deliver(
             { text: finalText },
@@ -200,7 +210,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
           assert.equal(input.ctx.Provider, githubNotificationChannelId);
           assert.equal(input.replyOptions?.disableTools, false);
           const replyOptions = input.replyOptions as Record<string, unknown>;
-          assertTurnContractOptions(replyOptions);
+          assertTurnContractOptions(replyOptions, 'cli-one-shot');
           assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
           assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
           assert.equal(replyOptions.oneShotCliRun, true);
