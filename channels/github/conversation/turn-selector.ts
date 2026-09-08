@@ -29,7 +29,9 @@ function normalizedAgentId(context: AgentSystemHookContext): string | undefined 
 }
 
 function conversationId(context: AgentSystemHookContext): string | undefined {
-  const candidates = [context.channelId, context.chatId, context.channelContext?.chat?.id]
+  const channelOwnedId = context.channelContext?.chat?.id?.trim();
+  if (channelOwnedId) return channelOwnedId;
+  const candidates = [context.channelId, context.chatId]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
   const unique = [...new Set(candidates)];

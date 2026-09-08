@@ -66,6 +66,35 @@ describe('channels/github/conversation/turn-selector', () => {
     assert.deepEqual(resolved, [{ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }]);
   });
 
+  it('should prefer the channel-owned id when OpenClaw normalizes flattened route ids', async () => {
+    const state = conversationState();
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve(identity) {
+          return { identity };
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await selector.select({
+        agentId,
+        channelContext: { chat: { id: conversationId } },
+        channelId: conversationId.toLowerCase(),
+        chatId: conversationId.toLowerCase(),
+        workspaceDir,
+      }),
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
+    );
+  });
+
   it('should select the registered assignment tuple from durable state', async () => {
     const state = conversationState();
     state.conversations[conversationId]!.activeTurn = {
