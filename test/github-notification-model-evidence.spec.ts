@@ -74,6 +74,7 @@ describe('scripts/github-notification-model-evidence', () => {
             ]),
       ];
       const callId = selectedScenario.toolCalls[0]?.id ?? '';
+      const observedCallId = `${callId}_fc-observed_123`;
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
       const evidence = githubNotificationModelEvidence(selectedScenario, [
         {
@@ -106,14 +107,14 @@ describe('scripts/github-notification-model-evidence', () => {
                 tool_calls: [
                   {
                     function: { name: 'agent_system_github_reply' },
-                    id: callId,
+                    id: observedCallId,
                   },
                 ],
               },
               {
                 content: '{"status":"staged"}',
                 role: 'tool',
-                tool_call_id: callId,
+                tool_call_id: observedCallId,
               },
             ],
             model: 'gpt-5.5',
