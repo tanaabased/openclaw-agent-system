@@ -5,7 +5,6 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
-import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
 
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGitCapability from '../tools/git/capability.ts';
@@ -39,6 +38,7 @@ import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 import { configuredAgentIds } from './configured-agents.ts';
+import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
@@ -51,10 +51,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     },
   });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
-  const readConfig = () => {
-    // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
-    return getRuntimeConfig();
-  };
+  const readConfig = readFreshRuntimeConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
