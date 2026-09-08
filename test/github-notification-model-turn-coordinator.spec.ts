@@ -5,6 +5,7 @@ import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound'
 import GitHubNotificationModelTurnCoordinator, {
   GitHubNotificationModelTurnCoordinatorError,
 } from '../channels/github/conversation/model-turn-coordinator.ts';
+import { GitHubNotificationPrivateResponseError } from '../channels/github/conversation/private-response.ts';
 import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
 import { GitHubNotificationReplyCandidateStoreError } from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
@@ -241,6 +242,41 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       warnings[0] ?? '',
       /model turn failed .*event=comment .*phase=dispatch code=unclassified aborted=false/u,
     );
+  });
+
+  it('should log only bounded payload shape when private response selection fails', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async attestPromptSelection() {},
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 2, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'sensitive one' }, { text: 'sensitive two' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    await assert.rejects(coordinator.run(input()), GitHubNotificationPrivateResponseError);
+    assert.match(
+      warnings[0] ?? '',
+      /phase=private-response code=github-notification-private-response-invalid payload-count=2 payload-shapes=0:13:0:0:0:0:0:0:0,1:13:0:0:0:0:0:0:0 payload-shapes-truncated=false/u,
+    );
+    assert.doesNotMatch(warnings[0] ?? '', /sensitive|one|two/u);
   });
 
   it('should warn with bounded diagnostics when publication is withheld', async () => {

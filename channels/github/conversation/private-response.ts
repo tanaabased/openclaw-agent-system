@@ -17,6 +17,33 @@ export function githubNotificationOrdinaryFinalPayloads(
   );
 }
 
+/** Summarize final payload shape without retaining model-authored content. */
+export function githubNotificationPrivateResponseDiagnostics(
+  payloads: readonly ReplyPayload[],
+): string {
+  const maximumPayloads = 8;
+  const summaries = payloads
+    .slice(0, maximumPayloads)
+    .map((payload, index) =>
+      [
+        index,
+        payload.text?.trim().length ?? 0,
+        Number(payload.isError === true),
+        Number(payload.isReasoning === true),
+        Number(payload.isCommentary === true),
+        Number(Boolean(payload.mediaUrl || payload.mediaUrls?.length)),
+        Number(Boolean(payload.presentation)),
+        Number(Boolean(payload.interactive)),
+        Number(Boolean(payload.channelData)),
+      ].join(':'),
+    );
+  return [
+    `payload-count=${payloads.length}`,
+    `payload-shapes=${summaries.join(',') || 'none'}`,
+    `payload-shapes-truncated=${payloads.length > maximumPayloads}`,
+  ].join(' ');
+}
+
 /** Select one non-empty ordinary final without imposing a publication protocol on it. */
 export function githubNotificationPrivateResponse(payloads: readonly ReplyPayload[]): string {
   const ordinary = githubNotificationOrdinaryFinalPayloads(payloads);

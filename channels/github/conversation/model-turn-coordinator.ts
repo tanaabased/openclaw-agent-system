@@ -19,6 +19,7 @@ import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatch
 import {
   githubNotificationOrdinaryFinalPayloads,
   githubNotificationPrivateResponse,
+  githubNotificationPrivateResponseDiagnostics,
 } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
@@ -271,7 +272,23 @@ export default class GitHubNotificationModelTurnCoordinator {
     }
 
     const ordinaryFinalPayloads = githubNotificationOrdinaryFinalPayloads(turnResult.finalPayloads);
-    const privateText = githubNotificationPrivateResponse(ordinaryFinalPayloads);
+    let privateText: string;
+    try {
+      privateText = githubNotificationPrivateResponse(ordinaryFinalPayloads);
+    } catch (error) {
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: model turn failed',
+          details,
+          'phase=private-response',
+          `code=${diagnosticCode(error)}`,
+          githubNotificationPrivateResponseDiagnostics(turnResult.finalPayloads),
+          `aborted=${Boolean(input.signal?.aborted)}`,
+          `duration-ms=${Date.now() - startedAt}`,
+        ].join(' '),
+      );
+      throw error;
+    }
     const responsePublication = publication(
       publicCandidates,
       ordinaryFinalPayloads,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   GitHubNotificationPrivateResponseError,
   githubNotificationPrivateResponse,
+  githubNotificationPrivateResponseDiagnostics,
 } from '../channels/github/conversation/private-response.ts';
 
 describe('channels/github/conversation/private-response', () => {
@@ -41,5 +42,18 @@ describe('channels/github/conversation/private-response', () => {
         (error: unknown) => error instanceof GitHubNotificationPrivateResponseError,
       );
     }
+  });
+
+  it('should summarize bounded payload shape without retaining text', () => {
+    const diagnostic = githubNotificationPrivateResponseDiagnostics([
+      { isReasoning: true, text: 'sensitive reasoning' },
+      { channelData: { secret: 'value' }, isError: true, text: 'private response' },
+    ]);
+
+    assert.equal(
+      diagnostic,
+      'payload-count=2 payload-shapes=0:19:0:1:0:0:0:0:0,1:16:1:0:0:0:0:0:1 payload-shapes-truncated=false',
+    );
+    assert.doesNotMatch(diagnostic, /sensitive|private|secret|value/u);
   });
 });
