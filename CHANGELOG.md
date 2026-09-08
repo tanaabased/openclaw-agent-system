@@ -2,11 +2,13 @@
 
 ### New Features
 
+- Added a disposable upgrade rehearsal from Agent System 0.5.3 that retains the existing profile and verifies the candidate after probing the intermediate core-and-plugin pair. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 - Added a packed-plugin and live-Gateway smoke test for the exact supported OpenClaw 2026.9.3 release. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 
 ### Bug Fixes
 
 - Hardened OpenClaw compatibility around the exact 2026.9.3 Plugin SDK, including canonical keyed agent configuration, explicit conversation-hook authorization, supported runtime capabilities, and repository-owned replacements for deprecated or private helpers. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+- Isolated unit-test OpenClaw persistence from the developer's normal profile before loading the SDK. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 

@@ -1,0 +1,123 @@
+name: OpenClaw upgrade rehearsal
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NO_COLOR: '1'
+
+jobs:
+  upgrade:
+    name: Upgrade from Agent System 0.5.3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Prepare isolated paths
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "OPENCLAW_STATE_DIR=$RUNNER_TEMP/upgrade-profile" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/openclaw/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/upgrade-gateway" "$RUNNER_TEMP/upgrade-evidence"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped candidate
+        uses: tanaabased/prepare-release-action@v1
+        with:
+          version: dev
+          sync: false
+          commands: |
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Pack candidate and historical release
+        shell: bash
+        run: |
+          candidate="$(npm pack --silent --ignore-scripts --pack-destination "$RUNNER_TEMP")"
+          baseline="$(npm pack @tanaab/openclaw-agent-system@0.5.3 --silent --ignore-scripts --pack-destination "$RUNNER_TEMP")"
+          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$candidate" >> "$GITHUB_ENV"
+          echo "BASELINE_PACKAGE=$RUNNER_TEMP/$baseline" >> "$GITHUB_ENV"
+      - name: Verify historical core and plugin pair
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/openclaw" openclaw@2026.7.1-2
+          hash -r
+          openclaw --version | grep -F '2026.7.1-2'
+          openclaw-setup --workspace "$RUNNER_TEMP/main"
+          openclaw plugins install "npm-pack:$BASELINE_PACKAGE" --force
+          openclaw plugins enable agent-system
+          openclaw plugins inspect agent-system --runtime --json > "$RUNNER_TEMP/upgrade-evidence/baseline.json"
+          jq -e '.plugin.status == "loaded" and .plugin.version == "0.5.3" and .plugin.error == null' "$RUNNER_TEMP/upgrade-evidence/baseline.json"
+          mkdir -p "$RUNNER_TEMP/install-data"
+          cp examples/install/data/agent.yaml "$RUNNER_TEMP/install-data/agent.yaml"
+          cd "$RUNNER_TEMP/install-data"
+          openclaw agent-system install --json | jq -e '.outcomes | any(.component == "agent" and .status == "created")'
+          openclaw agent-system doctor --json | jq -e '.status == "healthy"'
+          openclaw-gateway start --state-dir "$RUNNER_TEMP/upgrade-gateway"
+          openclaw gateway call agents.list --json --timeout 3000 | jq -e '.agents | any(.id == "install-data")'
+          openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/upgrade-gateway"
+          echo 'Historical pair: OpenClaw 2026.7.1-2 / Agent System 0.5.3 passed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Probe new core with historical plugin
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/openclaw" openclaw@2026.9.3
+          hash -r
+          openclaw --version | grep -F '2026.9.3'
+          openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+          if openclaw plugins inspect agent-system --runtime --json > "$RUNNER_TEMP/upgrade-evidence/bridge.json" 2> "$RUNNER_TEMP/upgrade-evidence/bridge.stderr" &&
+            jq -e '.plugin.status == "loaded" and .plugin.error == null' "$RUNNER_TEMP/upgrade-evidence/bridge.json"; then
+            openclaw-gateway start --state-dir "$RUNNER_TEMP/upgrade-gateway"
+            openclaw gateway call agents.list --json --timeout 3000 | jq -e '.agents | any(.id == "install-data")'
+            openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/upgrade-gateway"
+            echo 'Intermediate pair loaded and started; final cutover verification follows.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            jq -e '.plugin.status == "error" and (.plugin.error | type == "string" and length > 0)' "$RUNNER_TEMP/upgrade-evidence/bridge.json"
+            jq '{status: .plugin.status, error: .plugin.error}' "$RUNNER_TEMP/upgrade-evidence/bridge.json"
+            echo 'Intermediate plugin load failed. Verifying a coordinated cutover with the Gateway stopped.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Replace plugin and verify preserved installation
+        shell: bash
+        run: |
+          openclaw plugins disable agent-system
+          openclaw plugins install "npm-pack:$AGENT_SYSTEM_PACKAGE" --force --accept-capabilities
+          openclaw plugins enable agent-system
+          openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+          openclaw plugins inspect agent-system --runtime --json > "$RUNNER_TEMP/upgrade-evidence/candidate.json"
+          jq -e --arg source "$AGENT_SYSTEM_PACKAGE" '.plugin.status == "loaded" and .plugin.error == null and .install.sourcePath == $source and .install.version == .plugin.version and .plugin.version != "0.5.3" and .policy.allowConversationAccess == true and any(.typedHooks[]?; .name == "before_prompt_build")' "$RUNNER_TEMP/upgrade-evidence/candidate.json"
+          cd "$RUNNER_TEMP/install-data"
+          openclaw agent-system install --json | jq -e '.outcomes | any(.component == "agent" and .status == "unchanged")'
+          openclaw agent-system doctor --json | jq -e '.status == "healthy"'
+          openclaw as validate --json | jq -e '.status == "valid"'
+          openclaw-gateway start --state-dir "$RUNNER_TEMP/upgrade-gateway"
+          openclaw gateway call agents.list --json --timeout 3000 | jq -e '.agents | any(.id == "install-data")'
+          openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/upgrade-gateway"
+          echo 'Candidate pair passed with the existing agent, workspace, and installation preserved.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Stop disposable Gateway
+        if: always()
+        run: openclaw-gateway stop --timeout 60 --state-dir "$RUNNER_TEMP/upgrade-gateway" || true
+      - name: Preserve upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-upgrade-evidence
+          path: ${{ runner.temp }}/upgrade-evidence
+          retention-days: 7

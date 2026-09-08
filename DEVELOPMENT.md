@@ -17,10 +17,10 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 Agent System tests explicit core-and-plugin pairs. A minimum version is not a
 claim that every later or intervening OpenClaw release works.
 
-| Agent System release | OpenClaw release | Status                                      |
-| -------------------- | ---------------- | ------------------------------------------- |
-| Next release         | 2026.9.3         | Current development and release target      |
-| 0.5.3                | 2026.7.1-2       | Prior release record; not tested by this CI |
+| Agent System release | OpenClaw release | Status                                       |
+| -------------------- | ---------------- | -------------------------------------------- |
+| Next release         | 2026.9.3         | Current development and release target       |
+| 0.5.3                | 2026.7.1-2       | Historical baseline in the upgrade rehearsal |
 
 The ordinary lint, typecheck, unit, and release workflows run against the
 OpenClaw version pinned in `package.json` and `bun.lock`; they are the primary
@@ -30,6 +30,30 @@ covers the installed-state boundary those tests cannot: it installs OpenClaw
 2026.9.3 and the packed candidate in a disposable profile, accepts the declared
 capabilities, loads the plugin runtime, and starts a real Gateway. It is not a
 historical-version matrix.
+
+Unit tests preload a disposable OpenClaw state and config path before importing
+the SDK. This contains persistence performed by host channel helpers even when
+their model and session-recording callbacks are faked. The suite removes that
+state on exit and does not require migrating the developer's OpenClaw profile.
+
+The separate [upgrade rehearsal](./.github/workflows/pr-openclaw-upgrade.yml)
+installs the published 0.5.3 package on OpenClaw 2026.7.1-2, creates an agent,
+verifies its installation and Gateway, then stops the Gateway. It retains the
+same profile and workspace while replacing the core with 2026.9.3 and probing
+the old plugin. A plugin-load failure is captured explicitly; it is not treated
+as a successful intermediate pair. The final stage replaces the plugin with the
+packed candidate and verifies the existing agent, unchanged installation,
+healthy doctor result, command alias, and Gateway. Reports are retained in the
+`openclaw-upgrade-evidence` artifact, with the chosen path in the run summary.
+
+For this version transition, schedule a coordinated cutover: back up the profile
+and workspaces, stop the Gateway, update OpenClaw and Agent System together,
+grant `plugins.entries.agent-system.hooks.allowConversationAccess`, and inspect
+the plugin before restarting. Verify each managed workspace with
+`openclaw agent-system doctor`. Keep the prior core, plugin, and profile backup
+together for rollback; do not start a partially upgraded pair unless the
+rehearsal has proved that exact combination. The rehearsal runs only in GitHub
+Actions and never upgrades a production host.
 
 Before changing the supported OpenClaw release, update the dependency pin,
 plugin metadata, and reviewed Plugin SDK import inventory together. The
