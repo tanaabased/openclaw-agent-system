@@ -41,6 +41,11 @@ export interface PluginManifest {
     cliCommand?: string;
     name?: string;
   }>;
+  cliCommands?: Array<{
+    description?: string;
+    hasSubcommands?: boolean;
+    name?: string;
+  }>;
   channelConfigs?: Record<string, { schema?: Record<string, unknown> }>;
   channels?: string[];
   contracts?: {
@@ -73,6 +78,7 @@ export type PluginMetadataFailureCode =
   | 'alias-command'
   | 'canonical-command-alias'
   | 'short-command-alias'
+  | 'cli-command-contract'
   | 'channel-contract'
   | 'channel-config-contract'
   | 'tool-contract'
@@ -95,6 +101,18 @@ export interface PluginMetadataFailure {
 
 const supportedOperatingSystems = ['darwin', 'linux'];
 const githubNotificationChannelId = 'agent-system-github';
+const cliCommands = [
+  {
+    name: 'agent-system',
+    description: 'Manage reproducible OpenClaw agent workspaces.',
+    hasSubcommands: true,
+  },
+  {
+    name: 'as',
+    description: 'Alias for the Agent System command.',
+    hasSubcommands: true,
+  },
+];
 const githubNotificationChannelConfigs = {
   [githubNotificationChannelId]: {
     schema: {
@@ -234,6 +252,11 @@ export default function pluginMetadataFailures(
     declaresCommandAlias(manifest.commandAliases, 'as', 'as'),
     'short-command-alias',
     'short command alias is missing',
+  );
+  check(
+    isDeepStrictEqual(manifest.cliCommands, cliCommands),
+    'cli-command-contract',
+    'plugin must declare exact root CLI metadata without loading its runtime',
   );
   check(
     containsExactly(manifest.channels, [githubNotificationChannelId]),

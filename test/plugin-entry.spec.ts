@@ -15,6 +15,21 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
+  it('should not access runtime capabilities while OpenClaw collects CLI metadata', () => {
+    let runtimeAccessed = false;
+    const api = {
+      id: 'agent-system',
+      registrationMode: 'cli-metadata',
+      get runtime() {
+        runtimeAccessed = true;
+        throw new Error('runtime unavailable');
+      },
+    };
+
+    assert.doesNotThrow(() => plugin.register(api as never));
+    assert.equal(runtimeAccessed, false);
+  });
+
   it('should register startup hooks and both cli roots', async () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)

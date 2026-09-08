@@ -70,6 +70,18 @@ const manifest: PluginManifest = {
     { name: 'agent-system', cliCommand: 'agent-system' },
     { name: 'as', cliCommand: 'as' },
   ],
+  cliCommands: [
+    {
+      name: 'agent-system',
+      description: 'Manage reproducible OpenClaw agent workspaces.',
+      hasSubcommands: true,
+    },
+    {
+      name: 'as',
+      description: 'Alias for the Agent System command.',
+      hasSubcommands: true,
+    },
+  ],
   channels: ['agent-system-github'],
   channelConfigs: {
     'agent-system-github': {
@@ -143,6 +155,7 @@ describe('core/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
+        'cli-command-contract',
         'channel-contract',
         'channel-config-contract',
         'tool-contract',
@@ -268,11 +281,19 @@ describe('core/plugin-metadata-failures', () => {
           ...manifest,
           activation: { onStartup: true, onCommands: ['agent-system'] },
           commandAliases: [{ name: 'agent-system', cliCommand: 'agent-system' }],
+          cliCommands: [
+            {
+              name: 'agent-system',
+              description: 'Manage reproducible OpenClaw agent workspaces.',
+              hasSubcommands: true,
+            },
+          ],
         },
       ),
       new Set([
         'alias-command',
         'short-command-alias',
+        'cli-command-contract',
         'peer-openclaw-version',
         'plugin-api-version',
         'gateway-version',
