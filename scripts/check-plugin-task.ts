@@ -17,43 +17,30 @@ const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
 const manifest = JSON.parse(manifestContents) as PluginManifest;
 const installedOpenClaw = JSON.parse(installedOpenClawContents) as { version?: string };
 const failures = pluginMetadataFailures(packageMetadata, manifest).map(({ message }) => message);
-const compatibilityTestVersion = process.env.OPENCLAW_COMPATIBILITY_TEST_VERSION;
-const expectedInstalledOpenClawVersion =
-  compatibilityTestVersion ?? packageMetadata.devDependencies?.openclaw;
+const testVersion = process.env.OPENCLAW_COMPATIBILITY_TEST_VERSION;
+const expectedVersion = testVersion ?? packageMetadata.devDependencies?.openclaw;
+const actualVersion = installedOpenClaw.version ?? 'unknown';
+const targetKind = testVersion ? 'compatibility test' : 'development';
+const pluginApiRange = packageMetadata.openclaw?.compat?.pluginApi ?? '';
+const peerRange = packageMetadata.peerDependencies?.openclaw ?? '';
+const expectedDisplay = expectedVersion ?? 'unknown';
+const pluginApiDisplay = pluginApiRange || 'unknown';
 
-if (installedOpenClaw.version !== expectedInstalledOpenClawVersion) {
+if (installedOpenClaw.version !== expectedVersion) {
   failures.push(
-    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match ${
-      compatibilityTestVersion ? 'compatibility test' : 'development'
-    } target ${expectedInstalledOpenClawVersion ?? 'unknown'}`,
+    `installed OpenClaw ${actualVersion} must match ${targetKind} target ${expectedDisplay}`,
   );
 }
 
-if (
-  compatibilityTestVersion &&
-  !Bun.semver.satisfies(
-    compatibilityTestVersion,
-    packageMetadata.openclaw?.compat?.pluginApi ?? '',
-  )
-) {
+if (testVersion && !Bun.semver.satisfies(testVersion, pluginApiRange)) {
   failures.push(
-    `compatibility test target ${compatibilityTestVersion} must satisfy plugin API range ${
-      packageMetadata.openclaw?.compat?.pluginApi ?? 'unknown'
-    }`,
+    `compatibility target ${testVersion} must satisfy plugin API range ${pluginApiDisplay}`,
   );
 }
 
-if (
-  compatibilityTestVersion &&
-  !Bun.semver.satisfies(
-    compatibilityTestVersion,
-    packageMetadata.peerDependencies?.openclaw ?? '',
-  )
-) {
+if (testVersion && !Bun.semver.satisfies(testVersion, peerRange)) {
   failures.push(
-    `compatibility test target ${compatibilityTestVersion} must satisfy peer range ${
-      packageMetadata.peerDependencies?.openclaw ?? 'unknown'
-    }`,
+    `compatibility target ${testVersion} must satisfy peer range ${peerRange || 'unknown'}`,
   );
 }
 
