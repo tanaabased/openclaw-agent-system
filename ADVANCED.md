@@ -20,14 +20,14 @@ while the channel ID uses hyphens.
 
 ## Version Compatibility
 
-| Agent System release | Minimum OpenClaw | CI-tested through |
-| -------------------- | ---------------- | ----------------- |
-| Unreleased           | 2026.9.2         | 2026.9.3          |
-| 0.5.3                | 2026.7.1         | 2026.7.2          |
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| Unreleased           | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
 
-The package builds against its minimum OpenClaw version so published code does
-not accidentally depend on a newer SDK. Focused compatibility CI also installs
-the newest tested version before the supported floor advances.
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
 
 ## Manifest
 

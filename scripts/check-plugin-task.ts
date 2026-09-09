@@ -17,30 +17,10 @@ const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
 const manifest = JSON.parse(manifestContents) as PluginManifest;
 const installedOpenClaw = JSON.parse(installedOpenClawContents) as { version?: string };
 const failures = pluginMetadataFailures(packageMetadata, manifest).map(({ message }) => message);
-const testVersion = process.env.OPENCLAW_COMPATIBILITY_TEST_VERSION;
-const expectedVersion = testVersion ?? packageMetadata.devDependencies?.openclaw;
-const actualVersion = installedOpenClaw.version ?? 'unknown';
-const targetKind = testVersion ? 'compatibility test' : 'development';
-const pluginApiRange = packageMetadata.openclaw?.compat?.pluginApi ?? '';
-const peerRange = packageMetadata.peerDependencies?.openclaw ?? '';
-const expectedDisplay = expectedVersion ?? 'unknown';
-const pluginApiDisplay = pluginApiRange || 'unknown';
 
-if (installedOpenClaw.version !== expectedVersion) {
+if (installedOpenClaw.version !== packageMetadata.devDependencies?.openclaw) {
   failures.push(
-    `installed OpenClaw ${actualVersion} must match ${targetKind} target ${expectedDisplay}`,
-  );
-}
-
-if (testVersion && !Bun.semver.satisfies(testVersion, pluginApiRange)) {
-  failures.push(
-    `compatibility target ${testVersion} must satisfy plugin API range ${pluginApiDisplay}`,
-  );
-}
-
-if (testVersion && !Bun.semver.satisfies(testVersion, peerRange)) {
-  failures.push(
-    `compatibility target ${testVersion} must satisfy peer range ${peerRange || 'unknown'}`,
+    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match development target ${packageMetadata.devDependencies?.openclaw ?? 'unknown'}`,
   );
 }
 

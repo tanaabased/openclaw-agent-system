@@ -188,8 +188,12 @@ export default function pluginMetadataFailures(
   const hasExactDevelopmentOpenClawVersion =
     typeof developmentOpenClawVersion === 'string' &&
     exactSemanticVersion.test(developmentOpenClawVersion);
-  const expectedCompatibilityRange = hasExactDevelopmentOpenClawVersion
-    ? `>=${developmentOpenClawVersion}`
+  const minimumGatewayVersion = packageMetadata.openclaw?.compat?.minGatewayVersion;
+  const hasExactMinimumGatewayVersion =
+    typeof minimumGatewayVersion === 'string' &&
+    exactSemanticVersion.test(minimumGatewayVersion);
+  const expectedCompatibilityRange = hasExactMinimumGatewayVersion
+    ? `>=${minimumGatewayVersion}`
     : undefined;
 
   check(
@@ -320,22 +324,21 @@ export default function pluginMetadataFailures(
     'development OpenClaw version must be pinned to an exact semantic version',
   );
   check(
-    hasExactDevelopmentOpenClawVersion &&
+    hasExactMinimumGatewayVersion &&
       packageMetadata.peerDependencies?.openclaw === expectedCompatibilityRange,
     'peer-openclaw-version',
-    'OpenClaw peer dependency must use the development SDK as its compatibility floor',
+    'OpenClaw peer dependency must use the minimum Gateway version as its compatibility floor',
   );
   check(
-    hasExactDevelopmentOpenClawVersion &&
+    hasExactMinimumGatewayVersion &&
       packageMetadata.openclaw?.compat?.pluginApi === expectedCompatibilityRange,
     'plugin-api-version',
-    'plugin API compatibility must use the development SDK as its compatibility floor',
+    'plugin API compatibility must use the minimum Gateway version as its compatibility floor',
   );
   check(
-    hasExactDevelopmentOpenClawVersion &&
-      packageMetadata.openclaw?.compat?.minGatewayVersion === developmentOpenClawVersion,
+    hasExactMinimumGatewayVersion,
     'gateway-version',
-    'minimum Gateway version must match the development SDK',
+    'minimum Gateway version must be pinned to an exact semantic version',
   );
   check(
     hasExactDevelopmentOpenClawVersion &&

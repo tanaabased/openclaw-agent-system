@@ -166,7 +166,7 @@ describe('openclaw api policy', () => {
       assert.deepEqual(
         openClawImportFailures(source, file),
         [],
-        `${file} must use only the reviewed OpenClaw 2026.9.2 through 2026.9.3 plugin SDK inventory`,
+        `${file} must use only the reviewed OpenClaw 2026.9.3 plugin SDK inventory`,
       );
       for (const member of protectedRuntimeMembers) {
         assert.equal(

@@ -6,8 +6,9 @@ import pluginMetadataFailures, {
   type PluginMetadataFailureCode,
 } from '../core/plugin-metadata-failures.ts';
 
-const openclawVersion = '2099.8.7-test';
-const openclawCompatibilityRange = `>=${openclawVersion}`;
+const minimumOpenClawVersion = '2099.8.6-test';
+const developmentOpenClawVersion = '2099.8.7-test';
+const openclawCompatibilityRange = `>=${minimumOpenClawVersion}`;
 const packageMetadata: PackageMetadata = {
   description: 'Better per-agent management for OpenClaw.',
   name: '@tanaab/openclaw-agent-system',
@@ -43,18 +44,18 @@ const packageMetadata: PackageMetadata = {
     runtimeExtensions: ['./dist/index.js'],
     compat: {
       pluginApi: openclawCompatibilityRange,
-      minGatewayVersion: openclawVersion,
+      minGatewayVersion: minimumOpenClawVersion,
     },
     build: {
-      openclawVersion,
-      pluginSdkVersion: openclawVersion,
+      openclawVersion: developmentOpenClawVersion,
+      pluginSdkVersion: developmentOpenClawVersion,
     },
   },
   peerDependencies: {
     openclaw: openclawCompatibilityRange,
   },
   devDependencies: {
-    openclaw: openclawVersion,
+    openclaw: developmentOpenClawVersion,
   },
 };
 
@@ -211,10 +212,10 @@ describe('core/plugin-metadata-failures', () => {
             ...packageMetadata.openclaw,
             compat: {
               ...packageMetadata.openclaw?.compat,
-              pluginApi: openclawVersion,
+              pluginApi: minimumOpenClawVersion,
             },
           },
-          peerDependencies: { openclaw: openclawVersion },
+          peerDependencies: { openclaw: minimumOpenClawVersion },
         },
         manifest,
       ),
@@ -295,9 +296,6 @@ describe('core/plugin-metadata-failures', () => {
         'alias-command',
         'short-command-alias',
         'cli-command-contract',
-        'peer-openclaw-version',
-        'plugin-api-version',
-        'gateway-version',
         'build-openclaw-version',
         'build-sdk-version',
       ]),
