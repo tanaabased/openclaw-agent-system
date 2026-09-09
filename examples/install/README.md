@@ -86,7 +86,7 @@ openclaw config get 'agents.entries.install-data.tools' --json | jq -e '.allow =
 
 ```bash
 # should create main when the host roster is explicitly empty
-openclaw config set agents.entries '{}' --strict-json
+openclaw config set agents.entries '{}' --strict-json --replace
 mkdir -p "$TMPDIR/install-main"
 cp "$GITHUB_WORKSPACE/examples/install/main/agent.yaml" "$TMPDIR/install-main/agent.yaml"
 cd "$TMPDIR/install-main"

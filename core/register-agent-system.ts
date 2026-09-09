@@ -2,6 +2,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
+import { getRootOptionAwareCommandPath } from 'openclaw/plugin-sdk/cli-argv';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
@@ -287,6 +288,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
+  const toolOwnsStdout = ({ argv }: { argv: readonly string[] }) =>
+    getRootOptionAwareCommandPath(argv, 2)[1] === 'tool';
   api.registerCli(
     ({ program }) => {
       registerAgentSystemCli(program, {
@@ -311,11 +314,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           name: 'agent-system',
           description: 'Manage reproducible OpenClaw agent workspaces.',
           hasSubcommands: true,
+          machineOutput: toolOwnsStdout,
         },
         {
           name: 'as',
           description: 'Alias for the Agent System command.',
           hasSubcommands: true,
+          machineOutput: toolOwnsStdout,
         },
       ],
     },

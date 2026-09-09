@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawPluginApi, PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
 import type { CommandLike } from '../cli/register.ts';
@@ -34,12 +34,7 @@ describe('index', () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
-    let options:
-      | {
-          commands?: string[];
-          descriptors?: Array<{ hasSubcommands?: boolean; name: string }>;
-        }
-      | undefined;
+    let options: Parameters<OpenClawPluginApi['registerCli']>[1];
     const hookNames: string[] = [];
     const hookHandlers = new Map<string, (...args: unknown[]) => unknown>();
     const channelIds: string[] = [];
@@ -91,10 +86,7 @@ describe('index', () => {
           logger: PluginLogger;
           program: CommandLike;
         }) => Promise<void> | void,
-        nextOptions: {
-          commands?: string[];
-          descriptors?: Array<{ hasSubcommands?: boolean; name: string }>;
-        },
+        nextOptions: Parameters<OpenClawPluginApi['registerCli']>[1],
       ) {
         registrar = nextRegistrar;
         options = nextOptions;
@@ -149,6 +141,36 @@ describe('index', () => {
         { hasSubcommands: true, name: 'as' },
       ],
     );
+
+    for (const descriptor of options?.descriptors ?? []) {
+      assert.ok('machineOutput' in descriptor && typeof descriptor.machineOutput === 'function');
+      for (const argv of [
+        ['node', 'openclaw', descriptor.name, 'tool', 'gh', '--', 'api', 'user'],
+        [
+          'node',
+          'openclaw',
+          '--profile',
+          'tool',
+          '--log-level',
+          'debug',
+          descriptor.name,
+          'tool',
+          'git',
+          '--',
+          'status',
+        ],
+      ]) {
+        assert.equal(descriptor.machineOutput({ argv, stdoutIsTTY: false }), true);
+        assert.equal(descriptor.machineOutput({ argv, stdoutIsTTY: true }), true);
+      }
+      assert.equal(
+        descriptor.machineOutput({
+          argv: ['node', 'openclaw', '--profile', 'tool', descriptor.name, 'doctor'],
+          stdoutIsTTY: false,
+        }),
+        false,
+      );
+    }
 
     const promptResult = (await hookHandlers.get('before_prompt_build')?.(
       {},

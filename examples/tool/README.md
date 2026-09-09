@@ -40,5 +40,5 @@ openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-ope
 
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
+OPENCLAW_LOG_LEVEL=debug PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
 ```
