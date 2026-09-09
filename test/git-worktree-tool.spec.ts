@@ -130,10 +130,7 @@ describe('tools/git/worktree-tool', () => {
       scope,
     );
 
-    assert.equal(
-      prepared[0]?.cloneUrl,
-      'git@github.com:tanaabased/openclaw-agent-system.git',
-    );
+    assert.equal(prepared[0]?.cloneUrl, 'git@github.com:tanaabased/openclaw-agent-system.git');
   });
 
   it('should parse the registered command route and reject unsupported inputs', () => {
