@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
+import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
@@ -13,21 +14,24 @@ const manifest: AgentManifest = {
   github: {},
 };
 const context = { manifest, workspaceDir: '/workspace/emori' };
-const ownedToolNames = [
+const registeredToolNames = [
   'agent_system_git',
   'agent_system_git_worktree',
   'agent_system_github',
 ] as const;
 
 function toolGrants(currentManifest: AgentManifest) {
-  return {
-    desired: [
-      ...(currentManifest.git === undefined ? [] : ['agent_system_git']),
-      ...(currentManifest.git?.worktrees === undefined ? [] : ['agent_system_git_worktree']),
-      ...(currentManifest.github === undefined ? [] : ['agent_system_github']),
-    ],
-    owned: ownedToolNames,
-  };
+  return createAgentToolAccessGrants(
+    {
+      allToolNames: () => [...registeredToolNames],
+      configuredToolNames: () => [
+        ...(currentManifest.git === undefined ? [] : ['agent_system_git']),
+        ...(currentManifest.git?.worktrees === undefined ? [] : ['agent_system_git_worktree']),
+        ...(currentManifest.github === undefined ? [] : ['agent_system_github']),
+      ],
+    },
+    currentManifest,
+  );
 }
 
 function createHarness(config: OpenClawConfig) {
@@ -56,6 +60,7 @@ describe('api/access-lifecycle', () => {
                 'agent_system_git',
                 'agent_system_git_worktree',
                 'agent_system_github',
+                'github_identity_status',
               ],
             },
           },
@@ -116,6 +121,7 @@ describe('api/access-lifecycle', () => {
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'github_identity_status',
     ]);
 
     const repeated = await contribution.reconcile?.(context);
@@ -137,7 +143,11 @@ describe('api/access-lifecycle', () => {
       manifest: { schemaVersion: 1, agent: manifest.agent, github: {} },
     });
 
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.allow, ['read', 'agent_system_github']);
+    assert.deepEqual(config.agents?.list?.[0]?.tools?.allow, [
+      'read',
+      'agent_system_github',
+      'github_identity_status',
+    ]);
     assert.equal(config.agents?.list?.[0]?.tools?.alsoAllow, undefined);
   });
 
@@ -154,6 +164,7 @@ describe('api/access-lifecycle', () => {
                 'agent_system_git',
                 'agent_system_git_worktree',
                 'agent_system_github',
+                'github_identity_status',
               ],
             },
           },
@@ -169,6 +180,7 @@ describe('api/access-lifecycle', () => {
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'github_identity_status',
     ]);
     assert.deepEqual(config.agents?.list?.[0]?.tools?.alsoAllow, ['message']);
   });
@@ -185,6 +197,7 @@ describe('api/access-lifecycle', () => {
                 'agent_system_git',
                 'agent_system_git_worktree',
                 'agent_system_github',
+                'github_identity_status',
               ],
             },
           },
@@ -220,8 +233,13 @@ describe('api/access-lifecycle', () => {
           {
             id: 'emori',
             tools: {
-              alsoAllow: ['agent_system_git', 'agent_system_git_worktree', 'agent_system_github'],
-              deny: ['agent_system_github'],
+              alsoAllow: [
+                'agent_system_git',
+                'agent_system_git_worktree',
+                'agent_system_github',
+                'github_identity_status',
+              ],
+              deny: ['github_identity_status'],
             },
           },
         ],
@@ -231,7 +249,7 @@ describe('api/access-lifecycle', () => {
     assert.deepEqual(await contribution.inspect?.(context), [
       {
         code: 'agent-tool-access-denied',
-        message: 'OpenClaw agents.entries.emori.tools.deny blocks agent_system_github.',
+        message: 'OpenClaw agents.entries.emori.tools.deny blocks github_identity_status.',
         remediation:
           'Remove the conflicting entries from agents.entries.emori.tools.deny, then run openclaw agent-system install from this workspace.',
         status: 'blocked',

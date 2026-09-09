@@ -48,9 +48,9 @@ openclaw-gateway start
 ## Testing
 
 ```bash
-# should grant the native github tool to each installed github agent
-openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_github") != null'
-openclaw config get agents.entries.emori.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_github") != null'
+# should grant agent system and native openclaw github tools to each installed github agent
+openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) as $tools | ($tools | index("agent_system_github") != null) and ($tools | index("github_identity_status") != null)'
+openclaw config get agents.entries.emori.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) as $tools | ($tools | index("agent_system_github") != null) and ($tools | index("github_identity_status") != null)'
 
 # should bind distinct agent-scoped openclaw github identities with manifest-derived authors
 tanaabot_profile="$(openclaw config get agents.entries.tanaabot.tools.github.profileId --json | jq -r '.')"

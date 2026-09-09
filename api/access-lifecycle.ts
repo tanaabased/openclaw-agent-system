@@ -66,7 +66,7 @@ function deniedToolAccessError(agentId: string, denied: readonly string[]) {
   );
 }
 
-/** Own manifest-derived access to Agent System's native model-facing tools. */
+/** Own manifest-derived access to Agent System and required OpenClaw model-facing tools. */
 export default function createToolAccessLifecycleContribution(
   dependencies: ToolAccessLifecycleDependencies,
 ): AgentSystemLifecycleContribution {

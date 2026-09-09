@@ -38,6 +38,7 @@ import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
 import createToolCliRunner from '../api/cli-runner.ts';
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
+import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
@@ -194,10 +195,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return api.runtime.config.mutateConfigFile(params);
       },
       toolGrants(manifest) {
-        return {
-          desired: toolRegistry.configuredToolNames(manifest),
-          owned: toolRegistry.allToolNames(),
-        };
+        return createAgentToolAccessGrants(toolRegistry, manifest);
       },
     }),
     createToolSecurityLifecycleContribution({ readConfig }),
