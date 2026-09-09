@@ -263,6 +263,16 @@ describe('scripts/github-notification-model-scenarios', () => {
     });
     assert.ok(scenario.finalResponses.includes('NO_REPLY'));
 
+    const withRuntimeContext = structuredClone(request);
+    withRuntimeContext.messages.push({
+      role: 'user',
+      content:
+        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nHost runtime instructions.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+    });
+    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), fixture);
+    withRuntimeContext.messages.push({ content: 'A new operator request.', role: 'user' });
+    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), null);
+
     const missingAcknowledgment = structuredClone(request);
     missingAcknowledgment.messages[2]!.content = 'An unrelated task finished.';
     const ordinaryComment = structuredClone(request);
