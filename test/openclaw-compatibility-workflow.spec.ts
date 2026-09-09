@@ -31,10 +31,7 @@ interface CompatibilityWorkflow {
 
 describe('openclaw compatibility workflow', () => {
   it('should validate the supported openclaw matrix through an installed plugin', async () => {
-    const source = await readFile(
-      '.github/workflows/pr-openclaw-compatibility-tests.yml',
-      'utf8',
-    );
+    const source = await readFile('.github/workflows/pr-openclaw-compatibility-tests.yml', 'utf8');
     const workflow = parse(source) as CompatibilityWorkflow;
     const compatibility = workflow.jobs?.compatibility;
     const steps = compatibility?.steps ?? [];

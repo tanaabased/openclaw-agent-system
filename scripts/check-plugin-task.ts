@@ -23,7 +23,9 @@ const expectedInstalledOpenClawVersion =
 
 if (installedOpenClaw.version !== expectedInstalledOpenClawVersion) {
   failures.push(
-    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match ${compatibilityTestVersion ? 'compatibility test' : 'development'} target ${expectedInstalledOpenClawVersion ?? 'unknown'}`,
+    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match ${
+      compatibilityTestVersion ? 'compatibility test' : 'development'
+    } target ${expectedInstalledOpenClawVersion ?? 'unknown'}`,
   );
 }
 
@@ -35,7 +37,9 @@ if (
   )
 ) {
   failures.push(
-    `compatibility test target ${compatibilityTestVersion} must satisfy plugin API range ${packageMetadata.openclaw?.compat?.pluginApi ?? 'unknown'}`,
+    `compatibility test target ${compatibilityTestVersion} must satisfy plugin API range ${
+      packageMetadata.openclaw?.compat?.pluginApi ?? 'unknown'
+    }`,
   );
 }
 
@@ -47,7 +51,9 @@ if (
   )
 ) {
   failures.push(
-    `compatibility test target ${compatibilityTestVersion} must satisfy peer range ${packageMetadata.peerDependencies?.openclaw ?? 'unknown'}`,
+    `compatibility test target ${compatibilityTestVersion} must satisfy peer range ${
+      packageMetadata.peerDependencies?.openclaw ?? 'unknown'
+    }`,
   );
 }
 
