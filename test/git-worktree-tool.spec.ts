@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import AgentSystemToolError from '../api/error.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
 
-function definitionFixture(options: { cleanupFails?: boolean } = {}) {
+function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = {}) {
   const events: string[] = [];
+  const prepared: Array<{ cloneUrl?: string }> = [];
   const definition = createGitWorktreeToolDefinition({
     runnerFactory: {
       async acquire(configuration, _scope, acquireOptions) {
@@ -30,6 +31,7 @@ function definitionFixture(options: { cleanupFails?: boolean } = {}) {
       },
       async prepare(_context, input) {
         events.push(`prepare:${input.repositoryId}:${input.workId}`);
+        prepared.push(input);
         return { workId: input.workId } as never;
       },
       async remove(_context, repositoryId, workId) {
@@ -40,7 +42,12 @@ function definitionFixture(options: { cleanupFails?: boolean } = {}) {
   });
   const declared = definition.configuration.read({
     agent: { email: 'data@example.com', id: 'data', name: 'Data' },
-    git: { worktrees: {} },
+    git: {
+      ...(options.ssh
+        ? { ssh: { privateKeys: [{ path: '/run/keys/id_ed25519' }] } }
+        : {}),
+      worktrees: {},
+    },
     schemaVersion: 1,
   });
   assert.ok(declared);
@@ -55,7 +62,7 @@ function definitionFixture(options: { cleanupFails?: boolean } = {}) {
     source: 'tool' as const,
     workspaceDir: '/workspace',
   };
-  return { configuration, declared, definition, events, scope };
+  return { configuration, declared, definition, events, prepared, scope };
 }
 
 describe('tools/git/worktree-tool', () => {
@@ -105,6 +112,29 @@ describe('tools/git/worktree-tool', () => {
         risk: 'write',
         summary: 'Remove a Git worktree',
       },
+    );
+  });
+
+  it('should reuse configured git ssh for model-facing github worktrees', async () => {
+    const { configuration, definition, prepared, scope } = definitionFixture({ ssh: true });
+
+    await definition.execute(
+      {
+        action: 'prepare',
+        baseRef: 'origin/main',
+        repository: {
+          cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+          id: 'agent-system',
+        },
+        workId: 'task-1',
+      },
+      configuration,
+      scope,
+    );
+
+    assert.equal(
+      prepared[0]?.cloneUrl,
+      'git@github.com:tanaabased/openclaw-agent-system.git',
     );
   });
 

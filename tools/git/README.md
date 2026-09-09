@@ -191,14 +191,15 @@ latest fetched branch.
 
 The GitHub notifications channel uses this same managed-worktree service.
 Without `git.ssh`, canonical HTTPS supports public repositories. When `git.ssh`
-is configured, the channel derives the equivalent
-`git@github.com:<owner>/<repository>.git` remote and uses the isolated SSH
-resource. Configure `git.ssh` before enabling automatic notification delivery
-for private repositories. The trusted channel path may reconcile a managed
-origin after GitHub reports new canonical coordinates for the same immutable
-repository and owner identities. It verifies and fetches the new origin before
-continuing, restores the prior origin on failure, and never exposes this
-retargeting behavior through the model-facing worktree tool or operator command.
+is configured, model-facing, operator-command, and notification preparation all
+derive the equivalent `git@github.com:<owner>/<repository>.git` remote from a
+canonical GitHub HTTPS clone URL and use the isolated SSH resource. Configure
+`git.ssh` before enabling automatic notification delivery for private
+repositories. The trusted channel path may reconcile a managed origin after
+GitHub reports new canonical coordinates for the same immutable repository and
+owner identities. It verifies and fetches the new origin before continuing,
+restores the prior origin on failure, and never exposes this retargeting
+behavior through the model-facing worktree tool or operator command.
 On provider-verified completed assignment retirement, the same trusted path
 inspects the exact deterministic checkout, runs a full porcelain status check,
 and uses ordinary non-forced Git worktree removal only when it is clean.

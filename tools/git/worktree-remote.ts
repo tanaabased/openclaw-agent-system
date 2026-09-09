@@ -62,3 +62,13 @@ export function githubSshWorktreeRemote(input: string): string {
   }
   return `git@github.com:${match[1]}/${match[2]}.git`;
 }
+
+/** Prefer SSH for a canonical GitHub HTTPS remote and preserve other valid remotes. */
+export function preferGitHubSshWorktreeRemote(input: string): string {
+  const normalized = normalizeGitWorktreeRemote(input);
+  try {
+    return githubSshWorktreeRemote(normalized);
+  } catch {
+    return normalized;
+  }
+}
