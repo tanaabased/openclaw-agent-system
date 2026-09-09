@@ -22,7 +22,7 @@ while the channel ID uses hyphens.
 
 | Agent System release | Supported OpenClaw versions |
 | -------------------- | --------------------------- |
-| Unreleased           | 2026.9.3                    |
+| Unreleased           | 2026.9.2                    |
 | 0.5.3                | 2026.7.1-2                  |
 
 ## Manifest
