@@ -100,14 +100,22 @@ openclaw agent \
   --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
   --timeout 120 | grep -F 'emoriwan'
 
-# should identify emori through openclaw's agent-scoped managed github profile
-openclaw agent \
-  --agent emori \
-  --session-key agent:emori:agent-system-github-identity-status-leia \
-  --message-file "$GITHUB_WORKSPACE/examples/github/identity-status.md" \
-  --timeout 120 | grep -F 'emoriwan'
+# should report emori through openclaw's agent-scoped managed github profile
+openclaw gateway call tools.github.status \
+  --params '{"agentId":"emori","selectedScope":"agent"}' \
+  --timeout 30000 \
+  --json | jq -e '
+    .agentId == "emori" and
+    .selectedScope == "agent" and
+    .selected.configured == true and
+    .selected.identity.source == "agent-override" and
+    .selected.identity.credentialKind == "managed-pat" and
+    .selected.identity.credentialState == "available" and
+    .selected.identity.account.login == "emoriwan" and
+    .effective.account.login == "emoriwan"
+  '
 
-# should match all three strict mock tool exchanges
+# should match both strict mock tool exchanges
 openclaw-aimock evidence \
   --scenario github \
   --expected-evidence "$GITHUB_WORKSPACE/examples/github/expected-evidence.json"

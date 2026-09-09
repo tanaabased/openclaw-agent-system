@@ -4,7 +4,6 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import {
   githubExampleEmoriCallId,
-  githubExampleIdentityStatusCallId,
   githubExampleTanaabotCallId,
 } from '../examples/github/model-fixture.ts';
 import resolveExampleModelScenario, {
@@ -95,13 +94,6 @@ describe('scripts/example-model-scenarios', () => {
         message: 'Use the preferred configured GitHub integration to identify the account.',
         tool: 'agent_system_github',
       },
-      {
-        agentId: 'emori',
-        callId: githubExampleIdentityStatusCallId,
-        expectedLogin: 'emoriwan',
-        message: 'Call `github_identity_status` and return the account.',
-        tool: 'github_identity_status',
-      },
     ] as const;
 
     for (const entry of cases) {
@@ -114,10 +106,7 @@ describe('scripts/example-model-scenarios', () => {
           : [],
         [
           {
-            arguments:
-              entry.tool === 'agent_system_github'
-                ? JSON.stringify({ argv: ['api', 'user', '--jq', '.login'] })
-                : '{}',
+            arguments: JSON.stringify({ argv: ['api', 'user', '--jq', '.login'] }),
             id: entry.callId,
             name: entry.tool,
           },
