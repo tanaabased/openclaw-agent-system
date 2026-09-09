@@ -190,8 +190,7 @@ export default function pluginMetadataFailures(
     exactSemanticVersion.test(developmentOpenClawVersion);
   const minimumGatewayVersion = packageMetadata.openclaw?.compat?.minGatewayVersion;
   const hasExactMinimumGatewayVersion =
-    typeof minimumGatewayVersion === 'string' &&
-    exactSemanticVersion.test(minimumGatewayVersion);
+    typeof minimumGatewayVersion === 'string' && exactSemanticVersion.test(minimumGatewayVersion);
   const expectedCompatibilityRange = hasExactMinimumGatewayVersion
     ? `>=${minimumGatewayVersion}`
     : undefined;
