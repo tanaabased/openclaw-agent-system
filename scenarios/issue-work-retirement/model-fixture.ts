@@ -78,6 +78,30 @@ const retirementRestartRecoveryFixture: Fixture = {
       const lastAssistant = request.messages.findLast((message) => message.role === 'assistant');
       const lastUser = request.messages.findLast((message) => message.role === 'user');
       const recoveryText = getTextContent(lastUser?.content ?? null) ?? '';
+      if (lastAssistant) {
+        process.stderr.write(
+          'retirement-recovery-match ' +
+            JSON.stringify({
+              assistantMatches:
+                getTextContent(lastAssistant.content) === retirementGuidedAssignmentFinalResponse,
+              assistantLength: getTextContent(lastAssistant.content)?.length ?? 0,
+              messages: request.messages.map((message, index) => {
+                const text = getTextContent(message.content) ?? '';
+                return {
+                  index,
+                  role: message.role,
+                  length: text.length,
+                  restart: text.includes('Your previous turn was interrupted by a gateway restart'),
+                  systemPrefix: text.includes('[System] Your previous turn'),
+                  continuation: text.includes(
+                    'Continue from the existing transcript and finish the interrupted response.',
+                  ),
+                };
+              }),
+            }) +
+            '\n',
+        );
+      }
       return (
         getTextContent(lastAssistant?.content ?? null) ===
           retirementGuidedAssignmentFinalResponse &&
