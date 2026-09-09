@@ -101,24 +101,14 @@ username because installation may mutate the configured GitHub account.
 
 When both `github.username` and `github.token` are declared, `install` also
 projects that identity into OpenClaw for the same agent. Agent System remains
-the source of truth: it verifies the account, materializes a deterministic
-agent-scoped PAT profile, and binds only
-`agents.entries.<id>.tools.github`. `doctor` treats a system-level OpenClaw
-identity as missing rather than silently adopting it.
+the source of truth, and `doctor` treats a system-level OpenClaw identity as
+missing rather than adopting it.
 
-The token is duplicated into OpenClaw's normal `hosts.yml` PAT store, never
-`openclaw.json`. "Owner-only" describes filesystem permissions for the host OS
-account; it does not mean one identity is shared across agents. Isolation is
-enforced by separate agent-keyed profile directories, distinct opaque profile
-IDs, exact account verification, and per-agent config bindings. Because agents
-on one host can share an OS account, this is identity separation rather than a
-claim of hostile-process secret isolation.
-
-This projection is a guarded compatibility adapter for OpenClaw 2026.9.2 and
-newer. Installation refuses unmarked or mismatched profiles and fails closed if
-OpenClaw's private PAT profile layout changes. Credential rotation creates a new
-profile generation and rebinds the agent without deleting a generation that a
-running Gateway may still use.
+The token is duplicated only into OpenClaw's owner-readable PAT profile store,
+never `openclaw.json`. Each agent receives a separately verified profile and
+binding; conflicts or unsupported layouts fail closed. Agents that share an OS
+account still share process-level access, so this provides identity separation,
+not hostile-process secret isolation.
 
 ### `github.policy`
 

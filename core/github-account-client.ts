@@ -1,8 +1,5 @@
 import { createHash } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-
-import { stringify } from 'yaml';
 
 import type AgentEnvironmentService from '../environment/service.ts';
 import type { ManifestLoadTrigger } from '../manifest/service.ts';
@@ -30,6 +27,7 @@ const defaultTimeoutMs = 30_000;
 export interface GitHubAccountClientDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   configStore: { configDirectory(agentId: string): string };
+  credentialMaterializer?: GitHubCredentialMaterializer;
   environmentService: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   excludedExecutableDirectories?: readonly string[];
   runCli: AgentSystemCliRunner;
@@ -51,6 +49,19 @@ export interface GitHubAccountGitAuthor {
   name?: string;
 }
 
+export interface GitHubAccountCredential {
+  host: string;
+  token: string;
+}
+
+export interface GitHubCredentialMaterializer {
+  materialize(options: {
+    credential: GitHubAccountCredential;
+    directory: string;
+    identity: GitHubAccountIdentity;
+  }): Promise<void>;
+}
+
 export interface ConnectedGitHubAccountClient {
   credentialFingerprint?: string;
   execute(
@@ -60,8 +71,8 @@ export interface ConnectedGitHubAccountClient {
   ): Promise<AgentSystemCliResult>;
   gitAuthor?: GitHubAccountGitAuthor;
   identity: GitHubAccountIdentity;
-  materializeProfile?(configDirectory: string): Promise<GitHubAccountIdentity>;
-  verifyProfile?(configDirectory: string): Promise<GitHubAccountIdentity>;
+  materializeCredential?(directory: string): Promise<void>;
+  verifyConfiguredIdentity?(configDirectory: string): Promise<GitHubAccountIdentity>;
 }
 
 /** Identify stable credential, identity, and process failures at the shared GitHub boundary. */
@@ -87,10 +98,6 @@ function redact(result: AgentSystemCliResult, secret: string): AgentSystemCliRes
 
 function connectionError(message: string): GitHubAccountClientError {
   return new GitHubAccountClientError('github-account-credential-unavailable', message);
-}
-
-function profileError(code: string, message: string): GitHubAccountClientError {
-  return new GitHubAccountClientError(code, message);
 }
 
 function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
@@ -312,13 +319,13 @@ export default class GitHubAccountClient {
           normalizedToken,
         );
       } catch {
-        throw profileError(
+        throw new GitHubAccountClientError(
           'github-account-profile-tool-unavailable',
           'The GitHub CLI executable is unavailable for managed profile setup.',
         );
       }
     };
-    const verifyProfile = async (configDirectory: string) => {
+    const verifyConfiguredIdentity = async (configDirectory: string) => {
       let profileIdentity;
       try {
         profileIdentity = parseIdentity(
@@ -338,47 +345,33 @@ export default class GitHubAccountClient {
         profileIdentity.login.toLowerCase() !== identity.login.toLowerCase() ||
         profileIdentity.nodeId !== identity.nodeId
       ) {
-        throw profileError(
+        throw new GitHubAccountClientError(
           'github-account-profile-identity-mismatch',
           'The managed GitHub profile resolves to a different account.',
         );
       }
       return profileIdentity;
     };
-    const materializeProfile = async (configDirectory: string) => {
-      const host = configuration.host ?? 'github.com';
-      try {
-        await writeFile(
-          join(configDirectory, 'hosts.yml'),
-          stringify({
-            [host]: {
-              oauth_token: normalizedToken,
-              user: identity.login,
-              users: { [identity.login]: { oauth_token: normalizedToken } },
+    const credentialMaterializer = this.#dependencies.credentialMaterializer;
+    const materializeCredential = credentialMaterializer
+      ? async (directory: string): Promise<void> =>
+          credentialMaterializer.materialize({
+            credential: {
+              host: configuration.host ?? 'github.com',
+              token: normalizedToken,
             },
-          }),
-          { flag: 'wx', mode: 0o600 },
-        );
-        await writeFile(join(configDirectory, 'config.yml'), stringify({ version: '1' }), {
-          flag: 'wx',
-          mode: 0o600,
-        });
-      } catch {
-        throw profileError(
-          'github-account-profile-materialization-failed',
-          'The managed GitHub account profile could not be materialized.',
-        );
-      }
-      return verifyProfile(configDirectory);
-    };
+            directory: resolve(directory),
+            identity,
+          })
+      : undefined;
 
     return {
       credentialFingerprint: createHash('sha256').update(normalizedToken).digest('hex'),
       execute,
       ...(gitAuthor === undefined ? {} : { gitAuthor }),
       identity,
-      materializeProfile,
-      verifyProfile,
+      ...(materializeCredential === undefined ? {} : { materializeCredential }),
+      verifyConfiguredIdentity,
     };
   }
 }

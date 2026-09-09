@@ -6,6 +6,7 @@ import GitHubAccountClient from '../../core/github-account-client.ts';
 import GitHubAccountKeyService from './account-key-service.ts';
 import GitHubConfigStore from './config-store.ts';
 import createGitHubLifecycleContribution from './lifecycle.ts';
+import OpenClawGitHubProfileAdapter from './openclaw-profile-adapter.ts';
 import OpenClawGitHubProfileService from './openclaw-profile-service.ts';
 import { createGitHubTool } from './tool.ts';
 
@@ -40,10 +41,14 @@ export default function createGitHubCapability(
       ? {}
       : { rootDir: dependencies.privateStateRoot }),
   });
+  const profileAdapter = new OpenClawGitHubProfileAdapter({
+    ...(dependencies.currentUid === undefined ? {} : { currentUid: dependencies.currentUid }),
+  });
   const accountClient = new GitHubAccountClient({
     runCli: dependencies.runCli,
     baseEnvironment: dependencies.baseEnvironment,
     configStore,
+    credentialMaterializer: profileAdapter,
     environmentService: dependencies.environmentService,
     excludedExecutableDirectories: dependencies.excludedExecutableDirectories,
   });
@@ -57,6 +62,7 @@ export default function createGitHubCapability(
     accountClient,
     ...(dependencies.currentUid === undefined ? {} : { currentUid: dependencies.currentUid }),
     mutateConfigFile: dependencies.mutateConfigFile,
+    profileAdapter,
     readConfig: dependencies.readConfig,
     stateDir: dependencies.openClawStateDir,
   });

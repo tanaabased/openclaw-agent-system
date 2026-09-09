@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added agent-scoped Agent System GitHub identity projection into OpenClaw with doctor, install, and native identity-status integration. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 - Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ### Bug Fixes

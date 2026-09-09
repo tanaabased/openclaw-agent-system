@@ -3,7 +3,6 @@ import { chmod, lstat, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import { parseDocument } from 'yaml';
 
 import {
   type ConnectedGitHubAccountClient,
@@ -15,9 +14,14 @@ import ensurePrivateStateDirectories from '../../core/ensure-private-state-direc
 import PrivateStateFile from '../../core/private-state-file.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
+import {
+  OpenClawGitHubProfileError,
+  type OpenClawGitHubProfileValidator,
+} from './openclaw-profile-adapter.ts';
+
+export { OpenClawGitHubProfileError } from './openclaw-profile-adapter.ts';
 
 const adapterVersion = 1;
-const maximumProfileFileBytes = 32 * 1024;
 const markerName = '.agent-system-profile.json';
 const profileIdPattern = /^ghp_[a-f0-9]{32}$/u;
 
@@ -46,8 +50,8 @@ interface ProfilePaths {
 
 type ManagedProfileConnection = ConnectedGitHubAccountClient & {
   credentialFingerprint: string;
-  materializeProfile(configDirectory: string): Promise<unknown>;
-  verifyProfile(configDirectory: string): Promise<unknown>;
+  materializeCredential(directory: string): Promise<void>;
+  verifyConfiguredIdentity(configDirectory: string): Promise<unknown>;
 };
 
 export interface OpenClawGitHubProfileInspection {
@@ -75,20 +79,9 @@ export interface OpenClawGitHubProfileServiceDependencies {
     base: 'source';
     mutate(config: OpenClawConfig): boolean | void;
   }): Promise<{ result?: boolean }>;
+  profileAdapter: OpenClawGitHubProfileValidator;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   stateDir: string;
-}
-
-export class OpenClawGitHubProfileError extends Error {
-  override name = 'OpenClawGitHubProfileError';
-
-  constructor(
-    readonly code: string,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
 }
 
 function normalizeAgentId(agentId: string): string {
@@ -97,24 +90,6 @@ function normalizeAgentId(agentId: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function parseYamlRecord(raw: string, label: string): Record<string, unknown> {
-  const document = parseDocument(raw, { prettyErrors: false });
-  if (document.errors.length > 0 || document.warnings.length > 0) {
-    throw new OpenClawGitHubProfileError(
-      'openclaw-github-profile-layout-unsupported',
-      `The managed GitHub ${label} does not match the supported OpenClaw profile layout.`,
-    );
-  }
-  const value = document.toJS({ maxAliasCount: 0 });
-  if (!isRecord(value)) {
-    throw new OpenClawGitHubProfileError(
-      'openclaw-github-profile-layout-unsupported',
-      `The managed GitHub ${label} does not match the supported OpenClaw profile layout.`,
-    );
-  }
-  return value;
 }
 
 function sameGitAuthor(
@@ -135,6 +110,7 @@ export default class OpenClawGitHubProfileService {
   readonly #accountClient: OpenClawGitHubProfileServiceDependencies['accountClient'];
   readonly #currentUid: number | undefined;
   readonly #mutateConfigFile: OpenClawGitHubProfileServiceDependencies['mutateConfigFile'];
+  readonly #profileAdapter: OpenClawGitHubProfileValidator;
   readonly #readConfig: OpenClawGitHubProfileServiceDependencies['readConfig'];
   readonly #stateDir: string;
 
@@ -142,6 +118,7 @@ export default class OpenClawGitHubProfileService {
     this.#accountClient = dependencies.accountClient;
     this.#currentUid = dependencies.currentUid;
     this.#mutateConfigFile = dependencies.mutateConfigFile;
+    this.#profileAdapter = dependencies.profileAdapter;
     this.#readConfig = dependencies.readConfig;
     this.#stateDir = resolve(dependencies.stateDir);
   }
@@ -201,7 +178,7 @@ export default class OpenClawGitHubProfileService {
           status: 'drift',
         };
       }
-      await profileConnection.verifyProfile(
+      await profileConnection.verifyConfiguredIdentity(
         this.#paths(context.manifest.agent.id, expected.profileId).profileDir,
       );
       return {
@@ -277,7 +254,7 @@ export default class OpenClawGitHubProfileService {
         `OpenClaw GitHub identity for ${agentId} did not match after installation.`,
       );
     }
-    await connected.verifyProfile(this.#paths(agentId, expected.profileId).profileDir);
+    await connected.verifyConfiguredIdentity(this.#paths(agentId, expected.profileId).profileDir);
     return { bindingStatus, profileId: expected.profileId, profileStatus };
   }
 
@@ -324,11 +301,12 @@ export default class OpenClawGitHubProfileService {
     try {
       await chmod(stagingRoot, 0o700);
       await mkdir(stagedProfile, { mode: 0o700 });
-      await connected.materializeProfile(stagedProfile);
-      await chmod(stagedProfile, 0o700);
-      await chmod(join(stagedProfile, 'hosts.yml'), 0o600);
-      await chmod(join(stagedProfile, 'config.yml'), 0o600);
-      await this.#validateProfileFiles(stagedProfile, connected);
+      await connected.materializeCredential(stagedProfile);
+      await this.#profileAdapter.validate({
+        credentialFingerprint: connected.credentialFingerprint,
+        directories: [...paths.directories.slice(0, -1), stagingRoot, stagedProfile],
+        profileDir: stagedProfile,
+      });
       await this.#markerFile(agentId, profileId, stagedProfile, [
         ...paths.directories.slice(0, -1),
         stagingRoot,
@@ -399,7 +377,11 @@ export default class OpenClawGitHubProfileService {
         'The expected OpenClaw GitHub profile does not match this Agent System agent.',
       );
     }
-    await this.#validateProfileFiles(paths.profileDir, connected);
+    await this.#profileAdapter.validate({
+      credentialFingerprint: connected.credentialFingerprint,
+      directories: this.#directoriesForProfile(paths.profileDir),
+      profileDir: paths.profileDir,
+    });
     return 'ready';
   }
 
@@ -428,49 +410,6 @@ export default class OpenClawGitHubProfileService {
       throw new OpenClawGitHubProfileError(
         'openclaw-github-profile-conflict',
         "The agent is bound to another agent's GitHub profile.",
-      );
-    }
-  }
-
-  async #validateProfileFiles(
-    profileDir: string,
-    connected: ManagedProfileConnection,
-  ): Promise<void> {
-    const directories = this.#directoriesForProfile(profileDir);
-    const hostsRaw = await new PrivateStateFile({
-      ...(this.#currentUid === undefined ? {} : { currentUid: this.#currentUid }),
-      directories,
-      label: 'managed GitHub hosts file',
-      maximumBytes: maximumProfileFileBytes,
-      path: join(profileDir, 'hosts.yml'),
-    }).read();
-    const configRaw = await new PrivateStateFile({
-      ...(this.#currentUid === undefined ? {} : { currentUid: this.#currentUid }),
-      directories,
-      label: 'managed GitHub config file',
-      maximumBytes: maximumProfileFileBytes,
-      path: join(profileDir, 'config.yml'),
-    }).read();
-    if (hostsRaw === undefined || configRaw === undefined) {
-      throw new OpenClawGitHubProfileError(
-        'openclaw-github-profile-layout-unsupported',
-        'The managed GitHub profile is missing required OpenClaw files.',
-      );
-    }
-    const hosts = parseYamlRecord(hostsRaw, 'hosts file');
-    const host = hosts['github.com'];
-    const config = parseYamlRecord(configRaw, 'config file');
-    if (!isRecord(host) || typeof host.oauth_token !== 'string' || config.version !== '1') {
-      throw new OpenClawGitHubProfileError(
-        'openclaw-github-profile-layout-unsupported',
-        'The managed GitHub profile does not match the supported OpenClaw PAT layout.',
-      );
-    }
-    const storedFingerprint = createHash('sha256').update(host.oauth_token.trim()).digest('hex');
-    if (storedFingerprint !== connected.credentialFingerprint) {
-      throw new OpenClawGitHubProfileError(
-        'openclaw-github-profile-credential-mismatch',
-        'The managed GitHub profile credential does not match Agent System.',
       );
     }
   }
@@ -560,8 +499,8 @@ export default class OpenClawGitHubProfileService {
   #profileConnection(connected: ConnectedGitHubAccountClient): ManagedProfileConnection {
     if (
       typeof connected.credentialFingerprint !== 'string' ||
-      typeof connected.materializeProfile !== 'function' ||
-      typeof connected.verifyProfile !== 'function'
+      typeof connected.materializeCredential !== 'function' ||
+      typeof connected.verifyConfiguredIdentity !== 'function'
     ) {
       throw new OpenClawGitHubProfileError(
         'openclaw-github-profile-adapter-unavailable',

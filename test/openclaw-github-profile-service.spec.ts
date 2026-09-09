@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, rm, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import { parse } from 'yaml';
 
 import {
   type ConnectedGitHubAccountClient,
   GitHubAccountClientError,
 } from '../core/github-account-client.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import OpenClawGitHubProfileAdapter from '../tools/github/openclaw-profile-adapter.ts';
 import OpenClawGitHubProfileService, {
   OpenClawGitHubProfileError,
 } from '../tools/github/openclaw-profile-service.ts';
@@ -39,6 +41,7 @@ async function createHarness() {
   let token = 'private-token';
   let verificationError: Error | undefined;
   let materializations = 0;
+  const profileAdapter = new OpenClawGitHubProfileAdapter({ currentUid: process.getuid?.() });
   const config: OpenClawConfig = {
     agents: { entries: { [agentId]: { workspace: context.workspaceDir } } },
     tools: { github: { profileId: systemProfileId } },
@@ -54,17 +57,15 @@ async function createHarness() {
     }),
     gitAuthor: { email: 'emori@tanaab.dev', name: 'EMORI' },
     identity: { login: 'emoriwan', nodeId: 'U_emori' },
-    async materializeProfile(directory) {
+    async materializeCredential(directory) {
       materializations += 1;
-      await writeFile(
-        join(directory, 'hosts.yml'),
-        `github.com:\n  user: emoriwan\n  oauth_token: ${token}\n`,
-        { mode: 0o600 },
-      );
-      await writeFile(join(directory, 'config.yml'), 'version: "1"\n', { mode: 0o600 });
-      return { login: 'emoriwan', nodeId: 'U_emori' };
+      await profileAdapter.materialize({
+        credential: { host: 'github.com', token },
+        directory,
+        identity: { login: 'emoriwan', nodeId: 'U_emori' },
+      });
     },
-    async verifyProfile() {
+    async verifyConfiguredIdentity() {
       if (verificationError) throw verificationError;
       return { login: 'emoriwan', nodeId: 'U_emori' };
     },
@@ -75,6 +76,7 @@ async function createHarness() {
     async mutateConfigFile({ mutate }) {
       return { result: mutate(config) === true };
     },
+    profileAdapter,
     readConfig: () => config,
     stateDir,
   });
@@ -120,6 +122,16 @@ describe('tools/github/openclaw-profile-service', () => {
       assert.equal((await lstat(directory)).mode & 0o077, 0);
       assert.equal((await lstat(join(directory, 'hosts.yml'))).mode & 0o077, 0);
       assert.equal((await lstat(join(directory, 'config.yml'))).mode & 0o077, 0);
+      assert.deepEqual(parse(await readFile(join(directory, 'hosts.yml'), 'utf8')), {
+        'github.com': {
+          oauth_token: 'private-token',
+          user: 'emoriwan',
+          users: { emoriwan: { oauth_token: 'private-token' } },
+        },
+      });
+      assert.deepEqual(parse(await readFile(join(directory, 'config.yml'), 'utf8')), {
+        version: '1',
+      });
       const marker = await readFile(join(directory, '.agent-system-profile.json'), 'utf8');
       assert.equal(marker.includes('private-token'), false);
 
