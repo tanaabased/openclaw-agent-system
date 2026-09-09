@@ -173,7 +173,7 @@ async function respondWithCandidates(
           const replyOptions = input.replyOptions ?? {};
           assertTurnContractTransport(input.ctx, replyOptions, executionSurface);
           inspectReplyOptions?.(replyOptions);
-          await input.dispatcherOptions.deliver(
+          await input.dispatcherOptions.preparePayload?.(
             { text: finalText },
             {
               kind: 'final',
@@ -252,7 +252,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
           assert.equal(input.replyOptions?.sourceReplyDeliveryMode, 'automatic');
           assert.equal(input.toolsAllow, undefined);
           assert.doesNotMatch(String(input.ctx.BodyForAgent), /Return exactly/u);
-          await input.dispatcherOptions.deliver(
+          await input.dispatcherOptions.preparePayload?.(
             {
               text: [
                 'I checked the request and it is ready.',
