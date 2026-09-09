@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
-
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import type { GitHubNotificationAssignmentInspection } from '../channels/github/intake/assignment-provider.ts';
 import GitHubNotificationCommentOrchestrator, {
@@ -371,10 +369,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
           observedMentions.push(input.mentions);
           observedActiveTurns.push(store.snapshot()?.conversations[id]?.activeTurn);
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private ready response.',
             publication: { status: 'candidate', publicText: 'ready' },
           };
@@ -462,10 +457,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
         async respond(input) {
           responded.push(input.comment.databaseId);
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: `ready-${input.comment.databaseId}`,
             publication: {
               status: 'candidate',
@@ -582,10 +574,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
           assert.deepEqual(turn.item, item);
           assert.deepEqual(turn.source, { itemType: 'pull-request', number: 45 });
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private pull request response.',
             publication: { status: 'candidate', publicText: 'ready on the pull request' },
           };
@@ -857,10 +846,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       turns: {
         async respond() {
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'The successful private response.',
             publication: {
               status: 'withheld',
@@ -921,10 +907,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       turns: {
         async respond() {
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private ready response.',
             publication: { status: 'candidate', publicText: 'ready' },
           };

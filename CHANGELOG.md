@@ -1,12 +1,8 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
-### New Features
-
-- Added a packed-plugin and live-Gateway smoke test for the exact supported OpenClaw 2026.9.3 release. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
-
 ### Bug Fixes
 
-- Hardened OpenClaw compatibility around the exact 2026.9.3 Plugin SDK, including canonical keyed agent configuration, explicit conversation-hook authorization, direct channel prompt transport for CLI one-shot turns, supported runtime capabilities, and repository-owned replacements for deprecated or private helpers. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+- Updated Agent System for OpenClaw 2026.9.3, preserving GitHub notification and managed-agent workflows. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
 
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 

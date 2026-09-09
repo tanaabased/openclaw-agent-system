@@ -3,9 +3,7 @@ import { parseArgs } from 'node:util';
 
 import { LLMock, type Mountable } from '@copilotkit/aimock';
 
-import githubNotificationModelEvidence, {
-  githubNotificationModelRequestDiagnostics,
-} from './github-notification-model-evidence.ts';
+import githubNotificationModelEvidence from './github-notification-model-evidence.ts';
 import resolveGitHubNotificationModelScenario from './github-notification-model-scenarios.ts';
 
 const { values: options } = parseArgs({
@@ -44,18 +42,12 @@ mock.addFixtures([...scenario.fixtures]);
 
 const evidenceService: Mountable = {
   async handleRequest(req, res, pathname) {
-    if (pathname !== '/diagnostics' && pathname !== '/evidence') return false;
+    if (pathname !== '/evidence') return false;
     if (req.method !== 'GET') {
       json(res, 405, { error: 'method not allowed' });
       return true;
     }
-    json(
-      res,
-      200,
-      pathname === '/diagnostics'
-        ? githubNotificationModelRequestDiagnostics(mock.getRequests())
-        : githubNotificationModelEvidence(scenario, mock.getRequests()),
-    );
+    json(res, 200, githubNotificationModelEvidence(scenario, mock.getRequests()));
     return true;
   },
 };

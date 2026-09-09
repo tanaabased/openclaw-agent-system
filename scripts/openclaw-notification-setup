@@ -218,16 +218,10 @@ compare_evidence() {
 
   curl --fail --silent --show-error "$provider_base_url/proof/evidence" \
     | tee "$provider_evidence_path"
-  if ! jq -e --arg scenario "$scenario" \
+  jq -e --arg scenario "$scenario" \
     '.schemaVersion == 2 and .scenario == $scenario and .provider == "aimock" and .strictMissCount == 0' \
-    "$provider_evidence_path" >/dev/null; then
-    curl --fail --silent --show-error "$provider_base_url/proof/diagnostics" >&2 || true
-    return 1
-  fi
-  if ! cmp "$expected_evidence" "$provider_evidence_path"; then
-    curl --fail --silent --show-error "$provider_base_url/proof/diagnostics" >&2 || true
-    return 1
-  fi
+    "$provider_evidence_path" >/dev/null
+  cmp "$expected_evidence" "$provider_evidence_path"
 }
 
 stop_notification() {

@@ -245,7 +245,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
-  it('should log only bounded payload shape when private response selection fails', async () => {
+  it('should log the failure code without private response content', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
@@ -275,7 +275,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     await assert.rejects(coordinator.run(input()), GitHubNotificationPrivateResponseError);
     assert.match(
       warnings[0] ?? '',
-      /phase=private-response code=github-notification-private-response-invalid payload-count=2 payload-shapes=0:13:0:0:0:0:0:0:0:0:0:0,1:13:0:0:0:0:0:0:0:0:0:0 payload-shapes-truncated=false/u,
+      /phase=private-response code=github-notification-private-response-invalid aborted=false/u,
     );
     assert.doesNotMatch(warnings[0] ?? '', /sensitive|one|two/u);
   });

@@ -151,7 +151,10 @@ function modelTurnDispatcher(
 async function respondWithCandidates(
   candidates: readonly string[],
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
-  inspectReplyOptions?: (options: Record<string, unknown>) => void,
+  inspectReplyOptions?: (
+    options: Record<string, unknown>,
+    context: ChannelInboundTurnPlan['ctxPayload'],
+  ) => void,
   finishError?: Error,
   currentConfig: OpenClawConfig = config,
   finalText = 'Private response remains available.',
@@ -172,7 +175,7 @@ async function respondWithCandidates(
         async (input) => {
           const replyOptions = input.replyOptions ?? {};
           assertTurnContractTransport(input.ctx, replyOptions, executionSurface);
-          inspectReplyOptions?.(replyOptions);
+          inspectReplyOptions?.(replyOptions, input.ctx);
           await input.dispatcherOptions.deliver(
             { text: finalText },
             {
@@ -242,6 +245,26 @@ describe('channels/github/conversation/comment-turn-service', () => {
           assert.equal(input.ctx.BodyForAgent, presentation);
           assert.equal(input.ctx.RawBody, comment.body);
           assert.equal(input.ctx.Provider, githubNotificationChannelId);
+          assert.deepEqual((input.ctx.ChannelContext as Record<string, unknown>).chat, {
+            id: 'github:issue:R_repo:12',
+          });
+          assert.deepEqual(input.ctx.ChannelStructuredContext, [
+            {
+              comment: {
+                databaseId: 91,
+                nodeId: 'IC_comment',
+                revisionId: revision.revisionId,
+              },
+              source: { itemType: 'issue', number: 12 },
+              item: {
+                lifecycleId: 'issue',
+                number: 12,
+                repositoryName: 'example',
+                repositoryOwner: 'tanaabased',
+              },
+              worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
+            },
+          ]);
           assert.equal(input.replyOptions?.disableTools, false);
           const replyOptions = input.replyOptions as Record<string, unknown>;
           assertTurnContractTransport(input.ctx, replyOptions, 'cli-one-shot');
@@ -294,31 +317,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       publicText:
         'I checked the request and it is ready.\n\n## Notes\nThis response may use normal Markdown without a publication envelope.',
     });
-    assert.equal(result.accountId, agentId);
-    assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
-      id: 'github:issue:R_repo:12',
-    });
-    assert.deepEqual(result.ctxPayload.ChannelStructuredContext, [
-      {
-        comment: {
-          databaseId: 91,
-          nodeId: 'IC_comment',
-          revisionId: revision.revisionId,
-        },
-        source: { itemType: 'issue', number: 12 },
-        item: {
-          lifecycleId: 'issue',
-          number: 12,
-          repositoryName: 'example',
-          repositoryOwner: 'tanaabased',
-        },
-        worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
-      },
-    ]);
-    assert.equal(
-      JSON.stringify(result.ctxPayload.ChannelStructuredContext),
-      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"source":{"itemType":"issue","number":12},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
-    );
+    assert.equal(result.agentId, agentId);
   });
 
   it('should reject a comment turn when the assignment session is absent', async () => {
@@ -387,15 +386,15 @@ describe('channels/github/conversation/comment-turn-service', () => {
       gateway: { controlUi: { basePath: '/' } },
     };
 
-    const result = await respondWithCandidates(
+    await respondWithCandidates(
       ['ready'],
       'gateway',
-      undefined,
+      (_options, context) => {
+        assert.match(String(context.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
+      },
       undefined,
       fallbackConfig,
     );
-
-    assert.match(String(result.ctxPayload.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
   });
 
   it('should classify a missing prompt-selection attestation', async () => {

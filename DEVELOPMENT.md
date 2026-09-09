@@ -12,59 +12,6 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
 
-## OpenClaw Compatibility
-
-Agent System tests explicit core-and-plugin pairs. A minimum version is not a
-claim that every later or intervening OpenClaw release works.
-
-| Agent System release | OpenClaw release | Status                                      |
-| -------------------- | ---------------- | ------------------------------------------- |
-| Next release         | 2026.9.3         | Current development and release target      |
-| 0.5.3                | 2026.7.1-2       | Prior release record; not tested by this CI |
-
-The ordinary lint, typecheck, unit, and release workflows run against the
-OpenClaw version pinned in `package.json` and `bun.lock`; they are the primary
-compatibility suite. The separate
-[OpenClaw package smoke test](./.github/workflows/pr-openclaw-package-smoke.yml)
-covers the installed-state boundary those tests cannot: it installs OpenClaw
-2026.9.3 and the packed candidate in a disposable profile, accepts the declared
-capabilities, loads the plugin runtime, and starts a real Gateway. It is not a
-historical-version matrix.
-
-Before changing the supported OpenClaw release, update the dependency pin,
-plugin metadata, and reviewed Plugin SDK import inventory together. The
-ordinary suite, packed plugin inspection, and live Gateway smoke test must all
-pass on that exact release.
-
-### Plugin SDK Inventory
-
-Production imports are limited to these reviewed OpenClaw 2026.9.3 external
-plugin subpaths:
-
-| Public subpath            | Agent System use                     |
-| ------------------------- | ------------------------------------ |
-| `channel-core`            | Channel contracts                    |
-| `channel-inbound`         | Inbound reply dispatch               |
-| `channel-outbound`        | Outbound adapters and account status |
-| `config-contracts`        | Public configuration types           |
-| `error-runtime`           | Safe error formatting                |
-| `logging-core`            | Publication redaction                |
-| `plugin-entry`            | Plugin, tool, and logger contracts   |
-| `reply-payload`           | Reply payload contracts              |
-| `routing`                 | Session and agent route contracts    |
-| `run-command`             | Supported child OpenClaw commands    |
-| `runtime`                 | CLI presentation helpers             |
-| `runtime-config-snapshot` | Fresh configuration reads            |
-| `session-store-runtime`   | Public session store paths           |
-| `status-helpers`          | Channel status summaries             |
-
-The API policy test parses static imports, re-exports, dynamic imports, and
-import types. It fails deprecated broad barrels, private-local entrypoints, and
-any unreviewed OpenClaw subpath, including `agent-runtime`, `channel-lifecycle`,
-`config-runtime`, `infra-runtime`, `security-runtime`, `file-lock`,
-`keyed-async-queue`, and `types`. Agent System owns its narrow lock, keyed
-queue, delay, configured-agent, and hook-context primitives locally.
-
 ## Install From Source
 
 Install a linked development checkout in the normal OpenClaw profile:

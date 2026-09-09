@@ -19,7 +19,6 @@ import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatch
 import {
   githubNotificationOrdinaryFinalPayloads,
   githubNotificationPrivateResponse,
-  githubNotificationPrivateResponseDiagnostics,
 } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
@@ -282,7 +281,6 @@ export default class GitHubNotificationModelTurnCoordinator {
           details,
           'phase=private-response',
           `code=${diagnosticCode(error)}`,
-          githubNotificationPrivateResponseDiagnostics(turnResult.finalPayloads),
           `aborted=${Boolean(input.signal?.aborted)}`,
           `duration-ms=${Date.now() - startedAt}`,
         ].join(' '),

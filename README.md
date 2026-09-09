@@ -21,10 +21,7 @@ Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw ag
 - **Work mode turns an assigned GitHub issue into a delivery pull request.**
 
 > [!NOTE]
-> The next Agent System release targets OpenClaw 2026.9.3 exactly. Agent System
-> 0.5.3 remains the historical OpenClaw 2026.7.1-2 build; unlisted OpenClaw
-> releases are not implied compatible. See the
-> [compatibility policy](./DEVELOPMENT.md#openclaw-compatibility).
+> Requires OpenClaw 2026.9.3. See [version compatibility](./ADVANCED.md#version-compatibility).
 
 > [!WARNING]
 > Agent System remains a work in progress. Development and Leia coverage focus

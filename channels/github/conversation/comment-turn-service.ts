@@ -1,7 +1,4 @@
-import {
-  buildChannelInboundEventContext,
-  type AssembledInboundReply,
-} from 'openclaw/plugin-sdk/channel-inbound';
+import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import configuredAgentEntries from '../../../core/configured-agents.ts';
@@ -50,10 +47,7 @@ export interface GitHubNotificationCommentTurnInput {
 }
 
 export interface GitHubNotificationCommentTurnResult {
-  accountId: string;
   agentId: string;
-  config: OpenClawConfig;
-  ctxPayload: AssembledInboundReply['ctxPayload'];
   privateText: string;
   publication: Exclude<GitHubNotificationModelTurnPublication, { status: 'none' }>;
 }
@@ -279,10 +273,7 @@ export default class GitHubNotificationCommentTurnService {
       ].join(' '),
     );
     return {
-      accountId: route.accountId,
       agentId: route.agentId,
-      config,
-      ctxPayload,
       privateText: turnResult.privateText,
       publication: turnResult.publication,
     };

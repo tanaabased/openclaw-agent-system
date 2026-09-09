@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationModelEvidence, {
-  githubNotificationModelRequestDiagnostics,
-} from '../scripts/github-notification-model-evidence.ts';
+import githubNotificationModelEvidence from '../scripts/github-notification-model-evidence.ts';
 import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
 } from '../scripts/github-notification-model-scenarios.ts';
@@ -10,50 +8,6 @@ import resolveGitHubNotificationModelScenario, {
 const scenario = resolveGitHubNotificationModelScenario('assignment');
 
 describe('scripts/github-notification-model-evidence', () => {
-  it('should expose bounded request structure without prompt or result content', () => {
-    assert.deepEqual(
-      githubNotificationModelRequestDiagnostics([
-        {
-          body: {
-            messages: [
-              { content: 'private prompt', role: 'system' },
-              {
-                content: null,
-                role: 'assistant',
-                tool_calls: [
-                  {
-                    function: { name: 'agent_system_github_reply' },
-                    id: 'call_observed',
-                  },
-                ],
-              },
-              {
-                content: 'private tool result',
-                role: 'tool',
-                tool_call_id: 'call_observed',
-              },
-            ],
-            model: 'gpt-5.5',
-            tools: [],
-          },
-          method: 'POST',
-          path: '/responses',
-          response: { fixture: null, status: 503 },
-        },
-      ]),
-      [
-        {
-          assistantToolCalls: [{ id: 'call_observed', name: 'agent_system_github_reply' }],
-          index: 0,
-          matchedFixture: false,
-          messageRoles: ['system', 'assistant', 'tool'],
-          status: 503,
-          toolResultIds: ['call_observed'],
-        },
-      ],
-    );
-  });
-
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
       (id) => id === 'assignment',
