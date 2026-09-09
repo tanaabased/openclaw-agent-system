@@ -57,9 +57,7 @@ describe('tools/git/worktree-remote', () => {
 
   it('should prefer ssh only for canonical github https remotes', () => {
     assert.equal(
-      preferGitHubSshWorktreeRemote(
-        'https://github.com/tanaabased/openclaw-agent-system.git',
-      ),
+      preferGitHubSshWorktreeRemote('https://github.com/tanaabased/openclaw-agent-system.git'),
       'git@github.com:tanaabased/openclaw-agent-system.git',
     );
     for (const remote of [

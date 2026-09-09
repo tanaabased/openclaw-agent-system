@@ -43,9 +43,7 @@ function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = 
   const declared = definition.configuration.read({
     agent: { email: 'data@example.com', id: 'data', name: 'Data' },
     git: {
-      ...(options.ssh
-        ? { ssh: { privateKeys: [{ path: '/run/keys/id_ed25519' }] } }
-        : {}),
+      ...(options.ssh ? { ssh: { privateKeys: [{ path: '/run/keys/id_ed25519' }] } } : {}),
       worktrees: {},
     },
     schemaVersion: 1,

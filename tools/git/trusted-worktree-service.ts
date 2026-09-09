@@ -307,11 +307,7 @@ export default class TrustedGitWorktreeService {
       workspaceDir: loaded.scope.workspaceDir,
     };
     return toolInput.action === 'prepare'
-      ? this.#dependencies.definition.executeTrustedGitHubPrepare(
-          toolInput,
-          configuration,
-          scope,
-        )
+      ? this.#dependencies.definition.executeTrustedGitHubPrepare(toolInput, configuration, scope)
       : this.#dependencies.definition.execute(toolInput, configuration, scope);
   }
 }

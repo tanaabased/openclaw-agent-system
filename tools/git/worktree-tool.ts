@@ -11,9 +11,7 @@ import type {
 } from './config-schema.ts';
 import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
-import normalizeGitWorktreeRemote, {
-  preferGitHubSshWorktreeRemote,
-} from './worktree-remote.ts';
+import normalizeGitWorktreeRemote, { preferGitHubSshWorktreeRemote } from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
 import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
