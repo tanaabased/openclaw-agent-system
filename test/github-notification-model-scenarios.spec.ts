@@ -224,10 +224,10 @@ describe('scripts/github-notification-model-scenarios', () => {
       tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
     };
 
-    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[8]);
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
     request.messages[1]!.content =
       'add completed retirement fixture\nCreate completed-retirement-fixture-123-4.txt.';
-    assert.notEqual(matchFixture([...scenario.fixtures], request), scenario.fixtures[8]);
+    assert.notEqual(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
   });
 
   it('should match current work assignment guidance across execution scenarios', () => {
@@ -249,7 +249,8 @@ describe('scripts/github-notification-model-scenarios', () => {
 
     for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
-      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+      const assignmentFixture = scenario.fixtures[scenarioId === 'retirement' ? 1 : 0];
+      assert.equal(matchFixture([...scenario.fixtures], request), assignmentFixture);
     }
   });
 
@@ -283,6 +284,7 @@ describe('scripts/github-notification-model-scenarios', () => {
 
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
+      const fixtureOffset = executionScenario.id === 'retirement' ? 1 : 0;
       const request: ChatCompletionRequest = {
         messages: [
           {
@@ -308,9 +310,12 @@ describe('scripts/github-notification-model-scenarios', () => {
           },
         ],
       };
-      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[2]);
+      assert.equal(
+        matchFixture([...scenario.fixtures], request),
+        scenario.fixtures[fixtureOffset + 2],
+      );
       const responses = await Promise.all(
-        scenario.fixtures.slice(2, 6).map(async (fixture) => {
+        scenario.fixtures.slice(fixtureOffset + 2, fixtureOffset + 6).map(async (fixture) => {
           const responseFactory = fixture.response;
           assert.equal(typeof responseFactory, 'function');
           if (typeof responseFactory !== 'function') {
@@ -371,7 +376,7 @@ describe('scripts/github-notification-model-scenarios', () => {
         model: 'gpt-5.5',
       };
 
-      const fixture = scenario.fixtures[7];
+      const fixture = scenario.fixtures[scenarioId === 'retirement' ? 8 : 7];
       assert.equal(matchFixture([...scenario.fixtures], request), fixture);
       assert.deepEqual(fixture?.response, {
         content: githubNotificationPullRequestOpenedFinalResponse,

@@ -92,5 +92,5 @@ export const retirementScenario = {
     ...retirementWorkScenario.finalResponses,
     retirementGuidedAssignmentFinalResponse,
   ],
-  fixtures: [...retirementWorkScenario.fixtures, retirementGuidedAssignmentFixture],
+  fixtures: [retirementGuidedAssignmentFixture, ...retirementWorkScenario.fixtures],
 };
