@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+
+import { stringify } from 'yaml';
 
 import type AgentEnvironmentService from '../environment/service.ts';
 import type { ManifestLoadTrigger } from '../manifest/service.ts';
@@ -343,25 +346,27 @@ export default class GitHubAccountClient {
       return profileIdentity;
     };
     const materializeProfile = async (configDirectory: string) => {
-      const result = await runProfileCli(
-        [
-          'auth',
-          'login',
-          '--git-protocol',
-          'ssh',
-          '--hostname',
-          configuration.host ?? 'github.com',
-          '--insecure-storage',
-          '--skip-ssh-key',
-          '--with-token',
-        ],
-        configDirectory,
-        `${normalizedToken}\n`,
-      );
-      if (result.exitCode !== 0 || result.timedOut || result.truncated) {
+      const host = configuration.host ?? 'github.com';
+      try {
+        await writeFile(
+          join(configDirectory, 'hosts.yml'),
+          stringify({
+            [host]: {
+              oauth_token: normalizedToken,
+              user: identity.login,
+              users: { [identity.login]: { oauth_token: normalizedToken } },
+            },
+          }),
+          { flag: 'wx', mode: 0o600 },
+        );
+        await writeFile(join(configDirectory, 'config.yml'), stringify({ version: '1' }), {
+          flag: 'wx',
+          mode: 0o600,
+        });
+      } catch {
         throw profileError(
           'github-account-profile-materialization-failed',
-          'The GitHub CLI could not materialize the managed account profile.',
+          'The managed GitHub account profile could not be materialized.',
         );
       }
       return verifyProfile(configDirectory);
