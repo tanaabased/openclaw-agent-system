@@ -4,7 +4,9 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationAssignmentCard } from '../events/assignment.ts';
 import { githubNotificationImplementationCard } from '../events/implementation.ts';
-import githubNotificationAssignmentContext from './context/assignment.ts';
+import githubNotificationAssignmentContext, {
+  githubNotificationAssignmentContextBlock,
+} from './context/assignment.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type {
@@ -71,6 +73,7 @@ interface AssignmentConversationCheckpoint {
 
 interface ModelTurnContextInput {
   body: string;
+  includeLifecycleContextInBody?: boolean;
   lifecycleContext: Readonly<Record<string, unknown>>;
   messageId: string;
   repository: string;
@@ -108,6 +111,17 @@ function handoffPending(conversation: GitHubNotificationConversation): boolean {
 }
 
 function modelTurnContext(input: ModelTurnContextInput) {
+  const lifecycleContext = githubNotificationAssignmentContext({
+    lifecycleContext: input.lifecycleContext,
+  });
+  const bodyForAgent = input.includeLifecycleContextInBody
+    ? [
+        githubNotificationAssignmentContextBlock({
+          lifecycleContext: input.lifecycleContext,
+        }),
+        input.body,
+      ].join('\n\n')
+    : input.body;
   return buildChannelInboundEventContext({
     accountId: input.route.accountId,
     channel: githubNotificationChannelId,
@@ -122,14 +136,12 @@ function modelTurnContext(input: ModelTurnContextInput) {
       routePeer: { id: input.route.conversationId, kind: 'direct' },
     },
     extra: {
-      ChannelStructuredContext: [
-        githubNotificationAssignmentContext({ lifecycleContext: input.lifecycleContext }),
-      ],
+      ChannelStructuredContext: [lifecycleContext],
     },
     from: input.sender.from,
     message: {
       body: input.body,
-      bodyForAgent: input.body,
+      bodyForAgent,
       commandBody: '',
       inboundEventKind: 'user_request',
       rawBody: input.body,
@@ -330,6 +342,7 @@ export default class GitHubNotificationAssignmentSessionService {
       createIfMissing: true,
       ctxPayload: modelTurnContext({
         body,
+        includeLifecycleContextInBody: true,
         lifecycleContext: input.lifecycleContext,
         messageId,
         repository: `${input.repository}#${input.session.item.number}`,
