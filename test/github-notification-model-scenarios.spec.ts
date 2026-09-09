@@ -123,10 +123,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     ] as const;
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
-      assert.equal(
-        scenario.fixtures.length,
-        executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle' ? 9 : 8,
-      );
+      assert.equal(scenario.fixtures.length, executionScenario.id === 'implementation' ? 8 : 9);
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
         { id: executionScenario.callIds[1], name: 'agent_system_github' },
@@ -202,6 +199,35 @@ describe('scripts/github-notification-model-scenarios', () => {
     assert.deepEqual(scenario.toolCalls, []);
     request.messages[1]!.content = 'missing guided assignment evidence';
     assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should keep the incomplete retirement checkpoint in guided mode', () => {
+    const scenario = resolveGitHubNotificationModelScenario('retirement');
+    const request: ChatCompletionRequest = {
+      messages: [
+        {
+          content: [
+            'Continue the current GitHub issue lifecycle',
+            'Guided mode is operator-led',
+            'The initial assignment authorizes setup and acknowledgment, not implementation',
+            'do not call the tool because the deterministic assignment acknowledgment is the complete public response',
+          ].join('\n'),
+          role: 'system',
+        },
+        {
+          content:
+            'add retirement fixture\nCreate retirement-fixture-123-4.txt with the assigned contents.',
+          role: 'user',
+        },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[8]);
+    request.messages[1]!.content =
+      'add completed retirement fixture\nCreate completed-retirement-fixture-123-4.txt.';
+    assert.notEqual(matchFixture([...scenario.fixtures], request), scenario.fixtures[8]);
   });
 
   it('should match current work assignment guidance across execution scenarios', () => {

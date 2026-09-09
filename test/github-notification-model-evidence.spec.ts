@@ -194,7 +194,7 @@ describe('scripts/github-notification-model-evidence', () => {
     );
   });
 
-  it('should normalize execution tool loops, including repeated retirement assignments', () => {
+  it('should normalize execution tool loops with a guided retirement checkpoint', () => {
     for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const hasComment = scenarioId === 'pr-lifecycle' || scenarioId === 'comment';
@@ -244,9 +244,7 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({ content: selectedScenario.finalResponses[0] }));
       if (scenarioId === 'retirement') {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
-        entries.push(request({}));
-        appendCall(reply);
-        entries.push(request({ content: selectedScenario.finalResponses[0] }));
+        entries.push(request({ content: selectedScenario.finalResponses[3] }));
       }
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({}));
@@ -270,7 +268,7 @@ describe('scripts/github-notification-model-evidence', () => {
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';
-      const requestCount = scenarioId === 'retirement' ? 10 : hasComment ? 9 : 8;
+      const requestCount = scenarioId === 'retirement' || hasComment ? 9 : 8;
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
         finalResponseCount: hasFourthResponse ? 4 : 3,
@@ -300,7 +298,7 @@ describe('scripts/github-notification-model-evidence', () => {
             callResponseCount: 1,
             name: 'agent_system_github_reply',
             projectionRequestCount: requestCount,
-            resultRequestCount: scenarioId === 'retirement' ? 2 : 1,
+            resultRequestCount: 1,
           },
           {
             callResponseCount: 1,

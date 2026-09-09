@@ -1,3 +1,5 @@
+import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
+
 import createGitHubNotificationIssueWorkScenario from '../../scripts/github-notification-model-issue-work-scenario.ts';
 
 export const githubNotificationRetirementReplyCallId = 'call_agent_system_retirement_reply';
@@ -33,7 +35,41 @@ export const githubNotificationRetirementFinalResponse = [
   'Created one local commit in the prepared lifecycle worktree for managed pull request delivery.',
 ].join('\n');
 
-export const retirementScenario = createGitHubNotificationIssueWorkScenario({
+const retirementGuidedAssignmentFinalResponse =
+  'The retirement checkpoint is prepared. I am waiting for operator direction before taking action.';
+
+const retirementGuidedAssignmentSystemPromptSignals = [
+  'Guided mode is operator-led',
+  'The initial assignment authorizes setup and acknowledgment, not implementation',
+  'do not call the tool because the deterministic assignment acknowledgment is the complete public response',
+] as const;
+
+function hasRetirementGuidedAssignmentPrompt(request: ChatCompletionRequest): boolean {
+  const userText = request.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => getTextContent(message.content) ?? '')
+    .join('\n');
+  return (
+    userText.includes('add retirement fixture') &&
+    userText.includes('Create retirement-fixture-') &&
+    !userText.includes('completed-retirement-fixture-')
+  );
+}
+
+const retirementGuidedAssignmentFixture: Fixture = {
+  match: {
+    hasToolResult: false,
+    model: /^(?:aimock\/)?gpt-5\.5$/u,
+    predicate: hasRetirementGuidedAssignmentPrompt,
+    systemMessage: [...retirementGuidedAssignmentSystemPromptSignals],
+  },
+  response: {
+    content: retirementGuidedAssignmentFinalResponse,
+    id: 'agent-system-notification-retirement-guided-assignment-final-response',
+  },
+};
+
+const retirementWorkScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationRetirementAssignmentFinalResponse,
   callIds: {
     add: githubNotificationRetirementAddCallId,
@@ -49,3 +85,12 @@ export const retirementScenario = createGitHubNotificationIssueWorkScenario({
   finalResponse: githubNotificationRetirementFinalResponse,
   id: 'retirement',
 });
+
+export const retirementScenario = {
+  ...retirementWorkScenario,
+  finalResponses: [
+    ...retirementWorkScenario.finalResponses,
+    retirementGuidedAssignmentFinalResponse,
+  ],
+  fixtures: [...retirementWorkScenario.fixtures, retirementGuidedAssignmentFixture],
+};
