@@ -25,6 +25,17 @@ function config(): OpenClawConfig {
 }
 
 describe('channels/github/routing/routing', () => {
+  it('should reject main routing for an explicitly empty roster', () => {
+    const main = { ...desired, agentId: 'main', workspaceDir: '/workspace/main' };
+    for (const current of [{ agents: { entries: {} } }, { agents: { list: [] } }]) {
+      assert.equal(
+        planNotificationRouting(current, main, () => main.workspaceDir).code,
+        'notification-routing-agent-missing',
+      );
+    }
+    assert.equal(planNotificationRouting({}, main, () => main.workspaceDir).kind, 'upsert');
+  });
+
   it('should install and resolve one deterministic account-scoped route', () => {
     const current = config();
     const initial = planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir);

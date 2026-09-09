@@ -19,6 +19,26 @@ function successfulResult() {
 }
 
 describe('agent/lifecycle', () => {
+  it('should distinguish an implicit main agent from an explicitly empty roster', async () => {
+    const mainContext = {
+      manifest: { schemaVersion: 1, agent: { id: 'main', name: 'Main' } } as AgentManifest,
+      workspaceDir: '/workspace/main',
+    };
+    for (const config of [{}, { agents: { entries: {} } }, { agents: { list: [] } }]) {
+      const contribution = createAgentLifecycleContribution({
+        readConfig: () => config,
+        resolveAgentWorkspaceDir: () => mainContext.workspaceDir,
+        async runOpenClawCommand() {
+          throw new Error('inspection must not write');
+        },
+      });
+      assert.equal(
+        (await contribution.inspect?.(mainContext))?.[0]?.code,
+        'agents' in config ? 'agent-registration-drift' : 'agent-identity-drift',
+      );
+    }
+  });
+
   it('should validate the foundational agent declaration', () => {
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({}),

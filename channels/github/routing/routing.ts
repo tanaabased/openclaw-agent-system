@@ -1,9 +1,8 @@
 import { resolve } from 'node:path';
 
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { resolveAgentRoute } from 'openclaw/plugin-sdk/routing';
-
-import configuredAgentEntries from '../../../core/configured-agents.ts';
 
 export const githubNotificationChannelId = 'agent-system-github';
 export const githubNotificationBindingComment = 'managed by agent system github notifications';
@@ -118,9 +117,7 @@ function configuredAgentWorkspace(
   agentId: string,
   resolveAgentWorkspaceDir: ResolveAgentWorkspaceDir,
 ): string | undefined {
-  const entries = configuredAgentEntries(config);
-  const entry = entries.find(({ id }) => normalizedAgentId(id) === agentId);
-  if (!entry && !(entries.length === 0 && agentId === 'main')) return undefined;
+  if (!listAgentIds(config).includes(agentId)) return undefined;
   return resolveAgentWorkspaceDir(config, agentId);
 }
 

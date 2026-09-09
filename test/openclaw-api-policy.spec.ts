@@ -19,6 +19,7 @@ const sourceRoots = [
   'utils',
 ];
 const supportedPluginSdkSubpaths = new Set([
+  'agent-scope-runtime',
   'channel-core',
   'channel-inbound',
   'channel-outbound',

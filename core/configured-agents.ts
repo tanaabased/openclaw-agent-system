@@ -42,10 +42,3 @@ export function configuredAgentValue(
   }
   return config.agents?.list?.find((entry) => entry.id.trim().toLowerCase() === normalizedAgentId);
 }
-
-/** List unique configured ids with OpenClaw's implicit main-agent fallback. */
-export function configuredAgentIds(config: OpenClawConfig): string[] {
-  const ids = configuredAgentEntries(config).map(({ id }) => id.trim().toLowerCase());
-  const uniqueIds = [...new Set(ids.filter(Boolean))];
-  return uniqueIds.length > 0 ? uniqueIds : ['main'];
-}

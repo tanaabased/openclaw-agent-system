@@ -1,6 +1,7 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
@@ -37,7 +38,6 @@ import AgentSystemToolRuntime from '../api/runtime.ts';
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
-import { configuredAgentIds } from './configured-agents.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 
 /** Assemble and register the complete Agent System runtime. */
@@ -222,7 +222,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     async resolveCodexAgentId({ codexHome, openClawStateDir }) {
       const config = api.runtime.config.current() as OpenClawConfig;
       return resolveCodexCommandAgentId({
-        agentIds: configuredAgentIds(config),
+        agentIds: listAgentIds(config),
         codexHome,
         ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
         resolveAgentDir: (agentId) => api.runtime.agent.resolveAgentDir(config, agentId),

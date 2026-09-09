@@ -1,3 +1,4 @@
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import configuredAgentEntries from '../core/configured-agents.ts';
@@ -35,7 +36,7 @@ function currentAgentState(
   const normalizedAgentId = agentId.toLowerCase();
   const entries = configuredAgentEntries(config);
   const entry = entries.find(({ id }) => id.trim().toLowerCase() === normalizedAgentId);
-  const exists = entry !== undefined || (entries.length === 0 && normalizedAgentId === 'main');
+  const exists = listAgentIds(config).includes(normalizedAgentId);
   if (!exists) return { exists: false };
   const workspaceDir =
     resolveAgentWorkspaceDir?.(config, normalizedAgentId) ?? entry?.workspace?.trim();
