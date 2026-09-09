@@ -3,12 +3,21 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, symlink } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { AgentSystemCliRunner } from '../api/types.ts';
 import GitWorktreeLayoutService from '../tools/git/worktree-layout-service.ts';
+
+const runCli: AgentSystemCliRunner = async () => ({
+  exitCode: 1,
+  stderr: 'not a git repository',
+  stdout: '',
+  timedOut: false,
+  truncated: false,
+});
 
 describe('tools/git/worktree-layout-service', () => {
   it('should reconcile ignored owner-only managed roots idempotently', async () => {
     const workspaceDir = await mkdtemp(join(tmpdir(), 'agent-system-worktree-layout-'));
-    const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.() });
+    const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.(), runCli });
 
     const first = await service.reconcile(workspaceDir, {});
     const second = await service.reconcile(workspaceDir, {});
@@ -32,7 +41,7 @@ describe('tools/git/worktree-layout-service', () => {
     const outside = await mkdtemp(join(tmpdir(), 'agent-system-worktree-outside-'));
     await mkdir(join(workspaceDir, '.agent-system'), { recursive: true });
     await symlink(outside, join(workspaceDir, '.agent-system', 'worktrees'));
-    const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.() });
+    const service = new GitWorktreeLayoutService({ currentUid: process.getuid?.(), runCli });
 
     await assert.rejects(service.reconcile(workspaceDir, {}), /unavailable or unsafe/u);
     await assert.rejects(

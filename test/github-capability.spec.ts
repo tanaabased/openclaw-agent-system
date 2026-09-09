@@ -6,6 +6,9 @@ describe('tools/github/capability', () => {
   it('should assemble the github lifecycle and owned tool', () => {
     const capability = createGitHubCapability({
       baseEnvironment: { PATH: '/usr/bin' },
+      async runCli() {
+        throw new Error('not used during capability assembly');
+      },
       environmentService: {
         async loadForWorkspace() {
           throw new Error('not used during capability assembly');

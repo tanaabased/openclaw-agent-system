@@ -2,8 +2,7 @@ import { join, resolve } from 'node:path';
 
 import type AgentEnvironmentService from '../environment/service.ts';
 import type { ManifestLoadTrigger } from '../manifest/service.ts';
-import runToolCli from '../api/cli-runner.ts';
-import type { AgentSystemCliResult } from '../api/types.ts';
+import type { AgentSystemCliResult, AgentSystemCliRunner } from '../api/types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveManifestValue from '../manifest/resolve-value.ts';
 
@@ -29,7 +28,7 @@ export interface GitHubAccountClientDependencies {
   configStore: { configDirectory(agentId: string): string };
   environmentService: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   excludedExecutableDirectories?: readonly string[];
-  runCli?: typeof runToolCli;
+  runCli: AgentSystemCliRunner;
 }
 
 export interface GitHubAccountExecutionOptions {
@@ -138,11 +137,11 @@ function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | und
 /** Bind fixed internal calls to one manifest-declared GitHub account and sanitized process. */
 export default class GitHubAccountClient {
   readonly #dependencies: GitHubAccountClientDependencies;
-  readonly #runCli: typeof runToolCli;
+  readonly #runCli: AgentSystemCliRunner;
 
   constructor(dependencies: GitHubAccountClientDependencies) {
     this.#dependencies = dependencies;
-    this.#runCli = dependencies.runCli ?? runToolCli;
+    this.#runCli = dependencies.runCli;
   }
 
   async connect(

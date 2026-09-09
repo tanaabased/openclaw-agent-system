@@ -10,11 +10,11 @@ import type AgentManifestService from '../manifest/service.ts';
 import AgentSystemToolError from './error.ts';
 import executeAgentSystemCliTool from './cli-execution.ts';
 import loadBoundToolManifest from './manifest-binding.ts';
-import runToolCli from './cli-runner.ts';
 import type {
   AgentSystemAuditEvent,
   AgentSystemAuthorizationDecision,
   AgentSystemAuthorizationRequest,
+  AgentSystemCliRunner,
   AgentSystemCliToolExecutionResult,
   AgentSystemCliToolDefinition,
   AgentSystemOperation,
@@ -39,7 +39,7 @@ export interface AgentSystemToolRuntimeDependencies {
   excludedExecutableDirectories?: readonly string[];
   logger: ToolLogger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
-  runCli?: typeof runToolCli;
+  runCli: AgentSystemCliRunner;
 }
 
 interface RuntimeDefinition<
@@ -102,11 +102,11 @@ function defaultAuthorize(
 /** Execute tools through one agent-binding, authorization, credential, and audit path. */
 export default class AgentSystemToolRuntime {
   readonly #dependencies: AgentSystemToolRuntimeDependencies;
-  readonly #runCli: typeof runToolCli;
+  readonly #runCli: AgentSystemCliRunner;
 
   constructor(dependencies: AgentSystemToolRuntimeDependencies) {
     this.#dependencies = dependencies;
-    this.#runCli = dependencies.runCli ?? runToolCli;
+    this.#runCli = dependencies.runCli;
   }
 
   executeCli<TParameters extends TSchema, TDeclaredConfiguration, TResolvedConfiguration, TOutput>(

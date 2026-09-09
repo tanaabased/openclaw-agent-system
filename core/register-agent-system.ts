@@ -35,6 +35,7 @@ import registerAgentCommandAuthority from './register-agent-command-authority.ts
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
+import createToolCliRunner from '../api/cli-runner.ts';
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
@@ -124,7 +125,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return service.loadForAgentId(agentId, trigger);
     },
   };
+  const runCli = createToolCliRunner((argv, options) =>
+    api.runtime.system.runCommandWithTimeout(argv, options),
+  );
   const capabilityDependencies = {
+    runCli,
     baseEnvironment: process.env,
     ...(currentUid === undefined ? {} : { currentUid }),
     excludedExecutableDirectories: excludedToolExecutableDirectories,
@@ -232,6 +237,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
   const toolRuntime = new AgentSystemToolRuntime({
+    runCli,
     baseEnvironment: process.env,
     environmentService,
     excludedExecutableDirectories: excludedToolExecutableDirectories,

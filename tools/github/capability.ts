@@ -1,5 +1,6 @@
 import type AgentEnvironmentService from '../../environment/service.ts';
 import type { AgentSystemCapability } from '../../api/capability.ts';
+import type { AgentSystemCliRunner } from '../../api/types.ts';
 import GitHubAccountClient from '../../core/github-account-client.ts';
 import GitHubAccountKeyService from './account-key-service.ts';
 import GitHubConfigStore from './config-store.ts';
@@ -8,6 +9,7 @@ import { createGitHubTool } from './tool.ts';
 
 export interface GitHubCapabilityDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
+  runCli: AgentSystemCliRunner;
   currentUid?: number;
   environmentService: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   excludedExecutableDirectories?: readonly string[];
@@ -30,6 +32,7 @@ export default function createGitHubCapability(
       : { rootDir: dependencies.privateStateRoot }),
   });
   const accountClient = new GitHubAccountClient({
+    runCli: dependencies.runCli,
     baseEnvironment: dependencies.baseEnvironment,
     configStore,
     environmentService: dependencies.environmentService,
