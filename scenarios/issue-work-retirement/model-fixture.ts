@@ -69,6 +69,33 @@ const retirementGuidedAssignmentFixture: Fixture = {
   },
 };
 
+// the guided checkpoint needs no new work when openclaw resumes it after restart.
+const retirementRestartRecoveryFixture: Fixture = {
+  match: {
+    hasToolResult: false,
+    model: /^(?:aimock\/)?gpt-5\.5$/u,
+    predicate: (request) => {
+      const lastAssistant = request.messages.findLast((message) => message.role === 'assistant');
+      const lastUser = request.messages.findLast((message) => message.role === 'user');
+      const recoveryText = getTextContent(lastUser?.content ?? null) ?? '';
+      return (
+        getTextContent(lastAssistant?.content ?? null) ===
+          retirementGuidedAssignmentFinalResponse &&
+        recoveryText.includes(
+          '[System] Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work.',
+        ) &&
+        recoveryText.includes(
+          'Continue from the existing transcript and finish the interrupted response.',
+        )
+      );
+    },
+  },
+  response: {
+    content: 'NO_REPLY',
+    id: 'agent-system-notification-retirement-restart-recovery-final-response',
+  },
+};
+
 const retirementWorkScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationRetirementAssignmentFinalResponse,
   callIds: {
@@ -91,6 +118,11 @@ export const retirementScenario = {
   finalResponses: [
     ...retirementWorkScenario.finalResponses,
     retirementGuidedAssignmentFinalResponse,
+    'NO_REPLY',
   ],
-  fixtures: [retirementGuidedAssignmentFixture, ...retirementWorkScenario.fixtures],
+  fixtures: [
+    retirementGuidedAssignmentFixture,
+    ...retirementWorkScenario.fixtures,
+    retirementRestartRecoveryFixture,
+  ],
 };

@@ -245,6 +245,8 @@ describe('scripts/github-notification-model-evidence', () => {
       if (scenarioId === 'retirement') {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
         entries.push(request({ content: selectedScenario.finalResponses[3] }));
+        messages.splice(0, messages.length, { content: 'host restart recovery', role: 'user' });
+        entries.push(request({ content: 'NO_REPLY' }));
       }
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({}));
@@ -268,12 +270,13 @@ describe('scripts/github-notification-model-evidence', () => {
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';
-      const requestCount = scenarioId === 'retirement' || hasComment ? 9 : 8;
+      const promptRequestCount = hasFourthResponse ? 9 : 8;
+      const requestCount = promptRequestCount + (scenarioId === 'retirement' ? 1 : 0);
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
-        finalResponseCount: hasFourthResponse ? 4 : 3,
+        finalResponseCount: scenarioId === 'retirement' ? 5 : hasFourthResponse ? 4 : 3,
         model: 'aimock/gpt-5.5',
-        promptRequestCount: requestCount,
+        promptRequestCount,
         provider: 'aimock',
         requestCount,
         responsesApiRequestCount: requestCount,
