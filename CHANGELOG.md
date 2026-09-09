@@ -7,6 +7,7 @@
 
 ### Bug Fixes
 
+- Made the installed agent and GitHub examples deterministic with strict AIMock fixtures while preserving real Gateway and tool execution. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 - Fixed managed GitHub worktrees to reuse configured SSH authentication across direct and notification preparation. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 - Updated Agent System to support OpenClaw 2026.9.2 and newer while building against 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 

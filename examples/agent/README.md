@@ -1,22 +1,19 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging.
+This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging without depending on live model behavior.
 
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
+# should configure the default profile with the prepared plugin and strict mock model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL"
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+openclaw-aimock prepare --scenario agent
 
 # should install the scenario-owned data workspace through agent system
 cd "$GITHUB_WORKSPACE/examples/agent/data"
 openclaw agent-system install
-
-# should configure the installed agent with the ci model
-openclaw config set 'agents.entries.data.model' "openai/$OPENAI_MODEL"
 
 # should start the default gateway as a supervised background process
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -52,6 +49,11 @@ done
 # should keep manifest values out of lifecycle and gateway logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
+
+# should match the complete strict mock exchange
+openclaw-aimock evidence \
+  --scenario agent \
+  --expected-evidence "$GITHUB_WORKSPACE/examples/agent/expected-evidence.json"
 ```
 
 ## Cleanup
@@ -59,4 +61,7 @@ if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
 ```bash
 # should stop the background gateway cleanly
 openclaw-gateway stop
+
+# should stop the strict mock model cleanly
+openclaw-aimock stop
 ```

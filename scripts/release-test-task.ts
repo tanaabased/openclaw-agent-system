@@ -190,7 +190,8 @@ try {
       'scenarios/issue-work-retirement/expected-evidence.json',
       'scenarios/issue-work-retirement/model-fixture.ts',
       'scripts/github-notification-model-issue-work-scenario.ts',
-      'scripts/github-notification-model-server.ts',
+      'scripts/openclaw-aimock',
+      'scripts/aimock-server.ts',
       'scripts/openclaw-notification-setup',
       'test/encode.spec.ts',
     ]) {

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationModelEvidence from '../scripts/github-notification-model-evidence.ts';
+import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
 } from '../scripts/github-notification-model-scenarios.ts';
 
 const scenario = resolveGitHubNotificationModelScenario('assignment');
 
-describe('scripts/github-notification-model-evidence', () => {
+describe('scripts/aimock-evidence', () => {
   it('should normalize one strict tool loop across accepted responses paths', () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
       (id) => id === 'assignment',
@@ -30,7 +30,7 @@ describe('scripts/github-notification-model-evidence', () => {
       const callId = selectedScenario.toolCalls[0]?.id ?? '';
       const observedCallId = `${callId}_fc-observed_123`;
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
-      const evidence = githubNotificationModelEvidence(selectedScenario, [
+      const evidence = openClawAIMockEvidence(selectedScenario, [
         {
           body: {
             messages: structuredClone(selectedPromptMessages),
@@ -117,7 +117,7 @@ describe('scripts/github-notification-model-evidence', () => {
     ];
 
     assert.deepEqual(
-      githubNotificationModelEvidence(selectedScenario, [
+      openClawAIMockEvidence(selectedScenario, [
         {
           body: {
             messages: promptMessages,
@@ -160,7 +160,7 @@ describe('scripts/github-notification-model-evidence', () => {
         'apply_patch',
         'agent_system_git',
       ];
-      type EvidenceEntry = Parameters<typeof githubNotificationModelEvidence>[1][number];
+      type EvidenceEntry = Parameters<typeof openClawAIMockEvidence>[1][number];
       const messages: NonNullable<EvidenceEntry['body']>['messages'] = [
         { content: prompt, role: 'system' },
       ];
@@ -227,7 +227,7 @@ describe('scripts/github-notification-model-evidence', () => {
       const promptRequestCount = hasFourthResponse ? 9 : 8;
       const requestCount = promptRequestCount + (scenarioId === 'retirement' ? 1 : 0);
 
-      assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
+      assert.deepEqual(openClawAIMockEvidence(selectedScenario, entries), {
         finalResponseCount: scenarioId === 'retirement' ? 5 : hasFourthResponse ? 4 : 3,
         model: 'aimock/gpt-5.5',
         promptRequestCount,
@@ -275,7 +275,7 @@ describe('scripts/github-notification-model-evidence', () => {
       throw new Error('The comment scenario dynamic final response is missing.');
     }
     const entry = (
-      fixture: Parameters<typeof githubNotificationModelEvidence>[1][number]['response']['fixture'],
+      fixture: Parameters<typeof openClawAIMockEvidence>[1][number]['response']['fixture'],
     ) => ({
       body: { messages: [], model: 'gpt-5.5', tools: [] },
       method: 'POST',
@@ -283,7 +283,7 @@ describe('scripts/github-notification-model-evidence', () => {
       response: { fixture, status: 200 },
     });
 
-    const evidence = githubNotificationModelEvidence(selectedScenario, [
+    const evidence = openClawAIMockEvidence(selectedScenario, [
       entry({ response: { content: selectedScenario.finalResponses[0] } }),
       entry({ response: { content: 'unrelated string response' } }),
       entry(dynamicFinalResponseFixture),
@@ -294,7 +294,7 @@ describe('scripts/github-notification-model-evidence', () => {
   });
 
   it('should report unmatched requests without inventing successful evidence', () => {
-    const evidence = githubNotificationModelEvidence(scenario, [
+    const evidence = openClawAIMockEvidence(scenario, [
       {
         body: { messages: [], model: 'unexpected-model', tools: [] },
         method: 'POST',

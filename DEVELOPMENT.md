@@ -106,6 +106,12 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 The executable [Leia](https://github.com/lando/leia) material under [`examples/`](./examples/) and [`scenarios/`](./scenarios/) runs only through GitHub Actions. General examples cover macOS and Ubuntu where supported; notification acceptance scenarios use their own workflow and runner matrix. Both install plugins or mutate isolated OpenClaw and provider state, so neither suite may be run locally.
 
+Choose the driver independently of the folder. Prefer direct assertions when
+state proves the contract, use strict AIMock when the real OpenClaw agent/tool
+loop matters without model judgment, and use a live model only when provider
+transport, model interpretation, or Codex-native behavior is under test. The
+`agent` and `github` examples use AIMock; `path` and `security` remain live.
+
 #### GitHub Notification Scenarios
 
 The pull-request workflow runs six deterministic mock-provider scenarios on

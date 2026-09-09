@@ -3,8 +3,8 @@ import { parseArgs } from 'node:util';
 
 import { LLMock, type Mountable } from '@copilotkit/aimock';
 
-import githubNotificationModelEvidence from './github-notification-model-evidence.ts';
-import resolveGitHubNotificationModelScenario from './github-notification-model-scenarios.ts';
+import openClawAIMockEvidence from './aimock-evidence.ts';
+import resolveOpenClawAIMockScenario from './aimock-scenarios.ts';
 
 const { values: options } = parseArgs({
   options: {
@@ -16,14 +16,14 @@ const { values: options } = parseArgs({
 });
 const providerHost = options.host.trim();
 const providerPort = Number(options.port);
-const scenario = resolveGitHubNotificationModelScenario(options.scenario?.trim() ?? '');
+const scenario = resolveOpenClawAIMockScenario(options.scenario?.trim() ?? '');
 if (
   !providerHost ||
   !Number.isSafeInteger(providerPort) ||
   providerPort < 0 ||
   providerPort > 65_535
 ) {
-  throw new Error('The notification model host or port is invalid.');
+  throw new Error('The AIMock host or port is invalid.');
 }
 
 function json(res: ServerResponse, status: number, value: unknown): void {
@@ -47,7 +47,7 @@ const evidenceService: Mountable = {
       json(res, 405, { error: 'method not allowed' });
       return true;
     }
-    json(res, 200, githubNotificationModelEvidence(scenario, mock.getRequests()));
+    json(res, 200, openClawAIMockEvidence(scenario, mock.getRequests()));
     return true;
   },
 };

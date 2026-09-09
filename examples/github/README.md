@@ -1,16 +1,16 @@
 # GitHub Tool Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents. It verifies that GitHub lifecycle installation projects distinct OpenClaw identities, adds and diagnoses fresh ephemeral SSH authentication and signing keys, proves the already-installed path, and then verifies that Agent System and OpenClaw select each agent's configured 1Password-backed credential and authenticated account.
+This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents and a strict AIMock fixture. It verifies that GitHub lifecycle installation projects distinct OpenClaw identities, adds and diagnoses fresh ephemeral SSH authentication and signing keys, proves the already-installed path, and then verifies that Agent System and OpenClaw select each agent's configured 1Password-backed credential and authenticated account without depending on live model behavior.
 
 ## Setup
 
 ```bash
-# should configure the default profile with the ci model
+# should configure the default profile with the prepared plugin and strict mock model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --model "openai/$OPENAI_MODEL" \
   --yolo
+openclaw-aimock prepare --scenario github
 
 # should prepare scenario-owned generated public keys under the temporary workspace
 mkdir "$TMPDIR/agent-system-github-tanaabot"
@@ -36,10 +36,6 @@ printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "add-github-ssh-signin
 cd "$GITHUB_WORKSPACE/examples/github/emori"
 openclaw agent-system credentials set op --from-env
 openclaw agent-system install
-
-# should configure both installed agents with the ci model
-openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.entries.emori.model' "openai/$OPENAI_MODEL"
 
 # should start the default gateway as a supervised background process
 openclaw-gateway start
@@ -110,6 +106,11 @@ openclaw agent \
   --session-key agent:emori:agent-system-github-identity-status-leia \
   --message-file "$GITHUB_WORKSPACE/examples/github/identity-status.md" \
   --timeout 120 | grep -F 'emoriwan'
+
+# should match all three strict mock tool exchanges
+openclaw-aimock evidence \
+  --scenario github \
+  --expected-evidence "$GITHUB_WORKSPACE/examples/github/expected-evidence.json"
 ```
 
 ## Cleanup
@@ -135,4 +136,7 @@ test -z "$remaining"
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+
+# should stop the strict mock model cleanly
+openclaw-aimock stop
 ```

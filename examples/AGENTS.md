@@ -3,21 +3,23 @@
 ## Scope
 
 - Treat each `examples/<scenario>/README.md` as one executable, user-visible contract and one CI matrix identity.
+- Choose the driver from the contract rather than the folder: use direct assertions when state proves the behavior, strict AIMock when the real OpenClaw agent/tool loop matters without model judgment, and a live model only when provider transport, model interpretation, or Codex-native tool behavior is itself under test.
 - Keep scenario setup, assertions, and any justified cleanup in the owning README.
-- Keep scenario-owned fixtures beside their README and hoist only after two live scenarios share the same contract.
+- Keep scenario-owned model fixtures and expected evidence beside their README. Share only provider lifecycle machinery through `scripts/openclaw-aimock`.
 - Keep immediate child directories limited to scenario names represented in `.github/workflows/pr-examples-tests.yml`; keep other examples-level files limited to `AGENTS.md` and `package.json`.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
 ## OpenClaw Runtime
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly. Do not introduce DevGuard unless DevGuard integration is the behavior under test.
-- Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, use `--yolo` only when a live-agent scenario requires unattended tool execution, omit `--model` for model-free scenarios, and pass a complete provider/model reference only when the scenario invokes a live agent. Treat successful setup as proof that the resulting OpenClaw configuration is valid and any supplied Agent System pack is enabled and runtime-loadable; keep scenario assertions focused on behavior beyond those shared postconditions.
+- Use `openclaw-setup` for the shared isolated profile and packed Agent System plugin setup. Pass the prepared pack through `--agent-system-plugin`, use `--needs-secret-service` only when a cross-platform scenario exercises the native credential backend, use `--needs-ssh-key` only when a scenario needs the shared SSH fixture, and use `--yolo` only when an unattended agent scenario requires tool execution. Omit `--model` for direct and AIMock scenarios; configure strict AIMock afterward through `openclaw-aimock`. Pass a complete provider/model reference only for a justified live-model scenario. Treat successful setup as proof that the resulting OpenClaw configuration is valid and any supplied Agent System pack is enabled and runtime-loadable; keep scenario assertions focused on behavior beyond those shared postconditions.
 - Pass scenario-owned inputs to shared Leia helpers as command-line options. Reserve environment variables for the process or underlying runtime rather than using helper-specific environment aliases in scenario READMEs.
 - Register named agents explicitly and bind them to scenario-owned workspaces; do not rely on OpenClaw's implicit `main` fallback as agent-context proof.
 - Keep static agent workspaces and message inputs checked in beside their owning README and use them in place on fresh GitHub Actions runners. Copy a fixture only when isolation from a tested mutation is part of the scenario contract.
 - Background `openclaw gateway run` with its PID and combined output beneath `TMPDIR`, use bounded readiness and shutdown polling, and preserve a diagnostic log tail when coordination fails.
 - When an unattended OpenClaw CI scenario invokes tools, pass `--yolo` to `openclaw-setup`; use it only with isolated ephemeral state and never as routine local validation against a developer's normal profile.
 - Keep workflow-provided model credentials optional for scenarios that do not invoke a live agent.
+- Keep `agent` and `github` on strict AIMock and `path` and `security` on a live model unless the contract or evidence changes.
 - Keep shared command success output stable, route diagnostics to standard error, and use `OPENCLAW_DEBUG`, `OPENCLAW_LOG_LEVEL=debug`, `DEBUG`, or runner debug mode for opt-in diagnostics.
 
 ## Assertions
