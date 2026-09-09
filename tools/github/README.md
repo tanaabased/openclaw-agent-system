@@ -48,6 +48,7 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email: tanaabot@tanaab.dev
 
 environment:
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
@@ -97,6 +98,27 @@ The value names a variable in the completed Agent System environment; it can
 never contain a literal token. A declared binding takes precedence over the
 defaults. SSH authentication or signing keys require an explicit token and
 username because installation may mutate the configured GitHub account.
+
+When both `github.username` and `github.token` are declared, `install` also
+projects that identity into OpenClaw for the same agent. Agent System remains
+the source of truth: it verifies the account, materializes a deterministic
+agent-scoped PAT profile, and binds only
+`agents.entries.<id>.tools.github`. `doctor` treats a system-level OpenClaw
+identity as missing rather than silently adopting it.
+
+The token is duplicated into OpenClaw's normal `hosts.yml` PAT store, never
+`openclaw.json`. "Owner-only" describes filesystem permissions for the host OS
+account; it does not mean one identity is shared across agents. Isolation is
+enforced by separate agent-keyed profile directories, distinct opaque profile
+IDs, exact account verification, and per-agent config bindings. Because agents
+on one host can share an OS account, this is identity separation rather than a
+claim of hostile-process secret isolation.
+
+This projection is a guarded compatibility adapter for OpenClaw 2026.9.2 and
+newer. Installation refuses unmarked or mismatched profiles and fails closed if
+OpenClaw's private PAT profile layout changes. Credential rotation creates a new
+profile generation and rebinds the agent without deleting a generation that a
+running Gateway may still use.
 
 ### `github.policy`
 
@@ -175,8 +197,8 @@ contain exactly one supported public key. Agent System never accepts private
 keys, removes remote keys, rotates keys, or changes existing titles.
 
 The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
-commands validate declarations, reconcile missing keys and private GitHub CLI
-configuration, and report drift. See the
+commands validate declarations, reconcile the private GitHub CLI configuration,
+agent-scoped OpenClaw identity, and missing account keys, and report drift. See the
 [GitHub notifications channel](../../channels/github/README.md) for its separate
 configuration, routing, lifecycle, and security contract.
 

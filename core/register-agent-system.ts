@@ -146,7 +146,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const githubCapability = createGitHubCapability({
     ...capabilityDependencies,
     environmentService: lifecycleEnvironmentService,
+    mutateConfigFile(params) {
+      return api.runtime.config.mutateConfigFile(params);
+    },
+    openClawStateDir: api.runtime.state.resolveStateDir(),
     privateStateRoot,
+    readConfig,
   });
   const notificationRuntime = createGitHubNotificationRuntime({
     accountClient: githubCapability.accountClient,

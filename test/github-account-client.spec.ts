@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import GitHubAccountClient from '../core/github-account-client.ts';
@@ -6,7 +7,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
-  agent: { id: 'tanaabot' },
+  agent: { email: 'tanaabot@tanaab.dev', id: 'tanaabot', name: 'Tanaabot' },
   environment: { pathPrepend: ['commands'] },
   github: {
     sshKeys: [{ source: 'keys/auth.pub', type: 'path' }],
@@ -68,12 +69,26 @@ describe('core/github-account-client', () => {
       controller.signal,
     );
     await connected.execute(['api', '--paginate', '--slurp', '/user/keys']);
+    assert.ok(connected.materializeProfile);
+    await connected.materializeProfile('/state/credentials/github/profile');
 
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
         ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
         ['api', '--paginate', '--slurp', '/user/keys'],
+        [
+          'auth',
+          'login',
+          '--git-protocol',
+          'ssh',
+          '--hostname',
+          'github.com',
+          '--insecure-storage',
+          '--skip-ssh-key',
+          '--with-token',
+        ],
+        ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
       ],
     );
     assert.equal(requests[1]?.environment.GH_TOKEN, 'private-token');
@@ -86,6 +101,44 @@ describe('core/github-account-client', () => {
       `${workspaceDir}/commands`,
       '/package/bin',
     ]);
+    assert.equal(requests[2]?.stdin, 'private-token\n');
+    assert.equal(requests[2]?.environment.GH_TOKEN, '');
+    assert.equal(requests[2]?.environment.GITHUB_TOKEN, '');
+    assert.equal(requests[2]?.environment.GH_CONFIG_DIR, '/state/credentials/github/profile');
+    assert.equal(JSON.stringify(requests[2]?.argv).includes('private-token'), false);
+    assert.deepEqual(connected.gitAuthor, {
+      email: 'tanaabot@tanaab.dev',
+      name: 'Tanaabot',
+    });
+    assert.equal(
+      connected.credentialFingerprint,
+      createHash('sha256').update('private-token').digest('hex'),
+    );
+  });
+
+  it('should redact credential failures while materializing an openclaw profile', async () => {
+    const client = new GitHubAccountClient({
+      baseEnvironment: { PATH: '/usr/bin' },
+      configStore: { configDirectory: () => '/private/tanaabot/tools/gh' },
+      environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+      runCli: async (request) => ({
+        exitCode: request.argv[0] === 'auth' ? 1 : 0,
+        stderr: request.argv[0] === 'auth' ? 'request failed for private-token' : '',
+        stdout: request.argv[0] === 'auth' ? '' : '{"login":"tanaabot","nodeId":"U_agent"}',
+        timedOut: false,
+        truncated: false,
+      }),
+    });
+    const connected = await client.connect({ manifest, workspaceDir });
+    assert.ok(connected.materializeProfile);
+
+    await assert.rejects(
+      connected.materializeProfile('/state/credentials/github/profile'),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === 'The GitHub CLI could not materialize the managed account profile.' &&
+        !error.message.includes('private-token'),
+    );
   });
 
   it('should reject a github account that does not match the declaration', async () => {

@@ -1,21 +1,38 @@
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
+  type AgentSystemLifecycleContext,
   type AgentSystemLifecycleOutcome,
 } from '../../core/lifecycle-registry.ts';
+import { GitHubAccountClientError } from '../../core/github-account-client.ts';
 import type GitHubConfigStore from './config-store.ts';
 import { resolveGitHubCliConfiguration } from './config-schema.ts';
 import { validateGitHubAccountKeyDeclarations } from './account-key-declarations.ts';
 import GitHubAccountKeyError from './account-key-error.ts';
 import type GitHubAccountKeyService from './account-key-service.ts';
+import {
+  type OpenClawGitHubProfileInspection,
+  type OpenClawGitHubProfileReconciliation,
+  OpenClawGitHubProfileError,
+} from './openclaw-profile-service.ts';
 
 export interface GitHubLifecycleDependencies {
   accountKeyService?: Pick<GitHubAccountKeyService, 'inspect' | 'reconcile'>;
   configStore: Pick<GitHubConfigStore, 'inspect' | 'reconcile'>;
+  profileService?: {
+    inspect(context: AgentSystemLifecycleContext): Promise<OpenClawGitHubProfileInspection>;
+    reconcile(context: AgentSystemLifecycleContext): Promise<OpenClawGitHubProfileReconciliation>;
+  };
 }
 
 function hasAccountKeys(manifest: Parameters<AgentSystemLifecycleContribution['isConfigured']>[0]) {
   return Boolean(manifest.github?.sshKeys || manifest.github?.sshSigningKeys);
+}
+
+function hasProfileProjection(
+  manifest: Parameters<AgentSystemLifecycleContribution['isConfigured']>[0],
+) {
+  return Boolean(manifest.github?.username && manifest.github?.token);
 }
 
 function categoryLabel(category: 'ssh' | 'ssh-signing'): string {
@@ -73,6 +90,36 @@ export default function createGitHubLifecycleContribution(
           remediation: 'Correct the private config path, then run openclaw agent-system install.',
           status: 'drift',
         } as const);
+      }
+
+      if (hasProfileProjection(manifest)) {
+        const profileService = dependencies.profileService;
+        if (!configReady) {
+          findings.push({
+            code: 'openclaw-github-profile-blocked',
+            message:
+              'OpenClaw GitHub identity cannot be inspected until the private CLI config is ready.',
+            remediation: 'Run openclaw agent-system install from this workspace.',
+            status: 'blocked' as const,
+          });
+        } else if (!profileService) {
+          findings.push({
+            code: 'openclaw-github-profile-service-unavailable',
+            message: 'OpenClaw GitHub identity inspection is unavailable in this runtime.',
+            remediation: 'Reload Agent System with its GitHub identity runtime enabled.',
+            status: 'blocked' as const,
+          });
+        } else {
+          const profile = await profileService.inspect(context);
+          findings.push({
+            code: profile.code,
+            message: profile.message,
+            ...(profile.status === 'ready'
+              ? {}
+              : { remediation: 'Run openclaw agent-system install from this workspace.' }),
+            status: profile.status === 'ready' ? ('healthy' as const) : profile.status,
+          });
+        }
       }
 
       if (!hasAccountKeys(manifest)) return findings;
@@ -166,6 +213,41 @@ export default function createGitHubLifecycleContribution(
                   } as const,
                 ];
 
+        if (hasProfileProjection(manifest)) {
+          const profileService = dependencies.profileService;
+          if (!profileService) {
+            throw new OpenClawGitHubProfileError(
+              'openclaw-github-profile-service-unavailable',
+              'OpenClaw GitHub identity installation is unavailable in this runtime.',
+            );
+          }
+          const profile = await profileService.reconcile(context);
+          outcomes.push(
+            profile.profileStatus === 'created'
+              ? {
+                  code: 'create-openclaw-github-profile',
+                  message: 'agent-scoped OpenClaw GitHub profile',
+                  status: 'created',
+                }
+              : {
+                  code: 'openclaw-github-profile-unchanged',
+                  message: 'agent-scoped OpenClaw GitHub profile',
+                  status: 'unchanged',
+                },
+            profile.bindingStatus === 'updated'
+              ? {
+                  code: 'set-openclaw-github-profile',
+                  message: 'agent-scoped OpenClaw GitHub identity binding',
+                  status: 'updated',
+                }
+              : {
+                  code: 'openclaw-github-binding-unchanged',
+                  message: 'agent-scoped OpenClaw GitHub identity binding',
+                  status: 'unchanged',
+                },
+          );
+        }
+
         if (hasAccountKeys(manifest)) {
           const accountKeyService = dependencies.accountKeyService;
           if (!accountKeyService) {
@@ -189,6 +271,16 @@ export default function createGitHubLifecycleContribution(
         return { outcomes };
       } catch (error) {
         if (error instanceof AgentSystemLifecycleError) throw error;
+        if (error instanceof OpenClawGitHubProfileError) {
+          throw new AgentSystemLifecycleError('github', error.code, error.message, {
+            cause: error,
+          });
+        }
+        if (error instanceof GitHubAccountClientError) {
+          throw new AgentSystemLifecycleError('github', error.code, error.message, {
+            cause: error,
+          });
+        }
         if (error instanceof GitHubAccountKeyError) {
           throw new AgentSystemLifecycleError('github', error.code, error.message, {
             cause: error,

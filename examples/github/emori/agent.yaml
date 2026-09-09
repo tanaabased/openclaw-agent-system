@@ -3,6 +3,7 @@ schema-version: 1
 agent:
   id: emori
   name: EMORI
+  email: emori@tanaab.dev
 
 environment:
   op: jglytdfegfggijqkalco2cxexa

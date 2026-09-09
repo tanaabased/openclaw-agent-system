@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import type AgentEnvironmentService from '../environment/service.ts';
@@ -42,13 +43,22 @@ export interface GitHubAccountIdentity {
   nodeId: string;
 }
 
+export interface GitHubAccountGitAuthor {
+  email?: string;
+  name?: string;
+}
+
 export interface ConnectedGitHubAccountClient {
+  credentialFingerprint?: string;
   execute(
     argv: string[],
     stdin?: string,
     options?: GitHubAccountExecutionOptions,
   ): Promise<AgentSystemCliResult>;
+  gitAuthor?: GitHubAccountGitAuthor;
   identity: GitHubAccountIdentity;
+  materializeProfile?(configDirectory: string): Promise<GitHubAccountIdentity>;
+  verifyProfile?(configDirectory: string): Promise<GitHubAccountIdentity>;
 }
 
 /** Identify stable credential, identity, and process failures at the shared GitHub boundary. */
@@ -74,6 +84,10 @@ function redact(result: AgentSystemCliResult, secret: string): AgentSystemCliRes
 
 function connectionError(message: string): GitHubAccountClientError {
   return new GitHubAccountClientError('github-account-credential-unavailable', message);
+}
+
+function profileError(code: string, message: string): GitHubAccountClientError {
+  return new GitHubAccountClientError(code, message);
 }
 
 function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
@@ -177,6 +191,35 @@ export default class GitHubAccountClient {
         `The GitHub credential ${configuration.token} is unavailable for agent ${context.manifest.agent.id}.`,
       );
     }
+    const normalizedToken = token.trim();
+    if (!normalizedToken || normalizedToken.length > 2048 || /\s/u.test(normalizedToken)) {
+      throw connectionError('The GitHub credential must contain one non-empty line.');
+    }
+
+    const resolveOptionalValue = (
+      value: AgentManifest['agent']['name'] | undefined,
+      fieldPath: string,
+    ) => {
+      if (value === undefined) return undefined;
+      const resolved = resolveManifestValue(value, loaded.environment.values, fieldPath);
+      if (resolved.status === 'invalid') throw connectionError(resolved.diagnostic.message);
+      return resolved.value.trim();
+    };
+    const gitName = resolveOptionalValue(
+      context.manifest.git?.name ?? context.manifest.agent.name,
+      context.manifest.git?.name === undefined ? '/agent/name' : '/git/name',
+    );
+    const gitEmail = resolveOptionalValue(
+      context.manifest.git?.email ?? context.manifest.agent.email,
+      context.manifest.git?.email === undefined ? '/agent/email' : '/git/email',
+    );
+    const gitAuthor =
+      gitName === undefined && gitEmail === undefined
+        ? undefined
+        : {
+            ...(gitEmail === undefined ? {} : { email: gitEmail }),
+            ...(gitName === undefined ? {} : { name: gitName }),
+          };
 
     const environment: NodeJS.ProcessEnv = {};
     for (const name of baselineEnvironmentNames) {
@@ -188,7 +231,7 @@ export default class GitHubAccountClient {
       GH_HOST: configuration.host ?? 'github.com',
       GH_PAGER: 'cat',
       GH_PROMPT_DISABLED: '1',
-      GH_TOKEN: token,
+      GH_TOKEN: normalizedToken,
       PAGER: 'cat',
     });
     const excludedExecutableDirectories = [
@@ -218,7 +261,7 @@ export default class GitHubAccountClient {
             ...(stdin === undefined ? {} : { stdin }),
             timeoutMs: limits.timeoutMs,
           }),
-          token,
+          normalizedToken,
         );
       } catch (error) {
         throw new GitHubAccountClientError(
@@ -238,6 +281,99 @@ export default class GitHubAccountClient {
         `GitHub returned ${identity.login}, not the configured username ${username.value}.`,
       );
     }
-    return { execute, identity };
+
+    const profileEnvironment = (configDirectory: string): NodeJS.ProcessEnv => ({
+      ...environment,
+      GH_CONFIG_DIR: resolve(configDirectory),
+      GH_TOKEN: '',
+      GITHUB_TOKEN: '',
+    });
+    const runProfileCli = async (
+      argv: string[],
+      configDirectory: string,
+      stdin?: string,
+    ): Promise<AgentSystemCliResult> => {
+      try {
+        return redact(
+          await this.#runCli({
+            argv,
+            cwd: context.workspaceDir,
+            environment: profileEnvironment(configDirectory),
+            executable: 'gh',
+            excludedExecutableDirectories,
+            maxOutputBytes: defaultMaximumOutputBytes,
+            ...(signal ? { signal } : {}),
+            ...(stdin === undefined ? {} : { stdin }),
+            timeoutMs: defaultTimeoutMs,
+          }),
+          normalizedToken,
+        );
+      } catch {
+        throw profileError(
+          'github-account-profile-tool-unavailable',
+          'The GitHub CLI executable is unavailable for managed profile setup.',
+        );
+      }
+    };
+    const verifyProfile = async (configDirectory: string) => {
+      let profileIdentity;
+      try {
+        profileIdentity = parseIdentity(
+          await runProfileCli(
+            ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
+            configDirectory,
+          ),
+        );
+      } catch (error) {
+        throw new GitHubAccountClientError(
+          'github-account-profile-identity-failed',
+          'GitHub rejected the managed profile identity check.',
+          { cause: error },
+        );
+      }
+      if (
+        profileIdentity.login.toLowerCase() !== identity.login.toLowerCase() ||
+        profileIdentity.nodeId !== identity.nodeId
+      ) {
+        throw profileError(
+          'github-account-profile-identity-mismatch',
+          'The managed GitHub profile resolves to a different account.',
+        );
+      }
+      return profileIdentity;
+    };
+    const materializeProfile = async (configDirectory: string) => {
+      const result = await runProfileCli(
+        [
+          'auth',
+          'login',
+          '--git-protocol',
+          'ssh',
+          '--hostname',
+          configuration.host ?? 'github.com',
+          '--insecure-storage',
+          '--skip-ssh-key',
+          '--with-token',
+        ],
+        configDirectory,
+        `${normalizedToken}\n`,
+      );
+      if (result.exitCode !== 0 || result.timedOut || result.truncated) {
+        throw profileError(
+          'github-account-profile-materialization-failed',
+          'The GitHub CLI could not materialize the managed account profile.',
+        );
+      }
+      return verifyProfile(configDirectory);
+    };
+
+    return {
+      credentialFingerprint: createHash('sha256').update(normalizedToken).digest('hex'),
+      execute,
+      ...(gitAuthor === undefined ? {} : { gitAuthor }),
+      identity,
+      materializeProfile,
+      verifyProfile,
+    };
   }
 }

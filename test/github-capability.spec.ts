@@ -15,7 +15,14 @@ describe('tools/github/capability', () => {
         },
       },
       excludedExecutableDirectories: ['/package/bin'],
+      async mutateConfigFile() {
+        throw new Error('not used during capability assembly');
+      },
+      openClawStateDir: '/openclaw',
       privateStateRoot: '/private',
+      readConfig() {
+        throw new Error('not used during capability assembly');
+      },
     });
 
     assert.deepEqual(

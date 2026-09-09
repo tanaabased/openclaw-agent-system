@@ -86,6 +86,11 @@ describe('index', () => {
             return logger;
           },
         },
+        state: {
+          resolveStateDir() {
+            return '/openclaw';
+          },
+        },
       },
       registerCli(
         nextRegistrar: (context: {

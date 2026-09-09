@@ -3,6 +3,7 @@ schema-version: 1
 agent:
   id: tanaabot
   name: MODEL L3-37
+  email: tanaabot@tanaab.dev
 
 environment:
   op: jglytdfegfggijqkalco2cxexa
