@@ -2,7 +2,7 @@
 
 ### Bug Fixes
 
-- Updated Agent System for OpenClaw 2026.9.2, preserving GitHub notification and managed-agent workflows. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Updated Agent System to support OpenClaw 2026.9.2 and newer, with CI coverage through 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 

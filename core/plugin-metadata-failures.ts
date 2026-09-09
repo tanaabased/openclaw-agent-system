@@ -188,6 +188,9 @@ export default function pluginMetadataFailures(
   const hasExactDevelopmentOpenClawVersion =
     typeof developmentOpenClawVersion === 'string' &&
     exactSemanticVersion.test(developmentOpenClawVersion);
+  const expectedCompatibilityRange = hasExactDevelopmentOpenClawVersion
+    ? `>=${developmentOpenClawVersion}`
+    : undefined;
 
   check(
     manifest.activation?.onStartup === true,
@@ -318,15 +321,15 @@ export default function pluginMetadataFailures(
   );
   check(
     hasExactDevelopmentOpenClawVersion &&
-      packageMetadata.peerDependencies?.openclaw === developmentOpenClawVersion,
+      packageMetadata.peerDependencies?.openclaw === expectedCompatibilityRange,
     'peer-openclaw-version',
-    'OpenClaw peer dependency must pin the tested development SDK',
+    'OpenClaw peer dependency must use the development SDK as its compatibility floor',
   );
   check(
     hasExactDevelopmentOpenClawVersion &&
-      packageMetadata.openclaw?.compat?.pluginApi === developmentOpenClawVersion,
+      packageMetadata.openclaw?.compat?.pluginApi === expectedCompatibilityRange,
     'plugin-api-version',
-    'plugin API compatibility must pin the tested development SDK',
+    'plugin API compatibility must use the development SDK as its compatibility floor',
   );
   check(
     hasExactDevelopmentOpenClawVersion &&

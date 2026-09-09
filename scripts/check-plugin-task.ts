@@ -17,10 +17,37 @@ const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
 const manifest = JSON.parse(manifestContents) as PluginManifest;
 const installedOpenClaw = JSON.parse(installedOpenClawContents) as { version?: string };
 const failures = pluginMetadataFailures(packageMetadata, manifest).map(({ message }) => message);
+const compatibilityTestVersion = process.env.OPENCLAW_COMPATIBILITY_TEST_VERSION;
+const expectedInstalledOpenClawVersion =
+  compatibilityTestVersion ?? packageMetadata.devDependencies?.openclaw;
 
-if (installedOpenClaw.version !== packageMetadata.devDependencies?.openclaw) {
+if (installedOpenClaw.version !== expectedInstalledOpenClawVersion) {
   failures.push(
-    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match development target ${packageMetadata.devDependencies?.openclaw ?? 'unknown'}`,
+    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match ${compatibilityTestVersion ? 'compatibility test' : 'development'} target ${expectedInstalledOpenClawVersion ?? 'unknown'}`,
+  );
+}
+
+if (
+  compatibilityTestVersion &&
+  !Bun.semver.satisfies(
+    compatibilityTestVersion,
+    packageMetadata.openclaw?.compat?.pluginApi ?? '',
+  )
+) {
+  failures.push(
+    `compatibility test target ${compatibilityTestVersion} must satisfy plugin API range ${packageMetadata.openclaw?.compat?.pluginApi ?? 'unknown'}`,
+  );
+}
+
+if (
+  compatibilityTestVersion &&
+  !Bun.semver.satisfies(
+    compatibilityTestVersion,
+    packageMetadata.peerDependencies?.openclaw ?? '',
+  )
+) {
+  failures.push(
+    `compatibility test target ${compatibilityTestVersion} must satisfy peer range ${packageMetadata.peerDependencies?.openclaw ?? 'unknown'}`,
   );
 }
 

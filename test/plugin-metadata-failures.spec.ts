@@ -7,6 +7,7 @@ import pluginMetadataFailures, {
 } from '../core/plugin-metadata-failures.ts';
 
 const openclawVersion = '2099.8.7-test';
+const openclawCompatibilityRange = `>=${openclawVersion}`;
 const packageMetadata: PackageMetadata = {
   description: 'Better per-agent management for OpenClaw.',
   name: '@tanaab/openclaw-agent-system',
@@ -41,7 +42,7 @@ const packageMetadata: PackageMetadata = {
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
     compat: {
-      pluginApi: openclawVersion,
+      pluginApi: openclawCompatibilityRange,
       minGatewayVersion: openclawVersion,
     },
     build: {
@@ -50,7 +51,7 @@ const packageMetadata: PackageMetadata = {
     },
   },
   peerDependencies: {
-    openclaw: openclawVersion,
+    openclaw: openclawCompatibilityRange,
   },
   devDependencies: {
     openclaw: openclawVersion,
@@ -201,7 +202,7 @@ describe('core/plugin-metadata-failures', () => {
     );
   });
 
-  it('should reject open-ended compatibility ranges', () => {
+  it('should reject exact pins where compatibility floors are required', () => {
     assert.deepEqual(
       failureCodes(
         {
@@ -210,10 +211,10 @@ describe('core/plugin-metadata-failures', () => {
             ...packageMetadata.openclaw,
             compat: {
               ...packageMetadata.openclaw?.compat,
-              pluginApi: `>=${openclawVersion}`,
+              pluginApi: openclawVersion,
             },
           },
-          peerDependencies: { openclaw: `>=${openclawVersion}` },
+          peerDependencies: { openclaw: openclawVersion },
         },
         manifest,
       ),
