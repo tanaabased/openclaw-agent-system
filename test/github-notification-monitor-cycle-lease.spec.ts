@@ -3,16 +3,15 @@ import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { FILE_LOCK_TIMEOUT_ERROR_CODE } from 'openclaw/plugin-sdk/file-lock';
-
+import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/intake/monitor/cycle-lease.ts';
 
 function lockTimeout(): Error {
-  return Object.assign(new Error('busy'), { code: FILE_LOCK_TIMEOUT_ERROR_CODE });
+  return Object.assign(new Error('busy'), { code: privateStateFileLockBusyErrorCode });
 }
 
 describe('channels/github/intake/monitor/cycle-lease', () => {
-  it('should acquire the host file lock beneath private agent state', async () => {
+  it('should acquire the repository file lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-lease-'));
     const rootDir = join(temporaryDirectory, 'state');
     try {
@@ -27,7 +26,7 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
       assert.equal((await lstat(rootDir)).mode & 0o077, 0);
       assert.equal((await lstat(join(rootDir, 'tanaabot/channels'))).mode & 0o077, 0);
       assert.equal(
-        (await lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock'))).isFile(),
+        (await lstat(join(rootDir, 'tanaabot/channels/github-notifications.lock'))).isDirectory(),
         true,
       );
       if (result.status !== 'acquired') assert.fail('expected acquired lease');
@@ -41,7 +40,29 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
     }
   });
 
-  it('should retry host lock timeouts through the bounded notification wait', async () => {
+  it('should exclude independent stores through one atomic filesystem lease', async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-exclusive-'));
+    const rootDir = join(temporaryDirectory, 'state');
+    try {
+      const firstStore = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
+      const secondStore = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
+      const first = await firstStore.acquire('tanaabot');
+
+      assert.equal(first.status, 'acquired');
+      assert.equal((await secondStore.acquire('tanaabot')).status, 'busy');
+      if (first.status !== 'acquired') assert.fail('expected acquired lease');
+      await first.lease.release();
+
+      const second = await secondStore.acquire('tanaabot');
+      assert.equal(second.status, 'acquired');
+      if (second.status !== 'acquired') assert.fail('expected acquired lease');
+      await second.lease.release();
+    } finally {
+      await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('should retry lock contention through the bounded notification wait', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-retry-'));
     const rootDir = join(temporaryDirectory, 'state');
     let attempts = 0;
@@ -72,7 +93,7 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
     }
   });
 
-  it('should return busy when the host lock is held and no wait was requested', async () => {
+  it('should return busy when the repository lock is held and no wait was requested', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-busy-'));
     try {
       const store = new GitHubNotificationMonitorCycleLeaseStore({

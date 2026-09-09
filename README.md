@@ -21,7 +21,7 @@ Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw ag
 - **Work mode turns an assigned GitHub issue into a delivery pull request.**
 
 > [!NOTE]
-> Requires OpenClaw 2026.7.1-2 or newer. CI covers macOS 26 and Ubuntu 24.04.
+> Requires OpenClaw 2026.9.3. See [version compatibility](./ADVANCED.md#version-compatibility).
 
 > [!WARNING]
 > Agent System remains a work in progress. Development and Leia coverage focus
@@ -63,16 +63,21 @@ Today, Agent System:
 Install the current release from ClawHub:
 
 ```sh
-openclaw plugins install clawhub:@tanaab/openclaw-agent-system
+openclaw plugins install clawhub:@tanaab/openclaw-agent-system --accept-capabilities
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
 To select npm explicitly instead:
 
 ```sh
-openclaw plugins install npm:@tanaab/openclaw-agent-system
+openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
-Either install command registers and enables the `agent-system` plugin.
+Either install command accepts Agent System's declared capabilities, then
+registers and enables the `agent-system` plugin. The explicit conversation-access
+grant lets Agent System add manifest and GitHub lifecycle guidance through
+OpenClaw's `before_prompt_build` hook.
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 

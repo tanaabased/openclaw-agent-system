@@ -16,7 +16,7 @@ cd "$GITHUB_WORKSPACE/examples/agent/data"
 openclaw agent-system install
 
 # should configure the installed agent with the ci model
-openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.data.model' "openai/$OPENAI_MODEL"
 
 # should start the default gateway as a supervised background process
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start

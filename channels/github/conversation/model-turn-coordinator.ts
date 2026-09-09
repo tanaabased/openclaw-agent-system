@@ -1,5 +1,5 @@
 import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
 import type { Logger } from '../../../core/logger.ts';
@@ -16,7 +16,10 @@ import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnDispatcher from './model-turn-dispatcher.ts';
 import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatcher.ts';
-import { githubNotificationPrivateResponse } from './private-response.ts';
+import {
+  githubNotificationOrdinaryFinalPayloads,
+  githubNotificationPrivateResponse,
+} from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
 
 export type GitHubNotificationModelTurnPublication =
@@ -49,7 +52,10 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
-  candidates: Pick<GitHubNotificationReplyCandidateStore, 'begin' | 'cancel' | 'finish'>;
+  candidates: Pick<
+    GitHubNotificationReplyCandidateStore,
+    'attestPromptSelection' | 'begin' | 'cancel' | 'finish'
+  >;
   dispatcher: Pick<GitHubNotificationModelTurnDispatcher, 'dispatch'>;
   logger: Pick<Logger, 'info' | 'warn'>;
 }
@@ -203,6 +209,9 @@ export default class GitHubNotificationModelTurnCoordinator {
     const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
     let turnResult;
     try {
+      if (input.executionSurface === 'cli-one-shot') {
+        await this.#dependencies.candidates.attestPromptSelection(candidateIdentity);
+      }
       turnResult = await this.#dependencies.dispatcher.dispatch({
         config: input.config,
         contract: input.contract,
@@ -261,10 +270,26 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
     }
 
-    const privateText = githubNotificationPrivateResponse(turnResult.finalPayloads);
+    const ordinaryFinalPayloads = githubNotificationOrdinaryFinalPayloads(turnResult.finalPayloads);
+    let privateText: string;
+    try {
+      privateText = githubNotificationPrivateResponse(ordinaryFinalPayloads);
+    } catch (error) {
+      this.#dependencies.logger.warn(
+        [
+          'github-notifications: model turn failed',
+          details,
+          'phase=private-response',
+          `code=${diagnosticCode(error)}`,
+          `aborted=${Boolean(input.signal?.aborted)}`,
+          `duration-ms=${Date.now() - startedAt}`,
+        ].join(' '),
+      );
+      throw error;
+    }
     const responsePublication = publication(
       publicCandidates,
-      turnResult.finalPayloads,
+      ordinaryFinalPayloads,
       input.contract.publicationIntent,
       input.contract.publicationSource,
     );

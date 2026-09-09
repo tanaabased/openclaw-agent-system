@@ -1,10 +1,10 @@
-import { listAgentIds } from 'openclaw/plugin-sdk/agent-runtime';
-import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/plugin-entry';
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type AgentManifestService from '../../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../../core/github-account-client.ts';
 import type { Logger } from '../../../../core/logger.ts';
+import abortableDelay from '../../../../utils/abortable-delay.ts';
 import {
   githubNotificationRetirementItemKeys,
   type GitHubNotificationMonitorState,
@@ -136,7 +136,7 @@ export default class GitHubNotificationMonitorService {
         );
       }
       try {
-        await sleepWithAbort(schedulerIntervalMs, signal);
+        await abortableDelay(schedulerIntervalMs, signal);
       } catch (error) {
         if (!signal.aborted) throw error;
       }

@@ -18,6 +18,13 @@ and security documentation:
 These IDs come from distinct OpenClaw registries: tool IDs use underscores,
 while the channel ID uses hyphens.
 
+## Version Compatibility
+
+| Agent System release | Supported OpenClaw versions |
+| -------------------- | --------------------------- |
+| Unreleased           | 2026.9.3                    |
+| 0.5.3                | 2026.7.1-2                  |
+
 ## Manifest
 
 Agent System discovers one manifest from an agent workspace:

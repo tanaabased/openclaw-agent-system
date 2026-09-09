@@ -8,9 +8,23 @@ export class GitHubNotificationPrivateResponseError extends Error {
   }
 }
 
+/** Keep only user-facing final payloads, excluding OpenClaw supplemental lanes and notices. */
+export function githubNotificationOrdinaryFinalPayloads(
+  payloads: readonly ReplyPayload[],
+): ReplyPayload[] {
+  return payloads.filter(
+    ({ isCommentary, isCompactionNotice, isFallbackNotice, isReasoning, isStatusNotice }) =>
+      isCommentary !== true &&
+      isCompactionNotice !== true &&
+      isFallbackNotice !== true &&
+      isReasoning !== true &&
+      isStatusNotice !== true,
+  );
+}
+
 /** Select one non-empty ordinary final without imposing a publication protocol on it. */
 export function githubNotificationPrivateResponse(payloads: readonly ReplyPayload[]): string {
-  const ordinary = payloads.filter(({ isCommentary }) => isCommentary !== true);
+  const ordinary = githubNotificationOrdinaryFinalPayloads(payloads);
   const complete = ordinary.filter(
     (payload) => payload.isError !== true && Boolean(payload.text?.trim()),
   );

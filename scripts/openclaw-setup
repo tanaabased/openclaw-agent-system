@@ -194,6 +194,8 @@ validate_agent_system_plugin() {
       and ((.plugin.version | type) == "string")
       and (.plugin.version | length > 0)
       and .install.version == .plugin.version
+      and .policy.allowConversationAccess == true
+      and any(.typedHooks[]?; .name == "before_prompt_build")
       and ([.diagnostics[]? | select(.level == "error")] | length == 0)
   ' >/dev/null 2>&1; then
     debug "Agent System plugin inspection report=$report"
@@ -255,8 +257,9 @@ esac
 
 if [[ -n "$agent_system_plugin" ]]; then
   debug "installing Agent System plugin pack=$agent_system_plugin"
-  openclaw plugins install "npm-pack:$agent_system_plugin" --force
+  openclaw plugins install "npm-pack:$agent_system_plugin" --force --accept-capabilities
   openclaw plugins enable agent-system
+  openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 fi
 
 if value_enabled "$yolo"; then

@@ -1,12 +1,5 @@
 import assert from 'node:assert/strict';
 
-import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound';
-import {
-  createMessageReceiptFromOutboundResults,
-  type DurableInboundReplyDeliveryParams,
-  type DurableInboundReplyDeliveryResult,
-} from 'openclaw/plugin-sdk/channel-outbound';
-
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import type { GitHubNotificationAssignmentInspection } from '../channels/github/intake/assignment-provider.ts';
 import GitHubNotificationCommentOrchestrator, {
@@ -32,7 +25,6 @@ import type { GitHubNotificationMonitorState } from '../channels/github/intake/m
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
 import GitHubNotificationLifecycleRegistry from '../channels/github/lifecycles/registry.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
-import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import {
   notificationAccount,
   notificationActor,
@@ -45,9 +37,6 @@ const agentId = 'tanaabot';
 const workspaceDir = '/workspace/tanaabot';
 type CommentClient = GitHubNotificationCommentClient &
   Pick<GitHubNotificationIntakeClient, 'getItem'>;
-type DeliverInboundReply = (
-  input: DurableInboundReplyDeliveryParams,
-) => Promise<DurableInboundReplyDeliveryResult>;
 const configuration = {
   assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
@@ -356,48 +345,23 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const observedMentions: unknown[] = [];
     const observedActiveTurns: unknown[] = [];
     const publishedTexts: string[] = [];
-    const adapterReceipt = createMessageReceiptFromOutboundResults({
-      kind: 'text',
-      results: [
-        {
-          channel: githubNotificationChannelId,
-          conversationId: id,
-          messageId: '101',
-          meta: { nodeId: 'IC_reply' },
-        },
-      ],
-    });
-    const deliveryResult: DurableInboundReplyDeliveryResult = {
-      delivery: {
-        messageIds: ['101'],
-        receipt: createMessageReceiptFromOutboundResults({
-          kind: 'text',
-          results: [
-            {
-              messageId: '101',
-              receipt: adapterReceipt,
-            },
-          ],
-        }),
-        visibleReplySent: true,
-      },
-      status: 'handled_visible',
-    };
-    assert.equal(deliveryResult.delivery.receipt?.raw?.[0]?.meta, undefined);
-    assert.equal(deliveryResult.delivery.receipt?.parts[0]?.raw?.meta?.nodeId, 'IC_reply');
-    const deliver: DeliverInboundReply = async (input) => {
-      publishedTexts.push(input.payload.text ?? '');
-      return deliveryResult;
-    };
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority([incoming]),
       conversationStateStore: store,
       initialModeId: 'work',
       lifecycles: lifecycles(),
-      deliver,
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: monitorStateStore(monitor),
-      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      publications: {
+        async publish(input) {
+          publishedTexts.push(input.text);
+          return {
+            receipt: { databaseId: 101, nodeId: 'IC_reply' },
+            status: 'published',
+            target: input.target,
+          };
+        },
+      },
       turnCatalog,
       turns: {
         async respond(input) {
@@ -405,10 +369,7 @@ describe('channels/github/conversation/comment-orchestrator', () => {
           observedMentions.push(input.mentions);
           observedActiveTurns.push(store.snapshot()?.conversations[id]?.activeTurn);
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private ready response.',
             publication: { status: 'candidate', publicText: 'ready' },
           };
@@ -477,41 +438,26 @@ describe('channels/github/conversation/comment-orchestrator', () => {
     const orchestrator = new GitHubNotificationCommentOrchestrator({
       assignmentAuthority: authority(comments),
       conversationStateStore: store,
-      deliver: async () => {
-        receiptId += 1;
-        return {
-          delivery: {
-            messageIds: [String(receiptId)],
-            receipt: createMessageReceiptFromOutboundResults({
-              kind: 'text',
-              results: [
-                {
-                  channel: githubNotificationChannelId,
-                  conversationId: id,
-                  messageId: String(receiptId),
-                  meta: { nodeId: `IC_reply_${receiptId}` },
-                },
-              ],
-            }),
-            visibleReplySent: true,
-          },
-          status: 'handled_visible',
-        };
-      },
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: monitorStateStore(monitor),
-      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      publications: {
+        async publish(input) {
+          receiptId += 1;
+          return {
+            receipt: { databaseId: receiptId, nodeId: `IC_reply_${receiptId}` },
+            status: 'published',
+            target: input.target,
+          };
+        },
+      },
       turnCatalog,
       turns: {
         async respond(input) {
           responded.push(input.comment.databaseId);
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: `ready-${input.comment.databaseId}`,
             publication: {
               status: 'candidate',
@@ -608,42 +554,27 @@ describe('channels/github/conversation/comment-orchestrator', () => {
         },
       },
       conversationStateStore: store,
-      deliver: async (delivery) => {
-        destinationTarget = delivery.to ?? '';
-        return {
-          delivery: {
-            messageIds: ['201'],
-            receipt: createMessageReceiptFromOutboundResults({
-              kind: 'text',
-              results: [
-                {
-                  channel: githubNotificationChannelId,
-                  conversationId: id,
-                  messageId: '201',
-                  meta: { nodeId: 'IC_pr_reply' },
-                },
-              ],
-            }),
-            visibleReplySent: true,
-          },
-          status: 'handled_visible',
-        };
-      },
       initialModeId: 'work',
       lifecycles: lifecycles(),
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: monitorStateStore(monitor),
-      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      publications: {
+        async publish(input) {
+          destinationTarget = input.target;
+          return {
+            receipt: { databaseId: 201, nodeId: 'IC_pr_reply' },
+            status: 'published',
+            target: input.target,
+          };
+        },
+      },
       turnCatalog,
       turns: {
         async respond(turn) {
           assert.deepEqual(turn.item, item);
           assert.deepEqual(turn.source, { itemType: 'pull-request', number: 45 });
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private pull request response.',
             publication: { status: 'candidate', publicText: 'ready on the pull request' },
           };
@@ -903,21 +834,19 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       conversationStateStore: store,
       initialModeId: 'work',
       lifecycles: lifecycles(),
-      deliver: async () => {
-        deliveries += 1;
-        throw new Error('unexpected delivery');
-      },
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: monitorStateStore(monitor),
-      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      publications: {
+        async publish() {
+          deliveries += 1;
+          throw new Error('unexpected publication');
+        },
+      },
       turnCatalog,
       turns: {
         async respond() {
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'The successful private response.',
             publication: {
               status: 'withheld',
@@ -963,28 +892,22 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       conversationStateStore: store,
       initialModeId: 'work',
       lifecycles: lifecycles(),
-      deliver: async () => ({
-        delivery: {
-          messageIds: ['101'],
-          receipt: createMessageReceiptFromOutboundResults({
-            kind: 'text',
-            results: [{ messageId: '101' }],
-          }),
-          visibleReplySent: true,
-        },
-        status: 'handled_visible',
-      }),
       logger: { error() {}, info() {}, warn() {} },
       monitorStateStore: monitorStateStore(monitor),
-      publications: { publish: async () => Promise.reject(new Error('unexpected retry')) },
+      publications: {
+        async publish(input) {
+          return {
+            receipt: { databaseId: 101, nodeId: '' },
+            status: 'published',
+            target: input.target,
+          };
+        },
+      },
       turnCatalog,
       turns: {
         async respond() {
           return {
-            accountId: agentId,
             agentId,
-            config: {},
-            ctxPayload: {} as AssembledInboundReply['ctxPayload'],
             privateText: 'Private ready response.',
             publication: { status: 'candidate', publicText: 'ready' },
           };

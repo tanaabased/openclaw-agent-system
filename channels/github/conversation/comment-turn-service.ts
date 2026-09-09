@@ -1,10 +1,7 @@
-import {
-  buildChannelInboundEventContext,
-  type AssembledInboundReply,
-} from 'openclaw/plugin-sdk/channel-inbound';
-import { listAgentEntries } from 'openclaw/plugin-sdk/agent-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inbound';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import configuredAgentEntries from '../../../core/configured-agents.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationCommentPresentation } from '../events/comment.ts';
 import githubNotificationCommentContext from './context/comment.ts';
@@ -21,7 +18,7 @@ import {
   type default as GitHubNotificationModelTurnCoordinator,
 } from './model-turn-coordinator.ts';
 import { GitHubNotificationModelTurnDispatcherError } from './model-turn-dispatcher.ts';
-import { resolveNotificationRoute, githubNotificationChannelId } from '../routing/routing.ts';
+import { githubNotificationChannelId, type NotificationRouteResolver } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
@@ -32,6 +29,7 @@ export interface GitHubNotificationCommentTurnServiceDependencies {
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   logger: Logger;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
 }
 
@@ -49,10 +47,7 @@ export interface GitHubNotificationCommentTurnInput {
 }
 
 export interface GitHubNotificationCommentTurnResult {
-  accountId: string;
   agentId: string;
-  config: OpenClawConfig;
-  ctxPayload: AssembledInboundReply['ctxPayload'];
   privateText: string;
   publication: Exclude<GitHubNotificationModelTurnPublication, { status: 'none' }>;
 }
@@ -92,7 +87,7 @@ function normalizedAgentId(agentId: string): string {
 }
 
 function agentPresentation(config: OpenClawConfig, agentId: string) {
-  const agent = listAgentEntries(config).find(
+  const agent = configuredAgentEntries(config).find(
     ({ id }) => normalizedAgentId(id) === normalizedAgentId(agentId),
   );
   return {
@@ -152,7 +147,7 @@ export default class GitHubNotificationCommentTurnService {
       lifecycleId: input.item.lifecycleId,
       repositoryId: input.item.repositoryNodeId,
     });
-    const route = resolveNotificationRoute(
+    const route = this.#dependencies.resolveNotificationRoute(
       config,
       { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
       conversationId,
@@ -189,7 +184,7 @@ export default class GitHubNotificationCommentTurnService {
         routePeer: { id: route.conversationId, kind: 'direct' },
       },
       extra: {
-        UntrustedStructuredContext: [
+        ChannelStructuredContext: [
           githubNotificationCommentContext({
             comment: input.comment,
             lifecycleContext,
@@ -278,10 +273,7 @@ export default class GitHubNotificationCommentTurnService {
       ].join(' '),
     );
     return {
-      accountId: route.accountId,
       agentId: route.agentId,
-      config,
-      ctxPayload,
       privateText: turnResult.privateText,
       publication: turnResult.publication,
     };

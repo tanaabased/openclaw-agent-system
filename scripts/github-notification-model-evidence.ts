@@ -1,4 +1,5 @@
 import type { GitHubNotificationModelScenario } from './github-notification-model-scenarios.ts';
+import { matchesGitHubNotificationModelToolCallId } from './github-notification-model-tool-result.ts';
 
 interface EvidenceMessage {
   content: unknown;
@@ -101,7 +102,9 @@ function observedToolCallIds(
             (toolCall) =>
               toolCall.function?.name === name &&
               typeof toolCall.id === 'string' &&
-              acceptedCallIds.includes(toolCall.id),
+              acceptedCallIds.some((callId) =>
+                matchesGitHubNotificationModelToolCallId(toolCall.id as string, callId),
+              ),
           )
           .map((toolCall) => toolCall.id as string),
       ),
@@ -110,7 +113,12 @@ function observedToolCallIds(
 }
 
 function hasToolResult(messages: readonly EvidenceMessage[], callId: string): boolean {
-  return messages.some((message) => message.role === 'tool' && message.tool_call_id === callId);
+  return messages.some(
+    (message) =>
+      message.role === 'tool' &&
+      typeof message.tool_call_id === 'string' &&
+      matchesGitHubNotificationModelToolCallId(message.tool_call_id, callId),
+  );
 }
 
 function normalizedModel(

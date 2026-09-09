@@ -1,9 +1,3 @@
-import {
-  deliverInboundReplyWithMessageSendContext,
-  resolveMessageReceiptPrimaryId,
-  type DurableInboundReplyDeliveryResult,
-} from 'openclaw/plugin-sdk/channel-outbound';
-
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import {
@@ -23,7 +17,6 @@ import {
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
-import { githubNotificationChannelId } from '../routing/routing.ts';
 import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import { githubNotificationLifecycleSupportsEvent } from '../lifecycles/event-support.ts';
@@ -47,7 +40,6 @@ export interface GitHubNotificationCommentOrchestratorDependencies {
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationConversationClient>;
   clock?: () => number;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
-  deliver?: typeof deliverInboundReplyWithMessageSendContext;
   initialModeId:
     | GitHubNotificationModeId
     | ((input: {
@@ -90,31 +82,21 @@ function errorCode(error: unknown): string {
   return 'github-notification-comment-reconciliation-failed';
 }
 
-function publicationReceipt(result: DurableInboundReplyDeliveryResult): {
+function publicationReceipt(receipt: { databaseId: number; nodeId: string }): {
   databaseId: number;
   nodeId: string;
 } {
-  if (result.status !== 'handled_visible') {
-    throw new GitHubNotificationCommentOrchestratorError(
-      result.status === 'failed'
-        ? 'github-notification-publication-failed'
-        : 'github-notification-publication-not-confirmed',
-      result.status === 'failed' ? { cause: result.error } : undefined,
-    );
-  }
-  const receipt = result.delivery.receipt;
-  const databaseIdText =
-    (receipt ? resolveMessageReceiptPrimaryId(receipt) : undefined) ??
-    result.delivery.messageIds?.[0];
-  const nodeId = receipt?.parts.find((part) => part.platformMessageId === databaseIdText)?.raw?.meta
-    ?.nodeId;
-  const databaseId = Number(databaseIdText);
-  if (!Number.isSafeInteger(databaseId) || databaseId < 1 || typeof nodeId !== 'string') {
+  if (
+    !Number.isSafeInteger(receipt.databaseId) ||
+    receipt.databaseId < 1 ||
+    typeof receipt.nodeId !== 'string' ||
+    !receipt.nodeId.trim()
+  ) {
     throw new GitHubNotificationCommentOrchestratorError(
       'github-notification-publication-receipt-invalid',
     );
   }
-  return { databaseId, nodeId };
+  return { databaseId: receipt.databaseId, nodeId: receipt.nodeId };
 }
 
 interface GitHubNotificationCommentSource extends GitHubNotificationConversationSource {
@@ -138,13 +120,11 @@ function sortedComments(comments: readonly GitHubNotificationObservedComment[]) 
 /** Reconcile one prepared lifecycle item's bounded comment conversation. */
 export default class GitHubNotificationCommentOrchestrator {
   readonly #clock: () => number;
-  readonly #deliver: typeof deliverInboundReplyWithMessageSendContext;
   readonly #dependencies: GitHubNotificationCommentOrchestratorDependencies;
 
   constructor(dependencies: GitHubNotificationCommentOrchestratorDependencies) {
     this.#dependencies = dependencies;
     this.#clock = dependencies.clock ?? Date.now;
-    this.#deliver = dependencies.deliver ?? deliverInboundReplyWithMessageSendContext;
   }
 
   async reconcile(
@@ -533,18 +513,13 @@ export default class GitHubNotificationCommentOrchestrator {
       source,
       status: 'responded',
     });
-    const delivered = await this.#deliver({
-      accountId: response.accountId,
-      agentId: response.agentId,
-      cfg: response.config,
-      channel: githubNotificationChannelId,
-      ctxPayload: response.ctxPayload,
-      info: { kind: 'final' },
-      payload: { text: response.publication.publicText },
-      requiredCapabilities: { reconcileUnknownSend: true, text: true },
-      to: target,
+    const delivered = await this.#dependencies.publications.publish({
+      accountId: response.agentId,
+      ...(signal === undefined ? {} : { signal }),
+      target,
+      text: response.publication.publicText,
     });
-    const receipt = publicationReceipt(delivered);
+    const receipt = publicationReceipt(delivered.receipt);
     await this.#checkpointPublished(
       agentId,
       conversationId,

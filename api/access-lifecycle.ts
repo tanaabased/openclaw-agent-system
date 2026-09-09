@@ -1,4 +1,4 @@
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import planAgentToolAccess, {
   type AgentToolAccessGrants,
@@ -6,6 +6,7 @@ import planAgentToolAccess, {
   type CurrentAgentToolAccessState,
 } from './plan-access.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import { configuredAgentValue } from '../core/configured-agents.ts';
 import {
   AgentSystemLifecycleError,
   type AgentSystemLifecycleContribution,
@@ -22,8 +23,7 @@ export interface ToolAccessLifecycleDependencies {
 }
 
 function findAgent(config: OpenClawConfig, agentId: string) {
-  const normalizedAgentId = agentId.trim().toLowerCase();
-  return config.agents?.list?.find(({ id }) => id.trim().toLowerCase() === normalizedAgentId);
+  return configuredAgentValue(config, agentId);
 }
 
 function currentAgentToolAccess(
@@ -51,11 +51,11 @@ function describeDrift(
     details.push(`has ${plan.misplaced.join(', ')} in the other allowlist`);
   }
   if (details.length === 0) details.push('does not contain each required grant exactly once');
-  return `OpenClaw agents.list[].tools.${plan.target} for ${agentId} ${details.join(' and ')}.`;
+  return `OpenClaw agents.entries.${agentId}.tools.${plan.target} ${details.join(' and ')}.`;
 }
 
 function describeDeniedToolAccess(agentId: string, denied: readonly string[]): string {
-  return `OpenClaw agents.list[].tools.deny for ${agentId} blocks ${denied.join(', ')}.`;
+  return `OpenClaw agents.entries.${agentId}.tools.deny blocks ${denied.join(', ')}.`;
 }
 
 function deniedToolAccessError(agentId: string, denied: readonly string[]) {
@@ -93,8 +93,7 @@ export default function createToolAccessLifecycleContribution(
           {
             code: 'agent-tool-access-denied',
             message: describeDeniedToolAccess(context.manifest.agent.id, plan.denied),
-            remediation:
-              'Remove the conflicting entries from agents.list[].tools.deny, then run openclaw agent-system install from this workspace.',
+            remediation: `Remove the conflicting entries from agents.entries.${context.manifest.agent.id}.tools.deny, then run openclaw agent-system install from this workspace.`,
             status: 'blocked',
           },
         ];

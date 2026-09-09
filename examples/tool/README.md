@@ -26,6 +26,10 @@ PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --agent-system | grep -Fx 'agent-system'
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 openclaw as tool gh -- repo view tanaabased/openclaw-agent-system --json name --jq .name | grep -Fx 'openclaw-agent-system'
 
+# should deliver standard input through the installed host runner without contaminating json output
+cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
+printf '%s' '{"query":"query { viewer { login } }"}' | OPENCLAW_LOG_LEVEL=debug openclaw as tool gh -- api graphql --input - | jq -se 'length == 1 and .[0].data.viewer.login == "tanaabot"'
+
 # should run a tool command for an explicit installed agent outside its workspace
 cd "$TMPDIR"
 openclaw as tool gh --agent tanaabot -- api user --jq .login | grep -Fx 'tanaabot'
@@ -36,5 +40,5 @@ openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-ope
 
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
-PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
+OPENCLAW_LOG_LEVEL=debug PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
 ```

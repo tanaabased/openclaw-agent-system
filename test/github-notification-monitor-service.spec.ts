@@ -90,6 +90,20 @@ function monitorService(
 }
 
 describe('channels/github/intake/monitor/service', () => {
+  it('should skip an explicitly empty roster without inspecting manifests or state', async () => {
+    for (const config of [{ agents: { entries: {} } }, { agents: { list: [] } }]) {
+      const service = monitorService({
+        readConfig: async () => config,
+        manifestService: {
+          async loadForAgentId() {
+            throw new Error('an empty roster has no agent to inspect');
+          },
+        },
+      });
+      assert.deepEqual(await service.runOnce(), []);
+    }
+  });
+
   it('should stop an account scheduler without surfacing the host abort', async () => {
     const service = monitorService({
       readConfig: async () => ({ agents: { list: [] } }),

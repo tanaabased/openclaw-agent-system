@@ -6,7 +6,7 @@ import pluginMetadataFailures, {
   type PluginMetadataFailureCode,
 } from '../core/plugin-metadata-failures.ts';
 
-const openclawVersion = '2026.7.1-2';
+const openclawVersion = '2099.8.7-test';
 const packageMetadata: PackageMetadata = {
   description: 'Better per-agent management for OpenClaw.',
   name: '@tanaab/openclaw-agent-system',
@@ -41,7 +41,7 @@ const packageMetadata: PackageMetadata = {
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
     compat: {
-      pluginApi: `>=${openclawVersion}`,
+      pluginApi: openclawVersion,
       minGatewayVersion: openclawVersion,
     },
     build: {
@@ -50,7 +50,7 @@ const packageMetadata: PackageMetadata = {
     },
   },
   peerDependencies: {
-    openclaw: `>=${openclawVersion}`,
+    openclaw: openclawVersion,
   },
   devDependencies: {
     openclaw: openclawVersion,
@@ -69,6 +69,18 @@ const manifest: PluginManifest = {
   commandAliases: [
     { name: 'agent-system', cliCommand: 'agent-system' },
     { name: 'as', cliCommand: 'as' },
+  ],
+  cliCommands: [
+    {
+      name: 'agent-system',
+      description: 'Manage reproducible OpenClaw agent workspaces.',
+      hasSubcommands: true,
+    },
+    {
+      name: 'as',
+      description: 'Alias for the Agent System command.',
+      hasSubcommands: true,
+    },
   ],
   channels: ['agent-system-github'],
   channelConfigs: {
@@ -143,6 +155,7 @@ describe('core/plugin-metadata-failures', () => {
         'alias-command',
         'canonical-command-alias',
         'short-command-alias',
+        'cli-command-contract',
         'channel-contract',
         'channel-config-contract',
         'tool-contract',
@@ -185,6 +198,26 @@ describe('core/plugin-metadata-failures', () => {
           message: 'npm package must support exactly macOS and Linux',
         },
       ],
+    );
+  });
+
+  it('should reject open-ended compatibility ranges', () => {
+    assert.deepEqual(
+      failureCodes(
+        {
+          ...packageMetadata,
+          openclaw: {
+            ...packageMetadata.openclaw,
+            compat: {
+              ...packageMetadata.openclaw?.compat,
+              pluginApi: `>=${openclawVersion}`,
+            },
+          },
+          peerDependencies: { openclaw: `>=${openclawVersion}` },
+        },
+        manifest,
+      ),
+      new Set(['peer-openclaw-version', 'plugin-api-version']),
     );
   });
 
@@ -248,11 +281,19 @@ describe('core/plugin-metadata-failures', () => {
           ...manifest,
           activation: { onStartup: true, onCommands: ['agent-system'] },
           commandAliases: [{ name: 'agent-system', cliCommand: 'agent-system' }],
+          cliCommands: [
+            {
+              name: 'agent-system',
+              description: 'Manage reproducible OpenClaw agent workspaces.',
+              hasSubcommands: true,
+            },
+          ],
         },
       ),
       new Set([
         'alias-command',
         'short-command-alias',
+        'cli-command-contract',
         'peer-openclaw-version',
         'plugin-api-version',
         'gateway-version',

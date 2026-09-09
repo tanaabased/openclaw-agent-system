@@ -1,13 +1,12 @@
 import { join, resolve } from 'node:path';
 
 import {
-  FILE_LOCK_TIMEOUT_ERROR_CODE,
-  acquireFileLock,
-  type FileLockHandle,
-} from 'openclaw/plugin-sdk/file-lock';
-import { sleepWithAbort } from 'openclaw/plugin-sdk/infra-runtime';
-
+  default as acquirePrivateStateFileLock,
+  privateStateFileLockBusyErrorCode,
+  type PrivateStateFileLockHandle,
+} from '../../../../core/private-state-file-lock.ts';
 import ensurePrivateStateDirectories from '../../../../core/ensure-private-state-directories.ts';
+import abortableDelay from '../../../../utils/abortable-delay.ts';
 import nodeErrorCode from '../../../../utils/node-error-code.ts';
 
 const defaultRetryMs = 250;
@@ -22,7 +21,7 @@ export type GitHubNotificationMonitorCycleLeaseAcquireResult =
   | { status: 'aborted' | 'busy' };
 
 export interface GitHubNotificationMonitorCycleLeaseStoreDependencies {
-  acquireFileLock?: typeof acquireFileLock;
+  acquireFileLock?: typeof acquirePrivateStateFileLock;
   currentUid?: number;
   retryMs?: number;
   rootDir?: string;
@@ -41,7 +40,7 @@ function validAgentId(value: string): boolean {
 async function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise<boolean> {
   if (signal?.aborted) return false;
   try {
-    await sleepWithAbort(milliseconds, signal);
+    await abortableDelay(milliseconds, signal);
     return true;
   } catch (error) {
     if (signal?.aborted) return false;
@@ -51,14 +50,14 @@ async function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise
 
 /** Serialize notification monitor cycles across Gateway and CLI processes. */
 export default class GitHubNotificationMonitorCycleLeaseStore {
-  readonly #acquireFileLock: typeof acquireFileLock;
+  readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #currentUid: number | undefined;
   readonly #retryMs: number;
   readonly #rootDir: string | undefined;
   readonly #staleMs: number;
 
   constructor(dependencies: GitHubNotificationMonitorCycleLeaseStoreDependencies) {
-    this.#acquireFileLock = dependencies.acquireFileLock ?? acquireFileLock;
+    this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
     this.#currentUid = dependencies.currentUid;
     this.#retryMs = dependencies.retryMs ?? defaultRetryMs;
     this.#rootDir = dependencies.rootDir ? resolve(dependencies.rootDir) : undefined;
@@ -90,7 +89,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
   async #attemptAcquire(
     targetPath: string,
   ): Promise<GitHubNotificationMonitorCycleLease | undefined> {
-    let handle: FileLockHandle;
+    let handle: PrivateStateFileLockHandle;
     try {
       handle = await this.#acquireFileLock(targetPath, {
         retries: {
@@ -99,10 +98,10 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
           minTimeout: 0,
           retries: 0,
         },
-        stale: this.#staleMs,
+        staleMs: this.#staleMs,
       });
     } catch (error) {
-      if (nodeErrorCode(error) === FILE_LOCK_TIMEOUT_ERROR_CODE) return undefined;
+      if (nodeErrorCode(error) === privateStateFileLockBusyErrorCode) return undefined;
       throw error;
     }
     return { release: handle.release };

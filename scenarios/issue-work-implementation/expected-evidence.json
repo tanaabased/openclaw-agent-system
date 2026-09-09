@@ -14,25 +14,25 @@
       "callResponseCount": 2,
       "name": "agent_system_git",
       "projectionRequestCount": 8,
-      "resultRequestCount": 3
+      "resultRequestCount": 5
     },
     {
       "callResponseCount": 1,
       "name": "agent_system_github",
       "projectionRequestCount": 8,
-      "resultRequestCount": 4
+      "resultRequestCount": 5
     },
     {
       "callResponseCount": 1,
       "name": "agent_system_github_reply",
       "projectionRequestCount": 8,
-      "resultRequestCount": 1
+      "resultRequestCount": 7
     },
     {
       "callResponseCount": 1,
       "name": "apply_patch",
       "projectionRequestCount": 8,
-      "resultRequestCount": 3
+      "resultRequestCount": 4
     }
   ]
 }

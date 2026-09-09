@@ -1,3 +1,5 @@
+import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
+
 import createGitHubNotificationIssueWorkScenario from '../../scripts/github-notification-model-issue-work-scenario.ts';
 
 export const githubNotificationRetirementReplyCallId = 'call_agent_system_retirement_reply';
@@ -33,7 +35,75 @@ export const githubNotificationRetirementFinalResponse = [
   'Created one local commit in the prepared lifecycle worktree for managed pull request delivery.',
 ].join('\n');
 
-export const retirementScenario = createGitHubNotificationIssueWorkScenario({
+const retirementGuidedAssignmentFinalResponse =
+  'The retirement checkpoint is prepared. I am waiting for operator direction before taking action.';
+
+const retirementGuidedAssignmentSystemPromptSignals = [
+  'Guided mode is operator-led',
+  'The initial assignment authorizes setup and acknowledgment, not implementation',
+  'do not call the tool because the deterministic assignment acknowledgment is the complete public response',
+] as const;
+
+function hasRetirementGuidedAssignmentPrompt(request: ChatCompletionRequest): boolean {
+  const userText = request.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => getTextContent(message.content) ?? '')
+    .join('\n');
+  return (
+    userText.includes('add retirement fixture') &&
+    userText.includes('Create retirement-fixture-') &&
+    !userText.includes('completed-retirement-fixture-')
+  );
+}
+
+const retirementGuidedAssignmentFixture: Fixture = {
+  match: {
+    hasToolResult: false,
+    model: /^(?:aimock\/)?gpt-5\.5$/u,
+    predicate: hasRetirementGuidedAssignmentPrompt,
+    systemMessage: [...retirementGuidedAssignmentSystemPromptSignals],
+  },
+  response: {
+    content: retirementGuidedAssignmentFinalResponse,
+    id: 'agent-system-notification-retirement-guided-assignment-final-response',
+  },
+};
+
+// the guided checkpoint needs no new work when openclaw resumes it after restart.
+const retirementRestartRecoveryFixture: Fixture = {
+  match: {
+    hasToolResult: false,
+    model: /^(?:aimock\/)?gpt-5\.5$/u,
+    predicate: (request) => {
+      const lastAssistant = request.messages.findLast((message) => message.role === 'assistant');
+      const lastUser = request.messages.findLast((message) => {
+        if (message.role !== 'user') return false;
+        const text = getTextContent(message.content) ?? '';
+        return !(
+          text.startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n') &&
+          text.endsWith('\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>')
+        );
+      });
+      const recoveryText = getTextContent(lastUser?.content ?? null) ?? '';
+      return (
+        getTextContent(lastAssistant?.content ?? null) ===
+          retirementGuidedAssignmentFinalResponse &&
+        recoveryText.includes(
+          '[System] Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work.',
+        ) &&
+        recoveryText.includes(
+          'Continue from the existing transcript and finish the interrupted response.',
+        )
+      );
+    },
+  },
+  response: {
+    content: 'NO_REPLY',
+    id: 'agent-system-notification-retirement-restart-recovery-final-response',
+  },
+};
+
+const retirementWorkScenario = createGitHubNotificationIssueWorkScenario({
   assignmentFinalResponse: githubNotificationRetirementAssignmentFinalResponse,
   callIds: {
     add: githubNotificationRetirementAddCallId,
@@ -49,3 +119,17 @@ export const retirementScenario = createGitHubNotificationIssueWorkScenario({
   finalResponse: githubNotificationRetirementFinalResponse,
   id: 'retirement',
 });
+
+export const retirementScenario = {
+  ...retirementWorkScenario,
+  finalResponses: [
+    ...retirementWorkScenario.finalResponses,
+    retirementGuidedAssignmentFinalResponse,
+    'NO_REPLY',
+  ],
+  fixtures: [
+    retirementGuidedAssignmentFixture,
+    ...retirementWorkScenario.fixtures,
+    retirementRestartRecoveryFixture,
+  ],
+};

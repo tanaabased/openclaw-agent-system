@@ -20,10 +20,10 @@ openclaw agent-system install
 
 # should route one agent through codex and one through the openclaw runtime
 openclaw plugins enable codex
-openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.list[0].models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
-openclaw config set 'agents.list[1].model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.list[1].models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"openclaw\"}}}" --strict-json
+openclaw config set 'agents.entries.path-codex.model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.path-codex.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
+openclaw config set 'agents.entries.path-openclaw.model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.path-openclaw.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"openclaw\"}}}" --strict-json
 
 # should start the default gateway as a supervised background process
 openclaw-gateway start

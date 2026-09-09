@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { ChannelInboundTurnPlan } from 'openclaw/plugin-sdk/channel-inbound';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import GitHubNotificationCommentTurnService, {
   GitHubNotificationCommentTurnError,
@@ -11,7 +14,7 @@ import {
 } from '../channels/github/conversation/comment-admission.ts';
 import GitHubNotificationModelTurnCoordinator from '../channels/github/conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher, {
-  type GitHubNotificationModelTurnDispatcherDependencies,
+  type GitHubNotificationHostDispatchResult,
 } from '../channels/github/conversation/model-turn-dispatcher.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
@@ -52,8 +55,17 @@ const config: OpenClawConfig = {
   gateway: { controlUi: { basePath: '/openclaw/' } },
 };
 
-function assertTurnContractOptions(options: Record<string, unknown>) {
+function assertTurnContractTransport(
+  context: Record<string, unknown>,
+  options: Record<string, unknown>,
+  executionSurface: 'cli-one-shot' | 'gateway',
+) {
   assert.equal(options.extraSystemPrompt, undefined);
+  if (executionSurface === 'cli-one-shot') {
+    assert.match(String(context.GroupSystemPrompt), /## Event/u);
+    return;
+  }
+  assert.equal(context.GroupSystemPrompt, undefined);
 }
 
 function incomingComment(): GitHubCanonicalIssueComment {
@@ -76,6 +88,9 @@ function incomingMentions(comment: GitHubCanonicalIssueComment) {
 function candidateStore(candidates: readonly string[], finishError?: Error) {
   let identity: GitHubNotificationReplyCandidateTurnInput | undefined;
   return {
+    async attestPromptSelection(input: GitHubNotificationReplyCandidateTurnInput) {
+      assert.deepEqual(input, identity);
+    },
     async begin(input: GitHubNotificationReplyCandidateTurnInput) {
       identity = { ...input };
       return 'turn-1';
@@ -91,20 +106,55 @@ function candidateStore(candidates: readonly string[], finishError?: Error) {
   };
 }
 
+interface TestModelTurnDispatchInput {
+  ctx: ChannelInboundTurnPlan['ctxPayload'];
+  dispatcherOptions: ChannelInboundTurnPlan['delivery'];
+  replyOptions: ChannelInboundTurnPlan['replyOptions'];
+  toolsAllow: ChannelInboundTurnPlan['toolsAllow'];
+}
+
+type TestSessionRecordInput = Pick<
+  NonNullable<ChannelInboundTurnPlan['record']>,
+  'createIfMissing' | 'trackSessionMetaTask'
+>;
+
 function modelTurnDispatcher(
-  dispatchReplyWithBufferedBlockDispatcher: GitHubNotificationModelTurnDispatcherDependencies['dispatchReplyWithBufferedBlockDispatcher'],
-  recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'],
+  dispatchReply: (
+    input: TestModelTurnDispatchInput,
+  ) => Promise<GitHubNotificationHostDispatchResult>,
+  recordInboundSession: (input: TestSessionRecordInput) => Promise<void>,
 ) {
   return new GitHubNotificationModelTurnDispatcher({
-    dispatchReplyWithBufferedBlockDispatcher,
-    recordInboundSession,
+    async dispatchChannelInboundTurn(input) {
+      await recordInboundSession({
+        createIfMissing: input.record?.createIfMissing,
+        trackSessionMetaTask: input.record?.trackSessionMetaTask,
+      });
+      await input.afterRecord?.();
+      const dispatchResult = await dispatchReply({
+        ctx: input.ctxPayload,
+        dispatcherOptions: input.delivery,
+        replyOptions: input.replyOptions,
+        toolsAllow: input.toolsAllow,
+      });
+      return {
+        admission: { kind: 'dispatch' },
+        ctxPayload: input.ctxPayload,
+        dispatched: true,
+        dispatchResult,
+        routeSessionKey: input.route.sessionKey,
+      } as never;
+    },
   });
 }
 
 async function respondWithCandidates(
   candidates: readonly string[],
   executionSurface: 'cli-one-shot' | 'gateway' = 'gateway',
-  inspectReplyOptions?: (options: Record<string, unknown>) => void,
+  inspectReplyOptions?: (
+    options: Record<string, unknown>,
+    context: ChannelInboundTurnPlan['ctxPayload'],
+  ) => void,
   finishError?: Error,
   currentConfig: OpenClawConfig = config,
   finalText = 'Private response remains available.',
@@ -124,8 +174,8 @@ async function respondWithCandidates(
       dispatcher: modelTurnDispatcher(
         async (input) => {
           const replyOptions = input.replyOptions ?? {};
-          assertTurnContractOptions(replyOptions);
-          inspectReplyOptions?.(replyOptions);
+          assertTurnContractTransport(input.ctx, replyOptions, executionSurface);
+          inspectReplyOptions?.(replyOptions, input.ctx);
           await input.dispatcherOptions.deliver(
             { text: finalText },
             {
@@ -142,6 +192,7 @@ async function respondWithCandidates(
     }),
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => currentConfig,
+    resolveNotificationRoute: resolveTestNotificationRoute,
     turnContracts: contracts,
   });
   return service.respond({
@@ -171,15 +222,14 @@ describe('channels/github/conversation/comment-turn-service', () => {
     let createIfMissing: boolean | undefined;
     let recorded = false;
     const contracts = createGitHubNotificationTurnContractResolver();
-    const recordInboundSession: GitHubNotificationModelTurnDispatcherDependencies['recordInboundSession'] =
-      async (input) => {
-        createIfMissing = input.createIfMissing;
-        const task = Promise.resolve().then(() => {
-          recorded = true;
-          return { sessionId: 'session-1' };
-        });
-        input.trackSessionMetaTask?.(task);
-      };
+    const recordInboundSession = async (input: TestSessionRecordInput) => {
+      createIfMissing = input.createIfMissing;
+      const task = Promise.resolve().then(() => {
+        recorded = true;
+        return { sessionId: 'session-1' };
+      });
+      input.trackSessionMetaTask?.(task);
+    };
     const service = new GitHubNotificationCommentTurnService({
       coordinator: new GitHubNotificationModelTurnCoordinator({
         candidates: candidateStore(['ready']),
@@ -195,9 +245,29 @@ describe('channels/github/conversation/comment-turn-service', () => {
           assert.equal(input.ctx.BodyForAgent, presentation);
           assert.equal(input.ctx.RawBody, comment.body);
           assert.equal(input.ctx.Provider, githubNotificationChannelId);
+          assert.deepEqual((input.ctx.ChannelContext as Record<string, unknown>).chat, {
+            id: 'github:issue:R_repo:12',
+          });
+          assert.deepEqual(input.ctx.ChannelStructuredContext, [
+            {
+              comment: {
+                databaseId: 91,
+                nodeId: 'IC_comment',
+                revisionId: revision.revisionId,
+              },
+              source: { itemType: 'issue', number: 12 },
+              item: {
+                lifecycleId: 'issue',
+                number: 12,
+                repositoryName: 'example',
+                repositoryOwner: 'tanaabased',
+              },
+              worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
+            },
+          ]);
           assert.equal(input.replyOptions?.disableTools, false);
           const replyOptions = input.replyOptions as Record<string, unknown>;
-          assertTurnContractOptions(replyOptions);
+          assertTurnContractTransport(input.ctx, replyOptions, 'cli-one-shot');
           assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
           assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
           assert.equal(replyOptions.oneShotCliRun, true);
@@ -222,6 +292,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: contracts,
     });
 
@@ -246,31 +317,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       publicText:
         'I checked the request and it is ready.\n\n## Notes\nThis response may use normal Markdown without a publication envelope.',
     });
-    assert.equal(result.accountId, agentId);
-    assert.deepEqual((result.ctxPayload.ChannelContext as Record<string, unknown>).chat, {
-      id: 'github:issue:R_repo:12',
-    });
-    assert.deepEqual(result.ctxPayload.UntrustedStructuredContext, [
-      {
-        comment: {
-          databaseId: 91,
-          nodeId: 'IC_comment',
-          revisionId: revision.revisionId,
-        },
-        source: { itemType: 'issue', number: 12 },
-        item: {
-          lifecycleId: 'issue',
-          number: 12,
-          repositoryName: 'example',
-          repositoryOwner: 'tanaabased',
-        },
-        worktree: { branch: 'issue-12', path: '/workspace/worktrees/issue-12' },
-      },
-    ]);
-    assert.equal(
-      JSON.stringify(result.ctxPayload.UntrustedStructuredContext),
-      `[{"comment":{"databaseId":91,"nodeId":"IC_comment","revisionId":"${revision.revisionId}"},"source":{"itemType":"issue","number":12},"item":{"lifecycleId":"issue","number":12,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-12","path":"/workspace/worktrees/issue-12"}}]`,
-    );
+    assert.equal(result.agentId, agentId);
   });
 
   it('should reject a comment turn when the assignment session is absent', async () => {
@@ -298,6 +345,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
       }),
       logger: { error() {}, info() {}, warn() {} },
       readConfig: async () => config,
+      resolveNotificationRoute: resolveTestNotificationRoute,
       turnContracts: contracts,
     });
 
@@ -338,15 +386,15 @@ describe('channels/github/conversation/comment-turn-service', () => {
       gateway: { controlUi: { basePath: '/' } },
     };
 
-    const result = await respondWithCandidates(
+    await respondWithCandidates(
       ['ready'],
       'gateway',
-      undefined,
+      (_options, context) => {
+        assert.match(String(context.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
+      },
       undefined,
       fallbackConfig,
     );
-
-    assert.match(String(result.ctxPayload.Body), /^🤖 \[tanaabot\]\(\/agents\)/u);
   });
 
   it('should classify a missing prompt-selection attestation', async () => {

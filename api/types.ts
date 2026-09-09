@@ -52,6 +52,10 @@ export interface AgentSystemCliRunRequest {
   timeoutMs: number;
 }
 
+export type AgentSystemCliRunner = (
+  request: AgentSystemCliRunRequest,
+) => Promise<AgentSystemCliResult>;
+
 export interface AgentSystemToolScope {
   source: 'agent-command' | 'command' | 'tool';
   admittedWorkingDirectories?: readonly string[];

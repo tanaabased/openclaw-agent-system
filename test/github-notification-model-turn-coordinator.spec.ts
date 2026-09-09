@@ -5,6 +5,7 @@ import type { AssembledInboundReply } from 'openclaw/plugin-sdk/channel-inbound'
 import GitHubNotificationModelTurnCoordinator, {
   GitHubNotificationModelTurnCoordinatorError,
 } from '../channels/github/conversation/model-turn-coordinator.ts';
+import { GitHubNotificationPrivateResponseError } from '../channels/github/conversation/private-response.ts';
 import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
 import { GitHubNotificationReplyCandidateStoreError } from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
@@ -47,6 +48,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection(candidateIdentity) {
+          calls.push(['attest', candidateIdentity]);
+        },
         async begin(candidateIdentity) {
           calls.push(['begin', candidateIdentity]);
           return 'turn-1';
@@ -63,8 +67,12 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async dispatch(dispatchInput) {
           calls.push(['dispatch', dispatchInput.messageId]);
           return {
-            dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-            finalPayloads: [{ text: 'Complete private response.' }],
+            dispatch: { counts: { block: 0, final: 3, tool: 1 }, queuedFinal: false },
+            finalPayloads: [
+              { isReasoning: true, text: 'Internal reasoning.' },
+              { isStatusNotice: true, text: 'Tool execution completed.' },
+              { text: 'Complete private response.' },
+            ],
           };
         },
       },
@@ -74,9 +82,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       },
     });
 
-    assert.deepEqual(await coordinator.run(input()), {
-      dispatch: { counts: { block: 0, final: 1, tool: 1 }, queuedFinal: false },
-      finalPayloadCount: 1,
+    assert.deepEqual(await coordinator.run({ ...input(), executionSurface: 'cli-one-shot' }), {
+      dispatch: { counts: { block: 0, final: 3, tool: 1 }, queuedFinal: false },
+      finalPayloadCount: 3,
       privateText: 'Complete private response.',
       publication: {
         status: 'candidate',
@@ -86,6 +94,15 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     assert.deepEqual(calls, [
       [
         'begin',
+        {
+          agentId: 'tanaabot',
+          conversationId: route.conversationId,
+          identity,
+          sourceId: 'revision-1',
+        },
+      ],
+      [
+        'attest',
         {
           agentId: 'tanaabot',
           conversationId: route.conversationId,
@@ -107,11 +124,11 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     ]);
     assert.match(
       messages[0] ?? '',
-      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=gateway/u,
+      /model turn started agent=tanaabot lifecycle=issue mode=work event=comment surface=cli-one-shot/u,
     );
     assert.match(
       messages[1] ?? '',
-      /model turn completed .*final-payloads=1 block=0 final=1 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
+      /model turn completed .*final-payloads=3 block=0 final=3 tool=1 queued-final=false candidates=1 publication=candidate aborted=false/u,
     );
   });
 
@@ -121,6 +138,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const stagedCandidates: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -187,6 +207,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -222,10 +245,48 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
+  it('should log the failure code without private response content', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      candidates: {
+        async attestPromptSelection() {},
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 2, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'sensitive one' }, { text: 'sensitive two' }],
+          };
+        },
+      },
+      logger: {
+        info() {},
+        warn: (message) => warnings.push(message),
+      },
+    });
+
+    await assert.rejects(coordinator.run(input()), GitHubNotificationPrivateResponseError);
+    assert.match(
+      warnings[0] ?? '',
+      /phase=private-response code=github-notification-private-response-invalid aborted=false/u,
+    );
+    assert.doesNotMatch(warnings[0] ?? '', /sensitive|one|two/u);
+  });
+
   it('should warn with bounded diagnostics when publication is withheld', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -272,6 +333,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -320,6 +384,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },
@@ -359,6 +426,9 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should classify a missing prompt-selection attestation', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       candidates: {
+        async attestPromptSelection() {
+          throw new Error('gateway turns must use the prompt hook');
+        },
         async begin() {
           return 'turn-1';
         },

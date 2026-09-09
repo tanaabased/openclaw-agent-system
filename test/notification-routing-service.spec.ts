@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import NotificationRoutingService from '../channels/github/routing/service.ts';
 import type {
   NotificationRoutingDesiredState,
   NotificationRoutingReceipt,
 } from '../channels/github/routing/routing.ts';
+import { resolveTestAgentWorkspaceDir } from './openclaw-agent-runtime.ts';
 
 const desired: NotificationRoutingDesiredState = {
   agentId: 'data',
@@ -30,6 +31,7 @@ describe('channels/github/routing/service', () => {
         return { result: mutate(config) === true };
       },
       readConfig: () => config,
+      resolveAgentWorkspaceDir: resolveTestAgentWorkspaceDir,
       receiptStore: {
         async read() {
           return receipt;
@@ -90,6 +92,7 @@ describe('channels/github/routing/service', () => {
         return { result: mutate(config) === true };
       },
       readConfig: () => config,
+      resolveAgentWorkspaceDir: resolveTestAgentWorkspaceDir,
       receiptStore: {
         async read() {
           return receipt;

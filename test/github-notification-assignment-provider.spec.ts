@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+
+import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
 
 import GitHubNotificationAssignmentProvider from '../channels/github/intake/assignment-provider.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
@@ -154,6 +156,7 @@ function provider(
       },
     },
     readConfig: () => (routeReady ? config : { ...config, bindings: [] }),
+    resolveNotificationRoute: resolveTestNotificationRoute,
   });
 }
 

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import GitHubNotificationPublicationLeaseStore from '../channels/github/publication/publication-lease.ts';
 
 describe('channels/github/publication/publication-lease', () => {
-  it('should hold one target-specific host lock beneath private agent state', async () => {
+  it('should hold one target-specific repository lock beneath private agent state', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-publication-lease-'));
     const rootDir = join(temporaryDirectory, 'state');
     const target = 'same-target';
@@ -19,7 +19,7 @@ describe('channels/github/publication/publication-lease', () => {
     try {
       const store = new GitHubNotificationPublicationLeaseStore({ rootDir });
       const result = await store.exclusive('tanaabot', target, undefined, async () => {
-        assert.equal((await lstat(lockPath)).isFile(), true);
+        assert.equal((await lstat(lockPath)).isDirectory(), true);
         return 'published';
       });
 

@@ -1,11 +1,9 @@
-import {
-  dispatchChannelInboundReply,
-  type AssembledInboundReply,
-  type PreparedInboundReply,
+import type {
+  ChannelInboundTurnPlan,
+  dispatchChannelInboundTurn,
 } from 'openclaw/plugin-sdk/channel-inbound';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
-import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import { githubNotificationChannelId, type ResolvedNotificationRoute } from '../routing/routing.ts';
 import {
@@ -18,7 +16,7 @@ import {
 } from './turn-contract.ts';
 
 export type GitHubNotificationHostDispatchResult = Extract<
-  Awaited<ReturnType<typeof dispatchChannelInboundReply>>,
+  Awaited<ReturnType<typeof dispatchChannelInboundTurn>>,
   { dispatched: true }
 >['dispatchResult'];
 
@@ -40,15 +38,16 @@ export class GitHubNotificationModelTurnDispatcherError extends Error {
 }
 
 export interface GitHubNotificationModelTurnDispatcherDependencies {
-  dispatchReplyWithBufferedBlockDispatcher: AssembledInboundReply['dispatchReplyWithBufferedBlockDispatcher'];
-  recordInboundSession: PreparedInboundReply<void>['recordInboundSession'];
+  dispatchChannelInboundTurn(
+    input: ChannelInboundTurnPlan,
+  ): ReturnType<typeof dispatchChannelInboundTurn>;
 }
 
 export interface GitHubNotificationModelTurnDispatchInput {
   config: OpenClawConfig;
-  contract: Pick<GitHubNotificationTurnContract, 'mode'>;
+  contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>;
   createIfMissing?: boolean;
-  ctxPayload: AssembledInboundReply['ctxPayload'];
+  ctxPayload: ChannelInboundTurnPlan['ctxPayload'];
   executionSurface: GitHubNotificationExecutionSurface;
   messageId: string;
   route: ResolvedNotificationRoute;
@@ -58,6 +57,17 @@ export interface GitHubNotificationModelTurnDispatchInput {
 export interface GitHubNotificationModelTurnDispatchResult {
   dispatch: GitHubNotificationHostDispatchResult;
   finalPayloads: ReplyPayload[];
+}
+
+function modelContext(
+  input: GitHubNotificationModelTurnDispatchInput,
+): ChannelInboundTurnPlan['ctxPayload'] {
+  if (input.executionSurface !== 'cli-one-shot') return input.ctxPayload;
+  const existing = input.ctxPayload.GroupSystemPrompt?.trim();
+  return {
+    ...input.ctxPayload,
+    GroupSystemPrompt: [existing, input.contract.instructions].filter(Boolean).join('\n\n'),
+  };
 }
 
 /** Dispatch one resolved model turn through OpenClaw's host-owned inbound lifecycle. */
@@ -76,9 +86,8 @@ export default class GitHubNotificationModelTurnDispatcher {
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
     try {
-      result = await dispatchChannelInboundReply({
+      result = await this.#dependencies.dispatchChannelInboundTurn({
         accountId: input.route.accountId,
-        agentId: input.route.agentId,
         afterRecord: async () => {
           if (!sessionRecordTask) {
             throw new GitHubNotificationModelTurnDispatcherError(
@@ -93,15 +102,16 @@ export default class GitHubNotificationModelTurnDispatcher {
         },
         cfg: input.config,
         channel: githubNotificationChannelId,
-        ctxPayload: input.ctxPayload,
+        ctxPayload: modelContext(input),
         delivery: {
           async deliver(payload, info) {
             if (info.kind === 'final') finalPayloads.push(payload);
-            return { visibleReplySent: false };
+            return {
+              suppression: { reason: 'channel_transform' },
+              visibleReplySent: false,
+            };
           },
         },
-        dispatchReplyWithBufferedBlockDispatcher:
-          this.#dependencies.dispatchReplyWithBufferedBlockDispatcher,
         messageId: input.messageId,
         record: {
           createIfMissing: input.createIfMissing ?? false,
@@ -115,7 +125,6 @@ export default class GitHubNotificationModelTurnDispatcher {
             sessionRecordTask = task;
           },
         },
-        recordInboundSession: this.#dependencies.recordInboundSession,
         replyOptions: {
           ...(input.signal === undefined ? {} : { abortSignal: input.signal }),
           ...githubNotificationReplyCleanupOptions(input.executionSurface),
@@ -125,10 +134,10 @@ export default class GitHubNotificationModelTurnDispatcher {
           suppressDefaultToolProgressMessages: true,
           suppressTyping: true,
         },
-        routeSessionKey: input.route.sessionKey,
-        storePath: resolveStorePath(input.config.session?.store, {
+        route: {
           agentId: input.route.agentId,
-        }),
+          sessionKey: input.route.sessionKey,
+        },
         ...(turnDispatch.toolsAllow === undefined ? {} : { toolsAllow: turnDispatch.toolsAllow }),
       });
     } catch (error) {

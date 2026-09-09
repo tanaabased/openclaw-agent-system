@@ -32,6 +32,18 @@
       }
     }
   },
+  "cliCommands": [
+    {
+      "name": "agent-system",
+      "description": "Manage reproducible OpenClaw agent workspaces.",
+      "hasSubcommands": true
+    },
+    {
+      "name": "as",
+      "description": "Alias for the Agent System command.",
+      "hasSubcommands": true
+    }
+  ],
   "commandAliases": [
     {
       "name": "agent-system",

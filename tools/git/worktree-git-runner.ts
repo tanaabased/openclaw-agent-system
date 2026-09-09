@@ -1,4 +1,4 @@
-import runToolCli from '../../api/cli-runner.ts';
+import type { AgentSystemCliRunner } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { GitSshConfiguration } from './config-schema.ts';
 import { gitIdentityEnvironment, type ResolvedGitIdentity } from './identity.ts';
@@ -27,7 +27,7 @@ export interface GitWorktreeGitRunnerConfiguration {
 export interface GitWorktreeGitRunnerFactoryDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   excludedExecutableDirectories?: readonly string[];
-  runCli?: typeof runToolCli;
+  runCli: AgentSystemCliRunner;
   sshResourceService?: Pick<GitSshResourceService, 'acquire'>;
 }
 
@@ -41,11 +41,11 @@ function redact(value: string, secrets: readonly string[]): string {
 /** Create one invocation-scoped fixed Git runner and dispose its SSH resources. */
 export default class GitWorktreeGitRunnerFactory {
   readonly #dependencies: GitWorktreeGitRunnerFactoryDependencies;
-  readonly #runCli: typeof runToolCli;
+  readonly #runCli: AgentSystemCliRunner;
 
   constructor(dependencies: GitWorktreeGitRunnerFactoryDependencies) {
     this.#dependencies = dependencies;
-    this.#runCli = dependencies.runCli ?? runToolCli;
+    this.#runCli = dependencies.runCli;
   }
 
   async acquire(

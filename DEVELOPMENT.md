@@ -7,7 +7,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.7.1-2 or newer
+- OpenClaw 2026.9.3
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
@@ -22,8 +22,9 @@ cd openclaw-agent-system
 brew bundle
 bun install
 bun run build
-openclaw plugins install --link .
+openclaw plugins install --link . --accept-capabilities
 openclaw plugins enable agent-system
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
 ```
@@ -38,7 +39,7 @@ installation.
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.
 
 ```sh
-openclaw plugins install npm:@tanaab/openclaw-devguard
+openclaw plugins install npm:@tanaab/openclaw-devguard --accept-capabilities
 openclaw plugins enable openclaw-devguard
 openclaw plugins inspect openclaw-devguard --runtime --json
 openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth

@@ -240,6 +240,8 @@ describe('github notification workflows', () => {
     assert.match(source, /openclaw-notification-setup stop/u);
     assert.match(source, /--model "\$NOTIFICATION_MODEL"/u);
     assert.match(source, /--scenario retirement/u);
+    assert.match(source, /initial-mode: guided/u);
+    assert.match(source, /s\/initial-mode: guided\/initial-mode: work\//u);
     assert.doesNotMatch(source, /openclaw-setup|models\.providers\.aimock/u);
     assert.ok(
       source.indexOf('--for retired') < source.indexOf('openclaw-notification-setup evidence'),

@@ -1,6 +1,7 @@
-import { listAgentEntries, resolveAgentWorkspaceDir } from 'openclaw/plugin-sdk/agent-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import configuredAgentEntries from '../core/configured-agents.ts';
 import planAgentInstall, {
   type AgentInstallAction,
   type CurrentAgentInstallState,
@@ -23,19 +24,29 @@ export interface AgentLifecycleCommandResult {
 export interface AgentLifecycleDependencies {
   environmentService?: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveAgentWorkspaceDir?(config: OpenClawConfig, agentId: string): string;
   runOpenClawCommand(args: string[], cwd: string): Promise<AgentLifecycleCommandResult>;
 }
 
-function currentAgentState(config: OpenClawConfig, agentId: string): CurrentAgentInstallState {
+function currentAgentState(
+  config: OpenClawConfig,
+  agentId: string,
+  resolveAgentWorkspaceDir: AgentLifecycleDependencies['resolveAgentWorkspaceDir'],
+): CurrentAgentInstallState {
   const normalizedAgentId = agentId.toLowerCase();
-  const entries = listAgentEntries(config);
+  const entries = configuredAgentEntries(config);
   const entry = entries.find(({ id }) => id.trim().toLowerCase() === normalizedAgentId);
-  const exists = entry !== undefined || (entries.length === 0 && normalizedAgentId === 'main');
+  const exists = listAgentIds(config).includes(normalizedAgentId);
   if (!exists) return { exists: false };
+  const workspaceDir =
+    resolveAgentWorkspaceDir?.(config, normalizedAgentId) ?? entry?.workspace?.trim();
+  if (!workspaceDir) {
+    throw new Error('The configured OpenClaw agent workspace could not be resolved.');
+  }
 
   return {
     exists: true,
-    workspaceDir: resolveAgentWorkspaceDir(config, normalizedAgentId),
+    workspaceDir,
     ...(entry?.identity === undefined ? {} : { identity: entry.identity }),
   };
 }
@@ -178,7 +189,11 @@ export default function createAgentLifecycleContribution(
 
       const plan = planAgentInstall(
         desired,
-        currentAgentState(await dependencies.readConfig(), desired.agentId),
+        currentAgentState(
+          await dependencies.readConfig(),
+          desired.agentId,
+          dependencies.resolveAgentWorkspaceDir,
+        ),
       );
       if (plan.status === 'conflict') {
         return [
@@ -219,7 +234,11 @@ export default function createAgentLifecycleContribution(
       const desired = await desiredAgentState(context, dependencies);
       const plan = planAgentInstall(
         desired,
-        currentAgentState(await dependencies.readConfig(), desired.agentId),
+        currentAgentState(
+          await dependencies.readConfig(),
+          desired.agentId,
+          dependencies.resolveAgentWorkspaceDir,
+        ),
       );
       if (plan.status === 'conflict') {
         throw lifecycleError(
@@ -236,7 +255,11 @@ export default function createAgentLifecycleContribution(
 
       const verification = planAgentInstall(
         desired,
-        currentAgentState(await dependencies.readConfig(), desired.agentId),
+        currentAgentState(
+          await dependencies.readConfig(),
+          desired.agentId,
+          dependencies.resolveAgentWorkspaceDir,
+        ),
       );
       if (verification.status !== 'ready' || verification.actions.length > 0) {
         throw lifecycleError(

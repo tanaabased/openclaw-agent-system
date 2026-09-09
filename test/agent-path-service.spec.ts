@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -17,13 +17,12 @@ describe('paths/service', () => {
     await Promise.all([mkdir(workspaceDir), mkdir(join(packageDir, 'bin'), { recursive: true })]);
     const config: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: 'data',
+        entries: {
+          data: {
             workspace: workspaceDir,
             tools: { exec: { pathPrepend: ['/user/bin'] } },
           },
-        ],
+        },
       },
     };
     let stored: StoredPathProjection | undefined;
@@ -56,7 +55,7 @@ describe('paths/service', () => {
       'create-codex-config',
       'update-gitignore',
     ]);
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.exec?.pathPrepend, [
+    assert.deepEqual(config.agents?.entries?.data?.tools?.exec?.pathPrepend, [
       ...result.projection.entries.map(({ path }) => path),
       '/user/bin',
     ]);

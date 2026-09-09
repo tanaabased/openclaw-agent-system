@@ -66,6 +66,125 @@ describe('channels/github/conversation/turn-selector', () => {
     assert.deepEqual(resolved, [{ eventId: 'comment', lifecycleId: 'issue', modeId: 'work' }]);
   });
 
+  it('should prefer the channel-owned id when OpenClaw normalizes flattened route ids', async () => {
+    const state = conversationState();
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve(identity) {
+          return { identity };
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await selector.select({
+        agentId,
+        channelContext: { chat: { id: conversationId } },
+        channelId: conversationId.toLowerCase(),
+        chatId: conversationId.toLowerCase(),
+        workspaceDir,
+      }),
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
+    );
+  });
+
+  it('should recover the canonical stored id from normalized flattened route ids', async () => {
+    const state = conversationState();
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve(identity) {
+          return { identity };
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await selector.select({
+        agentId,
+        channelId: conversationId.toLowerCase(),
+        chatId: conversationId.toLowerCase(),
+        workspaceDir,
+      }),
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
+    );
+  });
+
+  it('should recover the canonical stored id from an account-scoped session route', async () => {
+    const state = conversationState();
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve(identity) {
+          return { identity };
+        },
+      },
+    });
+
+    assert.deepEqual(
+      await selector.select({
+        agentId,
+        channelId: 'R_repo:12',
+        chatId: 'R_repo:12',
+        sessionKey: [
+          'agent',
+          agentId,
+          'agent-system-github',
+          agentId,
+          'direct',
+          conversationId.toLowerCase(),
+        ].join(':'),
+        workspaceDir,
+      }),
+      {
+        agentId,
+        conversationId,
+        identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+        sourceId: 'a'.repeat(64),
+      },
+    );
+  });
+
+  it('should decline an ambiguous normalized route id', async () => {
+    const state = conversationState();
+    state.conversations[conversationId.toLowerCase()] = structuredClone(
+      state.conversations[conversationId]!,
+    );
+    const selector = new GitHubNotificationTurnSelector({
+      conversations: { read: async () => structuredClone(state) },
+      logger: { warn() {} },
+      turns: {
+        resolve() {
+          throw new Error('ambiguous conversations must not resolve a turn');
+        },
+      },
+    });
+
+    assert.equal(
+      await selector.select({
+        agentId,
+        channelId: conversationId.replace('R_repo', 'r_REPO'),
+        chatId: conversationId.replace('R_repo', 'r_REPO'),
+        workspaceDir,
+      }),
+      undefined,
+    );
+  });
+
   it('should select the registered assignment tuple from durable state', async () => {
     const state = conversationState();
     state.conversations[conversationId]!.activeTurn = {

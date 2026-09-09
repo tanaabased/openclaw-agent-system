@@ -29,6 +29,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
+perl -0pi -e 's/notifications:\n/notifications:\n    initial-mode: guided\n/' "$TMPDIR/agent-system-notifications/agent.yaml"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
@@ -114,6 +115,7 @@ openclaw agent-system notifications wait \
 
 # should complete a second assignment before provider-verified retirement
 cd "$TMPDIR/agent-system-notification-actor"
+perl -0pi -e 's/initial-mode: guided/initial-mode: work/' "$TMPDIR/agent-system-notifications/agent.yaml"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \

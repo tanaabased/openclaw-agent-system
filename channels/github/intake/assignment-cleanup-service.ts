@@ -1,4 +1,4 @@
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
@@ -8,7 +8,7 @@ import type {
   GitHubNotificationItemState,
 } from './monitor/state.ts';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
-import { resolveNotificationRoute } from '../routing/routing.ts';
+import type { NotificationRouteResolver } from '../routing/routing.ts';
 import { githubWorkItemKey } from '../provider/work-item.ts';
 
 export interface GitHubNotificationAssignmentCleanupInput {
@@ -22,6 +22,7 @@ export interface GitHubNotificationAssignmentCleanupInput {
 export interface GitHubNotificationAssignmentCleanupServiceDependencies {
   conversations: Pick<GitHubNotificationConversationStateStore, 'read'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
   sessions: Pick<GitHubNotificationSessionArchiveService, 'archive'>;
 }
 
@@ -81,7 +82,7 @@ export default class GitHubNotificationAssignmentCleanupService {
 
     let sessionKey: string;
     try {
-      sessionKey = resolveNotificationRoute(
+      sessionKey = this.#dependencies.resolveNotificationRoute(
         await this.#dependencies.readConfig(),
         { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
         conversationId,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createAgentLifecycleContribution, {
   type AgentLifecycleDependencies,
@@ -19,6 +19,26 @@ function successfulResult() {
 }
 
 describe('agent/lifecycle', () => {
+  it('should distinguish an implicit main agent from an explicitly empty roster', async () => {
+    const mainContext = {
+      manifest: { schemaVersion: 1, agent: { id: 'main', name: 'Main' } } as AgentManifest,
+      workspaceDir: '/workspace/main',
+    };
+    for (const config of [{}, { agents: { entries: {} } }, { agents: { list: [] } }]) {
+      const contribution = createAgentLifecycleContribution({
+        readConfig: () => config,
+        resolveAgentWorkspaceDir: () => mainContext.workspaceDir,
+        async runOpenClawCommand() {
+          throw new Error('inspection must not write');
+        },
+      });
+      assert.equal(
+        (await contribution.inspect?.(mainContext))?.[0]?.code,
+        'agents' in config ? 'agent-registration-drift' : 'agent-identity-drift',
+      );
+    }
+  });
+
   it('should validate the foundational agent declaration', () => {
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({}),
@@ -42,16 +62,15 @@ describe('agent/lifecycle', () => {
         commands.push(args);
         config =
           args[1] === 'add'
-            ? { agents: { list: [{ id: 'data', workspace: '/workspace/data' }] } }
+            ? { agents: { entries: { data: { workspace: '/workspace/data' } } } }
             : {
                 agents: {
-                  list: [
-                    {
-                      id: 'data',
+                  entries: {
+                    data: {
                       identity: { avatar: 'avatar.png', emoji: '📊', name: 'Data' },
                       workspace: '/workspace/data',
                     },
-                  ],
+                  },
                 },
               };
         return successfulResult();

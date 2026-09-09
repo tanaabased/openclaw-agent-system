@@ -1,6 +1,8 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
-import type { ChannelMessageAdapterShape } from 'openclaw/plugin-sdk/channel-outbound';
-import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-lifecycle';
+import {
+  createAccountStatusSink,
+  type ChannelMessageAdapterShape,
+} from 'openclaw/plugin-sdk/channel-outbound';
 import {
   createAsyncComputedAccountStatusAdapter,
   createDefaultChannelRuntimeState,

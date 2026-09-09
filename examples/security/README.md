@@ -22,8 +22,8 @@ cd "$GITHUB_WORKSPACE/examples/security/emori"
 openclaw agent-system install
 
 # should route tanaabot through codex with the ci model
-openclaw config set 'agents.list[0].model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.list[0].models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
+openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.tanaabot.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
 
 # should start the default gateway as a supervised background process
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start

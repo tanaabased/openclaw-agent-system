@@ -7,7 +7,7 @@ import resolveToolWorkingDirectory from './resolve-working-directory.ts';
 import AgentSystemToolError from './error.ts';
 import type {
   AgentSystemCliResult,
-  AgentSystemCliRunRequest,
+  AgentSystemCliRunner,
   AgentSystemCliToolDefinition,
   AgentSystemCliToolExecutionPayload,
   AgentSystemToolResourceLease,
@@ -54,7 +54,7 @@ interface ExecuteAgentSystemCliToolOptions<
   >;
   excludedExecutableDirectories?: readonly string[];
   input: Static<TParameters>;
-  runCli: (request: AgentSystemCliRunRequest) => Promise<AgentSystemCliResult>;
+  runCli: AgentSystemCliRunner;
   scope: AgentSystemToolScope;
   signal?: AbortSignal;
 }

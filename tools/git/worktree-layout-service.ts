@@ -1,7 +1,7 @@
 import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
-import runToolCli from '../../api/cli-runner.ts';
+import type { AgentSystemCliRunner } from '../../api/types.ts';
 import WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
@@ -29,7 +29,7 @@ export interface GitWorktreeLayoutServiceDependencies {
   excludedExecutableDirectories?: readonly string[];
   gitignoreService?: Pick<WorkspaceGitignoreService, 'includes' | 'reconcile'>;
   homeDirectory?: string;
-  runCli?: typeof runToolCli;
+  runCli: AgentSystemCliRunner;
 }
 
 async function directoryStatus(
@@ -62,15 +62,15 @@ export default class GitWorktreeLayoutService {
   readonly #excludedExecutableDirectories: readonly string[];
   readonly #gitignoreService: Pick<WorkspaceGitignoreService, 'includes' | 'reconcile'>;
   readonly #homeDirectory: string | undefined;
-  readonly #runCli: typeof runToolCli;
+  readonly #runCli: AgentSystemCliRunner;
 
-  constructor(dependencies: GitWorktreeLayoutServiceDependencies = {}) {
+  constructor(dependencies: GitWorktreeLayoutServiceDependencies) {
     this.#baseEnvironment = dependencies.baseEnvironment ?? process.env;
     this.#currentUid = dependencies.currentUid;
     this.#excludedExecutableDirectories = dependencies.excludedExecutableDirectories ?? [];
     this.#gitignoreService = dependencies.gitignoreService ?? new WorkspaceGitignoreService();
     this.#homeDirectory = dependencies.homeDirectory;
-    this.#runCli = dependencies.runCli ?? runToolCli;
+    this.#runCli = dependencies.runCli;
   }
 
   async inspect(

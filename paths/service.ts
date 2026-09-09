@@ -1,9 +1,10 @@
 import { lstat, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { AgentManifest } from '../manifest/types.ts';
+import { configuredAgentValue } from '../core/configured-agents.ts';
 import resolveAgentPaths, { type AgentPathProjection } from './resolve.ts';
 import type CodexPathConfigService from './codex-config-service.ts';
 import type PathProjectionStore from './projection-store.ts';
@@ -46,7 +47,7 @@ export interface AgentPathInput {
 }
 
 function findAgent(config: OpenClawConfig, agentId: string) {
-  return config.agents?.list?.find((entry) => entry.id.trim().toLowerCase() === agentId);
+  return configuredAgentValue(config, agentId);
 }
 
 function configuredPaths(config: OpenClawConfig, agentId: string): string[] {

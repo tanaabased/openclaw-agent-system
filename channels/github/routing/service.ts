@@ -1,4 +1,4 @@
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import {
   applyNotificationRoutingPlan,
@@ -8,6 +8,7 @@ import {
   type NotificationRoutingDesiredState,
   type NotificationRoutingPlan,
   type NotificationRoutingReceipt,
+  type ResolveAgentWorkspaceDir,
 } from './routing.ts';
 import type NotificationRoutingReceiptStore from './receipt-store.ts';
 
@@ -19,6 +20,7 @@ export interface NotificationRoutingServiceDependencies {
   }): Promise<{ result?: boolean }>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   receiptStore: Pick<NotificationRoutingReceiptStore, 'read' | 'remove' | 'write'>;
+  resolveAgentWorkspaceDir: ResolveAgentWorkspaceDir;
 }
 
 export interface NotificationRoutingReconcileResult {
@@ -45,15 +47,26 @@ export default class NotificationRoutingService {
       this.#dependencies.readConfig(),
       this.#dependencies.receiptStore.read(desired.agentId),
     ]);
-    return planNotificationRouting(config, desired, receipt);
+    return planNotificationRouting(
+      config,
+      desired,
+      this.#dependencies.resolveAgentWorkspaceDir,
+      receipt,
+    );
   }
 
   async reconcile(
     desired: NotificationRoutingDesiredState,
   ): Promise<NotificationRoutingReconcileResult> {
+    const resolveAgentWorkspaceDir = this.#dependencies.resolveAgentWorkspaceDir;
     const receipt = await this.#dependencies.receiptStore.read(desired.agentId);
     const initialConfig = await this.#dependencies.readConfig();
-    const initialPlan = planNotificationRouting(initialConfig, desired, receipt);
+    const initialPlan = planNotificationRouting(
+      initialConfig,
+      desired,
+      resolveAgentWorkspaceDir,
+      receipt,
+    );
     assertSafePlan(initialPlan);
 
     let configChanged = false;
@@ -62,7 +75,12 @@ export default class NotificationRoutingService {
         base: 'source',
         afterWrite: { mode: 'auto' },
         mutate(config) {
-          const currentPlan = planNotificationRouting(config, desired, receipt);
+          const currentPlan = planNotificationRouting(
+            config,
+            desired,
+            resolveAgentWorkspaceDir,
+            receipt,
+          );
           assertSafePlan(currentPlan);
           if (currentPlan.kind !== initialPlan.kind) {
             throw new Error('Notification routing changed while installation was in progress.');
@@ -76,7 +94,12 @@ export default class NotificationRoutingService {
     let receiptAction: NotificationRoutingReconcileResult['receiptAction'] = 'none';
     if (desired.enabled) {
       const config = await this.#dependencies.readConfig();
-      resolveNotificationRoute(config, desired, 'agent-system-install-verification');
+      resolveNotificationRoute(
+        config,
+        desired,
+        'agent-system-install-verification',
+        resolveAgentWorkspaceDir,
+      );
       if (!receipt) {
         await this.#dependencies.receiptStore.write(createNotificationRoutingReceipt(desired));
         receiptAction = 'created';
@@ -84,6 +107,7 @@ export default class NotificationRoutingService {
       const verified = planNotificationRouting(
         config,
         desired,
+        resolveAgentWorkspaceDir,
         receipt ?? createNotificationRoutingReceipt(desired),
       );
       if (verified.kind !== 'noop') {
@@ -93,6 +117,7 @@ export default class NotificationRoutingService {
       const verified = planNotificationRouting(
         await this.#dependencies.readConfig(),
         desired,
+        resolveAgentWorkspaceDir,
         receipt,
       );
       if (verified.kind !== 'forget') {

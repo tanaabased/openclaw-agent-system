@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 
-import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawPluginApi, PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
+import agentSystemCliMetadata from '../cli/metadata.ts';
 import type { CommandLike } from '../cli/register.ts';
 
 describe('index', () => {
@@ -15,16 +16,31 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
+  it('should declare cli output ownership without accessing runtime capabilities', () => {
+    let runtimeAccessed = false;
+    let metadata: Parameters<OpenClawPluginApi['registerCli']>[1];
+    const api = {
+      id: 'agent-system',
+      registrationMode: 'cli-metadata',
+      registerCli(_registrar: unknown, options: Parameters<OpenClawPluginApi['registerCli']>[1]) {
+        metadata = options;
+      },
+      get runtime() {
+        runtimeAccessed = true;
+        throw new Error('runtime unavailable');
+      },
+    };
+
+    assert.doesNotThrow(() => plugin.register(api as never));
+    assert.equal(runtimeAccessed, false);
+    assert.equal(metadata, agentSystemCliMetadata);
+  });
+
   it('should register startup hooks and both cli roots', async () => {
     let registrar:
       | ((context: { logger: PluginLogger; program: CommandLike }) => Promise<void> | void)
       | undefined;
-    let options:
-      | {
-          commands?: string[];
-          descriptors?: Array<{ hasSubcommands?: boolean; name: string }>;
-        }
-      | undefined;
+    let options: Parameters<OpenClawPluginApi['registerCli']>[1];
     const hookNames: string[] = [];
     const hookHandlers = new Map<string, (...args: unknown[]) => unknown>();
     const channelIds: string[] = [];
@@ -32,6 +48,7 @@ describe('index', () => {
     const policyIds: string[] = [];
     const serviceIds: string[] = [];
     const toolNames: string[] = [];
+    let channelInboundDispatchAccessed = false;
     const logger = {
       debug() {},
       error() {},
@@ -52,16 +69,21 @@ describe('index', () => {
           },
         },
         channel: {
-          reply: {
-            dispatchReplyWithBufferedBlockDispatcher() {},
-          },
-          session: {
-            async recordInboundSession() {},
+          inbound: {
+            get dispatch() {
+              channelInboundDispatchAccessed = true;
+              return async () => ({ dispatched: false });
+            },
           },
         },
         config: {
           current() {
             return {};
+          },
+        },
+        logging: {
+          getChildLogger() {
+            return logger;
           },
         },
       },
@@ -70,10 +92,7 @@ describe('index', () => {
           logger: PluginLogger;
           program: CommandLike;
         }) => Promise<void> | void,
-        nextOptions: {
-          commands?: string[];
-          descriptors?: Array<{ hasSubcommands?: boolean; name: string }>;
-        },
+        nextOptions: Parameters<OpenClawPluginApi['registerCli']>[1],
       ) {
         registrar = nextRegistrar;
         options = nextOptions;
@@ -98,6 +117,7 @@ describe('index', () => {
 
     plugin.register(api as never);
 
+    assert.equal(channelInboundDispatchAccessed, true);
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
       'resolve_exec_env',
@@ -119,6 +139,7 @@ describe('index', () => {
       'agent-system.git-worktree',
       'agent-system.github',
     ]);
+    assert.equal(options, agentSystemCliMetadata);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),
@@ -127,6 +148,36 @@ describe('index', () => {
         { hasSubcommands: true, name: 'as' },
       ],
     );
+
+    for (const descriptor of options?.descriptors ?? []) {
+      assert.ok('machineOutput' in descriptor && typeof descriptor.machineOutput === 'function');
+      for (const argv of [
+        ['node', 'openclaw', descriptor.name, 'tool', 'gh', '--', 'api', 'user'],
+        [
+          'node',
+          'openclaw',
+          '--profile',
+          'tool',
+          '--log-level',
+          'debug',
+          descriptor.name,
+          'tool',
+          'git',
+          '--',
+          'status',
+        ],
+      ]) {
+        assert.equal(descriptor.machineOutput({ argv, stdoutIsTTY: false }), true);
+        assert.equal(descriptor.machineOutput({ argv, stdoutIsTTY: true }), true);
+      }
+      assert.equal(
+        descriptor.machineOutput({
+          argv: ['node', 'openclaw', '--profile', 'tool', descriptor.name, 'doctor'],
+          stdoutIsTTY: false,
+        }),
+        false,
+      );
+    }
 
     const promptResult = (await hookHandlers.get('before_prompt_build')?.(
       {},

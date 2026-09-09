@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import {
   applyNotificationRoutingPlan,
@@ -10,6 +10,7 @@ import {
   resolveNotificationRoute,
   type NotificationRoutingDesiredState,
 } from '../channels/github/routing/routing.ts';
+import { resolveTestAgentWorkspaceDir } from './openclaw-agent-runtime.ts';
 
 const desired: NotificationRoutingDesiredState = {
   agentId: 'data',
@@ -24,19 +25,51 @@ function config(): OpenClawConfig {
 }
 
 describe('channels/github/routing/routing', () => {
+  it('should reject main routing for an explicitly empty roster', () => {
+    const main = { ...desired, agentId: 'main', workspaceDir: '/workspace/main' };
+    for (const current of [{ agents: { entries: {} } }, { agents: { list: [] } }]) {
+      assert.equal(
+        planNotificationRouting(current, main, () => main.workspaceDir).code,
+        'notification-routing-agent-missing',
+      );
+    }
+    assert.equal(planNotificationRouting({}, main, () => main.workspaceDir).kind, 'upsert');
+  });
+
   it('should install and resolve one deterministic account-scoped route', () => {
     const current = config();
-    const initial = planNotificationRouting(current, desired);
+    const initial = planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir);
 
     assert.equal(initial.kind, 'upsert');
     assert.equal(applyNotificationRoutingPlan(current, desired, initial), true);
-    assert.equal(planNotificationRouting(current, desired).kind, 'adopt');
+    assert.equal(
+      planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir).kind,
+      'adopt',
+    );
 
     const receipt = createNotificationRoutingReceipt(desired);
-    assert.equal(planNotificationRouting(current, desired, receipt).kind, 'noop');
-    const first = resolveNotificationRoute(current, desired, 'github:R_1:12');
-    const repeated = resolveNotificationRoute(current, desired, 'github:R_1:12');
-    const second = resolveNotificationRoute(current, desired, 'github:R_1:13');
+    assert.equal(
+      planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir, receipt).kind,
+      'noop',
+    );
+    const first = resolveNotificationRoute(
+      current,
+      desired,
+      'github:R_1:12',
+      resolveTestAgentWorkspaceDir,
+    );
+    const repeated = resolveNotificationRoute(
+      current,
+      desired,
+      'github:R_1:12',
+      resolveTestAgentWorkspaceDir,
+    );
+    const second = resolveNotificationRoute(
+      current,
+      desired,
+      'github:R_1:13',
+      resolveTestAgentWorkspaceDir,
+    );
 
     assert.equal(first.matchedBy, 'binding.account');
     assert.equal(first.agentId, 'data');
@@ -63,7 +96,7 @@ describe('channels/github/routing/routing', () => {
       ],
     };
 
-    const install = planNotificationRouting(current, desired);
+    const install = planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir);
     assert.equal(install.kind, 'upsert');
     applyNotificationRoutingPlan(current, desired, install);
 
@@ -71,6 +104,7 @@ describe('channels/github/routing/routing', () => {
     const removal = planNotificationRouting(
       current,
       disabled,
+      resolveTestAgentWorkspaceDir,
       createNotificationRoutingReceipt(desired),
     );
     assert.equal(removal.kind, 'remove');
@@ -96,7 +130,10 @@ describe('channels/github/routing/routing', () => {
         [githubNotificationChannelId]: { accounts: { data: { enabled: true } } },
       },
     };
-    assert.equal(planNotificationRouting(partial, desired).kind, 'conflict');
+    assert.equal(
+      planNotificationRouting(partial, desired, resolveTestAgentWorkspaceDir).kind,
+      'conflict',
+    );
 
     partial.bindings = [
       {
@@ -105,7 +142,7 @@ describe('channels/github/routing/routing', () => {
         match: { channel: githubNotificationChannelId, accountId: 'data' },
       },
     ];
-    const conflict = planNotificationRouting(partial, desired);
+    const conflict = planNotificationRouting(partial, desired, resolveTestAgentWorkspaceDir);
     assert.equal(conflict.kind, 'conflict');
     assert.equal(conflict.code, 'notification-routing-binding-conflict');
   });
@@ -119,18 +156,24 @@ describe('channels/github/routing/routing', () => {
     };
 
     assert.throws(
-      () => resolveNotificationRoute(current, desired, 'github:R_1:12'),
+      () =>
+        resolveNotificationRoute(current, desired, 'github:R_1:12', resolveTestAgentWorkspaceDir),
       /exact agent-system-github:data binding/u,
     );
   });
 
   it('should detect duplicate exact bindings and changed owned cleanup state', () => {
     const current = config();
-    const install = planNotificationRouting(current, desired);
+    const install = planNotificationRouting(current, desired, resolveTestAgentWorkspaceDir);
     applyNotificationRoutingPlan(current, desired, install);
     current.bindings?.push({ ...current.bindings[0]! });
     assert.equal(
-      planNotificationRouting(current, desired, createNotificationRoutingReceipt(desired)).code,
+      planNotificationRouting(
+        current,
+        desired,
+        resolveTestAgentWorkspaceDir,
+        createNotificationRoutingReceipt(desired),
+      ).code,
       'notification-routing-binding-duplicate',
     );
 
@@ -143,7 +186,12 @@ describe('channels/github/routing/routing', () => {
     };
     const disabled = { ...desired, enabled: false };
     assert.equal(
-      planNotificationRouting(current, disabled, createNotificationRoutingReceipt(desired)).code,
+      planNotificationRouting(
+        current,
+        disabled,
+        resolveTestAgentWorkspaceDir,
+        createNotificationRoutingReceipt(desired),
+      ).code,
       'notification-routing-binding-changed',
     );
   });

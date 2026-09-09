@@ -1,14 +1,14 @@
 import { resolve } from 'node:path';
 
 import type AgentManifestService from '../../../manifest/service.ts';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { GitHubNotificationLifecycleBoundaryInput } from '../lifecycles/types.ts';
 import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from './admit-assignment.ts';
-import { resolveNotificationRoute } from '../routing/routing.ts';
+import type { NotificationRouteResolver } from '../routing/routing.ts';
 import GitHubWorkEventClient, {
   type GitHubNotificationProviderClient,
   GitHubWorkEventClientError,
@@ -18,6 +18,7 @@ export interface GitHubNotificationAssignmentProviderDependencies {
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveNotificationRoute: NotificationRouteResolver;
 }
 
 export type GitHubNotificationAssignmentInspection<Client = GitHubNotificationProviderClient> =
@@ -83,7 +84,7 @@ export default class GitHubNotificationAssignmentProvider
       };
     }
     try {
-      resolveNotificationRoute(
+      this.#dependencies.resolveNotificationRoute(
         await this.#dependencies.readConfig(),
         { agentId: input.agentId, enabled: true, workspaceDir: input.workspaceDir },
         githubNotificationConversationId({

@@ -50,8 +50,8 @@ Work state, start implementation, or otherwise advance the task lifecycle.
 - The request must come from the private operator or an incoming commenter
   already admitted by the notification channel. This skill does not authorize
   actors or repositories.
-- The active agent must expose `agent_system_github`. An admitted notification
-  turn may also expose `agent_system_github_reply`.
+- The active agent must expose `agent_system_github` for issue reads and any
+  direct issue write.
 - If the owning issue cannot be resolved from trusted session context, ask the
   operator for it instead of guessing or publishing.
 
@@ -68,17 +68,19 @@ Work state, start implementation, or otherwise advance the task lifecycle.
    make public, such as completed work, decisions, validation results, delivery
    links, current blockers, and the immediate next step.
 4. Compare those facts with the public issue. If every material fact is already
-   represented, do not post; tell the requester that the issue is current.
+   represented, skip the update and tell the requester that the issue is current.
+   An admitted comment still receives that acknowledgment through its ordinary
+   final-response path.
 5. Draft one GitHub-flavored Markdown update in the agent's own voice, at most
    800 characters. Include only verified facts. Use repository-relative file
    names, omit `@` mentions, and exclude credentials, secret-like values,
    environment assignments, absolute paths, private quotations, hidden context,
    raw logs, and model or provider details.
 6. Publish through exactly one update path:
-   - When `agent_system_github_reply` is available and the active comment source
-     is the owning issue, stage the update once with that tool. The notification
-     channel owns final validation, reauthorization, attribution, idempotency,
-     and publication; do not also post through GitHub CLI.
+   - For an admitted comment on the owning issue, make the update the ordinary
+     final response. The notification channel owns validation, reauthorization,
+     attribution, idempotency, and publication. Do not call
+     `agent_system_github_reply` or also post through GitHub CLI.
    - Otherwise, use `agent_system_github` with `gh issue comment`, pass the body
      through standard input with `--body-file -`, and target the resolved owning
      issue explicitly. Re-read the newest public comments immediately before
@@ -87,8 +89,9 @@ Work state, start implementation, or otherwise advance the task lifecycle.
      update concise and separately satisfy the active source-affine reply
      contract with a brief acknowledgment rather than duplicating the update.
 7. For a direct GitHub write, read back the created comment and confirm its issue,
-   body, and URL. For a staged notification reply, report only that the candidate
-   was handed to the channel; do not claim publication before it completes.
+   body, and URL. Keep the final acknowledgment brief and include that URL.
+   For channel-owned publication, the final response is the update itself; do
+   not claim publication before the channel completes it.
 
 ## Checkpoints
 
@@ -96,17 +99,16 @@ Work state, start implementation, or otherwise advance the task lifecycle.
   item most recently supplied a comment.
 - **Delta:** At least one material, verified private fact is missing publicly.
 - **Safety:** The proposed body passes every public-content restriction above.
-- **Write path:** Use the notification reply tool or direct issue comment path,
+- **Write path:** Use the ordinary final response or direct issue comment path,
   never both for the same issue update.
 
 ## Completion Criteria
 
-- Finish without a write when the public issue already contains the material
-  private progress, and state that outcome plainly.
-- Otherwise, exactly one update is staged for channel publication or one direct
-  issue comment is created and verified.
-- Surface the owning issue and, when available, the created comment URL in the
-  private response without repeating the entire public update.
+- When the issue is current, acknowledge that without duplicating its progress.
+- Otherwise, provide exactly one update as the final response for channel
+  publication or create and verify one direct issue comment.
+- After a direct write, identify the owning issue and created comment URL without
+  repeating the update in the acknowledgment.
 
 ## Bundled Resources
 
@@ -119,5 +121,5 @@ Work state, start implementation, or otherwise advance the task lifecycle.
   the current lifecycle and mode.
 - Confirm the issue was read before drafting, only missing material progress was
   included, and no private or unsafe content crossed the public boundary.
-- Confirm no duplicate update path ran and the reported completion state matches
-  staged versus verified publication.
+- Confirm no duplicate update path ran and only a verified direct write is
+  reported as published.

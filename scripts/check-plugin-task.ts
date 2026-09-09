@@ -6,14 +6,23 @@ import pluginMetadataFailures, {
 } from '../core/plugin-metadata-failures.ts';
 import nodeTypesBaselineFailure from './node-types-baseline.ts';
 
-const [packageContents, manifestContents, nodeVersionContents] = await Promise.all([
-  readFile('package.json', 'utf8'),
-  readFile('openclaw.plugin.json', 'utf8'),
-  readFile('.node-version', 'utf8'),
-]);
+const [packageContents, manifestContents, nodeVersionContents, installedOpenClawContents] =
+  await Promise.all([
+    readFile('package.json', 'utf8'),
+    readFile('openclaw.plugin.json', 'utf8'),
+    readFile('.node-version', 'utf8'),
+    readFile('node_modules/openclaw/package.json', 'utf8'),
+  ]);
 const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
 const manifest = JSON.parse(manifestContents) as PluginManifest;
+const installedOpenClaw = JSON.parse(installedOpenClawContents) as { version?: string };
 const failures = pluginMetadataFailures(packageMetadata, manifest).map(({ message }) => message);
+
+if (installedOpenClaw.version !== packageMetadata.devDependencies?.openclaw) {
+  failures.push(
+    `installed OpenClaw ${installedOpenClaw.version ?? 'unknown'} must match development target ${packageMetadata.devDependencies?.openclaw ?? 'unknown'}`,
+  );
+}
 
 const nodeVersion = nodeVersionContents.trim();
 const nodeRange = packageMetadata.engines?.node;

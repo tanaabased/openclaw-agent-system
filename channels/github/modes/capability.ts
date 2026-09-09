@@ -1,6 +1,6 @@
-import { listAgentEntries } from 'openclaw/plugin-sdk/agent-runtime';
-import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-types';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import configuredAgentEntries from '../../../core/configured-agents.ts';
 import type { GitHubNotificationMode, ResolvedGitHubNotificationMode } from './types.ts';
 
 export class GitHubNotificationCapabilityError extends Error {
@@ -13,7 +13,9 @@ export class GitHubNotificationCapabilityError extends Error {
 
 function effectiveProfile(config: OpenClawConfig, agentId: string) {
   const normalized = agentId.trim().toLowerCase();
-  const agent = listAgentEntries(config).find(({ id }) => id.trim().toLowerCase() === normalized);
+  const agent = configuredAgentEntries(config).find(
+    ({ id }) => id.trim().toLowerCase() === normalized,
+  );
   return agent?.tools?.profile ?? config.tools?.profile;
 }
 

@@ -35,7 +35,7 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /use
 
 ```bash
 # should grant the native git tool to the installed git agent
-openclaw config get agents.list --json | jq -e '.[] | select(.id == "tanaabot") | ((.tools.allow // []) + (.tools.alsoAllow // [])) | index("agent_system_git") != null'
+openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []) + (.alsoAllow // [])) | index("agent_system_git") != null'
 ```
 
 ```bash

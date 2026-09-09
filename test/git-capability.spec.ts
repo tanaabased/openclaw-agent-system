@@ -7,6 +7,9 @@ describe('tools/git/capability', () => {
   it('should assemble the git lifecycle and owned tools', () => {
     const capability = createGitCapability({
       baseEnvironment: { PATH: '/usr/bin' },
+      async runCli() {
+        throw new Error('not used during capability assembly');
+      },
       environmentService: {
         async loadForAgentId() {
           return { diagnostics: [], status: 'unresolved' };

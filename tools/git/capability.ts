@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import type { AgentSystemCapability } from '../../api/capability.ts';
+import type { AgentSystemCliRunner } from '../../api/types.ts';
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import defineAgentSystemSemanticTool from '../../api/define-semantic-tool.ts';
 import type WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
@@ -18,6 +19,7 @@ import { createGitWorktreeToolDefinition } from './worktree-tool.ts';
 
 export interface GitCapabilityDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
+  runCli: AgentSystemCliRunner;
   currentUid?: number;
   excludedExecutableDirectories?: readonly string[];
   gitignoreService: Pick<WorkspaceGitignoreService, 'includes' | 'reconcile'>;
@@ -52,6 +54,7 @@ export default function createGitCapability(
     path: dependencies.baseEnvironment.PATH ?? '',
   });
   const worktreeLayoutService = new GitWorktreeLayoutService({
+    runCli: dependencies.runCli,
     baseEnvironment: dependencies.baseEnvironment,
     ...(dependencies.currentUid === undefined ? {} : { currentUid: dependencies.currentUid }),
     excludedExecutableDirectories: dependencies.excludedExecutableDirectories,
@@ -61,6 +64,7 @@ export default function createGitCapability(
       : { homeDirectory: dependencies.homeDirectory }),
   });
   const runnerFactory = new GitWorktreeGitRunnerFactory({
+    runCli: dependencies.runCli,
     baseEnvironment: dependencies.baseEnvironment,
     excludedExecutableDirectories: dependencies.excludedExecutableDirectories,
     sshResourceService,

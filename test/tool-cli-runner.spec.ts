@@ -1,9 +1,21 @@
 import assert from 'node:assert/strict';
-import { access, chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import runToolCli, { resolveToolExecutable } from '../api/cli-runner.ts';
+import createToolCliRunner, { resolveToolExecutable } from '../api/cli-runner.ts';
+
+type HostRunner = Parameters<typeof createToolCliRunner>[0];
+type HostResult = Awaited<ReturnType<HostRunner>>;
+
+const successfulResult: HostResult = {
+  code: 0,
+  killed: false,
+  signal: null,
+  stderr: '',
+  stdout: '',
+  termination: 'exit',
+};
 
 describe('api/cli-runner', () => {
   let root = '';
@@ -50,137 +62,131 @@ describe('api/cli-runner', () => {
     );
   });
 
-  it('should report the executable selected for the child process', async () => {
-    const bin = join(root, 'bin');
-    await mkdir(bin);
-    await writeFile(join(bin, 'probe'), '#!/bin/sh\nprintf selected');
-    await chmod(join(bin, 'probe'), 0o755);
-
-    const result = await runToolCli({
-      argv: [],
+  function request() {
+    return {
+      argv: ['--version'],
       cwd: root,
-      environment: { PATH: bin },
-      executable: 'probe',
+      environment: { PATH: '/usr/bin', DECLARED_VALUE: 'selected' },
+      executable: '/usr/bin/true',
       maxOutputBytes: 1024,
       timeoutMs: 1000,
+    };
+  }
+
+  it('should delegate the selected executable with an isolated environment and bounded lifecycle', async () => {
+    const controller = new AbortController();
+    const executable = await realpath('/usr/bin/true');
+    const input = { ...request(), signal: controller.signal, stdin: 'request-body' };
+    const runCli = createToolCliRunner(async (argv, options) => {
+      assert.deepEqual(argv, [executable, '--version']);
+      assert.deepEqual(options, {
+        baseEnv: {},
+        cwd: root,
+        env: { PATH: '/usr/bin', DECLARED_VALUE: 'selected' },
+        input: 'request-body',
+        killGraceMs: 100,
+        killProcessTree: true,
+        maxCombinedOutputBytes: 1024,
+        maxOutputBytes: 1024,
+        outputCapture: 'head',
+        signal: controller.signal,
+        timeoutMs: 1000,
+      });
+      return { ...successfulResult, stdout: 'selected' };
     });
 
-    assert.equal(result.exitCode, 0);
-    assert.equal(result.resolvedExecutable, await realpath(join(bin, 'probe')));
-    assert.equal(result.stdout, 'selected');
+    assert.deepEqual(await runCli(input), {
+      exitCode: 0,
+      resolvedExecutable: executable,
+      stderr: '',
+      stdout: 'selected',
+      timedOut: false,
+      truncated: false,
+    });
   });
 
-  it('should pass bounded stdin directly to the fixed executable', async () => {
-    const result = await runToolCli({
-      argv: ['-e', 'process.stdin.pipe(process.stdout)'],
-      cwd: root,
-      environment: process.env,
-      executable: process.execPath,
-      maxOutputBytes: 1024,
-      stdin: 'request-body',
-      timeoutMs: 1000,
+  it('should close stdin when no command input is supplied', async () => {
+    const runCli = createToolCliRunner(async (_argv, options) => {
+      assert.ok(typeof options === 'object');
+      assert.equal(options.input, '');
+      return successfulResult;
     });
 
-    assert.equal(result.exitCode, 0);
-    assert.equal(result.stdout, 'request-body');
+    await runCli(request());
   });
 
-  it('should bound combined standard output and error capture', async () => {
-    const script = join(root, 'output.mjs');
-    await writeFile(script, "process.stdout.write('abc');\nprocess.stderr.write('def');\n");
+  it('should retain output and report truncation from either stream', async () => {
+    for (const truncation of [{ stdoutTruncatedBytes: 1 }, { stderrTruncatedBytes: 2 }]) {
+      const runCli = createToolCliRunner(async () => ({
+        ...successfulResult,
+        ...truncation,
+        code: 3,
+        stdout: 'abc',
+        stderr: 'd',
+      }));
+      const result = await runCli(request());
 
-    const result = await runToolCli({
-      argv: [script],
-      cwd: root,
-      environment: process.env,
-      executable: process.execPath,
-      maxOutputBytes: 4,
-      timeoutMs: 1000,
-    });
-
-    assert.equal(result.exitCode, 0);
-    assert.equal(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr), 4);
-    assert.equal(result.truncated, true);
+      assert.equal(result.exitCode, 3);
+      assert.equal(result.stdout, 'abc');
+      assert.equal(result.stderr, 'd');
+      assert.equal(result.truncated, true);
+      assert.equal(result.timedOut, false);
+    }
   });
 
-  it('should terminate a child process after its timeout', async () => {
-    const script = join(root, 'timeout.mjs');
-    await writeFile(script, 'setInterval(() => {}, 1000);\n');
+  it('should preserve the timeout result contract without exposing the host timeout exit code', async () => {
+    for (const termination of ['timeout', 'no-output-timeout'] as const) {
+      const runCli = createToolCliRunner(async () => ({
+        ...successfulResult,
+        code: 124,
+        termination,
+      }));
+      const result = await runCli(request());
 
-    const result = await runToolCli({
-      argv: [script],
-      cwd: root,
-      environment: process.env,
-      executable: process.execPath,
-      maxOutputBytes: 1024,
-      timeoutMs: 20,
-    });
-
-    assert.equal(result.exitCode, null);
-    assert.equal(result.timedOut, true);
+      assert.equal(result.exitCode, null);
+      assert.equal(result.timedOut, true);
+    }
   });
 
-  it('should terminate the full child process group after its graceful timeout', async function () {
-    this.timeout(5_000);
-    const markerPath = join(root, 'grandchild-survived');
-    const grandchildPath = join(root, 'grandchild.mjs');
-    const parentPath = join(root, 'parent.mjs');
-    await writeFile(
-      grandchildPath,
-      [
-        "import { writeFileSync } from 'node:fs';",
-        "process.on('SIGTERM', () => {});",
-        "setTimeout(() => { writeFileSync(process.argv[2], 'survived'); process.exit(24); }, 3000);",
-        'setInterval(() => {}, 1000);',
-        '',
-      ].join('\n'),
-    );
-    await writeFile(
-      parentPath,
-      [
-        "import { spawn } from 'node:child_process';",
-        "spawn(process.execPath, [process.argv[2], process.argv[3]], { stdio: 'inherit' });",
-        "process.on('SIGTERM', () => {});",
-        'setTimeout(() => process.exit(23), 4000);',
-        'setInterval(() => {}, 1000);',
-        '',
-      ].join('\n'),
-    );
-
-    const result = await runToolCli({
-      argv: [parentPath, grandchildPath, markerPath],
-      cwd: root,
-      environment: process.env,
-      executable: process.execPath,
-      maxOutputBytes: 1024,
-      timeoutMs: 1_000,
-    });
-
-    assert.equal(result.exitCode, null);
-    assert.equal(result.timedOut, true);
-    await assert.rejects(
-      access(markerPath),
-      (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT',
-    );
-  });
-
-  it('should terminate immediately when the request is already aborted', async () => {
-    const script = join(root, 'abort.mjs');
-    await writeFile(script, 'setInterval(() => {}, 1000);\n');
+  it('should pass cancellation to the host without classifying it as a timeout', async () => {
     const controller = new AbortController();
     controller.abort();
-
-    const result = await runToolCli({
-      argv: [script],
-      cwd: root,
-      environment: process.env,
-      executable: process.execPath,
-      maxOutputBytes: 1024,
-      signal: controller.signal,
-      timeoutMs: 1000,
+    const runCli = createToolCliRunner(async (_argv, options) => {
+      assert.ok(typeof options === 'object');
+      assert.equal(options.signal, controller.signal);
+      return { ...successfulResult, code: null, termination: 'signal' };
     });
+    const result = await runCli({ ...request(), signal: controller.signal });
 
     assert.equal(result.exitCode, null);
     assert.equal(result.timedOut, false);
+  });
+
+  it('should wait for host settlement before returning control to resource owners', async () => {
+    const started = Promise.withResolvers<void>();
+    const settled = Promise.withResolvers<HostResult>();
+    const runCli = createToolCliRunner(async () => {
+      started.resolve();
+      return settled.promise;
+    });
+    let returned = false;
+    const execution = runCli(request()).then((result) => {
+      returned = true;
+      return result;
+    });
+    await started.promise;
+    assert.equal(returned, false);
+
+    settled.resolve(successfulResult);
+    assert.equal((await execution).exitCode, 0);
+  });
+
+  it('should propagate host launch failures to the owning error boundary', async () => {
+    const failure = new Error('launch failed');
+    const runCli = createToolCliRunner(async () => {
+      throw failure;
+    });
+
+    await assert.rejects(runCli(request()), (error) => error === failure);
   });
 });

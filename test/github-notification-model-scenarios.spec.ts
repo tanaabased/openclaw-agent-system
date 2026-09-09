@@ -123,10 +123,13 @@ describe('scripts/github-notification-model-scenarios', () => {
     ] as const;
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
-      assert.equal(
-        scenario.fixtures.length,
-        executionScenario.id === 'comment' || executionScenario.id === 'pr-lifecycle' ? 9 : 8,
-      );
+      const expectedFixtureCount =
+        executionScenario.id === 'retirement'
+          ? 10
+          : executionScenario.id === 'implementation'
+            ? 8
+            : 9;
+      assert.equal(scenario.fixtures.length, expectedFixtureCount);
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
         { id: executionScenario.callIds[1], name: 'agent_system_github' },
@@ -204,6 +207,96 @@ describe('scripts/github-notification-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], request), null);
   });
 
+  it('should keep the incomplete retirement checkpoint in guided mode', () => {
+    const scenario = resolveGitHubNotificationModelScenario('retirement');
+    const request: ChatCompletionRequest = {
+      messages: [
+        {
+          content: [
+            'Continue the current GitHub issue lifecycle',
+            'Guided mode is operator-led',
+            'The initial assignment authorizes setup and acknowledgment, not implementation',
+            'do not call the tool because the deterministic assignment acknowledgment is the complete public response',
+          ].join('\n'),
+          role: 'system',
+        },
+        {
+          content:
+            'add retirement fixture\nCreate retirement-fixture-123-4.txt with the assigned contents.',
+          role: 'user',
+        },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+    request.messages[1]!.content =
+      'add completed retirement fixture\nCreate completed-retirement-fixture-123-4.txt.';
+    assert.notEqual(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+  });
+
+  it('should silently finish restart recovery only for the guided retirement checkpoint', () => {
+    const scenario = resolveGitHubNotificationModelScenario('retirement');
+    const recoveryPrompt =
+      '[System] Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work. Continue from the existing transcript and finish the interrupted response.';
+    const request: ChatCompletionRequest = {
+      messages: [
+        { content: 'OpenClaw runtime guidance', role: 'system' },
+        { content: 'add retirement fixture\nCreate retirement-fixture-123-4.txt.', role: 'user' },
+        {
+          content:
+            'The retirement checkpoint is prepared. I am waiting for operator direction before taking action.',
+          role: 'assistant',
+        },
+        { content: 'internal restart context', role: 'user' },
+        { content: recoveryPrompt, role: 'user' },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+
+    const fixture = matchFixture([...scenario.fixtures], request);
+    assert.deepEqual(fixture?.response, {
+      content: 'NO_REPLY',
+      id: 'agent-system-notification-retirement-restart-recovery-final-response',
+    });
+    assert.ok(scenario.finalResponses.includes('NO_REPLY'));
+
+    const withRuntimeContext = structuredClone(request);
+    withRuntimeContext.messages.push({
+      role: 'user',
+      content:
+        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nHost runtime instructions.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+    });
+    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), fixture);
+    withRuntimeContext.messages.push({ content: 'A new operator request.', role: 'user' });
+    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), null);
+
+    const missingAcknowledgment = structuredClone(request);
+    missingAcknowledgment.messages[2]!.content = 'An unrelated task finished.';
+    const ordinaryComment = structuredClone(request);
+    ordinaryComment.messages[4]!.content = 'Please implement the issue now.';
+    const staleRecovery = structuredClone(request);
+    staleRecovery.messages.push({ content: 'A new operator request.', role: 'user' });
+    const wrongModel = { ...request, model: 'unexpected-model' };
+    const toolContinuation = structuredClone(request);
+    toolContinuation.messages.push({
+      content: '{"status":"completed"}',
+      role: 'tool',
+      tool_call_id: 'call_unexpected',
+    });
+    for (const [label, unrelatedRequest] of Object.entries({
+      missingAcknowledgment,
+      ordinaryComment,
+      staleRecovery,
+      toolContinuation,
+      wrongModel,
+    })) {
+      assert.equal(matchFixture([...scenario.fixtures], unrelatedRequest), null, label);
+    }
+  });
+
   it('should match current work assignment guidance across execution scenarios', () => {
     const request: ChatCompletionRequest = {
       messages: [
@@ -223,7 +316,8 @@ describe('scripts/github-notification-model-scenarios', () => {
 
     for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
-      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
+      const assignmentFixture = scenario.fixtures[scenarioId === 'retirement' ? 1 : 0];
+      assert.equal(matchFixture([...scenario.fixtures], request), assignmentFixture);
     }
   });
 
@@ -257,6 +351,7 @@ describe('scripts/github-notification-model-scenarios', () => {
 
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
+      const fixtureOffset = executionScenario.id === 'retirement' ? 1 : 0;
       const request: ChatCompletionRequest = {
         messages: [
           {
@@ -282,9 +377,12 @@ describe('scripts/github-notification-model-scenarios', () => {
           },
         ],
       };
-      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[2]);
+      assert.equal(
+        matchFixture([...scenario.fixtures], request),
+        scenario.fixtures[fixtureOffset + 2],
+      );
       const responses = await Promise.all(
-        scenario.fixtures.slice(2, 6).map(async (fixture) => {
+        scenario.fixtures.slice(fixtureOffset + 2, fixtureOffset + 6).map(async (fixture) => {
           const responseFactory = fixture.response;
           assert.equal(typeof responseFactory, 'function');
           if (typeof responseFactory !== 'function') {
@@ -345,7 +443,7 @@ describe('scripts/github-notification-model-scenarios', () => {
         model: 'gpt-5.5',
       };
 
-      const fixture = scenario.fixtures[7];
+      const fixture = scenario.fixtures[scenarioId === 'retirement' ? 8 : 7];
       assert.equal(matchFixture([...scenario.fixtures], request), fixture);
       assert.deepEqual(fixture?.response, {
         content: githubNotificationPullRequestOpenedFinalResponse,

@@ -28,6 +28,7 @@ describe('scripts/github-notification-model-evidence', () => {
             ]),
       ];
       const callId = selectedScenario.toolCalls[0]?.id ?? '';
+      const observedCallId = `${callId}_fc-observed_123`;
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
       const evidence = githubNotificationModelEvidence(selectedScenario, [
         {
@@ -60,14 +61,14 @@ describe('scripts/github-notification-model-evidence', () => {
                 tool_calls: [
                   {
                     function: { name: 'agent_system_github_reply' },
-                    id: callId,
+                    id: observedCallId,
                   },
                 ],
               },
               {
                 content: '{"status":"staged"}',
                 role: 'tool',
-                tool_call_id: callId,
+                tool_call_id: observedCallId,
               },
             ],
             model: 'gpt-5.5',
@@ -147,7 +148,7 @@ describe('scripts/github-notification-model-evidence', () => {
     );
   });
 
-  it('should normalize execution tool loops, including repeated retirement assignments', () => {
+  it('should normalize execution tool loops with a guided retirement checkpoint', () => {
     for (const scenarioId of ['implementation', 'pr-lifecycle', 'comment', 'retirement']) {
       const selectedScenario = resolveGitHubNotificationModelScenario(scenarioId);
       const hasComment = scenarioId === 'pr-lifecycle' || scenarioId === 'comment';
@@ -197,9 +198,9 @@ describe('scripts/github-notification-model-evidence', () => {
       entries.push(request({ content: selectedScenario.finalResponses[0] }));
       if (scenarioId === 'retirement') {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
-        entries.push(request({}));
-        appendCall(reply);
-        entries.push(request({ content: selectedScenario.finalResponses[0] }));
+        entries.push(request({ content: selectedScenario.finalResponses[3] }));
+        messages.splice(0, messages.length, { content: 'host restart recovery', role: 'user' });
+        entries.push(request({ content: 'NO_REPLY' }));
       }
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({}));
@@ -223,12 +224,13 @@ describe('scripts/github-notification-model-evidence', () => {
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';
-      const requestCount = scenarioId === 'retirement' ? 10 : hasComment ? 9 : 8;
+      const promptRequestCount = hasFourthResponse ? 9 : 8;
+      const requestCount = promptRequestCount + (scenarioId === 'retirement' ? 1 : 0);
 
       assert.deepEqual(githubNotificationModelEvidence(selectedScenario, entries), {
-        finalResponseCount: hasFourthResponse ? 4 : 3,
+        finalResponseCount: scenarioId === 'retirement' ? 5 : hasFourthResponse ? 4 : 3,
         model: 'aimock/gpt-5.5',
-        promptRequestCount: requestCount,
+        promptRequestCount,
         provider: 'aimock',
         requestCount,
         responsesApiRequestCount: requestCount,
@@ -253,7 +255,7 @@ describe('scripts/github-notification-model-evidence', () => {
             callResponseCount: 1,
             name: 'agent_system_github_reply',
             projectionRequestCount: requestCount,
-            resultRequestCount: scenarioId === 'retirement' ? 2 : 1,
+            resultRequestCount: 1,
           },
           {
             callResponseCount: 1,

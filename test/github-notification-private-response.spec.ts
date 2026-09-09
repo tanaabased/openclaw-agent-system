@@ -18,10 +18,14 @@ describe('channels/github/conversation/private-response', () => {
     assert.equal(githubNotificationPrivateResponse([{ text: response }]), response);
   });
 
-  it('should ignore commentary when selecting the ordinary final', () => {
+  it('should ignore supplemental lanes and notices when selecting the ordinary final', () => {
     assert.equal(
       githubNotificationPrivateResponse([
         { isCommentary: true, text: 'A progress update.' },
+        { isCompactionNotice: true, text: 'Compaction completed.' },
+        { isFallbackNotice: true, text: 'Model fallback completed.' },
+        { isReasoning: true, text: 'Internal reasoning.' },
+        { isStatusNotice: true, text: 'Tool execution completed.' },
         { text: 'The complete private response.' },
       ]),
       'The complete private response.',
@@ -31,6 +35,10 @@ describe('channels/github/conversation/private-response', () => {
   it('should reject missing and ambiguous ordinary responses', () => {
     for (const payloads of [
       [{ isCommentary: true, text: 'Only commentary.' }],
+      [{ isCompactionNotice: true, text: 'Only compaction.' }],
+      [{ isFallbackNotice: true, text: 'Only fallback.' }],
+      [{ isReasoning: true, text: 'Only reasoning.' }],
+      [{ isStatusNotice: true, text: 'Only status.' }],
       [{ text: '' }],
       [{ text: 'One.' }, { text: 'Two.' }],
     ]) {

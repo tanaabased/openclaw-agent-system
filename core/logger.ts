@@ -1,6 +1,5 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
-import { getChildLogger } from 'openclaw/plugin-sdk/runtime';
 
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
@@ -23,6 +22,7 @@ export interface CreateAgentSystemLoggerOptions {
 }
 
 export interface CreateAgentSystemLifecycleLoggerOptions extends CreateAgentSystemLoggerOptions {
+  getChildLogger?: (bindings?: Record<string, unknown>) => Logger;
   writeFileDebug?: (message: string) => void;
   writeFileInfo?: (message: string) => void;
 }
@@ -61,18 +61,21 @@ export function createAgentSystemLifecycleLogger(
   pluginId: string,
   options: CreateAgentSystemLifecycleLoggerOptions = {},
 ): Logger {
-  let fileLogger: ReturnType<typeof getChildLogger> | undefined;
+  let fileLogger: Logger | undefined;
+  const getFileLogger = () => {
+    fileLogger ??= options.getChildLogger?.({ subsystem: 'plugins' });
+    if (!fileLogger) throw new Error('The OpenClaw lifecycle file logger is unavailable.');
+    return fileLogger;
+  };
   const writeFileDebug =
     options.writeFileDebug ??
     ((message: string) => {
-      fileLogger ??= getChildLogger({ subsystem: 'plugins' });
-      fileLogger.debug(message);
+      getFileLogger().debug?.(message);
     });
   const writeFileInfo =
     options.writeFileInfo ??
     ((message: string) => {
-      fileLogger ??= getChildLogger({ subsystem: 'plugins' });
-      fileLogger.info(message);
+      getFileLogger().info(message);
     });
 
   return createAgentSystemLogger(

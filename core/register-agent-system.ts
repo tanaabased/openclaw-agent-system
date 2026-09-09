@@ -1,8 +1,9 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from 'openclaw/plugin-sdk/config-runtime';
-import type { OpenClawConfig, OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
+import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
@@ -30,25 +31,29 @@ import OpEnvironmentService from '../environment/op-service.ts';
 import createPathLifecycleContribution from '../paths/lifecycle.ts';
 import PathProjectionStore from '../paths/projection-store.ts';
 import registerAgentSystemCli from '../cli/register.ts';
+import agentSystemCliMetadata from '../cli/metadata.ts';
 import registerAgentCommandAuthority from './register-agent-command-authority.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
+import createToolCliRunner from '../api/cli-runner.ts';
 import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
+import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
   const runtimeDir = dirname(fileURLToPath(runtimeUrl));
   const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
   const logger = createAgentSystemLogger(api.logger, api.id);
-  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id);
+  const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id, {
+    getChildLogger(bindings) {
+      return api.runtime.logging.getChildLogger(bindings);
+    },
+  });
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
-  const readConfig = () => {
-    // Child OpenClaw commands mutate the config outside this process, so bypass its pinned snapshot.
-    return loadConfig({ pin: false });
-  };
+  const readConfig = readFreshRuntimeConfig;
   const readRuntimeConfig = () => api.runtime.config.current() as OpenClawConfig;
   const cliEntry = process.argv[1] ? resolve(process.argv[1]) : undefined;
   const openClawCommand = cliEntry ? [process.execPath, cliEntry] : ['openclaw'];
@@ -121,7 +126,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return service.loadForAgentId(agentId, trigger);
     },
   };
+  const runCli = createToolCliRunner((argv, options) =>
+    api.runtime.system.runCommandWithTimeout(argv, options),
+  );
   const capabilityDependencies = {
+    runCli,
     baseEnvironment: process.env,
     ...(currentUid === undefined ? {} : { currentUid }),
     excludedExecutableDirectories: excludedToolExecutableDirectories,
@@ -142,8 +151,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationRuntime = createGitHubNotificationRuntime({
     accountClient: githubCapability.accountClient,
     ...(currentUid === undefined ? {} : { currentUid }),
-    dispatchReplyWithBufferedBlockDispatcher:
-      api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+    dispatchChannelInboundTurn: api.runtime.channel.inbound.dispatch,
     lifecycleLogger,
     mutateConfigFile(params) {
       return api.runtime.config.mutateConfigFile(params);
@@ -151,8 +159,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...(privateStateRoot === undefined ? {} : { privateStateRoot }),
     readConfig,
     readRuntimeConfig,
-    recordInboundSession: api.runtime.channel.session.recordInboundSession,
     replyToolLogger: logger,
+    resolveAgentWorkspaceDir(config, agentId) {
+      return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);
+    },
     sessionRuntime: api.runtime.agent.session,
     worktrees: gitCapability.trustedWorktreeService,
   });
@@ -165,6 +175,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
       readConfig,
+      resolveAgentWorkspaceDir(config, agentId) {
+        return api.runtime.agent.resolveAgentWorkspaceDir(config, agentId);
+      },
       runOpenClawCommand(args, cwd) {
         const argv = [...openClawCommand, ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
@@ -215,7 +228,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     async resolveCodexAgentId({ codexHome, openClawStateDir }) {
       const config = api.runtime.config.current() as OpenClawConfig;
       return resolveCodexCommandAgentId({
-        agentIds: (config.agents?.list ?? []).map(({ id }) => id),
+        agentIds: listAgentIds(config),
         codexHome,
         ...(openClawStateDir === undefined ? {} : { openClawStateDir }),
         resolveAgentDir: (agentId) => api.runtime.agent.resolveAgentDir(config, agentId),
@@ -225,6 +238,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const doctorService = new AgentDoctorService({ lifecycleRegistry });
   const toolRuntime = new AgentSystemToolRuntime({
+    runCli,
     baseEnvironment: process.env,
     environmentService,
     excludedExecutableDirectories: excludedToolExecutableDirectories,
@@ -274,37 +288,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
-  api.registerCli(
-    ({ program }) => {
-      registerAgentSystemCli(program, {
-        commandAuthority,
-        credentialInput: opCredentialInput,
-        credentialManager,
-        doctorService,
-        environmentService,
-        input: process.stdin,
-        installService,
-        manifestService,
-        notificationMonitorService,
-        notificationStatusService,
-        toolRegistry,
-        toolRuntime,
-      });
-    },
-    {
-      commands: ['agent-system', 'as'],
-      descriptors: [
-        {
-          name: 'agent-system',
-          description: 'Manage reproducible OpenClaw agent workspaces.',
-          hasSubcommands: true,
-        },
-        {
-          name: 'as',
-          description: 'Alias for the Agent System command.',
-          hasSubcommands: true,
-        },
-      ],
-    },
-  );
+  api.registerCli(({ program }) => {
+    registerAgentSystemCli(program, {
+      commandAuthority,
+      credentialInput: opCredentialInput,
+      credentialManager,
+      doctorService,
+      environmentService,
+      input: process.stdin,
+      installService,
+      manifestService,
+      notificationMonitorService,
+      notificationStatusService,
+      toolRegistry,
+      toolRuntime,
+    });
+  }, agentSystemCliMetadata);
 }
