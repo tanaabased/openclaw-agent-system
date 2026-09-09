@@ -104,14 +104,12 @@ export default class GitHubNotificationModelTurnDispatcher {
         channel: githubNotificationChannelId,
         ctxPayload: modelContext(input),
         delivery: {
-          preparePayload(payload, info) {
+          async deliver(payload, info) {
             if (info.kind === 'final') finalPayloads.push(payload);
-            return null;
-          },
-          async deliver() {
-            throw new GitHubNotificationModelTurnDispatcherError(
-              'github-notification-model-turn-dispatch-failed',
-            );
+            return {
+              suppression: { reason: 'channel_transform' },
+              visibleReplySent: false,
+            };
           },
         },
         messageId: input.messageId,

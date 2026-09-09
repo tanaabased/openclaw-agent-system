@@ -39,18 +39,24 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         assert.equal(replyOptions.cleanupBundleMcpOnRunEnd, true);
         assert.equal(replyOptions.cleanupCliLiveSessionOnRunEnd, true);
         assert.equal(replyOptions.oneShotCliRun, true);
-        const commentaryPayload = await input.delivery.preparePayload?.(
+        const commentaryDelivery = await input.delivery.deliver(
           { text: 'progress', isCommentary: true },
           {
             kind: 'block',
           },
         );
-        const finalPayload = await input.delivery.preparePayload?.(
+        const finalDelivery = await input.delivery.deliver(
           { text: 'complete response' },
           { kind: 'final' },
         );
-        assert.equal(commentaryPayload, null);
-        assert.equal(finalPayload, null);
+        assert.deepEqual(commentaryDelivery, {
+          suppression: { reason: 'channel_transform' },
+          visibleReplySent: false,
+        });
+        assert.deepEqual(finalDelivery, {
+          suppression: { reason: 'channel_transform' },
+          visibleReplySent: false,
+        });
         return {
           admission: { kind: 'dispatch' },
           ctxPayload: input.ctxPayload,
