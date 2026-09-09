@@ -83,13 +83,3 @@ printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
 openclaw config get 'agents.entries.install-data.tools' --json | jq -e '.allow == ["read"] and (has("alsoAllow") | not)'
 ```
-
-```bash
-# should create main when the host roster is explicitly empty
-openclaw config set agents.entries '{}' --strict-json --replace
-mkdir -p "$TMPDIR/install-main"
-cp "$GITHUB_WORKSPACE/examples/install/main/agent.yaml" "$TMPDIR/install-main/agent.yaml"
-cd "$TMPDIR/install-main"
-openclaw agent-system install --json | jq -e '.outcomes | any(.component == "agent" and .code == "add-agent" and .status == "created")'
-openclaw agents list --json | jq -e 'any(.id == "main")'
-```

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { OpenClawPluginApi, PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
 import plugin from '../index.ts';
+import agentSystemCliMetadata from '../cli/metadata.ts';
 import type { CommandLike } from '../cli/register.ts';
 
 describe('index', () => {
@@ -15,11 +16,15 @@ describe('index', () => {
     assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
   });
 
-  it('should not access runtime capabilities while OpenClaw collects CLI metadata', () => {
+  it('should declare cli output ownership without accessing runtime capabilities', () => {
     let runtimeAccessed = false;
+    let metadata: Parameters<OpenClawPluginApi['registerCli']>[1];
     const api = {
       id: 'agent-system',
       registrationMode: 'cli-metadata',
+      registerCli(_registrar: unknown, options: Parameters<OpenClawPluginApi['registerCli']>[1]) {
+        metadata = options;
+      },
       get runtime() {
         runtimeAccessed = true;
         throw new Error('runtime unavailable');
@@ -28,6 +33,7 @@ describe('index', () => {
 
     assert.doesNotThrow(() => plugin.register(api as never));
     assert.equal(runtimeAccessed, false);
+    assert.equal(metadata, agentSystemCliMetadata);
   });
 
   it('should register startup hooks and both cli roots', async () => {
@@ -133,6 +139,7 @@ describe('index', () => {
       'agent-system.git-worktree',
       'agent-system.github',
     ]);
+    assert.equal(options, agentSystemCliMetadata);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(
       options?.descriptors?.map(({ hasSubcommands, name }) => ({ hasSubcommands, name })),

@@ -2,7 +2,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
-import { getRootOptionAwareCommandPath } from 'openclaw/plugin-sdk/cli-argv';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
@@ -32,6 +31,7 @@ import OpEnvironmentService from '../environment/op-service.ts';
 import createPathLifecycleContribution from '../paths/lifecycle.ts';
 import PathProjectionStore from '../paths/projection-store.ts';
 import registerAgentSystemCli from '../cli/register.ts';
+import agentSystemCliMetadata from '../cli/metadata.ts';
 import registerAgentCommandAuthority from './register-agent-command-authority.ts';
 import registerAgentSystemHooks from './register-hooks.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
@@ -288,41 +288,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
   });
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
-  const toolOwnsStdout = ({ argv }: { argv: readonly string[] }) =>
-    getRootOptionAwareCommandPath(argv, 2)[1] === 'tool';
-  api.registerCli(
-    ({ program }) => {
-      registerAgentSystemCli(program, {
-        commandAuthority,
-        credentialInput: opCredentialInput,
-        credentialManager,
-        doctorService,
-        environmentService,
-        input: process.stdin,
-        installService,
-        manifestService,
-        notificationMonitorService,
-        notificationStatusService,
-        toolRegistry,
-        toolRuntime,
-      });
-    },
-    {
-      commands: ['agent-system', 'as'],
-      descriptors: [
-        {
-          name: 'agent-system',
-          description: 'Manage reproducible OpenClaw agent workspaces.',
-          hasSubcommands: true,
-          machineOutput: toolOwnsStdout,
-        },
-        {
-          name: 'as',
-          description: 'Alias for the Agent System command.',
-          hasSubcommands: true,
-          machineOutput: toolOwnsStdout,
-        },
-      ],
-    },
-  );
+  api.registerCli(({ program }) => {
+    registerAgentSystemCli(program, {
+      commandAuthority,
+      credentialInput: opCredentialInput,
+      credentialManager,
+      doctorService,
+      environmentService,
+      input: process.stdin,
+      installService,
+      manifestService,
+      notificationMonitorService,
+      notificationStatusService,
+      toolRegistry,
+      toolRuntime,
+    });
+  }, agentSystemCliMetadata);
 }
