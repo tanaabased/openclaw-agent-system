@@ -1,7 +1,7 @@
 # Agent System
 
 <p align="center">
-  <img src="./assets/agent-system.png" alt="Agent System mark" width="180" />
+  <img src="./assets/icon.png" alt="Agent System mark" width="180" />
 </p>
 
 <p align="center">

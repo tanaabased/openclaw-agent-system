@@ -51,6 +51,7 @@ describe('channels/github/channel', () => {
       configPrefixes: ['channels.agent-system-github'],
     });
     assert.match(channel.meta.blurb ?? '', /issue and linked delivery pull-request comments/u);
+    assert.equal(channel.meta.systemImage, 'bell.badge');
     assert.equal(channel.outbound, undefined);
     assert.equal(channel.message, undefined);
   });

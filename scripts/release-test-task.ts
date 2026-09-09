@@ -156,7 +156,7 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
-    'assets/agent-system.png',
+    'assets/icon.png',
     'assets/git-icon-small.svg',
     'assets/git-icon-large.svg',
     'assets/github-icon-small.svg',
@@ -220,6 +220,16 @@ try {
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(manifest.skills, ['./skills']);
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
+  });
+
+  await check('ship a valid canonical OpenClaw plugin icon', async () => {
+    const icon = await readFile(join(packageRoot, 'assets', 'icon.png'));
+    assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(icon.subarray(12, 16).toString('ascii'), 'IHDR');
+    const width = icon.readUInt32BE(16);
+    const height = icon.readUInt32BE(20);
+    assert.equal(width, height, 'plugin icon must be square');
+    assert.ok(width >= 16, 'plugin icon must remain usable at 16 px');
   });
 
   await check('ship the built Agent System plugin entry', async () => {
