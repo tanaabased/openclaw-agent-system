@@ -145,6 +145,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const notificationRuntime = createGitHubNotificationRuntime({
     accountClient: githubCapability.accountClient,
     ...(currentUid === undefined ? {} : { currentUid }),
+    dispatchChannelInboundTurn: api.runtime.channel.inbound.dispatch,
     lifecycleLogger,
     mutateConfigFile(params) {
       return api.runtime.config.mutateConfigFile(params);

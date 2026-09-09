@@ -47,6 +47,7 @@ describe('index', () => {
     const policyIds: string[] = [];
     const serviceIds: string[] = [];
     const toolNames: string[] = [];
+    let channelInboundDispatchAccessed = false;
     const logger = {
       debug() {},
       error() {},
@@ -67,11 +68,11 @@ describe('index', () => {
           },
         },
         channel: {
-          reply: {
-            dispatchReplyWithBufferedBlockDispatcher() {},
-          },
-          session: {
-            async recordInboundSession() {},
+          inbound: {
+            get dispatch() {
+              channelInboundDispatchAccessed = true;
+              return async () => ({ dispatched: false });
+            },
           },
         },
         config: {
@@ -118,6 +119,7 @@ describe('index', () => {
 
     plugin.register(api as never);
 
+    assert.equal(channelInboundDispatchAccessed, true);
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
       'resolve_exec_env',

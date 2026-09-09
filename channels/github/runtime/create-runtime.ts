@@ -1,5 +1,9 @@
 import { resolve } from 'node:path';
 
+import type {
+  ChannelInboundTurnPlan,
+  dispatchChannelInboundTurn,
+} from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
@@ -61,6 +65,9 @@ import createNotificationLifecycleContribution from './lifecycle-contribution.ts
 export interface GitHubNotificationRuntimeDependencies {
   accountClient: GitHubAccountClient;
   currentUid?: number;
+  dispatchChannelInboundTurn(
+    input: ChannelInboundTurnPlan,
+  ): ReturnType<typeof dispatchChannelInboundTurn>;
   lifecycleLogger: Logger;
   mutateConfigFile: NotificationRoutingServiceDependencies['mutateConfigFile'];
   privateStateRoot?: string;
@@ -139,7 +146,9 @@ export default function createGitHubNotificationRuntime(
     turns: turnCatalog,
   });
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
-  const turnDispatcher = new GitHubNotificationModelTurnDispatcher();
+  const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
+    dispatchChannelInboundTurn: dependencies.dispatchChannelInboundTurn,
+  });
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
     candidates,
     dispatcher: turnDispatcher,

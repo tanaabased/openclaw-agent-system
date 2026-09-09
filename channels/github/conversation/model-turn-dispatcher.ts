@@ -1,6 +1,6 @@
-import {
+import type {
+  ChannelInboundTurnPlan,
   dispatchChannelInboundTurn,
-  type ChannelInboundTurnPlan,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
@@ -74,11 +74,7 @@ function modelContext(
 export default class GitHubNotificationModelTurnDispatcher {
   readonly #dependencies: GitHubNotificationModelTurnDispatcherDependencies;
 
-  constructor(
-    dependencies: GitHubNotificationModelTurnDispatcherDependencies = {
-      dispatchChannelInboundTurn,
-    },
-  ) {
+  constructor(dependencies: GitHubNotificationModelTurnDispatcherDependencies) {
     this.#dependencies = dependencies;
   }
 
