@@ -6,7 +6,7 @@ import { githubWorkItemKey } from '../provider/work-item.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import {
-  createGitHubNotificationConversationState,
+  createGitHubNotificationConversationSnapshot,
   githubNotificationPublicTextDigest,
 } from './conversation-state.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
@@ -49,12 +49,16 @@ export default class GitHubNotificationAssignmentAcknowledgmentService {
       publicationId: intake.assignmentEventId,
     });
     let state =
-      (await this.#dependencies.conversationStateStore.read(input.agentId)) ??
-      createGitHubNotificationConversationState(input.agentId, input.workspaceDir);
+      (await this.#dependencies.conversationStateStore.read(input.agentId, conversationId)) ??
+      createGitHubNotificationConversationSnapshot(
+        input.agentId,
+        input.workspaceDir,
+        conversationId,
+      );
     if (state.workspaceDir !== input.workspaceDir) {
       throw new Error('The GitHub assignment acknowledgment belongs to another workspace.');
     }
-    const conversation = state.conversations[conversationId];
+    const conversation = state.conversation;
     if (
       conversation &&
       (conversation.itemKey !== itemKey ||
@@ -83,7 +87,7 @@ export default class GitHubNotificationAssignmentAcknowledgmentService {
         target,
       };
       state = structuredClone(state);
-      state.conversations[conversationId] = {
+      state.conversation = {
         ...(conversation ?? {
           baselineEstablished: false,
           itemKey,
@@ -102,14 +106,17 @@ export default class GitHubNotificationAssignmentAcknowledgmentService {
       target: acknowledgment.target,
       text: acknowledgment.publicText,
     });
-    const current = await this.#dependencies.conversationStateStore.read(input.agentId);
-    const currentConversation = current?.conversations[conversationId];
+    const current = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      conversationId,
+    );
+    const currentConversation = current?.conversation;
     if (!current || currentConversation?.acknowledgment?.target !== target) {
       throw new Error('The GitHub assignment acknowledgment checkpoint is missing.');
     }
     if (currentConversation.acknowledgment.status === 'published') return;
     const next = structuredClone(current);
-    next.conversations[conversationId]!.acknowledgment = {
+    next.conversation!.acknowledgment = {
       ...currentConversation.acknowledgment,
       commentDatabaseId: result.receipt.databaseId,
       commentNodeId: result.receipt.nodeId,

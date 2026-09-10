@@ -59,11 +59,11 @@ export default class GitHubNotificationAssignmentCleanupService {
     });
     let state: Awaited<ReturnType<GitHubNotificationConversationStateStore['read']>>;
     try {
-      state = await this.#dependencies.conversations.read(input.agentId);
+      state = await this.#dependencies.conversations.read(input.agentId, conversationId);
     } catch {
       return failed('github-notification-cleanup-conversation-read-failed');
     }
-    const conversation = state?.conversations[conversationId];
+    const conversation = state?.conversation;
     if (
       !state ||
       state.workspaceDir !== input.workspaceDir ||

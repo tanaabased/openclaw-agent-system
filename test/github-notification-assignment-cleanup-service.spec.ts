@@ -65,31 +65,31 @@ function fixture(
   });
   const service = new GitHubNotificationAssignmentCleanupService({
     conversations: {
-      async read() {
+      async read(selectedAgentId, selectedConversationId) {
+        assert.equal(selectedAgentId, agentId);
+        assert.equal(selectedConversationId, conversationId);
         return {
           agentId,
-          conversations: {
-            [conversationId]: {
-              ...(options.active
-                ? { activeTurn: { eventId: 'comment' as const, sourceId: 'C_comment' } }
-                : {}),
-              assignmentResponse: {
-                commentDatabaseId: 1,
-                commentNodeId: 'C_response',
-                publicText: 'Plan',
-                publicTextDigest: '0'.repeat(64),
-                status: 'published' as const,
-                target: 'unused',
-              },
-              baselineEstablished: true,
-              implementation: { status: options.implementation ?? 'completed' },
-              itemKey: notificationItemKey,
-              lifecycleId: 'issue' as const,
-              mode: 'work' as const,
-              revisions: {},
+          conversationId,
+          conversation: {
+            ...(options.active
+              ? { activeTurn: { eventId: 'comment' as const, sourceId: 'C_comment' } }
+              : {}),
+            assignmentResponse: {
+              commentDatabaseId: 1,
+              commentNodeId: 'C_response',
+              publicText: 'Plan',
+              publicTextDigest: '0'.repeat(64),
+              status: 'published' as const,
+              target: 'unused',
             },
+            baselineEstablished: true,
+            implementation: { status: options.implementation ?? 'completed' },
+            itemKey: notificationItemKey,
+            lifecycleId: 'issue' as const,
+            mode: 'work' as const,
+            revisions: {},
           },
-          schemaVersion: 7 as const,
           workspaceDir,
         };
       },

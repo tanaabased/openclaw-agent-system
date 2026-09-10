@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { conversationSnapshot } from './github-notification-conversation-fixtures.ts';
+
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
@@ -21,7 +23,10 @@ import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
 } from '../channels/github/conversation/conversation-state.ts';
-import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
+import {
+  githubNotificationPublicationTarget,
+  parseGitHubNotificationPublicationTarget,
+} from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
@@ -204,10 +209,16 @@ function publicationService(
     monitor: ReturnType<typeof notificationMonitorState>;
   },
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<PublicationClient>,
+  conversationReads: string[] = [],
 ) {
   return new GitHubNotificationCommentPublicationService({
     assignmentAuthority,
-    conversationStateStore: { read: async () => structuredClone(fixture.conversations) },
+    conversationStateStore: {
+      async read(_agentId, selectedConversationId) {
+        conversationReads.push(selectedConversationId);
+        return conversationSnapshot(fixture.conversations, selectedConversationId);
+      },
+    },
     manifestService: {
       async loadForAgentId() {
         return {
@@ -233,6 +244,7 @@ describe('channels/github/publication/comment-publication-service', () => {
     const fixture = stateFixture();
     let opened = 0;
     let publishedBody = '';
+    const conversationReads: string[] = [];
     const client: PublicationClient = {
       identity: notificationAccount,
       async createIssueComment(_owner: string, _repository: string, _number: number, body: string) {
@@ -246,12 +258,16 @@ describe('channels/github/publication/comment-publication-service', () => {
         return structuredClone(fixture.comment);
       },
     };
-    const service = publicationService(fixture, {
-      async open(): Promise<GitHubNotificationAssignmentInspection<PublicationClient>> {
-        opened += 1;
-        return { authorized: true, client, configuration };
+    const service = publicationService(
+      fixture,
+      {
+        async open(): Promise<GitHubNotificationAssignmentInspection<PublicationClient>> {
+          opened += 1;
+          return { authorized: true, client, configuration };
+        },
       },
-    });
+      conversationReads,
+    );
 
     const result = await service.publish({
       accountId: agentId,
@@ -260,6 +276,10 @@ describe('channels/github/publication/comment-publication-service', () => {
     });
 
     assert.equal(opened, 1);
+    assert.deepEqual(
+      [...new Set(conversationReads)],
+      [parseGitHubNotificationPublicationTarget(fixture.target).conversationId],
+    );
     assert.equal(result.status, 'published');
     assert.match(
       publishedBody,

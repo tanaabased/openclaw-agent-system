@@ -20,7 +20,7 @@ import { githubCommentRevision } from './comment-admission.ts';
 import {
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversation,
-  type GitHubNotificationConversationState,
+  type GitHubNotificationConversationSnapshot,
   type GitHubNotificationDeliveryPullRequestState,
 } from './conversation-state.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
@@ -77,7 +77,7 @@ export type GitHubNotificationPullRequestHandoffReconcileInput =
 interface HandoffConversationCheckpoint {
   conversation: GitHubNotificationConversation;
   source: GitHubNotificationDeliveryPullRequestState;
-  state: GitHubNotificationConversationState;
+  state: GitHubNotificationConversationSnapshot;
 }
 
 function sortedComments<T extends { createdAt: string; databaseId: number }>(
@@ -156,8 +156,11 @@ export default class GitHubNotificationPullRequestHandoffService {
   async #conversation(
     input: GitHubNotificationPullRequestHandoffBaseInput,
   ): Promise<HandoffConversationCheckpoint> {
-    const state = await this.#dependencies.conversationStateStore.read(input.agentId);
-    const conversation = state?.conversations[this.#conversationId(input)];
+    const state = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      this.#conversationId(input),
+    );
+    const conversation = state?.conversation;
     const source = conversation?.deliveryPullRequest;
     if (
       !state ||
@@ -177,8 +180,11 @@ export default class GitHubNotificationPullRequestHandoffService {
     input: GitHubNotificationPullRequestHandoffCheckpointInput,
   ): Promise<void> {
     const conversationId = this.#conversationId(input);
-    const current = await this.#dependencies.conversationStateStore.read(input.agentId);
-    const conversation = current?.conversations[conversationId];
+    const current = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      conversationId,
+    );
+    const conversation = current?.conversation;
     if (
       !current ||
       current.workspaceDir !== input.workspaceDir ||
@@ -200,7 +206,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
     if (existing) return;
     const next = structuredClone(current);
-    next.conversations[conversationId]!.deliveryPullRequest = {
+    next.conversation!.deliveryPullRequest = {
       baselineEstablished: false,
       eventRecorded: false,
       nodeId: input.pullRequest.pullRequestNodeId,
@@ -237,7 +243,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
     if (observed.source.baselineEstablished) return;
     const next = structuredClone(observed.state);
-    const conversation = next.conversations[this.#conversationId(input)]!;
+    const conversation = next.conversation!;
     for (const comment of sortedComments(page.comments)) {
       const revision = githubCommentRevision(comment);
       conversation.revisions[comment.nodeId] = {
@@ -265,7 +271,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
     if (!checkpoint.conversation.activeTurn) {
       const next = structuredClone(checkpoint.state);
-      next.conversations[this.#conversationId(input)]!.activeTurn = {
+      next.conversation!.activeTurn = {
         eventId: 'pull-request-opened',
         sourceId: checkpoint.source.nodeId,
       };
@@ -358,7 +364,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       throw new Error('The pull request opened event checkpoint has changed.');
     }
     const next = structuredClone(observed.state);
-    const conversation = next.conversations[this.#conversationId(input)]!;
+    const conversation = next.conversation!;
     delete conversation.activeTurn;
     conversation.deliveryPullRequest!.eventRecorded = true;
     await this.#dependencies.conversationStateStore.write(next);
@@ -373,7 +379,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     if (!checkpoint.source.handoff) {
       const publicText = githubNotificationPullRequestHandoffComment(checkpoint.source.number);
       const next = structuredClone(checkpoint.state);
-      next.conversations[this.#conversationId(input)]!.deliveryPullRequest!.handoff = {
+      next.conversation!.deliveryPullRequest!.handoff = {
         publicText,
         publicTextDigest: githubNotificationPublicTextDigest(publicText),
         status: 'pending',
@@ -401,7 +407,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       throw new Error('The pull request handoff publication checkpoint has changed.');
     }
     const next = structuredClone(observed.state);
-    next.conversations[this.#conversationId(input)]!.deliveryPullRequest!.handoff = {
+    next.conversation!.deliveryPullRequest!.handoff = {
       ...handoff,
       commentDatabaseId: result.receipt.databaseId,
       commentNodeId: result.receipt.nodeId,

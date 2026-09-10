@@ -102,6 +102,21 @@ export interface GitHubNotificationConversationState {
   workspaceDir: string;
 }
 
+export interface GitHubNotificationConversationSnapshot {
+  agentId: string;
+  conversation?: GitHubNotificationConversation;
+  conversationId: string;
+  workspaceDir: string;
+}
+
+export function createGitHubNotificationConversationSnapshot(
+  agentId: string,
+  workspaceDir: string,
+  conversationId: string,
+): GitHubNotificationConversationSnapshot {
+  return { agentId, conversationId, workspaceDir };
+}
+
 const maximumConversations = 500;
 const maximumRevisions = 400;
 

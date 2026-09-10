@@ -8,7 +8,7 @@ import { admitGitHubComment, githubCommentRevision } from '../conversation/comme
 import type {
   GitHubNotificationCommentRevisionState,
   GitHubNotificationConversationSource,
-  GitHubNotificationConversationState,
+  GitHubNotificationConversationSnapshot,
   GitHubNotificationPublicationState,
 } from '../conversation/conversation-state.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
@@ -57,7 +57,7 @@ type LocalPublicationMatch = LocalPublicationMatchBase &
 type PublicationMatch = LocalPublicationMatch & {
   destination: GitHubNotificationConversationSource;
   item: GitHubNotificationItemState;
-  state: GitHubNotificationConversationState;
+  state: GitHubNotificationConversationSnapshot;
 };
 
 export interface GitHubNotificationCommentPublicationServiceDependencies {
@@ -98,56 +98,56 @@ function accountId(value: string): string {
 }
 
 function publicationMatches(
-  state: GitHubNotificationConversationState,
+  state: GitHubNotificationConversationSnapshot,
   target: string,
 ): LocalPublicationMatch[] {
   const matches: LocalPublicationMatch[] = [];
-  for (const [conversationId, conversation] of Object.entries(state.conversations)) {
-    if (conversation.acknowledgment?.target === target) {
-      matches.push({
-        conversationId,
-        itemKey: conversation.itemKey,
-        kind: 'initial-acknowledgment',
-        publication: conversation.acknowledgment,
-      });
-    }
+  const { conversationId, conversation } = state;
+  if (!conversation) return matches;
+  if (conversation.acknowledgment?.target === target) {
+    matches.push({
+      conversationId,
+      itemKey: conversation.itemKey,
+      kind: 'initial-acknowledgment',
+      publication: conversation.acknowledgment,
+    });
+  }
+  if (
+    conversation.assignmentResponse?.status !== 'withheld' &&
+    conversation.assignmentResponse?.target === target
+  ) {
+    matches.push({
+      conversationId,
+      itemKey: conversation.itemKey,
+      kind: 'assignment-response',
+      publication: conversation.assignmentResponse,
+    });
+  }
+  const pullRequest = conversation.deliveryPullRequest;
+  if (pullRequest?.handoff?.target === target) {
+    matches.push({
+      conversationId,
+      itemKey: conversation.itemKey,
+      kind: 'pull-request-handoff',
+      publication: pullRequest.handoff,
+      publicationId: pullRequest.nodeId,
+    });
+  }
+  for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
+    const publication = revision.publication;
     if (
-      conversation.assignmentResponse?.status !== 'withheld' &&
-      conversation.assignmentResponse?.target === target
+      revision.status === 'responded' &&
+      publication &&
+      publication.status !== 'withheld' &&
+      publication.target === target
     ) {
       matches.push({
+        commentNodeId,
         conversationId,
         itemKey: conversation.itemKey,
-        kind: 'assignment-response',
-        publication: conversation.assignmentResponse,
+        kind: 'reply',
+        revision: { ...revision, publication },
       });
-    }
-    const pullRequest = conversation.deliveryPullRequest;
-    if (pullRequest?.handoff?.target === target) {
-      matches.push({
-        conversationId,
-        itemKey: conversation.itemKey,
-        kind: 'pull-request-handoff',
-        publication: pullRequest.handoff,
-        publicationId: pullRequest.nodeId,
-      });
-    }
-    for (const [commentNodeId, revision] of Object.entries(conversation.revisions)) {
-      const publication = revision.publication;
-      if (
-        revision.status === 'responded' &&
-        publication &&
-        publication.status !== 'withheld' &&
-        publication.target === target
-      ) {
-        matches.push({
-          commentNodeId,
-          conversationId,
-          itemKey: conversation.itemKey,
-          kind: 'reply',
-          revision: { ...revision, publication },
-        });
-      }
     }
   }
   return matches;
@@ -268,7 +268,7 @@ export default class GitHubNotificationCommentPublicationService {
     const parsed = parseGitHubNotificationPublicationTarget(input.target);
     const text = githubNotificationPublicationText(parsed.intent, [{ text: input.text }]);
     const [conversationState, monitorState, config, loaded] = await Promise.all([
-      this.#dependencies.conversationStateStore.read(normalizedAccountId),
+      this.#dependencies.conversationStateStore.read(normalizedAccountId, parsed.conversationId),
       this.#dependencies.monitorStateStore.read(normalizedAccountId),
       this.#dependencies.readConfig(),
       this.#dependencies.manifestService.loadForAgentId(normalizedAccountId, 'service'),
@@ -290,7 +290,7 @@ export default class GitHubNotificationCommentPublicationService {
     }
     const candidate = matches[0];
     const item = monitorState.items[candidate.itemKey];
-    const conversation = conversationState.conversations[candidate.conversationId];
+    const conversation = conversationState.conversation;
     const destination = !item
       ? undefined
       : candidate.kind === 'reply'

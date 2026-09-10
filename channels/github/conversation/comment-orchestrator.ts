@@ -8,11 +8,11 @@ import {
   type GitHubCommentRevision,
 } from './comment-admission.ts';
 import {
-  createGitHubNotificationConversationState,
+  createGitHubNotificationConversationSnapshot,
   githubNotificationPublicTextDigest,
   type GitHubNotificationCommentRevisionState,
   type GitHubNotificationConversationSource,
-  type GitHubNotificationConversationState,
+  type GitHubNotificationConversationSnapshot,
 } from './conversation-state.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type {
@@ -164,14 +164,14 @@ export default class GitHubNotificationCommentOrchestrator {
       repositoryId: item.repositoryNodeId,
     });
     let state =
-      (await this.#dependencies.conversationStateStore.read(agentId)) ??
-      createGitHubNotificationConversationState(agentId, monitor.workspaceDir);
+      (await this.#dependencies.conversationStateStore.read(agentId, conversationId)) ??
+      createGitHubNotificationConversationSnapshot(agentId, monitor.workspaceDir, conversationId);
     if (state.workspaceDir !== monitor.workspaceDir) {
       throw new GitHubNotificationCommentOrchestratorError(
         'github-notification-conversation-workspace-mismatch',
       );
     }
-    const existingConversation = state.conversations[conversationId];
+    const existingConversation = state.conversation;
     if (existingConversation) {
       const pending = Object.entries(existingConversation.revisions).find(
         ([, revision]) =>
@@ -257,7 +257,7 @@ export default class GitHubNotificationCommentOrchestrator {
     const missingBaselines = pages.filter(({ source }) => !source.baselineEstablished);
     if (missingBaselines.length > 0) {
       state = structuredClone(state);
-      state.conversations[conversationId] = {
+      state.conversation = {
         ...(existingConversation ?? {}),
         baselineEstablished: existingConversation?.baselineEstablished ?? false,
         itemKey,
@@ -265,7 +265,7 @@ export default class GitHubNotificationCommentOrchestrator {
         mode: modeId,
         revisions: { ...(existingConversation?.revisions ?? {}) },
       };
-      const conversation = state.conversations[conversationId]!;
+      const conversation = state.conversation!;
       let baselineCount = 0;
       for (const { comments, source } of missingBaselines) {
         for (const comment of comments) {
@@ -379,11 +379,11 @@ export default class GitHubNotificationCommentOrchestrator {
     client: GitHubNotificationConversationClient,
     expectedMonitor: GitHubNotificationMonitorState,
   ): Promise<boolean> {
-    const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const conversation = current?.conversations[conversationId];
+    const current = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    const conversation = current?.conversation;
     if (!current || !conversation) return false;
     const next = structuredClone(current);
-    const updated = next.conversations[conversationId]!;
+    const updated = next.conversation!;
     const source = conversation.deliveryPullRequest;
     if (!source || source.status === 'merged') return false;
     const observed = await client.getItem(item.repositoryOwner, item.repositoryName, source.number);
@@ -555,8 +555,8 @@ export default class GitHubNotificationCommentOrchestrator {
     revisionId: string,
     receipt: { databaseId: number; nodeId: string },
   ): Promise<void> {
-    const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const revision = current?.conversations[conversationId]?.revisions[commentNodeId];
+    const current = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    const revision = current?.conversation?.revisions[commentNodeId];
     if (
       !current ||
       revision?.revisionId !== revisionId ||
@@ -566,7 +566,7 @@ export default class GitHubNotificationCommentOrchestrator {
       return;
     }
     const state = structuredClone(current);
-    state.conversations[conversationId]!.revisions[commentNodeId] = {
+    state.conversation!.revisions[commentNodeId] = {
       ...revision,
       publication: {
         ...revision.publication,
@@ -583,16 +583,16 @@ export default class GitHubNotificationCommentOrchestrator {
     conversationId: string,
     commentNodeId: string,
     revision: GitHubNotificationCommentRevisionState,
-  ): Promise<GitHubNotificationConversationState> {
-    const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const conversation = current?.conversations[conversationId];
+  ): Promise<GitHubNotificationConversationSnapshot> {
+    const current = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    const conversation = current?.conversation;
     if (!current || !conversation) {
       throw new GitHubNotificationCommentOrchestratorError(
         'github-notification-conversation-state-missing',
       );
     }
     const state = structuredClone(current);
-    const updatedConversation = state.conversations[conversationId]!;
+    const updatedConversation = state.conversation!;
     if (revision.status === 'admitted') {
       updatedConversation.activeTurn = {
         eventId: 'comment',

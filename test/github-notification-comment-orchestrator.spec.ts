@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 
+import {
+  conversationSnapshot,
+  replaceConversationSnapshot,
+} from './github-notification-conversation-fixtures.ts';
+
 import type { GitHubNotificationMonitorStateUpdate } from '../channels/github/intake/monitor/state-store.ts';
 
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
@@ -18,6 +23,7 @@ import {
 import {
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
+  type GitHubNotificationConversationSnapshot,
   type GitHubNotificationConversationState,
 } from '../channels/github/conversation/conversation-state.ts';
 import GitHubNotificationTurnCatalog, {
@@ -204,14 +210,14 @@ function conversationId(monitor: GitHubNotificationMonitorState): string {
 function memoryStateStore(initial?: GitHubNotificationConversationState) {
   let state = initial === undefined ? undefined : structuredClone(initial);
   return {
-    async read() {
-      return state === undefined ? undefined : structuredClone(state);
+    async read(_agentId: string, conversationId: string) {
+      return conversationSnapshot(state, conversationId);
     },
     snapshot() {
       return state === undefined ? undefined : structuredClone(state);
     },
-    async write(next: GitHubNotificationConversationState) {
-      state = structuredClone(next);
+    async write(next: GitHubNotificationConversationSnapshot) {
+      state = replaceConversationSnapshot(state, next);
     },
   };
 }

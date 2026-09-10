@@ -5,13 +5,12 @@ import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationChannelId } from '../routing/routing.ts';
-import type { GitHubNotificationConversationState } from './conversation-state.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 
 export interface GitHubNotificationTurnSelectorDependencies {
-  conversations: Pick<GitHubNotificationConversationStateStore, 'read'>;
+  conversations: Pick<GitHubNotificationConversationStateStore, 'readRouted'>;
   logger: Pick<Logger, 'warn'>;
   turns: {
     resolve(
@@ -62,19 +61,6 @@ function conversationId(context: AgentSystemHookContext, agentId: string): strin
   return unique.length === 1 ? unique[0] : undefined;
 }
 
-function canonicalConversationId(
-  conversations: GitHubNotificationConversationState['conversations'],
-  routedConversationId: string,
-): string | undefined {
-  if (Object.hasOwn(conversations, routedConversationId)) return routedConversationId;
-  // OpenClaw can normalize flattened route ids, so recover only one canonical durable key.
-  const normalized = routedConversationId.toLowerCase();
-  const matches = Object.keys(conversations).filter(
-    (candidate) => candidate.toLowerCase() === normalized,
-  );
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
 /** Select one catalogued turn from trusted hook routing and private conversation state. */
 export default class GitHubNotificationTurnSelector {
   readonly #dependencies: GitHubNotificationTurnSelectorDependencies;
@@ -92,7 +78,10 @@ export default class GitHubNotificationTurnSelector {
     if (!selectedConversationId) return undefined;
 
     try {
-      const state = await this.#dependencies.conversations.read(agentId);
+      const state = await this.#dependencies.conversations.readRouted(
+        agentId,
+        selectedConversationId,
+      );
       if (!state) return undefined;
       const workspaceDir = context.workspaceDir?.trim();
       if (
@@ -101,12 +90,8 @@ export default class GitHubNotificationTurnSelector {
       ) {
         return undefined;
       }
-      const selectedCanonicalConversationId = canonicalConversationId(
-        state.conversations,
-        selectedConversationId,
-      );
-      if (!selectedCanonicalConversationId) return undefined;
-      const conversation = state.conversations[selectedCanonicalConversationId];
+      const selectedCanonicalConversationId = state.conversationId;
+      const conversation = state.conversation;
       if (!conversation?.activeTurn) return undefined;
       const identity = this.#dependencies.turns.resolve({
         eventId: conversation.activeTurn.eventId,
