@@ -67,6 +67,11 @@ function monitorService(
   overrides: Partial<GitHubNotificationMonitorServiceDependencies> = {},
 ): GitHubNotificationMonitorService {
   return new GitHubNotificationMonitorService({
+    inspectReadiness: () => ({
+      code: 'github-notification-hook-ready',
+      message: 'ready',
+      status: 'healthy',
+    }),
     accountClient: { connect: async () => Promise.reject(new Error('unexpected poll')) },
     assignmentOrchestrator: {
       reconcile: async () => undefined,
@@ -92,6 +97,43 @@ function monitorService(
 }
 
 describe('channels/github/intake/monitor/service', () => {
+  it('should block hookless gateway work before provider access and recover after repair', async () => {
+    let ready = false;
+    let providerCalls = 0;
+    let state: GitHubNotificationMonitorState | undefined;
+    const service = monitorService({
+      clock: () => 1000,
+      inspectReadiness: () =>
+        ready
+          ? { code: 'github-notification-hook-ready', message: 'ready', status: 'healthy' }
+          : {
+              code: 'github-notification-hook-access-required',
+              message: 'hook denied',
+              status: 'blocked',
+            },
+      accountClient: {
+        async connect() {
+          providerCalls++;
+          throw new Error('provider reached');
+        },
+      },
+      stateStore: {
+        read: async () => state,
+        update: async (_id, patch) => {
+          state = await patch(state);
+          return state;
+        },
+      },
+    });
+    const [blocked] = await service.runOnce();
+    assert.equal(blocked?.code, 'github-notification-hook-access-required');
+    assert.equal(state?.diagnosticCode, 'github-notification-hook-access-required');
+    assert.equal(providerCalls, 0);
+    ready = true;
+    await service.runOnce();
+    assert.equal(providerCalls, 1);
+  });
+
   it('should skip an explicitly empty roster without inspecting manifests or state', async () => {
     for (const config of [{ agents: { entries: {} } }, { agents: { list: [] } }]) {
       const service = monitorService({

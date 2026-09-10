@@ -8,6 +8,10 @@ import {
   createDefaultChannelRuntimeState,
 } from 'openclaw/plugin-sdk/status-helpers';
 
+import {
+  inspectConversationHookPolicy,
+  type ConversationHookFinding,
+} from '../../core/conversation-hook-access.ts';
 import type GitHubNotificationMonitorService from './intake/monitor/service.ts';
 import type GitHubNotificationMonitorStateStore from './intake/monitor/state-store.ts';
 import type { GitHubNotificationMonitorState } from './intake/monitor/state.ts';
@@ -20,6 +24,7 @@ interface ResolvedNotificationChannelAccount {
 }
 
 export interface GitHubNotificationChannelDependencies {
+  inspectReadiness(): ConversationHookFinding;
   clock?: () => number;
   message?: ChannelMessageAdapterShape;
   monitorService: Pick<GitHubNotificationMonitorService, 'runAccount'>;
@@ -121,12 +126,23 @@ export function createGitHubNotificationChannel(
         lastEventAt: snapshot.lastEventAt ?? null,
         mode: 'polling',
       }),
-      async resolveAccountSnapshot({ account }) {
+      async resolveAccountSnapshot({ account, cfg }) {
+        // CLI status may inspect a Gateway snapshot without an active local hook registry.
+        const readiness = inspectConversationHookPolicy(cfg);
         return {
           accountId: account.accountId,
           enabled: account.enabled,
           configured: account.enabled,
-          extra: monitorObservation(await dependencies.stateStore.read(account.accountId)),
+          extra: {
+            ...monitorObservation(await dependencies.stateStore.read(account.accountId)),
+            ...(account.enabled && readiness.status === 'blocked'
+              ? {
+                  connected: false,
+                  healthState: 'degraded',
+                  lastError: `${readiness.message} ${readiness.remediation}`,
+                }
+              : {}),
+          },
         };
       },
     }),
@@ -137,10 +153,18 @@ export function createGitHubNotificationChannel(
           setStatus: context.setStatus,
         });
         const publish = async (lastStartAt?: number) => {
+          const readiness = dependencies.inspectReadiness();
           status({
             running: true,
             ...(lastStartAt === undefined ? {} : { lastStartAt }),
             ...monitorRuntimeStatus(await dependencies.stateStore.read(context.accountId)),
+            ...(readiness.status === 'blocked'
+              ? {
+                  connected: false,
+                  healthState: 'degraded',
+                  lastError: `${readiness.message} ${readiness.remediation}`,
+                }
+              : {}),
           });
         };
         await publish(clock());

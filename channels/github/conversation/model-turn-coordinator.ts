@@ -52,6 +52,7 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
+  assertReady(surface: GitHubNotificationExecutionSurface): void | Promise<void>;
   candidates: Pick<
     GitHubNotificationReplyCandidateStore,
     'attestPromptSelection' | 'begin' | 'cancel' | 'finish'
@@ -197,6 +198,7 @@ export default class GitHubNotificationModelTurnCoordinator {
   async run(
     input: GitHubNotificationModelTurnCoordinatorInput,
   ): Promise<GitHubNotificationModelTurnCoordinatorResult> {
+    await this.#dependencies.assertReady(input.executionSurface);
     const startedAt = Date.now();
     const details = turnDetails(input);
     this.#dependencies.logger.info(`github-notifications: model turn started ${details}`);

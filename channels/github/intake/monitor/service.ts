@@ -1,6 +1,7 @@
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import type { ConversationHookFinding } from '../../../../core/conversation-hook-access.ts';
 import type AgentManifestService from '../../../../manifest/service.ts';
 import type GitHubAccountClient from '../../../../core/github-account-client.ts';
 import type { Logger } from '../../../../core/logger.ts';
@@ -31,6 +32,7 @@ import GitHubNotificationMonitorReconciler, {
 const schedulerIntervalMs = 30_000;
 
 export interface GitHubNotificationMonitorServiceDependencies {
+  inspectReadiness(): ConversationHookFinding;
   accountClient: Pick<GitHubAccountClient, 'connect'>;
   assignmentOrchestrator: GitHubNotificationAssignmentReconciler;
   commentOrchestrator?: GitHubNotificationCommentReconciler;
@@ -88,8 +90,12 @@ function monitorStateMetadata(state: GitHubNotificationMonitorState | undefined)
   };
 }
 
-function isRoutingDiagnostic(code: string | undefined): boolean {
-  return code?.startsWith('notification-routing-') === true;
+function isPrerequisiteDiagnostic(code: string | undefined): boolean {
+  return (
+    code?.startsWith('notification-routing-') === true ||
+    code?.startsWith('github-notification-hook-') === true ||
+    code === 'github-notification-prompt-injection-denied'
+  );
 }
 
 function completedExecutionResult(result: GitHubNotificationMonitorRunResult) {
@@ -209,7 +215,7 @@ export default class GitHubNotificationMonitorService {
     return (
       result.status === 'completed' ||
       result.code === 'github-notification-disabled' ||
-      isRoutingDiagnostic(result.code)
+      isPrerequisiteDiagnostic(result.code)
     );
   }
 
@@ -223,7 +229,7 @@ export default class GitHubNotificationMonitorService {
     result: GitHubNotificationMonitorRunResult,
   ): Promise<string[]> {
     const state = await this.#dependencies.stateStore.read(agentId);
-    if (result.code === 'github-notification-disabled' || isRoutingDiagnostic(result.code)) {
+    if (result.code === 'github-notification-disabled' || isPrerequisiteDiagnostic(result.code)) {
       return githubNotificationRetirementItemKeys(state);
     }
     return [
@@ -342,6 +348,29 @@ export default class GitHubNotificationMonitorService {
         }
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
+      if (options.executionSurface !== 'cli-one-shot') {
+        const readiness = this.#dependencies.inspectReadiness();
+        if (readiness.status === 'blocked') {
+          if (current?.diagnosticCode === readiness.code && (current.nextPollAt ?? 0) > now) {
+            return {
+              agentId,
+              code: readiness.code,
+              ...monitorStateMetadata(current),
+              status: 'failed',
+            };
+          }
+          this.#dependencies.logger.warn(
+            `github-notifications: ${readiness.message} ${readiness.remediation}`,
+          );
+          const failed = await this.#saveFailure(agentId, workspaceDir, now, readiness.code);
+          return {
+            agentId,
+            code: readiness.code,
+            ...monitorStateMetadata(failed),
+            status: 'failed',
+          };
+        }
+      }
       const pendingItemKeys = pendingGitHubNotificationItemKeys(current, options.selector);
       const intervalDeferred = current?.nextPollAt !== undefined && current.nextPollAt > now;
       const pollDeferred =
@@ -349,7 +378,7 @@ export default class GitHubNotificationMonitorService {
       const routingBackoff =
         pollDeferred &&
         (current?.failureCount ?? 0) > 0 &&
-        isRoutingDiagnostic(current?.diagnosticCode);
+        isPrerequisiteDiagnostic(current?.diagnosticCode);
       if (pollDeferred && (current?.failureCount ?? 0) > 0 && !routingBackoff) {
         return {
           agentId,
@@ -536,6 +565,17 @@ export default class GitHubNotificationMonitorService {
           itemKey,
         );
         return { ...result, code: 'github-notification-disabled', status: 'skipped' };
+      }
+      if (executionSurface !== 'cli-one-shot') {
+        const readiness = this.#dependencies.inspectReadiness();
+        if (readiness.status === 'blocked') {
+          await this.#reconciler.reconcileAssignments(
+            agentId,
+            githubNotificationRetirementItemKeys(current).filter((key) => key === itemKey),
+            signal,
+          );
+          return { ...result, code: readiness.code, status: 'failed' };
+        }
       }
       const route = await this.#dependencies.routingService.inspect({
         agentId,

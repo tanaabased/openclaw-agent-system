@@ -1,0 +1,19 @@
+schema-version: 1
+
+agent:
+  id: hook-doctor-data
+  name: Hook Doctor Data
+  email: hook-doctor@example.invalid
+
+git:
+  worktrees: {}
+
+github:
+  username: hook-doctor
+  token: HOOK_DOCTOR_UNUSED_TOKEN
+  notifications:
+    assignment-types:
+      - issue
+    approved-actors:
+      - login: fixture-owner
+        node-id: U_fixture

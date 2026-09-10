@@ -170,6 +170,7 @@ async function respondWithCandidates(
   const contracts = createGitHubNotificationTurnContractResolver();
   const service = new GitHubNotificationCommentTurnService({
     coordinator: new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: candidateStore(candidates, finishError),
       dispatcher: modelTurnDispatcher(
         async (input) => {
@@ -232,6 +233,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     };
     const service = new GitHubNotificationCommentTurnService({
       coordinator: new GitHubNotificationModelTurnCoordinator({
+        assertReady() {},
         candidates: candidateStore(['ready']),
         dispatcher: modelTurnDispatcher(async (input) => {
           assert.equal(recorded, true);
@@ -332,6 +334,7 @@ describe('channels/github/conversation/comment-turn-service', () => {
     const contracts = createGitHubNotificationTurnContractResolver();
     const service = new GitHubNotificationCommentTurnService({
       coordinator: new GitHubNotificationModelTurnCoordinator({
+        assertReady() {},
         candidates: candidateStore([]),
         dispatcher: modelTurnDispatcher(
           async () => {

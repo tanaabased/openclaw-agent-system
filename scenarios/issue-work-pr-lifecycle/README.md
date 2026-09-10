@@ -38,6 +38,9 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-s
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
+# should require normal install to repair missing hook consent
+openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
+
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
@@ -47,6 +50,7 @@ openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
+openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data

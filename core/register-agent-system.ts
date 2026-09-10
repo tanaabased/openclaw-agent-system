@@ -5,6 +5,7 @@ import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
+import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
@@ -41,6 +42,11 @@ import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
+import ConversationHookAccess, {
+  inspectConversationHookPolicy,
+  inspectRunningConversationHook,
+  requiredConversationHooks,
+} from './conversation-hook-access.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 
 /** Assemble and register the complete Agent System runtime. */
@@ -154,7 +160,29 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
     readConfig,
   });
+  const registrationPolicy = inspectConversationHookPolicy(api.config ?? {});
+  const hookAccess = new ConversationHookAccess({
+    readConfig,
+    mutateConfigFile: (params) => api.runtime.config.mutateConfigFile(params),
+    inspectPlugin(workspaceDir) {
+      return runPluginCommandWithTimeout({
+        argv: [...openClawCommand, 'plugins', 'inspect', 'agent-system', '--runtime', '--json'],
+        cwd: workspaceDir,
+        timeoutMs: 30_000,
+      });
+    },
+  });
+  const inspectRuntimeHook = () =>
+    inspectRunningConversationHook({
+      config: readRuntimeConfig(),
+      registrationPolicy,
+      hasRequiredHooks: requiredConversationHooks.every(
+        (name) => getGlobalHookRunner()?.hasHooks(name) === true,
+      ),
+    });
   const notificationRuntime = createGitHubNotificationRuntime({
+    hookAccess,
+    inspectRuntimeHook,
     accountClient: githubCapability.accountClient,
     ...(currentUid === undefined ? {} : { currentUid }),
     dispatchChannelInboundTurn: api.runtime.channel.inbound.dispatch,

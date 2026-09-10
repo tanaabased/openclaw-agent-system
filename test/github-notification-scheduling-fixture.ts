@@ -158,6 +158,11 @@ export default async function createGitHubNotificationSchedulingFixture(
   ) {
     const store = new GitHubNotificationMonitorStateStore(stateOptions);
     return new GitHubNotificationMonitorService({
+      inspectReadiness: () => ({
+        code: 'github-notification-hook-ready',
+        message: 'ready',
+        status: 'healthy',
+      }),
       ...(options.reconcileComment
         ? { commentOrchestrator: { reconcile: options.reconcileComment } }
         : {}),

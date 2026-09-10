@@ -78,7 +78,9 @@ openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess t
 Either install command accepts Agent System's declared capabilities, then
 registers and enables the `agent-system` plugin. The explicit conversation-access
 grant lets Agent System add manifest and GitHub lifecycle guidance through
-OpenClaw's `before_prompt_build` hook.
+OpenClaw's `before_prompt_build` hook. For workspaces with GitHub notifications,
+normal `openclaw agent-system install` also reconciles and verifies this grant;
+`doctor` reports missing access without changing it.
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 

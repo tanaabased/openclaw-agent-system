@@ -1,10 +1,52 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
+import githubNotificationPromptGuidance, {
+  githubNotificationBeforeRun,
+} from '../channels/github/conversation/prompt-guidance.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 describe('channels/github/conversation/prompt-guidance', () => {
+  it('should block unattested or unresolved github turns before model execution', async () => {
+    const selected = {
+      agentId: 'data',
+      conversationId: 'github:issue:R_repo:12',
+      sourceId: 'assignment',
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' } as const,
+    };
+    let attested = false;
+    const dependencies = {
+      candidates: {
+        async assertPromptSelected(input: unknown) {
+          assert.deepEqual(input, selected);
+          if (!attested) throw new Error('missing private receipt');
+        },
+      },
+      turnSelector: { select: async () => selected },
+      logger: { warn() {} },
+    };
+    const context = { messageProvider: githubNotificationChannelId };
+    const blocked = await githubNotificationBeforeRun(context, dependencies);
+    assert.equal(blocked?.outcome, 'block');
+    assert.match(blocked?.message ?? '', /before_prompt_build/u);
+    assert.doesNotMatch(blocked?.message ?? '', /private receipt/u);
+    attested = true;
+    assert.equal(await githubNotificationBeforeRun(context, dependencies), undefined);
+    assert.equal(
+      (
+        await githubNotificationBeforeRun(context, {
+          ...dependencies,
+          turnSelector: { select: async () => undefined },
+        })
+      )?.outcome,
+      'block',
+    );
+    assert.equal(
+      await githubNotificationBeforeRun({ messageProvider: 'discord' }, dependencies),
+      undefined,
+    );
+  });
+
   it('should compose the selected issue work comment instructions for github turns', async () => {
     const turnContracts = createGitHubNotificationTurnContractResolver();
     const selected = {

@@ -33,7 +33,16 @@ describe('channels/github/publication/reply-candidate-store', () => {
       const executor = new GitHubNotificationReplyCandidateStore({ rootDir });
       const turnId = await parent.begin(identity);
 
+      await assert.rejects(
+        parent.assertPromptSelected(identity),
+        hasCode('reply-turn-prompt-selection-missing'),
+      );
       await executor.attestPromptSelection(identity);
+      await parent.assertPromptSelected(identity);
+      await assert.rejects(
+        parent.assertPromptSelected({ ...identity, sourceId: 'another-turn' }),
+        hasCode('reply-turn-mismatch'),
+      );
       await executor.stage(identity.agentId, ' ready ');
 
       assert.equal(turnId, 'turn-1');

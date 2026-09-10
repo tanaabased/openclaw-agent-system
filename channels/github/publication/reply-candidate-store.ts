@@ -218,6 +218,14 @@ export default class GitHubNotificationReplyCandidateStore {
     });
   }
 
+  /** Verify the matching durable receipt before a Gateway model can begin work. */
+  async assertPromptSelected(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
+    await this.#exclusive(input.agentId, async (file) => {
+      const active = await this.#activeState(file, input);
+      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
+    });
+  }
+
   async attestPromptSelection(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
     await this.#exclusive(input.agentId, async (file) => {
       const active = await this.#activeState(file, input);

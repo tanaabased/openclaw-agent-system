@@ -43,3 +43,30 @@ export default async function githubNotificationPromptGuidance(
   await dependencies.candidates.attestPromptSelection(selected);
   return instructions;
 }
+
+/** Block before model execution if this turn never received its trusted prompt. */
+export async function githubNotificationBeforeRun(
+  context: AgentSystemHookContext,
+  dependencies: {
+    candidates: Pick<GitHubNotificationReplyCandidateStore, 'assertPromptSelected'>;
+    turnSelector: Pick<GitHubNotificationTurnSelector, 'select'>;
+    logger: Pick<Logger, 'warn'>;
+  },
+) {
+  if (!isGitHubNotificationContext(context)) return undefined;
+  try {
+    const selected = await dependencies.turnSelector.select(context);
+    if (!selected) throw new Error('unresolved turn');
+    await dependencies.candidates.assertPromptSelected(selected);
+    return undefined;
+  } catch {
+    const code = 'github-notification-model-turn-prompt-selection-missing';
+    dependencies.logger.warn(`github-notifications: model execution blocked code=${code}`);
+    return {
+      outcome: 'block' as const,
+      reason: code,
+      message:
+        'Required before_prompt_build did not attest this GitHub turn. Run openclaw agent-system doctor and the normal install flow; reload the Gateway before retrying.',
+    };
+  }
+}

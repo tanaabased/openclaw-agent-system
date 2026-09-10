@@ -10,6 +10,14 @@ type HookApi = Pick<OpenClawPluginApi, 'on'> & {
 };
 type HookManifestService = Pick<AgentManifestService, 'loadForRuntimeContext'>;
 export interface AgentSystemPromptGuidance {
+  beforeRun?(context: AgentSystemHookContext): Promise<
+    | {
+        outcome: 'block';
+        reason: string;
+        message: string;
+      }
+    | undefined
+  >;
   instructions(context: AgentSystemHookContext): string | undefined | Promise<string | undefined>;
 }
 
@@ -20,6 +28,9 @@ export default function registerAgentSystemHooks(
   toolRegistry: Pick<AgentSystemToolRegistry, 'guidance'>,
   promptGuidance?: AgentSystemPromptGuidance,
 ): void {
+  if (promptGuidance?.beforeRun) {
+    api.on('before_agent_run', (_event, context) => promptGuidance.beforeRun!(context));
+  }
   api.on('session_start', async (_event, context) => {
     await manifestService.loadForRuntimeContext(context, 'session_start');
   });

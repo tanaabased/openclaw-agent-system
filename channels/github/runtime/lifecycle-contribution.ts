@@ -1,3 +1,4 @@
+import type ConversationHookAccess from '../../../core/conversation-hook-access.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../../../manifest/types.ts';
 import type { NotificationRoutingDesiredState } from '../routing/routing.ts';
 import { githubNotificationRetirementItemKeys } from '../intake/monitor/state.ts';
@@ -13,6 +14,7 @@ import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-st
 const notificationLifecycleLeaseWaitMs = 120_000;
 
 export interface NotificationLifecycleDependencies {
+  hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
   monitorService?: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   routingService: Pick<NotificationRoutingService, 'inspect' | 'reconcile'>;
   stateStore?: Pick<GitHubNotificationMonitorStateStore, 'read'> &
@@ -125,6 +127,10 @@ export default function createNotificationLifecycleContribution(
       };
     },
     async inspect(context) {
+      const hookFindings = context.manifest.github?.notifications
+        ? [await dependencies.hookAccess.inspect(context.workspaceDir)]
+        : [];
+      if (hookFindings.some(({ status }) => status === 'blocked')) return hookFindings;
       const plan = await dependencies.routingService.inspect(desiredState(context));
       if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') {
         const state = await dependencies.stateStore?.read(context.manifest.agent.id);
@@ -154,6 +160,7 @@ export default function createNotificationLifecycleContribution(
                 ? ('healthy' as const)
                 : ('drift' as const),
         },
+        ...hookFindings,
       ];
       if (plan.kind !== 'noop' || plan.code !== 'notification-routing-ready') {
         return routingFinding;
@@ -215,6 +222,9 @@ export default function createNotificationLifecycleContribution(
     },
     async reconcile(context) {
       try {
+        const hookOutcome = context.manifest.github?.notifications
+          ? await dependencies.hookAccess.reconcile(context.workspaceDir)
+          : undefined;
         const result = await dependencies.routingService.reconcile(desiredState(context));
         const disabled = !context.manifest.github?.notifications;
         const initialState = await dependencies.stateStore?.read(context.manifest.agent.id);
@@ -258,6 +268,7 @@ export default function createNotificationLifecycleContribution(
           dependencies.monitorService !== undefined
         ) {
           const [baseline] = await dependencies.monitorService.runOnce({
+            executionSurface: 'cli-one-shot',
             agentId: context.manifest.agent.id,
             bypassInterval: true,
             waitForLeaseMs: notificationLifecycleLeaseWaitMs,
@@ -306,6 +317,7 @@ export default function createNotificationLifecycleContribution(
                 : ('unchanged' as const);
         return {
           outcomes: [
+            ...(hookOutcome ? [hookOutcome] : []),
             {
               code: result.plan.code,
               message: result.requiresManualRestart

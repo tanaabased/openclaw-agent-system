@@ -171,6 +171,29 @@ establishes the first safe assignment baseline; only assignments observed after
 that baseline create local work. A baseline failure reports
 `github-notification-baseline-failed` and leaves intake inactive.
 
+### Required Conversation Hook
+
+For configured notifications, doctor reports unset or denied
+`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked and
+points to normal `openclaw agent-system install`. Doctor never grants access.
+Explicit installation sets this shared plugin permission to `true`, preserves
+unrelated configuration, and checks Agent System's `before_prompt_build`
+registration with `openclaw plugins inspect agent-system --runtime --json`.
+A failed or inconclusive inspection fails installation. An independent
+`hooks.allowPromptInjection: false` remains authoritative and is not overwritten.
+Removing one agent's notifications does not revoke the shared permission.
+
+Inspection verifies a freshly loaded plugin registry; it does not prove that an
+already-running Gateway reloaded. A Gateway instance started without access
+remains blocked until OpenClaw reloads the plugin. If automatic reload is off,
+restart the Gateway after installation. Channel health reflects this blocked
+prerequisite, and Gateway execution checks readiness before opening a model turn.
+A separate `before_agent_run` gate verifies the matching durable prompt-selection
+receipt before the model executes; another plugin's prompt hook is not sufficient.
+The existing one-shot CLI contract still carries and attests trusted instructions
+without relying on globally activated hooks. Install uses that CLI surface for
+its initial read-only assignment baseline.
+
 ## CLI
 
 All notification commands run from an agent workspace or use `--agent <id>` to
