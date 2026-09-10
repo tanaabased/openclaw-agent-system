@@ -60,6 +60,20 @@ describe('channels/github/channel', () => {
     assert.equal('setup' in channel.meta, false);
   });
 
+  it('should preserve the exact Control UI artwork blocker', () => {
+    const compatibility = readFileSync(
+      new URL('../channels/github/CONTROL-UI-ARTWORK.md', import.meta.url),
+      'utf8',
+    );
+
+    assert.match(compatibility, /OpenClaw 2026\.9\.2 and 2026\.9\.3/u);
+    assert.match(compatibility, /channel id is also a loaded plugin id/u);
+    assert.match(compatibility, /PluginPackageChannel.*ChannelMeta/us);
+    assert.match(compatibility, /channel-specific artwork field/u);
+    assert.match(compatibility, /owning-plugin id/u);
+    assert.match(compatibility, /another PNG would be a dead asset/u);
+  });
+
   it('should expose a local-only multi-account channel', () => {
     const config = configuredRoute();
 
