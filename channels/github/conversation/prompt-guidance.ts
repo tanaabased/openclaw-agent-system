@@ -39,7 +39,7 @@ export default async function githubNotificationPromptGuidance(
     );
     return undefined;
   }
-  const instructions = dependencies.turnContracts.instructions(selected.identity);
+  const instructions = dependencies.turnContracts.instructions(selected.identity, selected.agentId);
   await dependencies.candidates.attestPromptSelection(selected);
   return instructions;
 }

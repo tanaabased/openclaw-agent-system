@@ -67,11 +67,10 @@ describe('channels/github/conversation/turn-contract', () => {
   it('should reject a tuple outside the supported turn catalog', () => {
     assert.throws(
       () =>
-        createGitHubNotificationTurnContractResolver().instructions({
-          eventId: 'comment',
-          lifecycleId: 'pull-request',
-          modeId: 'work',
-        }),
+        createGitHubNotificationTurnContractResolver().instructions(
+          { eventId: 'comment', lifecycleId: 'pull-request', modeId: 'work' },
+          'tanaabot',
+        ),
       (error: unknown) =>
         error instanceof GitHubNotificationTurnCatalogError &&
         error.code === 'github-notification-turn-unsupported',
@@ -123,6 +122,38 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.match(contract.instructions, /do not call the tool/u);
     assert.match(contract.instructions, /one brief acknowledgment/u);
     assert.doesNotMatch(contract.instructions, /Carry out that plan now/u);
+  });
+
+  it('should bind optional session setup to the trusted agent only on initial assignments', () => {
+    const resolver = createGitHubNotificationTurnContractResolver();
+    for (const modeId of ['work', 'guided'] as const) {
+      const identity = { eventId: 'assignment', lifecycleId: 'issue', modeId } as const;
+      const instructions = resolver.instructions(identity, 'notification-data');
+
+      assert.match(instructions, /trusted OpenClaw agent ID.*"notification-data"/u);
+      assert.match(instructions, /action "assign_owner", ownerType "agent"/u);
+      assert.match(instructions, /Omit sessionKey and targets/u);
+      assert.match(instructions, /issue labels first: bugs red/u);
+      assert.match(instructions, /"group_list".*existing custom groups/u);
+      assert.match(instructions, /otherwise use "GitHub Issues"/u);
+      assert.match(instructions, /tool is unavailable or a call fails, continue/u);
+      assert.match(instructions, /without retries, permission changes/u);
+      assert.match(instructions, /overwrite later manual owner, color, or group choices/u);
+      assert.equal(
+        instructions,
+        resolver.resolve(identity, { tools: { profile: 'coding' } }, 'notification-data')
+          .instructions,
+      );
+    }
+    for (const eventId of ['comment', 'implementation', 'pull-request-opened'] as const) {
+      assert.doesNotMatch(
+        resolver.instructions(
+          { eventId, lifecycleId: 'issue', modeId: 'work' },
+          'notification-data',
+        ),
+        /assign_owner|group_list|bugs red|trusted OpenClaw agent ID/u,
+      );
+    }
   });
 
   it('should retain guided mode for later approved comments', () => {

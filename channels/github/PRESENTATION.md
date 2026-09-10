@@ -34,6 +34,14 @@ Use a short bulleted fact list when a card primarily presents metadata. A
 summary sentence may replace the list when the component primarily presents an
 outcome or call to action.
 
+## Session Appearance
+
+Use the routed OpenClaw agent for the session's visible owner. Prefer red for
+bugs, green for features, blue for documentation, and purple for maintenance;
+use another supported native color when the issue fits better. Prefer a fitting
+existing custom group, falling back to `GitHub Issues`. Keep appearance setup out
+of the public GitHub response.
+
 ## Assignment Card
 
 ```markdown

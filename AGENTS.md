@@ -30,6 +30,7 @@
 
 ## Documentation
 
+- Treat the locations below as ownership boundaries, not a checklist of files to update. Keep aligned documents unchanged and avoid repeating explanations across them.
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
 - Keep the target GitHub notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior in `channels/github/DESIGN.md`.
@@ -115,6 +116,6 @@
 - Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
 - Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
-- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material and its workflow matrix entry; keep detailed rules in `examples/AGENTS.md` or `scenarios/AGENTS.md`.
+- When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md` or `scenarios/AGENTS.md`.
 - Never run Leia material or other operational tests from `examples/` or `scenarios/` locally. Both are GitHub Actions-only, including when isolated state would be available.
 - Keep live OpenClaw validation isolated and explicitly requested; repository checks must not mutate the user's normal OpenClaw state.
