@@ -71,7 +71,7 @@ describe('channels/github/channel', () => {
     assert.match(compatibility, /PluginPackageChannel.*ChannelMeta/us);
     assert.match(compatibility, /channel-specific artwork field/u);
     assert.match(compatibility, /owning-plugin id/u);
-    assert.match(compatibility, /another PNG would be a dead asset/u);
+    assert.match(compatibility, /another PNG would be a\s+dead asset/u);
   });
 
   it('should expose a local-only multi-account channel', () => {
