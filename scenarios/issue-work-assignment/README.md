@@ -1,9 +1,9 @@
 # GitHub Issue Work Assignment Scenario
 
-This GitHub Actions-only scenario proves the Gateway `issue` + `work` + `assignment` turn. It
+This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, native session owner and color setup, one assessment and plan, and the
+context, best-effort session setup with a persisted color, one assessment and plan, and the
 planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
@@ -32,7 +32,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # should prepare notification and approved actor workspaces
 mkdir "$TMPDIR/agent-system-notifications"
 mkdir "$TMPDIR/agent-system-notification-actor"
-sed 's/interval-minutes: 60/interval-minutes: 1/' "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" > "$TMPDIR/agent-system-notifications/agent.yaml"
+cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
@@ -107,14 +107,15 @@ openclaw-github-issue create-and-assign \
   --issue-number-path "$TMPDIR/approved-issue-number"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-deadline=$((SECONDS + 420))
-until OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api \
-  "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" \
-  --jq 'any(.[]; .user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response")))' | jq -e .; do
-  test "$SECONDS" -lt "$deadline" || exit 1
-  sleep 5
-done
-openclaw config set channels.agent-system-github.accounts.notification-data.enabled false --strict-json
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 
 # should expose the prepared lifecycle owned issue worktree
 cd "$TMPDIR/agent-system-notifications"
@@ -146,9 +147,9 @@ jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] 
 ```
 
 ```bash
-# should persist the routed agent owner and bug color on the issue session
+# should persist the bug color despite unavailable cli owner assignment
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and (.[0] | .owner.actor.type == "agent" and .owner.actor.id == "notification-data" and .color == "red")'
+openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red"'
 ```
 
 ```bash
