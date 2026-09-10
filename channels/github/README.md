@@ -55,23 +55,6 @@ The channel also:
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
-### Session appearance
-
-The initial Work or Guided assignment asks the agent to set the current session's
-visible owner to its routed OpenClaw agent and choose a sidebar color from issue
-labels, falling back to the title and body. Suggested colors are red for bugs,
-green for features, blue for documentation, and purple for maintenance. Later
-turns do not repeat this setup or overwrite manual choices.
-
-This is best-effort prompt guidance using OpenClaw's native `sessions` tool.
-OpenClaw 2026.9.3 requires owner access for that tool: the assigning GitHub actor
-must already be an OpenClaw owner, with a channel-qualified entry such as
-`agent-system-github:<github-node-id>` in `commands.ownerAllowFrom`, and the
-tool must remain enabled. Agent System's approved actors do not automatically
-receive that broader access. If customization is unavailable or fails, the
-assignment continues normally. Visible ownership does not change agent routing
-or permissions.
-
 ## Configuration Reference
 
 Add the channel to `.agent-system/agent.yaml` or the root `agent.yaml`:
@@ -272,6 +255,9 @@ openclaw agent-system notifications wait \
 
 ## Current Limitations
 
+- Automatic session owner/color setup requires the assigning GitHub actor to have
+  OpenClaw owner access (`commands.ownerAllowFrom`) and the native `sessions` tool
+  enabled; otherwise the assignment continues without customization.
 - Plan and Auto modes and mode transitions remain unavailable.
 - Directly assigned pull requests retain bounded head metadata but do not create
   a managed worktree or an independent comment session.
