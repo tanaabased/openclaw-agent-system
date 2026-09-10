@@ -29,6 +29,7 @@ export interface GitHubNotificationMonitorCycleLeaseStoreDependencies {
 }
 
 export interface GitHubNotificationMonitorCycleLeaseAcquireOptions {
+  scope?: 'execution' | 'poll';
   signal?: AbortSignal;
   waitMs?: number;
 }
@@ -48,7 +49,7 @@ async function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise
   }
 }
 
-/** Serialize notification monitor cycles across Gateway and CLI processes. */
+/** Independently serialize polling and execution across Gateway and CLI processes. */
 export default class GitHubNotificationMonitorCycleLeaseStore {
   readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #currentUid: number | undefined;
@@ -72,7 +73,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     if (!Number.isSafeInteger(waitMs) || waitMs < 0) {
       throw new Error('GitHub notification cycle lease waits must be non-negative integers.');
     }
-    const targetPath = await this.#targetPath(agentId);
+    const targetPath = await this.#targetPath(agentId, options.scope ?? 'poll');
     const deadline = Date.now() + waitMs;
     while (true) {
       if (options.signal?.aborted) return { status: 'aborted' };
@@ -107,7 +108,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     return { release: handle.release };
   }
 
-  async #targetPath(agentId: string): Promise<string> {
+  async #targetPath(agentId: string, scope: 'execution' | 'poll'): Promise<string> {
     if (!this.#rootDir || !validAgentId(agentId)) {
       throw new Error('The GitHub notification cycle lease store is unavailable.');
     }
@@ -118,6 +119,9 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
       directories: [this.#rootDir, agentDir, stateDir],
       label: 'GitHub notification cycle lease',
     });
-    return join(stateDir, 'github-notifications');
+    return join(
+      stateDir,
+      scope === 'execution' ? 'github-notification-execution' : 'github-notifications',
+    );
   }
 }

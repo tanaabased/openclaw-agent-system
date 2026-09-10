@@ -13,6 +13,66 @@ const itemKeyA = githubWorkItemKey(schedulingIssueA.repositoryNodeId, scheduling
 const itemKeyB = githubWorkItemKey(schedulingIssueB.repositoryNodeId, schedulingIssueB.number);
 
 describe('channels/github/intake/monitor/service scheduling', () => {
+  it('should keep gateway polling while supervising one executor through shutdown and restart', async () => {
+    const fixture = await createGitHubNotificationSchedulingFixture();
+    const controller = new AbortController();
+    const nextTick = Promise.withResolvers<void>();
+    const polled = Promise.withResolvers<void>();
+    let cycles = 0;
+    let ended = false;
+    const monitor = fixture.createMonitor(undefined, async () => {
+      if (cycles === 1) await nextTick.promise;
+      else fixture.advance(300_000);
+    });
+    const running = monitor
+      .runAccount(fixture.agentId, controller.signal, () => {
+        cycles += 1;
+        if (cycles === 3) {
+          controller.abort();
+          polled.resolve();
+        }
+      })
+      .then(() => {
+        ended = true;
+      });
+    try {
+      await Promise.race([
+        fixture.started,
+        running.then(() => assert.fail('the account ended before starting execution')),
+      ]);
+      fixture.expose(schedulingIssueB);
+      fixture.advance(300_000);
+      nextTick.resolve();
+      await polled.promise;
+      const during = await fixture.readState();
+      assert.equal(during?.items[itemKeyB]?.intake?.stage, 'admitted');
+      assert.equal(during?.items[itemKeyA]?.intake?.stage, 'prepared');
+      assert.deepEqual(fixture.sessionCalls, [schedulingIssueA.number]);
+      assert.equal(fixture.sessionSignals[0]?.aborted, true);
+      assert.equal(ended, false);
+
+      fixture.release.resolve();
+      await running;
+      const [recovered] = await fixture.createMonitor().runOnce({
+        agentId: fixture.agentId,
+        selector: schedulingSelector(schedulingIssueB),
+      });
+      assert.equal(recovered?.status, 'completed');
+      assert.equal((await fixture.readState())?.items[itemKeyB]?.intake?.stage, 'prepared');
+      assert.deepEqual(fixture.sessionCalls, [schedulingIssueA.number, schedulingIssueB.number]);
+      assert.deepEqual(fixture.worktreePreparations, [
+        schedulingIssueA.itemDatabaseId,
+        schedulingIssueB.itemDatabaseId,
+      ]);
+    } finally {
+      controller.abort();
+      nextTick.resolve();
+      fixture.release.resolve();
+      await running;
+      await fixture.dispose();
+    }
+  });
+
   it('should retain retirement checkpointed after a poll snapshot while admitting another issue', async () => {
     const fixture = await createGitHubNotificationSchedulingFixture();
     fixture.release.resolve();
@@ -56,7 +116,7 @@ describe('channels/github/intake/monitor/service scheduling', () => {
   });
 
   for (const outcome of ['completed', 'failed'] as const) {
-    it(`should recover a later assignment after a held session ${outcome}`, async () => {
+    it(`should admit a later assignment before a held session ${outcome}`, async () => {
       const fixture = await createGitHubNotificationSchedulingFixture();
       const active = fixture.createMonitor().runOnce({ agentId: fixture.agentId });
       try {
@@ -76,15 +136,17 @@ describe('channels/github/intake/monitor/service scheduling', () => {
         };
         const [blocked] = await refresh.runOnce(options);
 
-        // #71 baseline: the desired regression will require admission before releasing a.
-        assert.equal(blocked?.code, 'github-notification-cycle-busy');
+        assert.equal(blocked?.code, 'github-notification-execution-busy');
         assert.equal(blocked?.status, 'skipped');
-        assert.deepEqual(await fixture.readState(), before);
-        assert.deepEqual(
-          githubNotificationMonitorStatus(fixture.agentId, before, options.selector).items,
-          [],
+        const during = await fixture.readState();
+        assert.deepEqual(during?.items[itemKeyA], before?.items[itemKeyA]);
+        assert.equal(during?.items[itemKeyB]?.intake?.stage, 'admitted');
+        assert.equal(
+          githubNotificationMonitorStatus(fixture.agentId, during, options.selector).items[0]
+            ?.disposition,
+          'approved',
         );
-        assert.equal(fixture.requests.includes('/repos/tanaabased/example/issues/13'), false);
+        assert.equal(fixture.requests.includes('/repos/tanaabased/example/issues/13'), true);
         assert.deepEqual(fixture.sessionCalls, [schedulingIssueA.number]);
 
         if (outcome === 'failed') fixture.release.reject(new Error('controlled session failure'));
@@ -93,7 +155,7 @@ describe('channels/github/intake/monitor/service scheduling', () => {
 
         const [admitted] = await refresh.runOnce(options);
         assert.equal(admitted?.status, 'completed');
-        assert.equal(admitted?.approved, 1);
+        assert.equal(admitted?.approved, 0);
         const after = await fixture.readState();
         assert.deepEqual(after?.items[itemKeyA], before?.items[itemKeyA]);
         assert.equal(after?.items[itemKeyB]?.disposition, 'approved');
@@ -149,7 +211,9 @@ describe('channels/github/intake/monitor/service scheduling', () => {
 
       assert.equal(result?.code, 'github-notification-cycle-aborted');
       assert.equal(result?.status, 'skipped');
-      assert.deepEqual(await fixture.readState(), before);
+      const after = await fixture.readState();
+      assert.deepEqual(after?.items[itemKeyA], before?.items[itemKeyA]);
+      assert.equal(after?.items[itemKeyB]?.intake?.stage, 'admitted');
       assert.deepEqual(fixture.sessionCalls, [schedulingIssueA.number]);
       fixture.release.resolve();
       assert.equal((await active)[0]?.status, 'completed');

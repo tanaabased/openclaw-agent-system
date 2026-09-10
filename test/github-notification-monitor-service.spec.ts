@@ -203,7 +203,6 @@ describe('channels/github/intake/monitor/service', () => {
         async respond(_agentId, _itemKey, _signal, executionSurface) {
           operations.push('assignment-response');
           executionSurfaces.push(executionSurface ?? 'missing');
-          controller.abort();
           throw new GitHubNotificationAssignmentOrchestratorError(
             'github-notification-assignment-session-recording-failed',
             'The assignment response could not be reconciled.',
@@ -296,7 +295,123 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(reconciled, []);
   });
 
-  it('should surface the exact assignment boundary failure from a monitor cycle', async () => {
+  it('should recheck workspace and routing after acquiring execution ownership', async () => {
+    for (const changedBoundary of ['workspace', 'routing'] as const) {
+      const state = notificationMonitorState();
+      state.agentId = 'tanaabot';
+      state.workspaceDir = workspaceDir;
+      state.nextPollAt = 10_000;
+      let executing = false;
+      let responses = 0;
+      const released: string[] = [];
+      const service = monitorService({
+        clock: () => 1_000,
+        assignmentOrchestrator: {
+          reconcile: async () => undefined,
+          async respond() {
+            responses += 1;
+          },
+        },
+        cycleLeaseStore: {
+          async acquire(_agentId, options) {
+            const scope = options?.scope ?? 'poll';
+            if (scope === 'execution') executing = true;
+            return {
+              status: 'acquired',
+              lease: {
+                async release() {
+                  released.push(scope);
+                },
+              },
+            };
+          },
+        },
+        manifestService: {
+          async loadForAgentId() {
+            const loaded = loadedManifest();
+            if (executing && changedBoundary === 'workspace')
+              loaded.scope.workspaceDir = '/changed';
+            return loaded;
+          },
+        },
+        routingService: {
+          inspect: async () =>
+            executing && changedBoundary === 'routing'
+              ? { code: 'notification-routing-repair-required', kind: 'upsert', message: 'repair' }
+              : { code: 'notification-routing-ready', kind: 'noop', message: 'ready' },
+        },
+        stateStore: {
+          read: async () => structuredClone(state),
+          update: async (_agentId, patch) => patch(state),
+        },
+      });
+      const [result] = await service.runOnce({ agentId: 'tanaabot' });
+      assert.equal(
+        result?.code,
+        changedBoundary === 'workspace'
+          ? 'github-notification-execution-context-changed'
+          : 'notification-routing-repair-required',
+      );
+      assert.equal(responses, 0);
+      assert.deepEqual(released, ['poll', 'execution']);
+      assert.equal(state.failureCount, 0);
+    }
+  });
+
+  it('should supervise background execution failure and release ownership without provider backoff', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const controller = new AbortController();
+    const failed = Promise.withResolvers<void>();
+    const released: string[] = [];
+    const service = monitorService({
+      clock: () => 1_000,
+      assignmentOrchestrator: {
+        async reconcile() {
+          throw new Error('private execution failure');
+        },
+        respond: async () => undefined,
+      },
+      cycleLeaseStore: {
+        async acquire(_agentId, options) {
+          return {
+            status: 'acquired',
+            lease: {
+              async release() {
+                released.push(options?.scope ?? 'poll');
+              },
+            },
+          };
+        },
+      },
+      logger: {
+        error() {},
+        info() {},
+        warn(message) {
+          assert.equal(message.includes('private execution failure'), false);
+          if (message.includes('executor failed')) failed.resolve();
+        },
+      },
+      async sleep() {
+        await failed.promise;
+        controller.abort();
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        async update() {
+          assert.fail('execution failure must not update provider health');
+        },
+      },
+    });
+    await service.runAccount('tanaabot', controller.signal);
+    assert.deepEqual(released, ['poll', 'execution']);
+    assert.equal(state.failureCount, 0);
+    assert.equal(state.nextPollAt, 10_000);
+  });
+
+  it('should surface assignment boundary failure without changing provider backoff', async () => {
     let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
@@ -328,12 +443,11 @@ describe('channels/github/intake/monitor/service', () => {
       agentId: 'tanaabot',
       baselineAt: 1,
       code: 'github-notification-worktree-preparation-failed',
-      diagnosticCode: 'github-notification-worktree-preparation-failed',
-      nextPollAt: 31_000,
-      retryAt: 31_000,
+      nextPollAt: 10_000,
       status: 'failed',
     });
-    assert.equal(state?.diagnosticCode, 'github-notification-worktree-preparation-failed');
+    assert.equal(state?.diagnosticCode, undefined);
+    assert.equal(state?.failureCount, 0);
   });
 
   it('should report comment failure without poisoning provider health or retirement', async () => {

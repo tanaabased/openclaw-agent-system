@@ -93,6 +93,24 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
     }
   });
 
+  it('should hold polling and execution independently while excluding duplicate executors', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'agent-system-monitor-scopes-'));
+    const store = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
+    const independent = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
+    const execution = await store.acquire('tanaabot', { scope: 'execution' });
+    const poll = await independent.acquire('tanaabot');
+    try {
+      assert.equal(execution.status, 'acquired');
+      assert.equal(poll.status, 'acquired');
+      assert.equal((await independent.acquire('tanaabot', { scope: 'execution' })).status, 'busy');
+      assert.equal((await store.acquire('tanaabot')).status, 'busy');
+    } finally {
+      if (poll.status === 'acquired') await poll.lease.release();
+      if (execution.status === 'acquired') await execution.lease.release();
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('should return busy when the repository lock is held and no wait was requested', async () => {
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-monitor-busy-'));
     try {

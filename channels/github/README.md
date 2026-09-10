@@ -34,11 +34,16 @@ The channel also:
   owners, and repositories where the agent has sufficient access
 - keeps approved issue and delivery pull-request comments in the issue-owned
   session, publishes each ordinary final response back to its exact source,
-  and drains a bounded pair of queued comments serially per poll
+  and drains a bounded pair of queued comments serially per execution pass
 - retires issue-owned work after delivery merge or loss of assignment authority
   and removes only clean managed worktrees for completed lifecycles
 - supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
   for an explicit, mode-neutral public progress update
+
+The Gateway polls at the configured interval independently of its executor. New
+assignments can appear in notification status while an existing model turn is
+running. Worktree preparation, model turns, and comment processing remain serial
+within each agent; newly admitted work waits for the executor to become available.
 
 ## Requirements
 
@@ -201,6 +206,11 @@ A selector limits the cycle to one exact item. A completed cycle may establish
 the baseline, prepare an issue, continue one pending Work implementation,
 process one admitted comment, or retire work. Deferred and failed cycles return
 nonzero.
+
+The CLI first polls and saves intake, then waits for execution within the refresh
+timeout. If execution is busy or the wait ends, newly admitted items remain visible
+through `notifications status` and can resume on a later cycle. The CLI waits for
+any execution it starts to settle before exiting.
 
 ### `openclaw agent-system notifications status`
 

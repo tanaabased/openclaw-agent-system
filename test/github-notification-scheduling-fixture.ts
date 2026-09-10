@@ -15,6 +15,7 @@ import type { ConnectedGitHubAccountClient } from '../core/github-account-client
 import acquirePrivateStateFileLock, {
   privateStateFileLockBusyErrorCode,
 } from '../core/private-state-file-lock.ts';
+import type abortableDelay from '../utils/abortable-delay.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
   approvedNotificationItem,
@@ -75,6 +76,7 @@ export default async function createGitHubNotificationSchedulingFixture() {
   const arrivals = new Map([[schedulingIssueA.number, schedulingIssueA]]);
   const requests: string[] = [];
   const sessionCalls: number[] = [];
+  const sessionSignals: AbortSignal[] = [];
   const worktreePreparations: number[] = [];
   const worktrees = new Map<number, GitHubNotificationLifecycleWorktree>();
   const started = Promise.withResolvers<void>();
@@ -142,6 +144,7 @@ export default async function createGitHubNotificationSchedulingFixture() {
 
   function createMonitor(
     beforePoll?: (store: GitHubNotificationMonitorStateStore) => Promise<void>,
+    sleep?: typeof abortableDelay,
   ) {
     const store = new GitHubNotificationMonitorStateStore(stateOptions);
     return new GitHubNotificationMonitorService({
@@ -172,8 +175,9 @@ export default async function createGitHubNotificationSchedulingFixture() {
           }),
         ]),
         sessions: {
-          async prepare({ item }) {
+          async prepare({ item, signal }) {
             sessionCalls.push(item.number);
+            if (signal) sessionSignals.push(signal);
             if (item.number === schedulingIssueA.number) {
               started.resolve();
               await release.promise;
@@ -224,11 +228,15 @@ export default async function createGitHubNotificationSchedulingFixture() {
         }),
       },
       stateStore: store,
+      ...(sleep === undefined ? {} : { sleep }),
     });
   }
 
   return {
     agentId: initial.agentId,
+    advance(milliseconds: number) {
+      now += milliseconds;
+    },
     contended: contended.promise,
     createMonitor,
     dispose: () => rm(rootDir, { force: true, recursive: true }),
@@ -240,6 +248,7 @@ export default async function createGitHubNotificationSchedulingFixture() {
     release,
     requests,
     sessionCalls,
+    sessionSignals,
     started: started.promise,
     warnings,
     worktreePreparations,

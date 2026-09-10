@@ -36,6 +36,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
   logger: Logger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId'>;
   random?: () => number;
+  sleep?: typeof abortableDelay;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   routingService: Pick<NotificationRoutingService, 'inspect'>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'update'> &
@@ -91,7 +92,6 @@ function isRoutingDiagnostic(code: string | undefined): boolean {
 /** Schedule route-gated GitHub assignment polls and recoverable local intake. */
 export default class GitHubNotificationMonitorService {
   readonly #dependencies: GitHubNotificationMonitorServiceDependencies;
-  readonly #inFlight = new Map<string, Promise<GitHubNotificationMonitorRunResult>>();
   readonly #reconciler: GitHubNotificationMonitorReconciler;
 
   constructor(dependencies: GitHubNotificationMonitorServiceDependencies) {
@@ -116,7 +116,10 @@ export default class GitHubNotificationMonitorService {
     const results: GitHubNotificationMonitorRunResult[] = [];
     for (const agentId of agentIds) {
       if (options.signal?.aborted) break;
-      results.push(await this.#runAgent(agentId, options));
+      const result = await this.#pollAgent(agentId, options);
+      results.push(
+        this.#needsExecution(result) ? await this.#runExecution(agentId, options, result) : result,
+      );
     }
     return results;
   }
@@ -127,72 +130,115 @@ export default class GitHubNotificationMonitorService {
     signal: AbortSignal,
     onCycle?: GitHubNotificationMonitorCycleListener,
   ): Promise<void> {
-    while (!signal.aborted) {
-      try {
-        const [result] = await this.runOnce({ agentId, signal });
-        if (result) await onCycle?.(result);
-      } catch {
-        this.#dependencies.logger.error(
-          `github-notifications: monitor cycle failed agent=${agentId} code=github-notification-monitor-cycle-failed`,
-        );
+    const controller = new AbortController();
+    const accountSignal = AbortSignal.any([signal, controller.signal]);
+    let execution: Promise<void> | undefined;
+    try {
+      while (!accountSignal.aborted) {
+        try {
+          const result = await this.#pollAgent(agentId, { signal: accountSignal });
+          if (!execution && !accountSignal.aborted && this.#needsExecution(result)) {
+            execution = this.#runExecution(agentId, { signal: accountSignal }, result)
+              .then((completed) => {
+                if (completed.status === 'failed') {
+                  this.#dependencies.logger.warn(
+                    `github-notifications: executor failed agent=${agentId} code=${completed.code}`,
+                  );
+                }
+              })
+              .catch(() => {
+                this.#dependencies.logger.error(
+                  `github-notifications: executor failed agent=${agentId} code=github-notification-execution-failed`,
+                );
+              })
+              .finally(() => {
+                execution = undefined;
+              });
+          }
+          await onCycle?.(result);
+        } catch {
+          this.#dependencies.logger.error(
+            `github-notifications: monitor cycle failed agent=${agentId} code=github-notification-monitor-cycle-failed`,
+          );
+        }
+        try {
+          await (this.#dependencies.sleep ?? abortableDelay)(schedulerIntervalMs, accountSignal);
+        } catch (error) {
+          if (!accountSignal.aborted) throw error;
+        }
       }
-      try {
-        await abortableDelay(schedulerIntervalMs, signal);
-      } catch (error) {
-        if (!signal.aborted) throw error;
-      }
+    } finally {
+      // the account owns its executor through shutdown; no detached work survives it.
+      controller.abort();
+      await execution;
     }
   }
 
-  async #runAgent(
-    agentId: string,
-    options: GitHubNotificationMonitorRunOptions,
-  ): Promise<GitHubNotificationMonitorRunResult> {
-    const runKey = options.selector
-      ? `${agentId}:${options.selector.repository.toLowerCase()}:${options.selector.itemType}:${options.selector.number}`
-      : agentId;
-    const existing = this.#inFlight.get(runKey);
-    if (existing) return existing;
-    const current = this.#runAgentWithLease(agentId, options).finally(() => {
-      if (this.#inFlight.get(runKey) === current) this.#inFlight.delete(runKey);
-    });
-    this.#inFlight.set(runKey, current);
-    return current;
+  #needsExecution(result: GitHubNotificationMonitorRunResult): boolean {
+    return (
+      result.status === 'completed' ||
+      result.code === 'github-notification-disabled' ||
+      isRoutingDiagnostic(result.code)
+    );
   }
 
-  async #runAgentWithLease(
+  #pollAgent(agentId: string, options: GitHubNotificationMonitorRunOptions) {
+    return this.#withLease(agentId, options, 'poll', () => this.#poll(agentId, options));
+  }
+
+  #runExecution(
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
+    result: GitHubNotificationMonitorRunResult,
+  ) {
+    return this.#withLease(
+      agentId,
+      options,
+      'execution',
+      () => this.#execute(agentId, options, result),
+      result,
+    );
+  }
+
+  async #withLease(
+    agentId: string,
+    options: GitHubNotificationMonitorRunOptions,
+    scope: 'execution' | 'poll',
+    operation: () => Promise<GitHubNotificationMonitorRunResult>,
+    previous?: GitHubNotificationMonitorRunResult,
   ): Promise<GitHubNotificationMonitorRunResult> {
+    const label = scope === 'poll' ? 'cycle' : 'execution';
     let acquisition;
     try {
       acquisition = await this.#dependencies.cycleLeaseStore.acquire(agentId, {
+        scope,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.waitForLeaseMs === undefined ? {} : { waitMs: options.waitForLeaseMs }),
       });
     } catch {
       this.#dependencies.logger.warn(
-        `github-notifications: cycle lease failed agent=${agentId} code=github-notification-cycle-lease-failed`,
+        `github-notifications: ${label} lease failed agent=${agentId} code=github-notification-${label}-lease-failed`,
       );
       return {
         agentId,
-        code: 'github-notification-cycle-lease-failed',
+        code: `github-notification-${label}-lease-failed`,
         status: 'failed',
       };
     }
     if (acquisition.status !== 'acquired') {
       return {
+        ...previous,
         agentId,
         code:
           acquisition.status === 'aborted'
             ? 'github-notification-cycle-aborted'
-            : 'github-notification-cycle-busy',
+            : `github-notification-${label}-busy`,
         status: 'skipped',
       };
     }
     let result: GitHubNotificationMonitorRunResult;
     try {
-      result = await this.#executeAgent(agentId, options);
+      result = await operation();
     } catch (error) {
       await acquisition.lease.release().catch(() => undefined);
       throw error;
@@ -201,22 +247,22 @@ export default class GitHubNotificationMonitorService {
       await acquisition.lease.release();
     } catch {
       this.#dependencies.logger.warn(
-        `github-notifications: cycle lease release failed agent=${agentId} code=github-notification-cycle-lease-release-failed`,
+        `github-notifications: ${label} lease release failed agent=${agentId} code=github-notification-${label}-lease-release-failed`,
       );
       return {
         agentId,
-        code: 'github-notification-cycle-lease-release-failed',
+        code: `github-notification-${label}-lease-release-failed`,
         status: 'failed',
       };
     }
     return result;
   }
 
-  async #executeAgent(
+  async #poll(
     agentId: string,
     options: GitHubNotificationMonitorRunOptions,
   ): Promise<GitHubNotificationMonitorRunResult> {
-    const { bypassInterval = false, executionSurface = 'gateway', signal } = options;
+    const { bypassInterval = false, signal } = options;
     let workspaceDir: string | undefined;
     try {
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
@@ -239,7 +285,6 @@ export default class GitHubNotificationMonitorService {
       let current = loadedState.status === 'missing' ? undefined : loadedState.state;
       const notifications = loaded.manifest.github?.notifications;
       if (!notifications) {
-        await this.#reconciler.retireDisabledAssignments(agentId, current, now, signal);
         return { agentId, code: 'github-notification-disabled', status: 'skipped' };
       }
       const pendingItemKeys = pendingGitHubNotificationItemKeys(current, options.selector);
@@ -283,11 +328,6 @@ export default class GitHubNotificationMonitorService {
             status: 'skipped',
           };
         }
-        await this.#reconciler.reconcileAssignments(
-          agentId,
-          githubNotificationRetirementItemKeys(current),
-          signal,
-        );
         const failed = await this.#saveFailure(agentId, workspaceDir, now, route.code);
         return {
           agentId,
@@ -304,30 +344,9 @@ export default class GitHubNotificationMonitorService {
           return { ...latest, diagnosticCode: undefined, failureCount: 0, nextPollAt: now };
         });
       } else if (pollDeferred) {
-        await this.#reconciler.reconcileAssignments(agentId, pendingItemKeys, signal);
-        const commentFailure = await this.#reconciler.reconcileCommentsSafely(
-          agentId,
-          options.selector,
-          executionSurface,
-          signal,
-        );
-        await this.#reconciler.reconcileAssignmentResponses(
-          agentId,
-          options.selector,
-          executionSurface,
-          signal,
-        );
-        if (commentFailure) {
-          return {
-            agentId,
-            code: commentFailure.code,
-            ...monitorStateMetadata(current),
-            status: 'failed',
-          };
-        }
         return {
           agentId,
-          code: 'github-notification-pending-reconciled',
+          code: 'github-notification-execution-pending',
           ...monitorStateMetadata(current),
           status: 'completed',
         };
@@ -359,39 +378,6 @@ export default class GitHubNotificationMonitorService {
       result.state = await this.#dependencies.stateStore.update(agentId, (latest) =>
         checkpointGitHubNotificationPoll(latest, current, result.state),
       );
-      await this.#reconciler.reconcileAssignments(
-        agentId,
-        pendingGitHubNotificationItemKeys(result.state, options.selector),
-        signal,
-      );
-      const commentFailure = await this.#reconciler.reconcileCommentsSafely(
-        agentId,
-        options.selector,
-        executionSurface,
-        signal,
-      );
-      await this.#reconciler.reconcileAssignmentResponses(
-        agentId,
-        options.selector,
-        executionSurface,
-        signal,
-      );
-      if (commentFailure) {
-        return {
-          agentId,
-          approved: result.approved,
-          baseline: result.baseline,
-          baselineAt: result.state.baselineAt,
-          baselineEstablished: result.baselineEstablished,
-          code: commentFailure.code,
-          duplicates: result.duplicates,
-          lastSuccessfulPollAt: result.state.lastSuccessfulPollAt,
-          nextPollAt: result.state.nextPollAt,
-          rejected: result.rejected,
-          retired: result.retired,
-          status: 'failed',
-        };
-      }
       const code = result.baselineEstablished
         ? 'github-notification-baseline-established'
         : 'github-notification-poll-complete';
@@ -456,6 +442,87 @@ export default class GitHubNotificationMonitorService {
         `github-notifications: poll deferred agent=${agentId} code=${diagnostic.code}`,
       );
       return { agentId, code: diagnostic.code, status: 'failed' };
+    }
+  }
+
+  async #execute(
+    agentId: string,
+    options: GitHubNotificationMonitorRunOptions,
+    result: GitHubNotificationMonitorRunResult,
+  ): Promise<GitHubNotificationMonitorRunResult> {
+    const { executionSurface = 'gateway', signal, selector } = options;
+    try {
+      // re-read authority and durable work after waiting for another executor.
+      const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
+      if (loaded.status !== 'loaded') {
+        return {
+          ...result,
+          code: `github-notification-manifest-${loaded.status}`,
+          status: 'skipped',
+        };
+      }
+      const current = await this.#dependencies.stateStore.read(agentId);
+      if (current && current.workspaceDir !== loaded.scope.workspaceDir) {
+        return {
+          ...result,
+          code: 'github-notification-execution-context-changed',
+          status: 'skipped',
+        };
+      }
+      if (!loaded.manifest.github?.notifications) {
+        await this.#reconciler.retireDisabledAssignments(
+          agentId,
+          current,
+          (this.#dependencies.clock ?? Date.now)(),
+          signal,
+        );
+        return { ...result, code: 'github-notification-disabled', status: 'skipped' };
+      }
+      const route = await this.#dependencies.routingService.inspect({
+        agentId,
+        enabled: true,
+        workspaceDir: loaded.scope.workspaceDir,
+      });
+      if (route.kind !== 'noop' || route.code !== 'notification-routing-ready') {
+        await this.#reconciler.reconcileAssignments(
+          agentId,
+          githubNotificationRetirementItemKeys(current),
+          signal,
+        );
+        return { ...result, code: route.code, status: 'failed' };
+      }
+      await this.#reconciler.reconcileAssignments(
+        agentId,
+        pendingGitHubNotificationItemKeys(current, selector),
+        signal,
+      );
+      const commentFailure = await this.#reconciler.reconcileCommentsSafely(
+        agentId,
+        selector,
+        executionSurface,
+        signal,
+      );
+      await this.#reconciler.reconcileAssignmentResponses(
+        agentId,
+        selector,
+        executionSurface,
+        signal,
+      );
+      if (signal?.aborted)
+        return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
+      if (commentFailure) return { ...result, code: commentFailure.code, status: 'failed' };
+      return result.code === 'github-notification-execution-pending'
+        ? { ...result, code: 'github-notification-pending-reconciled' }
+        : result;
+    } catch (error) {
+      if (signal?.aborted)
+        return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
+      const diagnostic = githubNotificationDiagnostic(error);
+      this.#dependencies.logger.warn(
+        `github-notifications: execution failed agent=${agentId} code=${diagnostic.code}`,
+      );
+      // execution failures belong to lifecycle checkpoints, not provider polling backoff.
+      return { ...result, code: diagnostic.code, status: 'failed' };
     }
   }
 

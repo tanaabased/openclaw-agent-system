@@ -7,7 +7,9 @@ context, one assessment and plan, and the planning-only worktree checkpoint. The
 lifecycle contract runs against the deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
 It also checks that the installed runtime saves publication receipts in the owning
-conversation file and keeps only routing identity in the shared index.
+conversation file and keeps only routing identity in the shared index. A controlled
+execution lease verifies that intake can admit an issue before execution is available,
+and that the bounded CLI refresh reports its wait ending without losing that admission.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -93,7 +95,13 @@ openclaw agent-system notifications wait \
   --timeout 180 \
   --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-self" and .worktree == "pending" and (has("stage") | not))'
 
-# should prepare one approved issue assignment and planning turn
+# should hold execution while allowing independent assignment intake
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+execution_lock="$config_root/tanaab/agent-system/notification-data/channels/github-notification-execution.lock"
+mkdir "$execution_lock"
+printf '%s' "$execution_lock" > "$TMPDIR/notification-execution-lock"
+
+# should admit an approved issue while a bounded refresh cannot acquire execution
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
@@ -103,6 +111,16 @@ openclaw-github-issue create-and-assign \
   --body "Create assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment planning ready." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+blocked_refresh="$(openclaw agent-system notifications refresh --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --timeout 30 --json || true)"
+jq -se 'length == 1 and (.[0] | .status == "skipped" and .code == "github-notification-cycle-aborted" and (.lastSuccessfulPollAt | type) == "number")' <<< "$blocked_refresh"
+openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --json | jq -e --argjson number "$issue_number" '.status == "ready" and (.items | length) == 1 and (.items[0] | .number == $number and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")'
+
+# should resume the admitted issue and complete its planning turn after execution is released
+openclaw-gateway stop
+rmdir "$(cat "$TMPDIR/notification-execution-lock")"
+rm "$TMPDIR/notification-execution-lock"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 refresh_result="$(
@@ -175,6 +193,14 @@ test -z "$status"
 ## Cleanup
 
 ```bash
+# should release the scenario owned execution hold if an assertion failed
+if test -f "$TMPDIR/notification-execution-lock"; then
+  execution_lock="$(cat "$TMPDIR/notification-execution-lock")"
+  if test -d "$execution_lock"; then
+    rmdir "$execution_lock"
+  fi
+fi
+
 # should remove only the generated tanaabot public key
 if test -f "$TMPDIR/notification-ssh.key-id"; then
   cd "$TMPDIR/agent-system-notifications"
