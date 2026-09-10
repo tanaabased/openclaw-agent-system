@@ -131,12 +131,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     ] as const;
     for (const executionScenario of executionScenarios) {
       const scenario = resolveGitHubNotificationModelScenario(executionScenario.id);
-      const expectedFixtureCount =
-        executionScenario.id === 'retirement'
-          ? 10
-          : executionScenario.id === 'implementation'
-            ? 8
-            : 9;
+      const expectedFixtureCount = executionScenario.id === 'implementation' ? 8 : 9;
       assert.equal(scenario.fixtures.length, expectedFixtureCount);
       const expectedToolCalls: Array<{ id: string; name: string }> = [
         { id: executionScenario.callIds[0], name: 'agent_system_github_reply' },
@@ -300,7 +295,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     assert.notEqual(matchFixture([...scenario.fixtures], request), scenario.fixtures[0]);
   });
 
-  it('should silently finish restart recovery only for the guided retirement checkpoint', () => {
+  it('should not supply a model fallback for uncontracted retirement restart recovery', () => {
     const scenario = resolveGitHubNotificationModelScenario('retirement');
     const recoveryPrompt =
       '[System] Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work. Continue from the existing transcript and finish the interrupted response.';
@@ -320,45 +315,8 @@ describe('scripts/github-notification-model-scenarios', () => {
       tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
     };
 
-    const fixture = matchFixture([...scenario.fixtures], request);
-    assert.deepEqual(fixture?.response, {
-      content: 'NO_REPLY',
-      id: 'agent-system-notification-retirement-restart-recovery-final-response',
-    });
-    assert.ok(scenario.finalResponses.includes('NO_REPLY'));
-
-    const withRuntimeContext = structuredClone(request);
-    withRuntimeContext.messages.push({
-      role: 'user',
-      content:
-        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nHost runtime instructions.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
-    });
-    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), fixture);
-    withRuntimeContext.messages.push({ content: 'A new operator request.', role: 'user' });
-    assert.equal(matchFixture([...scenario.fixtures], withRuntimeContext), null);
-
-    const missingAcknowledgment = structuredClone(request);
-    missingAcknowledgment.messages[2]!.content = 'An unrelated task finished.';
-    const ordinaryComment = structuredClone(request);
-    ordinaryComment.messages[4]!.content = 'Please implement the issue now.';
-    const staleRecovery = structuredClone(request);
-    staleRecovery.messages.push({ content: 'A new operator request.', role: 'user' });
-    const wrongModel = { ...request, model: 'unexpected-model' };
-    const toolContinuation = structuredClone(request);
-    toolContinuation.messages.push({
-      content: '{"status":"completed"}',
-      role: 'tool',
-      tool_call_id: 'call_unexpected',
-    });
-    for (const [label, unrelatedRequest] of Object.entries({
-      missingAcknowledgment,
-      ordinaryComment,
-      staleRecovery,
-      toolContinuation,
-      wrongModel,
-    })) {
-      assert.equal(matchFixture([...scenario.fixtures], unrelatedRequest), null, label);
-    }
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+    assert.equal(scenario.finalResponses.includes('NO_REPLY'), false);
   });
 
   it('should match current work assignment guidance across execution scenarios', () => {

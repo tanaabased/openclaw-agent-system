@@ -262,8 +262,6 @@ describe('scripts/aimock-evidence', () => {
       if (scenarioId === 'retirement') {
         messages.splice(0, messages.length, { content: prompt, role: 'system' });
         entries.push(request({ content: selectedScenario.finalResponses[3] }));
-        messages.splice(0, messages.length, { content: 'host restart recovery', role: 'user' });
-        entries.push(request({ content: 'NO_REPLY' }));
       }
       messages.splice(0, messages.length, { content: prompt, role: 'system' });
       entries.push(request({}));
@@ -287,13 +285,12 @@ describe('scripts/aimock-evidence', () => {
       }
 
       const hasFourthResponse = hasComment || scenarioId === 'retirement';
-      const promptRequestCount = hasFourthResponse ? 9 : 8;
-      const requestCount = promptRequestCount + (scenarioId === 'retirement' ? 1 : 0);
+      const requestCount = hasFourthResponse ? 9 : 8;
 
       assert.deepEqual(openClawAIMockEvidence(selectedScenario, entries), {
-        finalResponseCount: scenarioId === 'retirement' ? 5 : hasFourthResponse ? 4 : 3,
+        finalResponseCount: hasFourthResponse ? 4 : 3,
         model: 'aimock/gpt-5.5',
-        promptRequestCount,
+        promptRequestCount: requestCount,
         provider: 'aimock',
         requestCount,
         responsesApiRequestCount: requestCount,

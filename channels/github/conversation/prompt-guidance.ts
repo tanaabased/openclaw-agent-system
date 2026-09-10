@@ -54,19 +54,24 @@ export async function githubNotificationBeforeRun(
   },
 ) {
   if (!isGitHubNotificationContext(context)) return undefined;
+  let code = 'github-notification-model-turn-unresolved';
   try {
     const selected = await dependencies.turnSelector.select(context);
-    if (!selected) throw new Error('unresolved turn');
-    await dependencies.candidates.assertPromptSelected(selected);
-    return undefined;
+    if (selected) {
+      code = 'github-notification-model-turn-prompt-selection-missing';
+      await dependencies.candidates.assertPromptSelected(selected);
+      return undefined;
+    }
   } catch {
-    const code = 'github-notification-model-turn-prompt-selection-missing';
-    dependencies.logger.warn(`github-notifications: model execution blocked code=${code}`);
-    return {
-      outcome: 'block' as const,
-      reason: code,
-      message:
-        'Required before_prompt_build did not attest this GitHub turn. Run openclaw agent-system doctor and the normal install flow; reload the Gateway before retrying.',
-    };
+    // keep the turn blocked without exposing private state or exception details.
   }
+  dependencies.logger.warn(`github-notifications: model execution blocked code=${code}`);
+  return {
+    outcome: 'block' as const,
+    reason: code,
+    message:
+      code === 'github-notification-model-turn-unresolved'
+        ? 'No active trusted GitHub lifecycle turn could be resolved. Resume through the owning issue lifecycle before retrying.'
+        : 'Required before_prompt_build did not attest this GitHub turn. Run openclaw agent-system doctor and the normal install flow; reload the Gateway before retrying.',
+  };
 }
