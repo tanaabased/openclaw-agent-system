@@ -3,6 +3,8 @@ import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copil
 import hasOpenClawAIMockToolResult from '../../scripts/aimock-tool-result.ts';
 
 export const githubNotificationAssignmentCallId = 'call_agent_system_assignment_reply';
+export const githubNotificationAssignmentOwnerCallId = 'call_assignment_session_owner';
+export const githubNotificationAssignmentColorCallId = 'call_assignment_session_color';
 
 export const githubNotificationAssignmentCandidate =
   "This assignment asks for a small repository fixture. I'm going to assess the request, inspect the prepared worktree, and propose an implementation plan without changing files during this planning turn.";
@@ -20,11 +22,13 @@ export const githubNotificationAssignmentFinalResponse = [
 const assignmentSystemPromptSignals = [
   'Continue the current GitHub issue lifecycle',
   'This is the initial turn for an assigned issue',
+  'The trusted OpenClaw agent ID for this assignment is "notification-data"',
+  'bugs red',
   'In a mode that advances automatically, call `agent_system_github_reply` exactly once',
 ] as const;
 
 const assignmentUserPromptSignals = [
-  'add assignment planning fixture',
+  'bug: add assignment planning fixture',
   'Create assignment-planning-',
   'assignment planning ready.',
 ] as const;
@@ -44,11 +48,25 @@ const fixtures: Fixture[] = [
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: hasAssignmentUserPrompt,
       systemMessage: [...assignmentSystemPromptSignals],
-      toolName: 'agent_system_github_reply',
+      toolName: 'sessions',
     },
     response: {
       id: 'agent-system-notification-assignment-tool-response',
       toolCalls: [
+        {
+          arguments: JSON.stringify({
+            action: 'assign_owner',
+            ownerType: 'agent',
+            ownerId: 'notification-data',
+          }),
+          id: githubNotificationAssignmentOwnerCallId,
+          name: 'sessions',
+        },
+        {
+          arguments: JSON.stringify({ action: 'patch', color: 'red' }),
+          id: githubNotificationAssignmentColorCallId,
+          name: 'sessions',
+        },
         {
           arguments: JSON.stringify({ body: githubNotificationAssignmentCandidate }),
           id: githubNotificationAssignmentCallId,
@@ -63,7 +81,11 @@ const fixtures: Fixture[] = [
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: (request) =>
         hasAssignmentUserPrompt(request) &&
-        hasOpenClawAIMockToolResult(request.messages, githubNotificationAssignmentCallId),
+        [
+          githubNotificationAssignmentCallId,
+          githubNotificationAssignmentOwnerCallId,
+          githubNotificationAssignmentColorCallId,
+        ].every((id) => hasOpenClawAIMockToolResult(request.messages, id)),
       systemMessage: [...assignmentSystemPromptSignals],
     },
     response: {
@@ -87,6 +109,8 @@ export const assignmentScenario = {
       id: githubNotificationAssignmentCallId,
       name: 'agent_system_github_reply',
     },
+    { id: githubNotificationAssignmentOwnerCallId, name: 'sessions' },
+    { id: githubNotificationAssignmentColorCallId, name: 'sessions' },
   ],
   userPromptSignals: assignmentUserPromptSignals,
 };

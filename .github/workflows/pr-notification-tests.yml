@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         scenario:
-          - assignment
+          - assignment # includes native session owner and color setup
           - guided-assignment
           - implementation
           - pr-lifecycle

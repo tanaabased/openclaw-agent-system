@@ -15,6 +15,12 @@
       "name": "agent_system_github_reply",
       "projectionRequestCount": 2,
       "resultRequestCount": 1
+    },
+    {
+      "callResponseCount": 2,
+      "name": "sessions",
+      "projectionRequestCount": 2,
+      "resultRequestCount": 2
     }
   ]
 }

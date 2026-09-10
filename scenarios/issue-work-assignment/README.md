@@ -3,8 +3,9 @@
 This GitHub Actions-only scenario proves the `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, one assessment and plan, and the planning-only worktree checkpoint. The same
-lifecycle contract runs against the deterministic mock provider on pull requests and
+context, native session owner and color setup, one assessment and plan, and the
+planning-only worktree checkpoint. The same lifecycle contract runs against the
+deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
 
 The scenario creates uniquely named disposable issues in
@@ -34,6 +35,9 @@ mkdir "$TMPDIR/agent-system-notification-actor"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
+
+# should authorize the fixture actor for native owner-only session tools
+openclaw config set commands.ownerAllowFrom '["agent-system-github:U_kgDOEUqvpg"]' --strict-json
 
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
@@ -97,7 +101,7 @@ agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/big-test-bucket \
-  --title "add assignment planning fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --title "bug: add assignment planning fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
   --body "Create assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment planning ready." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
@@ -140,6 +144,12 @@ responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent noti
 response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+```
+
+```bash
+# should persist the routed agent owner and bug color on the issue session
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and (.[0] | .owner.actor.type == "agent" and .owner.actor.id == "notification-data" and .color == "red")'
 ```
 
 ```bash

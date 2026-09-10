@@ -11,7 +11,11 @@ import githubNotificationIssueLifecycleInstructions from '../channels/github/con
 import githubNotificationWorkModeInstructions from '../channels/github/conversation/prompts/mode-work.ts';
 import githubNotificationAssignmentResponseInstructions from '../channels/github/conversation/prompts/response-assignment.ts';
 import { githubNotificationGuidedAssignmentFinalResponse } from '../scenarios/issue-guided-assignment/model-fixture.ts';
-import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
+import {
+  githubNotificationAssignmentCallId,
+  githubNotificationAssignmentOwnerCallId,
+  githubNotificationAssignmentColorCallId,
+} from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
   githubNotificationImplementationAddCallId,
   githubNotificationImplementationCommitCallId,
@@ -67,6 +71,8 @@ describe('scripts/github-notification-model-scenarios', () => {
           id: toolCall?.id,
           name: 'agent_system_github_reply',
         },
+        { id: githubNotificationAssignmentOwnerCallId, name: 'sessions' },
+        { id: githubNotificationAssignmentColorCallId, name: 'sessions' },
       ]);
       return toolCall?.id;
     });
@@ -156,7 +162,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     const scenario = resolveGitHubNotificationModelScenario('assignment');
     const userPromptSignals = scenario.userPromptSignals ?? [];
     assert.deepEqual(userPromptSignals, [
-      'add assignment planning fixture',
+      'bug: add assignment planning fixture',
       'Create assignment-planning-',
       'assignment planning ready.',
     ]);
@@ -174,6 +180,7 @@ describe('scripts/github-notification-model-scenarios', () => {
           function: { name: 'agent_system_github_reply' },
           type: 'function',
         },
+        { function: { name: 'sessions' }, type: 'function' },
       ],
     };
 
@@ -183,6 +190,8 @@ describe('scripts/github-notification-model-scenarios', () => {
         id: githubNotificationAssignmentCallId,
         name: 'agent_system_github_reply',
       },
+      { id: githubNotificationAssignmentOwnerCallId, name: 'sessions' },
+      { id: githubNotificationAssignmentColorCallId, name: 'sessions' },
     ]);
     request.messages[1]!.content = userPromptSignals
       .filter((signal) => signal !== 'Create assignment-planning-')

@@ -27,8 +27,10 @@ describe('scripts/aimock-evidence', () => {
               },
             ]),
       ];
-      const callId = selectedScenario.toolCalls[0]?.id ?? '';
-      const observedCallId = `${callId}_fc-observed_123`;
+      const observedCalls = selectedScenario.toolCalls.map((call) => ({
+        function: { name: call.name },
+        id: `${call.id}_fc-observed_123`,
+      }));
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
       const evidence = openClawAIMockEvidence(selectedScenario, [
         {
@@ -38,6 +40,7 @@ describe('scripts/aimock-evidence', () => {
             tools: [
               { function: { name: 'agent_system_github_reply' } },
               { function: { name: 'read' } },
+              { function: { name: 'sessions' } },
             ],
           },
           method: 'POST',
@@ -45,7 +48,7 @@ describe('scripts/aimock-evidence', () => {
           response: {
             fixture: {
               response: {
-                toolCalls: [{ id: callId, name: 'agent_system_github_reply' }],
+                toolCalls: selectedScenario.toolCalls,
               },
             },
             status: 200,
@@ -58,21 +61,19 @@ describe('scripts/aimock-evidence', () => {
               {
                 content: null,
                 role: 'assistant',
-                tool_calls: [
-                  {
-                    function: { name: 'agent_system_github_reply' },
-                    id: observedCallId,
-                  },
-                ],
+                tool_calls: observedCalls,
               },
-              {
-                content: '{"status":"staged"}',
+              ...observedCalls.map((call) => ({
+                content: '{"status":"updated"}',
                 role: 'tool',
-                tool_call_id: observedCallId,
-              },
+                tool_call_id: call.id,
+              })),
             ],
             model: 'gpt-5.5',
-            tools: [{ function: { name: 'agent_system_github_reply' } }],
+            tools: [
+              { function: { name: 'agent_system_github_reply' } },
+              { function: { name: 'sessions' } },
+            ],
           },
           method: 'POST',
           path: '/v1/responses',
@@ -100,6 +101,12 @@ describe('scripts/aimock-evidence', () => {
             name: 'agent_system_github_reply',
             projectionRequestCount: 2,
             resultRequestCount: 1,
+          },
+          {
+            callResponseCount: 2,
+            name: 'sessions',
+            projectionRequestCount: 2,
+            resultRequestCount: 2,
           },
         ],
       });
@@ -318,6 +325,12 @@ describe('scripts/aimock-evidence', () => {
         {
           callResponseCount: 0,
           name: 'agent_system_github_reply',
+          projectionRequestCount: 0,
+          resultRequestCount: 0,
+        },
+        {
+          callResponseCount: 0,
+          name: 'sessions',
           projectionRequestCount: 0,
           resultRequestCount: 0,
         },
