@@ -304,6 +304,22 @@ openclaw agent-system notifications wait \
   removes owned routing and converged monitor state, and stops intake without
   deleting existing issue worktrees.
 
+### Durable State and Upgrades
+
+Intake saves short checkpoints in the agent's shared monitor file before advancing
+the provider cursor. Conversation state and publication receipts live in separate,
+independently locked lifecycle files under `channels/github-notification-conversations/`
+in the agent's private state directory. The adjacent
+`github-notification-conversations.json` is a small schema 8 routing index.
+
+On the first conversation write, older supported conversation snapshots migrate
+automatically: the original bytes are retained in
+`github-notification-conversations.legacy.json`, each lifecycle record is written,
+and the index switches last. Interrupted migration can retry from the original
+snapshot. A missing or invalid indexed record fails closed for that lifecycle.
+Older plugin versions cannot read the new index; the retained legacy snapshot is
+a migration backup and does not receive subsequent conversation updates.
+
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and common manifest workflow
