@@ -37,7 +37,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/a
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should authorize the fixture actor for native owner-only session tools
-openclaw config set commands.ownerAllowFrom '["agent-system-github:U_kgDOEUqvpg"]' --strict-json
+openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
 
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
