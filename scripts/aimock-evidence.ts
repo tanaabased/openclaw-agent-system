@@ -1,5 +1,5 @@
-import type { GitHubNotificationModelScenario } from './github-notification-model-scenarios.ts';
-import { matchesGitHubNotificationModelToolCallId } from './github-notification-model-tool-result.ts';
+import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
+import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
 interface EvidenceMessage {
   content: unknown;
@@ -15,7 +15,7 @@ interface EvidenceToolDefinition {
   function?: { name?: string };
 }
 
-interface GitHubNotificationModelJournalEntry {
+interface OpenClawAIMockJournalEntry {
   body: {
     messages?: EvidenceMessage[];
     model?: string;
@@ -29,14 +29,14 @@ interface GitHubNotificationModelJournalEntry {
   };
 }
 
-export interface GitHubNotificationModelToolEvidence {
+export interface OpenClawAIMockToolEvidence {
   callResponseCount: number;
   name: string;
   projectionRequestCount: number;
   resultRequestCount: number;
 }
 
-export interface GitHubNotificationModelEvidence {
+export interface OpenClawAIMockEvidence {
   finalResponseCount: number;
   model: string;
   promptRequestCount: number;
@@ -47,7 +47,7 @@ export interface GitHubNotificationModelEvidence {
   schemaVersion: 2;
   strictMissCount: number;
   successfulFixtureResponseCount: number;
-  tools: GitHubNotificationModelToolEvidence[];
+  tools: OpenClawAIMockToolEvidence[];
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -72,13 +72,13 @@ function roleText(messages: readonly EvidenceMessage[], role: string): string {
     .join('\n');
 }
 
-function fixtureResponse(entry: GitHubNotificationModelJournalEntry): Record<string, unknown> {
+function fixtureResponse(entry: OpenClawAIMockJournalEntry): Record<string, unknown> {
   return record(entry.response.fixture?.response) ?? {};
 }
 
 function isFinalResponse(
-  scenario: GitHubNotificationModelScenario,
-  entry: GitHubNotificationModelJournalEntry,
+  scenario: OpenClawAIMockScenario,
+  entry: OpenClawAIMockJournalEntry,
 ): boolean {
   const fixture = entry.response.fixture;
   if (fixture === null) return false;
@@ -90,7 +90,7 @@ function isFinalResponse(
 }
 
 function observedToolCallIds(
-  requests: readonly GitHubNotificationModelJournalEntry[],
+  requests: readonly OpenClawAIMockJournalEntry[],
   name: string,
   acceptedCallIds: readonly string[],
 ): Set<string> {
@@ -103,7 +103,7 @@ function observedToolCallIds(
               toolCall.function?.name === name &&
               typeof toolCall.id === 'string' &&
               acceptedCallIds.some((callId) =>
-                matchesGitHubNotificationModelToolCallId(toolCall.id as string, callId),
+                matchesOpenClawAIMockToolCallId(toolCall.id as string, callId),
               ),
           )
           .map((toolCall) => toolCall.id as string),
@@ -117,24 +117,21 @@ function hasToolResult(messages: readonly EvidenceMessage[], callId: string): bo
     (message) =>
       message.role === 'tool' &&
       typeof message.tool_call_id === 'string' &&
-      matchesGitHubNotificationModelToolCallId(message.tool_call_id, callId),
+      matchesOpenClawAIMockToolCallId(message.tool_call_id, callId),
   );
 }
 
-function normalizedModel(
-  value: string | undefined,
-  scenario: GitHubNotificationModelScenario,
-): string {
+function normalizedModel(value: string | undefined, scenario: OpenClawAIMockScenario): string {
   return value !== undefined && scenario.model.match.test(value)
     ? scenario.model.reference
     : (value ?? 'unknown');
 }
 
 /** Project AIMock's request journal into one provider-neutral scenario report. */
-export default function githubNotificationModelEvidence(
-  scenario: GitHubNotificationModelScenario,
-  entries: readonly GitHubNotificationModelJournalEntry[],
-): GitHubNotificationModelEvidence {
+export default function openClawAIMockEvidence(
+  scenario: OpenClawAIMockScenario,
+  entries: readonly OpenClawAIMockJournalEntry[],
+): OpenClawAIMockEvidence {
   const requests = entries.filter((entry) => entry.body !== null);
   const toolNames = [...new Set(scenario.toolCalls.map(({ name }) => name))].sort();
   return {

@@ -3,6 +3,7 @@
 ## Scope
 
 - Treat each `scenarios/<scenario>/README.md` as one executable GitHub notification acceptance contract and one CI matrix identity.
+- Keep this directory notification-specific; model choice does not determine folder placement. Notification scenarios may use strict AIMock or a live provider according to the workflow contract.
 - Name notification scenarios from their supported lifecycle, mode, and event or bounded outcome; keep prerequisite setup separate from the behavior asserted by the scenario.
 - Keep scenario setup, deterministic assertions, bounded disposable GitHub fixtures, and cleanup in the owning directory.
 - Keep immediate child directories limited to lifecycle-mode-scenario names selectable through `.github/workflows/notification-tests.yml` or `.github/workflows/pr-notification-tests.yml`; keep other scenario-level files limited to `AGENTS.md` and `package.json`.
@@ -13,7 +14,7 @@
 
 - Use the fresh runner's default OpenClaw profile and Gateway directly, with the prepared Agent System package supplied by the workflow.
 - Pass scenario-owned inputs to shared Leia helpers as command-line options. Reserve environment variables for the process or underlying runtime.
-- Use `openclaw-notification-setup` for provider-specific profile preparation, mock evidence comparison, and model shutdown. Keep provider branches out of scenario README files.
+- Use `openclaw-notification-setup` as the notification-specific wrapper for profile preparation, evidence comparison, and shutdown. It delegates strict AIMock lifecycle to `openclaw-aimock`; keep provider branches out of scenario README files.
 - Register named agents explicitly, bind them to scenario-owned workspaces, and keep generated state beneath `TMPDIR`.
 - Use `--yolo` only for unattended live-agent work in the isolated ephemeral runner.
 - Keep model and provider credentials scoped to the final Leia execution step in `.github/workflows/reusable-notification-test.yml` and load account tokens from declared 1Password Environments.

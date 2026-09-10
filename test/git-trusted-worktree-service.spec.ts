@@ -198,7 +198,7 @@ describe('tools/git/trusted-worktree-service', () => {
     assert.deepEqual(events, ['manifest', 'authorize']);
   });
 
-  it('should reuse configured git ssh for provider-derived github worktrees', async () => {
+  it('should reuse shared git ssh preparation for provider-derived github worktrees', async () => {
     const { prepared, service } = fixture({ ssh: true });
 
     await service.prepareGitHub({

@@ -1,30 +1,13 @@
-import type { Fixture } from '@copilotkit/aimock';
-
 import { guidedAssignmentScenario } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { assignmentScenario } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import { commentScenario } from '../scenarios/issue-work-comment/model-fixture.ts';
 import { implementationScenario } from '../scenarios/issue-work-implementation/model-fixture.ts';
 import { pullRequestLifecycleScenario } from '../scenarios/issue-work-pr-lifecycle/model-fixture.ts';
 import { retirementScenario } from '../scenarios/issue-work-retirement/model-fixture.ts';
+import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 
-export interface GitHubNotificationModelToolCall {
-  id: string;
-  name: string;
-}
-
-export interface GitHubNotificationModelScenario {
-  dynamicFinalResponseFixtures?: readonly Fixture[];
-  finalResponses: readonly string[];
-  fixtures: readonly Fixture[];
-  id: string;
-  model: {
-    match: RegExp;
-    reference: string;
-  };
-  systemPromptSignals: readonly string[];
-  toolCalls: readonly GitHubNotificationModelToolCall[];
-  userPromptSignals?: readonly string[];
-}
+export type GitHubNotificationModelToolCall = OpenClawAIMockToolCall;
+export type GitHubNotificationModelScenario = OpenClawAIMockScenario;
 
 const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [assignmentScenario.id, assignmentScenario],

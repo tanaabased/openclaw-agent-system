@@ -7,7 +7,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.9.3
+- OpenClaw 2026.9.3 for development; package compatibility starts at 2026.9.2
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
@@ -105,6 +105,12 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 ### Leia Scenarios
 
 The executable [Leia](https://github.com/lando/leia) material under [`examples/`](./examples/) and [`scenarios/`](./scenarios/) runs only through GitHub Actions. General examples cover macOS and Ubuntu where supported; notification acceptance scenarios use their own workflow and runner matrix. Both install plugins or mutate isolated OpenClaw and provider state, so neither suite may be run locally.
+
+Choose the driver independently of the folder. Prefer direct assertions when
+state proves the contract, use strict AIMock when the real OpenClaw agent/tool
+loop matters without model judgment, and use a live model only when provider
+transport, model interpretation, or Codex-native behavior is under test. The
+`agent` and `github` examples use AIMock; `path` and `security` remain live.
 
 #### GitHub Notification Scenarios
 

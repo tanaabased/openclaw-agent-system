@@ -182,12 +182,30 @@ describe('tools/github/lifecycle', () => {
           throw new Error('reconcile should not run');
         },
       },
+      profileService: {
+        async inspect(input) {
+          assert.deepEqual(input, keyContext);
+          return {
+            code: 'openclaw-github-profile-ready',
+            message: 'The agent-scoped OpenClaw GitHub identity matches the Agent System manifest.',
+            status: 'ready',
+          };
+        },
+        async reconcile() {
+          throw new Error('reconcile should not run');
+        },
+      },
     });
 
     assert.deepEqual(await contribution.inspect?.(keyContext), [
       {
         code: 'github-config-ready',
         message: 'Generated GitHub CLI config matches the agent manifest.',
+        status: 'healthy',
+      },
+      {
+        code: 'openclaw-github-profile-ready',
+        message: 'The agent-scoped OpenClaw GitHub identity matches the Agent System manifest.',
         status: 'healthy',
       },
       {
@@ -230,6 +248,20 @@ describe('tools/github/lifecycle', () => {
           return { configDir: '/private/data/tools/gh', status: 'ready' };
         },
       },
+      profileService: {
+        async inspect() {
+          throw new Error('inspect should not run');
+        },
+        async reconcile(input) {
+          assert.deepEqual(input, keyContext);
+          events.push('profile');
+          return {
+            bindingStatus: 'updated',
+            profileId: 'ghp_00000000000000000000000000000000',
+            profileStatus: 'created',
+          };
+        },
+      },
     });
 
     assert.deepEqual(await contribution.reconcile?.(keyContext), {
@@ -238,6 +270,16 @@ describe('tools/github/lifecycle', () => {
           code: 'github-config-unchanged',
           message: 'private GitHub CLI config',
           status: 'unchanged',
+        },
+        {
+          code: 'create-openclaw-github-profile',
+          message: 'agent-scoped OpenClaw GitHub profile',
+          status: 'created',
+        },
+        {
+          code: 'set-openclaw-github-profile',
+          message: 'agent-scoped OpenClaw GitHub identity binding',
+          status: 'updated',
         },
         {
           code: 'add-github-ssh-keys',
@@ -251,6 +293,6 @@ describe('tools/github/lifecycle', () => {
         },
       ],
     });
-    assert.deepEqual(events, ['config', 'verify-config', 'keys']);
+    assert.deepEqual(events, ['config', 'verify-config', 'profile', 'keys']);
   });
 });

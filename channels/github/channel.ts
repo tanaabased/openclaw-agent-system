@@ -86,6 +86,7 @@ export function createGitHubNotificationChannel(
       id: githubNotificationChannelId,
       label: 'Agent System GitHub Notifications',
       selectionLabel: 'Agent System GitHub Notifications',
+      systemImage: 'bell.badge',
       docsPath:
         'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
       blurb:

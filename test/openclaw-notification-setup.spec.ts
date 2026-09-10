@@ -42,4 +42,13 @@ describe('scripts/openclaw-notification-setup', () => {
       /configure_notification_profile\n\n {2}if \[\[ "\$model_provider" == mock \]\]/u,
     );
   });
+
+  it('should delegate strict mock lifecycle handling to the shared helper', async () => {
+    const source = await readFile(command, 'utf8');
+
+    assert.match(source, /openclaw-aimock" prepare/u);
+    assert.match(source, /openclaw-aimock" evidence/u);
+    assert.match(source, /openclaw-aimock" stop/u);
+    assert.doesNotMatch(source, /aimock-server\.ts/u);
+  });
 });

@@ -2,7 +2,7 @@ import { isAbsolute, join } from 'node:path';
 
 import type { ChatCompletionRequest, Fixture, ToolCallResponse } from '@copilotkit/aimock';
 
-import hasGitHubNotificationModelToolResult from './github-notification-model-tool-result.ts';
+import hasGitHubNotificationModelToolResult from './aimock-tool-result.ts';
 
 interface GitHubNotificationIssueWorkCallIds {
   add: string;

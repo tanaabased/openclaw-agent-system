@@ -91,6 +91,12 @@ printf '%s' "$worktree_branch" > "$TMPDIR/approved-worktree-branch"
 ## Testing
 
 ```bash
+# should keep the notification worktree on the configured ssh transport
+cd "$TMPDIR/agent-system-notifications"
+worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"
+cd "$worktree_path"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- remote get-url origin | grep -Fx 'git@github.com:tanaabased/big-test-bucket.git'
+
 # should implement the exact assignment fixture
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"

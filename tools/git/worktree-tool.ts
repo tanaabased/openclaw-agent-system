@@ -11,7 +11,7 @@ import type {
 } from './config-schema.ts';
 import { resolveGitIdentity, type ResolvedGitIdentity } from './identity.ts';
 import type GitWorktreeGitRunnerFactory from './worktree-git-runner.ts';
-import normalizeGitWorktreeRemote from './worktree-remote.ts';
+import normalizeGitWorktreeRemote, { preferGitHubSshWorktreeRemote } from './worktree-remote.ts';
 import type GitWorktreeService from './worktree-service.ts';
 import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 import { gitWorktreeToolSchema, type GitWorktreeToolInput } from './worktree-tool-schema.ts';
@@ -183,11 +183,17 @@ export function createGitWorktreeToolDefinition(
     let result: GitWorktreeResult | GitWorktreeResult[] | undefined;
     try {
       if (input.action === 'prepare') {
+        const cloneUrl = input.repository.cloneUrl;
         result = await dependencies.service.prepare(context, {
           baseRef: input.baseRef,
-          ...(input.repository.cloneUrl === undefined
+          ...(cloneUrl === undefined
             ? {}
-            : { cloneUrl: input.repository.cloneUrl }),
+            : {
+                cloneUrl:
+                  configuration.ssh === undefined
+                    ? cloneUrl
+                    : preferGitHubSshWorktreeRemote(cloneUrl),
+              }),
           ...(reconcileOrigin ? { reconcileOrigin: true } : {}),
           repositoryId: input.repository.id,
           workId: input.workId,

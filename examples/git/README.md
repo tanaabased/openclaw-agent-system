@@ -81,11 +81,21 @@ openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git 
 # should load both configured keys and authenticate with the registered generated key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 "$GITHUB_WORKSPACE/bin/git" ls-remote git@github.com:tanaabased/openclaw-agent-system.git HEAD | grep -F 'HEAD'
+
+# should prepare github worktrees with the configured ssh transport
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system ssh-transport origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git | tee "$TMPDIR/agent-system-ssh-worktree.json" | grep -F '"status": "created"'
+cd "$(jq -r .path "$TMPDIR/agent-system-ssh-worktree.json")"
+"$GITHUB_WORKSPACE/bin/git" remote get-url origin | grep -Fx 'git@github.com:tanaabased/openclaw-agent-system.git'
 ```
 
 ## Cleanup
 
 ```bash
+# should remove the clean ssh backed worktree
+cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- remove agent-system ssh-transport | grep -F '"status": "removed"'
+
 # should remove only the generated tanaabot public key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
 key_id="$(cat "$TMPDIR/big-test-bucket-ssh.key-id")"

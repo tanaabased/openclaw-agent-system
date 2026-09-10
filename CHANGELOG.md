@@ -1,8 +1,15 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+
 ### Bug Fixes
 
-- Updated Agent System for OpenClaw 2026.9.3, preserving GitHub notification and managed-agent workflows. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55)
+- Made the installed agent and GitHub examples deterministic with strict AIMock fixtures while preserving real Gateway and tool execution. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Fixed managed GitHub worktrees to reuse configured SSH authentication across direct and notification preparation. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Updated Agent System to support OpenClaw 2026.9.2 and newer while building against 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 

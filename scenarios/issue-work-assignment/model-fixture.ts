@@ -1,6 +1,6 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
-import hasGitHubNotificationModelToolResult from '../../scripts/github-notification-model-tool-result.ts';
+import hasOpenClawAIMockToolResult from '../../scripts/aimock-tool-result.ts';
 
 export const githubNotificationAssignmentCallId = 'call_agent_system_assignment_reply';
 
@@ -63,7 +63,7 @@ const fixtures: Fixture[] = [
       model: /^(?:aimock\/)?gpt-5\.5$/u,
       predicate: (request) =>
         hasAssignmentUserPrompt(request) &&
-        hasGitHubNotificationModelToolResult(request.messages, githubNotificationAssignmentCallId),
+        hasOpenClawAIMockToolResult(request.messages, githubNotificationAssignmentCallId),
       systemMessage: [...assignmentSystemPromptSignals],
     },
     response: {

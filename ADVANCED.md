@@ -20,10 +20,14 @@ while the channel ID uses hyphens.
 
 ## Version Compatibility
 
-| Agent System release | Supported OpenClaw versions |
-| -------------------- | --------------------------- |
-| Unreleased           | 2026.9.3                    |
-| 0.5.3                | 2026.7.1-2                  |
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| Unreleased           | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
+
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
 
 ## Manifest
 
@@ -64,7 +68,10 @@ is the per-workspace manifest plus any configured component sections. When
 [`github.notifications`](./channels/github/README.md#configuration-reference) is present,
 `install` projects only a non-secret channel account and exact agent binding into
 global OpenClaw configuration; notification policy and credentials remain
-workspace-owned.
+workspace-owned. When a workspace declares both `github.username` and
+`github.token`, `install` also projects a distinct managed GitHub profile into
+that agent's `tools.github` configuration. Agent System remains authoritative;
+no token enters `openclaw.json` and no system-level GitHub identity is adopted.
 
 A complete core configuration can contain:
 
@@ -269,8 +276,10 @@ creates or updates only owned state, verifies the result, and reports unchanged
 state on repeated runs. An existing agent id bound to another workspace fails
 instead of being repointed. It also reconciles per-agent grants for the native
 Git, managed-worktree, and GitHub tools selected by the manifest while preserving
-unrelated grants. An explicit operator-owned denial remains authoritative and
-blocks reconciliation.
+unrelated grants. GitHub installation additionally reconciles an agent-scoped
+OpenClaw managed profile when explicit account and credential bindings are
+present. An explicit operator-owned denial or unmarked conflicting profile
+remains authoritative and blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 

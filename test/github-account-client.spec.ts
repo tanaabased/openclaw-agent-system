@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import GitHubAccountClient from '../core/github-account-client.ts';
@@ -6,7 +7,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
   schemaVersion: 1,
-  agent: { id: 'tanaabot' },
+  agent: { email: 'tanaabot@tanaab.dev', id: 'tanaabot', name: 'Tanaabot' },
   environment: { pathPrepend: ['commands'] },
   github: {
     sshKeys: [{ source: 'keys/auth.pub', type: 'path' }],
@@ -38,6 +39,7 @@ function loadedEnvironment() {
 describe('core/github-account-client', () => {
   it('should bind fixed calls to a sanitized child environment and configured identity', async () => {
     const requests: AgentSystemCliRunRequest[] = [];
+    const materializations: string[] = [];
     const controller = new AbortController();
     const client = new GitHubAccountClient({
       baseEnvironment: {
@@ -46,6 +48,13 @@ describe('core/github-account-client', () => {
         SHOULD_NOT_INHERIT: 'private-host-value',
       },
       configStore: { configDirectory: () => '/private/tanaabot/tools/gh' },
+      credentialMaterializer: {
+        async materialize({ credential, directory, identity }) {
+          materializations.push(directory);
+          assert.deepEqual(credential, { host: 'github.com', token: 'private-token' });
+          assert.deepEqual(identity, { login: 'tanaabot', nodeId: 'U_agent' });
+        },
+      },
       environmentService: { loadForWorkspace: async () => loadedEnvironment() },
       excludedExecutableDirectories: ['/package/bin'],
       runCli: async (request) => {
@@ -68,12 +77,17 @@ describe('core/github-account-client', () => {
       controller.signal,
     );
     await connected.execute(['api', '--paginate', '--slurp', '/user/keys']);
+    assert.ok(connected.materializeCredential);
+    await connected.materializeCredential('/private/openclaw/profile');
+    assert.ok(connected.verifyConfiguredIdentity);
+    await connected.verifyConfiguredIdentity('/private/openclaw/profile');
 
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
         ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
         ['api', '--paginate', '--slurp', '/user/keys'],
+        ['api', 'user', '--jq', '{login:.login,nodeId:.node_id}'],
       ],
     );
     assert.equal(requests[1]?.environment.GH_TOKEN, 'private-token');
@@ -86,6 +100,20 @@ describe('core/github-account-client', () => {
       `${workspaceDir}/commands`,
       '/package/bin',
     ]);
+    assert.equal(requests[2]?.stdin, undefined);
+    assert.equal(requests[2]?.environment.GH_TOKEN, '');
+    assert.equal(requests[2]?.environment.GITHUB_TOKEN, '');
+    assert.equal(requests[2]?.environment.GH_CONFIG_DIR, '/private/openclaw/profile');
+    assert.equal(JSON.stringify(requests[2]?.argv).includes('private-token'), false);
+    assert.deepEqual(materializations, ['/private/openclaw/profile']);
+    assert.deepEqual(connected.gitAuthor, {
+      email: 'tanaabot@tanaab.dev',
+      name: 'Tanaabot',
+    });
+    assert.equal(
+      connected.credentialFingerprint,
+      createHash('sha256').update('private-token').digest('hex'),
+    );
   });
 
   it('should reject a github account that does not match the declaration', async () => {

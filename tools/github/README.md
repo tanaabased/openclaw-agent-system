@@ -48,6 +48,7 @@ schema-version: 1
 agent:
   id: tanaabot
   name: Tanaabot
+  email: tanaabot@tanaab.dev
 
 environment:
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
@@ -97,6 +98,17 @@ The value names a variable in the completed Agent System environment; it can
 never contain a literal token. A declared binding takes precedence over the
 defaults. SSH authentication or signing keys require an explicit token and
 username because installation may mutate the configured GitHub account.
+
+When both `github.username` and `github.token` are declared, `install` also
+projects that identity into OpenClaw for the same agent. Agent System remains
+the source of truth, and `doctor` treats a system-level OpenClaw identity as
+missing rather than adopting it.
+
+The token is duplicated only into OpenClaw's owner-readable PAT profile store,
+never `openclaw.json`. Each agent receives a separately verified profile and
+binding; conflicts or unsupported layouts fail closed. Agents that share an OS
+account still share process-level access, so this provides identity separation,
+not hostile-process secret isolation.
 
 ### `github.policy`
 
@@ -175,8 +187,8 @@ contain exactly one supported public key. Agent System never accepts private
 keys, removes remote keys, rotates keys, or changes existing titles.
 
 The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
-commands validate declarations, reconcile missing keys and private GitHub CLI
-configuration, and report drift. See the
+commands validate declarations, reconcile the private GitHub CLI configuration,
+agent-scoped OpenClaw identity, and missing account keys, and report drift. See the
 [GitHub notifications channel](../../channels/github/README.md) for its separate
 configuration, routing, lifecycle, and security contract.
 

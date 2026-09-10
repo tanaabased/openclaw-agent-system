@@ -14,6 +14,7 @@ environment:
 git:
   extensions:
     big-test-bucket: allow
+  worktrees: {}
   signing:
     key: OP_SSH_KEY
     allowed-signers-file: .agent-system/allowed_signers

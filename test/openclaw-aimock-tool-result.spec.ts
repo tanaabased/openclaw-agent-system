@@ -1,21 +1,22 @@
 import assert from 'node:assert/strict';
 
-import hasGitHubNotificationModelToolResult, {
-  matchesGitHubNotificationModelToolCallId,
-} from '../scripts/github-notification-model-tool-result.ts';
 import { githubNotificationAssignmentCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
+import hasOpenClawAIMockToolResult, {
+  matchesOpenClawAIMockToolCallId,
+  openClawAIMockToolResultText,
+} from '../scripts/aimock-tool-result.ts';
 
-describe('scripts/github-notification-model-tool-result', () => {
+describe('scripts/aimock-tool-result', () => {
   it('should recognize only the requested scenario tool result', () => {
     assert.equal(
-      hasGitHubNotificationModelToolResult(
+      hasOpenClawAIMockToolResult(
         [{ role: 'assistant' }, { role: 'tool', tool_call_id: githubNotificationAssignmentCallId }],
         githubNotificationAssignmentCallId,
       ),
       true,
     );
     assert.equal(
-      hasGitHubNotificationModelToolResult(
+      hasOpenClawAIMockToolResult(
         [
           {
             role: 'tool',
@@ -27,7 +28,7 @@ describe('scripts/github-notification-model-tool-result', () => {
       true,
     );
     assert.equal(
-      hasGitHubNotificationModelToolResult(
+      hasOpenClawAIMockToolResult(
         [{ role: 'tool', tool_call_id: 'call_other' }],
         githubNotificationAssignmentCallId,
       ),
@@ -37,18 +38,35 @@ describe('scripts/github-notification-model-tool-result', () => {
 
   it('should reject unrelated suffixes that merely share the authored prefix', () => {
     assert.equal(
-      matchesGitHubNotificationModelToolCallId(
+      matchesOpenClawAIMockToolCallId(
         `${githubNotificationAssignmentCallId}_fc-observed_123`,
         githubNotificationAssignmentCallId,
       ),
       true,
     );
     assert.equal(
-      matchesGitHubNotificationModelToolCallId(
+      matchesOpenClawAIMockToolCallId(
         `${githubNotificationAssignmentCallId}_message-observed`,
         githubNotificationAssignmentCallId,
       ),
       false,
+    );
+  });
+
+  it('should return text only for the requested tool result', () => {
+    assert.equal(
+      openClawAIMockToolResultText(
+        [
+          { content: 'other', role: 'tool', tool_call_id: 'call_other' },
+          {
+            content: [{ text: '{"login":"emoriwan"}' }],
+            role: 'tool',
+            tool_call_id: `${githubNotificationAssignmentCallId}_fc-observed_123`,
+          },
+        ],
+        githubNotificationAssignmentCallId,
+      ),
+      '{"login":"emoriwan"}',
     );
   });
 });

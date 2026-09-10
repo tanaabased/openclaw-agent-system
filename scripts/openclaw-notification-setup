@@ -104,73 +104,11 @@ case "$model" in
     ;;
   aimock/*)
     model_provider=mock
-    [[ -z "${OPENAI_API_KEY:-}" ]] || error 'OPENAI_API_KEY must be empty for an AIMock model'
     ;;
   *)
     error "unsupported notification model: $model" 2
     ;;
 esac
-
-provider_base_url='http://127.0.0.1:4010'
-provider_log="$TMPDIR/notification-model.log"
-provider_pid_path="$TMPDIR/notification-model.pid"
-provider_url_path="$TMPDIR/notification-model.url"
-provider_evidence_path="$TMPDIR/notification-model-evidence.json"
-
-start_mock_provider() {
-  local provider_pid
-  local provider_ready=''
-
-  [[ -n "$scenario" ]] || error '--scenario is required for mock preparation' 2
-  [[ ! -e "$provider_pid_path" ]] || error "notification model state already exists: $provider_pid_path"
-
-  node --import tsx "$command_dir/github-notification-model-server.ts" \
-    --scenario "$scenario" \
-    --host 127.0.0.1 \
-    --port 4010 \
-    >"$provider_url_path" \
-    2>"$provider_log" &
-  provider_pid="$!"
-  printf '%s\n' "$provider_pid" >"$provider_pid_path"
-
-  for _ in {1..30}; do
-    if curl --fail --silent --show-error "$provider_base_url/ready" >/dev/null; then
-      provider_ready=1
-      break
-    fi
-    if ! kill -0 "$provider_pid" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-  done
-
-  if [[ -z "$provider_ready" ]]; then
-    tail -n 120 "$provider_log" >&2 || true
-    error 'notification model did not become ready'
-  fi
-  [[ "$(<"$provider_url_path")" == "$provider_base_url" ]] || error 'notification model reported an unexpected base URL'
-}
-
-configure_mock_model() {
-  local model_config
-  local model_defaults
-  local model_id="${model#aimock/}"
-
-  [[ -n "$model_id" ]] || error 'the AIMock model id is empty' 2
-  model_config="$(
-    jq -cn \
-      --arg base_url "$provider_base_url" \
-      --arg model_id "$model_id" \
-      '{baseUrl:$base_url,apiKey:"test",api:"openai-responses",request:{allowPrivateNetwork:true},models:[{id:$model_id,name:$model_id,api:"openai-responses",reasoning:true,input:["text","image"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:4096}]}'
-  )"
-  model_defaults="$(jq -cn --arg model "$model" '{($model):{params:{transport:"sse"}}}')"
-
-  openclaw config set models.mode replace
-  openclaw config set models.providers.aimock "$model_config" --strict-json
-  openclaw models set "$model"
-  openclaw config set agents.defaults.models "$model_defaults" --strict-json --merge
-  openclaw config validate --json | jq -e '.valid == true'
-}
 
 configure_notification_profile() {
   debug 'disabling the unrelated default-agent heartbeat for notification acceptance'
@@ -194,7 +132,6 @@ prepare_notification() {
   [[ -f "$agent_system_plugin" ]] || error "Agent System plugin pack is unavailable: $agent_system_plugin" 2
 
   if [[ "$model_provider" == mock ]]; then
-    start_mock_provider
     "$command_dir/openclaw-setup" "${setup_args[@]}"
   else
     "$command_dir/openclaw-setup" "${setup_args[@]}" --model "$model"
@@ -203,7 +140,7 @@ prepare_notification() {
   configure_notification_profile
 
   if [[ "$model_provider" == mock ]]; then
-    configure_mock_model
+    "$command_dir/openclaw-aimock" prepare --model "$model" --scenario "$scenario"
   fi
 }
 
@@ -212,35 +149,17 @@ compare_evidence() {
     return
   fi
 
-  [[ -n "$scenario" ]] || error '--scenario is required for evidence' 2
-  [[ -n "$expected_evidence" ]] || error '--expected-evidence is required for mock evidence' 2
-  [[ -f "$expected_evidence" ]] || error "expected notification evidence is unavailable: $expected_evidence" 2
-
-  curl --fail --silent --show-error "$provider_base_url/proof/evidence" \
-    | tee "$provider_evidence_path"
-  jq -e --arg scenario "$scenario" \
-    '.schemaVersion == 2 and .scenario == $scenario and .provider == "aimock" and .strictMissCount == 0' \
-    "$provider_evidence_path" >/dev/null
-  cmp "$expected_evidence" "$provider_evidence_path"
+  "$command_dir/openclaw-aimock" evidence \
+    --model "$model" \
+    --scenario "$scenario" \
+    --expected-evidence "$expected_evidence"
 }
 
 stop_notification() {
-  local provider_pid
-
-  if [[ "$model_provider" == live || ! -f "$provider_pid_path" ]]; then
+  if [[ "$model_provider" == live ]]; then
     return
   fi
-
-  provider_pid="$(<"$provider_pid_path")"
-  require_positive_integer 'notification model pid' "$provider_pid"
-  kill -TERM "$provider_pid" 2>/dev/null || true
-  for _ in {1..30}; do
-    if ! kill -0 "$provider_pid" 2>/dev/null; then
-      return
-    fi
-    sleep 1
-  done
-  error "notification model did not stop: pid=$provider_pid"
+  "$command_dir/openclaw-aimock" stop --model "$model"
 }
 
 case "$action" in

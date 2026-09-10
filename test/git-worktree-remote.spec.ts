@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import normalizeGitWorktreeRemote, {
   githubSshWorktreeRemote,
+  preferGitHubSshWorktreeRemote,
 } from '../tools/git/worktree-remote.ts';
 
 describe('tools/git/worktree-remote', () => {
@@ -51,6 +52,20 @@ describe('tools/git/worktree-remote', () => {
       'https://github.com/tanaabased/nested/openclaw-agent-system.git',
     ]) {
       assert.throws(() => githubSshWorktreeRemote(remote), /canonical HTTPS/u, remote);
+    }
+  });
+
+  it('should prefer ssh only for canonical github https remotes', () => {
+    assert.equal(
+      preferGitHubSshWorktreeRemote('https://github.com/tanaabased/openclaw-agent-system.git'),
+      'git@github.com:tanaabased/openclaw-agent-system.git',
+    );
+    for (const remote of [
+      'https://example.com/tanaabased/openclaw-agent-system.git',
+      'ssh://git@example.com/tanaabased/openclaw-agent-system.git',
+      'git@github.com:tanaabased/openclaw-agent-system.git',
+    ]) {
+      assert.equal(preferGitHubSshWorktreeRemote(remote), remote);
     }
   });
 });

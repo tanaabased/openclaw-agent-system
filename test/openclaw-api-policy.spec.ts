@@ -184,7 +184,7 @@ describe('openclaw api policy', () => {
       assert.equal(
         source.includes('agents.list'),
         false,
-        `${file} must use the OpenClaw 2026.9.3 agents.entries configuration`,
+        `${file} must use the OpenClaw 2026.9.2 agents.entries configuration`,
       );
     }
   });
