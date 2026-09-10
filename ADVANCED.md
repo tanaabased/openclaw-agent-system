@@ -279,9 +279,7 @@ Git, managed-worktree, and GitHub tools selected by the manifest while preservin
 unrelated grants. GitHub installation additionally reconciles an agent-scoped
 OpenClaw managed profile when explicit account and credential bindings are
 present. An explicit operator-owned denial or unmarked conflicting profile
-remains authoritative and blocks reconciliation. For configured GitHub notifications,
-explicit install also reconciles the plugin-wide conversation-hook grant and
-verifies registration; see [required conversation hook](./channels/github/README.md#required-conversation-hook).
+remains authoritative and blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 

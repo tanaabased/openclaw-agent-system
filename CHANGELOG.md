@@ -13,7 +13,6 @@
 ### Bug Fixes
 
 - Made notification doctor report blocked conversation-hook access, normal install reconcile and verify it, and Gateway turns require prompt attestation before model execution. [#76](https://github.com/tanaabased/openclaw-agent-system/issues/76)
-
 - Fixed busy GitHub issues blocking intake and independent issue execution, with separate lifecycle state and shared repository preparation locks. [#71](https://github.com/tanaabased/openclaw-agent-system/issues/71) [#73](https://github.com/tanaabased/openclaw-agent-system/pull/73)
 - Fixed managed GitHub worktrees to reuse configured SSH authentication across direct and notification preparation. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 - Made the installed agent and GitHub examples deterministic with strict AIMock fixtures while preserving real Gateway and tool execution. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)

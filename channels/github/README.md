@@ -173,26 +173,13 @@ that baseline create local work. A baseline failure reports
 
 ### Required Conversation Hook
 
-For configured notifications, doctor reports unset or denied
-`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked and
-points to normal `openclaw agent-system install`. Doctor never grants access.
-Explicit installation sets this shared plugin permission to `true`, preserves
-unrelated configuration, and checks Agent System's `before_prompt_build`
-registration with `openclaw plugins inspect agent-system --runtime --json`.
-A failed or inconclusive inspection fails installation. An independent
-`hooks.allowPromptInjection: false` remains authoritative and is not overwritten.
-Removing one agent's notifications does not revoke the shared permission.
-
-Inspection verifies a freshly loaded plugin registry; it does not prove that an
-already-running Gateway reloaded. A Gateway instance started without access
-remains blocked until OpenClaw reloads the plugin. If automatic reload is off,
-restart the Gateway after installation. Channel health reflects this blocked
-prerequisite, and Gateway execution checks readiness before opening a model turn.
-A separate `before_agent_run` gate verifies the matching durable prompt-selection
-receipt before the model executes; another plugin's prompt hook is not sufficient.
-The existing one-shot CLI contract still carries and attests trusted instructions
-without relying on globally activated hooks. Install uses that CLI surface for
-its initial read-only assignment baseline.
+For configured notifications, `doctor` reports unset or denied
+`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked without
+changing it. Run `openclaw agent-system install` from the agent workspace to grant
+access and verify required hook registration. Install preserves unrelated
+configuration and does not override `hooks.allowPromptInjection: false`.
+If the running Gateway has not reloaded the permission, restart it after install;
+notifications remain blocked until its required hooks are available.
 
 ## CLI
 

@@ -155,20 +155,3 @@ functional. Capability-specific configuration and usage documentation belongs
 beside its tool or channel. The planned third-party integration boundary is
 documented in [Tool API](./API.md); the current `api/` implementation remains
 internal to Agent System.
-
-### Notification Hook Regression Evidence
-
-The credential-free `notification-hook-regression.yml` workflow runs the same
-installed doctor assertions against `2fe15db` and the proposed source on Ubuntu
-and macOS. Its artifacts record the baseline's missing prerequisite diagnostic,
-blocked hook registration, unchanged doctor configuration, and the fixed
-unset/denied/healthy controls. `examples/routing` covers normal-install repair,
-registration verification, configuration preservation, and repeated installation.
-
-The assignment, guided-assignment, and PR-lifecycle scenarios now remove setup
-consent before normal install. Their existing lifecycle assertions therefore
-exercise the repaired installation, including source-affine PR-comment delivery.
-Strict AIMock covers deterministic native OpenClaw turns. Live-provider lanes
-retain their existing coverage; they are not evidence of Codex-native behavior
-unless that harness actually ran. Do not infer Gateway hook coverage solely from
-one-shot CLI scenarios. All installed regression and Leia work remains CI-only.

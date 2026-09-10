@@ -1,6 +1,6 @@
 # Doctor Example
 
-This scenario installs the prepared Agent System package and verifies healthy, drifted, and repaired foundational lifecycle state through the public doctor and install commands.
+This scenario installs the prepared Agent System package and verifies foundational lifecycle state and notification-hook prerequisites through the public doctor and install commands.
 
 ## Setup
 
@@ -41,4 +41,27 @@ printf '%s\n' "$output" | grep -F 'drift' | grep -F 'agent'
 cd "$GITHUB_WORKSPACE/examples/doctor/data"
 openclaw agent-system install --json | jq -e '.outcomes | any(.status == "updated")'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
+
+# should report unset and denied notification hook access without changing configuration
+openclaw agents add hook-doctor-data --workspace "$GITHUB_WORKSPACE/examples/doctor/hook-data" --non-interactive --json
+for state in unset false; do
+  if [ "$state" = unset ]; then
+    openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
+  else
+    openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false
+  fi
+  before="$(openclaw config get plugins.entries.agent-system --json | jq -cS .)"
+  if output="$(openclaw agent-system doctor --agent hook-doctor-data --json)"; then exit 1; fi
+  printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-access-required" and .status == "blocked" and (.message | contains("plugins.entries.agent-system.hooks.allowConversationAccess")) and (.remediation | contains("openclaw agent-system install")))'
+  test "$(openclaw config get plugins.entries.agent-system --json | jq -cS .)" = "$before"
+  openclaw plugins inspect agent-system --runtime --json | jq -e 'all(.typedHooks[]; .name != "before_prompt_build")'
+done
+
+# should report healthy hook access when the required hooks are registered
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+before="$(openclaw config get plugins.entries.agent-system --json | jq -cS .)"
+output="$(openclaw agent-system doctor --agent hook-doctor-data --json || true)"
+printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-ready" and .status == "healthy")'
+test "$(openclaw config get plugins.entries.agent-system --json | jq -cS .)" = "$before"
+openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build") and any(.typedHooks[]; .name == "before_agent_run")'
 ```
