@@ -68,7 +68,7 @@ describe('channels/github/channel', () => {
 
     assert.match(compatibility, /OpenClaw 2026\.9\.2 and 2026\.9\.3/u);
     assert.match(compatibility, /channel id is also a loaded plugin id/u);
-    assert.match(compatibility, /PluginPackageChannel.*ChannelMeta/us);
+    assert.match(compatibility, /PluginPackageChannel.*ChannelMeta/su);
     assert.match(compatibility, /channel-specific artwork field/u);
     assert.match(compatibility, /owning-plugin id/u);
     assert.match(compatibility, /another PNG would be a\s+dead asset/u);
