@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { githubNotificationMonitorStatus } from '../channels/github/intake/monitor/status.ts';
+import { patchGitHubNotificationItem } from '../channels/github/intake/monitor/state-checkpoint.ts';
 import { githubWorkItemKey } from '../channels/github/provider/work-item.ts';
 import createGitHubNotificationSchedulingFixture, {
   schedulingIssueA,
@@ -12,6 +13,48 @@ const itemKeyA = githubWorkItemKey(schedulingIssueA.repositoryNodeId, scheduling
 const itemKeyB = githubWorkItemKey(schedulingIssueB.repositoryNodeId, schedulingIssueB.number);
 
 describe('channels/github/intake/monitor/service scheduling', () => {
+  it('should retain retirement checkpointed after a poll snapshot while admitting another issue', async () => {
+    const fixture = await createGitHubNotificationSchedulingFixture();
+    fixture.release.resolve();
+    fixture.expose(schedulingIssueB);
+    const retiredIntake = {
+      ...schedulingIssueA.intake!,
+      cleanup: {
+        reasonCode: 'pull-request-merged',
+        session: 'missing' as const,
+        status: 'completed' as const,
+        worktree: 'removed' as const,
+      },
+      providerRetirementVerifiedAt: 3_500,
+      stage: 'retired' as const,
+      worktreeBranch: 'issue-7',
+      worktreePath: '/workspace/worktrees/issue-7',
+    };
+    try {
+      const monitor = fixture.createMonitor(async (store) => {
+        const before = await store.read(fixture.agentId);
+        assert.ok(before);
+        await store.update(fixture.agentId, (current) =>
+          patchGitHubNotificationItem(current, before, itemKeyA, {
+            disposition: 'retired',
+            intake: retiredIntake,
+            reasonCode: 'pull-request-merged',
+          }),
+        );
+      });
+      const [result] = await monitor.runOnce({ agentId: fixture.agentId });
+
+      assert.equal(result?.status, 'completed');
+      const state = await fixture.readState();
+      assert.deepEqual(state?.items[itemKeyA]?.intake, retiredIntake);
+      assert.equal(state?.items[itemKeyA]?.disposition, 'retired');
+      assert.equal(state?.items[itemKeyB]?.intake?.stage, 'prepared');
+      assert.deepEqual(fixture.sessionCalls, [schedulingIssueB.number]);
+    } finally {
+      await fixture.dispose();
+    }
+  });
+
   for (const outcome of ['completed', 'failed'] as const) {
     it(`should recover a later assignment after a held session ${outcome}`, async () => {
       const fixture = await createGitHubNotificationSchedulingFixture();

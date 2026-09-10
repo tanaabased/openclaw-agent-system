@@ -15,7 +15,11 @@ import {
   type GitHubNotificationConversationState,
 } from './conversation-state.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
-import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
+import type {
+  GitHubNotificationItemState,
+  GitHubNotificationMonitorState,
+} from '../intake/monitor/state.ts';
+import { patchGitHubNotificationItem } from '../intake/monitor/state-checkpoint.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
@@ -48,7 +52,7 @@ export interface GitHubNotificationCommentOrchestratorDependencies {
       }) => GitHubNotificationModeId | Promise<GitHubNotificationModeId>);
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
-  monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'>;
+  monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'update'>;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   turnCatalog: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
   turns: Pick<GitHubNotificationCommentTurnService, 'respond'>;
@@ -211,6 +215,7 @@ export default class GitHubNotificationCommentOrchestrator {
         itemKey,
         item,
         opened.client,
+        monitor,
       ))
     ) {
       return;
@@ -372,6 +377,7 @@ export default class GitHubNotificationCommentOrchestrator {
     itemKey: string,
     item: GitHubNotificationItemState,
     client: GitHubNotificationConversationClient,
+    expectedMonitor: GitHubNotificationMonitorState,
   ): Promise<boolean> {
     const current = await this.#dependencies.conversationStateStore.read(agentId);
     const conversation = current?.conversations[conversationId];
@@ -403,25 +409,14 @@ export default class GitHubNotificationCommentOrchestrator {
     }
     const merged = status === 'merged';
     if (merged) {
-      const monitor = await this.#dependencies.monitorStateStore.read(agentId);
-      const monitorItem = monitor?.items[itemKey];
-      if (!monitor || !monitorItem?.intake || monitorItem.intake.stage !== 'prepared') {
-        throw new GitHubNotificationCommentOrchestratorError(
-          'github-notification-comment-retirement-state-missing',
-        );
-      }
-      const retired = structuredClone(monitor);
-      retired.items[itemKey] = {
-        ...monitorItem,
-        disposition: 'retired',
-        intake: {
-          ...monitorItem.intake,
-          providerRetirementVerifiedAt: this.#clock(),
-          stage: 'retired',
-        },
-        reasonCode: 'pull-request-merged',
-      };
-      await this.#dependencies.monitorStateStore.write(retired);
+      const verifiedAt = this.#clock();
+      await this.#dependencies.monitorStateStore.update(agentId, (monitor) =>
+        patchGitHubNotificationItem(monitor, expectedMonitor, itemKey, {
+          disposition: 'retired',
+          intake: { providerRetirementVerifiedAt: verifiedAt, stage: 'retired' },
+          reasonCode: 'pull-request-merged',
+        }),
+      );
     }
     await this.#dependencies.conversationStateStore.write(next);
     this.#dependencies.logger.info(

@@ -140,10 +140,17 @@ export default async function createGitHubNotificationSchedulingFixture() {
     },
   };
 
-  function createMonitor() {
+  function createMonitor(
+    beforePoll?: (store: GitHubNotificationMonitorStateStore) => Promise<void>,
+  ) {
     const store = new GitHubNotificationMonitorStateStore(stateOptions);
     return new GitHubNotificationMonitorService({
-      accountClient: { connect: async () => account },
+      accountClient: {
+        async connect() {
+          await beforePoll?.(store);
+          return account;
+        },
+      },
       assignmentOrchestrator: new GitHubNotificationAssignmentOrchestrator({
         authority: { inspect: async () => ({ authorized: true }) },
         initialMode: githubNotificationWorkMode,

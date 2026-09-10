@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationMonitorStateUpdate } from '../channels/github/intake/monitor/state-store.ts';
+
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import type { GitHubNotificationAssignmentInspection } from '../channels/github/intake/assignment-provider.ts';
 import GitHubNotificationCommentOrchestrator, {
@@ -223,8 +225,9 @@ function monitorStateStore(initial: GitHubNotificationMonitorState) {
     snapshot() {
       return structuredClone(state);
     },
-    async write(next: GitHubNotificationMonitorState) {
-      state = structuredClone(next);
+    async update(_agentId: string, patch: GitHubNotificationMonitorStateUpdate) {
+      state = structuredClone(patch(structuredClone(state)));
+      return state;
     },
   };
 }

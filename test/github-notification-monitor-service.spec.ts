@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationMonitorStateUpdate } from '../channels/github/intake/monitor/state-store.ts';
+
 import AgentSystemToolError from '../api/error.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
@@ -83,7 +85,7 @@ function monitorService(
     },
     stateStore: {
       read: async () => undefined,
-      write: async () => undefined,
+      update: async (_agentId, patch) => patch(undefined),
     },
     ...overrides,
   });
@@ -145,8 +147,9 @@ describe('channels/github/intake/monitor/service', () => {
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => {
+        update: async (_agentId, patch) => {
           writes += 1;
+          return patch(state);
         },
       },
     });
@@ -223,7 +226,7 @@ describe('channels/github/intake/monitor/service', () => {
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -282,7 +285,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -312,8 +315,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -405,8 +409,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -461,8 +466,9 @@ describe('channels/github/intake/monitor/service', () => {
       async read() {
         return structuredClone(state);
       },
-      async write(next: GitHubNotificationMonitorState) {
-        state = structuredClone(next);
+      async update(_agentId: string, patch: GitHubNotificationMonitorStateUpdate) {
+        state = structuredClone(patch(state));
+        return state;
       },
     };
     let worktreeOperations = 0;
@@ -546,8 +552,9 @@ describe('channels/github/intake/monitor/service', () => {
       },
       stateStore: {
         read: async () => state,
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -611,8 +618,9 @@ describe('channels/github/intake/monitor/service', () => {
           state = undefined;
           return true;
         },
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -642,8 +650,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => state,
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -673,7 +682,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -703,7 +712,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -741,7 +750,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 

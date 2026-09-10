@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationMonitorStateUpdate } from '../channels/github/intake/monitor/state-store.ts';
+
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
 } from '../channels/github/intake/assignment-orchestrator.ts';
@@ -28,9 +30,10 @@ function memoryStore(initial = monitorState()) {
       return structuredClone(state);
     },
     state: () => structuredClone(state),
-    async write(next: GitHubNotificationMonitorState) {
-      state = structuredClone(next);
-      writes.push(structuredClone(next));
+    async update(_agentId: string, patch: GitHubNotificationMonitorStateUpdate) {
+      state = structuredClone(patch(structuredClone(state)));
+      writes.push(structuredClone(state));
+      return state;
     },
     writes,
   };
@@ -53,6 +56,72 @@ function lifecycles(worktrees: {
 }
 
 describe('channels/github/intake/assignment-orchestrator', () => {
+  it('should preserve another admission and the poll cursor when worktree preparation finishes', async () => {
+    const store = memoryStore();
+    const other = approvedPullRequestNotificationItem();
+    const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+      authority: { inspect: async () => ({ authorized: true }) },
+      initialMode: githubNotificationWorkMode,
+      lifecycles: lifecycles({
+        inspect: async () => undefined,
+        async prepare() {
+          await store.update('tanaabot', (current) => ({
+            ...current!,
+            items: { ...current!.items, [notificationPullRequestItemKey]: other },
+            nextPollAt: 5_000,
+            searchBoundary: '2026-09-10T12:00:00.000Z',
+          }));
+          return worktree;
+        },
+      }),
+      sessions: { prepare: async () => undefined },
+      stateStore: store,
+    });
+
+    await orchestrator.reconcile('tanaabot', itemKey);
+
+    assert.deepEqual(store.state().items[notificationPullRequestItemKey], other);
+    assert.equal(store.state().items[itemKey]?.intake?.worktreePath, worktree.path);
+    assert.equal(store.state().nextPollAt, 5_000);
+    assert.equal(store.state().searchBoundary, '2026-09-10T12:00:00.000Z');
+  });
+
+  for (const outcome of ['completes', 'fails']) {
+    it(`should leave a replacement assignment intact when old worktree preparation ${outcome}`, async () => {
+      const store = memoryStore();
+      const replacement = {
+        ...store.state().items[itemKey]!,
+        assignmentEventNodeId: 'EV_reassigned',
+        intake: { assignmentEventId: 'EV_reassigned', stage: 'admitted' as const },
+      };
+      const orchestrator = new GitHubNotificationAssignmentOrchestrator({
+        authority: { inspect: async () => ({ authorized: true }) },
+        initialMode: githubNotificationWorkMode,
+        lifecycles: lifecycles({
+          inspect: async () => undefined,
+          async prepare() {
+            await store.update('tanaabot', (current) => ({
+              ...current!,
+              items: { ...current!.items, [itemKey]: replacement },
+            }));
+            if (outcome === 'fails') throw new Error('controlled worktree failure');
+            return worktree;
+          },
+        }),
+        sessions: { prepare: async () => undefined },
+        stateStore: store,
+      });
+
+      await assert.rejects(orchestrator.reconcile('tanaabot', itemKey), {
+        code:
+          outcome === 'fails'
+            ? 'github-notification-worktree-preparation-failed'
+            : 'github-notification-state-checkpoint-stale',
+      });
+      assert.deepEqual(store.state().items[itemKey], replacement);
+    });
+  }
+
   it('should checkpoint one issue worktree before its assignment response', async () => {
     const store = memoryStore();
     let observedWorktree: typeof worktree | undefined;
@@ -274,12 +343,13 @@ describe('channels/github/intake/assignment-orchestrator', () => {
       sessions: { prepare: async () => undefined },
       stateStore: {
         read: store.read,
-        async write(next) {
+        async update(agentId, patch) {
+          const next = patch(await store.read());
           if (failWorktreeCheckpoint && next.items[itemKey]?.intake?.stage === 'prepared') {
             failWorktreeCheckpoint = false;
             throw new Error('state write failed');
           }
-          await store.write(next);
+          return store.update(agentId, () => next);
         },
       },
     });

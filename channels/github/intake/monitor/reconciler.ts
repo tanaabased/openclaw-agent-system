@@ -107,7 +107,10 @@ export default class GitHubNotificationMonitorReconciler {
   ): Promise<void> {
     const itemKeys = githubNotificationRetirementItemKeys(current);
     if (itemKeys.length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
+      await this.#dependencies.stateStore.remove?.(
+        agentId,
+        (latest) => githubNotificationRetirementItemKeys(latest).length === 0,
+      );
       return;
     }
     const retryDeferred =
@@ -119,7 +122,10 @@ export default class GitHubNotificationMonitorReconciler {
     await this.reconcileAssignments(agentId, itemKeys, signal);
     const reconciled = await this.#dependencies.stateStore.read(agentId);
     if (githubNotificationRetirementItemKeys(reconciled).length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
+      await this.#dependencies.stateStore.remove?.(
+        agentId,
+        (latest) => githubNotificationRetirementItemKeys(latest).length === 0,
+      );
     }
   }
 

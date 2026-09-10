@@ -13,6 +13,7 @@ import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
 import type GitHubNotificationMonitorCycleLeaseStore from './cycle-lease.ts';
 import type GitHubNotificationMonitorStateStore from './state-store.ts';
+import { checkpointGitHubNotificationPoll } from './state-checkpoint.ts';
 import { pollGitHubNotifications } from './poller.ts';
 import type NotificationRoutingService from '../../routing/service.ts';
 import GitHubWorkEventClient from '../../provider/work-event-client.ts';
@@ -37,7 +38,7 @@ export interface GitHubNotificationMonitorServiceDependencies {
   random?: () => number;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   routingService: Pick<NotificationRoutingService, 'inspect'>;
-  stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'write'> &
+  stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'update'> &
     Partial<Pick<GitHubNotificationMonitorStateStore, 'load' | 'remove'>>;
 }
 
@@ -287,13 +288,7 @@ export default class GitHubNotificationMonitorService {
           githubNotificationRetirementItemKeys(current),
           signal,
         );
-        const failed = await this.#saveFailure(
-          agentId,
-          workspaceDir,
-          await this.#dependencies.stateStore.read(agentId),
-          now,
-          route.code,
-        );
+        const failed = await this.#saveFailure(agentId, workspaceDir, now, route.code);
         return {
           agentId,
           code: route.code,
@@ -304,11 +299,10 @@ export default class GitHubNotificationMonitorService {
       }
 
       if (routingBackoff && current) {
-        current = structuredClone(current);
-        delete current.diagnosticCode;
-        current.failureCount = 0;
-        current.nextPollAt = now;
-        await this.#dependencies.stateStore.write(current);
+        current = await this.#dependencies.stateStore.update(agentId, (latest) => {
+          if (!latest) throw new Error('The GitHub notification monitor state is missing.');
+          return { ...latest, diagnosticCode: undefined, failureCount: 0, nextPollAt: now };
+        });
       } else if (pollDeferred) {
         await this.#reconciler.reconcileAssignments(agentId, pendingItemKeys, signal);
         const commentFailure = await this.#reconciler.reconcileCommentsSafely(
@@ -362,7 +356,9 @@ export default class GitHubNotificationMonitorService {
       result.state.lastPollAt = now;
       result.state.lastSuccessfulPollAt = now;
       result.state.nextPollAt = Math.max(now + Math.floor(intervalMs * jitter), rateReset + 1_000);
-      await this.#dependencies.stateStore.write(result.state);
+      result.state = await this.#dependencies.stateStore.update(agentId, (latest) =>
+        checkpointGitHubNotificationPoll(latest, current, result.state),
+      );
       await this.#reconciler.reconcileAssignments(
         agentId,
         pendingGitHubNotificationItemKeys(result.state, options.selector),
@@ -428,11 +424,9 @@ export default class GitHubNotificationMonitorService {
       const diagnostic = githubNotificationDiagnostic(error);
       try {
         if (workspaceDir) {
-          const current = await this.#dependencies.stateStore.read(agentId);
           const failed = await this.#saveFailure(
             agentId,
             workspaceDir,
-            current,
             now,
             diagnostic.code,
             diagnostic.retryAt,
@@ -468,21 +462,20 @@ export default class GitHubNotificationMonitorService {
   async #saveFailure(
     agentId: string,
     workspaceDir: string,
-    current: GitHubNotificationMonitorState | undefined,
     now: number,
     code: string,
     retryAt?: number,
   ): Promise<GitHubNotificationMonitorState> {
-    const state = createGitHubNotificationFailureState({
-      agentId,
-      code,
-      current,
-      now,
-      random: this.#dependencies.random ?? Math.random,
-      ...(retryAt === undefined ? {} : { retryAt }),
-      workspaceDir,
-    });
-    await this.#dependencies.stateStore.write(state);
-    return state;
+    return this.#dependencies.stateStore.update(agentId, (current) =>
+      createGitHubNotificationFailureState({
+        agentId,
+        code,
+        current,
+        now,
+        random: this.#dependencies.random ?? Math.random,
+        ...(retryAt === undefined ? {} : { retryAt }),
+        workspaceDir,
+      }),
+    );
   }
 }
