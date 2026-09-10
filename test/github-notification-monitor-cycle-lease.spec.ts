@@ -93,20 +93,62 @@ describe('channels/github/intake/monitor/cycle-lease', () => {
     }
   });
 
-  it('should hold polling and execution independently while excluding duplicate executors', async () => {
+  it('should exclude the same lifecycle across stores while other lifecycles and polls proceed', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'agent-system-monitor-scopes-'));
     const store = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
     const independent = new GitHubNotificationMonitorCycleLeaseStore({ rootDir });
-    const execution = await store.acquire('tanaabot', { scope: 'execution' });
+    const options = { scope: 'execution' as const, itemKey: 'repository:issue:a' };
+    const execution = await store.acquire('tanaabot', options);
+    const other = await independent.acquire('tanaabot', {
+      ...options,
+      itemKey: 'repository:issue:b',
+    });
     const poll = await independent.acquire('tanaabot');
     try {
       assert.equal(execution.status, 'acquired');
+      assert.equal(other.status, 'acquired');
       assert.equal(poll.status, 'acquired');
-      assert.equal((await independent.acquire('tanaabot', { scope: 'execution' })).status, 'busy');
+      assert.equal((await independent.acquire('tanaabot', options)).status, 'busy');
       assert.equal((await store.acquire('tanaabot')).status, 'busy');
     } finally {
       if (poll.status === 'acquired') await poll.lease.release();
+      if (other.status === 'acquired') await other.lease.release();
       if (execution.status === 'acquired') await execution.lease.release();
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should require an execution item and keep opaque item keys inside private state', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'agent-system-monitor-item-key-'));
+    let target = '';
+    const store = new GitHubNotificationMonitorCycleLeaseStore({
+      rootDir,
+      async acquireFileLock(path) {
+        target = path;
+        return { release: async () => undefined };
+      },
+    });
+    try {
+      await assert.rejects(
+        store.acquire('tanaabot', { scope: 'execution' }),
+        /requires an item key/u,
+      );
+      const acquired = await store.acquire('tanaabot', {
+        scope: 'execution',
+        itemKey: '../../opaque/item',
+      });
+      assert.equal(acquired.status, 'acquired');
+      assert.equal(
+        target.startsWith(join(rootDir, 'tanaabot/channels/github-notification-execution/')),
+        true,
+      );
+      assert.match(target.split('/').at(-1)!, /^[a-f0-9]{64}$/u);
+      assert.equal(
+        (await lstat(join(rootDir, 'tanaabot/channels/github-notification-execution'))).mode &
+          0o077,
+        0,
+      );
+    } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
   });

@@ -34,7 +34,7 @@ describe('channels/github/conversation/prompt-guidance', () => {
           turnSelector,
         },
       ),
-      turnContracts.instructions(selected.identity),
+      turnContracts.instructions(selected.identity, selected.agentId),
     );
     assert.deepEqual(attestations, [selected]);
     assert.equal(
@@ -90,7 +90,7 @@ describe('channels/github/conversation/prompt-guidance', () => {
       },
     });
 
-    assert.equal(instructions, turnContracts.instructions(selected.identity));
+    assert.equal(instructions, turnContracts.instructions(selected.identity, selected.agentId));
     assert.equal(selectorContext, context);
     assert.deepEqual(attested, selected);
   });
@@ -119,7 +119,7 @@ describe('channels/github/conversation/prompt-guidance', () => {
       },
     );
 
-    assert.equal(instructions, turnContracts.instructions(selected.identity));
+    assert.equal(instructions, turnContracts.instructions(selected.identity, selected.agentId));
     assert.match(instructions ?? '', /Carry out that plan now/u);
     assert.deepEqual(attestations, [selected]);
   });
@@ -155,7 +155,7 @@ describe('channels/github/conversation/prompt-guidance', () => {
         { channel: githubNotificationChannelId, messageProvider: 'github' },
         dependencies,
       ),
-      turnContracts.instructions(selected.identity),
+      turnContracts.instructions(selected.identity, selected.agentId),
     );
     assert.equal(
       await githubNotificationPromptGuidance(
@@ -164,7 +164,7 @@ describe('channels/github/conversation/prompt-guidance', () => {
         },
         dependencies,
       ),
-      turnContracts.instructions(selected.identity),
+      turnContracts.instructions(selected.identity, selected.agentId),
     );
     assert.equal(selections, 2);
     assert.equal(attestations, 2);

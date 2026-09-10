@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import GitHubNotificationAssignmentOrchestrator from '../channels/github/intake/assignment-orchestrator.ts';
 import GitHubNotificationMonitorCycleLeaseStore from '../channels/github/intake/monitor/cycle-lease.ts';
 import GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
+import type { GitHubNotificationCommentReconciler } from '../channels/github/intake/monitor/reconciler.ts';
 import GitHubNotificationMonitorStateStore from '../channels/github/intake/monitor/state-store.ts';
 import type { GitHubNotificationItemState } from '../channels/github/intake/monitor/state.ts';
 import GitHubIssueLifecycle from '../channels/github/lifecycles/issue.ts';
@@ -54,7 +55,13 @@ function githubResponse(body: unknown) {
 }
 
 /** Exercise real polling, reconciliation, leases, and persistence around a held session call. */
-export default async function createGitHubNotificationSchedulingFixture() {
+export default async function createGitHubNotificationSchedulingFixture(
+  options: {
+    holdIssueB?: boolean;
+    reconcileComment?: GitHubNotificationCommentReconciler['reconcile'];
+    prepareWorktree?: (itemDatabaseId: number) => Promise<void>;
+  } = {},
+) {
   const rootDir = await mkdtemp(join(tmpdir(), 'agent-system-notification-scheduling-'));
   const stateOptions = { rootDir };
   const stateStore = new GitHubNotificationMonitorStateStore(stateOptions);
@@ -81,6 +88,9 @@ export default async function createGitHubNotificationSchedulingFixture() {
   const worktrees = new Map<number, GitHubNotificationLifecycleWorktree>();
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
+  const startedB = Promise.withResolvers<void>();
+  const releaseB = Promise.withResolvers<void>();
+  if (!options.holdIssueB) releaseB.resolve();
   const contended = Promise.withResolvers<void>();
   const warnings: string[] = [];
   const logger = { error() {}, info() {}, warn: (message: string) => warnings.push(message) };
@@ -148,6 +158,9 @@ export default async function createGitHubNotificationSchedulingFixture() {
   ) {
     const store = new GitHubNotificationMonitorStateStore(stateOptions);
     return new GitHubNotificationMonitorService({
+      ...(options.reconcileComment
+        ? { commentOrchestrator: { reconcile: options.reconcileComment } }
+        : {}),
       accountClient: {
         async connect() {
           await beforePoll?.(store);
@@ -164,6 +177,7 @@ export default async function createGitHubNotificationSchedulingFixture() {
             },
             inspectGitHub: async ({ itemDatabaseId }) => worktrees.get(itemDatabaseId),
             async prepareGitHub({ itemDatabaseId }) {
+              await options.prepareWorktree?.(itemDatabaseId);
               worktreePreparations.push(itemDatabaseId);
               const worktree = {
                 branch: `issue-${itemDatabaseId}`,
@@ -181,6 +195,9 @@ export default async function createGitHubNotificationSchedulingFixture() {
             if (item.number === schedulingIssueA.number) {
               started.resolve();
               await release.promise;
+            } else if (item.number === schedulingIssueB.number) {
+              startedB.resolve();
+              await releaseB.promise;
             }
           },
         },
@@ -246,10 +263,12 @@ export default async function createGitHubNotificationSchedulingFixture() {
     },
     readState: () => new GitHubNotificationMonitorStateStore(stateOptions).read(initial.agentId),
     release,
+    releaseB,
     requests,
     sessionCalls,
     sessionSignals,
     started: started.promise,
+    startedB: startedB.promise,
     warnings,
     worktreePreparations,
   };

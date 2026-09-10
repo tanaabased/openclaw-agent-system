@@ -253,6 +253,31 @@ describe('channels/github/intake/monitor/service', () => {
     );
   });
 
+  it('should retain the completed cli result when another worker finishes before selection', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    let reads = 0;
+    const service = monitorService({
+      clock: () => 1_000,
+      stateStore: {
+        read: async () => (++reads === 1 ? structuredClone(state) : { ...state, items: {} }),
+        update: async () => assert.fail('a deferred poll must not write'),
+      },
+      assignmentOrchestrator: {
+        reconcile: async () => assert.fail('the pending item has already finished'),
+        respond: async () => assert.fail('the pending item has already finished'),
+      },
+    });
+    const [result] = await service.runOnce({
+      agentId: 'tanaabot',
+      executionSurface: 'cli-one-shot',
+    });
+    assert.equal(result?.status, 'completed');
+    assert.equal(result?.code, 'github-notification-pending-reconciled');
+  });
+
   it('should leave prepared intake idle until the next remote poll', async () => {
     let connected = 0;
     const reconciled: string[] = [];
@@ -745,6 +770,47 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(reconciled, [notificationItemKey]);
     assert.equal(removals, 1);
     assert.equal(state, undefined);
+  });
+
+  it('should retire another disabled issue while one issue remains deferred', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const first = state.items[notificationItemKey]!;
+    const other = structuredClone(first);
+    other.number += 1;
+    const otherKey = `github:${other.repositoryNodeId}:${other.number}`;
+    state.items[otherKey] = other;
+    first.intake!.failureCode = 'github-notification-intake-failed';
+    const retired: string[] = [];
+    const service = monitorService({
+      clock: () => 1_000,
+      manifestService: {
+        loadForAgentId: async () =>
+          loadedManifest({
+            ...manifest,
+            github: { token: 'GH_TOKEN_TANAABOT', username: 'tanaabot' },
+          }),
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          retired.push(itemKey);
+          state.items[itemKey]!.intake!.stage = 'retired';
+        },
+        respond: async () => assert.fail('disabled issues must not respond'),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        update: async (_agentId, patch) => patch(state),
+        remove: async () => assert.fail('state must retain the deferred issue'),
+      },
+    });
+    const [result] = await service.runOnce({ agentId: 'tanaabot' });
+    assert.equal(result?.code, 'github-notification-disabled');
+    assert.deepEqual(retired, [otherKey]);
+    assert.equal(first.intake?.stage, 'admitted');
+    assert.equal(other.intake?.stage, 'retired');
   });
 
   it('should persist value-free exponential backoff after a transient account failure', async () => {

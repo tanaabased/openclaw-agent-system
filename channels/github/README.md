@@ -40,10 +40,14 @@ The channel also:
 - supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
   for an explicit, mode-neutral public progress update
 
-The Gateway polls at the configured interval independently of its executor. New
-assignments can appear in notification status while an existing model turn is
-running. Worktree preparation, model turns, and comment processing remain serial
-within each agent; newly admitted work waits for the executor to become available.
+The Gateway polls at the configured interval independently of its issue workers.
+New assignments can appear in status and begin work while another issue is running.
+Each issue's preparation, comments, responses, and retirement share one execution
+lease across Gateway and CLI processes. Different issues can proceed independently;
+preparation is serialized per shared repository, and model turns use
+OpenClaw's existing dispatcher and capacity limits. Comments on the busy issue
+itself wait for its worker. Shutdown cancels and drains all workers; CLI refreshes
+await their selected issues within the existing timeout.
 
 ## Requirements
 
@@ -265,6 +269,10 @@ openclaw agent-system notifications wait \
 
 ## Current Limitations
 
+- Automatic session appearance setup requires the assigning GitHub actor to have
+  OpenClaw owner access (`commands.ownerAllowFrom`) and the native `sessions` tool
+  enabled; otherwise the assignment continues without customization.
+  Owner assignment requires a Gateway turn; CLI refresh can still set the color and group.
 - Plan and Auto modes and mode transitions remain unavailable.
 - Directly assigned pull requests retain bounded head metadata but do not create
   a managed worktree or an independent comment session.

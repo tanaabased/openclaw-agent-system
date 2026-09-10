@@ -1,14 +1,15 @@
 # GitHub Issue Work Assignment Scenario
 
-This GitHub Actions-only scenario proves the `issue` + `work` + `assignment` turn. It
+This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, one assessment and plan, and the planning-only worktree checkpoint. The same
-lifecycle contract runs against the deterministic mock provider on pull requests and
+context, best-effort session setup with a persisted color and group, one assessment and plan, and the
+planning-only worktree checkpoint. The same lifecycle contract runs against the
+deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
 It also checks that the installed runtime saves publication receipts in the owning
 conversation file and keeps only routing identity in the shared index. A controlled
-execution lease verifies that intake can admit an issue before execution is available,
+per-issue execution lease verifies that intake can admit an issue before execution is available,
 and that the bounded CLI refresh reports its wait ending without losing that admission.
 
 The scenario creates uniquely named disposable issues in
@@ -39,8 +40,14 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-s
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
+# should authorize the fixture actor for native owner-only session tools
+openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
+
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+
+# should make existing custom groups available for assignment setup
+openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active Work"]}' --json | jq -e '.ok == true'
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -95,30 +102,35 @@ openclaw agent-system notifications wait \
   --timeout 180 \
   --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-self" and .worktree == "pending" and (has("stage") | not))'
 
-# should hold execution while allowing independent assignment intake
-config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
-execution_lock="$config_root/tanaab/agent-system/notification-data/channels/github-notification-execution.lock"
-mkdir "$execution_lock"
-printf '%s' "$execution_lock" > "$TMPDIR/notification-execution-lock"
+# should keep native session tools available while the cli owns notification execution
+openclaw-gateway stop
+OPENCLAW_NO_RESPAWN=1 OPENCLAW_SKIP_CHANNELS=1 openclaw-gateway start
 
-# should admit an approved issue while a bounded refresh cannot acquire execution
+# should admit an approved issue while a bounded refresh cannot acquire its execution lease
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-actor \
   --repository tanaabased/big-test-bucket \
-  --title "add assignment planning fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --title "bug: add assignment planning fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
   --body "Create assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment planning ready." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
+repository_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api /repos/tanaabased/big-test-bucket --jq .node_id)"
+execution_key="$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "github:$repository_id:$issue_number")"
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+execution_root="$config_root/tanaab/agent-system/notification-data/channels/github-notification-execution"
+mkdir -p -m 700 "$execution_root"
+execution_lock="$execution_root/$execution_key.lock"
+mkdir "$execution_lock"
+printf '%s' "$execution_lock" > "$TMPDIR/notification-execution-lock"
 blocked_refresh="$(openclaw agent-system notifications refresh --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --timeout 30 --json || true)"
 jq -se 'length == 1 and (.[0] | .status == "skipped" and .code == "github-notification-cycle-aborted" and (.lastSuccessfulPollAt | type) == "number")' <<< "$blocked_refresh"
 openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --json | jq -e --argjson number "$issue_number" '.status == "ready" and (.items | length) == 1 and (.items[0] | .number == $number and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")'
 
 # should resume the admitted issue and complete its planning turn after execution is released
-openclaw-gateway stop
 rmdir "$(cat "$TMPDIR/notification-execution-lock")"
 rm "$TMPDIR/notification-execution-lock"
 cd "$TMPDIR/agent-system-notifications"
@@ -168,6 +180,12 @@ conversation_id="$(jq -er 'select(.schemaVersion == 8 and .agentId == "notificat
 record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 jq -e --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 1 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
+```
+
+```bash
+# should persist the bug color and fitting group despite unavailable cli owner assignment
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
 ```
 
 ```bash

@@ -72,7 +72,7 @@ function nestedDiagnosticCode(error: unknown): string | undefined {
   return undefined;
 }
 
-/** Reconcile one agent's assignments serially through durable, value-free checkpoints. */
+/** Serialize each assignment's reconciliation and response through durable checkpoints. */
 export default class GitHubNotificationAssignmentOrchestrator {
   readonly #dependencies: GitHubNotificationAssignmentOrchestratorDependencies;
   readonly #queue = new KeyedAsyncQueue();
@@ -82,7 +82,9 @@ export default class GitHubNotificationAssignmentOrchestrator {
   }
 
   async reconcile(agentId: string, itemKey: string, signal?: AbortSignal): Promise<void> {
-    return this.#queue.enqueue(agentId, () => this.#reconcile(agentId, itemKey, signal));
+    return this.#queue.enqueue(JSON.stringify([agentId, itemKey]), () =>
+      this.#reconcile(agentId, itemKey, signal),
+    );
   }
 
   async respond(
@@ -91,7 +93,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     signal?: AbortSignal,
     executionSurface: GitHubNotificationExecutionSurface = 'gateway',
   ): Promise<void> {
-    return this.#queue.enqueue(agentId, () =>
+    return this.#queue.enqueue(JSON.stringify([agentId, itemKey]), () =>
       this.#respond(agentId, itemKey, signal, executionSurface),
     );
   }

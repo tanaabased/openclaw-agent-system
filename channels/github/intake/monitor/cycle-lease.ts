@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import {
@@ -29,6 +30,7 @@ export interface GitHubNotificationMonitorCycleLeaseStoreDependencies {
 }
 
 export interface GitHubNotificationMonitorCycleLeaseAcquireOptions {
+  itemKey?: string;
   scope?: 'execution' | 'poll';
   signal?: AbortSignal;
   waitMs?: number;
@@ -49,7 +51,7 @@ async function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise
   }
 }
 
-/** Independently serialize polling and execution across Gateway and CLI processes. */
+/** Serialize account polls and individual lifecycle executions across Gateway and CLI. */
 export default class GitHubNotificationMonitorCycleLeaseStore {
   readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #currentUid: number | undefined;
@@ -73,7 +75,7 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     if (!Number.isSafeInteger(waitMs) || waitMs < 0) {
       throw new Error('GitHub notification cycle lease waits must be non-negative integers.');
     }
-    const targetPath = await this.#targetPath(agentId, options.scope ?? 'poll');
+    const targetPath = await this.#targetPath(agentId, options.scope ?? 'poll', options.itemKey);
     const deadline = Date.now() + waitMs;
     while (true) {
       if (options.signal?.aborted) return { status: 'aborted' };
@@ -108,20 +110,32 @@ export default class GitHubNotificationMonitorCycleLeaseStore {
     return { release: handle.release };
   }
 
-  async #targetPath(agentId: string, scope: 'execution' | 'poll'): Promise<string> {
+  async #targetPath(
+    agentId: string,
+    scope: 'execution' | 'poll',
+    itemKey?: string,
+  ): Promise<string> {
     if (!this.#rootDir || !validAgentId(agentId)) {
       throw new Error('The GitHub notification cycle lease store is unavailable.');
     }
     const agentDir = join(this.#rootDir, agentId);
     const stateDir = join(agentDir, 'channels');
+    if (scope === 'execution' && (!itemKey || itemKey.length > 1_024)) {
+      throw new Error('A GitHub notification execution lease requires an item key.');
+    }
+    const executionDir = join(stateDir, 'github-notification-execution');
     await ensurePrivateStateDirectories({
       currentUid: this.#currentUid,
-      directories: [this.#rootDir, agentDir, stateDir],
+      directories: [
+        this.#rootDir,
+        agentDir,
+        stateDir,
+        ...(scope === 'execution' ? [executionDir] : []),
+      ],
       label: 'GitHub notification cycle lease',
     });
-    return join(
-      stateDir,
-      scope === 'execution' ? 'github-notification-execution' : 'github-notifications',
-    );
+    return scope === 'execution'
+      ? join(executionDir, createHash('sha256').update(itemKey!).digest('hex'))
+      : join(stateDir, 'github-notifications');
   }
 }

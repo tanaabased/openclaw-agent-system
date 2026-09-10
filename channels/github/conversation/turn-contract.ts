@@ -32,9 +32,15 @@ export interface GitHubNotificationTurnContractResolverDependencies {
   turns: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
 }
 
-function turnInstructions(turn: GitHubNotificationTurnDefinition): string {
+function turnInstructions(turn: GitHubNotificationTurnDefinition, agentId: string): string {
   return composeGitHubNotificationPrompt({
-    eventInstructions: turn.eventTurn.instructions,
+    eventInstructions:
+      turn.identity.eventId === 'assignment'
+        ? [
+            turn.eventTurn.instructions,
+            `The trusted OpenClaw agent ID for this assignment is ${JSON.stringify(agentId)}; use that exact ID for session ownership.`,
+          ].join(' ')
+        : turn.eventTurn.instructions,
     lifecycleInstructions: turn.lifecycle.instructions,
     modeInstructions: turn.mode.instructions,
     ...(turn.modeSupport.instructions === undefined
@@ -68,8 +74,8 @@ export default class GitHubNotificationTurnContractResolver {
     this.#dependencies = dependencies;
   }
 
-  instructions(identity: GitHubNotificationTurnIdentity): string {
-    return turnInstructions(this.#dependencies.turns.resolve(identity));
+  instructions(identity: GitHubNotificationTurnIdentity, agentId: string): string {
+    return turnInstructions(this.#dependencies.turns.resolve(identity), agentId);
   }
 
   resolve(
@@ -90,7 +96,7 @@ export default class GitHubNotificationTurnContractResolver {
     }
     return {
       identity: turn.identity,
-      instructions: turnInstructions(turn),
+      instructions: turnInstructions(turn, agentId),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
       ...(publicationIntent === undefined ? {} : { publicationIntent }),
