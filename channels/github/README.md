@@ -258,6 +258,7 @@ openclaw agent-system notifications wait \
 - Automatic session owner/color setup requires the assigning GitHub actor to have
   OpenClaw owner access (`commands.ownerAllowFrom`) and the native `sessions` tool
   enabled; otherwise the assignment continues without customization.
+  Owner assignment requires a Gateway turn; CLI refresh can still set the color.
 - Plan and Auto modes and mode transitions remain unavailable.
 - Directly assigned pull requests retain bounded head metadata but do not create
   a managed worktree or an independent comment session.
