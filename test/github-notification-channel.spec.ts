@@ -60,7 +60,7 @@ describe('channels/github/channel', () => {
     assert.equal('setup' in channel.meta, false);
   });
 
-  it('should preserve the exact Control UI artwork blocker', () => {
+  it('should preserve the exact control ui artwork blocker', () => {
     const compatibility = readFileSync(
       new URL('../channels/github/CONTROL-UI-ARTWORK.md', import.meta.url),
       'utf8',
