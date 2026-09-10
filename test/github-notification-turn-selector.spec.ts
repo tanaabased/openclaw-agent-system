@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { conversationSnapshot } from './github-notification-conversation-fixtures.ts';
+
 import {
   createGitHubNotificationConversationState,
   type GitHubNotificationConversationState,
@@ -34,9 +36,10 @@ describe('channels/github/conversation/turn-selector', () => {
     const state = conversationState();
     const selector = new GitHubNotificationTurnSelector({
       conversations: {
-        async read(selectedAgentId) {
+        async readRouted(selectedAgentId, selectedConversationId) {
+          assert.equal(selectedConversationId, conversationId);
           reads.push(selectedAgentId);
-          return structuredClone(state);
+          return conversationSnapshot(state, conversationId);
         },
       },
       logger: { warn() {} },
@@ -69,7 +72,7 @@ describe('channels/github/conversation/turn-selector', () => {
   it('should prefer the channel-owned id when OpenClaw normalizes flattened route ids', async () => {
     const state = conversationState();
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: { readRouted: async () => conversationSnapshot(state, conversationId) },
       logger: { warn() {} },
       turns: {
         resolve(identity) {
@@ -98,7 +101,7 @@ describe('channels/github/conversation/turn-selector', () => {
   it('should recover the canonical stored id from normalized flattened route ids', async () => {
     const state = conversationState();
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: { readRouted: async () => conversationSnapshot(state, conversationId) },
       logger: { warn() {} },
       turns: {
         resolve(identity) {
@@ -126,7 +129,7 @@ describe('channels/github/conversation/turn-selector', () => {
   it('should recover the canonical stored id from an account-scoped session route', async () => {
     const state = conversationState();
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: { readRouted: async () => conversationSnapshot(state, conversationId) },
       logger: { warn() {} },
       turns: {
         resolve(identity) {
@@ -159,13 +162,16 @@ describe('channels/github/conversation/turn-selector', () => {
     );
   });
 
-  it('should decline an ambiguous normalized route id', async () => {
-    const state = conversationState();
-    state.conversations[conversationId.toLowerCase()] = structuredClone(
-      state.conversations[conversationId]!,
-    );
+  it('should decline a routed id the store cannot resolve unambiguously', async () => {
+    const routedId = conversationId.replace('R_repo', 'r_REPO');
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: {
+        async readRouted(selectedAgentId, selectedConversationId) {
+          assert.equal(selectedAgentId, agentId);
+          assert.equal(selectedConversationId, routedId);
+          return undefined;
+        },
+      },
       logger: { warn() {} },
       turns: {
         resolve() {
@@ -173,14 +179,8 @@ describe('channels/github/conversation/turn-selector', () => {
         },
       },
     });
-
     assert.equal(
-      await selector.select({
-        agentId,
-        channelId: conversationId.replace('R_repo', 'r_REPO'),
-        chatId: conversationId.replace('R_repo', 'r_REPO'),
-        workspaceDir,
-      }),
+      await selector.select({ agentId, channelId: routedId, chatId: routedId }),
       undefined,
     );
   });
@@ -196,7 +196,7 @@ describe('channels/github/conversation/turn-selector', () => {
       createGitHubNotificationTurnDefinitions(),
     );
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: { readRouted: async () => conversationSnapshot(state, conversationId) },
       logger: { warn() {} },
       turns: catalog,
     });
@@ -220,7 +220,7 @@ describe('channels/github/conversation/turn-selector', () => {
       createGitHubNotificationTurnDefinitions(),
     );
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => structuredClone(state) },
+      conversations: { readRouted: async () => conversationSnapshot(state, conversationId) },
       logger: { warn() {} },
       turns: catalog,
     });
@@ -238,9 +238,9 @@ describe('channels/github/conversation/turn-selector', () => {
     let reads = 0;
     const selector = new GitHubNotificationTurnSelector({
       conversations: {
-        async read() {
+        async readRouted() {
           reads += 1;
-          return structuredClone(state);
+          return conversationSnapshot(state, conversationId);
         },
       },
       logger: { warn() {} },
@@ -273,7 +273,9 @@ describe('channels/github/conversation/turn-selector', () => {
 
   it('should decline a conversation without an active turn', async () => {
     const selector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => conversationState(false) },
+      conversations: {
+        readRouted: async () => conversationSnapshot(conversationState(false), conversationId),
+      },
       logger: { warn() {} },
       turns: {
         resolve() {
@@ -289,7 +291,7 @@ describe('channels/github/conversation/turn-selector', () => {
     const warnings: string[] = [];
     const stateSelector = new GitHubNotificationTurnSelector({
       conversations: {
-        async read() {
+        async readRouted() {
           throw new Error('private state contents must not escape');
         },
       },
@@ -301,7 +303,9 @@ describe('channels/github/conversation/turn-selector', () => {
       },
     });
     const catalogSelector = new GitHubNotificationTurnSelector({
-      conversations: { read: async () => conversationState() },
+      conversations: {
+        readRouted: async () => conversationSnapshot(conversationState(), conversationId),
+      },
       logger: { warn: (message) => warnings.push(message) },
       turns: {
         resolve() {

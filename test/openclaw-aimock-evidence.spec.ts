@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { githubNotificationAssignmentGroupsCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
@@ -9,7 +10,7 @@ import resolveGitHubNotificationModelScenario, {
 const scenario = resolveGitHubNotificationModelScenario('assignment');
 
 describe('scripts/aimock-evidence', () => {
-  it('should normalize one strict tool loop across accepted responses paths', () => {
+  it('should count independent assignment tool loops across accepted responses paths', async () => {
     for (const scenarioId of githubNotificationModelScenarioIds.filter(
       (id) => id === 'assignment',
     )) {
@@ -39,7 +40,7 @@ describe('scripts/aimock-evidence', () => {
       const observedGroupCalls = observedCalls.filter((call) =>
         call.id.startsWith(githubNotificationAssignmentGroupsCallId),
       );
-      const evidence = openClawAIMockEvidence(selectedScenario, [
+      const entries = [
         {
           body: {
             messages: structuredClone(selectedPromptMessages),
@@ -119,34 +120,52 @@ describe('scripts/aimock-evidence', () => {
             status: 200,
           },
         },
-      ]);
+      ];
 
-      assert.deepEqual(evidence, {
-        finalResponseCount: 1,
-        model: 'aimock/gpt-5.5',
-        promptRequestCount: 3,
-        provider: 'aimock',
-        requestCount: 3,
-        responsesApiRequestCount: 3,
-        scenario: scenarioId,
-        schemaVersion: 2,
-        strictMissCount: 0,
-        successfulFixtureResponseCount: 3,
-        tools: [
-          {
-            callResponseCount: 1,
-            name: 'agent_system_github_reply',
-            projectionRequestCount: 3,
-            resultRequestCount: 1,
-          },
-          {
-            callResponseCount: 3,
-            name: 'sessions',
-            projectionRequestCount: 3,
-            resultRequestCount: 4,
-          },
-        ],
-      });
+      for (const count of [1, 2]) {
+        const requests = Array.from(
+          { length: count },
+          (_, index) =>
+            JSON.parse(
+              JSON.stringify(entries).replaceAll('_fc-observed_123', `_fc-session_${index}`),
+            ) as typeof entries,
+        ).flat();
+        const evidence = openClawAIMockEvidence(selectedScenario, requests);
+        assert.deepEqual(evidence, {
+          finalResponseCount: count,
+          model: 'aimock/gpt-5.5',
+          promptRequestCount: 3 * count,
+          provider: 'aimock',
+          requestCount: 3 * count,
+          responsesApiRequestCount: 3 * count,
+          scenario: scenarioId,
+          schemaVersion: 2,
+          strictMissCount: 0,
+          successfulFixtureResponseCount: 3 * count,
+          tools: [
+            {
+              callResponseCount: count,
+              name: 'agent_system_github_reply',
+              projectionRequestCount: 3 * count,
+              resultRequestCount: count,
+            },
+            {
+              callResponseCount: 3 * count,
+              name: 'sessions',
+              projectionRequestCount: 3 * count,
+              resultRequestCount: 4 * count,
+            },
+          ],
+        });
+        if (count === 2) {
+          assert.deepEqual(
+            evidence,
+            JSON.parse(
+              await readFile('scenarios/issue-work-assignment/expected-evidence.json', 'utf8'),
+            ),
+          );
+        }
+      }
     }
   });
 

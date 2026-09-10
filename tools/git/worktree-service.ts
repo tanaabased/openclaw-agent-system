@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
+import acquirePrivateStateFileLock, {
+  privateStateFileLockBusyErrorCode,
+  type PrivateStateFileLockHandle,
+} from '../../core/private-state-file-lock.ts';
+import abortableDelay from '../../utils/abortable-delay.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
 import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
@@ -115,9 +120,14 @@ function parseWorktrees(source: string): RegisteredWorktree[] {
 
 /** Prepare, discover, and remove deterministic worktrees while leaving state to Git. */
 export default class GitWorktreeService {
+  readonly #acquireFileLock: typeof acquirePrivateStateFileLock;
   readonly #layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
 
-  constructor(dependencies: { layoutService: Pick<GitWorktreeLayoutService, 'inspect'> }) {
+  constructor(dependencies: {
+    acquireFileLock?: typeof acquirePrivateStateFileLock;
+    layoutService: Pick<GitWorktreeLayoutService, 'inspect'>;
+  }) {
+    this.#acquireFileLock = dependencies.acquireFileLock ?? acquirePrivateStateFileLock;
     this.#layoutService = dependencies.layoutService;
   }
 
@@ -127,6 +137,56 @@ export default class GitWorktreeService {
   ): Promise<GitWorktreeResult> {
     this.#validatePrepareInput(input);
     const layout = await this.#readyLayout(context);
+    const lease = await this.#acquirePreparationLock(context, layout, input.repositoryId);
+    try {
+      context.signal?.throwIfAborted();
+      return await this.#prepare(context, input, layout);
+    } finally {
+      await lease.release();
+    }
+  }
+
+  async #acquirePreparationLock(
+    context: GitWorktreeServiceContext,
+    layout: GitWorktreeLayout,
+    repositoryId: string,
+  ): Promise<PrivateStateFileLockHandle> {
+    context.signal?.throwIfAborted();
+    const localPath = getOwn(layout.localRepositories, repositoryId);
+    let targetPath = join(layout.repositoryRoot, gitWorktreeRepositoryDirectoryName(repositoryId));
+    if (localPath) {
+      const result = requireGitSuccess(
+        'common-directory inspection',
+        await this.#run(context, localPath, ['rev-parse', '--git-common-dir']),
+      );
+      if (!result.stdout.trim()) throw new Error('Git returned no shared repository directory.');
+      const commonDir = await realpath(resolve(localPath, result.stdout.trim()));
+      targetPath = join(commonDir, 'agent-system-worktree-preparation');
+    }
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (true) {
+      context.signal?.throwIfAborted();
+      try {
+        return await this.#acquireFileLock(targetPath, {
+          retries: { factor: 1, maxTimeout: 0, minTimeout: 0, retries: 0 },
+          staleMs: 30_000,
+        });
+      } catch (error) {
+        if (nodeErrorCode(error) !== privateStateFileLockBusyErrorCode) throw error;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error('Git worktree repository preparation is busy.', { cause: error });
+        }
+        await abortableDelay(Math.min(250, remaining), context.signal);
+      }
+    }
+  }
+
+  async #prepare(
+    context: GitWorktreeServiceContext,
+    input: GitWorktreePrepareInput,
+    layout: GitWorktreeLayout,
+  ): Promise<GitWorktreeResult> {
     const repository = await this.#resolveRepository(
       context,
       layout,

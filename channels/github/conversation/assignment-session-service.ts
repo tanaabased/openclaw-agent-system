@@ -31,7 +31,7 @@ import type GitHubNotificationAssignmentAcknowledgmentService from './assignment
 import {
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversation,
-  type GitHubNotificationConversationState,
+  type GitHubNotificationConversationSnapshot,
   type GitHubNotificationPublicationState,
 } from './conversation-state.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
@@ -68,7 +68,7 @@ export interface GitHubNotificationAssignmentSessionInput {
 
 interface AssignmentConversationCheckpoint {
   conversation: GitHubNotificationConversation;
-  state: GitHubNotificationConversationState;
+  state: GitHubNotificationConversationSnapshot;
 }
 
 interface ModelTurnContextInput {
@@ -419,8 +419,11 @@ export default class GitHubNotificationAssignmentSessionService {
     input: GitHubNotificationAssignmentSessionInput,
     conversationId: string,
   ): Promise<AssignmentConversationCheckpoint> {
-    const state = await this.#dependencies.conversationStateStore.read(input.agentId);
-    const conversation = state?.conversations[conversationId];
+    const state = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      conversationId,
+    );
+    const conversation = state?.conversation;
     if (!state || !conversation) {
       throw new Error('The GitHub assignment conversation checkpoint is missing.');
     }
@@ -449,7 +452,7 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('Another GitHub notification model turn is active.');
     }
     const next = structuredClone(state);
-    next.conversations[conversationId]!.activeTurn = {
+    next.conversation!.activeTurn = {
       eventId: 'assignment',
       sourceId: assignmentEventId,
     };
@@ -490,7 +493,7 @@ export default class GitHubNotificationAssignmentSessionService {
       };
     }
     const next = structuredClone(state);
-    const updatedConversation = next.conversations[conversationId]!;
+    const updatedConversation = next.conversation!;
     delete updatedConversation.activeTurn;
     updatedConversation.assignmentResponse = response;
     if (
@@ -518,7 +521,7 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment implementation checkpoint is missing.');
     }
     const next = structuredClone(state);
-    next.conversations[conversationId]!.activeTurn = {
+    next.conversation!.activeTurn = {
       eventId: 'implementation',
       sourceId: assignmentEventId,
     };
@@ -540,7 +543,7 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment implementation active-turn checkpoint is missing.');
     }
     const next = structuredClone(state);
-    const updatedConversation = next.conversations[conversationId]!;
+    const updatedConversation = next.conversation!;
     delete updatedConversation.activeTurn;
     updatedConversation.implementation = { status: 'delivery-pending' };
     await this.#dependencies.conversationStateStore.write(next);
@@ -559,13 +562,13 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment delivery checkpoint is missing.');
     }
     const next = structuredClone(state);
-    next.conversations[conversationId]!.implementation = { status: 'completed' };
+    next.conversation!.implementation = { status: 'completed' };
     await this.#dependencies.conversationStateStore.write(next);
   }
 
   async #publish(agentId: string, conversationId: string, signal?: AbortSignal): Promise<void> {
-    const state = await this.#dependencies.conversationStateStore.read(agentId);
-    const publication = state?.conversations[conversationId]?.assignmentResponse;
+    const state = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    const publication = state?.conversation?.assignmentResponse;
     if (!state || publication?.status !== 'pending') {
       throw new Error('The GitHub assignment response publication checkpoint is missing.');
     }
@@ -575,13 +578,13 @@ export default class GitHubNotificationAssignmentSessionService {
       target: publication.target,
       text: publication.publicText,
     });
-    const current = await this.#dependencies.conversationStateStore.read(agentId);
-    const currentPublication = current?.conversations[conversationId]?.assignmentResponse;
+    const current = await this.#dependencies.conversationStateStore.read(agentId, conversationId);
+    const currentPublication = current?.conversation?.assignmentResponse;
     if (!current || currentPublication?.status !== 'pending') {
       throw new Error('The GitHub assignment response publication checkpoint has changed.');
     }
     const next = structuredClone(current);
-    const conversation = next.conversations[conversationId]!;
+    const conversation = next.conversation!;
     conversation.assignmentResponse = {
       ...currentPublication,
       commentDatabaseId: result.receipt.databaseId,

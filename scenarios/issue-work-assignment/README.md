@@ -7,6 +7,14 @@ context, best-effort session setup with a persisted color and group, one assessm
 planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
+It also checks that the installed runtime saves publication receipts in the owning
+conversation file and keeps only routing identity in the shared index. A controlled
+per-issue execution lease verifies that intake can admit an issue before execution is available,
+and that the bounded CLI refresh reports its wait ending without losing that admission.
+While that lease remains held, a second issue completes planning through a separate
+CLI process. Releasing the first issue then proves that its resumed execution preserves
+the second issue's state and receipts. The hold models a busy executor; overlapping
+model turns, comment workers, failure isolation, and shutdown are covered by unit tests.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -98,7 +106,11 @@ openclaw agent-system notifications wait \
   --timeout 180 \
   --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-self" and .worktree == "pending" and (has("stage") | not))'
 
-# should prepare one approved issue assignment and planning turn
+# should keep native session tools available while the cli owns notification execution
+openclaw-gateway stop
+OPENCLAW_NO_RESPAWN=1 OPENCLAW_SKIP_CHANNELS=1 openclaw-gateway start
+
+# should admit an approved issue while a bounded refresh cannot acquire its execution lease
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
@@ -108,6 +120,51 @@ openclaw-github-issue create-and-assign \
   --body "Create assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment planning ready." \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/approved-issue-number"
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+repository_id="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api /repos/tanaabased/big-test-bucket --jq .node_id)"
+execution_key="$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "github:$repository_id:$issue_number")"
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+execution_root="$config_root/tanaab/agent-system/notification-data/channels/github-notification-execution"
+mkdir -p -m 700 "$execution_root"
+execution_lock="$execution_root/$execution_key.lock"
+mkdir "$execution_lock"
+printf '%s' "$execution_lock" > "$TMPDIR/notification-execution-lock"
+blocked_refresh="$(openclaw agent-system notifications refresh --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --timeout 30 --json || true)"
+jq -se 'length == 1 and (.[0] | .status == "skipped" and .code == "github-notification-cycle-aborted" and (.lastSuccessfulPollAt | type) == "number")' <<< "$blocked_refresh"
+openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --json | jq -e --argjson number "$issue_number" '.status == "ready" and (.items | length) == 1 and (.items[0] | .number == $number and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")'
+
+# should complete an independent assignment while the first issue remains busy
+cd "$TMPDIR/agent-system-notification-actor"
+agent_login="$(cat "$TMPDIR/notification-agent-login")"
+openclaw-github-issue create-and-assign \
+  --creator-agent notification-actor \
+  --repository tanaabased/big-test-bucket \
+  --title "bug: add assignment planning fixture independent $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body "Create assignment-planning-independent-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: assignment planning ready." \
+  --assignee "$agent_login" \
+  --issue-number-path "$TMPDIR/independent-issue-number"
+cd "$TMPDIR/agent-system-notifications"
+independent_issue="$(cat "$TMPDIR/independent-issue-number")"
+openclaw-github-notifications refresh-completed \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$independent_issue" \
+  --timeout 420 | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+test -d "$(cat "$TMPDIR/notification-execution-lock")"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+openclaw agent-system notifications status --agent notification-data --json | jq -e --argjson blocked "$issue_number" --argjson ready "$independent_issue" '([.items[] | select(.number == $blocked and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")] | length) == 1 and ([.items[] | select(.number == $ready and .disposition == "approved" and .stage == "prepared" and .worktree == "ready")] | length) == 1'
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
+conversation_id="$(jq -er --arg number "$independent_issue" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
+record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
+jq -e '.conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
+cp "$channel_state/github-notification-conversations/$record_digest.json" "$TMPDIR/independent-conversation-before.json"
+
+# should resume the admitted issue from a new process after execution is released
+rmdir "$(cat "$TMPDIR/notification-execution-lock")"
+rm "$TMPDIR/notification-execution-lock"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 refresh_result="$(
@@ -122,37 +179,59 @@ jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-noti
 
 # should expose the prepared lifecycle owned issue worktree
 cd "$TMPDIR/agent-system-notifications"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw agent-system notifications wait \
-  --agent notification-data \
-  --repository tanaabased/big-test-bucket \
-  --kind issue \
-  --number "$issue_number" \
-  --for worktree-ready \
-  --timeout 30 \
-  --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/big-test-bucket" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
+for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
+  openclaw agent-system notifications wait \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --for worktree-ready \
+    --timeout 30 \
+    --json | jq -e --argjson number "$issue_number" '.status == "completed" and .code == "github-notification-worktree-ready" and (.observation.items[0] | .repository == "tanaabased/big-test-bucket" and .itemType == "issue" and .lifecycleId == "issue" and .number == $number and .disposition == "approved" and .reasonCode == "assignment-approved" and .stage == "prepared" and .worktree == "ready")'
+done
 
 # should publish exactly one bounded assignment acknowledgment
 cd "$TMPDIR/agent-system-notification-actor"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-acknowledgments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment"))) | {body, id}')"
-acknowledgment="$(jq -sce 'select(length == 1) | .[0]' <<< "$acknowledgments")"
-jq -e '.id | type == "number" and . > 0' <<< "$acknowledgment"
-jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 200) and (.[1] | contains("agent-system-github-publication:initial-acknowledgment"))' <<< "$acknowledgment"
+for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
+  acknowledgments="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:initial-acknowledgment"))) | {body, id}')"
+  acknowledgment="$(jq -sce 'select(length == 1) | .[0]' <<< "$acknowledgments")"
+  jq -e '.id | type == "number" and . > 0' <<< "$acknowledgment"
+  jq -e '.body | split("\n\n") | length == 2 and (.[0] | length > 0 and length <= 200) and (.[1] | contains("agent-system-github-publication:initial-acknowledgment"))' <<< "$acknowledgment"
+done
 
 # should publish exactly one bounded assignment response
 cd "$TMPDIR/agent-system-notification-actor"
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
-response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
-jq -e '.id | type == "number" and . > 0' <<< "$response"
-jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
+  responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:assignment-response"))) | {body, id}')"
+  response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
+  jq -e '.id | type == "number" and . > 0' <<< "$response"
+  jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+done
+
+# should persist assignment receipts in the owning conversation file
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
+jq -e '.schemaVersion == 8 and .agentId == "notification-data" and (has("conversations") | not) and (.conversationIds | length) == 2 and (.conversationIds | unique | length) == 2' "$channel_state/github-notification-conversations.json"
+for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
+  conversation_id="$(jq -er --arg number "$issue_number" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
+  record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
+  jq -e --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 1 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
+done
+
+# should preserve the independent conversation exactly when the first issue resumes
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
+independent_issue="$(cat "$TMPDIR/independent-issue-number")"
+conversation_id="$(jq -er --arg number "$independent_issue" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
+record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
+cmp "$TMPDIR/independent-conversation-before.json" "$channel_state/github-notification-conversations/$record_digest.json"
 ```
 
 ```bash
 # should persist the bug color and fitting group despite unavailable cli owner assignment
-issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
+for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
+  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
+done
 ```
 
 ```bash
@@ -167,17 +246,27 @@ openclaw-notification-setup evidence \
 # should leave the planning only assignment worktree unchanged
 cd "$TMPDIR/agent-system-notifications"
 worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
-worktree_path="$(jq -re 'select(length == 1) | .[0].path' <<< "$worktrees")"
-fixture_path="$worktree_path/assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
-test ! -e "$fixture_path"
-cd "$worktree_path"
-status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
-test -z "$status"
+worktree_paths="$(jq -re 'select(length == 2 and (map(.path) | unique | length) == 2) | .[].path' <<< "$worktrees")"
+while IFS= read -r worktree_path; do
+  test ! -e "$worktree_path/assignment-planning-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+  test ! -e "$worktree_path/assignment-planning-independent-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+  cd "$worktree_path"
+  status="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- status --porcelain)"
+  test -z "$status"
+done <<< "$worktree_paths"
 ```
 
 ## Cleanup
 
 ```bash
+# should release the scenario owned execution hold if an assertion failed
+if test -f "$TMPDIR/notification-execution-lock"; then
+  execution_lock="$(cat "$TMPDIR/notification-execution-lock")"
+  if test -d "$execution_lock"; then
+    rmdir "$execution_lock"
+  fi
+fi
+
 # should remove only the generated tanaabot public key
 if test -f "$TMPDIR/notification-ssh.key-id"; then
   cd "$TMPDIR/agent-system-notifications"
@@ -196,11 +285,13 @@ if test -d "$TMPDIR/agent-system-notification-actor"; then
     OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$rejected_issue" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
     OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$rejected_issue" --repo tanaabased/big-test-bucket
   fi
-  if test -f "$TMPDIR/approved-issue-number"; then
-    approved_issue="$(cat "$TMPDIR/approved-issue-number")"
-    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$approved_issue" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
-    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$approved_issue" --repo tanaabased/big-test-bucket
-  fi
+  for issue_path in "$TMPDIR/approved-issue-number" "$TMPDIR/independent-issue-number"; do
+    if test -f "$issue_path"; then
+      approved_issue="$(cat "$issue_path")"
+      OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$approved_issue" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
+      OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$approved_issue" --repo tanaabased/big-test-bucket
+    fi
+  done
 fi
 
 # should stop the background gateway cleanly

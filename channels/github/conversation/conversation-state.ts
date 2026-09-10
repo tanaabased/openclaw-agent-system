@@ -102,6 +102,28 @@ export interface GitHubNotificationConversationState {
   workspaceDir: string;
 }
 
+export interface GitHubNotificationConversationSnapshot {
+  agentId: string;
+  conversation?: GitHubNotificationConversation;
+  conversationId: string;
+  workspaceDir: string;
+}
+
+export interface GitHubNotificationConversationIndex {
+  agentId: string;
+  conversationIds: string[];
+  schemaVersion: 8;
+  workspaceDir: string;
+}
+
+export function createGitHubNotificationConversationSnapshot(
+  agentId: string,
+  workspaceDir: string,
+  conversationId: string,
+): GitHubNotificationConversationSnapshot {
+  return { agentId, conversationId, workspaceDir };
+}
+
 const maximumConversations = 500;
 const maximumRevisions = 400;
 
@@ -458,4 +480,70 @@ export function createGitHubNotificationConversationState(
   workspaceDir: string,
 ): GitHubNotificationConversationState {
   return { agentId, conversations: {}, schemaVersion: 7, workspaceDir };
+}
+
+/** Decode the bounded index without loading another lifecycle's records. */
+export function decodeGitHubNotificationConversationIndex(
+  value: unknown,
+  expectedAgentId: string,
+): GitHubNotificationConversationIndex | undefined {
+  if (
+    !record(value) ||
+    !onlyKeys(value, ['agentId', 'conversationIds', 'schemaVersion', 'workspaceDir']) ||
+    value.schemaVersion !== 8 ||
+    value.agentId !== expectedAgentId ||
+    typeof value.agentId !== 'string' ||
+    !/^[a-z0-9][a-z0-9-]*$/u.test(value.agentId) ||
+    typeof value.workspaceDir !== 'string' ||
+    !isAbsolute(value.workspaceDir) ||
+    !Array.isArray(value.conversationIds) ||
+    value.conversationIds.length > maximumConversations ||
+    new Set(value.conversationIds).size !== value.conversationIds.length ||
+    !value.conversationIds.every(
+      (id) =>
+        typeof id === 'string' &&
+        /^github:(?:issue|pull-request|pull-request-review):[^:\s\0]+:[1-9]\d*$/u.test(id),
+    )
+  )
+    return undefined;
+  return value as unknown as GitHubNotificationConversationIndex;
+}
+
+/** Bind a standalone record to its index identity and the existing conversation contract. */
+export function decodeGitHubNotificationConversationRecord(
+  value: unknown,
+  index: Pick<GitHubNotificationConversationIndex, 'agentId' | 'workspaceDir'>,
+  conversationId: string,
+): GitHubNotificationConversationSnapshot | undefined {
+  if (
+    !record(value) ||
+    !onlyKeys(value, [
+      'agentId',
+      'conversation',
+      'conversationId',
+      'schemaVersion',
+      'workspaceDir',
+    ]) ||
+    value.schemaVersion !== 1 ||
+    value.agentId !== index.agentId ||
+    value.workspaceDir !== index.workspaceDir ||
+    value.conversationId !== conversationId
+  )
+    return undefined;
+  const state = decodeGitHubNotificationConversationState(
+    {
+      agentId: value.agentId,
+      conversations: { [conversationId]: value.conversation },
+      schemaVersion: 7,
+      workspaceDir: value.workspaceDir,
+    },
+    index.agentId,
+  );
+  if (!state) return undefined;
+  return {
+    agentId: state.agentId,
+    conversation: state.conversations[conversationId]!,
+    conversationId,
+    workspaceDir: state.workspaceDir,
+  };
 }

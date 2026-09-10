@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 
+import {
+  conversationSnapshot,
+  replaceConversationSnapshot,
+} from './github-notification-conversation-fixtures.ts';
+
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
@@ -228,11 +233,12 @@ function harness(options: HarnessOptions = {}) {
       },
     },
     conversationStateStore: {
-      async read() {
-        return structuredClone(state);
+      async read(_agentId, selectedConversationId) {
+        assert.equal(selectedConversationId, conversationId);
+        return conversationSnapshot(state, selectedConversationId);
       },
       async write(next) {
-        state = structuredClone(next);
+        state = replaceConversationSnapshot(state, next);
       },
     },
     coordinator: {

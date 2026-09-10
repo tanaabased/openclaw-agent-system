@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import type { GitHubNotificationMonitorStateUpdate } from '../channels/github/intake/monitor/state-store.ts';
+
 import AgentSystemToolError from '../api/error.ts';
 import GitHubNotificationAssignmentOrchestrator, {
   GitHubNotificationAssignmentOrchestratorError,
@@ -83,7 +85,7 @@ function monitorService(
     },
     stateStore: {
       read: async () => undefined,
-      write: async () => undefined,
+      update: async (_agentId, patch) => patch(undefined),
     },
     ...overrides,
   });
@@ -145,8 +147,9 @@ describe('channels/github/intake/monitor/service', () => {
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => {
+        update: async (_agentId, patch) => {
           writes += 1;
+          return patch(state);
         },
       },
     });
@@ -200,7 +203,6 @@ describe('channels/github/intake/monitor/service', () => {
         async respond(_agentId, _itemKey, _signal, executionSurface) {
           operations.push('assignment-response');
           executionSurfaces.push(executionSurface ?? 'missing');
-          controller.abort();
           throw new GitHubNotificationAssignmentOrchestratorError(
             'github-notification-assignment-session-recording-failed',
             'The assignment response could not be reconciled.',
@@ -223,7 +225,7 @@ describe('channels/github/intake/monitor/service', () => {
       logger: { error() {}, info() {}, warn: (message) => warnings.push(message) },
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -249,6 +251,31 @@ describe('channels/github/intake/monitor/service', () => {
     assert.ok(
       warnings.every((message) => !message.includes('private assignment response failure')),
     );
+  });
+
+  it('should retain the completed cli result when another worker finishes before selection', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    let reads = 0;
+    const service = monitorService({
+      clock: () => 1_000,
+      stateStore: {
+        read: async () => (++reads === 1 ? structuredClone(state) : { ...state, items: {} }),
+        update: async () => assert.fail('a deferred poll must not write'),
+      },
+      assignmentOrchestrator: {
+        reconcile: async () => assert.fail('the pending item has already finished'),
+        respond: async () => assert.fail('the pending item has already finished'),
+      },
+    });
+    const [result] = await service.runOnce({
+      agentId: 'tanaabot',
+      executionSurface: 'cli-one-shot',
+    });
+    assert.equal(result?.status, 'completed');
+    assert.equal(result?.code, 'github-notification-pending-reconciled');
   });
 
   it('should leave prepared intake idle until the next remote poll', async () => {
@@ -282,7 +309,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -293,7 +320,123 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(reconciled, []);
   });
 
-  it('should surface the exact assignment boundary failure from a monitor cycle', async () => {
+  it('should recheck workspace and routing after acquiring execution ownership', async () => {
+    for (const changedBoundary of ['workspace', 'routing'] as const) {
+      const state = notificationMonitorState();
+      state.agentId = 'tanaabot';
+      state.workspaceDir = workspaceDir;
+      state.nextPollAt = 10_000;
+      let executing = false;
+      let responses = 0;
+      const released: string[] = [];
+      const service = monitorService({
+        clock: () => 1_000,
+        assignmentOrchestrator: {
+          reconcile: async () => undefined,
+          async respond() {
+            responses += 1;
+          },
+        },
+        cycleLeaseStore: {
+          async acquire(_agentId, options) {
+            const scope = options?.scope ?? 'poll';
+            if (scope === 'execution') executing = true;
+            return {
+              status: 'acquired',
+              lease: {
+                async release() {
+                  released.push(scope);
+                },
+              },
+            };
+          },
+        },
+        manifestService: {
+          async loadForAgentId() {
+            const loaded = loadedManifest();
+            if (executing && changedBoundary === 'workspace')
+              loaded.scope.workspaceDir = '/changed';
+            return loaded;
+          },
+        },
+        routingService: {
+          inspect: async () =>
+            executing && changedBoundary === 'routing'
+              ? { code: 'notification-routing-repair-required', kind: 'upsert', message: 'repair' }
+              : { code: 'notification-routing-ready', kind: 'noop', message: 'ready' },
+        },
+        stateStore: {
+          read: async () => structuredClone(state),
+          update: async (_agentId, patch) => patch(state),
+        },
+      });
+      const [result] = await service.runOnce({ agentId: 'tanaabot' });
+      assert.equal(
+        result?.code,
+        changedBoundary === 'workspace'
+          ? 'github-notification-execution-context-changed'
+          : 'notification-routing-repair-required',
+      );
+      assert.equal(responses, 0);
+      assert.deepEqual(released, ['poll', 'execution']);
+      assert.equal(state.failureCount, 0);
+    }
+  });
+
+  it('should supervise background execution failure and release ownership without provider backoff', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const controller = new AbortController();
+    const failed = Promise.withResolvers<void>();
+    const released: string[] = [];
+    const service = monitorService({
+      clock: () => 1_000,
+      assignmentOrchestrator: {
+        async reconcile() {
+          throw new Error('private execution failure');
+        },
+        respond: async () => undefined,
+      },
+      cycleLeaseStore: {
+        async acquire(_agentId, options) {
+          return {
+            status: 'acquired',
+            lease: {
+              async release() {
+                released.push(options?.scope ?? 'poll');
+              },
+            },
+          };
+        },
+      },
+      logger: {
+        error() {},
+        info() {},
+        warn(message) {
+          assert.equal(message.includes('private execution failure'), false);
+          if (message.includes('executor failed')) failed.resolve();
+        },
+      },
+      async sleep() {
+        await failed.promise;
+        controller.abort();
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        async update() {
+          assert.fail('execution failure must not update provider health');
+        },
+      },
+    });
+    await service.runAccount('tanaabot', controller.signal);
+    assert.deepEqual(released, ['poll', 'execution']);
+    assert.equal(state.failureCount, 0);
+    assert.equal(state.nextPollAt, 10_000);
+  });
+
+  it('should surface assignment boundary failure without changing provider backoff', async () => {
     let state: GitHubNotificationMonitorState | undefined = notificationMonitorState();
     state.agentId = 'tanaabot';
     state.workspaceDir = workspaceDir;
@@ -312,8 +455,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -324,12 +468,11 @@ describe('channels/github/intake/monitor/service', () => {
       agentId: 'tanaabot',
       baselineAt: 1,
       code: 'github-notification-worktree-preparation-failed',
-      diagnosticCode: 'github-notification-worktree-preparation-failed',
-      nextPollAt: 31_000,
-      retryAt: 31_000,
+      nextPollAt: 10_000,
       status: 'failed',
     });
-    assert.equal(state?.diagnosticCode, 'github-notification-worktree-preparation-failed');
+    assert.equal(state?.diagnosticCode, undefined);
+    assert.equal(state?.failureCount, 0);
   });
 
   it('should report comment failure without poisoning provider health or retirement', async () => {
@@ -405,8 +548,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -461,8 +605,9 @@ describe('channels/github/intake/monitor/service', () => {
       async read() {
         return structuredClone(state);
       },
-      async write(next: GitHubNotificationMonitorState) {
-        state = structuredClone(next);
+      async update(_agentId: string, patch: GitHubNotificationMonitorStateUpdate) {
+        state = structuredClone(patch(state));
+        return state;
       },
     };
     let worktreeOperations = 0;
@@ -546,8 +691,9 @@ describe('channels/github/intake/monitor/service', () => {
       },
       stateStore: {
         read: async () => state,
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -611,8 +757,9 @@ describe('channels/github/intake/monitor/service', () => {
           state = undefined;
           return true;
         },
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -623,6 +770,47 @@ describe('channels/github/intake/monitor/service', () => {
     assert.deepEqual(reconciled, [notificationItemKey]);
     assert.equal(removals, 1);
     assert.equal(state, undefined);
+  });
+
+  it('should retire another disabled issue while one issue remains deferred', async () => {
+    const state = notificationMonitorState();
+    state.agentId = 'tanaabot';
+    state.workspaceDir = workspaceDir;
+    state.nextPollAt = 10_000;
+    const first = state.items[notificationItemKey]!;
+    const other = structuredClone(first);
+    other.number += 1;
+    const otherKey = `github:${other.repositoryNodeId}:${other.number}`;
+    state.items[otherKey] = other;
+    first.intake!.failureCode = 'github-notification-intake-failed';
+    const retired: string[] = [];
+    const service = monitorService({
+      clock: () => 1_000,
+      manifestService: {
+        loadForAgentId: async () =>
+          loadedManifest({
+            ...manifest,
+            github: { token: 'GH_TOKEN_TANAABOT', username: 'tanaabot' },
+          }),
+      },
+      assignmentOrchestrator: {
+        async reconcile(_agentId, itemKey) {
+          retired.push(itemKey);
+          state.items[itemKey]!.intake!.stage = 'retired';
+        },
+        respond: async () => assert.fail('disabled issues must not respond'),
+      },
+      stateStore: {
+        read: async () => structuredClone(state),
+        update: async (_agentId, patch) => patch(state),
+        remove: async () => assert.fail('state must retain the deferred issue'),
+      },
+    });
+    const [result] = await service.runOnce({ agentId: 'tanaabot' });
+    assert.equal(result?.code, 'github-notification-disabled');
+    assert.deepEqual(retired, [otherKey]);
+    assert.equal(first.intake?.stage, 'admitted');
+    assert.equal(other.intake?.stage, 'retired');
   });
 
   it('should persist value-free exponential backoff after a transient account failure', async () => {
@@ -642,8 +830,9 @@ describe('channels/github/intake/monitor/service', () => {
       random: () => 0.5,
       stateStore: {
         read: async () => state,
-        write: async (next) => {
-          state = structuredClone(next);
+        update: async (_agentId, patch) => {
+          state = structuredClone(patch(state));
+          return state;
         },
       },
     });
@@ -673,7 +862,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -703,7 +892,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 
@@ -741,7 +930,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => structuredClone(state),
-        write: async () => undefined,
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
 

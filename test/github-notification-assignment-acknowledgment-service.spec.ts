@@ -1,21 +1,29 @@
 import assert from 'node:assert/strict';
 
+import {
+  conversationSnapshot,
+  replaceConversationSnapshot,
+} from './github-notification-conversation-fixtures.ts';
+
 import GitHubNotificationAssignmentAcknowledgmentService from '../channels/github/conversation/assignment-acknowledgment-service.ts';
-import type { GitHubNotificationConversationState } from '../channels/github/conversation/conversation-state.ts';
+import type {
+  GitHubNotificationConversationSnapshot,
+  GitHubNotificationConversationState,
+} from '../channels/github/conversation/conversation-state.ts';
 import { parseGitHubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 
 function memoryStateStore() {
   let state: GitHubNotificationConversationState | undefined;
   return {
-    async read() {
-      return state === undefined ? undefined : structuredClone(state);
+    async read(_agentId: string, conversationId: string) {
+      return conversationSnapshot(state, conversationId);
     },
     snapshot() {
       return state === undefined ? undefined : structuredClone(state);
     },
-    async write(next: GitHubNotificationConversationState) {
-      state = structuredClone(next);
+    async write(next: GitHubNotificationConversationSnapshot) {
+      state = replaceConversationSnapshot(state, next);
     },
   };
 }

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 
+import {
+  conversationSnapshot,
+  replaceConversationSnapshot,
+} from './github-notification-conversation-fixtures.ts';
+
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { resolveTestNotificationRoute } from './openclaw-agent-runtime.ts';
@@ -149,11 +154,12 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       },
       clock: () => 1_755_259_200_000,
       conversationStateStore: {
-        async read() {
-          return structuredClone(state);
+        async read(_agentId, selectedConversationId) {
+          assert.equal(selectedConversationId, conversationId);
+          return conversationSnapshot(state, selectedConversationId);
         },
         async write(next) {
-          state = structuredClone(next);
+          state = replaceConversationSnapshot(state, next);
         },
       },
       coordinator: {
@@ -286,11 +292,12 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         },
       },
       conversationStateStore: {
-        async read() {
-          return structuredClone(state);
+        async read(_agentId, selectedConversationId) {
+          assert.equal(selectedConversationId, conversationId);
+          return conversationSnapshot(state, selectedConversationId);
         },
         async write(next) {
-          state = structuredClone(next);
+          state = replaceConversationSnapshot(state, next);
         },
       },
       coordinator: { run: async () => Promise.reject(new Error('unexpected turn')) },

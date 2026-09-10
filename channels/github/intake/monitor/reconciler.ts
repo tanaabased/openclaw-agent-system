@@ -1,7 +1,6 @@
 import type { Logger } from '../../../../core/logger.ts';
 import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
-import type { GitHubNotificationItemSelector } from '../../provider/work-item.ts';
 import { githubNotificationDiagnostic, githubNotificationToolCauseCode } from './diagnostic.ts';
 import { preparedGitHubNotificationIssueItemKeys } from './item-queries.ts';
 import {
@@ -57,12 +56,12 @@ export default class GitHubNotificationMonitorReconciler {
 
   async reconcileAssignmentResponses(
     agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
+    itemKey: string,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
   ): Promise<void> {
     const state = await this.#dependencies.stateStore.read(agentId);
-    for (const itemKey of preparedGitHubNotificationIssueItemKeys(state, selector)) {
+    if (preparedGitHubNotificationIssueItemKeys(state).includes(itemKey)) {
       if (signal?.aborted) return;
       try {
         await this.#dependencies.assignmentOrchestrator.respond(
@@ -83,12 +82,12 @@ export default class GitHubNotificationMonitorReconciler {
 
   async reconcileCommentsSafely(
     agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
+    itemKey: string,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
   ): Promise<{ code: string } | undefined> {
     try {
-      await this.#reconcileComments(agentId, selector, executionSurface, signal);
+      await this.#reconcileComments(agentId, itemKey, executionSurface, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
       const diagnostic = githubNotificationDiagnostic(error);
@@ -104,12 +103,18 @@ export default class GitHubNotificationMonitorReconciler {
     current: GitHubNotificationMonitorState | undefined,
     now: number,
     signal?: AbortSignal,
+    itemKey?: string,
   ): Promise<void> {
-    const itemKeys = githubNotificationRetirementItemKeys(current);
-    if (itemKeys.length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
+    const remainingKeys = githubNotificationRetirementItemKeys(current);
+    if (remainingKeys.length === 0) {
+      await this.#dependencies.stateStore.remove?.(
+        agentId,
+        (latest) => githubNotificationRetirementItemKeys(latest).length === 0,
+      );
       return;
     }
+    const itemKeys =
+      itemKey === undefined ? remainingKeys : remainingKeys.filter((key) => key === itemKey);
     const retryDeferred =
       current?.nextPollAt !== undefined &&
       current.nextPollAt > now &&
@@ -119,19 +124,22 @@ export default class GitHubNotificationMonitorReconciler {
     await this.reconcileAssignments(agentId, itemKeys, signal);
     const reconciled = await this.#dependencies.stateStore.read(agentId);
     if (githubNotificationRetirementItemKeys(reconciled).length === 0) {
-      await this.#dependencies.stateStore.remove?.(agentId);
+      await this.#dependencies.stateStore.remove?.(
+        agentId,
+        (latest) => githubNotificationRetirementItemKeys(latest).length === 0,
+      );
     }
   }
 
   async #reconcileComments(
     agentId: string,
-    selector: GitHubNotificationItemSelector | undefined,
+    itemKey: string,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
   ): Promise<void> {
     if (!this.#dependencies.commentOrchestrator) return;
     const state = await this.#dependencies.stateStore.read(agentId);
-    for (const itemKey of preparedGitHubNotificationIssueItemKeys(state, selector)) {
+    if (preparedGitHubNotificationIssueItemKeys(state).includes(itemKey)) {
       if (signal?.aborted) return;
       await this.#dependencies.commentOrchestrator.reconcile(agentId, itemKey, {
         executionSurface,

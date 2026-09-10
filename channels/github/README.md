@@ -34,11 +34,20 @@ The channel also:
   owners, and repositories where the agent has sufficient access
 - keeps approved issue and delivery pull-request comments in the issue-owned
   session, publishes each ordinary final response back to its exact source,
-  and drains a bounded pair of queued comments serially per poll
+  and drains a bounded pair of queued comments serially per execution pass
 - retires issue-owned work after delivery merge or loss of assignment authority
   and removes only clean managed worktrees for completed lifecycles
 - supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
   for an explicit, mode-neutral public progress update
+
+The Gateway polls at the configured interval independently of its issue workers.
+New assignments can appear in status and begin work while another issue is running.
+Each issue's preparation, comments, responses, and retirement share one execution
+lease across Gateway and CLI processes. Different issues can proceed independently;
+preparation is serialized per shared repository, and model turns use
+OpenClaw's existing dispatcher and capacity limits. Comments on the busy issue
+itself wait for its worker. Shutdown cancels and drains all workers; CLI refreshes
+await their selected issues within the existing timeout.
 
 ## Requirements
 
@@ -202,6 +211,11 @@ the baseline, prepare an issue, continue one pending Work implementation,
 process one admitted comment, or retire work. Deferred and failed cycles return
 nonzero.
 
+The CLI first polls and saves intake, then waits for execution within the refresh
+timeout. If execution is busy or the wait ends, newly admitted items remain visible
+through `notifications status` and can resume on a later cycle. The CLI waits for
+any execution it starts to settle before exiting.
+
 ### `openclaw agent-system notifications status`
 
 Reads the durable notification state without advancing intake.
@@ -289,6 +303,22 @@ openclaw agent-system notifications wait \
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without
   deleting existing issue worktrees.
+
+### Durable State and Upgrades
+
+Intake saves short checkpoints in the agent's shared monitor file before advancing
+the provider cursor. Conversation state and publication receipts live in separate,
+independently locked lifecycle files under `channels/github-notification-conversations/`
+in the agent's private state directory. The adjacent
+`github-notification-conversations.json` is a small schema 8 routing index.
+
+On the first conversation write, older supported conversation snapshots migrate
+automatically: the original bytes are retained in
+`github-notification-conversations.legacy.json`, each lifecycle record is written,
+and the index switches last. Interrupted migration can retry from the original
+snapshot. A missing or invalid indexed record fails closed for that lifecycle.
+Older plugin versions cannot read the new index; the retained legacy snapshot is
+a migration backup and does not receive subsequent conversation updates.
 
 ## Further Reading
 
