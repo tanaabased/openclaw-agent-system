@@ -6,6 +6,8 @@ acknowledgment, delivery of the created issue title and body as bounded private
 context, one assessment and plan, and the planning-only worktree checkpoint. The same
 lifecycle contract runs against the deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
+It also checks that the installed runtime saves publication receipts in the owning
+conversation file and keeps only routing identity in the shared index.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -140,6 +142,14 @@ responses="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent noti
 response="$(jq -sce 'select(length == 1) | .[0]' <<< "$responses")"
 jq -e '.id | type == "number" and . > 0' <<< "$response"
 jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] | contains("agent-system-github-publication:assignment-response")) and (($parts[0:-1] | join("\n\n") | length) > 0) and (($parts[0:-1] | join("\n\n") | length) <= 800)' <<< "$response"
+
+# should persist assignment receipts in the owning conversation file
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
+conversation_id="$(jq -er 'select(.schemaVersion == 8 and .agentId == "notification-data" and (has("conversations") | not) and (.conversationIds | length) == 1) | .conversationIds[0]' "$channel_state/github-notification-conversations.json")"
+record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+jq -e --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 1 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
 ```
 
 ```bash

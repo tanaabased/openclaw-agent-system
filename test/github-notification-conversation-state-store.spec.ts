@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
-import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +18,8 @@ import GitHubNotificationConversationStateStore from '../channels/github/convers
 import GitHubNotificationAssignmentAcknowledgmentService from '../channels/github/conversation/assignment-acknowledgment-service.ts';
 import type { GitHubNotificationConversationSnapshot } from '../channels/github/conversation/conversation-state.ts';
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
+import PrivateStateFile from '../core/private-state-file.ts';
+import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 
 function snapshot(number = 12, repositoryId = 'R_repo'): GitHubNotificationConversationSnapshot {
   return {
@@ -30,6 +43,28 @@ describe('channels/github/conversation/conversation-state-store', () => {
   let statePath: string;
   let store: GitHubNotificationConversationStateStore;
 
+  function recordPath(value: GitHubNotificationConversationSnapshot): string {
+    const digest = createHash('sha256').update(value.conversationId).digest('hex');
+    return join(rootDir, 'tanaabot/channels/github-notification-conversations', `${digest}.json`);
+  }
+
+  async function seedLegacy(version = 7): Promise<string> {
+    await mkdir(join(rootDir, 'tanaabot/channels'), { mode: 0o700, recursive: true });
+    const first = snapshot();
+    const second = snapshot(13);
+    const contents = JSON.stringify({
+      agentId: first.agentId,
+      conversations: {
+        [first.conversationId]: first.conversation,
+        [second.conversationId]: second.conversation,
+      },
+      schemaVersion: version,
+      workspaceDir: first.workspaceDir,
+    });
+    await writeFile(statePath, contents, { mode: 0o600 });
+    return contents;
+  }
+
   beforeEach(async () => {
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'agent-system-conversation-store-'));
     rootDir = join(temporaryDirectory, 'state');
@@ -44,7 +79,7 @@ describe('channels/github/conversation/conversation-state-store', () => {
     await rm(temporaryDirectory, { force: true, recursive: true });
   });
 
-  it('should expose only the requested lifecycle and retain the private schema seven file', async () => {
+  it('should persist private lifecycle files behind a small routing index', async () => {
     const first = snapshot();
     const second = snapshot(13);
     await store.write(first);
@@ -58,11 +93,26 @@ describe('channels/github/conversation/conversation-state-store', () => {
       workspaceDir: first.workspaceDir,
     });
     const persisted = JSON.parse(await readFile(statePath, 'utf8'));
-    assert.equal(persisted.schemaVersion, 7);
-    assert.deepEqual(persisted.conversations, {
-      [first.conversationId]: first.conversation,
-      [second.conversationId]: second.conversation,
+    assert.deepEqual(persisted, {
+      agentId: first.agentId,
+      conversationIds: [first.conversationId, second.conversationId],
+      schemaVersion: 8,
+      workspaceDir: first.workspaceDir,
     });
+    assert.deepEqual(JSON.parse(await readFile(recordPath(first), 'utf8')), {
+      ...first,
+      schemaVersion: 1,
+    });
+    assert.deepEqual(JSON.parse(await readFile(recordPath(second), 'utf8')), {
+      ...second,
+      schemaVersion: 1,
+    });
+    assert.equal((await lstat(recordPath(first))).mode & 0o077, 0);
+    assert.equal(
+      (await lstat(join(rootDir, 'tanaabot/channels/github-notification-conversations'))).mode &
+        0o077,
+      0,
+    );
     assert.equal((await lstat(statePath)).mode & 0o077, 0);
     assert.equal((await lstat(rootDir)).mode & 0o077, 0);
   });
@@ -142,10 +192,7 @@ describe('channels/github/conversation/conversation-state-store', () => {
   it('should project legacy state without rewriting it during reads', async () => {
     const first = snapshot();
     const second = snapshot(13);
-    await store.write(first);
-    await store.write(second);
-    const legacy = JSON.parse(await readFile(statePath, 'utf8'));
-    legacy.schemaVersion = 6;
+    const legacy = JSON.parse(await seedLegacy(6));
     legacy.conversations[second.conversationId].revisions.IC_legacy = {
       bodyDigest: 'b'.repeat(64),
       commentDatabaseId: 100,
@@ -165,13 +212,19 @@ describe('channels/github/conversation/conversation-state-store', () => {
 
     await store.write(first);
     assert.deepEqual(await store.read(second.agentId, second.conversationId), projected);
-    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).schemaVersion, 7);
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).schemaVersion, 8);
+    assert.equal(await readFile(statePath.replace('.json', '.legacy.json'), 'utf8'), contents);
+    assert.deepEqual(JSON.parse(await readFile(recordPath(second), 'utf8')), {
+      ...projected,
+      schemaVersion: 1,
+    });
   });
 
   it('should preserve durable state and release the lock after invalid or cross-workspace writes', async () => {
     const first = snapshot();
     await store.write(first);
     const before = await readFile(statePath, 'utf8');
+    const recordBefore = await readFile(recordPath(first), 'utf8');
     await assert.rejects(
       store.write({ ...first, workspaceDir: '/another-workspace' }),
       /another workspace/u,
@@ -189,8 +242,200 @@ describe('channels/github/conversation/conversation-state-store', () => {
       /state is invalid/u,
     );
     assert.equal(await readFile(statePath, 'utf8'), before);
+    assert.equal(await readFile(recordPath(first), 'utf8'), recordBefore);
     await new GitHubNotificationConversationStateStore({ rootDir }).write(snapshot(13));
     assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+  });
+
+  it('should save an existing lifecycle while another record and the index are locked', async () => {
+    const first = snapshot();
+    const second = snapshot(13);
+    await store.write(first);
+    await store.write(second);
+    const indexBefore = await lstat(statePath);
+    const firstBefore = await readFile(recordPath(first), 'utf8');
+    const options = {
+      retries: { factor: 1, maxTimeout: 1, minTimeout: 1, retries: 0 },
+      staleMs: 30_000,
+    };
+    const indexLock = await acquirePrivateStateFileLock(statePath, options);
+    const firstLock = await acquirePrivateStateFileLock(recordPath(first), options);
+    try {
+      second.conversation!.mode = 'guided';
+      await new GitHubNotificationConversationStateStore({ rootDir }).write(second);
+      assert.deepEqual(await store.read(second.agentId, second.conversationId), second);
+      assert.equal(await readFile(recordPath(first), 'utf8'), firstBefore);
+      assert.equal((await lstat(statePath)).ino, indexBefore.ino);
+    } finally {
+      await firstLock.release();
+      await indexLock.release();
+    }
+  });
+
+  it('should retry an interrupted migration from the untouched legacy file', async () => {
+    const original = await seedLegacy();
+    const first = snapshot();
+    const second = snapshot(13);
+    const changed = snapshot();
+    changed.conversation!.mode = 'guided';
+    const originalWrite = PrivateStateFile.prototype.write;
+    PrivateStateFile.prototype.write = async function (contents) {
+      if (JSON.parse(contents).schemaVersion === 8) throw new Error('interrupted index cutover');
+      return originalWrite.call(this, contents);
+    };
+    try {
+      await assert.rejects(store.write(changed), /interrupted index cutover/u);
+    } finally {
+      PrivateStateFile.prototype.write = originalWrite;
+    }
+    assert.equal(await readFile(statePath, 'utf8'), original);
+    assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+    assert.deepEqual(await store.read(second.agentId, second.conversationId), second);
+    assert.equal(
+      JSON.parse(await readFile(recordPath(changed), 'utf8')).conversation.mode,
+      'guided',
+    );
+
+    const restarted = new GitHubNotificationConversationStateStore({ rootDir });
+    await restarted.write(second);
+    assert.deepEqual(await restarted.read(first.agentId, first.conversationId), first);
+    assert.deepEqual(await restarted.read(second.agentId, second.conversationId), second);
+    assert.equal(await readFile(statePath.replace('.json', '.legacy.json'), 'utf8'), original);
+    first.conversation!.mode = 'guided';
+    await restarted.write(first);
+    assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+  });
+
+  it('should retain both writers when migration overlaps admission of another lifecycle', async () => {
+    await seedLegacy();
+    const first = snapshot();
+    const third = snapshot(14);
+    first.conversation!.mode = 'guided';
+    const independent = new GitHubNotificationConversationStateStore({ rootDir });
+    await Promise.all([store.write(first), independent.write(third)]);
+    assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+    assert.deepEqual(await store.read(third.agentId, third.conversationId), third);
+    assert.deepEqual(await store.read(first.agentId, snapshot(13).conversationId), snapshot(13));
+  });
+
+  it('should ignore an unindexed record after a failed admission and recover on retry', async () => {
+    const first = snapshot();
+    const second = snapshot(13);
+    await store.write(first);
+    const originalWrite = PrivateStateFile.prototype.write;
+    PrivateStateFile.prototype.write = async function (contents) {
+      if (JSON.parse(contents).schemaVersion === 8) throw new Error('interrupted admission');
+      return originalWrite.call(this, contents);
+    };
+    try {
+      await assert.rejects(store.write(second), /interrupted admission/u);
+    } finally {
+      PrivateStateFile.prototype.write = originalWrite;
+    }
+    assert.equal(
+      (await store.read(second.agentId, second.conversationId))?.conversation,
+      undefined,
+    );
+    assert.equal(await store.readRouted(second.agentId, second.conversationId), undefined);
+    await new GitHubNotificationConversationStateStore({ rootDir }).write(second);
+    assert.deepEqual(await store.read(second.agentId, second.conversationId), second);
+    assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+  });
+
+  it('should isolate damaged records and never resurrect a missing record from the legacy backup', async () => {
+    await seedLegacy();
+    const first = snapshot();
+    const second = snapshot(13);
+    await store.write(first);
+    await writeFile(recordPath(first), '{invalid');
+    await assert.rejects(store.read(first.agentId, first.conversationId), /state is invalid/u);
+    await assert.rejects(store.write(first), /state is invalid/u);
+    second.conversation!.mode = 'guided';
+    await store.write(second);
+    assert.deepEqual(
+      await store.readRouted(second.agentId, second.conversationId.toLowerCase()),
+      second,
+    );
+    await rm(recordPath(first));
+    await assert.rejects(store.read(first.agentId, first.conversationId), /record is missing/u);
+    await assert.rejects(store.write(first), /record is missing/u);
+    assert.deepEqual(await store.read(second.agentId, second.conversationId), second);
+  });
+
+  it('should reject records with mismatched identity, workspace, schema, or excessive size', async () => {
+    const first = snapshot();
+    await store.write(first);
+    for (const override of [
+      { agentId: 'other' },
+      { conversationId: snapshot(13).conversationId },
+      { workspaceDir: '/other' },
+      { schemaVersion: 2 },
+      { unexpected: 'data' },
+    ]) {
+      await writeFile(
+        recordPath(first),
+        JSON.stringify({ ...first, schemaVersion: 1, ...override }),
+      );
+      await assert.rejects(store.read(first.agentId, first.conversationId), /state is invalid/u);
+    }
+    await writeFile(recordPath(first), 'x'.repeat(1024 * 1024 + 1));
+    await assert.rejects(store.read(first.agentId, first.conversationId), /size limit/u);
+  });
+
+  it('should reject unsafe record files and directories without touching their targets', async () => {
+    const first = snapshot();
+    await store.write(first);
+    const contents = await readFile(recordPath(first), 'utf8');
+    const target = join(temporaryDirectory, 'outside.json');
+    await writeFile(target, contents, { mode: 0o600 });
+    await rm(recordPath(first));
+    await symlink(target, recordPath(first));
+    await assert.rejects(store.read(first.agentId, first.conversationId), /symbolic link/u);
+    await assert.rejects(store.write(first), /symbolic link/u);
+    assert.equal(await readFile(target, 'utf8'), contents);
+    await rm(recordPath(first));
+    await writeFile(recordPath(first), contents, { mode: 0o644 });
+    await assert.rejects(store.read(first.agentId, first.conversationId), /private/u);
+    await chmod(recordPath(first), 0o600);
+    const wrongOwner = new GitHubNotificationConversationStateStore({
+      rootDir,
+      currentUid: (process.getuid?.() ?? 0) + 1,
+    });
+    await assert.rejects(wrongOwner.read(first.agentId, first.conversationId), /owned by/u);
+    const directory = join(rootDir, 'tanaabot/channels/github-notification-conversations');
+    await rm(directory, { recursive: true });
+    await symlink(temporaryDirectory, directory);
+    await assert.rejects(store.read(first.agentId, first.conversationId), /real directories/u);
+    await assert.rejects(store.write(first), /real directories/u);
+  });
+
+  it('should keep provider ids out of filenames and reject malformed indexes', async () => {
+    const first = snapshot(12, '../R_repo');
+    await store.write(first);
+    assert.deepEqual(
+      await readdir(join(rootDir, 'tanaabot/channels/github-notification-conversations')),
+      [recordPath(first).split('/').at(-1)],
+    );
+    assert.deepEqual(await store.read(first.agentId, first.conversationId), first);
+    const index = JSON.parse(await readFile(statePath, 'utf8'));
+    for (const override of [
+      { conversationIds: [first.conversationId, first.conversationId] },
+      { conversationIds: ['invalid'] },
+      {
+        conversationIds: Array.from(
+          { length: 501 },
+          (_, number) => snapshot(number + 1).conversationId,
+        ),
+      },
+      { agentId: 'other' },
+      { workspaceDir: 'relative' },
+      { schemaVersion: 9 },
+      { unexpected: 'data' },
+    ]) {
+      await writeFile(statePath, JSON.stringify({ ...index, ...override }));
+      await assert.rejects(store.read(first.agentId, first.conversationId), /state is invalid/u);
+      await assert.rejects(store.write(first), /state is invalid/u);
+    }
   });
 
   it('should leave missing state absent during exact and routed reads', async () => {
