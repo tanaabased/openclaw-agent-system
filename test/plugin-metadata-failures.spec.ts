@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import pluginMetadataFailures, {
   type PackageMetadata,
   type PluginManifest,
@@ -42,6 +43,7 @@ const packageMetadata: PackageMetadata = {
   openclaw: {
     extensions: ['./index.ts'],
     runtimeExtensions: ['./dist/index.js'],
+    channel: githubNotificationChannelMetadata,
     compat: {
       pluginApi: openclawCompatibilityRange,
       minGatewayVersion: minimumOpenClawVersion,
@@ -160,6 +162,7 @@ describe('core/plugin-metadata-failures', () => {
         'cli-command-contract',
         'channel-contract',
         'channel-config-contract',
+        'channel-metadata-contract',
         'tool-contract',
         'tool-policy-contract',
         'skill-contract',
@@ -220,6 +223,27 @@ describe('core/plugin-metadata-failures', () => {
         manifest,
       ),
       new Set(['peer-openclaw-version', 'plugin-api-version']),
+    );
+  });
+
+  it('should report package channel metadata drift', () => {
+    assert.deepEqual(
+      pluginMetadataFailures(
+        {
+          ...packageMetadata,
+          openclaw: {
+            ...packageMetadata.openclaw,
+            channel: { ...githubNotificationChannelMetadata, label: 'Other channel' },
+          },
+        },
+        manifest,
+      ),
+      [
+        {
+          code: 'channel-metadata-contract',
+          message: 'package must publish exact GitHub notification channel metadata',
+        },
+      ],
     );
   });
 

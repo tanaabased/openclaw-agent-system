@@ -148,6 +148,7 @@ try {
     'bin/agent-system-tool',
     'bin/git',
     'bin/gh',
+    'channels/github/CONTROL-UI-ARTWORK.md',
     'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
