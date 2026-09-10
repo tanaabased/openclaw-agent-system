@@ -90,14 +90,14 @@ printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "github-ssh-signing-ke
 openclaw agent \
   --agent tanaabot \
   --session-key agent:tanaabot:agent-system-github-leia \
-  --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
+  --message-file "$GITHUB_WORKSPACE/examples/github/tanaabot/whoami.md" \
   --timeout 120 | grep -F 'tanaabot'
 
 # should identify emori through her configured github tool credential
 openclaw agent \
   --agent emori \
   --session-key agent:emori:agent-system-github-leia \
-  --message-file "$GITHUB_WORKSPACE/examples/github/whoami.md" \
+  --message-file "$GITHUB_WORKSPACE/examples/github/emori/whoami.md" \
   --timeout 120 | grep -F 'emoriwan'
 
 # should report emori through openclaw's agent-scoped managed github profile

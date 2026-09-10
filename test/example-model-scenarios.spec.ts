@@ -4,7 +4,9 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import {
   githubExampleEmoriCallId,
+  githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
+  githubExampleTanaabotPrompt,
 } from '../examples/github/model-fixture.ts';
 import resolveExampleModelScenario, {
   exampleModelScenarioIds,
@@ -84,14 +86,14 @@ describe('scripts/example-model-scenarios', () => {
         agentId: 'tanaabot',
         callId: githubExampleTanaabotCallId,
         expectedLogin: 'tanaabot',
-        message: 'Use the preferred configured GitHub integration to identify the account.',
+        message: githubExampleTanaabotPrompt,
         tool: 'agent_system_github',
       },
       {
         agentId: 'emori',
         callId: githubExampleEmoriCallId,
         expectedLogin: 'emoriwan',
-        message: 'Use the preferred configured GitHub integration to identify the account.',
+        message: githubExampleEmoriPrompt,
         tool: 'agent_system_github',
       },
     ] as const;

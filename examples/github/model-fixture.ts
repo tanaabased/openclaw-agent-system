@@ -4,7 +4,11 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
-const whoAmIPrompt = 'Use the preferred configured GitHub integration';
+
+export const githubExampleTanaabotPrompt =
+  'Use the preferred configured GitHub integration to identify the Tanaabot account.';
+export const githubExampleEmoriPrompt =
+  'Use the preferred configured GitHub integration to identify the EMORI account.';
 
 export const githubExampleTanaabotCallId = 'call_example_github_tanaabot';
 export const githubExampleEmoriCallId = 'call_example_github_emori';
@@ -16,11 +20,8 @@ function roleText(request: ChatCompletionRequest, role: string): string {
     .join('\n');
 }
 
-function hasPrompt(request: ChatCompletionRequest, agentId: string, prompt: string): boolean {
-  return (
-    roleText(request, 'system').includes(`Agent ID: \`${agentId}\``) &&
-    roleText(request, 'user').includes(prompt)
-  );
+function hasPrompt(request: ChatCompletionRequest, prompt: string): boolean {
+  return roleText(request, 'user').includes(prompt);
 }
 
 function hasExpectedResult(
@@ -31,13 +32,13 @@ function hasExpectedResult(
   return openClawAIMockToolResultText(request.messages, callId)?.includes(expectedLogin) === true;
 }
 
-function githubIdentityFixtures(agentId: string, expectedLogin: string, callId: string): Fixture[] {
+function githubIdentityFixtures(prompt: string, expectedLogin: string, callId: string): Fixture[] {
   return [
     {
       match: {
         hasToolResult: false,
         model,
-        predicate: (request) => hasPrompt(request, agentId, whoAmIPrompt),
+        predicate: (request) => hasPrompt(request, prompt),
         toolName: 'agent_system_github',
       },
       response: {
@@ -56,8 +57,7 @@ function githubIdentityFixtures(agentId: string, expectedLogin: string, callId: 
         hasToolResult: true,
         model,
         predicate: (request) =>
-          hasPrompt(request, agentId, whoAmIPrompt) &&
-          hasExpectedResult(request, callId, expectedLogin),
+          hasPrompt(request, prompt) && hasExpectedResult(request, callId, expectedLogin),
       },
       response: {
         content: expectedLogin,
@@ -68,8 +68,8 @@ function githubIdentityFixtures(agentId: string, expectedLogin: string, callId: 
 }
 
 const fixtures: Fixture[] = [
-  ...githubIdentityFixtures('tanaabot', 'tanaabot', githubExampleTanaabotCallId),
-  ...githubIdentityFixtures('emori', 'emoriwan', githubExampleEmoriCallId),
+  ...githubIdentityFixtures(githubExampleTanaabotPrompt, 'tanaabot', githubExampleTanaabotCallId),
+  ...githubIdentityFixtures(githubExampleEmoriPrompt, 'emoriwan', githubExampleEmoriCallId),
 ];
 
 export const githubExampleScenario: OpenClawAIMockScenario = {
