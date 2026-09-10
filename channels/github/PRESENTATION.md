@@ -38,8 +38,9 @@ outcome or call to action.
 
 Use the routed OpenClaw agent for the session's visible owner. Prefer red for
 bugs, green for features, blue for documentation, and purple for maintenance;
-use another supported native color when the issue fits better. Keep appearance
-setup out of the public GitHub response.
+use another supported native color when the issue fits better. Prefer a fitting
+existing custom group, falling back to `GitHub Issues`. Keep appearance setup out
+of the public GitHub response.
 
 ## Assignment Card
 

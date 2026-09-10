@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added optional initial GitHub session owner and issue-based color guidance through native OpenClaw session tools.
+- Added optional initial GitHub session owner, color, and group guidance through native OpenClaw session tools.
 
 - Published complete GitHub notification channel metadata for package-time
   discovery and kept it aligned with runtime registration.

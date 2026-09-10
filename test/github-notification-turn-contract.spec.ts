@@ -134,9 +134,11 @@ describe('channels/github/conversation/turn-contract', () => {
       assert.match(instructions, /action "assign_owner", ownerType "agent"/u);
       assert.match(instructions, /Omit sessionKey and targets/u);
       assert.match(instructions, /issue labels first: bugs red/u);
+      assert.match(instructions, /"group_list".*existing custom groups/u);
+      assert.match(instructions, /otherwise use "GitHub Issues"/u);
       assert.match(instructions, /tool is unavailable or a call fails, continue/u);
       assert.match(instructions, /without retries, permission changes/u);
-      assert.match(instructions, /overwrite later manual owner or color choices/u);
+      assert.match(instructions, /overwrite later manual owner, color, or group choices/u);
       assert.equal(
         instructions,
         resolver.resolve(identity, { tools: { profile: 'coding' } }, 'notification-data')
@@ -149,7 +151,7 @@ describe('channels/github/conversation/turn-contract', () => {
           { eventId, lifecycleId: 'issue', modeId: 'work' },
           'notification-data',
         ),
-        /assign_owner|bugs red|trusted OpenClaw agent ID/u,
+        /assign_owner|group_list|bugs red|trusted OpenClaw agent ID/u,
       );
     }
   });

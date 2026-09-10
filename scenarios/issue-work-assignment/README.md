@@ -3,7 +3,7 @@
 This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, best-effort session setup with a persisted color, one assessment and plan, and the
+context, best-effort session setup with a persisted color and group, one assessment and plan, and the
 planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
@@ -41,6 +41,9 @@ openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
 
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+
+# should make existing custom groups available for assignment setup
+openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active Work"]}' --json | jq -e '.ok == true'
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -147,9 +150,9 @@ jq -e '.body | split("\n\n") as $parts | ($parts | length) >= 2 and ($parts[-1] 
 ```
 
 ```bash
-# should persist the bug color despite unavailable cli owner assignment
+# should persist the bug color and fitting group despite unavailable cli owner assignment
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
-openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red"'
+openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
 ```
 
 ```bash

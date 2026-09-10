@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { githubNotificationAssignmentGroupsCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveGitHubNotificationModelScenario, {
   githubNotificationModelScenarioIds,
@@ -32,6 +33,12 @@ describe('scripts/aimock-evidence', () => {
         id: `${call.id}_fc-observed_123`,
       }));
       const finalResponse = selectedScenario.finalResponses[0] ?? '';
+      const groupCalls = selectedScenario.toolCalls.filter(
+        (call) => call.id === githubNotificationAssignmentGroupsCallId,
+      );
+      const observedGroupCalls = observedCalls.filter((call) =>
+        call.id.startsWith(githubNotificationAssignmentGroupsCallId),
+      );
       const evidence = openClawAIMockEvidence(selectedScenario, [
         {
           body: {
@@ -48,7 +55,37 @@ describe('scripts/aimock-evidence', () => {
           response: {
             fixture: {
               response: {
-                toolCalls: selectedScenario.toolCalls,
+                toolCalls: groupCalls,
+              },
+            },
+            status: 200,
+          },
+        },
+        {
+          body: {
+            messages: [
+              ...structuredClone(selectedPromptMessages),
+              { content: null, role: 'assistant', tool_calls: observedGroupCalls },
+              ...observedGroupCalls.map((call) => ({
+                content: '{"groups":[{"name":"Active Work","position":0}],"sectionOrder":[]}',
+                role: 'tool',
+                tool_call_id: call.id,
+              })),
+            ],
+            model: 'gpt-5.5',
+            tools: [
+              { function: { name: 'agent_system_github_reply' } },
+              { function: { name: 'sessions' } },
+            ],
+          },
+          method: 'POST',
+          path: '/responses',
+          response: {
+            fixture: {
+              response: {
+                toolCalls: selectedScenario.toolCalls.filter(
+                  (call) => call.id !== githubNotificationAssignmentGroupsCallId,
+                ),
               },
             },
             status: 200,
@@ -87,26 +124,26 @@ describe('scripts/aimock-evidence', () => {
       assert.deepEqual(evidence, {
         finalResponseCount: 1,
         model: 'aimock/gpt-5.5',
-        promptRequestCount: 2,
+        promptRequestCount: 3,
         provider: 'aimock',
-        requestCount: 2,
-        responsesApiRequestCount: 2,
+        requestCount: 3,
+        responsesApiRequestCount: 3,
         scenario: scenarioId,
         schemaVersion: 2,
         strictMissCount: 0,
-        successfulFixtureResponseCount: 2,
+        successfulFixtureResponseCount: 3,
         tools: [
           {
             callResponseCount: 1,
             name: 'agent_system_github_reply',
-            projectionRequestCount: 2,
+            projectionRequestCount: 3,
             resultRequestCount: 1,
           },
           {
-            callResponseCount: 2,
+            callResponseCount: 3,
             name: 'sessions',
-            projectionRequestCount: 2,
-            resultRequestCount: 2,
+            projectionRequestCount: 3,
+            resultRequestCount: 4,
           },
         ],
       });

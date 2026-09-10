@@ -15,6 +15,7 @@ import {
   githubNotificationAssignmentCallId,
   githubNotificationAssignmentOwnerCallId,
   githubNotificationAssignmentColorCallId,
+  githubNotificationAssignmentGroupsCallId,
 } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import {
   githubNotificationImplementationAddCallId,
@@ -63,7 +64,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     const callIds = planningScenarioIds.map((scenarioId) => {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
       assert.equal(scenario.id, scenarioId);
-      assert.equal(scenario.fixtures.length, 2);
+      assert.equal(scenario.fixtures.length, 3);
       const [toolCall] = scenario.toolCalls;
       assert.match(toolCall?.id ?? '', /^call_[A-Za-z0-9_-]{1,59}$/u);
       assert.deepEqual(scenario.toolCalls, [
@@ -73,6 +74,7 @@ describe('scripts/github-notification-model-scenarios', () => {
         },
         { id: githubNotificationAssignmentOwnerCallId, name: 'sessions' },
         { id: githubNotificationAssignmentColorCallId, name: 'sessions' },
+        { id: githubNotificationAssignmentGroupsCallId, name: 'sessions' },
       ]);
       return toolCall?.id;
     });
@@ -192,11 +194,64 @@ describe('scripts/github-notification-model-scenarios', () => {
       },
       { id: githubNotificationAssignmentOwnerCallId, name: 'sessions' },
       { id: githubNotificationAssignmentColorCallId, name: 'sessions' },
+      { id: githubNotificationAssignmentGroupsCallId, name: 'sessions' },
     ]);
     request.messages[1]!.content = userPromptSignals
       .filter((signal) => signal !== 'Create assignment-planning-')
       .join('\n');
     assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should use listed groups before patching and fall back when none fit the assignment', async () => {
+    const scenario = resolveGitHubNotificationModelScenario('assignment');
+    for (const entry of [
+      { names: ['Reading', 'Active Work'], expected: 'Active Work' },
+      { names: ['Reading'], expected: 'GitHub Issues' },
+      { names: [], expected: 'GitHub Issues' },
+    ]) {
+      const request: ChatCompletionRequest = {
+        messages: [
+          { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
+          { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+          {
+            content: JSON.stringify({
+              groups: entry.names.map((name, position) => ({ name, position })),
+              sectionOrder: [],
+            }),
+            role: 'tool',
+            tool_call_id: `${githubNotificationAssignmentGroupsCallId}_fc-observed_123`,
+          },
+        ],
+        model: 'gpt-5.5',
+        tools: [{ function: { name: 'sessions' }, type: 'function' }],
+      };
+      const fixture = matchFixture([...scenario.fixtures], request);
+      assert.equal(fixture, scenario.fixtures[1]);
+      const responseFactory = fixture?.response;
+      if (typeof responseFactory !== 'function') {
+        throw new Error('The assignment fixture requires a response factory.');
+      }
+      const response = (await responseFactory(request)) as ToolCallResponse;
+      const patch = response.toolCalls.find(
+        (call) => call.id === githubNotificationAssignmentColorCallId,
+      );
+      assert.deepEqual(JSON.parse(patch?.arguments ?? '{}'), {
+        action: 'patch',
+        color: 'red',
+        group: entry.expected,
+      });
+      request.messages.push(
+        ...response.toolCalls.map((call) => ({
+          content:
+            call.id === githubNotificationAssignmentOwnerCallId
+              ? '{"error":"requires an identified caller"}'
+              : '{"status":"updated"}',
+          role: 'tool' as const,
+          tool_call_id: call.id,
+        })),
+      );
+      assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures[2]);
+    }
   });
 
   it('should require guided assignment context without a public reply tool call', () => {

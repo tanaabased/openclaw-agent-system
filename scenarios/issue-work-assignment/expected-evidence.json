@@ -1,26 +1,26 @@
 {
   "finalResponseCount": 1,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 2,
+  "promptRequestCount": 3,
   "provider": "aimock",
-  "requestCount": 2,
-  "responsesApiRequestCount": 2,
+  "requestCount": 3,
+  "responsesApiRequestCount": 3,
   "scenario": "assignment",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 2,
+  "successfulFixtureResponseCount": 3,
   "tools": [
     {
       "callResponseCount": 1,
       "name": "agent_system_github_reply",
-      "projectionRequestCount": 2,
+      "projectionRequestCount": 3,
       "resultRequestCount": 1
     },
     {
-      "callResponseCount": 2,
+      "callResponseCount": 3,
       "name": "sessions",
-      "projectionRequestCount": 2,
-      "resultRequestCount": 2
+      "projectionRequestCount": 3,
+      "resultRequestCount": 4
     }
   ]
 }
