@@ -55,14 +55,6 @@ The channel also:
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
-## Control UI artwork
-
-Agent System publishes the GitHub notification channel's complete static and
-runtime catalog metadata. OpenClaw 2026.9.2 and 2026.9.3 cannot yet associate a
-multi-capability plugin's packaged icon with a differently named channel. See
-[Control UI artwork compatibility](./CONTROL-UI-ARTWORK.md) for the verified
-platform prerequisite and the reason another unreferenced image is not a fix.
-
 ## Configuration Reference
 
 Add the channel to `.agent-system/agent.yaml` or the root `agent.yaml`:
