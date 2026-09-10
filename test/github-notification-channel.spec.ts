@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -39,6 +40,24 @@ describe('channels/github/channel', () => {
   const channel = createGitHubNotificationChannel({
     monitorService: { runAccount: async () => undefined },
     stateStore: { read: async () => undefined },
+  });
+
+  it('should align package-time and runtime channel metadata', () => {
+    const packageMetadata = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { openclaw?: { channel?: unknown } };
+
+    assert.deepEqual(packageMetadata.openclaw?.channel, channel.meta);
+    assert.equal(channel.meta.id, 'agent-system-github');
+    assert.equal(channel.meta.detailLabel, 'GitHub Notifications');
+    assert.equal(channel.meta.docsLabel, 'GitHub notifications');
+    assert.equal(channel.meta.systemImage, 'bell.badge');
+    assert.equal(channel.meta.markdownCapable, true);
+    assert.deepEqual(channel.meta.exposure, { configured: true, docs: true, setup: false });
+    assert.equal(channel.meta.forceAccountBinding, true);
+    assert.equal('aliases' in channel.meta, false);
+    assert.equal('order' in channel.meta, false);
+    assert.equal('setup' in channel.meta, false);
   });
 
   it('should expose a local-only multi-account channel', () => {

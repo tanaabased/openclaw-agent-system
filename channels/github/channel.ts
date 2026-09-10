@@ -11,6 +11,7 @@ import {
 import type GitHubNotificationMonitorService from './intake/monitor/service.ts';
 import type GitHubNotificationMonitorStateStore from './intake/monitor/state-store.ts';
 import type { GitHubNotificationMonitorState } from './intake/monitor/state.ts';
+import { githubNotificationChannelMetadata } from './metadata.ts';
 import { githubNotificationChannelId } from './routing/routing.ts';
 
 interface ResolvedNotificationChannelAccount {
@@ -82,18 +83,7 @@ export function createGitHubNotificationChannel(
   const clock = dependencies.clock ?? Date.now;
   return {
     id: githubNotificationChannelId,
-    meta: {
-      id: githubNotificationChannelId,
-      label: 'Agent System GitHub Notifications',
-      selectionLabel: 'Agent System GitHub Notifications',
-      systemImage: 'bell.badge',
-      docsPath:
-        'https://github.com/tanaabased/openclaw-agent-system/blob/main/channels/github/README.md',
-      blurb:
-        'Admits authorized GitHub assignments and relays approved issue and linked delivery pull-request comments.',
-      exposure: { configured: true, docs: true, setup: false },
-      forceAccountBinding: true,
-    },
+    meta: githubNotificationChannelMetadata,
     capabilities: { chatTypes: ['direct'], blockStreaming: true },
     ...(dependencies.message === undefined ? {} : { message: dependencies.message }),
     reload: { configPrefixes: [`channels.${githubNotificationChannelId}`] },

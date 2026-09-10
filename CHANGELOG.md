@@ -2,6 +2,9 @@
 
 ### New Features
 
+- Published complete GitHub notification channel metadata for package-time
+  discovery and kept it aligned with runtime registration.
+
 - Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 - Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 

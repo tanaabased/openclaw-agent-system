@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import { agentSystemPluginIdentity } from './plugin-identity.ts';
 
 export interface PackageMetadata {
@@ -14,6 +15,7 @@ export interface PackageMetadata {
   files?: string[];
   name?: string;
   openclaw?: {
+    channel?: Record<string, unknown>;
     build?: {
       openclawVersion?: string;
       pluginSdkVersion?: string;
@@ -81,6 +83,7 @@ export type PluginMetadataFailureCode =
   | 'cli-command-contract'
   | 'channel-contract'
   | 'channel-config-contract'
+  | 'channel-metadata-contract'
   | 'tool-contract'
   | 'tool-policy-contract'
   | 'skill-contract'
@@ -273,6 +276,11 @@ export default function pluginMetadataFailures(
     isDeepStrictEqual(manifest.channelConfigs, githubNotificationChannelConfigs),
     'channel-config-contract',
     'plugin must declare the exact Agent System channel configuration schema',
+  );
+  check(
+    isDeepStrictEqual(packageMetadata.openclaw?.channel, githubNotificationChannelMetadata),
+    'channel-metadata-contract',
+    'package must publish exact GitHub notification channel metadata',
   );
   check(
     containsExactly(manifest.contracts?.tools, [
