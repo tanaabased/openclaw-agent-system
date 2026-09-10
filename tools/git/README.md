@@ -189,6 +189,13 @@ source; a declared local override is authoritative and fails closed when
 unavailable or unsafe. Use a remote base such as `origin/main` to start from the
 latest fetched branch.
 
+Preparation holds a repository-specific cross-process lock through clone,
+origin reconciliation, fetch, and worktree creation, then releases it before
+agent work starts. Concurrent callers reuse the same deterministic worktree;
+different repositories can prepare independently. Declared local repository
+aliases share the lock in Git's common metadata directory. Waiting callers honor
+cancellation and stop after ten minutes if the repository remains busy.
+
 The GitHub notifications channel uses this same managed-worktree service.
 Without `git.ssh`, canonical HTTPS supports public repositories. When `git.ssh`
 is configured, model-facing, operator-command, and notification preparation all
