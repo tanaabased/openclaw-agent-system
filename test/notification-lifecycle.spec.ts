@@ -21,10 +21,23 @@ const manifest: AgentManifest = {
   },
 };
 const context = { manifest, workspaceDir: '/workspace/data' };
+const healthyHookAccess = {
+  inspect: async () => ({
+    code: 'github-notification-hook-ready',
+    message: 'ready',
+    status: 'healthy' as const,
+  }),
+  reconcile: async () => ({
+    code: 'github-notification-hook-ready',
+    message: 'ready',
+    status: 'unchanged' as const,
+  }),
+};
 
 describe('channels/github/runtime/lifecycle-contribution', () => {
   it('should always participate so removed manifest state can be cleaned up', () => {
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -47,6 +60,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
 
   it('should validate required github identity and credential declarations', () => {
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -90,6 +104,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
   it('should report healthy, drifted, and conflicting routing state', async () => {
     let kind: 'conflict' | 'noop' | 'upsert' = 'noop';
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           return { code: `state-${kind}`, kind, message: kind };
@@ -124,6 +139,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       { ...healthyState, diagnosticCode: 'github-notification-search-truncated' },
     ];
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           return {
@@ -155,6 +171,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
 
   it('should translate routing reconciliation and preserve attributed failures', async () => {
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -170,10 +187,12 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       },
     });
     assert.deepEqual((await contribution.reconcile?.(context))?.outcomes, [
+      { code: 'github-notification-hook-ready', message: 'ready', status: 'unchanged' },
       { code: 'notification-route-installed', message: 'installed', status: 'updated' },
     ]);
 
     const restartRequired = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -189,6 +208,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       },
     });
     assert.deepEqual((await restartRequired.reconcile?.(context))?.outcomes, [
+      { code: 'github-notification-hook-ready', message: 'ready', status: 'unchanged' },
       {
         code: 'notification-route-installed',
         message:
@@ -198,6 +218,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
     ]);
 
     const failing = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -224,6 +245,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       waitForLeaseMs?: number;
     }> = [];
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       monitorService: {
         async runOnce(options) {
           refreshes.push(options && 'aborted' in options ? {} : (options ?? {}));
@@ -261,6 +283,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
 
     assert.deepEqual(await contribution.reconcile?.(context), {
       outcomes: [
+        { code: 'github-notification-hook-ready', message: 'ready', status: 'unchanged' },
         { code: 'notification-route-installed', message: 'installed', status: 'updated' },
         {
           code: 'github-notification-baseline-established',
@@ -271,12 +294,18 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       warnings: [],
     });
     assert.deepEqual(refreshes, [
-      { agentId: 'data', bypassInterval: true, waitForLeaseMs: 120_000 },
+      {
+        agentId: 'data',
+        bypassInterval: true,
+        executionSurface: 'cli-one-shot',
+        waitForLeaseMs: 120_000,
+      },
     ]);
   });
 
   it('should fail enabled installation when the first baseline cannot be established', async () => {
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       monitorService: {
         async runOnce() {
           return [
@@ -325,6 +354,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
   it('should remove private monitor state only during explicit disabled reconciliation', async () => {
     let removals = 0;
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           throw new Error('not used');
@@ -377,6 +407,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       worktreePath: '/workspace/worktrees/issue-7',
     };
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       routingService: {
         async inspect() {
           return {
@@ -449,6 +480,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       waitForLeaseMs?: number;
     }> = [];
     const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
       monitorService: {
         async runOnce(options) {
           refreshes.push(options && 'aborted' in options ? {} : (options ?? {}));

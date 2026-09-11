@@ -1,10 +1,89 @@
 import assert from 'node:assert/strict';
 
-import githubNotificationPromptGuidance from '../channels/github/conversation/prompt-guidance.ts';
+import githubNotificationPromptGuidance, {
+  githubNotificationBeforeRun,
+} from '../channels/github/conversation/prompt-guidance.ts';
+import GitHubNotificationTurnSelector from '../channels/github/conversation/turn-selector.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { createGitHubNotificationTurnContractResolver } from './github-notification-turn-fixtures.ts';
 
 describe('channels/github/conversation/prompt-guidance', () => {
+  it('should block unattested github turns before model execution', async () => {
+    const selected = {
+      agentId: 'data',
+      conversationId: 'github:issue:R_repo:12',
+      sourceId: 'assignment',
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' } as const,
+    };
+    let attested = false;
+    const dependencies = {
+      candidates: {
+        async assertPromptSelected(input: unknown) {
+          assert.deepEqual(input, selected);
+          if (!attested) throw new Error('missing private receipt');
+        },
+      },
+      turnSelector: { select: async () => selected },
+      logger: { warn() {} },
+    };
+    const context = { messageProvider: githubNotificationChannelId };
+    const blocked = await githubNotificationBeforeRun(context, dependencies);
+    assert.equal(blocked?.outcome, 'block');
+    assert.equal(blocked?.reason, 'github-notification-model-turn-prompt-selection-missing');
+    assert.match(blocked?.message ?? '', /before_prompt_build/u);
+    assert.doesNotMatch(blocked?.message ?? '', /private receipt/u);
+    attested = true;
+    assert.equal(await githubNotificationBeforeRun(context, dependencies), undefined);
+    assert.equal(
+      await githubNotificationBeforeRun({ messageProvider: 'discord' }, dependencies),
+      undefined,
+    );
+  });
+
+  it('should block restarted guided sessions without an active lifecycle turn', async () => {
+    const context = {
+      agentId: 'data',
+      sessionKey: 'agent:data:agent-system-github:data:direct:github:issue:r_repo:12',
+      workspaceDir: '/workspace/data',
+    };
+    const warnings: string[] = [];
+    const logger = { warn: (message: string) => warnings.push(message) };
+    const turnSelector = new GitHubNotificationTurnSelector({
+      conversations: {
+        async readRouted() {
+          return {
+            agentId: 'data',
+            conversationId: 'github:issue:R_repo:12',
+            workspaceDir: context.workspaceDir,
+            conversation: {
+              baselineEstablished: true,
+              itemKey: 'github:R_repo:12',
+              lifecycleId: 'issue',
+              mode: 'guided',
+              revisions: {},
+            },
+          };
+        },
+      },
+      logger,
+      turns: { resolve: () => assert.fail('no active turn to resolve') },
+    });
+    const blocked = await githubNotificationBeforeRun(context, {
+      candidates: {
+        assertPromptSelected: async () => assert.fail('no active turn to attest'),
+      },
+      logger,
+      turnSelector,
+    });
+    assert.equal(blocked?.outcome, 'block');
+    assert.equal(blocked?.reason, 'github-notification-model-turn-unresolved');
+    assert.match(blocked?.message ?? '', /active.*lifecycle turn/u);
+    assert.doesNotMatch(blocked?.message ?? '', /install|before_prompt_build/u);
+    assert.deepEqual(warnings, [
+      'github-notifications: model execution blocked code=github-notification-model-turn-unresolved',
+    ]);
+  });
+
   it('should compose the selected issue work comment instructions for github turns', async () => {
     const turnContracts = createGitHubNotificationTurnContractResolver();
     const selected = {

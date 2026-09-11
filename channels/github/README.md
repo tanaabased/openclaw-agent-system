@@ -171,6 +171,16 @@ establishes the first safe assignment baseline; only assignments observed after
 that baseline create local work. A baseline failure reports
 `github-notification-baseline-failed` and leaves intake inactive.
 
+### Required Conversation Hook
+
+For configured notifications, `doctor` reports unset or denied
+`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked without
+changing it. Run `openclaw agent-system install` from the agent workspace to grant
+access and verify required hook registration. Install preserves unrelated
+configuration and does not override `hooks.allowPromptInjection: false`.
+If the running Gateway has not reloaded the permission, restart it after install;
+notifications remain blocked until its required hooks are available.
+
 ## CLI
 
 All notification commands run from an agent workspace or use `--agent <id>` to

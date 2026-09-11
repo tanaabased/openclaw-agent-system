@@ -22,6 +22,7 @@ const event: GitHubNotificationAssignmentEvent = {
 function configuredRoute(agentId = 'data'): OpenClawConfig {
   return {
     agents: { list: [{ id: 'data', workspace: '/workspace/data' }] },
+    plugins: { entries: { 'agent-system': { hooks: { allowConversationAccess: true } } } },
     channels: {
       'agent-system-github': { accounts: { data: { enabled: true } } },
     },
@@ -38,6 +39,11 @@ function configuredRoute(agentId = 'data'): OpenClawConfig {
 
 describe('channels/github/channel', () => {
   const channel = createGitHubNotificationChannel({
+    inspectReadiness: () => ({
+      code: 'github-notification-hook-ready',
+      message: 'ready',
+      status: 'healthy',
+    }),
     monitorService: { runAccount: async () => undefined },
     stateStore: { read: async () => undefined },
   });
@@ -80,6 +86,11 @@ describe('channels/github/channel', () => {
     let state: ReturnType<typeof notificationMonitorState> | undefined;
     const statuses: Array<Record<string, unknown>> = [];
     const runtimeChannel = createGitHubNotificationChannel({
+      inspectReadiness: () => ({
+        code: 'github-notification-hook-ready',
+        message: 'ready',
+        status: 'healthy',
+      }),
       clock: () => 2_000,
       monitorService: {
         async runAccount(agentId, signal, onCycle) {
@@ -169,6 +180,30 @@ describe('channels/github/channel', () => {
     assert.equal(snapshot?.lastConnectedAt, 1_000);
     assert.equal(snapshot?.lastEventAt, 1_000);
     assert.equal(snapshot?.mode, 'polling');
+  });
+
+  it('should override stale healthy channel state when a required hook is blocked', async () => {
+    const channel = createGitHubNotificationChannel({
+      inspectReadiness: () => ({
+        code: 'github-notification-hook-access-required',
+        status: 'blocked',
+        message: 'plugins.entries.agent-system.hooks.allowConversationAccess must be true.',
+        remediation: 'Run openclaw agent-system install.',
+      }),
+      monitorService: { runAccount: async () => undefined },
+      stateStore: { read: async () => notificationMonitorState() },
+    });
+    const config = configuredRoute();
+    config.plugins!.entries!['agent-system']!.hooks!.allowConversationAccess = false;
+    const snapshot = await channel.status!.buildAccountSnapshot!({
+      account: channel.config.resolveAccount(config, 'data'),
+      cfg: config,
+      runtime: { accountId: 'data', connected: true, healthState: 'healthy', running: true },
+    });
+    assert.equal(snapshot.connected, false);
+    assert.equal(snapshot.healthState, 'degraded');
+    assert.match(snapshot.lastError ?? '', /allowConversationAccess/u);
+    assert.match(snapshot.lastError ?? '', /agent-system install/u);
   });
 
   it('should derive stable lifecycle conversations from repository and item number', () => {

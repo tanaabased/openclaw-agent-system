@@ -5,6 +5,11 @@ import type {
   dispatchChannelInboundTurn,
 } from 'openclaw/plugin-sdk/channel-inbound';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import {
+  assertConversationHookReady,
+  type ConversationHookFinding,
+  type default as ConversationHookAccess,
+} from '../../../core/conversation-hook-access.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import type { AgentSystemHookContext } from '../../../core/agent-hook-context.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
@@ -22,7 +27,9 @@ import GitHubNotificationCommentOrchestrator from '../conversation/comment-orche
 import GitHubNotificationCommentTurnService from '../conversation/comment-turn-service.ts';
 import GitHubNotificationPullRequestHandoffService from '../conversation/pull-request-handoff-service.ts';
 import GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
-import githubNotificationPromptGuidance from '../conversation/prompt-guidance.ts';
+import githubNotificationPromptGuidance, {
+  githubNotificationBeforeRun,
+} from '../conversation/prompt-guidance.ts';
 import GitHubNotificationModelTurnCoordinator from '../conversation/model-turn-coordinator.ts';
 import GitHubNotificationModelTurnDispatcher from '../conversation/model-turn-dispatcher.ts';
 import GitHubNotificationTurnContractResolver from '../conversation/turn-contract.ts';
@@ -63,6 +70,8 @@ import { resolveNotificationRoute } from '../routing/routing.ts';
 import createNotificationLifecycleContribution from './lifecycle-contribution.ts';
 
 export interface GitHubNotificationRuntimeDependencies {
+  hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
+  inspectRuntimeHook(): ConversationHookFinding;
   accountClient: GitHubAccountClient;
   currentUid?: number;
   dispatchChannelInboundTurn(
@@ -150,6 +159,9 @@ export default function createGitHubNotificationRuntime(
     dispatchChannelInboundTurn: dependencies.dispatchChannelInboundTurn,
   });
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
+    assertReady(surface) {
+      if (surface === 'gateway') assertConversationHookReady(dependencies.inspectRuntimeHook());
+    },
     candidates,
     dispatcher: turnDispatcher,
     logger: dependencies.lifecycleLogger,
@@ -157,6 +169,7 @@ export default function createGitHubNotificationRuntime(
 
   return {
     lifecycleContribution: createNotificationLifecycleContribution({
+      hookAccess: dependencies.hookAccess,
       monitorService: {
         runOnce(input) {
           const service = monitorServiceRef.current;
@@ -168,6 +181,13 @@ export default function createGitHubNotificationRuntime(
       stateStore: monitorStateStore,
     }),
     promptGuidance: {
+      beforeRun(context: AgentSystemHookContext) {
+        return githubNotificationBeforeRun(context, {
+          candidates,
+          turnSelector,
+          logger: dependencies.lifecycleLogger,
+        });
+      },
       instructions(context: AgentSystemHookContext) {
         return githubNotificationPromptGuidance(context, {
           candidates,
@@ -271,6 +291,7 @@ export default function createGitHubNotificationRuntime(
         turns: commentTurnService,
       });
       const monitorService = new GitHubNotificationMonitorService({
+        inspectReadiness: dependencies.inspectRuntimeHook,
         accountClient: dependencies.accountClient,
         assignmentOrchestrator,
         commentOrchestrator,
@@ -289,6 +310,7 @@ export default function createGitHubNotificationRuntime(
 
       return {
         channel: createGitHubNotificationChannel({
+          inspectReadiness: dependencies.inspectRuntimeHook,
           message: createGitHubNotificationMessageAdapter({
             publications: commentPublicationService,
           }),

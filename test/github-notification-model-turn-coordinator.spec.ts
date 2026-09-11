@@ -43,10 +43,42 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
+  it('should block before candidate creation or dispatch when the required hook is unavailable', async () => {
+    let candidateStarted = false;
+    let dispatched = false;
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {
+        throw new Error('required hook unavailable');
+      },
+      candidates: {
+        async begin() {
+          candidateStarted = true;
+          return 'unexpected';
+        },
+        async attestPromptSelection() {},
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          dispatched = true;
+          throw new Error('unexpected dispatch');
+        },
+      },
+      logger: { info() {}, warn() {} },
+    });
+    await assert.rejects(coordinator.run(input()), /required hook unavailable/u);
+    assert.equal(candidateStarted, false);
+    assert.equal(dispatched, false);
+  });
+
   it('should publish the ordinary final response and retain it privately', async () => {
     const calls: unknown[] = [];
     const messages: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection(candidateIdentity) {
           calls.push(['attest', candidateIdentity]);
@@ -137,6 +169,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     const warnings: string[] = [];
     const stagedCandidates: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');
@@ -206,6 +239,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     let cancellation: unknown;
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');
@@ -248,6 +282,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should log the failure code without private response content', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {},
         async begin() {
@@ -283,6 +318,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should warn with bounded diagnostics when publication is withheld', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');
@@ -332,6 +368,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should report a value-free publication safety category', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');
@@ -383,6 +420,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
   it('should publish a safe notice when an ordinary final response fails safety validation', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');
@@ -425,6 +463,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
 
   it('should classify a missing prompt-selection attestation', async () => {
     const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
       candidates: {
         async attestPromptSelection() {
           throw new Error('gateway turns must use the prompt hook');

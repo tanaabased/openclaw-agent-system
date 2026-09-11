@@ -127,6 +127,7 @@ describe('index', () => {
     assert.deepEqual(hookNames, [
       'resolve_exec_env',
       'before_tool_call',
+      'before_agent_run',
       'session_start',
       'before_prompt_build',
     ]);

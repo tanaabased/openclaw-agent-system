@@ -18,6 +18,16 @@ openclaw-setup \
 mkdir "$TMPDIR/agent-system-notifications"
 cp "$GITHUB_WORKSPACE/examples/routing/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 
+# should remove inherited setup consent before testing normal installation
+openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
+openclaw config set plugins.entries.agent-system.hooks.timeoutMs 30000
+
+# should report the missing hook prerequisite without granting access
+cd "$TMPDIR/agent-system-notifications"
+openclaw agent-system credentials set op --from-env
+if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-access-required" and .status == "blocked" and (.message | contains("plugins.entries.agent-system.hooks.allowConversationAccess")))'
+
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
@@ -27,6 +37,9 @@ openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "github-notification-hook-ready" and .status == "updated")'
+openclaw config get plugins.entries.agent-system.hooks --json | jq -e '.allowConversationAccess == true and .timeoutMs == 30000'
+openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 ```
 
@@ -59,9 +72,20 @@ openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | 
 ```
 
 ```bash
+# should reconcile explicitly denied hook access through normal install
+openclaw-gateway stop
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false
+cd "$TMPDIR/agent-system-notifications"
+if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-access-required" and .status == "blocked")'
+openclaw config get plugins.entries.agent-system.hooks --json | jq -e '.allowConversationAccess == false and .timeoutMs == 30000'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "github-notification-hook-ready" and .status == "updated")'
+openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+
 # should keep repeated notification installation unchanged
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system install --json | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "unchanged")'
+openclaw agent-system install --json | jq -e '.outcomes | any(.code == "github-notification-hook-ready" and .status == "unchanged")'
 
 # should stop the gateway before deterministic routing removal
 openclaw-gateway stop

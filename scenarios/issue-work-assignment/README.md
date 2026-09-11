@@ -47,6 +47,9 @@ printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 # should authorize the fixture actor for native owner-only session tools
 openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
 
+# should require normal install to repair missing hook consent
+openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
+
 # should start the default gateway before routing installation
 OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
@@ -59,6 +62,7 @@ openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
+openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 openclaw-github-notifications wait-route \
   --route-state present \
