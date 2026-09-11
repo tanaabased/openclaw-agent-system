@@ -16,7 +16,7 @@ import { githubWorkItemKey } from '../provider/work-item.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import { githubNotificationChannelId, type NotificationRouteResolver } from '../routing/routing.ts';
-import { githubCommentRevision } from './comment-admission.ts';
+import { admitGitHubComment, githubCommentRevision } from './comment-admission.ts';
 import {
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversation,
@@ -245,6 +245,17 @@ export default class GitHubNotificationPullRequestHandoffService {
     const next = structuredClone(observed.state);
     const conversation = next.conversation!;
     for (const comment of sortedComments(page.comments)) {
+      // initial handoff must neither replace receipts nor consume actionable comments.
+      // an already recorded handoff retains the fresh baseline used after reopening.
+      if (!observed.source.eventRecorded) {
+        if (conversation.revisions[comment.nodeId]) continue;
+        const admission = admitGitHubComment({
+          account: opened.client.identity,
+          comment,
+          configuration: opened.configuration,
+        });
+        if (admission.disposition === 'approved') continue;
+      }
       const revision = githubCommentRevision(comment);
       conversation.revisions[comment.nodeId] = {
         bodyDigest: revision.bodyDigest,

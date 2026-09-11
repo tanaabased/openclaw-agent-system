@@ -137,6 +137,29 @@ jq -e '.id | type == "number" and . > 0' <<< "$reply"
 jq -e --arg token "$reply_token" '.body | contains("@emoriwan") and contains($token)' <<< "$reply"
 issue_reply_count_after="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
 test "$issue_reply_count_after" -eq "$issue_reply_count_before"
+printf '%s' "$reply" > "$TMPDIR/pull-request-comment-reply.json"
+printf '%s' "$issue_reply_count_before" > "$TMPDIR/issue-comment-reply-count"
+```
+
+```bash
+# should retain exactly one pull request reply after another reconciliation
+cd "$TMPDIR/agent-system-notifications"
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$issue_number" \
+    --timeout 180
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+cd "$TMPDIR/agent-system-notification-actor"
+replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$pull_request_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body, id}')"
+jq -se --slurpfile expected "$TMPDIR/pull-request-comment-reply.json" '. == $expected' <<< "$replies"
+issue_reply_count="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '[.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply")))] | length')"
+test "$issue_reply_count" -eq "$(cat "$TMPDIR/issue-comment-reply-count")"
 ```
 
 ```bash
