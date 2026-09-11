@@ -8,6 +8,37 @@ function diagnosticCodes(source: string): Set<string> {
 }
 
 describe('manifest/parse', () => {
+  it('should accept operator opt-in only on approved actor records', () => {
+    const source = (flag: string, field = 'approved-actors') => `
+schema-version: 1
+agent:
+  id: data
+  email: data@example.com
+git:
+  worktrees: {}
+github:
+  username: data
+  token: GH_TOKEN_DATA
+  notifications:
+    approved-actors:
+      - login: actor
+        node-id: U_actor
+${field === 'approved-actors' ? `        operator-owner: ${flag}` : `    allowed-repository-owners:\n      - login: owner\n        node-id: O_owner\n        operator-owner: ${flag}`}
+`;
+    for (const flag of ['true', 'false']) {
+      const result = parseAgentManifest(source(flag));
+      assert.equal(result.status, 'valid');
+      if (result.status === 'valid')
+        assert.equal(
+          result.manifest.github?.notifications?.approvedActors[0]?.operatorOwner,
+          flag === 'true',
+        );
+    }
+    for (const flag of ['"true"', '1', 'null', '[]'])
+      assert.equal(parseAgentManifest(source(flag)).status, 'invalid');
+    assert.equal(parseAgentManifest(source('true', 'allowed-repository-owners')).status, 'invalid');
+  });
+
   it('should parse github identity and an environment-only credential binding', () => {
     const result = parseAgentManifest(`
 schema-version: 1

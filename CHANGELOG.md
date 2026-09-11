@@ -2,6 +2,10 @@
 
 ### New Features
 
+- Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
+  verified install reconciliation with shared grant provenance, and non-blocking
+  initial-assignment session persistence checks.
+
 - Added optional initial GitHub session owner, color, and group guidance through native OpenClaw session tools.
 
 - Published complete GitHub notification channel metadata for package-time

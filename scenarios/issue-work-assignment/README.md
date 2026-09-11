@@ -44,8 +44,8 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-s
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
-# should authorize the fixture actor for native owner-only session tools
-openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
+# should leave operator grants for the normal manifest installation to reconcile
+openclaw config set commands.ownerAllowFrom '[]' --strict-json
 
 # should require normal install to repair missing hook consent
 openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
@@ -64,6 +64,7 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
+openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data

@@ -26,6 +26,7 @@ github:
     approved-actors:
       - login: emoriwan
         node-id: U_kgDOEUqvpg
+        operator-owner: true
     allowed-repository-owners:
       - login: tanaabased
         node-id: O_kgDODNGy1g

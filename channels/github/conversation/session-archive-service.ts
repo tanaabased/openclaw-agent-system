@@ -1,4 +1,6 @@
-export interface GitHubNotificationSessionEntry {
+import type { SessionSetupEntry } from './session-setup-verification.ts';
+
+export interface GitHubNotificationSessionEntry extends SessionSetupEntry {
   archivedAt?: number;
   pinnedAt?: number;
 }
@@ -6,6 +8,7 @@ export interface GitHubNotificationSessionEntry {
 export interface GitHubNotificationSessionRuntime {
   getSessionEntry(input: {
     agentId: string;
+    readConsistency?: 'latest';
     sessionKey: string;
   }): GitHubNotificationSessionEntry | undefined;
   patchSessionEntry(input: {

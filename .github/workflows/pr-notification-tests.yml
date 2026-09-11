@@ -11,6 +11,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  operator-access:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-26]
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      runner: ${{ matrix.runner }}
+      scenario: operator-access
   notifications:
     name: ${{ matrix.scenario }}
     strategy:

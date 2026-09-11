@@ -29,7 +29,12 @@ interface CallerJob {
 
 interface CallerWorkflow {
   concurrency?: unknown;
-  jobs?: { concurrency?: CallerJob; mock?: CallerJob; notifications?: CallerJob };
+  jobs?: {
+    concurrency?: CallerJob;
+    mock?: CallerJob;
+    notifications?: CallerJob;
+    'operator-access'?: CallerJob;
+  };
   name?: string;
   on?: {
     pull_request?: unknown;
@@ -74,6 +79,20 @@ interface ExampleWorkflow {
 }
 
 describe('github notification workflows', () => {
+  it('should exercise operator access on both platforms without live credentials or models', async () => {
+    const workflow = parse(
+      await readFile('.github/workflows/pr-notification-tests.yml', 'utf8'),
+    ) as CallerWorkflow;
+    const job = workflow.jobs?.['operator-access'];
+    assert.deepEqual(job?.strategy?.matrix, { runner: ['ubuntu-24.04', 'macos-26'] });
+    assert.equal(job?.secrets, undefined);
+    assert.equal(job?.with?.provider, 'mock');
+    assert.equal(job?.with?.scenario, 'operator-access');
+    const source = await readFile('scenarios/issue-work-operator-access/README.md', 'utf8');
+    assert.match(source, /agent-system doctor/u);
+    assert.match(source, /agent-system install/u);
+    assert.doesNotMatch(source, /notifications refresh|OPENAI_API_KEY|credentials set/u);
+  });
   it('should select deterministic concurrency and live lifecycle scenarios in the manual matrix', async () => {
     const source = await readFile('.github/workflows/notification-tests.yml', 'utf8');
     const workflow = parse(source) as CallerWorkflow;
@@ -83,7 +102,11 @@ describe('github notification workflows', () => {
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.deepEqual(Object.keys(inputs), ['scenario', 'runner']);
-    assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications', 'concurrency']);
+    assert.deepEqual(Object.keys(workflow.jobs ?? {}), [
+      'notifications',
+      'operator-access',
+      'concurrency',
+    ]);
     assert.deepEqual(workflow.concurrency, {
       group: 'notification-test-account',
       'cancel-in-progress': false,
@@ -96,13 +119,17 @@ describe('github notification workflows', () => {
       'pr-lifecycle',
       'comment',
       'retirement',
+      'operator-access',
       'all',
     ]);
     assert.equal(inputs.runner?.default, 'ubuntu-24.04');
     assert.deepEqual(inputs.runner?.options, ['ubuntu-24.04', 'macos-26']);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
     assert.equal(notifications?.name, undefined);
-    assert.equal(notifications?.if, "${{ inputs.scenario != 'concurrency' }}");
+    assert.equal(
+      notifications?.if,
+      "${{ inputs.scenario != 'concurrency' && inputs.scenario != 'operator-access' }}",
+    );
     assert.equal(notifications?.concurrency, undefined);
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);

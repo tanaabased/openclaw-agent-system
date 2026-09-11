@@ -24,6 +24,7 @@ const supportedPluginSdkSubpaths = new Set([
   'channel-inbound',
   'channel-outbound',
   'cli-argv',
+  'command-auth',
   'config-contracts',
   'error-runtime',
   'logging-core',

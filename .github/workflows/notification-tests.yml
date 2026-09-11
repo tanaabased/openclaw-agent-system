@@ -16,6 +16,7 @@ on:
           - pr-lifecycle
           - comment
           - retirement
+          - operator-access
           - all
       runner:
         description: Runner
@@ -35,7 +36,7 @@ concurrency:
 
 jobs:
   notifications:
-    if: ${{ inputs.scenario != 'concurrency' }}
+    if: ${{ inputs.scenario != 'concurrency' && inputs.scenario != 'operator-access' }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +49,13 @@ jobs:
     secrets:
       openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+  operator-access:
+    if: ${{ inputs.scenario == 'all' || inputs.scenario == 'operator-access' }}
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      runner: ${{ inputs.runner }}
+      scenario: operator-access
   concurrency:
     needs: notifications
     if: ${{ always() && !cancelled() && (inputs.scenario == 'all' || inputs.scenario == 'concurrency') }}

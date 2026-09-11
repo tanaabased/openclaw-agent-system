@@ -130,13 +130,82 @@ or both supported values without duplicates.
 Lists the GitHub users allowed to assign work to the notification agent. At
 least one identity is required.
 
-| Field     | Type   | Required | Behavior                                   |
-| --------- | ------ | -------- | ------------------------------------------ |
-| `login`   | string | yes      | Records the user's current GitHub login.   |
-| `node-id` | string | yes      | Pins the user's immutable GitHub identity. |
+| Field            | Type    | Required | Behavior                                                   |
+| ---------------- | ------- | -------- | ---------------------------------------------------------- |
+| `login`          | string  | yes      | Records the user's current GitHub login.                   |
+| `node-id`        | string  | yes      | Pins the user's immutable GitHub identity.                 |
+| `operator-owner` | boolean | no       | Requests OpenClaw operator recognition; defaults to false. |
 
 Node IDs must be unique within the list. The channel verifies the login and
 node ID together so a renamed or recycled login cannot inherit authorization.
+
+#### Optional operator recognition
+
+`operator-owner: true` requests `commands.ownerAllowFrom` access for the verified
+`agent-system-github:<node-id>` identity. This is **channel-wide OpenClaw operator
+recognition**, not a repository-scoped or styling-only permission. It can expose
+other owner-gated capabilities permitted by independent tool policy. The flag is
+not accepted on `allowed-repository-owners` and is unrelated to the visible session
+assignee. No username-only, unqualified, or wildcard grant is generated.
+
+```yaml
+github:
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: MDQ6VXNlcjcxMzQyNA==
+        operator-owner: true
+      - login: emoriwan
+        node-id: U_kgDOEUqvpg
+        operator-owner: false
+```
+
+- **None:** omit the flag or set it false on every actor.
+- **One:** the example opts in only pirog.
+- **Multiple:** set it true on each selected existing actor record.
+- **All current actors:** set it true on every current record. New records remain
+  unprivileged unless they are explicitly flagged too.
+
+After editing the manifest, run `openclaw agent-system doctor` to inspect desired
+access, then `openclaw agent-system install` from the declaring workspace to apply
+it. Doctor is read-only: missing or unverifiable optional access is a per-actor
+warning, not an intake blocker. Deliberate opt-outs do not produce missing-access
+warnings. Install verifies GitHub login/node-ID pins before changing grants, reports
+the planned identities and scope, and reads configuration back after writing it.
+Passive discovery, checkout, issue prose, and notification intake never grant access.
+
+Saved configuration and effective Gateway permissions are separate evidence.
+Install requests the supported automatic config reload; if reload is disabled or
+the running Gateway is stale, restart it through the normal operator workflow.
+Doctor's loaded-policy check describes its own process, not proof of a separate
+Gateway's effective tool list. Verify a **fresh assignment** after reload. Explicit
+tool denials, narrower allowlists, and session visibility restrictions remain intact;
+this flag does not guarantee model compliance or successful setup.
+
+Removing the flag, setting it false, removing an actor, or removing notifications
+requests retirement of this installation's grant claim on the next install. It is
+not a global denial. A shared private provenance ledger preserves pre-existing/manual
+grants and grants still required by another installation. Only a verified,
+feature-created grant with no remaining claims is removed. Duplicate/drifted or
+interrupted provenance is preserved with an explicit warning; retained access is
+never reported as revoked. Do not delete the ledger to repair an uncertain grant.
+
+Before uninstalling Agent System or deleting an agent workspace, remove its requested
+flags and run install while the plugin and declaration are still available; confirm
+the cleanup outcome. Plugin removal itself has no reconciliation callback and cannot
+revoke grants after the code or receipts have been removed. If cleanup cannot be
+verified, retain the receipts and review remaining owner entries as an operator.
+
+Initial assignments still use the native `sessions` tool. A read-only post-turn
+check inspects persisted routed-agent ownership, a supported color, and the selected
+group. Tool observations provide setup evidence and bounded failure categories;
+missing observations or unreadable state are reported as unverified. Existing/manual
+fields are preserved, not counted as automation success. Diagnostics stay in private
+logs, never retry setup, and do not block normal work or add GitHub comments.
+
+This optional access does **not** replace the required conversation-hook permission
+introduced separately: `plugins.entries.agent-system.hooks.allowConversationAccess`.
+The hook must still be enabled for notification work.
 
 ### `github.notifications.allowed-repository-owners`
 

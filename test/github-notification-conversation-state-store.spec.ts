@@ -395,6 +395,7 @@ describe('channels/github/conversation/conversation-state-store', () => {
     assert.equal(await readFile(target, 'utf8'), contents);
     await rm(recordPath(first));
     await writeFile(recordPath(first), contents, { mode: 0o644 });
+    await chmod(recordPath(first), 0o644);
     await assert.rejects(store.read(first.agentId, first.conversationId), /private/u);
     await chmod(recordPath(first), 0o600);
     const wrongOwner = new GitHubNotificationConversationStateStore({

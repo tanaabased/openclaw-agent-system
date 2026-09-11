@@ -132,6 +132,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       'pr-lifecycle',
       'comment',
       'retirement',
+      'operator-access',
     ]);
 
     const planningScenarioIds = ['assignment'] as const;
