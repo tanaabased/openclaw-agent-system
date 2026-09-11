@@ -104,7 +104,7 @@ function handoffPending(conversation: GitHubNotificationConversation): boolean {
   const source = conversation.deliveryPullRequest;
   return Boolean(
     conversation.implementation?.status === 'completed' &&
-    source &&
+    source?.status === 'open' &&
     (!source.baselineEstablished ||
       !source.eventRecorded ||
       source.handoff?.status !== 'published'),

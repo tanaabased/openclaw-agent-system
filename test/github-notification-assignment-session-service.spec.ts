@@ -693,6 +693,34 @@ describe('channels/github/conversation/assignment-session-service', () => {
     );
   });
 
+  it('should leave a closed delivery untouched and resume its baseline only after reopening', async () => {
+    const scenario = harness();
+    await scenario.prepare();
+    await scenario.prepare();
+    const delivered = scenario.state().conversations[conversationId]!.deliveryPullRequest!;
+    delivered.status = 'closed';
+    delivered.baselineEstablished = false;
+    const closedState = structuredClone(scenario.state());
+    const completedCounts = { ...scenario.counts };
+
+    await scenario.prepare();
+    await scenario.prepare();
+    assert.deepEqual(scenario.counts, completedCounts);
+    assert.deepEqual(scenario.state(), closedState);
+
+    scenario.state().conversations[conversationId]!.deliveryPullRequest!.status = 'open';
+    await scenario.prepare();
+    await scenario.prepare();
+    assert.deepEqual(scenario.counts, {
+      ...completedCounts,
+      handoffs: completedCounts.handoffs + 1,
+    });
+    const reopened = scenario.state().conversations[conversationId]!.deliveryPullRequest!;
+    assert.equal(reopened.baselineEstablished, true);
+    assert.deepEqual(reopened.handoff, delivered.handoff);
+    assert.equal(reopened.nodeId, delivered.nodeId);
+  });
+
   it('should schedule implementation without parsing model-authored report formatting', async () => {
     const scenario = harness({ assignmentResult: unstructuredPlanResult() });
 
