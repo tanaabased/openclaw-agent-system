@@ -79,6 +79,13 @@ describe('scripts/github-notification-model-scenarios', () => {
         ],
       };
       assert.equal(concurrencyIssueNumber(request), number);
+      const hostContext = request.messages[0]!.content;
+      request.messages.unshift({ role: 'system', content: 'An inline example mentions ```json.' });
+      assert.equal(concurrencyIssueNumber(request), number);
+      request.messages.shift();
+      request.messages[0]!.content = `An inline example mentions \`\`\`json.\n${hostContext}`;
+      assert.equal(concurrencyIssueNumber(request), number);
+      request.messages[0]!.content = hostContext;
       request.messages[0]!.role = 'user';
       assert.equal(concurrencyIssueNumber(request), number);
       request.messages[0]!.role = 'assistant';

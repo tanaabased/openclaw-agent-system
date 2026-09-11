@@ -29,17 +29,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: notification-test-account
+  cancel-in-progress: false
+
 jobs:
   notifications:
+    if: ${{ inputs.scenario != 'concurrency' }}
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","concurrency","guided-assignment","implementation","pr-lifecycle","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
-      provider: ${{ matrix.scenario == 'concurrency' && 'mock' || 'live' }}
+      provider: live
       runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:
       openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
+      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+  concurrency:
+    needs: notifications
+    if: ${{ always() && !cancelled() && (inputs.scenario == 'all' || inputs.scenario == 'concurrency') }}
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      runner: ${{ inputs.runner }}
+      scenario: concurrency
+    secrets:
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

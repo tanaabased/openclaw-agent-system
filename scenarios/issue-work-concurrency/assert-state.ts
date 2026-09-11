@@ -23,6 +23,13 @@ async function main(): Promise<void> {
   const deadline = Date.now() + 150_000;
   let lastError: unknown;
   while (true) {
+    const fixtureError = await readFile(join(gate, 'fixture-error'), 'utf8').catch(
+      (error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return undefined;
+      },
+    );
+    assert.equal(fixtureError, undefined, fixtureError);
     try {
       const sessions = JSON.parse(
         execFileSync(

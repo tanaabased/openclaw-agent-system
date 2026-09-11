@@ -6,6 +6,10 @@ separate durable sessions and candidate records during the next one-minute
 poll while A remains open. No execution lease is fabricated. A scenario-owned
 release file controls the provider barrier, not model-authored instructions.
 
+Notification workflows share a CI account lock, and this background-poll scenario
+runs after sibling scenarios have cleaned up. That keeps other jobs' assignments
+out of its strict provider fixture without serializing the three turns under test.
+
 The assertions inspect the installed Gateway, file-backed candidate and
 conversation records, and bounded GitHub publication receipts. After all three
 sessions exist, releasing the barrier proves isolated candidates and exactly

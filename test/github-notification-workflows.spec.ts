@@ -15,6 +15,7 @@ interface WorkflowStep {
 interface CallerJob {
   concurrency?: unknown;
   if?: string;
+  needs?: string;
   name?: string;
   secrets?: Record<string, unknown>;
   strategy?: {
@@ -27,7 +28,8 @@ interface CallerJob {
 }
 
 interface CallerWorkflow {
-  jobs?: { mock?: CallerJob; notifications?: CallerJob };
+  concurrency?: unknown;
+  jobs?: { concurrency?: CallerJob; mock?: CallerJob; notifications?: CallerJob };
   name?: string;
   on?: {
     pull_request?: unknown;
@@ -81,7 +83,11 @@ describe('github notification workflows', () => {
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.deepEqual(Object.keys(inputs), ['scenario', 'runner']);
-    assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications']);
+    assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications', 'concurrency']);
+    assert.deepEqual(workflow.concurrency, {
+      group: 'notification-test-account',
+      'cancel-in-progress': false,
+    });
     assert.deepEqual(inputs.scenario?.options, [
       'assignment',
       'concurrency',
@@ -96,15 +102,12 @@ describe('github notification workflows', () => {
     assert.deepEqual(inputs.runner?.options, ['ubuntu-24.04', 'macos-26']);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
     assert.equal(notifications?.name, undefined);
-    assert.equal(notifications?.if, undefined);
+    assert.equal(notifications?.if, "${{ inputs.scenario != 'concurrency' }}");
     assert.equal(notifications?.concurrency, undefined);
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);
     assert.deepEqual(Object.keys(notifications?.strategy?.matrix ?? {}), ['scenario']);
-    assert.equal(
-      notifications?.with?.provider,
-      "${{ matrix.scenario == 'concurrency' && 'mock' || 'live' }}",
-    );
+    assert.equal(notifications?.with?.provider, 'live');
     assert.equal(notifications?.with?.runner, '${{ inputs.runner }}');
     assert.equal(notifications?.with?.scenario, '${{ matrix.scenario }}');
     assert.equal(
@@ -115,9 +118,19 @@ describe('github notification workflows', () => {
       notifications?.secrets?.openai_api_key,
       '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}',
     );
+    assert.equal(workflow.jobs?.concurrency?.needs, 'notifications');
+    assert.equal(
+      workflow.jobs?.concurrency?.if,
+      "${{ always() && !cancelled() && (inputs.scenario == 'all' || inputs.scenario == 'concurrency') }}",
+    );
+    assert.deepEqual(workflow.jobs?.concurrency?.with, {
+      provider: 'mock',
+      runner: '${{ inputs.runner }}',
+      scenario: 'concurrency',
+    });
   });
 
-  it('should run the converted pull request scenarios through one mock matrix', async () => {
+  it('should finish sibling fixtures before starting background concurrency polling', async () => {
     const source = await readFile('.github/workflows/pr-notification-tests.yml', 'utf8');
     const workflow = parse(source) as CallerWorkflow;
     const notifications = workflow.jobs?.notifications;
@@ -125,6 +138,10 @@ describe('github notification workflows', () => {
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.equal(Object.hasOwn(workflow.on ?? {}, 'pull_request'), true);
+    assert.deepEqual(workflow.concurrency, {
+      group: 'notification-test-account',
+      'cancel-in-progress': false,
+    });
     assert.equal(notifications?.if, undefined);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
     assert.equal(notifications?.name, '${{ matrix.scenario }}');
@@ -134,7 +151,6 @@ describe('github notification workflows', () => {
     assert.deepEqual(notifications?.strategy?.matrix, {
       scenario: [
         'assignment',
-        'concurrency',
         'guided-assignment',
         'implementation',
         'pr-lifecycle',
@@ -149,6 +165,13 @@ describe('github notification workflows', () => {
     });
     assert.deepEqual(notifications?.secrets, {
       op_service_account_token: '${{ secrets.TANAAB_OP_TESTVAULT }}',
+    });
+    assert.equal(workflow.jobs?.concurrency?.needs, 'notifications');
+    assert.equal(workflow.jobs?.concurrency?.if, '${{ always() && !cancelled() }}');
+    assert.deepEqual(workflow.jobs?.concurrency?.with, {
+      provider: 'mock',
+      runner: 'ubuntu-24.04',
+      scenario: 'concurrency',
     });
   });
 

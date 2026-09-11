@@ -16,13 +16,18 @@ const signals = [
 ];
 
 export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
-  const source = request.messages
+  const sources = request.messages
     .filter((message) => ['system', 'developer', 'user'].includes(message.role))
-    .map((message) => getTextContent(message.content) ?? '')
-    .join('\n');
-  for (const match of source.matchAll(/```json\s*([\s\S]*?)\s*```/gu)) {
+    .map((message) => getTextContent(message.content) ?? '');
+  const blocks = sources.flatMap((source) =>
+    [...source.matchAll(/^[\t ]*```json[\t ]*\r?\n([\s\S]*?)^[\t ]*```[\t ]*$/gmu)].map(
+      (match) => match[1]!,
+    ),
+  );
+  const observations: unknown[] = [];
+  for (const block of blocks) {
     try {
-      const context = JSON.parse(match[1]!) as {
+      const context = JSON.parse(block) as {
         source?: string;
         type?: string;
         payload?: {
@@ -37,6 +42,19 @@ export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
       };
       const item = context.payload?.item;
       const issue = context.payload?.issue;
+      observations.push({
+        keys: Object.keys(context),
+        source: context.source,
+        type: context.type,
+        item,
+        issueKeys: issue ? Object.keys(issue) : [],
+        titleMatches:
+          typeof issue?.title === 'string' &&
+          /^concurrent assignment [abc] \d+ \d+ (?:Linux|macOS)$/u.test(issue.title),
+        bodyMatches:
+          issue?.body ===
+          'Assess the bounded concurrency fixture without changing repository files.',
+      });
       if (
         context.source === 'agent-system' &&
         context.type === 'github_lifecycle_context' &&
@@ -51,18 +69,15 @@ export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
       )
         return item.number!;
     } catch {
+      observations.push({ invalidJson: true });
       continue;
     }
   }
   throw new Error(
     `The concurrency fixture did not receive bounded issue context. ${JSON.stringify({
       roles: request.messages.map(({ role }) => role),
-      jsonBlocks: [...source.matchAll(/```json\s*([\s\S]*?)\s*```/gu)].length,
-      lifecycleContextPresent: source.includes('github_lifecycle_context'),
-      fixtureTitlePresent: /concurrent assignment [abc] \d+ \d+ (?:Linux|macOS)/u.test(source),
-      fixtureBodyPresent: source.includes(
-        'Assess the bounded concurrency fixture without changing repository files.',
-      ),
+      jsonBlocks: blocks.length,
+      observations,
     })}`,
   );
 }
@@ -76,8 +91,14 @@ const fixtures: Fixture[] = [
       toolName: 'agent_system_github_reply',
     },
     response: async (request) => {
-      const number = concurrencyIssueNumber(request);
       const gate = join(tmpdir(), 'notification-concurrency');
+      let number: number;
+      try {
+        number = concurrencyIssueNumber(request);
+      } catch (error) {
+        await writeFile(join(gate, 'fixture-error'), String(error));
+        throw error;
+      }
       await writeFile(join(gate, `entered-${number}`), 'entered');
       const deadline = Date.now() + 240_000;
       while (true) {
