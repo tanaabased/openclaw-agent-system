@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import installAgentSystem from '../cli/install.ts';
 import type { AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-import { createCliStyles } from '../cli/output.ts';
+import { createCliStyles, type CliStyles } from '../cli/output.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import { installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
@@ -22,6 +22,7 @@ function createHarness(
     install?: AgentInstallResult | Error;
     json?: boolean;
     manifest?: AgentManifestLoadResult;
+    styles?: CliStyles;
     terminalColumns?: number;
   } = {},
 ) {
@@ -79,7 +80,7 @@ function createHarness(
           writeStdout: (message) => output.push(message),
         },
         setExitCode: (code) => exitCodes.push(code),
-        styles: createCliStyles({ NO_COLOR: '1' }),
+        styles: options.styles ?? createCliStyles({ NO_COLOR: '1' }),
         terminalColumns: options.terminalColumns,
         workspaceDir: '/current',
       }),
@@ -245,7 +246,12 @@ describe('cli/install', () => {
     const original = structuredClone(installed);
     Object.freeze(installed.outcomes);
     for (const json of [false, true]) {
-      const harness = createHarness({ install: installed, json, terminalColumns: 40 });
+      const harness = createHarness({
+        install: installed,
+        json,
+        styles: createCliStyles(json ? { FORCE_COLOR: '3' } : { NO_COLOR: '1' }),
+        terminalColumns: 40,
+      });
       await harness.run();
       assert.deepEqual(harness.calls.install, [
         { manifest: validResult.manifest, workspaceDir: '/workspace' },
@@ -256,6 +262,7 @@ describe('cli/install', () => {
       assert.equal(text.includes('manual-follow-up'), json);
       if (json) {
         assert.equal(harness.output.length, 1);
+        assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
         assert.deepEqual(JSON.parse(text), original);
       } else {
         const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));

@@ -67,8 +67,8 @@ openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-too
 # should block a selected native tool denied by operator policy
 openclaw config set 'agents.entries.install-data.tools.deny' '["agent_system_github"]' --strict-json
 cd "$TMPDIR/install-data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'blocked' | grep -F 'tool-access' | grep -F 'agent_system_github'
+if output=$(openclaw agent-system doctor --json); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.findings | any(.component == "tool-access" and .status == "blocked" and .code == "agent-tool-access-denied" and (.message | contains("agent_system_github")))'
 if output=$(openclaw agent-system install --json 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
 ```

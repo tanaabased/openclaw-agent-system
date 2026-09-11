@@ -39,7 +39,7 @@ describe('cli/lifecycle-output', () => {
       assert.match(row, /<action>(updated|created|removed)<\/action> +[^<]/);
       assert.equal(row.includes('<dim>') || row.includes('<bold>'), false);
     }
-    assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
+    assert.deepEqual(rows.slice(-2), ['', 'workspace  <bold>/workspace</bold>']);
   });
 
   it('should keep colored and no-color layouts identical, with no-color taking precedence', () => {
@@ -62,7 +62,7 @@ describe('cli/lifecycle-output', () => {
       colored.map((line) => ansis.strip(line)),
       plain,
     );
-    assert.equal(colored.at(-1), 'workspace  /workspace');
+    assert.equal(colored.at(-1), 'workspace  \u001b[1m/workspace\u001b[22m');
     for (const row of colored.filter((line) => line && !line.startsWith('workspace'))) {
       if (row.startsWith(' ')) {
         // eslint-disable-next-line no-control-regex -- Explanations must not contain ANSI foreground colors.

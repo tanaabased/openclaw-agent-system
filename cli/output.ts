@@ -133,7 +133,7 @@ export function renderCliLifecycleTable(
       index === 0 ? `${header}${statusGap}${line}` : `${indent}${line}`,
     );
   });
-  return [...rows, ...(rows.length ? [''] : []), `workspace  ${workspaceDir}`];
+  return [...rows, ...(rows.length ? [''] : []), `workspace  ${styles.bold(workspaceDir)}`];
 }
 
 export function writeCliLifecycleTable(

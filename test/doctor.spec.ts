@@ -58,7 +58,7 @@ describe('cli/doctor', () => {
           writeStdout: (value) => output.push(value),
         },
         setExitCode: (code) => exitCodes.push(code),
-        styles: createCliStyles({ NO_COLOR: '1', FORCE_COLOR: '3' }),
+        styles: createCliStyles(json ? { FORCE_COLOR: '3' } : { NO_COLOR: '1', FORCE_COLOR: '3' }),
         terminalColumns: 60,
         workspaceDir: '/workspace',
       });
@@ -71,6 +71,7 @@ describe('cli/doctor', () => {
       assert.equal(text.includes('\u001b'), false);
       assert.equal(text.includes('manifest-warning'), false);
       if (json) {
+        assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
         assert.deepEqual(JSON.parse(text), original);
       } else {
         const rows = text
