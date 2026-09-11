@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 
 import { parse } from 'yaml';
 
 import { githubNotificationAssignmentCandidate } from '../scenarios/issue-work-assignment/model-fixture.ts';
+import { githubNotificationModelScenarioIds } from '../scripts/github-notification-model-scenarios.ts';
+
+interface ParsedLeiaSuite {
+  tests: Record<string, Array<{ command: string }>>;
+}
+
+const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
+  parse(files: string[]): ParsedLeiaSuite[];
+};
 
 interface WorkflowStep {
   env?: Record<string, unknown>;
@@ -79,6 +90,27 @@ interface ExampleWorkflow {
 }
 
 describe('github notification workflows', () => {
+  it('should discover executable tests for every selected notification scenario without running them', () => {
+    const leia = new Leia();
+    for (const id of githubNotificationModelScenarioIds) {
+      const directory = id === 'guided-assignment' ? 'issue-guided-assignment' : `issue-work-${id}`;
+      const suites = leia.parse([resolve('scenarios', directory, 'README.md')]);
+      assert.equal(suites.length, 1, `${id} must contain one discoverable suite`);
+      assert.ok(suites[0]?.tests.test?.length, `${id} must contain executable tests`);
+      if (id === 'operator-access') {
+        assert.equal(suites[0].tests.setup?.length, 1);
+        assert.equal(suites[0].tests.test.length, 7);
+        assert.equal(suites[0].tests.cleanup?.length, 1);
+        for (const { command } of Object.values(suites[0].tests).flat()) {
+          assert.match(command, /export PATH="\$TMPDIR\/operator-access\/bin:\$PATH"/u);
+          if (/agent-system (?:doctor|install)/u.test(command)) {
+            assert.match(command, /cd "\$TMPDIR\/operator-access\/agent"/u);
+          }
+        }
+      }
+    }
+  });
+
   it('should exercise operator access on both platforms without live credentials or models', async () => {
     const workflow = parse(
       await readFile('.github/workflows/pr-notification-tests.yml', 'utf8'),

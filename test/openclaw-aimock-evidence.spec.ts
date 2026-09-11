@@ -157,16 +157,56 @@ describe('scripts/aimock-evidence', () => {
             },
           ],
         });
-        if (count === 2) {
-          assert.deepEqual(
-            evidence,
-            JSON.parse(
-              await readFile('scenarios/issue-work-assignment/expected-evidence.json', 'utf8'),
-            ),
-          );
-        }
       }
     }
+  });
+
+  it('should count completed cli assignments without optional session tool calls', async () => {
+    const prompts = [
+      { role: 'system', content: scenario.systemPromptSignals.join('\n') },
+      { role: 'user', content: scenario.userPromptSignals?.join('\n') ?? '' },
+    ];
+    const calls = scenario.toolCalls.filter(({ name }) => name === 'agent_system_github_reply');
+    const tools = [{ function: { name: 'agent_system_github_reply' } }];
+    const requests = [0, 1].flatMap((index) => {
+      const observedCalls = calls.map(({ id, name }) => ({
+        id: `${id}_fc-session_${index}`,
+        function: { name },
+      }));
+      return [
+        {
+          body: { messages: prompts, model: 'gpt-5.5', tools },
+          method: 'POST',
+          path: '/responses',
+          response: { fixture: { response: { toolCalls: calls } }, status: 200 },
+        },
+        {
+          body: {
+            messages: [
+              ...prompts,
+              { role: 'assistant', content: null, tool_calls: observedCalls },
+              ...observedCalls.map(({ id }) => ({
+                role: 'tool',
+                content: '{"status":"accepted"}',
+                tool_call_id: id,
+              })),
+            ],
+            model: 'gpt-5.5',
+            tools,
+          },
+          method: 'POST',
+          path: '/v1/responses',
+          response: {
+            fixture: { response: { content: scenario.finalResponses[0] } },
+            status: 200,
+          },
+        },
+      ];
+    });
+    assert.deepEqual(
+      openClawAIMockEvidence(scenario, requests),
+      JSON.parse(await readFile('scenarios/issue-work-assignment/expected-evidence.json', 'utf8')),
+    );
   });
 
   it('should normalize one guided assignment without a public reply tool call', () => {

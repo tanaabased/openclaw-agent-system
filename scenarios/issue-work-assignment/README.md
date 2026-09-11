@@ -1,9 +1,15 @@
 # GitHub Issue Work Assignment Scenario
 
+The one-shot CLI currently cannot resolve channel-qualified owner grants without
+the active channel registry. Its strict model fixture must still publish the plan
+when the optional `sessions` tool is absent. The
+[operator-access Gateway scenario](../issue-work-operator-access/README.md) owns
+the positive owner/color/group persistence and authorization controls.
+
 This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, best-effort session setup with a persisted color and group, one assessment and plan, and the
+context, graceful continuation without optional session setup, one assessment and plan, and the
 planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
@@ -233,9 +239,9 @@ cmp "$TMPDIR/independent-conversation-before.json" "$channel_state/github-notifi
 ```
 
 ```bash
-# should persist the bug color and fitting group despite unavailable cli owner assignment
+# should finish assignment planning despite unavailable optional cli session setup
 for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
-  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
+  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == null and .[0].category == null'
 done
 ```
 
