@@ -51,7 +51,7 @@ if (action === 'prepare') {
   writeFileSync(join(root, 'bin/gh'), `#!/bin/sh\nexec node '${fixturePath}' "$@"\n`, {
     mode: 0o755,
   });
-  writeFileSync(statePath, JSON.stringify({ items: [] }));
+  writeFileSync(statePath, JSON.stringify({ fixture: 'operator-access-ci', items: [] }));
   writeFileSync(join(workspace, '.env'), 'GH_TOKEN_FIXTURE=synthetic-ci-value-not-a-credential\n', {
     mode: 0o600,
   });
@@ -61,7 +61,7 @@ if (action === 'prepare') {
       {
         'schema-version': 1,
         agent: { id: 'notification-data', name: 'Fixture Data', email: 'fixture@example.com' },
-        environment: { dotenv: ['.env'], set: { GITHUB_ACTIONS: 'true' } },
+        environment: { dotenv: ['.env'] },
         git: { worktrees: { repositories: { local: { 'github-42': repository } } } },
         github: {
           username: 'fixture-data',

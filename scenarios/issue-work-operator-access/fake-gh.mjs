@@ -2,16 +2,21 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-// this disposable provider never makes a network request or accepts real credentials.
-if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('CI-only GitHub fixture');
+// the account client intentionally strips CI flags; preparation marks the disposable state.
+const statePath = new URL('../state.json', import.meta.url);
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+if (state.fixture !== 'operator-access-ci') throw new Error('Unprepared GitHub fixture');
+// this provider never makes a network request or accepts non-synthetic token values.
+for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+  if (process.env[name] && process.env[name] !== 'synthetic-ci-value-not-a-credential')
+    throw new Error('GitHub fixture accepts only synthetic credentials');
+}
 const argv = process.argv.slice(2);
 if (argv[0] === '--version') {
   process.stdout.write('gh version 2.0.0 (operator fixture)\n');
   process.exit(0);
 }
 if (argv[0] !== 'api') throw new Error('Unsupported fixture command');
-const statePath = new URL('../state.json', import.meta.url);
-const state = JSON.parse(readFileSync(statePath, 'utf8'));
 const endpoint = argv
   .find((value) => /^(\/?users?($|\/)|\/repos\/|\/search\/)/u.test(value))
   ?.replace(/^\//u, '');
@@ -74,7 +79,7 @@ else if (item && itemMatch[2] === '/comments') {
 if (argv.includes('--include'))
   process.stdout.write('HTTP/2 200 OK\r\nx-ratelimit-remaining: 9999\r\n\r\n');
 const query = argv.includes('--jq') ? argv[argv.indexOf('--jq') + 1] : '.';
-const result = spawnSync('jq', ['-c', query], {
+const result = spawnSync('jq', ['-cr', query], {
   input: JSON.stringify(response),
   encoding: 'utf8',
 });
