@@ -316,6 +316,10 @@ openclaw agent-system notifications wait \
   final response in GitHub and the private session. If deterministic validation
   rejects that response, the channel publishes a safe notice instead of going
   silent while retaining the detailed response privately.
+- Initial delivery handoff preserves recorded revisions and leaves eligible unseen
+  pull-request comments for the next comment reconciliation pass. Comments wait for
+  handoff completion and reply to their originating pull request without another
+  assignment or a concurrent turn for the same issue.
 - Merging a delivery pull request retires its issue-owned lifecycle. Closing and
   reopening the pull request suspends and safely re-baselines that comment source.
 - Removing `github.notifications` and reinstalling retires tracked assignments,

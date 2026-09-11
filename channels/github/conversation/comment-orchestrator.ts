@@ -220,6 +220,18 @@ export default class GitHubNotificationCommentOrchestrator {
     ) {
       return;
     }
+    // handoff owns the initial baseline and active event, including interrupted retries.
+    // provider close/merge transitions above still take precedence over pending delivery.
+    const delivery = existingConversation?.deliveryPullRequest;
+    if (
+      delivery?.status === 'open' &&
+      (!delivery.eventRecorded ||
+        (existingConversation?.implementation?.status === 'completed' &&
+          delivery.baselineEstablished &&
+          delivery.handoff?.status !== 'published'))
+    ) {
+      return;
+    }
     const sources: GitHubNotificationCommentSource[] = [
       {
         baselineEstablished: existingConversation?.baselineEstablished ?? false,
