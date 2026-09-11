@@ -85,7 +85,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
+main().catch(async (error: unknown) => {
   process.stderr.write(`${inspect(error)}\n`);
+  const gatewayLog = await readFile(join(tmpdir(), 'gateway.log'), 'utf8').catch(() => '');
+  const failures = gatewayLog
+    .split('\n')
+    .filter((line) => /error|failed|provider|model|transport/iu.test(line))
+    .slice(0, 60)
+    .map((line) => line.slice(0, 2_000));
+  process.stderr.write(`Initial Gateway diagnostics:\n${failures.join('\n')}\n`);
   process.exitCode = 1;
 });

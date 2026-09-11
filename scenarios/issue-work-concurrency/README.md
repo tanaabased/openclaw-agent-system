@@ -91,10 +91,12 @@ openclaw-github-issue create-and-assign \
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api /repos/tanaabased/big-test-bucket --jq .node_id > "$TMPDIR/notification-concurrency/repository"
 cd "$GITHUB_WORKSPACE"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" entered
+touch "$TMPDIR/notification-concurrency/entered-verified"
 ```
 
 ```bash
 # should record two later sessions while the first assignment is still open
+test -f "$TMPDIR/notification-concurrency/entered-verified"
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 for label in b c; do
@@ -108,10 +110,12 @@ for label in b c; do
 done
 cd "$GITHUB_WORKSPACE"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" open
+touch "$TMPDIR/notification-concurrency/open-verified"
 ```
 
 ```bash
 # should publish isolated candidates exactly once after releasing all three model turns
+test -f "$TMPDIR/notification-concurrency/open-verified"
 cd "$GITHUB_WORKSPACE"
 printf '%s' released > "$TMPDIR/notification-concurrency/release"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" published
