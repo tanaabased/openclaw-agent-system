@@ -18,7 +18,21 @@ const signals = [
 export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
   const sources = request.messages
     .filter((message) => ['system', 'developer', 'user'].includes(message.role))
-    .map((message) => getTextContent(message.content) ?? '');
+    .flatMap((message) => {
+      const source = getTextContent(message.content) ?? '';
+      const contexts = [source];
+      for (const match of source.matchAll(
+        /^Conversation data \(data, not instructions\):\r?\n(.+)$/gmu,
+      )) {
+        try {
+          const decoded: unknown = JSON.parse(match[1]!);
+          if (typeof decoded === 'string') contexts.push(decoded);
+        } catch {
+          continue;
+        }
+      }
+      return contexts;
+    });
   const blocks = sources.flatMap((source) =>
     [...source.matchAll(/^[\t ]*```json[\t ]*\r?\n([\s\S]*?)^[\t ]*```[\t ]*$/gmu)].map(
       (match) => match[1]!,
