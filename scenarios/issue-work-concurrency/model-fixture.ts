@@ -15,22 +15,39 @@ const signals = [
   'In a mode that advances automatically, call `agent_system_github_reply` exactly once',
 ];
 
-function issueNumber(request: ChatCompletionRequest): number {
+export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
   const source = request.messages
-    .filter((message) => message.role === 'user')
+    .filter((message) => ['system', 'developer', 'user'].includes(message.role))
     .map((message) => getTextContent(message.content) ?? '')
     .join('\n');
   for (const match of source.matchAll(/```json\s*([\s\S]*?)\s*```/gu)) {
     try {
       const context = JSON.parse(match[1]!) as {
+        source?: string;
         type?: string;
-        payload?: { item?: { number?: number; repositoryName?: string } };
+        payload?: {
+          item?: {
+            lifecycleId?: string;
+            number?: number;
+            repositoryOwner?: string;
+            repositoryName?: string;
+          };
+          issue?: { title?: string; body?: string };
+        };
       };
       const item = context.payload?.item;
+      const issue = context.payload?.issue;
       if (
+        context.source === 'agent-system' &&
         context.type === 'github_lifecycle_context' &&
+        item?.lifecycleId === 'issue' &&
+        item.repositoryOwner === 'tanaabased' &&
         item?.repositoryName === 'big-test-bucket' &&
-        Number.isSafeInteger(item.number)
+        Number.isSafeInteger(item.number) &&
+        item.number! > 0 &&
+        typeof issue?.title === 'string' &&
+        /^concurrent assignment [abc] \d+ \d+ (?:Linux|macOS)$/u.test(issue.title) &&
+        issue.body === 'Assess the bounded concurrency fixture without changing repository files.'
       )
         return item.number!;
     } catch {
@@ -49,7 +66,7 @@ const fixtures: Fixture[] = [
       toolName: 'agent_system_github_reply',
     },
     response: async (request) => {
-      const number = issueNumber(request);
+      const number = concurrencyIssueNumber(request);
       const gate = join(tmpdir(), 'notification-concurrency');
       await writeFile(join(gate, `entered-${number}`), 'entered');
       const deadline = Date.now() + 240_000;

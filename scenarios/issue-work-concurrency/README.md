@@ -89,6 +89,7 @@ openclaw-github-issue create-and-assign \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/notification-concurrency/a"
 OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api /repos/tanaabased/big-test-bucket --jq .node_id > "$TMPDIR/notification-concurrency/repository"
+cd "$GITHUB_WORKSPACE"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" entered
 ```
 
@@ -105,11 +106,13 @@ for label in b c; do
     --assignee "$agent_login" \
     --issue-number-path "$TMPDIR/notification-concurrency/$label"
 done
+cd "$GITHUB_WORKSPACE"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" open
 ```
 
 ```bash
 # should publish isolated candidates exactly once after releasing all three model turns
+cd "$GITHUB_WORKSPACE"
 printf '%s' released > "$TMPDIR/notification-concurrency/release"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" published
 openclaw-gateway stop
