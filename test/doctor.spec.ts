@@ -72,7 +72,6 @@ describe('cli/doctor', () => {
       assert.equal(text.includes('manifest-warning'), false);
       if (json) {
         assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
-        assert.deepEqual(JSON.parse(text), original);
       } else {
         const rows = text
           .split('\n')

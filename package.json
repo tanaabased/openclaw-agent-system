@@ -89,7 +89,6 @@
   },
   "scripts": {
     "build": "bun scripts/build-task.ts",
-    "capture:lifecycle": "node --import tsx scripts/capture-lifecycle-output.ts",
     "format:check": "prettier . --check --ignore-unknown",
     "format:write": "prettier . --write --ignore-unknown",
     "leia": "leia",

@@ -3,7 +3,7 @@ import type {
   AgentSystemLifecycleOutcome,
 } from '../core/lifecycle-registry.ts';
 
-// Synthetic results for regression checks and terminal captures, not a host diagnosis.
+// Synthetic lifecycle results for regression checks.
 export const doctorFindings: AgentSystemLifecycleFinding[] = [
   {
     code: 'agent-ready',

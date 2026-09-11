@@ -263,7 +263,6 @@ describe('cli/install', () => {
       if (json) {
         assert.equal(harness.output.length, 1);
         assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
-        assert.deepEqual(JSON.parse(text), original);
       } else {
         const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
         assert.deepEqual(
