@@ -603,7 +603,7 @@ export default class GitHubNotificationMonitorService {
         executionSurface,
         signal,
       );
-      await this.#reconciler.reconcileAssignmentResponses(
+      const assignmentFailure = await this.#reconciler.reconcileAssignmentResponses(
         agentId,
         itemKey,
         executionSurface,
@@ -612,6 +612,7 @@ export default class GitHubNotificationMonitorService {
       if (signal?.aborted)
         return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
       if (commentFailure) return { ...result, code: commentFailure.code, status: 'failed' };
+      if (assignmentFailure) return { ...result, code: assignmentFailure.code, status: 'failed' };
       return completedExecutionResult(result);
     } catch (error) {
       if (signal?.aborted)

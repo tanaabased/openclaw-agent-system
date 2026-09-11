@@ -29,6 +29,7 @@ import type GitHubNotificationCommentPublicationService from '../publication/com
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import type GitHubNotificationAssignmentAcknowledgmentService from './assignment-acknowledgment-service.ts';
 import {
+  createGitHubNotificationConversationSnapshot,
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversation,
   type GitHubNotificationConversationSnapshot,
@@ -200,14 +201,7 @@ export default class GitHubNotificationAssignmentSessionService {
     if (!assignmentEventId || assignmentEventId !== input.item.assignmentEventNodeId) {
       throw new Error('The GitHub assignment turn is missing its intake identity.');
     }
-    await this.#dependencies.acknowledgments.publish({
-      agentId: input.agentId,
-      item: input.item,
-      modeId: input.mode.policy.id,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      workspaceDir: input.workspaceDir,
-    });
-
+    await this.#initializeConversation(input, conversationId);
     const current = await this.#conversation(input, conversationId);
     if (current.conversation.assignmentResponse) {
       if (current.conversation.assignmentResponse.status === 'pending') {
@@ -268,6 +262,14 @@ export default class GitHubNotificationAssignmentSessionService {
       route.agentId,
     );
     const turn = await this.#dependencies.coordinator.run({
+      afterRecord: () =>
+        this.#dependencies.acknowledgments.publish({
+          agentId: input.agentId,
+          item: input.item,
+          modeId: input.mode.policy.id,
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+          workspaceDir: input.workspaceDir,
+        }),
       config,
       contract,
       createIfMissing: true,
@@ -436,6 +438,34 @@ export default class GitHubNotificationAssignmentSessionService {
       throw new Error('The GitHub assignment conversation identity is invalid.');
     }
     return { conversation, state };
+  }
+
+  async #initializeConversation(
+    input: GitHubNotificationAssignmentSessionInput,
+    conversationId: string,
+  ): Promise<void> {
+    const existing = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      conversationId,
+    );
+    if (existing?.conversation) return;
+    const state =
+      existing ??
+      createGitHubNotificationConversationSnapshot(
+        input.agentId,
+        input.workspaceDir,
+        conversationId,
+      );
+    if (state.workspaceDir !== input.workspaceDir)
+      throw new Error('The GitHub assignment conversation belongs to another workspace.');
+    state.conversation = {
+      baselineEstablished: false,
+      itemKey: githubWorkItemKey(input.item.repositoryNodeId, input.item.number),
+      lifecycleId: input.item.lifecycleId,
+      mode: input.mode.policy.id,
+      revisions: {},
+    };
+    await this.#dependencies.conversationStateStore.write(state);
   }
 
   async #checkpointActiveTurn(

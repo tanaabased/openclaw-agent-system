@@ -43,6 +43,41 @@ function input() {
 }
 
 describe('channels/github/conversation/model-turn-coordinator', () => {
+  it('should preserve the causal candidate-start diagnostic without dispatching or cancelling another turn', async () => {
+    const failure = new GitHubNotificationReplyCandidateStoreError('reply-turn-already-active');
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
+      candidates: {
+        async begin() {
+          throw failure;
+        },
+        async attestPromptSelection() {
+          assert.fail('unexpected prompt selection');
+        },
+        async cancel() {
+          assert.fail('must not cancel the existing turn');
+        },
+        async finish() {
+          assert.fail('unexpected completion');
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          assert.fail('must not record or dispatch a conflicting turn');
+        },
+      },
+      logger: { info() {}, warn: (message) => warnings.push(message) },
+    });
+    await assert.rejects(
+      coordinator.run(input()),
+      (error: unknown) =>
+        error instanceof GitHubNotificationModelTurnCoordinatorError &&
+        error.code === 'github-notification-reply-turn-already-active' &&
+        error.cause === failure,
+    );
+    assert.match(warnings[0] ?? '', /phase=candidate-start code=reply-turn-already-active/u);
+  });
   it('should block before candidate creation or dispatch when the required hook is unavailable', async () => {
     let candidateStarted = false;
     let dispatched = false;

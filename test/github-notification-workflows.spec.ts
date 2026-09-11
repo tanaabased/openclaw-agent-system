@@ -72,7 +72,7 @@ interface ExampleWorkflow {
 }
 
 describe('github notification workflows', () => {
-  it('should keep the manual dispatcher as one live scenario matrix', async () => {
+  it('should select deterministic concurrency and live lifecycle scenarios in the manual matrix', async () => {
     const source = await readFile('.github/workflows/notification-tests.yml', 'utf8');
     const workflow = parse(source) as CallerWorkflow;
     const notifications = workflow.jobs?.notifications;
@@ -84,6 +84,7 @@ describe('github notification workflows', () => {
     assert.deepEqual(Object.keys(workflow.jobs ?? {}), ['notifications']);
     assert.deepEqual(inputs.scenario?.options, [
       'assignment',
+      'concurrency',
       'guided-assignment',
       'implementation',
       'pr-lifecycle',
@@ -100,7 +101,10 @@ describe('github notification workflows', () => {
     assert.equal(notifications?.strategy?.['fail-fast'], false);
     assert.equal(notifications?.strategy?.['max-parallel'], undefined);
     assert.deepEqual(Object.keys(notifications?.strategy?.matrix ?? {}), ['scenario']);
-    assert.equal(notifications?.with?.provider, 'live');
+    assert.equal(
+      notifications?.with?.provider,
+      "${{ matrix.scenario == 'concurrency' && 'mock' || 'live' }}",
+    );
     assert.equal(notifications?.with?.runner, '${{ inputs.runner }}');
     assert.equal(notifications?.with?.scenario, '${{ matrix.scenario }}');
     assert.equal(
@@ -130,6 +134,7 @@ describe('github notification workflows', () => {
     assert.deepEqual(notifications?.strategy?.matrix, {
       scenario: [
         'assignment',
+        'concurrency',
         'guided-assignment',
         'implementation',
         'pr-lifecycle',

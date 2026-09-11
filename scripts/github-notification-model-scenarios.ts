@@ -1,5 +1,6 @@
 import { guidedAssignmentScenario } from '../scenarios/issue-guided-assignment/model-fixture.ts';
 import { assignmentScenario } from '../scenarios/issue-work-assignment/model-fixture.ts';
+import { concurrencyScenario } from '../scenarios/issue-work-concurrency/model-fixture.ts';
 import { commentScenario } from '../scenarios/issue-work-comment/model-fixture.ts';
 import { implementationScenario } from '../scenarios/issue-work-implementation/model-fixture.ts';
 import { pullRequestLifecycleScenario } from '../scenarios/issue-work-pr-lifecycle/model-fixture.ts';
@@ -11,6 +12,7 @@ export type GitHubNotificationModelScenario = OpenClawAIMockScenario;
 
 const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [assignmentScenario.id, assignmentScenario],
+  [concurrencyScenario.id, concurrencyScenario],
   [guidedAssignmentScenario.id, guidedAssignmentScenario],
   [implementationScenario.id, implementationScenario],
   [pullRequestLifecycleScenario.id, pullRequestLifecycleScenario],

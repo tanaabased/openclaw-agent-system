@@ -276,8 +276,8 @@ describe('channels/github/intake/monitor/service', () => {
       signal: controller.signal,
     });
 
-    assert.equal(result?.code, 'github-notification-pending-reconciled');
-    assert.equal(result?.status, 'completed');
+    assert.equal(result?.code, 'github-notification-assignment-session-recording-failed');
+    assert.equal(result?.status, 'failed');
     assert.equal(connected, 0);
     assert.deepEqual(reconciled, [notificationItemKey]);
     assert.deepEqual(executionSurfaces, ['cli-one-shot']);

@@ -6,12 +6,17 @@ import type { Logger } from '../../../core/logger.ts';
 import AgentSystemToolError from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
-import { GitHubNotificationReplyCandidateStoreError } from './reply-candidate-store.ts';
+import {
+  GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateFinishInput,
+} from './reply-candidate-store.ts';
 import {
   githubNotificationReplyToolName,
   githubNotificationReplyToolOutput,
 } from './reply-tool-result.ts';
 import isGitHubNotificationReplyToolContext from './reply-tool-context.ts';
+import type GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
+import { resolveGitHubNotificationReplyTurnBinding } from './reply-turn-binding.ts';
 
 export { githubNotificationReplyToolName } from './reply-tool-result.ts';
 
@@ -25,7 +30,7 @@ const githubNotificationReplyToolSchema = Type.Object(
 type GitHubNotificationReplyToolInput = Static<typeof githubNotificationReplyToolSchema>;
 
 interface GitHubNotificationReplyCandidateStager {
-  stage(agentId: string, candidate: string): Promise<void>;
+  stage(input: GitHubNotificationReplyCandidateFinishInput, candidate: string): Promise<void>;
 }
 
 function notifications(manifest: AgentManifest) {
@@ -35,6 +40,7 @@ function notifications(manifest: AgentManifest) {
 /** Return one typed public candidate during a GitHub notification turn. */
 export default function createGitHubNotificationReplyTool(
   candidates: GitHubNotificationReplyCandidateStager,
+  turnSelector: Pick<GitHubNotificationTurnSelector, 'select'>,
   logger?: Pick<Logger, 'debug'>,
 ) {
   return defineAgentSystemSemanticTool({
@@ -59,8 +65,22 @@ export default function createGitHubNotificationReplyTool(
         );
       }
       const agentId = scope.toolContext.agentId.trim();
+      const selected = await turnSelector.select({
+        agentId,
+        sessionKey: scope.toolContext.sessionKey,
+        channelId: scope.toolContext.nativeChannelId,
+        workspaceDir: scope.workspaceDir,
+      });
+      const turn =
+        selected && resolveGitHubNotificationReplyTurnBinding(scope.toolContext, selected);
+      if (!turn) {
+        throw new AgentSystemToolError(
+          'tool_unavailable',
+          'The GitHub reply candidate has no matching trusted turn binding.',
+        );
+      }
       try {
-        await candidates.stage(agentId, input.body);
+        await candidates.stage(turn, input.body);
       } catch (error) {
         if (error instanceof GitHubNotificationReplyCandidateStoreError) {
           throw new AgentSystemToolError(

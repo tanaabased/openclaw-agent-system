@@ -59,7 +59,7 @@ export default class GitHubNotificationMonitorReconciler {
     itemKey: string,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<{ code: string } | undefined> {
     const state = await this.#dependencies.stateStore.read(agentId);
     if (preparedGitHubNotificationIssueItemKeys(state).includes(itemKey)) {
       if (signal?.aborted) return;
@@ -76,6 +76,7 @@ export default class GitHubNotificationMonitorReconciler {
         this.#dependencies.logger.warn(
           `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
         );
+        return diagnostic;
       }
     }
   }

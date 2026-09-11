@@ -197,7 +197,11 @@ export default function createGitHubNotificationRuntime(
         });
       },
     },
-    replyTool: createGitHubNotificationReplyTool(candidates, dependencies.replyToolLogger),
+    replyTool: createGitHubNotificationReplyTool(
+      candidates,
+      turnSelector,
+      dependencies.replyToolLogger,
+    ),
     assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
       const initialMode = async (input: { agentId: string; workspaceDir: string }) => {
         const loaded = await manifestService.loadForAgentId(input.agentId, 'service');

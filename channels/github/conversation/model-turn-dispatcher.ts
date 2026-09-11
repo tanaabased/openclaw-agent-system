@@ -44,6 +44,7 @@ export interface GitHubNotificationModelTurnDispatcherDependencies {
 }
 
 export interface GitHubNotificationModelTurnDispatchInput {
+  afterRecord?: () => Promise<void>;
   config: OpenClawConfig;
   contract: Pick<GitHubNotificationTurnContract, 'instructions' | 'mode'>;
   createIfMissing?: boolean;
@@ -99,6 +100,7 @@ export default class GitHubNotificationModelTurnDispatcher {
               'github-notification-model-turn-session-missing',
             );
           }
+          await input.afterRecord?.();
         },
         cfg: input.config,
         channel: githubNotificationChannelId,

@@ -12,6 +12,7 @@ import createGitHubNotificationReplyTool, {
   githubNotificationReplyToolName,
 } from '../channels/github/publication/reply-tool.ts';
 import GitHubNotificationReplyCandidateStore from '../channels/github/publication/reply-candidate-store.ts';
+import { githubNotificationReplyTurnBinding } from '../channels/github/publication/reply-turn-binding.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
 describe('channels/github/publication/reply-tool', () => {
@@ -30,11 +31,25 @@ describe('channels/github/publication/reply-tool', () => {
     const turn = await parentCandidates.begin(identity);
     await toolCandidates.attestPromptSelection(identity);
     let factory: OpenClawPluginToolFactory | undefined;
-    const registered = createGitHubNotificationReplyTool(toolCandidates, {
-      debug(message) {
-        diagnostics.push(message);
+    const selectedTurns = new Map([[identity.conversationId, identity]]);
+    const registered = createGitHubNotificationReplyTool(
+      toolCandidates,
+      {
+        async select(context) {
+          return [...selectedTurns.values()].find(
+            (turn) =>
+              context.agentId === turn.agentId &&
+              (context.channelId === turn.conversationId ||
+                context.sessionKey?.endsWith(`:direct:${turn.conversationId}`)),
+          );
+        },
       },
-    });
+      {
+        debug(message) {
+          diagnostics.push(message);
+        },
+      },
+    );
     try {
       registered.registerTools(
         {
@@ -100,15 +115,43 @@ describe('channels/github/publication/reply-tool', () => {
       const codexTool = factory({
         agentId: 'tanaabot',
         sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:12',
+        toolBindings: { [githubNotificationReplyTurnBinding]: { ...identity, turnId: turn } },
       });
       assert.ok(codexTool && !Array.isArray(codexTool));
       const tool = factory({
         agentId: 'tanaabot',
         messageChannel: githubNotificationChannelId,
         sessionKey: 'sandbox-session-that-does-not-match-the-lifecycle-route',
+        nativeChannelId: identity.conversationId,
+        toolBindings: { [githubNotificationReplyTurnBinding]: { ...identity, turnId: turn } },
       });
       assert.ok(tool && !Array.isArray(tool));
       assert.equal(tool.name, githubNotificationReplyToolName);
+      const codexIdentity = {
+        ...identity,
+        conversationId: 'github:issue:repository:13',
+        sourceId: 'revision-2',
+      };
+      selectedTurns.set(codexIdentity.conversationId, codexIdentity);
+      const codexTurn = await parentCandidates.begin(codexIdentity);
+      await toolCandidates.attestPromptSelection(codexIdentity);
+      for (const binding of [
+        undefined,
+        { ...identity, turnId: turn, agentId: 'other' },
+        { ...codexIdentity, turnId: codexTurn },
+        { ...identity, turnId: turn, sourceId: 'stale-source' },
+        { ...identity, turnId: turn, identity: { ...identity.identity, eventId: 'assignment' } },
+        { ...identity, turnId: 'stale-attempt' },
+      ]) {
+        const mismatched: ReturnType<OpenClawPluginToolFactory> = factory({
+          agentId: 'tanaabot',
+          messageChannel: githubNotificationChannelId,
+          nativeChannelId: identity.conversationId,
+          toolBindings: { [githubNotificationReplyTurnBinding]: binding },
+        });
+        assert.ok(mismatched && !Array.isArray(mismatched));
+        await assert.rejects(mismatched.execute('mismatched-call', { body: 'must not stage' }));
+      }
       const result = await tool.execute('call-1', { body: ' ready ' });
       assert.deepEqual(result.details, {
         auditId: 'audit-1',
@@ -125,14 +168,16 @@ describe('channels/github/publication/reply-tool', () => {
       if (result.content[0]?.type === 'text') {
         assert.match(result.content[0].text, /github-reply-candidate/u);
       }
-      const codexIdentity = {
-        ...identity,
-        conversationId: 'github:issue:repository:13',
-        sourceId: 'revision-2',
-      };
-      const codexTurn = await parentCandidates.begin(codexIdentity);
-      await toolCandidates.attestPromptSelection(codexIdentity);
-      const codexResult = await codexTool.execute('call-2', { body: ' codex ready ' });
+      await assert.rejects(codexTool.execute('stale-call', { body: 'wrong conversation' }));
+      const nextCodexTool = factory({
+        agentId: 'tanaabot',
+        sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:13',
+        toolBindings: {
+          [githubNotificationReplyTurnBinding]: { ...codexIdentity, turnId: codexTurn },
+        },
+      });
+      assert.ok(nextCodexTool && !Array.isArray(nextCodexTool));
+      const codexResult = await nextCodexTool.execute('call-2', { body: ' codex ready ' });
       assert.deepEqual(codexResult.details, {
         auditId: 'audit-1',
         output: { body: 'codex ready', kind: 'github-reply-candidate', version: 1 },

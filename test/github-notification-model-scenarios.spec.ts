@@ -50,9 +50,10 @@ import resolveGitHubNotificationModelScenario, {
 import { githubNotificationPullRequestOpenedFinalResponse } from '../scripts/github-notification-model-issue-work-scenario.ts';
 
 describe('scripts/github-notification-model-scenarios', () => {
-  it('should resolve the six provider-neutral scenarios', () => {
+  it('should resolve the supported notification scenarios', () => {
     assert.deepEqual(githubNotificationModelScenarioIds, [
       'assignment',
+      'concurrency',
       'guided-assignment',
       'implementation',
       'pr-lifecycle',

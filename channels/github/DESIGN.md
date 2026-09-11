@@ -264,7 +264,8 @@ selection fails closed instead of falling back to a different prompt.
 
 - **Receipt:** An admitted assignment produces a visible assignment card and an
   immediate GitHub acknowledgment appropriate to its lifecycle type and mode.
-  The acknowledgment may be deterministic and does not wait for the main turn.
+  The acknowledgment may be deterministic and does not wait for the main turn
+  to finish, but follows confirmed durable session recording.
 - **Turn:** Bounded provider context, hidden instructions, and enforced
   capability start the mode-specific model turn.
 - **Response:** Lifecycle turns may keep a complete private result separate from
