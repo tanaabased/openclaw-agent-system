@@ -1,17 +1,18 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-// the account client intentionally strips CI flags; preparation marks the disposable state.
-const statePath = new URL('../state.json', import.meta.url);
-const state = JSON.parse(readFileSync(statePath, 'utf8'));
-if (state.fixture !== 'operator-access-ci') throw new Error('Unprepared GitHub fixture');
+import { readFixtureState, updateFixtureState } from './state.mjs';
+
+// the launcher supplies the prepared state without relying on inherited CI flags.
+const statePath = process.argv[2];
+const state = readFixtureState(statePath);
 // this provider never makes a network request or accepts non-synthetic token values.
 for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
   if (process.env[name] && process.env[name] !== 'synthetic-ci-value-not-a-credential')
     throw new Error('GitHub fixture accepts only synthetic credentials');
 }
-const argv = process.argv.slice(2);
+const argv = process.argv.slice(3);
 if (argv[0] === '--version') {
   process.stdout.write('gh version 2.0.0 (operator fixture)\n');
   process.exit(0);
@@ -62,18 +63,21 @@ else if (item && itemMatch[2] === '/events')
 else if (item && itemMatch[2] === '/comments') {
   if (method === 'POST') {
     const request = JSON.parse(readFileSync(0, 'utf8'));
-    const comment = {
-      id: item.id * 100 + item.comments.length + 1,
-      node_id: `IC_${item.number}_${item.comments.length}`,
-      body: request.body,
-      user: data,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      issue_url: `https://api.github.com/repos/tanaabased/operator-fixture/issues/${item.number}`,
-    };
-    item.comments.push(comment);
-    writeFileSync(statePath, JSON.stringify(state));
-    response = comment;
+    response = await updateFixtureState(statePath, (latest) => {
+      const current = latest.items.find((entry) => entry.number === item.number);
+      if (!current) throw new Error('Fixture issue disappeared before comment publication');
+      const comment = {
+        id: current.id * 100 + current.comments.length + 1,
+        node_id: `IC_${current.number}_${current.comments.length}`,
+        body: request.body,
+        user: data,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        issue_url: `https://api.github.com/repos/tanaabased/operator-fixture/issues/${current.number}`,
+      };
+      current.comments.push(comment);
+      return comment;
+    });
   } else response = item.comments;
 } else throw new Error(`Unsupported fixture endpoint: ${method} ${endpoint}`);
 if (argv.includes('--include'))

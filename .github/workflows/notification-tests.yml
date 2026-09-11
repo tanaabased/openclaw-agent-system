@@ -36,26 +36,19 @@ concurrency:
 
 jobs:
   notifications:
-    if: ${{ inputs.scenario != 'concurrency' && inputs.scenario != 'operator-access' }}
+    if: ${{ inputs.scenario != 'concurrency' }}
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement","operator-access"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
-      provider: live
+      provider: ${{ matrix.scenario == 'operator-access' && 'mock' || 'live' }}
       runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:
       openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
-  operator-access:
-    if: ${{ inputs.scenario == 'all' || inputs.scenario == 'operator-access' }}
-    uses: ./.github/workflows/reusable-notification-test.yml
-    with:
-      provider: mock
-      runner: ${{ inputs.runner }}
-      scenario: operator-access
   concurrency:
     needs: notifications
     if: ${{ always() && !cancelled() && (inputs.scenario == 'all' || inputs.scenario == 'concurrency') }}
