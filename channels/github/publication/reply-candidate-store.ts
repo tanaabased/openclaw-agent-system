@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import acquirePrivateStateFileLock, {
@@ -181,7 +181,7 @@ export default class GitHubNotificationReplyCandidateStore {
   }
 
   async begin(input: GitHubNotificationReplyCandidateTurnInput): Promise<string> {
-    return this.#exclusive(input.agentId, async (file) => {
+    return this.#exclusive(input, async (file) => {
       const active = await this.#read(file, input.agentId);
       if (active && !this.#expired(active)) fail('reply-turn-already-active');
       if (active) await file.remove();
@@ -203,14 +203,14 @@ export default class GitHubNotificationReplyCandidateStore {
   }
 
   async cancel(input: GitHubNotificationReplyCandidateFinishInput): Promise<void> {
-    await this.#exclusive(input.agentId, async (file) => {
+    await this.#exclusive(input, async (file) => {
       const active = await this.#read(file, input.agentId);
-      if (active?.turnId === input.turnId) await file.remove();
+      if (active?.turnId === input.turnId && sameTurn(active, input)) await file.remove();
     });
   }
 
   async finish(input: GitHubNotificationReplyCandidateFinishInput): Promise<string[]> {
-    return this.#exclusive(input.agentId, async (file) => {
+    return this.#exclusive(input, async (file) => {
       const active = await this.#matchingState(file, input);
       await file.remove();
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
@@ -220,14 +220,14 @@ export default class GitHubNotificationReplyCandidateStore {
 
   /** Verify the matching durable receipt before a Gateway model can begin work. */
   async assertPromptSelected(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
-    await this.#exclusive(input.agentId, async (file) => {
+    await this.#exclusive(input, async (file) => {
       const active = await this.#activeState(file, input);
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
     });
   }
 
   async attestPromptSelection(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
-    await this.#exclusive(input.agentId, async (file) => {
+    await this.#exclusive(input, async (file) => {
       const active = await this.#activeState(file, input);
       if (active.promptSelectedAt) return;
       active.promptSelectedAt = new Date(this.#now()).toISOString();
@@ -235,14 +235,12 @@ export default class GitHubNotificationReplyCandidateStore {
     });
   }
 
-  async stage(agentId: string, candidate: string): Promise<void> {
-    await this.#exclusive(agentId, async (file) => {
-      const active = await this.#read(file, agentId);
-      if (!active) fail('reply-turn-missing');
-      if (this.#expired(active)) {
-        await file.remove();
-        fail('reply-turn-expired');
-      }
+  async stage(
+    input: GitHubNotificationReplyCandidateFinishInput,
+    candidate: string,
+  ): Promise<void> {
+    await this.#exclusive(input, async (file) => {
+      const active = await this.#matchingState(file, input);
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
       if (active.candidates.length >= 2) fail('reply-turn-candidate-limit');
       const body = candidate.trim();
@@ -295,8 +293,12 @@ export default class GitHubNotificationReplyCandidateStore {
     }
   }
 
-  async #exclusive<T>(agentId: string, run: (file: PrivateStateFile) => Promise<T>): Promise<T> {
-    const resources = await this.#resources(agentId);
+  async #exclusive<T>(
+    input: GitHubNotificationReplyCandidateTurnInput,
+    run: (file: PrivateStateFile) => Promise<T>,
+  ): Promise<T> {
+    await this.#migrateLegacy(input);
+    const resources = await this.#resources(input.agentId, input.conversationId);
     let handle: PrivateStateFileLockHandle | undefined;
     try {
       handle = await this.#acquireFileLock(resources.lockPath, {
@@ -309,24 +311,75 @@ export default class GitHubNotificationReplyCandidateStore {
     }
   }
 
-  async #resources(agentId: string): Promise<{ file: PrivateStateFile; lockPath: string }> {
+  /** Move only the requested legacy turn; unrelated conversations never wait for its expiry. */
+  async #migrateLegacy(input: GitHubNotificationReplyCandidateTurnInput): Promise<void> {
+    const legacy = await this.#resources(input.agentId);
+    if ((await legacy.file.read()) === undefined) return;
+    const lock = await this.#acquireFileLock(legacy.lockPath, {
+      retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
+      staleMs: defaultTtlMs,
+    });
+    try {
+      const active = await this.#read(legacy.file, input.agentId);
+      if (!active) return;
+      if (this.#expired(active)) {
+        await legacy.file.remove();
+        return;
+      }
+      if (active.conversationId !== input.conversationId) return;
+      const target = await this.#resources(input.agentId, input.conversationId);
+      const targetLock = await this.#acquireFileLock(target.lockPath, {
+        retries: { factor: 1, maxTimeout: 25, minTimeout: 25, retries: 40 },
+        staleMs: defaultTtlMs,
+      });
+      try {
+        const existing = await this.#read(target.file, input.agentId);
+        if (existing && (existing.turnId !== active.turnId || !sameTurn(existing, active))) {
+          fail('reply-turn-already-active');
+        }
+        // a completed copy may already contain newer candidates after an interrupted migration.
+        if (!existing) await target.file.write(`${JSON.stringify(active, undefined, 2)}\n`);
+        await legacy.file.remove();
+      } finally {
+        await targetLock.release();
+      }
+    } finally {
+      await lock.release();
+    }
+  }
+
+  async #resources(
+    agentId: string,
+    conversationId?: string,
+  ): Promise<{ file: PrivateStateFile; lockPath: string }> {
     if (!this.#rootDir || !validAgentId(agentId)) fail('reply-turn-store-unavailable');
     const agentDir = join(this.#rootDir, agentId);
-    const stateDir = join(agentDir, 'channels');
+    if (conversationId !== undefined && !boundedString(conversationId, 512))
+      fail('reply-turn-state-invalid');
+    const channelsDir = join(agentDir, 'channels');
+    const stateDir =
+      conversationId === undefined
+        ? channelsDir
+        : join(channelsDir, 'github-notification-reply-turns');
+    const directories = [...new Set([this.#rootDir, agentDir, channelsDir, stateDir])];
+    const name =
+      conversationId === undefined
+        ? 'github-notification-reply-turn'
+        : createHash('sha256').update(conversationId).digest('hex');
     await ensurePrivateStateDirectories({
       currentUid: this.#currentUid,
-      directories: [this.#rootDir, agentDir, stateDir],
+      directories,
       label: 'GitHub notification reply candidate',
     });
     return {
       file: new PrivateStateFile({
         currentUid: this.#currentUid,
-        directories: [this.#rootDir, agentDir, stateDir],
+        directories,
         label: 'GitHub notification reply candidate',
         maximumBytes: maximumStateBytes,
-        path: join(stateDir, 'github-notification-reply-turn.json'),
+        path: join(stateDir, `${name}.json`),
       }),
-      lockPath: join(stateDir, 'github-notification-reply-turn'),
+      lockPath: join(stateDir, name),
     };
   }
 }

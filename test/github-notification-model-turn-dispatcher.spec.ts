@@ -21,6 +21,7 @@ const ctxPayload = {} as ChannelInboundTurnPlan['ctxPayload'];
 describe('channels/github/conversation/model-turn-dispatcher', () => {
   it('should record and dispatch one resolved model turn through the shared host boundary', async () => {
     let recorded = false;
+    let acknowledged = false;
     const dispatcher = new GitHubNotificationModelTurnDispatcher({
       async dispatchChannelInboundTurn(input) {
         assert.equal(input.record?.createIfMissing, true);
@@ -32,6 +33,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
         );
         await input.afterRecord?.();
         assert.equal(recorded, true);
+        assert.equal(acknowledged, true);
         assert.equal(input.ctxPayload.GroupSystemPrompt, 'trusted notification instructions');
         assert.equal(input.replyOptions?.disableTools, false);
         const replyOptions = input.replyOptions as Record<string, unknown>;
@@ -68,6 +70,10 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
     });
 
     const result = await dispatcher.dispatch({
+      afterRecord: async () => {
+        assert.equal(recorded, true);
+        acknowledged = true;
+      },
       config: {},
       contract: {
         instructions: 'trusted notification instructions',
@@ -99,6 +105,9 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
 
     await assert.rejects(
       dispatcher.dispatch({
+        afterRecord: async () => {
+          assert.fail('missing sessions must not be acknowledged');
+        },
         config: {},
         contract: {
           instructions: 'trusted notification instructions',

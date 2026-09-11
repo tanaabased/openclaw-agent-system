@@ -167,6 +167,8 @@ function guidedResult(): GitHubNotificationModelTurnCoordinatorResult {
 }
 
 interface HarnessOptions {
+  initialConversationMissing?: boolean;
+  acknowledgmentFailures?: number;
   assignmentFailures?: number;
   assignmentResult?: GitHubNotificationModelTurnCoordinatorResult;
   deliveryFailures?: number;
@@ -185,6 +187,7 @@ function harness(options: HarnessOptions = {}) {
   const expectedAssignmentContract =
     mode.policy.id === 'guided' ? guidedAssignmentContract : assignmentContract;
   let state = initialState(mode.policy.id === 'guided' ? 'guided' : 'work');
+  if (options.initialConversationMissing) delete state.conversations[conversationId];
   let contextReads = 0;
   if (options.initialActiveTurn) {
     state.conversations[conversationId]!.activeTurn = options.initialActiveTurn;
@@ -202,6 +205,8 @@ function harness(options: HarnessOptions = {}) {
     acknowledgments: {
       async publish(acknowledgment) {
         counts.acknowledgments += 1;
+        if (counts.acknowledgments <= (options.acknowledgmentFailures ?? 0))
+          throw new Error('acknowledgment interrupted');
         assert.equal(acknowledgment.item, item);
         assert.equal(acknowledgment.modeId, mode.policy.id);
       },
@@ -247,6 +252,7 @@ function harness(options: HarnessOptions = {}) {
         assert.equal(activeTurn?.sourceId, assignmentEventId);
         if (activeTurn?.eventId === 'assignment') {
           counts.assignmentTurns += 1;
+          await turnInput.afterRecord?.();
           options.verifyAssignment?.(turnInput);
           if (counts.assignmentTurns <= (options.assignmentFailures ?? 0)) {
             throw new Error('assignment turn interrupted');
@@ -367,6 +373,21 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe('channels/github/conversation/assignment-session-service', () => {
+  it('should initialize a new conversation before dispatch and retry an interrupted acknowledgment', async () => {
+    const scenario = harness({ initialConversationMissing: true, acknowledgmentFailures: 1 });
+    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/u);
+    const pending = scenario.state().conversations[conversationId]!;
+    assert.equal(pending.activeTurn?.eventId, 'assignment');
+    assert.equal(pending.assignmentResponse, undefined);
+    assert.equal(scenario.counts.implementationTurns, 0);
+    await scenario.prepare();
+    assert.equal(
+      scenario.state().conversations[conversationId]?.assignmentResponse?.status,
+      'published',
+    );
+    assert.equal(scenario.counts.assignmentTurns, 2);
+    assert.equal(scenario.counts.acknowledgments, 2);
+  });
   it('should publish the work plan before running one implementation turn', async () => {
     const scenario = harness({
       verifyAssignment(turnInput) {
@@ -469,7 +490,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 3,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -501,7 +522,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 2,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 0,
       handoffCheckpoints: 0,
@@ -527,7 +548,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 2,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -553,7 +574,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 3,
+      acknowledgments: 2,
       assignmentTurns: 2,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -571,7 +592,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await assert.rejects(scenario.prepare(), /Another GitHub notification model turn is active/u);
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 1,
+      acknowledgments: 0,
       assignmentTurns: 0,
       deliveries: 0,
       handoffCheckpoints: 0,
@@ -597,7 +618,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 3,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -623,7 +644,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 3,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 2,
       handoffCheckpoints: 1,
@@ -646,7 +667,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       status: 'completed',
     });
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 2,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -658,7 +679,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 3,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -672,6 +693,34 @@ describe('channels/github/conversation/assignment-session-service', () => {
     );
   });
 
+  it('should leave a closed delivery untouched and resume its baseline only after reopening', async () => {
+    const scenario = harness();
+    await scenario.prepare();
+    await scenario.prepare();
+    const delivered = scenario.state().conversations[conversationId]!.deliveryPullRequest!;
+    delivered.status = 'closed';
+    delivered.baselineEstablished = false;
+    const closedState = structuredClone(scenario.state());
+    const completedCounts = { ...scenario.counts };
+
+    await scenario.prepare();
+    await scenario.prepare();
+    assert.deepEqual(scenario.counts, completedCounts);
+    assert.deepEqual(scenario.state(), closedState);
+
+    scenario.state().conversations[conversationId]!.deliveryPullRequest!.status = 'open';
+    await scenario.prepare();
+    await scenario.prepare();
+    assert.deepEqual(scenario.counts, {
+      ...completedCounts,
+      handoffs: completedCounts.handoffs + 1,
+    });
+    const reopened = scenario.state().conversations[conversationId]!.deliveryPullRequest!;
+    assert.equal(reopened.baselineEstablished, true);
+    assert.deepEqual(reopened.handoff, delivered.handoff);
+    assert.equal(reopened.nodeId, delivered.nodeId);
+  });
+
   it('should schedule implementation without parsing model-authored report formatting', async () => {
     const scenario = harness({ assignmentResult: unstructuredPlanResult() });
 
@@ -679,7 +728,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 2,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 1,
       handoffCheckpoints: 1,
@@ -711,7 +760,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     await scenario.prepare();
 
     assert.deepEqual(scenario.counts, {
-      acknowledgments: 2,
+      acknowledgments: 1,
       assignmentTurns: 1,
       deliveries: 0,
       handoffCheckpoints: 0,

@@ -104,3 +104,6 @@ jobs:
           if test -f "$RUNNER_TEMP/notification-model.log"; then
             tail -n 120 "$RUNNER_TEMP/notification-model.log" >&2
           fi
+          if test -f "$RUNNER_TEMP/openclaw-aimock.log"; then
+            tail -n 120 "$RUNNER_TEMP/openclaw-aimock.log" >&2
+          fi

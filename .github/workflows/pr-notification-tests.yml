@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: notification-test-account
+  cancel-in-progress: false
+
 jobs:
   notifications:
     name: ${{ matrix.scenario }}
@@ -24,5 +28,15 @@ jobs:
       provider: mock
       runner: ubuntu-24.04
       scenario: ${{ matrix.scenario }}
+    secrets:
+      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+  concurrency:
+    needs: notifications
+    if: ${{ always() && !cancelled() }}
+    uses: ./.github/workflows/reusable-notification-test.yml
+    with:
+      provider: mock
+      runner: ubuntu-24.04
+      scenario: concurrency
     secrets:
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}

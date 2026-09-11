@@ -46,8 +46,16 @@ Each issue's preparation, comments, responses, and retirement share one executio
 lease across Gateway and CLI processes. Different issues can proceed independently;
 preparation is serialized per shared repository, and model turns use
 OpenClaw's existing dispatcher and capacity limits. Comments on the busy issue
-itself wait for its worker. Shutdown cancels and drains all workers; CLI refreshes
+itself wait for its worker. Candidate records and locks are scoped to the canonical
+issue conversation, and reply tools require the host-bound active attempt.
+Assignment acknowledgments publish only after OpenClaw confirms durable session
+recording. Shutdown cancels and drains all workers; CLI refreshes
 await their selected issues within the existing timeout.
+
+The former agent-wide reply-turn file is read only for migration: its owning
+conversation imports the active receipt and candidates atomically on next use;
+other conversations proceed independently. Stop old runtime processes before
+upgrading; running old and new state writers together is unsupported.
 
 ## Requirements
 

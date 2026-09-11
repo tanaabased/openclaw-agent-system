@@ -3,8 +3,10 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 
 import type { Logger } from '../../../core/logger.ts';
+import { githubNotificationReplyTurnBinding } from '../publication/reply-turn-binding.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateStoreErrorCode,
   type default as GitHubNotificationReplyCandidateStore,
 } from '../publication/reply-candidate-store.ts';
 import {
@@ -37,6 +39,7 @@ export type GitHubNotificationModelTurnPublication =
     };
 
 export type GitHubNotificationModelTurnCoordinatorErrorCode =
+  | `github-notification-${GitHubNotificationReplyCandidateStoreErrorCode}`
   | 'github-notification-model-turn-prompt-selection-missing'
   | 'github-notification-model-turn-reply-candidate-failed';
 
@@ -62,6 +65,7 @@ export interface GitHubNotificationModelTurnCoordinatorDependencies {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorInput {
+  afterRecord?: () => Promise<void>;
   config: OpenClawConfig;
   contract: GitHubNotificationTurnContract;
   createIfMissing?: boolean;
@@ -208,17 +212,37 @@ export default class GitHubNotificationModelTurnCoordinator {
       identity: input.contract.identity,
       sourceId: input.sourceId,
     };
-    const candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
+    let candidateTurn: string;
+    try {
+      candidateTurn = await this.#dependencies.candidates.begin(candidateIdentity);
+    } catch (error) {
+      this.#dependencies.logger.warn(
+        `github-notifications: model turn failed ${details} phase=candidate-start code=${diagnosticCode(error)}`,
+      );
+      if (error instanceof GitHubNotificationReplyCandidateStoreError) {
+        throw new GitHubNotificationModelTurnCoordinatorError(`github-notification-${error.code}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
     let turnResult;
     try {
       if (input.executionSurface === 'cli-one-shot') {
         await this.#dependencies.candidates.attestPromptSelection(candidateIdentity);
       }
       turnResult = await this.#dependencies.dispatcher.dispatch({
+        ...(input.afterRecord === undefined ? {} : { afterRecord: input.afterRecord }),
         config: input.config,
         contract: input.contract,
         ...(input.createIfMissing === undefined ? {} : { createIfMissing: input.createIfMissing }),
-        ctxPayload: input.ctxPayload,
+        ctxPayload: {
+          ...input.ctxPayload,
+          GatewayRunToolBindings: {
+            ...input.ctxPayload.GatewayRunToolBindings,
+            [githubNotificationReplyTurnBinding]: { ...candidateIdentity, turnId: candidateTurn },
+          },
+        },
         executionSurface: input.executionSurface,
         messageId: input.messageId,
         route: input.route,

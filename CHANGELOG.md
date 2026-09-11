@@ -12,6 +12,7 @@
 
 ### Bug Fixes
 
+- Isolated GitHub reply-candidate turns by lifecycle conversation, bound staging to the active attempt, delayed acknowledgments until session recording, and retained assignment failure codes in refresh results. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)
 - Made notification doctor report blocked conversation-hook access, normal install reconcile and verify it, and Gateway turns require prompt attestation before model execution. [#76](https://github.com/tanaabased/openclaw-agent-system/issues/76)
 - Fixed busy GitHub issues blocking intake and independent issue execution, with separate lifecycle state and shared repository preparation locks. [#71](https://github.com/tanaabased/openclaw-agent-system/issues/71) [#73](https://github.com/tanaabased/openclaw-agent-system/pull/73)
 - Fixed managed GitHub worktrees to reuse configured SSH authentication across direct and notification preparation. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)

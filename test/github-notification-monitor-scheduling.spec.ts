@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { GitHubNotificationModelTurnCoordinatorError } from '../channels/github/conversation/model-turn-coordinator.ts';
 
 import { githubNotificationMonitorStatus } from '../channels/github/intake/monitor/status.ts';
 import { patchGitHubNotificationItem } from '../channels/github/intake/monitor/state-checkpoint.ts';
@@ -13,6 +14,35 @@ const itemKeyA = githubWorkItemKey(schedulingIssueA.repositoryNodeId, scheduling
 const itemKeyB = githubWorkItemKey(schedulingIssueB.repositoryNodeId, schedulingIssueB.number);
 
 describe('channels/github/intake/monitor/service scheduling', () => {
+  it('should retain a reply-turn conflict in refresh status and execution diagnostics', async () => {
+    const fixture = await createGitHubNotificationSchedulingFixture();
+    const running = fixture.createMonitor().runOnce({ agentId: fixture.agentId });
+    try {
+      await fixture.started;
+      fixture.release.reject(
+        new GitHubNotificationModelTurnCoordinatorError(
+          'github-notification-reply-turn-already-active',
+        ),
+      );
+      const [result] = await running;
+      assert.equal(result?.status, 'failed');
+      assert.equal(result?.code, 'github-notification-reply-turn-already-active');
+      assert.ok(
+        fixture.warnings.some((message) =>
+          message.includes('github-notification-reply-turn-already-active'),
+        ),
+      );
+      assert.ok(
+        fixture.warnings.every(
+          (message) => !message.includes('assignment-session-recording-failed'),
+        ),
+      );
+    } finally {
+      fixture.release.resolve();
+      await running;
+      await fixture.dispose();
+    }
+  });
   it('should keep a comment and assignment response under the same issue lease', async () => {
     const entered = Promise.withResolvers<void>();
     const releaseComment = Promise.withResolvers<void>();

@@ -1,0 +1,20 @@
+{
+  "finalResponseCount": 3,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 6,
+  "provider": "aimock",
+  "requestCount": 6,
+  "responsesApiRequestCount": 6,
+  "scenario": "concurrency",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 6,
+  "tools": [
+    {
+      "callResponseCount": 3,
+      "name": "agent_system_github_reply",
+      "projectionRequestCount": 6,
+      "resultRequestCount": 3
+    }
+  ]
+}
