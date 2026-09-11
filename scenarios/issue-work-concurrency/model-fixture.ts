@@ -54,7 +54,17 @@ export function concurrencyIssueNumber(request: ChatCompletionRequest): number {
       continue;
     }
   }
-  throw new Error('The concurrency fixture did not receive bounded issue context.');
+  throw new Error(
+    `The concurrency fixture did not receive bounded issue context. ${JSON.stringify({
+      roles: request.messages.map(({ role }) => role),
+      jsonBlocks: [...source.matchAll(/```json\s*([\s\S]*?)\s*```/gu)].length,
+      lifecycleContextPresent: source.includes('github_lifecycle_context'),
+      fixtureTitlePresent: /concurrent assignment [abc] \d+ \d+ (?:Linux|macOS)/u.test(source),
+      fixtureBodyPresent: source.includes(
+        'Assess the bounded concurrency fixture without changing repository files.',
+      ),
+    })}`,
+  );
 }
 
 const fixtures: Fixture[] = [

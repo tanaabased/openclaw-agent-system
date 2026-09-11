@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
+import { inspect } from 'node:util';
 
 async function main(): Promise<void> {
   const phase = process.argv[2];
@@ -85,6 +86,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${String(error)}\n`);
+  process.stderr.write(`${inspect(error)}\n`);
   process.exitCode = 1;
 });
