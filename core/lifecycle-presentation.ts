@@ -1,4 +1,5 @@
-import type { CliSummaryLine } from '../cli/output.ts';
+import type { CliLifecycleLine, CliSummaryLine } from '../cli/output.ts';
+import type { AgentSystemLifecycleFinding } from './lifecycle-registry.ts';
 
 export type AgentSystemLifecyclePresentationStatus =
   | 'blocked'
@@ -40,4 +41,27 @@ export default function lifecyclePresentationLines(
     style: presentationStyle(status),
     value: message,
   }));
+}
+
+/** Assign independent emphasis roles for the Doctor and Install table cells. */
+export function lifecycleTableLines(
+  items: readonly AgentSystemLifecyclePresentationItem[],
+): CliLifecycleLine[] {
+  return items.map(({ component, message, status }) => ({
+    attention: ['blocked', 'drift', 'warning', 'manual'].includes(status),
+    component,
+    label: status,
+    quiet: status === 'healthy' || status === 'unchanged',
+    style: presentationStyle(status),
+    value: message,
+  }));
+}
+
+/** Group a display copy without changing findings, aggregate status, or execution order. */
+export function orderDoctorFindings(
+  findings: readonly AgentSystemLifecycleFinding[],
+): AgentSystemLifecycleFinding[] {
+  const priority = ({ status }: AgentSystemLifecycleFinding) =>
+    status === 'blocked' ? 0 : status === 'healthy' ? 2 : 1;
+  return [...findings].sort((left, right) => priority(left) - priority(right));
 }

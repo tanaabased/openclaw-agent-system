@@ -18,10 +18,10 @@ openclaw agent-system install
 ## Testing
 
 ```bash
-# should report healthy agent and path state in the default human table
+# should report component-first healthy agent and path state without color
 cd "$GITHUB_WORKSPACE/examples/doctor/data"
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'agent'
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'path'
+NO_COLOR=1 openclaw agent-system doctor | grep -E '^agent[[:space:]]+healthy[[:space:]]'
+NO_COLOR=1 openclaw agent-system doctor | grep -E '^path[[:space:]]+healthy[[:space:]]'
 
 # should report the same healthy aggregate state as structured json
 cd "$GITHUB_WORKSPACE/examples/doctor/data"

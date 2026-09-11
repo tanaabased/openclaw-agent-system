@@ -9,9 +9,9 @@ import {
   writeCliDiagnostics,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  writeCliLifecycleTable,
 } from './output.ts';
-import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
+import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 import {
   formatDiagnostic,
@@ -27,6 +27,7 @@ export interface InstallAgentSystemOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -65,9 +66,13 @@ export default async function installAgentSystem(
     );
     if (options.json) writeCliJson(options.output, installed);
     else {
-      const lines = lifecyclePresentationLines(installed.outcomes);
-      lines.push({ label: 'workspace', style: 'target' as const, value: installed.workspaceDir });
-      writeCliSummary(options.output, lines, options.styles);
+      writeCliLifecycleTable(
+        options.output,
+        lifecycleTableLines(installed.outcomes),
+        installed.workspaceDir,
+        options.styles,
+        options.terminalColumns,
+      );
     }
   } catch (error) {
     writeCliError(

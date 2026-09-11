@@ -89,6 +89,7 @@
   },
   "scripts": {
     "build": "bun scripts/build-task.ts",
+    "capture:lifecycle": "node --import tsx scripts/capture-lifecycle-output.ts",
     "format:check": "prettier . --check --ignore-unknown",
     "format:write": "prettier . --write --ignore-unknown",
     "leia": "leia",
@@ -109,6 +110,8 @@
     "@clack/prompts": "1.6.0",
     "ansis": "^4.3.1",
     "camelcase-keys": "6.2.2",
+    "fast-string-width": "3.0.2",
+    "fast-wrap-ansi": "0.2.2",
     "kebabcase-keys": "^1.0.0",
     "lodash-es": "4.18.1",
     "proper-lockfile": "4.1.2",

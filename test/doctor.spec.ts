@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 
 import doctorAgentSystem from '../cli/doctor.ts';
+import type { AgentDoctorResult } from '../agent/doctor-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { doctorFindings } from './lifecycle-presentation-fixtures.ts';
 
 const manifest: AgentManifestLoadResult = {
   status: 'loaded',
@@ -15,6 +17,87 @@ const manifest: AgentManifestLoadResult = {
 };
 
 describe('cli/doctor', () => {
+  it('should group human findings without changing json, aggregate status, or diagnostics', async () => {
+    const result: AgentDoctorResult = {
+      agentId: 'data',
+      findings: structuredClone(doctorFindings),
+      status: 'blocked',
+      workspaceDir: '/workspace',
+    };
+    const original = structuredClone(result);
+    Object.freeze(result.findings);
+    for (const json of [false, true]) {
+      const output: string[] = [];
+      const diagnostics: string[] = [];
+      const exitCodes: number[] = [];
+      const calls: unknown[] = [];
+      const warnedManifest: AgentManifestLoadResult = {
+        ...manifest,
+        diagnostics: [
+          { code: 'manifest-warning', message: 'Manifest warning.', severity: 'warning' },
+        ],
+      };
+      await doctorAgentSystem({
+        doctorService: {
+          async inspect(input) {
+            calls.push(input);
+            return result;
+          },
+        },
+        json,
+        manifestService: {
+          async loadForAgentId() {
+            return warnedManifest;
+          },
+          async loadForCommandDirectory() {
+            return warnedManifest;
+          },
+        },
+        output: {
+          writeStderr: (value) => diagnostics.push(value),
+          writeStdout: (value) => output.push(value),
+        },
+        setExitCode: (code) => exitCodes.push(code),
+        styles: createCliStyles({ NO_COLOR: '1', FORCE_COLOR: '3' }),
+        terminalColumns: 60,
+        workspaceDir: '/workspace',
+      });
+      assert.deepEqual(calls, [{ manifest: manifest.manifest, workspaceDir: '/workspace' }]);
+      assert.deepEqual(exitCodes, [1]);
+      assert.equal(diagnostics.length, 1);
+      assert.ok(diagnostics[0]!.includes('code=manifest-warning'));
+      assert.equal(output.length, 1);
+      const text = output.join('');
+      assert.equal(text.includes('\u001b'), false);
+      assert.equal(text.includes('manifest-warning'), false);
+      if (json) {
+        assert.deepEqual(JSON.parse(text), original);
+      } else {
+        const rows = text
+          .split('\n')
+          .filter((row) => /^\S+\s+(blocked|warning|drift|manual|healthy)\s/.test(row));
+        assert.deepEqual(
+          rows.map((row) => row.split(/\s+/).slice(0, 2)),
+          [
+            ['git', 'blocked'],
+            ['github', 'blocked'],
+            ['security', 'warning'],
+            ['github-notifications', 'manual'],
+            ['path', 'drift'],
+            ['agent', 'healthy'],
+            ['tool-access', 'healthy'],
+          ],
+        );
+        for (const { message, remediation } of result.findings) {
+          const normalized = text.replace(/\s+/g, ' ');
+          assert.ok(normalized.includes(message));
+          if (remediation) assert.ok(normalized.includes(remediation));
+        }
+      }
+      assert.deepEqual(result, original);
+    }
+  });
+
   it('should report path drift and set a failing exit code', async () => {
     const output: string[] = [];
     const exitCodes: number[] = [];

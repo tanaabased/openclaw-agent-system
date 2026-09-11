@@ -49,6 +49,7 @@ describe('cli/output', () => {
   it('should render error and warning summaries with semantic styles', () => {
     const markerStyles = {
       action: (value: string) => `<action>${value}</action>`,
+      bold: (value: string) => `<bold>${value}</bold>`,
       error: (value: string) => `<error>${value}</error>`,
       field: (value: string) => `<field>${value}</field>`,
       status: (value: string) => `<status>${value}</status>`,

@@ -22,9 +22,9 @@ cp "$GITHUB_WORKSPACE/examples/install/data/agent.yaml" "$TMPDIR/install-data/ag
 openclaw agent-system --help | grep -F 'validate'
 openclaw as --help | grep -F 'validate'
 
-# should install the scenario agent with the default human lifecycle table
+# should install the scenario agent with a component-first table without color
 cd "$TMPDIR/install-data"
-openclaw agent-system install | grep -F 'created' | grep -F 'agent' | grep -F 'OpenClaw agent install-data'
+NO_COLOR=1 openclaw agent-system install | grep -E '^agent[[:space:]]+created[[:space:]]' | grep -F 'OpenClaw agent install-data'
 
 # should report every foundational component as unchanged in json on repeated install
 cd "$TMPDIR/install-data"
