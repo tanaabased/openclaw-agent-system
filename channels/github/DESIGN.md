@@ -278,13 +278,11 @@ selection fails closed instead of falling back to a different prompt.
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
 - **Pull-request handoff:** Successful issue delivery checkpoints the pull request
-  as the delivery comment source, preserves existing revision receipts, and leaves
-  eligible unseen comments actionable while baselining ineligible history. It records one
+  as the delivery comment source, preserves recorded revisions, and leaves eligible
+  unseen comments actionable after handoff while baselining ineligible history. It records one
   private card through the registered `pull-request-opened` model turn, retains
   its private response in the issue-owned session, and publishes one deterministic
-  handoff comment to the owning issue. Comment turns wait for initial handoff to
-  complete, including retries, under the existing issue execution lease. A previously
-  handed-off pull request still establishes a fresh baseline after reopening.
+  handoff comment to the owning issue.
 - **Comments:** An admitted comment enters as an attributed direct-message card
   in the existing session and inherits its lifecycle type, current mode, and
   capability. The event presentation replaces only admitted account mentions,

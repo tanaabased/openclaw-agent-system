@@ -13,11 +13,6 @@ The scenario creates one disposable issue, pull request, head branch, and
 temporary base branch in `tanaabased/big-test-bucket`, then removes every
 remaining remote fixture, generated SSH key, and issue during cleanup.
 
-The deterministic initial-handoff race and interrupted-receipt cases are covered
-by `test/github-notification-initial-handoff.spec.ts`. This installed scenario
-checks source-affine publication, repeat-reconciliation idempotency, and the
-separate fresh baseline after reopening.
-
 ## Setup
 
 ```bash
