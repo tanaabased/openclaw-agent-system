@@ -125,7 +125,7 @@ export default class GitHubNotificationConversationStateStore {
     const file = this.#indexFile(snapshot.agentId);
     if (!file) throw new Error('The GitHub notification conversation state store is unavailable.');
     const validated = decodeGitHubNotificationConversationRecord(
-      { ...snapshot, schemaVersion: 1 },
+      { ...snapshot, schemaVersion: snapshot.conversation.modelRouting ? 2 : 1 },
       snapshot,
       snapshot.conversationId,
     );
@@ -196,7 +196,7 @@ export default class GitHubNotificationConversationStateStore {
     const lock = await acquirePrivateStateFileLock(path, lockOptions);
     try {
       await this.#recordFile(snapshot.agentId, snapshot.conversationId).write(
-        `${JSON.stringify({ ...snapshot, schemaVersion: 1 }, undefined, 2)}\n`,
+        `${JSON.stringify({ ...snapshot, schemaVersion: snapshot.conversation?.modelRouting ? 2 : 1 }, undefined, 2)}\n`,
       );
     } finally {
       await lock.release();

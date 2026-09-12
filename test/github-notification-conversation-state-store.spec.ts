@@ -20,6 +20,7 @@ import type { GitHubNotificationConversationSnapshot } from '../channels/github/
 import { approvedNotificationItem } from './github-notification-fixtures.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import { initializeModelRouting } from '../channels/github/conversation/model-routing.ts';
 
 function snapshot(number = 12, repositoryId = 'R_repo'): GitHubNotificationConversationSnapshot {
   return {
@@ -77,6 +78,35 @@ describe('channels/github/conversation/conversation-state-store', () => {
 
   afterEach(async () => {
     await rm(temporaryDirectory, { force: true, recursive: true });
+  });
+
+  it('should persist pending and selected routing across store restarts without changing ordinary records', async () => {
+    const routed = snapshot();
+    const profile = { model: 'openai/gpt-5.5', effort: 'high' } as const;
+    routed.conversation!.modelRouting = initializeModelRouting({
+      default: profile,
+      low: profile,
+      medium: profile,
+      high: profile,
+    });
+    await store.write(routed);
+    assert.equal(JSON.parse(await readFile(recordPath(routed), 'utf8')).schemaVersion, 2);
+    routed.conversation!.modelRouting!.decision = {
+      ...profile,
+      complexity: 'low',
+      source: 'assessed',
+      reason: 'Localized repair.',
+    };
+    await store.write(routed);
+    const restarted = new GitHubNotificationConversationStateStore({
+      rootDir,
+      currentUid: process.getuid?.(),
+    });
+    assert.deepEqual(await restarted.read(routed.agentId, routed.conversationId), routed);
+    const corrupt = JSON.parse(await readFile(recordPath(routed), 'utf8'));
+    corrupt.conversation.modelRouting.decision.model = 'openai/unconfigured';
+    await writeFile(recordPath(routed), JSON.stringify(corrupt));
+    await assert.rejects(restarted.read(routed.agentId, routed.conversationId));
   });
 
   it('should persist private lifecycle files behind a small routing index', async () => {

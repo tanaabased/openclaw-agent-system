@@ -6,6 +6,7 @@ import type GitHubNotificationReplyCandidateStore from '../publication/reply-can
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type GitHubNotificationTurnSelector from './turn-selector.ts';
+import { modelRoutingGuidance } from './model-routing.ts';
 
 export interface GitHubNotificationPromptGuidanceDependencies {
   candidates: Pick<GitHubNotificationReplyCandidateStore, 'attestPromptSelection'>;
@@ -41,7 +42,12 @@ export default async function githubNotificationPromptGuidance(
   }
   const instructions = dependencies.turnContracts.instructions(selected.identity, selected.agentId);
   await dependencies.candidates.attestPromptSelection(selected);
-  return instructions;
+  return [
+    instructions,
+    selected.identity.eventId === 'assignment' ? modelRoutingGuidance(selected.modelRouting) : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /** Block before model execution if this turn never received its trusted prompt. */

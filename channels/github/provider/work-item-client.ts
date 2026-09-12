@@ -36,6 +36,7 @@ import {
   type GitHubRepositoryIdentity,
   type GitHubRepositoryPermission,
 } from './work-item.ts';
+import { nativeRoutingMetadata, routingMetadata } from './routing-metadata.ts';
 
 const pageSize = 100;
 const maximumSearchPages = 10;
@@ -257,6 +258,7 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
     name: string,
     number: number,
     itemType: 'issue' | 'pull-request' = 'issue',
+    includeRoutingMetadata = false,
   ): Promise<GitHubNotificationItemContext> {
     const endpoint = githubWorkItemEndpoint(owner, name, number);
     const response = await this.#api.request(
@@ -382,7 +384,28 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
         });
       }
     }
+    let metadata;
+    if (includeRoutingMetadata && itemType === 'issue') {
+      let native = nativeRoutingMetadata(undefined);
+      try {
+        const fields = await this.#api.request(
+          [
+            '--method',
+            'GET',
+            `${endpoint}/issue-field-values?per_page=100`,
+            '-H',
+            'X-GitHub-Api-Version: 2026-03-10',
+          ],
+          'issue routing metadata',
+        );
+        native = nativeRoutingMetadata(fields.value, fields.hasNextPage);
+      } catch {
+        // Optional metadata failure remains distinct from a missing field.
+      }
+      metadata = routingMetadata(native, body.text);
+    }
     return {
+      ...(metadata === undefined ? {} : { routingMetadata: metadata }),
       body: body.text,
       comments,
       ...(itemType === 'pull-request' ? { files } : {}),

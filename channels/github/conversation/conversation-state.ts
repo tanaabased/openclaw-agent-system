@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { validModelRouting, type ModelRouting } from './model-routing.ts';
 
 import {
   isGitHubNotificationLifecycleId,
@@ -83,6 +84,7 @@ export interface GitHubNotificationCommentRevisionState {
 }
 
 export interface GitHubNotificationConversation {
+  modelRouting?: ModelRouting;
   acknowledgment?: GitHubNotificationAssignmentAcknowledgmentState;
   activeTurn?: GitHubNotificationActiveTurnState;
   assignmentResponse?: GitHubNotificationPublicationState;
@@ -351,6 +353,7 @@ function validConversation(
       'itemKey',
       'lifecycleId',
       'mode',
+      ...(schemaVersion >= 7 ? ['modelRouting'] : []),
       'revisions',
     ]) ||
     (value.acknowledgment !== undefined &&
@@ -371,6 +374,8 @@ function validConversation(
       value.deliveryPullRequest !== undefined &&
       !validDeliveryPullRequest(value.deliveryPullRequest, conversationId)) ||
     (value.mode !== 'guided' && value.mode !== 'work') ||
+    (value.modelRouting !== undefined &&
+      (value.lifecycleId !== 'issue' || !validModelRouting(value.modelRouting))) ||
     !record(value.revisions) ||
     Object.keys(value.revisions).length > maximumRevisions
   ) {
@@ -524,7 +529,9 @@ export function decodeGitHubNotificationConversationRecord(
       'schemaVersion',
       'workspaceDir',
     ]) ||
-    value.schemaVersion !== 1 ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
+    (value.schemaVersion === 2) !==
+      (record(value.conversation) && value.conversation.modelRouting !== undefined) ||
     value.agentId !== index.agentId ||
     value.workspaceDir !== index.workspaceDir ||
     value.conversationId !== conversationId

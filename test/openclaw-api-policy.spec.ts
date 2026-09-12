@@ -29,6 +29,7 @@ const supportedPluginSdkSubpaths = new Set([
   'error-runtime',
   'gateway-runtime',
   'logging-core',
+  'model-session-runtime',
   'plugin-entry',
   'plugin-runtime',
   'reply-payload',

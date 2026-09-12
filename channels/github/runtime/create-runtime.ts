@@ -71,8 +71,12 @@ import createNotificationLifecycleContribution from './lifecycle-contribution.ts
 import GitHubOperatorAccess from '../operator-access.ts';
 import OperatorGrantStore from '../operator-grant-store.ts';
 import SessionSetupVerification from '../conversation/session-setup-verification.ts';
+import ModelRoutingService, {
+  type ModelRoutingRuntime,
+} from '../conversation/model-routing-service.ts';
 
 export interface GitHubNotificationRuntimeDependencies {
+  modelRoutingRuntime: ModelRoutingRuntime;
   hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
   inspectRuntimeHook(): ConversationHookFinding;
   accountClient: GitHubAccountClient;
@@ -158,7 +162,13 @@ export default function createGitHubNotificationRuntime(
     turns: turnCatalog,
   });
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
+  const modelRouting = new ModelRoutingService({
+    runtime: dependencies.modelRoutingRuntime,
+    conversations: conversationStateStore,
+    readConfig: dependencies.readRuntimeConfig,
+  });
   const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
+    modelRouting,
     dispatchChannelInboundTurn: dependencies.dispatchChannelInboundTurn,
   });
   const sessionSetup = new SessionSetupVerification({
@@ -264,6 +274,18 @@ export default function createGitHubNotificationRuntime(
         turnContracts,
       });
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
+        modelRouting,
+        async readModels(input) {
+          const loaded = await manifestService.loadForAgentId(input.agentId, 'service');
+          if (
+            loaded.status !== 'loaded' ||
+            loaded.manifest.agent.id !== input.agentId ||
+            resolve(loaded.scope.workspaceDir) !== resolve(input.workspaceDir)
+          ) {
+            throw new Error('The GitHub routing manifest binding is unavailable.');
+          }
+          return loaded.manifest.models;
+        },
         acknowledgments: assignmentAcknowledgmentService,
         assignmentAuthority: assignmentProvider,
         conversationStateStore,

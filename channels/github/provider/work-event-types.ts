@@ -1,4 +1,5 @@
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
+import type { RoutingMetadata } from './routing-metadata.ts';
 import type {
   GitHubAssignedItemCandidate,
   GitHubAssignmentEvent,
@@ -24,6 +25,7 @@ export interface GitHubNotificationItemContextFile {
 }
 
 export interface GitHubNotificationItemContext {
+  routingMetadata?: RoutingMetadata;
   body: string;
   comments: GitHubNotificationItemContextComment[];
   files?: GitHubNotificationItemContextFile[];
@@ -75,6 +77,7 @@ export interface GitHubNotificationItemContextClient {
     name: string,
     number: number,
     itemType?: 'issue' | 'pull-request',
+    includeRoutingMetadata?: boolean,
   ): Promise<GitHubNotificationItemContext>;
 }
 
