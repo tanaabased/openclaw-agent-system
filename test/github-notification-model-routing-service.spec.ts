@@ -159,14 +159,37 @@ describe('channels/github/conversation/model-routing-service', () => {
     assert.equal(saved.conversation?.modelRouting?.decision?.model, profiles.low.model);
     await h.service.assess(saved, context);
     assert.equal(h.requests.length, 1);
+    h.config.agents!.entries!.emori!.model = {
+      primary: profiles.default.model,
+      fallbacks: [profiles.medium.model],
+    };
     const applied = await h.service.apply(route);
     assert.deepEqual(applied?.expected, profiles.low);
     assert.equal(h.entry().modelOverride, 'gpt-5.6-terra');
+    assert.equal(h.entry().modelOverrideSource, 'auto');
+    assert.equal(h.entry().modelOverrideFallbackOriginProvider, 'openai');
+    assert.equal(h.entry().modelOverrideFallbackOriginModel, 'gpt-5.6-terra');
     assert.equal(h.entry().thinkingLevel, 'medium');
     assert.equal(h.entry().authProfileOverride, 'openai:subscription');
     assert.equal(h.entry().agentRuntimeOverride, 'codex');
     assert.equal(h.entry().sessionId, 'session-12');
     assert.equal(h.entry().updatedAt, 1);
+    assert.deepEqual(applied?.permittedModels, [
+      profiles.low.model,
+      profiles.default.model,
+      profiles.medium.model,
+    ]);
+    assert.equal(applied?.strict, false);
+    await h.service.recordExecution(route, {
+      requested: profiles.low,
+      observed: profiles.default,
+      status: 'continued',
+    });
+    assert.deepEqual(h.snapshots.get(route.conversationId)?.conversation?.modelRouting?.execution, {
+      requested: profiles.low,
+      observed: profiles.default,
+      status: 'continued',
+    });
     h.config.agents!.entries!.emori!.model = 'openai/gpt-5.6-sol';
     assert.deepEqual((await h.service.apply(route))?.expected, profiles.low);
   });
@@ -181,10 +204,12 @@ describe('channels/github/conversation/model-routing-service', () => {
       providerOverride: 'openai',
       modelOverrideSource: 'user',
     });
-    assert.deepEqual((await h.service.apply(route))?.expected, {
+    const manualModel = await h.service.apply(route);
+    assert.deepEqual(manualModel?.expected, {
       model: profiles.medium.model,
       effort: 'medium',
     });
+    assert.equal(manualModel?.strict, true);
     h.setEntry({ ...h.entry(), thinkingLevel: 'low' });
     assert.deepEqual((await h.service.apply(route))?.expected, {
       model: profiles.medium.model,

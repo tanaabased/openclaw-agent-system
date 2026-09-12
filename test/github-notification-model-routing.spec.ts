@@ -149,4 +149,44 @@ describe('channels/github/conversation/model-routing', () => {
       false,
     );
   });
+
+  it('should distinguish verified, continued, and unverified execution records', () => {
+    const routing = initializeModelRouting(routingProfiles)!;
+    routing.decision = modelRoutingDecision(
+      '{"complexity":"low","reason":"Localized change."}',
+      routing,
+      context,
+    );
+    routing.applied = routingProfiles.low;
+    for (const execution of [
+      {
+        requested: routingProfiles.low,
+        observed: routingProfiles.low,
+        status: 'verified',
+      },
+      {
+        requested: routingProfiles.low,
+        observed: routingProfiles.default,
+        status: 'continued',
+      },
+      {
+        requested: routingProfiles.low,
+        observed: { model: routingProfiles.default.model },
+        status: 'unverified',
+      },
+    ] as const) {
+      assert.ok(validModelRouting({ ...routing, execution }));
+    }
+    assert.equal(
+      validModelRouting({
+        ...routing,
+        execution: {
+          requested: routingProfiles.low,
+          observed: routingProfiles.default,
+          status: 'verified',
+        },
+      }),
+      false,
+    );
+  });
 });

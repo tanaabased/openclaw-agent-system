@@ -5,7 +5,11 @@ import type {
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import type ModelRoutingService from './model-routing-service.ts';
-import { ModelRoutingError } from './model-routing.ts';
+import {
+  ModelRoutingError,
+  type ModelRoutingExecution,
+  type ModelRoutingObservation,
+} from './model-routing.ts';
 
 import { githubNotificationChannelId, type ResolvedNotificationRoute } from '../routing/routing.ts';
 import {
@@ -40,7 +44,7 @@ export class GitHubNotificationModelTurnDispatcherError extends Error {
 }
 
 export interface GitHubNotificationModelTurnDispatcherDependencies {
-  modelRouting?: Pick<ModelRoutingService, 'apply'>;
+  modelRouting?: Pick<ModelRoutingService, 'apply' | 'recordExecution'>;
   dispatchChannelInboundTurn(
     input: ChannelInboundTurnPlan,
   ): ReturnType<typeof dispatchChannelInboundTurn>;
@@ -62,6 +66,7 @@ export interface GitHubNotificationModelTurnDispatchInput {
 export interface GitHubNotificationModelTurnDispatchResult {
   dispatch: GitHubNotificationHostDispatchResult;
   finalPayloads: ReplyPayload[];
+  routing?: ModelRoutingExecution;
 }
 
 function modelContext(
@@ -94,7 +99,7 @@ export default class GitHubNotificationModelTurnDispatcher {
       ? AbortSignal.any([input.signal, controller.signal])
       : controller.signal;
     let routing: Awaited<ReturnType<ModelRoutingService['apply']>>;
-    let verified = false;
+    let observed: ModelRoutingObservation | undefined;
     let routingFailure: ModelRoutingError | undefined;
     let sessionRecordTask: Promise<unknown> | undefined;
     let result;
@@ -153,18 +158,23 @@ export default class GitHubNotificationModelTurnDispatcher {
           abortSignal: signal,
           onModelSelected(actual) {
             if (!routing) return;
-            if (
-              `${actual.provider}/${actual.model}` !== routing.expected.model ||
-              actual.thinkLevel !== routing.expected.effort
-            ) {
+            observed = {
+              model: `${actual.provider}/${actual.model}`,
+              ...(actual.thinkLevel ? { effort: actual.thinkLevel } : {}),
+            };
+            const observedModel = observed.model;
+            const observedEffort = observed.effort;
+            const matches =
+              observedModel === routing.expected.model &&
+              observedEffort === routing.expected.effort;
+            if (!matches && (routing.strict || !routing.permittedModels.includes(observedModel))) {
               routingFailure = new ModelRoutingError(
                 'github-notification-routing-effective-mismatch',
-                'Native model or effort differed from the saved selection. Work was cancelled; no fallback was accepted.',
+                'Native model or effort differed from the strict selection or its permitted continuation routes. Work was cancelled.',
               );
               controller.abort(routingFailure);
               throw routingFailure;
             }
-            verified = true;
           },
           ...githubNotificationReplyCleanupOptions(input.executionSurface),
           commentaryPayloadsEnabled: true,
@@ -192,16 +202,34 @@ export default class GitHubNotificationModelTurnDispatcher {
       );
     }
     if (routingFailure) throw routingFailure;
-    if (routing && !verified)
-      throw new ModelRoutingError(
-        'github-notification-routing-effective-unverified',
-        'The native harness did not report both effective model and effort. This turn cannot be marked verified or published.',
-      );
     if (!result.dispatched || result.routeSessionKey !== input.route.sessionKey) {
       throw new GitHubNotificationModelTurnDispatcherError(
         'github-notification-model-turn-dispatch-unconfirmed',
       );
     }
-    return { dispatch: result.dispatchResult, finalPayloads };
+    let execution: ModelRoutingExecution | undefined;
+    if (routing) {
+      execution = observed?.effort
+        ? {
+            requested: routing.expected,
+            observed,
+            status:
+              observed.model === routing.expected.model &&
+              observed.effort === routing.expected.effort
+                ? 'verified'
+                : 'continued',
+          }
+        : {
+            requested: routing.expected,
+            ...(observed ? { observed } : {}),
+            status: 'unverified',
+          };
+      await this.#dependencies.modelRouting!.recordExecution(input.route, execution);
+    }
+    return {
+      dispatch: result.dispatchResult,
+      finalPayloads,
+      ...(execution ? { routing: execution } : {}),
+    };
   }
 }

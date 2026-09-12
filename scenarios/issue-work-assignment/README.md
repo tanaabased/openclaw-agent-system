@@ -26,10 +26,12 @@ model turns, comment workers, failure isolation, and shutdown are covered by uni
 Complete model profiles opt both issues into a separate tool-free assessment. The
 strict fixture checks bounded issue content and absence of tools; the dispatcher
 requires the native work selection to report the saved model and medium effort.
-The durable record independently retains that selection across CLI runs. AIMock
-does not retain wire-level reasoning effort, so this scenario does not prove the
-provider's applied reasoning budget. Cost and rework sampling remains a separate,
-explicitly authorized live evaluation before broad rollout.
+The deterministic mock gives the classifier/default and selected work turns distinct
+model IDs, so fallback to the default cannot masquerade as successful routing. The
+durable record independently retains the requested and observed selection across CLI
+runs. AIMock does not retain wire-level reasoning effort, so this scenario does not
+prove the provider's applied reasoning budget. Cost and rework sampling remains a
+separate, explicitly authorized live evaluation before broad rollout.
 
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
@@ -60,7 +62,8 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/a
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should configure complete profiles with a high effort classifier and medium effort low tier
-printf '\nmodels:\n  default:\n    model: %s\n    effort: high\n  low:\n    model: %s\n    effort: medium\n  medium:\n    model: %s\n    effort: high\n  high:\n    model: %s\n    effort: high\n' "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" >> "$TMPDIR/agent-system-notifications/agent.yaml"
+routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
+printf '\nmodels:\n  default:\n    model: %s\n    effort: high\n  low:\n    model: %s\n    effort: medium\n  medium:\n    model: %s\n    effort: high\n  high:\n    model: %s\n    effort: high\n' "$routing_default_model" "$NOTIFICATION_MODEL" "$routing_default_model" "$routing_default_model" >> "$TMPDIR/agent-system-notifications/agent.yaml"
 
 # should preserve unrelated llm permissions while classifier access remains absent
 openclaw config set plugins.entries.agent-system.llm.allowAuthProfileOverride true --strict-json
@@ -81,11 +84,12 @@ openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active 
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
+routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
-openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$NOTIFICATION_MODEL" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
+openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$routing_default_model" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
@@ -196,12 +200,13 @@ printf '%s' "$conversation_id" > "$TMPDIR/independent-conversation-id-before"
 
 # should diagnose and reconcile only the missing classifier access
 cd "$TMPDIR/agent-system-notifications"
+routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
 if doctor_before="$(openclaw agent-system doctor --json)"; then exit 1; fi
-printf '%s\n' "$doctor_before" | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-drift" and .status == "drift" and (.message | contains($model)))'
+printf '%s\n' "$doctor_before" | jq -e --arg model "$routing_default_model" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-drift" and .status == "drift" and (.message | contains($model)))'
 repair="$(openclaw agent-system install --json)"
 printf '%s\n' "$repair" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
-openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$NOTIFICATION_MODEL" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
-openclaw agent-system doctor --json | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-ready" and .status == "healthy" and (.message | contains($model)))'
+openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$routing_default_model" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
+openclaw agent-system doctor --json | jq -e --arg model "$routing_default_model" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-ready" and .status == "healthy" and (.message | contains($model)))'
 repeat="$(openclaw agent-system install --json)"
 printf '%s\n' "$repeat" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "unchanged")'
 
@@ -277,7 +282,7 @@ jq -e '.schemaVersion == 8 and .agentId == "notification-data" and (has("convers
 for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
   conversation_id="$(jq -er --arg number "$issue_number" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
   record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
-  jq -e --arg model "$NOTIFICATION_MODEL" --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 2 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published" and .conversation.modelRouting.decision.model == $model and .conversation.modelRouting.decision.complexity == "low" and .conversation.modelRouting.applied == {model: $model, effort: "medium"}' "$channel_state/github-notification-conversations/$record_digest.json"
+  jq -e --arg model "$NOTIFICATION_MODEL" --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 2 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published" and .conversation.modelRouting.decision.model == $model and .conversation.modelRouting.decision.complexity == "low" and .conversation.modelRouting.applied == {model: $model, effort: "medium"} and .conversation.modelRouting.execution == {requested: {model: $model, effort: "medium"}, observed: {model: $model, effort: "medium"}, status: "verified"}' "$channel_state/github-notification-conversations/$record_digest.json"
 done
 
 # should preserve the independent conversation exactly when the first issue resumes

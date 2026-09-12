@@ -177,7 +177,7 @@ describe('scripts/aimock-evidence', () => {
         {
           body: {
             messages: [{ role: 'user', content: 'bounded issue routing assessment' }],
-            model: 'gpt-5.5',
+            model: 'gpt-5.5-classifier',
           },
           method: 'POST',
           path: '/v1/responses',

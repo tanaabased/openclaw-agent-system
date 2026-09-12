@@ -55,7 +55,7 @@ describe('scripts/github-notification-model-scenarios', () => {
   it('should reject tools or missing issue context in the isolated routing fixture', () => {
     const scenario = resolveGitHubNotificationModelScenario('assignment');
     const request: ChatCompletionRequest = {
-      model: 'gpt-5.5',
+      model: 'gpt-5.5-classifier',
       messages: [
         {
           role: 'system',
@@ -72,6 +72,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       ],
     };
     assert.equal(matchFixture([...scenario.fixtures], request), scenario.fixtures.at(-1));
+    assert.equal(matchFixture([...scenario.fixtures], { ...request, model: 'gpt-5.5' }), null);
     assert.equal(
       matchFixture([...scenario.fixtures], {
         ...request,
