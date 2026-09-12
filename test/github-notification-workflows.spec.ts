@@ -223,6 +223,8 @@ describe('github notification workflows', () => {
       scenario: '${{ matrix.scenario }}',
     });
     assert.deepEqual(notifications?.secrets, {
+      gh_token_emori: '${{ secrets.GH_TOKEN_EMORI }}',
+      gh_token_tanaabot: '${{ secrets.GH_TOKEN_TANAABOT }}',
       op_service_account_token: '${{ secrets.TANAAB_OP_TESTVAULT }}',
     });
     assert.equal(workflow.jobs?.concurrency?.needs, 'notifications');
@@ -250,6 +252,8 @@ describe('github notification workflows', () => {
       'scenario',
     ]);
     assert.deepEqual(Object.keys(workflow.on?.workflow_call?.secrets ?? {}), [
+      'gh_token_emori',
+      'gh_token_tanaabot',
       'openai_api_key',
       'op_service_account_token',
     ]);

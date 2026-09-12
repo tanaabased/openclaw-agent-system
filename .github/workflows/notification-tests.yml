@@ -47,6 +47,8 @@ jobs:
       runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:
+      gh_token_emori: ${{ secrets.GH_TOKEN_EMORI }}
+      gh_token_tanaabot: ${{ secrets.GH_TOKEN_TANAABOT }}
       openai_api_key: ${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
   concurrency:
@@ -58,4 +60,6 @@ jobs:
       runner: ${{ inputs.runner }}
       scenario: concurrency
     secrets:
+      gh_token_emori: ${{ secrets.GH_TOKEN_EMORI }}
+      gh_token_tanaabot: ${{ secrets.GH_TOKEN_TANAABOT }}
       op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
