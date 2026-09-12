@@ -116,6 +116,43 @@ describe('core/github-account-client', () => {
     );
   });
 
+  it('should invalidate rejected credentials without replaying a write', async () => {
+    let executions = 0;
+    const invalidated: string[] = [];
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: {
+        loadForWorkspace: async () => loadedEnvironment(),
+        invalidateCredentials: (agentId) => {
+          invalidated.push(agentId);
+        },
+      },
+      runCli: async () => {
+        executions += 1;
+        return executions === 1
+          ? {
+              exitCode: 0,
+              stdout: '{"login":"tanaabot","nodeId":"U_agent"}',
+              stderr: '',
+              timedOut: false,
+              truncated: false,
+            }
+          : {
+              exitCode: 1,
+              stdout: '',
+              stderr: 'gh: Bad credentials (HTTP 401)',
+              timedOut: false,
+              truncated: false,
+            };
+      },
+    });
+    const connected = await client.connect({ manifest, workspaceDir });
+    assert.equal((await connected.execute(['api', '--method', 'POST', '/fixture'])).exitCode, 1);
+    assert.deepEqual(invalidated, ['tanaabot']);
+    assert.equal(executions, 2);
+  });
+
   it('should reject a github account that does not match the declaration', async () => {
     const client = new GitHubAccountClient({
       baseEnvironment: { PATH: '/usr/bin' },

@@ -43,9 +43,15 @@ env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install | grep -F 'created' | grep -F 'OpenClaw agent credential-data'
 
+# should expose the selected policy in the installed gateway without reading provider resources
+openclaw-gateway start
+openclaw agent-system credentials cache status --json | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and .counts.resourceReads == 0'
+
 # should remove every persisted credential copy
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'removed' | grep -F 'op credential for credential-data'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op)
+printf '%s\n' "$output" | grep -F 'removed' | grep -F 'op credential for credential-data'
+printf '%s\n' "$output" | grep -F 'gateway cache' | grep -F 'invalidation confirmed'
 
 # should leave the credential absent when removal is repeated
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -70,4 +76,11 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --st
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 if output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'code=op-credential-missing'
+```
+
+## Cleanup
+
+```bash
+# should stop the isolated gateway
+openclaw-gateway stop
 ```

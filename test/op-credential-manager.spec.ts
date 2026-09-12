@@ -10,6 +10,44 @@ const manifest: AgentManifest = {
 };
 
 describe('credentials/op-manager', () => {
+  it('should invalidate after mutations and report unavailable gateway without replaying uncertain writes', async () => {
+    for (const uncertain of [false, true]) {
+      const calls: string[] = [];
+      const manager = new OpCredentialManager({
+        invalidate: async (agentId) => {
+          calls.push(`invalidate:${agentId}`);
+          return 'pending';
+        },
+        credentialService: {
+          environmentServiceAccountToken: () => undefined,
+          async storeServiceAccountToken() {
+            calls.push('store');
+            if (uncertain) throw new Error('private-store-error');
+            return { status: 'stored', storeId: 'file' };
+          },
+          async removeServiceAccountToken() {
+            calls.push('remove');
+            return { status: 'removed', storeIds: ['file'], unavailableStoreIds: [] };
+          },
+        },
+        environmentService: {
+          async validate() {
+            throw new Error('not expected');
+          },
+          async validateToken() {
+            return { status: 'valid', secretCount: 0, environmentCount: 2 };
+          },
+        },
+      });
+      const result = await manager.set(manifest, 'private-token');
+      assert.equal(result.status, uncertain ? 'invalid' : 'stored');
+      assert.equal(result.gatewayInvalidation, 'pending');
+      assert.equal(JSON.stringify(result).includes('private-store-error'), false);
+      await manager.unset('data');
+      assert.deepEqual(calls, ['store', 'invalidate:data', 'remove', 'invalidate:data']);
+    }
+  });
+
   it('should validate a supplied token against every environment before storing it', async () => {
     const calls: string[] = [];
     const manager = new OpCredentialManager({
@@ -48,7 +86,12 @@ describe('credentials/op-manager', () => {
 
   it('should not write a token that cannot access a declared environment', async () => {
     let writes = 0;
+    let invalidations = 0;
     const manager = new OpCredentialManager({
+      invalidate: async () => {
+        invalidations += 1;
+        return 'confirmed';
+      },
       credentialService: {
         environmentServiceAccountToken: () => undefined,
         async removeServiceAccountToken() {
@@ -80,6 +123,7 @@ describe('credentials/op-manager', () => {
 
     assert.equal((await manager.set(manifest, 'private-token', 'file')).status, 'invalid');
     assert.equal(writes, 0);
+    assert.equal(invalidations, 1);
   });
 
   it('should require an explicit store without falling back to the process environment', async () => {

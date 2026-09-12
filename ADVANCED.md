@@ -379,6 +379,110 @@ Codex, ACP, MCP, or third-party execution tools. Agent System tools resolve only
 the values they declare after trusted agent binding and authorization. PATH
 projection is the separate, limited contract described below.
 
+### In-memory 1Password caching
+
+The operator controls `plugins.entries.agent-system.config.opCache` in OpenClaw
+configuration. Repository manifests and `CI=true` cannot enable indefinite
+retention. The default is timed retention for 300 seconds, with at most 128
+agent/workspace entries. Agent entries are evicted oldest-first at the configured bound
+(1–1,024); each holds at most one client and one complete successful resource
+snapshot. No secret cache is written to disk. Timed expiry applies to values; an unchanged
+authenticated SDK client can survive a timed value refresh.
+
+| Mode             | Configuration                                             | Behavior                                                                                                    |
+| ---------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Off              | `{"mode":"off"}`                                          | No cross-operation client or value reuse; duplicate references within one operation are still deduplicated. |
+| Timed (default)  | `{"mode":"timed","durationSeconds":300,"maxEntries":128}` | Lazy, non-sliding expiry measured with a monotonic clock from successful retrieval.                         |
+| Process lifetime | `{"mode":"process-lifetime","maxEntries":128}`            | Retain until invalidation, eviction, or process exit. External provider edits require flush or restart.     |
+
+Timed durations must be positive finite numbers no greater than 4,503,599,627,370
+seconds. Sub-millisecond durations round up to one millisecond. One, five, and
+twelve hours are `3600`, `18000`, and `43200` seconds. Other modes reject a duration;
+negative numbers and JSON `Infinity` are not lifetime settings.
+
+```bash
+# retain stable values for five hours
+openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"timed","durationSeconds":18000}' --strict-json
+
+# inspect the running gateway, not this short-lived cli process
+openclaw agent-system credentials cache status --json
+
+# invalidate one agent, or omit --agent to invalidate all
+openclaw agent-system credentials cache flush --agent data --json
+```
+
+Status requires `operator.read`; flush requires `operator.admin`. Both use the
+public Gateway RPC interface, identify the Gateway process, and disclose only
+policy, agent IDs, entry ages/expiry, counts, and backoff duration. They make no
+1Password request. Flush returns invalidated entry, client, pending-load, and
+value-snapshot counts. An unreachable, unauthorized, or incompatible Gateway is
+an error, never a successful local clear. `openclaw as` supports the same commands.
+
+Authorization and manifest/dotenv evaluation remain fresh on each operation.
+Credential-store selection and bootstrap credentials are rechecked before cache
+hits; clients and values are scoped by agent/workspace binding, credential source,
+credential generation, and resource declarations. Successful snapshots are
+immutable. Concurrent misses share retrieval without sharing caller cancellation.
+Failed or partial resource loads never populate successful values. Expired refresh
+failures return errors, not stale values. Expiry does not schedule idle refreshes.
+
+Configuration reload, agent removal, credential changes/rejection, explicit flush,
+and shutdown invalidate retained generations. Old in-flight loads cannot restore
+them. Existing operation snapshots are not remotely revoked or replayed. CLI
+credential commands notify the Gateway after validation rejection; set/unset
+commands attempt invalidation even after uncertain
+store mutations; they report **invalidation pending** when it cannot be confirmed.
+Restore Gateway access and run flush in that case. Store writes are never retried
+automatically. External 1Password edits become visible on lazy timed refresh or
+explicit flush; external local-store changes are detected on the next credential
+lookup.
+
+[OTP query transforms](https://www.1password.dev/sdks/concepts) (`attribute`/`attr`
+with `otp`/`totp`) and unknown query transforms bypass snapshot retention; only the
+stable `ssh-format=openssh` transform is admitted. The Environment SDK response
+contains names, values, and masking flags, not validity deadlines. Keep other
+externally time-varying credentials under off mode when their validity cannot be
+bounded by the selected TTL.
+
+Provider failures share bounded, credential-scoped in-process backoff across
+consumers, independent of value retention. Ordinary failures back off from 30
+seconds exponentially to one hour; the SDK's quota-error type imposes one hour.
+Flush preserves this state and does not reset provider quota. Existing GitHub
+polling backoff is unchanged. Separate processes cannot share either retained
+secrets or this in-memory provider backoff.
+
+#### Measured SDK-boundary costs
+
+A deterministic injected-provider run compared the prepared implementation base
+with this change: 40 loads, each declaring one direct secret and one Environment.
+These are SDK client creations and resource-read calls, **not billed API units**.
+
+| Workload                                    | Before: clients / reads | Default timed: clients / reads |
+| ------------------------------------------- | ----------------------- | ------------------------------ |
+| One retained process, sequential loads      | 40 / 80                 | 1 / 2                          |
+| One retained process, concurrent loads      | 40 / 80                 | 1 / 2                          |
+| Forty independent service/process lifetimes | 40 / 80                 | 40 / 80                        |
+
+The retained synthetic workload saves 97.5% of these boundary calls. This is not
+an account-wide quota forecast: background traffic, SDK internals, and live CI
+headroom must be measured independently. `test/op-cache.spec.ts` keeps these
+workloads reproducible, including off mode and process-lifetime mode. Status
+exposes saturating counters for client creations, resource reads, hits, misses,
+coalescing, failures, and backoff skips, without resource IDs or token digests.
+
+Existing tests remain in place. Shared disposable CI setup explicitly selects
+process-lifetime mode; the installed GitHub example checks warmed Gateway state,
+flush counts, absence of control-triggered reads, and honest unreachable-Gateway
+reporting. The credentials example checks cross-process mutation acknowledgment.
+These installed scenarios run only in GitHub Actions. No live-provider experiment
+or operator-host rollout is part of local validation. Broad fixture rewrites are
+deferred: short-lived env/credential/tool commands still pay the process-start
+cost, and synthetic savings alone do not establish CI quota headroom.
+
+Compatibility review found the used public `registerGatewayMethod`, scoped
+registration, service reload/stop, and `callGatewayFromCli` contracts in OpenClaw
+2026.9.2 as well as the installed 2026.9.3 SDK. No minimum-version change is needed.
+
 ## Path
 
 Installation builds one deterministic prefix:

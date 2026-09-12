@@ -27,6 +27,7 @@ const supportedPluginSdkSubpaths = new Set([
   'command-auth',
   'config-contracts',
   'error-runtime',
+  'gateway-runtime',
   'logging-core',
   'plugin-entry',
   'plugin-runtime',
@@ -151,6 +152,7 @@ describe('openclaw api policy', () => {
     const source = [
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';",
       "import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';",
+      "import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';",
       "import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-outbound';",
       "import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';",
     ].join('\n');

@@ -115,6 +115,16 @@ openclaw gateway call tools.github.status \
     .effective.account.login == "emoriwan"
   '
 
+# should inspect warmed gateway credentials without making provider reads
+first=$(openclaw agent-system credentials cache status --json)
+printf '%s\n' "$first" | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and any(.entries[]; .cached == true) and .counts.resourceReads > 0'
+openclaw agent-system credentials cache status --json | jq -e --argjson first "$first" '.process.pid == $first.process.pid and .counts.resourceReads == $first.counts.resourceReads'
+
+# should flush the running gateway without reading secrets or resetting backoff
+before=$(openclaw agent-system credentials cache status --json)
+openclaw agent-system credentials cache flush --json | jq -e --argjson before "$before" '.runtime == "gateway" and .process.pid == $before.process.pid and .invalidated.values > 0 and (.entries | length) == 0 and .counts.resourceReads == $before.counts.resourceReads and .backoff.active == $before.backoff.active'
+openclaw as credentials cache status --json | jq -e '.runtime == "gateway" and (.entries | length) == 0'
+
 # should match both strict mock tool exchanges
 openclaw-aimock evidence \
   --scenario github \
@@ -144,6 +154,10 @@ test -z "$remaining"
 
 # should stop the background gateway cleanly
 openclaw-gateway stop
+
+# should report an unreachable gateway without claiming a cli-only flush succeeded
+if output=$(openclaw agent-system credentials cache flush --json 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'Gateway cache request was not confirmed'
 
 # should stop the strict mock model cleanly
 openclaw-aimock stop

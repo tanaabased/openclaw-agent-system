@@ -48,6 +48,8 @@ import ConversationHookAccess, {
   requiredConversationHooks,
 } from './conversation-hook-access.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
+import registerOpCache from './register-op-cache.ts';
+import { requestOpCacheGateway } from '../cli/credentials-cache.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
@@ -84,13 +86,33 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     input: process.stdin,
     output: process.stderr,
   });
+  let cacheConfiguration: string | undefined;
   const opEnvironmentService = new OpEnvironmentService({
     credentialService: opCredentialService,
     integrationVersion: api.version ?? 'dev',
+    readCachePolicy() {
+      const config = readRuntimeConfig();
+      const pluginConfig = config.plugins?.entries?.['agent-system']?.config;
+      const signature = JSON.stringify([config.agents, pluginConfig]);
+      if (cacheConfiguration !== undefined && cacheConfiguration !== signature)
+        opEnvironmentService.flush();
+      cacheConfiguration = signature;
+      return pluginConfig?.opCache;
+    },
   });
+  registerOpCache(api, opEnvironmentService);
   const credentialManager = new OpCredentialManager({
     credentialService: opCredentialService,
     environmentService: opEnvironmentService,
+    async invalidate(agentId) {
+      opEnvironmentService.flush(agentId);
+      try {
+        await requestOpCacheGateway('flush', agentId);
+        return 'confirmed';
+      } catch {
+        return 'pending';
+      }
+    },
   });
   const gitignoreService = new WorkspaceGitignoreService();
   const pathService = new AgentPathService({
@@ -111,6 +133,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const environmentServiceRef: { current?: AgentEnvironmentService } = {};
   const manifestServiceRef: { current?: AgentManifestService } = {};
   const lifecycleEnvironmentService = {
+    invalidateCredentials(agentId: string) {
+      opEnvironmentService.flush(agentId);
+    },
     loadForAgentId(agentId: string, trigger?: ManifestLoadTrigger) {
       const service = environmentServiceRef.current;
       if (!service) throw new Error('Agent System environment service is unavailable.');

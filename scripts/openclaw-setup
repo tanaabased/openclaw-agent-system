@@ -260,6 +260,7 @@ if [[ -n "$agent_system_plugin" ]]; then
   openclaw plugins install "npm-pack:$agent_system_plugin" --force --accept-capabilities
   openclaw plugins enable agent-system
   openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+  openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"process-lifetime","maxEntries":128}' --strict-json
 fi
 
 if value_enabled "$yolo"; then

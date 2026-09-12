@@ -13,7 +13,7 @@ describe('index', () => {
     assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
-    assert.deepEqual(plugin.configSchema.jsonSchema?.properties, {});
+    assert.ok(Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('opCache'));
   });
 
   it('should declare cli output ownership without accessing runtime capabilities', () => {
@@ -109,6 +109,7 @@ describe('index', () => {
       registerCommand(command: { name: string }) {
         commandNames.push(command.name);
       },
+      registerGatewayMethod() {},
       registerService(service: { id: string }) {
         serviceIds.push(service.id);
       },
@@ -134,7 +135,7 @@ describe('index', () => {
     ]);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);
-    assert.deepEqual(serviceIds, ['agent-system-command-authority']);
+    assert.deepEqual(serviceIds, ['agent-system-op-cache', 'agent-system-command-authority']);
     assert.deepEqual(toolNames, [
       'agent_system_git',
       'agent_system_git_worktree',

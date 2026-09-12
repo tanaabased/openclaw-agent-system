@@ -2,6 +2,12 @@
 
 ### New Features
 
+- Added operator-controlled in-memory 1Password client/value reuse with off,
+  timed, and process-lifetime modes, bounded secret-free counters, generation-safe
+  invalidation, shared provider backoff, and live Gateway status/flush commands.
+  Preserved fresh authorization and local configuration; added deterministic
+  cache coverage and installed CI checks. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
+
 - Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
   verified install reconciliation with shared grant provenance, and non-blocking
   initial-assignment session persistence checks.
