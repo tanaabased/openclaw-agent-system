@@ -1,6 +1,7 @@
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from './github-schema.ts';
+import type { AgentModelsConfiguration } from './models-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;
@@ -21,6 +22,7 @@ export interface AgentManifest {
   };
   git?: GitManifestConfiguration;
   github?: GitHubManifestConfiguration;
+  models?: AgentModelsConfiguration;
 }
 
 export interface ManifestDiagnostic {

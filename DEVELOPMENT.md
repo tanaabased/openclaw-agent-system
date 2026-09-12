@@ -110,7 +110,7 @@ Choose the driver independently of the folder. Prefer direct assertions when
 state proves the contract, use strict AIMock when the real OpenClaw agent/tool
 loop matters without model judgment, and use a live model only when provider
 transport, model interpretation, or Codex-native behavior is under test. The
-`agent` and `github` examples use AIMock; `path` and `security` remain live.
+`agent` and `github` examples use AIMock; `models`, `path`, and `security` remain live.
 
 Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#in-memory-1password-caching);
 unit tests set their own policy. The [credentials example](examples/credentials/README.md)
