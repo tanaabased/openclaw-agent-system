@@ -6,22 +6,23 @@ agent:
   email: tanaabot@tanaab.dev
 
 environment:
-  op: jglytdfegfggijqkalco2cxexa
   set:
-    OP_SSH_KEY:
-      from-op: 'op://omfsw2uztmi2xqpid5g3kiv6ba/id_test/private key?ssh-format=openssh'
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+    GIT_SSH_PRIVATE_KEY: ${GIT_SSH_PRIVATE_KEY}
+  required:
+    - GH_TOKEN_TANAABOT
+    - GIT_SSH_PRIVATE_KEY
 
 git:
   extensions:
     big-test-bucket: allow
   worktrees: {}
   signing:
-    key: OP_SSH_KEY
+    key: GIT_SSH_PRIVATE_KEY
     allowed-signers-file: .agent-system/allowed_signers
   ssh:
     private-keys:
-      - path: ~/.ssh/big-test-bucket-ssh
-      - from-environment: OP_SSH_KEY
+      path: ~/.ssh/big-test-bucket-ssh
 
 github:
   username: tanaabot
