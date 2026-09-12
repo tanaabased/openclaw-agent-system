@@ -15,6 +15,7 @@
 
 ### Bug Fixes
 
+- Fixed Doctor falsely blocking agent-scoped Codex OAuth when the configured native model route is ready. [#93](https://github.com/tanaabased/openclaw-agent-system/issues/93)
 - Made Doctor and Install tables component-first with status-only color, neutral workspace metadata, readable wrapping, and stable attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
 - Preserved eligible unseen delivery pull-request comments and existing revision receipts during initial handoff, including interrupted retries, without changing reopen baselines. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)
 - Isolated GitHub reply-candidate turns by lifecycle conversation, bound staging to the active attempt, delayed acknowledgments until session recording, and retained assignment failure codes in refresh results. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)

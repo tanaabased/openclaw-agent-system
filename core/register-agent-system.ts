@@ -19,6 +19,7 @@ import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
+import parseModelRuntimeStatus from '../agent/model-runtime-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -293,6 +294,17 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           throw new Error(result.stderr.trim() || `OpenClaw models list exited ${result.code}.`);
         }
         return parseModelCatalogRows(result.stdout);
+      },
+      async inspectModelRuntimeStatus({ agentId, workspaceDir }) {
+        const result = await runPluginCommandWithTimeout({
+          argv: [...openClawCommand, 'models', 'status', '--agent', agentId, '--json'],
+          cwd: workspaceDir,
+          timeoutMs: 120_000,
+        });
+        if (result.code !== 0) {
+          throw new Error(result.stderr.trim() || `OpenClaw models status exited ${result.code}.`);
+        }
+        return parseModelRuntimeStatus(result.stdout);
       },
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);

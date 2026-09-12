@@ -7,6 +7,7 @@ import {
   type AgentSystemLifecycleFinding,
 } from '../core/lifecycle-registry.ts';
 import type { AgentModelProfile, AgentModelsConfiguration } from '../manifest/models-schema.ts';
+import type { ModelRuntimeStatusSnapshot } from './model-runtime-status.ts';
 
 interface ModelRef {
   model: string;
@@ -30,6 +31,10 @@ export interface ModelLifecycleDependencies {
     provider: string;
     workspaceDir: string;
   }): Promise<ModelCatalogRow[]>;
+  inspectModelRuntimeStatus(params: {
+    agentId: string;
+    workspaceDir: string;
+  }): Promise<ModelRuntimeStatusSnapshot>;
   mutateConfigFile(params: {
     afterWrite: { mode: 'auto' };
     base: 'source';
@@ -294,10 +299,10 @@ function createConfigurationPlan(
 
 async function runtimeFinding(
   params: {
-    agentId: string;
     config: OpenClawConfig;
     ref: ModelRef;
     runtime: string;
+    runtimeStatus?: ModelRuntimeStatusSnapshot;
     workspaceDir: string;
   },
   dependencies: ModelLifecycleDependencies,
@@ -320,33 +325,69 @@ async function runtimeFinding(
     }
   }
 
-  const eligibility = dependencies.resolveCliBackendDispatchEligibility({
-    agentId: params.agentId,
-    config: params.config,
-    model: params.ref.model,
-    provider: params.ref.provider,
-    workspaceDir: params.workspaceDir,
-  });
-  if (eligibility && sameRuntime(eligibility.provider, params.runtime)) return;
-  if (!eligibility) {
-    try {
-      const auth = await dependencies.verifyProviderAuth({
-        config: params.config,
-        provider: params.ref.provider,
-        workspaceDir: params.workspaceDir,
-      });
-      if (auth.mode === 'api-key') return;
-    } catch {
-      // Report the native route failure below without exposing credential details.
-    }
+  const issue = params.runtimeStatus?.issues.find(
+    (candidate) =>
+      sameRuntime(candidate.provider, params.ref.provider) && candidate.model === params.ref.model,
+  );
+  if (issue?.kind === 'indeterminate') {
+    return {
+      code: 'agent-model-runtime-evidence-unavailable',
+      message: `Native runtime authentication evidence is unavailable for ${modelKey(params.ref)}.`,
+      remediation: 'Restore agent-scoped model status inspection, then run doctor again.',
+      status: 'blocked',
+    };
   }
-  return {
-    code: 'agent-model-runtime-auth-unavailable',
-    message: `Native runtime ${params.runtime} is not ready for ${modelKey(params.ref)} with its current authentication.`,
-    remediation:
-      'Repair the existing native runtime or its stored authentication, then run doctor again.',
-    status: 'blocked',
-  };
+  if (issue) {
+    return {
+      code: 'agent-model-runtime-auth-unavailable',
+      message: issue.message,
+      remediation:
+        issue.kind === 'missing-auth'
+          ? 'Repair the existing provider authentication, then run doctor again.'
+          : 'Repair the existing model route or its authentication, then run doctor again.',
+      status: 'blocked',
+    };
+  }
+
+  const route = params.runtimeStatus?.routes.find(
+    (candidate) =>
+      sameRuntime(candidate.provider, params.ref.provider) &&
+      sameRuntime(candidate.runtime, params.runtime),
+  );
+  if (!route || route.status === 'indeterminate') {
+    return {
+      code: 'agent-model-runtime-evidence-unavailable',
+      message: `Native runtime authentication evidence is unavailable for ${modelKey(params.ref)}.`,
+      remediation: 'Restore agent-scoped model status inspection, then run doctor again.',
+      status: 'blocked',
+    };
+  }
+  const authStatus = route.status === 'unavailable' ? route.authStatus : route.status;
+  if (authStatus === 'missing') {
+    return {
+      code: 'agent-model-runtime-auth-unavailable',
+      message: `Native runtime ${params.runtime} is not ready for ${modelKey(params.ref)} with its current authentication.`,
+      remediation:
+        'Repair the existing native runtime or its stored authentication, then run doctor again.',
+      status: 'blocked',
+    };
+  }
+  if (authStatus === 'indeterminate') {
+    return {
+      code: 'agent-model-runtime-evidence-unavailable',
+      message: `Native runtime authentication evidence is unavailable for ${modelKey(params.ref)}.`,
+      remediation: 'Restore agent-scoped model status inspection, then run doctor again.',
+      status: 'blocked',
+    };
+  }
+  if (route.status === 'unavailable') {
+    return {
+      code: 'agent-model-runtime-unavailable',
+      message: `Native runtime ${params.runtime} is unavailable for ${modelKey(params.ref)}${route.runtimeDetail ? `: ${route.runtimeDetail}` : '.'}`,
+      remediation: 'Repair the existing native runtime, then run doctor again.',
+      status: 'blocked',
+    };
+  }
 }
 
 async function readinessFindings(
@@ -355,12 +396,27 @@ async function readinessFindings(
   workspaceDir: string,
   dependencies: ModelLifecycleDependencies,
 ): Promise<ContributionFinding[]> {
+  let runtimeStatus: ModelRuntimeStatusSnapshot | undefined;
+  if (!sameRuntime(plan.sourceRuntime, 'openclaw')) {
+    try {
+      runtimeStatus = await dependencies.inspectModelRuntimeStatus({ agentId, workspaceDir });
+    } catch {
+      return [
+        {
+          code: 'agent-model-runtime-evidence-unavailable',
+          message: `Native runtime authentication evidence is unavailable for ${modelKey(plan.sourceModel)}.`,
+          remediation: 'Restore agent-scoped model status inspection, then run doctor again.',
+          status: 'blocked',
+        },
+      ];
+    }
+  }
   const sourceFinding = await runtimeFinding(
     {
-      agentId,
       config: plan.config,
       ref: plan.sourceModel,
       runtime: plan.sourceRuntime,
+      runtimeStatus,
       workspaceDir,
     },
     dependencies,
@@ -374,10 +430,10 @@ async function readinessFindings(
   for (const ref of declaredRefs) {
     const routeFinding = await runtimeFinding(
       {
-        agentId,
         config: plan.config,
         ref,
         runtime: plan.sourceRuntime,
+        runtimeStatus,
         workspaceDir,
       },
       dependencies,
