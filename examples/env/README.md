@@ -1,6 +1,6 @@
 # Environment Example
 
-This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv, 1Password Environment, and direct secret resolution; host references; required-value enforcement; and value-free environment inspection without invoking a model.
+This scenario uses scenario-owned workspaces on a fresh runner. It verifies ordered dotenv, 1Password Environment, and direct secret resolution; host references; required-value enforcement; and value-free environment inspection without invoking a model. One local signature verifies that the `from-op` SSH key resolves to usable private-key material.
 
 ## Setup
 
@@ -13,6 +13,9 @@ openclaw-setup \
 # should install the scenario-owned data workspace through agent system
 cd "$GITHUB_WORKSPACE/examples/env/data"
 openclaw agent-system install
+
+# should register the vault fixture workspace for the private-key consumer check
+openclaw agents add onepassword-data --workspace "$GITHUB_WORKSPACE/examples/env/onepassword" --non-interactive --json
 ```
 
 ## Testing
@@ -45,6 +48,12 @@ printf '%s\n' "$output" | jq -e '.variables | any(.name == "VIBES" and .source =
 printf '%s\n' "$output" | jq -e '.variables | any(.name == "OP_SSH_KEY" and .source == "environment.set" and .required == true)'
 printf '%s\n' "$output" | jq -e '[.. | objects | has("values")] | all(. == false)'
 if printf '%s\n' "$output" | grep -Fq "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; fi
+
+# should resolve a usable openssh private key from the declared vault reference
+git init --quiet "$GITHUB_WORKSPACE/examples/env/onepassword/repository"
+cd "$GITHUB_WORKSPACE/examples/env/onepassword/repository"
+openclaw agent-system tool git -- commit --quiet --allow-empty --message 'verify resolved private key'
+git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$GITHUB_WORKSPACE/examples/env/onepassword/.agent-system/allowed_signers" verify-commit HEAD
 
 # should validate access to every declared 1password resource without returning values
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"

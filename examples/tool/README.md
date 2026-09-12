@@ -10,9 +10,8 @@ openclaw-setup \
   --workspace "$TMPDIR/main" \
   --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 
-# should store access and install the scenario-owned agent through agent system
+# should install the scenario-owned agent through agent system
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
-openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 ```
 

@@ -2,6 +2,8 @@ schema-version: 1
 
 agent:
   id: onepassword-data
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
 
 environment:
   op: jglytdfegfggijqkalco2cxexa
@@ -11,3 +13,8 @@ environment:
   required:
     - OP_SSH_KEY
     - VIBES
+
+git:
+  signing:
+    key: OP_SSH_KEY
+    allowed-signers-file: .agent-system/allowed_signers

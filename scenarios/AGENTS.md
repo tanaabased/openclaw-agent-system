@@ -17,7 +17,8 @@
 - Use `openclaw-notification-setup` as the notification-specific wrapper for profile preparation, evidence comparison, and shutdown. It delegates strict AIMock lifecycle to `openclaw-aimock`; keep provider branches out of scenario README files.
 - Register named agents explicitly, bind them to scenario-owned workspaces, and keep generated state beneath `TMPDIR`.
 - Use `--yolo` only for unattended live-agent work in the isolated ephemeral runner.
-- Keep model and provider credentials scoped to the final Leia execution step in `.github/workflows/reusable-notification-test.yml` and load account tokens from declared 1Password Environments.
+- Make live 1Password requests only when the test verifies 1Password behavior. Use host environment variables with explicit manifest imports for ordinary test authentication.
+- Keep model and provider credentials scoped to the final Leia execution step in `.github/workflows/reusable-notification-test.yml`.
 
 ## Assertions
 

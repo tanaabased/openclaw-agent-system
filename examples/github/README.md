@@ -1,8 +1,8 @@
 # GitHub Tool Example
 
-Tests two agents' installation, SSH keys, distinct GitHub identities, and 1Password
-cache reuse, flush, and mutation invalidation through the real Gateway with AIMock.
-The [credentials example](../credentials/README.md) covers storage and cache commands.
+Tests two agents' installation, SSH keys, and distinct GitHub identities through
+the real Gateway with AIMock and host-provided GitHub tokens. The
+[credentials example](../credentials/README.md) covers provider storage and caching.
 
 ## Setup
 
@@ -25,18 +25,16 @@ sed \
 ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-auth -f "$TMPDIR/agent-system-github-tanaabot/generated-auth"
 ssh-keygen -q -t ed25519 -N '' -C agent-system-leia-signing -f "$TMPDIR/agent-system-github-tanaabot/generated-signing"
 
-# should store access and add missing tanaabot authentication and signing keys during install
+# should add missing tanaabot authentication and signing keys during install
 cd "$TMPDIR/agent-system-github-tanaabot"
-openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "create-openclaw-github-profile")'
 printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "set-openclaw-github-profile")'
 printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "add-github-ssh-keys")'
 printf '%s\n' "$output" | jq -e '.outcomes | any(.code == "add-github-ssh-signing-keys")'
 
-# should store access and install the scenario-owned emori agent through agent system
+# should install the scenario-owned emori agent through agent system
 cd "$GITHUB_WORKSPACE/examples/github/emori"
-openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
@@ -117,61 +115,7 @@ openclaw gateway call tools.github.status \
     .effective.account.login == "emoriwan"
   '
 
-# should inspect both warmed agents through the gateway without making provider reads
-first=$(openclaw agent-system credentials cache status --json)
-printf '%s\n' "$first" | jq '.'
-printf '%s\n' "$first" | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and ([.entries[] | select(.cached) | .agentId] | sort) == ["emori", "tanaabot"] and .counts.resourceReads > 0'
-openclaw agent-system credentials cache status --json | jq -e --argjson first "$first" '.process.pid == $first.process.pid and .counts.resourceReads == $first.counts.resourceReads'
-
-# should reuse credentials across separate agent turns in the same gateway
-before=$(openclaw agent-system credentials cache status --json)
-openclaw agent \
-  --agent emori \
-  --session-key agent:emori:agent-system-github-cache-hit \
-  --message-file "$GITHUB_WORKSPACE/examples/github/emori/cache-hit.md" \
-  --timeout 120 | grep -F 'emoriwan'
-after=$(openclaw agent-system credentials cache status --json)
-printf '%s\n' "$after" | jq '.'
-printf '%s\n' "$after" | jq -e --argjson before "$before" '.process.pid == $before.process.pid and .counts.resourceReads == $before.counts.resourceReads and .counts.clientCreations == $before.counts.clientCreations and .counts.hits > $before.counts.hits'
-
-# should invalidate only the selected agent and lazily refill on its next operation
-before=$(openclaw agent-system credentials cache status --json)
-flushed=$(openclaw agent-system credentials cache flush --agent emori --json)
-printf '%s\n' "$flushed" | jq '.'
-printf '%s\n' "$flushed" | jq -e --argjson before "$before" '.process.pid == $before.process.pid and .invalidated.values == 1 and ([.entries[].agentId] == ["tanaabot"]) and .counts.resourceReads == $before.counts.resourceReads'
-openclaw agent \
-  --agent emori \
-  --session-key agent:emori:agent-system-github-cache-refill \
-  --message-file "$GITHUB_WORKSPACE/examples/github/emori/cache-refill.md" \
-  --timeout 120 | grep -F 'emoriwan'
-after=$(openclaw agent-system credentials cache status --json)
-printf '%s\n' "$after" | jq '.'
-printf '%s\n' "$after" | jq -e --argjson before "$before" '.process.pid == $before.process.pid and .counts.resourceReads == ($before.counts.resourceReads + 1) and any(.entries[]; .agentId == "emori" and .cached)'
-
-# should invalidate warmed gateway values after a separate credential store command
-before=$(openclaw agent-system credentials cache status --json)
-cd "$GITHUB_WORKSPACE/examples/github/emori"
-openclaw agent-system credentials set op --from-env | grep -F 'gateway cache' | grep -F 'invalidation confirmed'
-after=$(openclaw agent-system credentials cache status --json)
-printf '%s\n' "$after" | jq '.'
-printf '%s\n' "$after" | jq -e --argjson before "$before" '.process.pid == $before.process.pid and ([.entries[].agentId] == ["tanaabot"]) and .counts.resourceReads == $before.counts.resourceReads'
-openclaw agent \
-  --agent emori \
-  --session-key agent:emori:agent-system-github-cache-mutation \
-  --message-file "$GITHUB_WORKSPACE/examples/github/emori/cache-mutation.md" \
-  --timeout 120 | grep -F 'emoriwan'
-refilled=$(openclaw agent-system credentials cache status --json)
-printf '%s\n' "$refilled" | jq '.'
-printf '%s\n' "$refilled" | jq -e --argjson before "$before" '.process.pid == $before.process.pid and .counts.resourceReads == ($before.counts.resourceReads + 1) and any(.entries[]; .agentId == "emori" and .cached)'
-
-# should flush the running gateway without reading secrets or resetting backoff
-before=$(openclaw agent-system credentials cache status --json)
-flushed=$(openclaw agent-system credentials cache flush --json)
-printf '%s\n' "$flushed" | jq '.'
-printf '%s\n' "$flushed" | jq -e --argjson before "$before" '.runtime == "gateway" and .process.pid == $before.process.pid and .invalidated.values == 2 and (.entries | length) == 0 and .counts.resourceReads == $before.counts.resourceReads and .backoff.active == $before.backoff.active'
-openclaw as credentials cache status --json | jq -e '.runtime == "gateway" and (.entries | length) == 0'
-
-# should match the identity and cache verification tool exchanges
+# should match the identity verification tool exchanges
 openclaw-aimock evidence \
   --scenario github \
   --expected-evidence "$GITHUB_WORKSPACE/examples/github/expected-evidence.json"

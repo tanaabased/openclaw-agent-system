@@ -7,7 +7,10 @@ agent:
   emoji: 📬
 
 environment:
-  op: jglytdfegfggijqkalco2cxexa
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required:
+    - GH_TOKEN_TANAABOT
 
 git:
   worktrees: {}
