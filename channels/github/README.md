@@ -72,6 +72,55 @@ upgrading; running old and new state writers together is unsupported.
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
+## Model routing
+
+Declaring all four [model profiles](../../ADVANCED.md#models) enables routing for
+new issue conversations in either mode. Existing conversations and default-only
+manifests keep their ordinary behavior. Before the initial assignment turn, the
+manifest default model assesses bounded issue content in a fresh, tool-free
+native runtime context. The model supplies the reasoning judgment; code validates
+its response, maps the tier to the configured profile, and saves the decision
+before substantive work. Routing runs inside the issue's execution lease and
+outside the shared polling lease.
+
+Verified native **Complexity** determines the tier. When native metadata is
+missing or unavailable, the visible fenced YAML capsule with
+`schema: tanaab/task-metadata/v2`, `mode: fallback`, and `fallback.complexity`
+can supply it. Missing, invalid, conflicting, and unavailable values remain
+distinct evidence for the model's labeled content assessment. **Work size**
+informs scope and decomposition, never the model tier. An unresolvable assessment,
+unsupported profile, or failed classifier blocks that issue for retry; it does
+not select an expensive default or a fallback chain. Automatic efforts are
+`medium`, `high`, or justified `xhigh`.
+
+Run `install` and `doctor` to establish the declared model bindings. Isolated
+classification additionally requires operator-owned OpenClaw permissions under
+`plugins.entries.agent-system.llm`: `allowAgentIdOverride: true` and
+`allowModelOverride: true`. Restrict `allowedModels` to the agents' classifier
+default models where appropriate; any `allowedCompletionModels` restriction
+must also permit them. Agent System does not grant itself these permissions,
+provision authentication, or replace an unsupported native runtime with a direct
+provider call.
+
+The saved model and effort survive retries, restarts, comments, and delivery
+pull-request continuation. Later manifest edits do not reclassify existing
+conversations. Explicit supported native model and effort overrides take
+precedence independently. OpenClaw must report both selected values before a
+routed turn can publish. The initial private assessment includes a short routing
+note with model, effort, complexity, source, and reason; the note itself is not
+runtime evidence and is excluded from the public reply candidate.
+
+For a demonstrated reasoning blocker, the agent explains the failed approach
+and requests a specific stronger profile through the existing clarification
+flow. Authentication failures, rate limits, slow tests, and missing requirements
+do not justify escalation. When native tools cannot set and verify both model
+and effort, the operator must make the change through supported session controls.
+
+The existing [assignment scenario](../../scenarios/issue-work-assignment/README.md)
+covers installed selection and persistence. Provider-level effort and a bounded
+completed-issue cost/rework sample require separately authorized live evaluation
+before broad rollout.
+
 ## Configuration Reference
 
 Add the channel to `.agent-system/agent.yaml` or the root `agent.yaml`:

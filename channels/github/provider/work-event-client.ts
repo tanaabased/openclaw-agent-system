@@ -80,8 +80,9 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     name: string,
     number: number,
     itemType: 'issue' | 'pull-request' = 'issue',
+    includeRoutingMetadata = false,
   ): Promise<GitHubNotificationItemContext> {
-    return this.#items.getItemContext(owner, name, number, itemType);
+    return this.#items.getItemContext(owner, name, number, itemType, includeRoutingMetadata);
   }
 
   listAssignmentEvents(

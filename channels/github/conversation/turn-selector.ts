@@ -8,6 +8,7 @@ import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type { GitHubNotificationTurnDefinition } from './turn-catalog.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
+import type { ModelRouting } from './model-routing.ts';
 
 export interface GitHubNotificationTurnSelectorDependencies {
   conversations: Pick<GitHubNotificationConversationStateStore, 'readRouted'>;
@@ -20,6 +21,7 @@ export interface GitHubNotificationTurnSelectorDependencies {
 }
 
 export interface GitHubNotificationSelectedTurn {
+  modelRouting?: ModelRouting;
   agentId: string;
   conversationId: string;
   identity: Readonly<GitHubNotificationTurnIdentity>;
@@ -99,6 +101,7 @@ export default class GitHubNotificationTurnSelector {
         modeId: conversation.mode,
       }).identity;
       return {
+        ...(conversation.modelRouting ? { modelRouting: conversation.modelRouting } : {}),
         agentId,
         conversationId: selectedCanonicalConversationId,
         identity,

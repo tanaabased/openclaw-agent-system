@@ -2,6 +2,9 @@ import { buildChannelInboundEventContext } from 'openclaw/plugin-sdk/channel-inb
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import type { Logger } from '../../../core/logger.ts';
+import type { AgentModelsConfiguration } from '../../../manifest/models-schema.ts';
+import { initializeModelRouting } from './model-routing.ts';
+import type ModelRoutingService from './model-routing-service.ts';
 import { githubNotificationAssignmentCard } from '../events/assignment.ts';
 import { githubNotificationImplementationCard } from '../events/implementation.ts';
 import githubNotificationAssignmentContext, {
@@ -43,6 +46,11 @@ import type GitHubNotificationIssueDeliveryService from './issue-delivery-servic
 import type GitHubNotificationPullRequestHandoffService from './pull-request-handoff-service.ts';
 
 export interface GitHubNotificationAssignmentSessionServiceDependencies {
+  readModels?(input: {
+    agentId: string;
+    workspaceDir: string;
+  }): Promise<AgentModelsConfiguration | undefined>;
+  modelRouting?: Pick<ModelRoutingService, 'assess'>;
   acknowledgments: Pick<GitHubNotificationAssignmentAcknowledgmentService, 'publish'>;
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationItemContextClient>;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
@@ -231,7 +239,19 @@ export default class GitHubNotificationAssignmentSessionService {
       }
       return;
     }
-    const contextInput = await this.#context(input);
+    const pendingRouting = Boolean(
+      current.conversation.modelRouting && !current.conversation.modelRouting.decision,
+    );
+    let contextInput = await this.#context(input, pendingRouting);
+    if (pendingRouting && contextInput.itemContext) {
+      await this.#dependencies.modelRouting?.assess(
+        current.state,
+        contextInput.itemContext,
+        input.signal,
+      );
+      // Reauthorize after inference; a slow assessment must not retain stale assignment authority.
+      contextInput = await this.#context(input);
+    }
     const projection = assignmentSupport.session.project(contextInput);
     const lifecycleContext = input.lifecycle.context.project(contextInput);
     const body = githubNotificationAssignmentCard(projection, input.mode.policy.id);
@@ -291,6 +311,7 @@ export default class GitHubNotificationAssignmentSessionService {
 
   async #context(
     input: GitHubNotificationAssignmentSessionInput,
+    includeRoutingMetadata = false,
   ): Promise<GitHubNotificationLifecycleContextInput> {
     const intake = input.item.intake;
     if (!intake) {
@@ -313,6 +334,7 @@ export default class GitHubNotificationAssignmentSessionService {
       input.item.repositoryName,
       input.item.number,
       input.item.itemType,
+      includeRoutingMetadata,
     );
     return {
       item: input.item,
@@ -458,7 +480,12 @@ export default class GitHubNotificationAssignmentSessionService {
       );
     if (state.workspaceDir !== input.workspaceDir)
       throw new Error('The GitHub assignment conversation belongs to another workspace.');
+    const routing =
+      input.item.lifecycleId === 'issue'
+        ? initializeModelRouting(await this.#dependencies.readModels?.(input))
+        : undefined;
     state.conversation = {
+      ...(routing ? { modelRouting: routing } : {}),
       baselineEstablished: false,
       itemKey: githubWorkItemKey(input.item.repositoryNodeId, input.item.number),
       lifecycleId: input.item.lifecycleId,

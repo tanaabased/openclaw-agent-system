@@ -175,6 +175,20 @@ describe('scripts/aimock-evidence', () => {
       }));
       return [
         {
+          body: {
+            messages: [{ role: 'user', content: 'bounded issue routing assessment' }],
+            model: 'gpt-5.5',
+          },
+          method: 'POST',
+          path: '/v1/responses',
+          response: {
+            fixture: {
+              response: { content: '{"complexity":"low","reason":"Localized fixture."}' },
+            },
+            status: 200,
+          },
+        },
+        {
           body: { messages: prompts, model: 'gpt-5.5', tools },
           method: 'POST',
           path: '/responses',

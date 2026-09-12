@@ -30,6 +30,8 @@ import { githubWorkItemKey } from '../channels/github/provider/work-item.ts';
 import { githubNotificationPublicationTarget } from '../channels/github/publication/publication.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
+import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
+import { modelRoutingDecision } from '../channels/github/conversation/model-routing.ts';
 
 const agentId = 'tanaabot';
 const workspaceDir = '/workspace';
@@ -167,6 +169,7 @@ function guidedResult(): GitHubNotificationModelTurnCoordinatorResult {
 }
 
 interface HarnessOptions {
+  models?: AgentModelsConfiguration;
   initialConversationMissing?: boolean;
   acknowledgmentFailures?: number;
   assignmentFailures?: number;
@@ -189,6 +192,8 @@ function harness(options: HarnessOptions = {}) {
   let state = initialState(mode.policy.id === 'guided' ? 'guided' : 'work');
   if (options.initialConversationMissing) delete state.conversations[conversationId];
   let contextReads = 0;
+  let classifications = 0;
+  let metadataReads = 0;
   if (options.initialActiveTurn) {
     state.conversations[conversationId]!.activeTurn = options.initialActiveTurn;
   }
@@ -202,6 +207,21 @@ function harness(options: HarnessOptions = {}) {
     publications: 0,
   };
   const service = new GitHubNotificationAssignmentSessionService({
+    readModels: async () => options.models,
+    modelRouting: {
+      async assess(snapshot, context) {
+        const routing = snapshot.conversation?.modelRouting;
+        assert.ok(routing);
+        assert.equal(snapshot.conversation?.activeTurn, undefined);
+        classifications += 1;
+        routing.decision = modelRoutingDecision(
+          '{"complexity":"low","reason":"Localized fixture."}',
+          routing,
+          context,
+        );
+        state = replaceConversationSnapshot(state, snapshot);
+      },
+    },
     acknowledgments: {
       async publish(acknowledgment) {
         counts.acknowledgments += 1;
@@ -220,8 +240,9 @@ function harness(options: HarnessOptions = {}) {
         return {
           authorized: true,
           client: {
-            async getItemContext(owner, name, number, itemType) {
+            async getItemContext(owner, name, number, itemType, includeRoutingMetadata) {
               contextReads += 1;
+              if (includeRoutingMetadata) metadataReads += 1;
               assert.deepEqual(
                 [owner, name, number, itemType],
                 ['tanaabased', 'example', 12, 'issue'],
@@ -251,6 +272,10 @@ function harness(options: HarnessOptions = {}) {
         const activeTurn = state.conversations[conversationId]?.activeTurn;
         assert.equal(activeTurn?.sourceId, assignmentEventId);
         if (activeTurn?.eventId === 'assignment') {
+          if (options.models?.low && options.initialConversationMissing) {
+            assert.ok(state.conversations[conversationId]?.modelRouting?.decision);
+            assert.ok(contextReads >= 2);
+          }
           counts.assignmentTurns += 1;
           await turnInput.afterRecord?.();
           options.verifyAssignment?.(turnInput);
@@ -365,6 +390,8 @@ function harness(options: HarnessOptions = {}) {
     },
   });
   return {
+    classifications: () => classifications,
+    metadataReads: () => metadataReads,
     counts,
     contextReads: () => contextReads,
     prepare: () => service.prepare({ ...input, mode }),
@@ -373,6 +400,29 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe('channels/github/conversation/assignment-session-service', () => {
+  it('should classify a new opted-in issue before dispatch, reauthorize, and reuse its saved decision on retry', async () => {
+    const profile = { model: 'openai/gpt-5.5', effort: 'high' } as const;
+    const scenario = harness({
+      initialConversationMissing: true,
+      acknowledgmentFailures: 1,
+      models: { default: profile, low: profile, medium: profile, high: profile },
+    });
+    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/);
+    await scenario.prepare();
+    assert.equal(scenario.classifications(), 1);
+    assert.equal(scenario.metadataReads(), 1);
+    assert.ok(scenario.state().conversations[conversationId]?.modelRouting?.decision);
+    for (const options of [
+      { initialConversationMissing: true, models: { default: profile } },
+      { models: { default: profile, low: profile, medium: profile, high: profile } },
+    ]) {
+      const ordinary = harness(options);
+      await ordinary.prepare();
+      assert.equal(ordinary.classifications(), 0);
+      assert.equal(ordinary.metadataReads(), 0);
+    }
+  });
+
   it('should initialize a new conversation before dispatch and retry an interrupted acknowledgment', async () => {
     const scenario = harness({ initialConversationMissing: true, acknowledgmentFailures: 1 });
     await assert.rejects(scenario.prepare(), /acknowledgment interrupted/u);
