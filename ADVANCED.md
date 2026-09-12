@@ -162,21 +162,32 @@ Each profile requires both fields:
 Model refs cannot select an authentication profile. Runtime and credential
 configuration remain outside the manifest.
 
+OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
+`agentRuntime`; it does not authorize selection. Selection is governed by the
+agent's effective `modelPolicy.allow`, which may come from the agent entry or
+`agents.defaults`.
+
 `install` sets the bound agent's primary model and default thinking effort from
 `models.default`. It binds each distinct declared model to the same established
 runtime route already used by that agent, without provisioning or resolving
 credentials and without changing global defaults, fallbacks, unrelated per-model
-settings, or existing session selections. An explicit incompatible or ambiguous
-runtime binding blocks the change rather than selecting another route. Removing
-`models` later performs no cleanup and does not guess the previous default.
+settings, or existing session selections. When a restrictive effective model
+policy excludes a declared model, `install` creates or extends the bound agent's
+own `modelPolicy.allow`, preserving the currently inherited permissions and
+appending only missing declarations. It does not broaden the global policy or
+other agents. Unrestricted and matching wildcard policies need no repair. An
+explicit incompatible or ambiguous runtime binding blocks the change rather than
+selecting another route. Removing profiles or `models` later performs no cleanup
+and does not guess which policy entries or previous defaults it once added.
 
-`doctor` checks configuration drift, configured model presence, and effort support
-without changing configuration, resolving authentication, or running inference.
-OpenClaw owns authentication and runtime health through its model status and agent
-execution surfaces. A configured model that OpenClaw explicitly reports as
-unavailable produces a warning rather than blocking Doctor. Unknown availability
-does not imply failure, while list inspection failures remain distinct from a
-model or effort known to be unsupported.
+`doctor` checks configuration drift, effective selection policy, configured model
+presence, and effort support without changing configuration, resolving
+authentication, or running inference. OpenClaw owns authentication and runtime
+health through its model status and agent execution surfaces. A configured model
+that OpenClaw explicitly reports as unavailable produces a warning rather than
+blocking Doctor. Unknown availability does not imply failure, while list
+inspection failures remain distinct from a model or effort known to be
+unsupported.
 
 Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.

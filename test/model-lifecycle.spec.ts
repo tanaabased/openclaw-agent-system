@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { resolveAllowedModelRef as resolveOpenClawAllowedModelRef } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import createModelLifecycleContribution, {
@@ -73,6 +74,15 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
           : (agent?.model?.primary ?? 'openai/gpt-5.6-sol');
       return parseRef(selected);
     },
+    resolveAllowedModelRef({ agentId, config: current, defaultProvider, raw }) {
+      return resolveOpenClawAllowedModelRef({
+        agentId,
+        catalog: [],
+        cfg: current,
+        defaultProvider,
+        raw,
+      });
+    },
     resolveThinkingPolicy() {
       return {
         levels: (options.supportedEfforts ?? ['medium', 'high', 'xhigh']).map((id) => ({ id })),
@@ -109,6 +119,22 @@ function codexConfig(): OpenClawConfig {
       },
     },
   };
+}
+
+function readyCodexConfig(): OpenClawConfig {
+  const config = codexConfig();
+  const agent = config.agents!.entries!.emori!;
+  agent.model = {
+    primary: 'openai/gpt-6-astra',
+    fallbacks: ['anthropic/claude-sonnet'],
+  };
+  agent.thinkingDefault = 'high';
+  agent.models!['openai/gpt-6-astra'] = {
+    alias: 'astra',
+    agentRuntime: { id: 'codex' },
+  };
+  agent.models!['openai/gpt-5.6-terra'] = { agentRuntime: { id: 'codex' } };
+  return config;
 }
 
 describe('agent/model-lifecycle', () => {
@@ -167,6 +193,133 @@ describe('agent/model-lifecycle', () => {
 
     assert.equal(repeated?.outcomes[0]?.status, 'unchanged');
     assert.equal(mutations(), 1);
+  });
+
+  it('should diagnose and repair inherited selection policy at agent scope', async () => {
+    const config = readyCodexConfig();
+    config.agents!.defaults = {
+      modelPolicy: {
+        allow: ['openai/gpt-5.5', 'openai/gpt-5.6-sol', 'openai/gpt-6-astra'],
+      },
+    };
+    config.agents!.entries!.leia = {
+      modelPolicy: { allow: ['anthropic/claude-sonnet'] },
+    };
+    const before = structuredClone(config);
+    const { contribution, mutations } = createHarness(config);
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.deepEqual(
+      findings
+        ?.filter(({ code }) => code === 'agent-model-selection-policy-drift')
+        .map(({ message }) => message),
+      [
+        'OpenClaw model policy agents.defaults.modelPolicy.allow does not allow openai/gpt-5.6-terra for emori.',
+      ],
+    );
+    assert.deepEqual(config, before);
+    assert.equal(mutations(), 0);
+
+    const installed = await contribution.reconcile?.(context);
+
+    assert.equal(installed?.outcomes[0]?.status, 'updated');
+    assert.deepEqual(config.agents?.defaults?.modelPolicy?.allow, [
+      'openai/gpt-5.5',
+      'openai/gpt-5.6-sol',
+      'openai/gpt-6-astra',
+    ]);
+    assert.deepEqual(config.agents?.entries?.emori?.modelPolicy?.allow, [
+      'openai/gpt-5.5',
+      'openai/gpt-5.6-sol',
+      'openai/gpt-6-astra',
+      'openai/gpt-5.6-terra',
+    ]);
+    assert.deepEqual(config.agents?.entries?.leia, before.agents?.entries?.leia);
+    assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
+    assert.equal((await contribution.reconcile?.(context))?.outcomes[0]?.status, 'unchanged');
+    assert.equal(mutations(), 1);
+  });
+
+  it('should extend an explicit agent selection policy without inheriting defaults', async () => {
+    const config = readyCodexConfig();
+    config.agents!.defaults = {
+      modelPolicy: { allow: ['openai/gpt-5.5', 'openai/gpt-5.6-terra'] },
+    };
+    config.agents!.entries!.emori!.modelPolicy = {
+      allow: ['openai/gpt-5.6-sol', 'openai/gpt-6-astra'],
+    };
+    const { contribution } = createHarness(config);
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(
+      findings?.find(({ code }) => code === 'agent-model-selection-policy-drift')?.message,
+      'OpenClaw model policy agents.entries.emori.modelPolicy.allow does not allow openai/gpt-5.6-terra for emori.',
+    );
+
+    await contribution.reconcile?.(context);
+
+    assert.deepEqual(config.agents?.entries?.emori?.modelPolicy?.allow, [
+      'openai/gpt-5.6-sol',
+      'openai/gpt-6-astra',
+      'openai/gpt-5.6-terra',
+    ]);
+    assert.deepEqual(config.agents?.defaults?.modelPolicy?.allow, [
+      'openai/gpt-5.5',
+      'openai/gpt-5.6-terra',
+    ]);
+  });
+
+  it('should preserve inherited alias permissions when materializing agent policy', async () => {
+    const config = readyCodexConfig();
+    config.agents!.defaults = {
+      models: { 'openai/gpt-5.5': { alias: 'shared' } },
+      modelPolicy: { allow: ['shared'] },
+    };
+    config.agents!.entries!.emori!.models!['anthropic/claude-sonnet'] = {
+      alias: 'shared',
+    };
+    const { contribution } = createHarness(config);
+
+    await contribution.reconcile?.(context);
+
+    assert.deepEqual(config.agents?.entries?.emori?.modelPolicy?.allow, [
+      'openai/gpt-5.5',
+      'openai/gpt-6-astra',
+      'openai/gpt-5.6-terra',
+      'openai/gpt-5.6-sol',
+    ]);
+    assert.deepEqual(config.agents?.defaults?.modelPolicy?.allow, ['shared']);
+  });
+
+  it('should leave unrestricted and wildcard selection policies unchanged', async () => {
+    const unrestricted = readyCodexConfig();
+    const wildcard = readyCodexConfig();
+    wildcard.agents!.defaults = { modelPolicy: { allow: ['openai/*'] } };
+    const unrestrictedHarness = createHarness(unrestricted);
+    const wildcardHarness = createHarness(wildcard);
+
+    assert.equal(
+      (await unrestrictedHarness.contribution.inspect?.(context))?.[0]?.code,
+      'agent-models-ready',
+    );
+    assert.equal(
+      (await wildcardHarness.contribution.inspect?.(context))?.[0]?.code,
+      'agent-models-ready',
+    );
+    assert.equal(
+      (await unrestrictedHarness.contribution.reconcile?.(context))?.outcomes[0]?.status,
+      'unchanged',
+    );
+    assert.equal(
+      (await wildcardHarness.contribution.reconcile?.(context))?.outcomes[0]?.status,
+      'unchanged',
+    );
+    assert.equal(unrestrictedHarness.mutations(), 0);
+    assert.equal(wildcardHarness.mutations(), 0);
+    assert.equal(unrestricted.agents?.entries?.emori?.modelPolicy, undefined);
+    assert.equal(wildcard.agents?.entries?.emori?.modelPolicy, undefined);
   });
 
   it('should refuse to overwrite an explicit conflicting runtime', async () => {
@@ -363,6 +516,32 @@ describe('agent/model-lifecycle', () => {
     };
 
     assert.deepEqual(await contribution.reconcile?.(withoutModels), { outcomes: [] });
+    assert.equal(mutations(), 0);
+  });
+
+  it('should preserve model policy entries after a profile is removed', async () => {
+    const config = readyCodexConfig();
+    config.agents!.entries!.emori!.modelPolicy = {
+      allow: ['openai/gpt-5.6-sol', 'openai/gpt-6-astra', 'openai/gpt-5.6-terra'],
+    };
+    const defaultOnlyManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: manifest.agent,
+      models: { default: manifest.models!.default },
+    };
+    const { contribution, mutations } = createHarness(config);
+
+    const outcome = await contribution.reconcile?.({
+      manifest: defaultOnlyManifest,
+      workspaceDir: context.workspaceDir,
+    });
+
+    assert.equal(outcome?.outcomes[0]?.status, 'unchanged');
+    assert.deepEqual(config.agents?.entries?.emori?.modelPolicy?.allow, [
+      'openai/gpt-5.6-sol',
+      'openai/gpt-6-astra',
+      'openai/gpt-5.6-terra',
+    ]);
     assert.equal(mutations(), 0);
   });
 });
