@@ -170,11 +170,11 @@ settings, or existing session selections. An explicit incompatible or ambiguous
 runtime binding blocks the change rather than selecting another route. Removing
 `models` later performs no cleanup and does not guess the previous default.
 
-`doctor` checks configuration drift, runtime and authentication readiness, model
-availability, and effort support without changing configuration or running
-inference. Authentication remains ambient OpenClaw runtime state rather than an
-install input or manifest concern. Catalog or capability failures are reported
-separately from a model or effort known to be unsupported.
+`doctor` checks configuration drift, configured model presence, and effort support
+without changing configuration, resolving authentication, or running inference.
+OpenClaw owns authentication and runtime health through its model status and agent
+execution surfaces. Catalog inspection failures are reported separately from a
+model or effort known to be unsupported.
 
 ### `environment`
 
@@ -323,7 +323,7 @@ remains authoritative and blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 
-Inspects agent registration, public identity, model readiness, path projection,
+Inspects agent registration, public identity, model configuration, path projection,
 and configured capabilities for drift without applying repairs.
 
 ```text

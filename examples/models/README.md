@@ -1,6 +1,6 @@
 # Models Example
 
-This scenario verifies model reconciliation, readiness, idempotency, and native Codex execution against the repository's API-key test model. CI supplies ambient authentication for doctor and the live turn; Agent System neither installs nor stores it.
+This scenario verifies model reconciliation, configured model presence, idempotency, and native Codex execution against the repository's API-key test model. Doctor does not inspect authentication; CI supplies ambient authentication only for the live turn, and Agent System neither installs nor stores it.
 
 ## Setup
 
@@ -31,7 +31,7 @@ openclaw agent-system install --json \
 openclaw config get 'agents.entries.models-data' --json \
   | jq -e '.model == "openai/gpt-5.4-nano" and .thinkingDefault == "medium" and .models["openai/gpt-5.4-nano"].agentRuntime.id == "codex"'
 
-# should report the installed model configuration and readiness as healthy
+# should report the installed model configuration as healthy
 cd "$GITHUB_WORKSPACE/examples/models/data"
 openclaw agent-system doctor --json \
   | jq -e '.findings | any(.component == "models" and .code == "agent-models-ready" and .status == "healthy")'
