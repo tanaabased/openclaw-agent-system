@@ -112,6 +112,15 @@ loop matters without model judgment, and use a live model only when provider
 transport, model interpretation, or Codex-native behavior is under test. The
 `agent` and `github` examples use AIMock; `path` and `security` remain live.
 
+Shared `openclaw-setup` explicitly selects process-lifetime 1Password caching for
+these disposable profiles. A CI job can contain many processes: Gateway operations
+reuse its in-memory credentials, while separate CLI commands do not share values.
+Unit tests choose their own policy and injected providers; the shared CI setting
+does not replace timed-expiry, disabled-cache, or credential-rotation coverage.
+See the [cache reference](ADVANCED.md#in-memory-1password-caching) for command and
+retention semantics. Assert multiple fields from one command result instead of
+repeating provider-backed validation solely to inspect another output field.
+
 #### GitHub Notification Scenarios
 
 The pull-request workflow runs six deterministic mock-provider scenarios on

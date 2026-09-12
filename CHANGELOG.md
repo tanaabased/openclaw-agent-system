@@ -22,6 +22,12 @@
 
 ### Bug Fixes
 
+- Shared the in-memory 1Password cache across Gateway and agent-tool plugin
+  registrations so status and flush operate on the values used by tools. Added
+  cross-registration regressions and installed reuse, refill, scoped flush, and
+  credential-mutation checks; consolidated repeated example validation calls.
+  [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
+
 - Made Doctor and Install tables component-first with status-only color, neutral workspace metadata, readable wrapping, and stable attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
 - Preserved eligible unseen delivery pull-request comments and existing revision receipts during initial handoff, including interrupted retries, without changing reopen baselines. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)
 - Isolated GitHub reply-candidate turns by lifecycle conversation, bound staging to the active attempt, delayed acknowledgments until session recording, and retained assignment failure codes in refresh results. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)

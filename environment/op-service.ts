@@ -53,6 +53,7 @@ export type OpCredentialValidationResult =
     };
 
 export interface OpEnvironmentServiceDependencies {
+  cache?: OpCache;
   createClient?: CreateOpEnvironmentClient;
   credentialService: Pick<OpCredentialService, 'resolveServiceAccountToken'>;
   integrationVersion: string;
@@ -116,7 +117,7 @@ export default class OpEnvironmentService {
     this.#createClient = dependencies.createClient ?? createSdkClient;
     this.#credentialService = dependencies.credentialService;
     this.#integrationVersion = dependencies.integrationVersion;
-    this.#cache = new OpCache(dependencies.now);
+    this.#cache = dependencies.cache ?? new OpCache(dependencies.now);
     this.#readCachePolicy = dependencies.readCachePolicy ?? (() => undefined);
   }
 

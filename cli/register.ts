@@ -186,7 +186,6 @@ export default function registerAgentSystemCli(
     const command = cache
       .command(action)
       .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
-      .option('--agent <id>', 'Select an agent for invalidation.')
       .option('--json', 'Write structured JSON output.')
       .action(async () => {
         const agentId = command.opts().agent;
@@ -198,6 +197,7 @@ export default function registerAgentSystemCli(
           ...(options.cacheGatewayRequest ? { request: options.cacheGatewayRequest } : {}),
         });
       });
+    if (action === 'flush') command.option('--agent <id>', 'Select an agent for invalidation.');
   }
   const credentialsSet = credentials
     .command('set <credential>')

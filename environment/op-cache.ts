@@ -56,6 +56,7 @@ export default class OpCache {
   #overflowRetryAt = 0;
   #policy: OpCachePolicy = resolveOpCachePolicy(undefined);
   #requestOrder = 0;
+  #configuration: string | undefined;
   readonly #generations = new Map<string, object>();
   readonly #counts = {
     clientCreations: 0,
@@ -94,6 +95,12 @@ export default class OpCache {
       this.#generations.set(agentId, generation);
     }
     return generation;
+  }
+
+  configureContext(value: unknown): void {
+    const signature = opDigest(value);
+    if (this.#configuration !== undefined && this.#configuration !== signature) this.flush();
+    this.#configuration = signature;
   }
 
   configure(value: unknown): OpCachePolicy {

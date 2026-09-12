@@ -389,6 +389,11 @@ agent/workspace entries. Agent entries are evicted oldest-first at the configure
 snapshot. No secret cache is written to disk. Timed expiry applies to values; an unchanged
 authenticated SDK client can survive a timed value refresh.
 
+Gateway controls and agent tools share the same process-local cache even when
+OpenClaw loads separate plugin registries for them. Different installations,
+OpenClaw state roots, and credential-store roots remain separate; agent/workspace
+and credential-generation isolation still applies inside each cache.
+
 | Mode             | Configuration                                             | Behavior                                                                                                    |
 | ---------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Off              | `{"mode":"off"}`                                          | No cross-operation client or value reuse; duplicate references within one operation are still deduplicated. |
@@ -471,9 +476,15 @@ exposes saturating counters for client creations, resource reads, hits, misses,
 coalescing, failures, and backoff skips, without resource IDs or token digests.
 
 Existing tests remain in place. Shared disposable CI setup explicitly selects
-process-lifetime mode; the installed GitHub example checks warmed Gateway state,
-flush counts, absence of control-triggered reads, and honest unreachable-Gateway
-reporting. The credentials example checks cross-process mutation acknowledgment.
+process-lifetime mode. This means the lifetime of each Gateway or CLI process,
+not an entire CI job: separate CLI invocations still fetch independently, and
+explicit credential validation requests fresh provider data. The installed
+[GitHub example](examples/github/README.md) checks reuse across agent turns,
+agent-specific and global flush, lazy refill, and invalidation of warmed values
+after a separate credential command. The [credentials example](examples/credentials/README.md)
+checks command aliases, no-read controls, mutation acknowledgment, pending
+invalidation, and honest unreachable-Gateway reporting. Failed cache assertions
+print only the secret-free status response to make the failed condition inspectable.
 These installed scenarios run only in GitHub Actions. No live-provider experiment
 or operator-host rollout is part of local validation. Broad fixture rewrites are
 deferred: short-lived env/credential/tool commands still pay the process-start

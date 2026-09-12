@@ -29,6 +29,7 @@ import OpCredentialInput from '../credentials/op-input.ts';
 import OpCredentialManager from '../credentials/op-manager.ts';
 import OpCredentialService from '../credentials/op-service.ts';
 import OpEnvironmentService from '../environment/op-service.ts';
+import processOpCache from '../environment/op-process-cache.ts';
 import createPathLifecycleContribution from '../paths/lifecycle.ts';
 import PathProjectionStore from '../paths/projection-store.ts';
 import registerAgentSystemCli from '../cli/register.ts';
@@ -86,17 +87,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     input: process.stdin,
     output: process.stderr,
   });
-  let cacheConfiguration: string | undefined;
+  const opCache = processOpCache({
+    packageDir,
+    stateDir: api.runtime.state.resolveStateDir(),
+    credentialRoot: privateStateRoot,
+  });
   const opEnvironmentService = new OpEnvironmentService({
+    cache: opCache,
     credentialService: opCredentialService,
     integrationVersion: api.version ?? 'dev',
     readCachePolicy() {
       const config = readRuntimeConfig();
       const pluginConfig = config.plugins?.entries?.['agent-system']?.config;
-      const signature = JSON.stringify([config.agents, pluginConfig]);
-      if (cacheConfiguration !== undefined && cacheConfiguration !== signature)
-        opEnvironmentService.flush();
-      cacheConfiguration = signature;
+      opCache.configureContext([config.agents, pluginConfig]);
       return pluginConfig?.opCache;
     },
   });

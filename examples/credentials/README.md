@@ -1,6 +1,6 @@
 # Credentials Example
 
-This scenario verifies OP credential fallback, explicit environment validation, platform-native and file storage, stdin storage, install preflight, stored resolution without the process token, and idempotent automatic removal on a fresh runner.
+This scenario verifies OP credential fallback, explicit environment validation, platform-native and file storage, stdin storage, install preflight, stored resolution without the process token, idempotent automatic removal, and Gateway cache controls on a fresh runner. Warm-cache reuse and mutation invalidation are exercised by the [GitHub example](../github/README.md).
 
 ## Setup
 
@@ -17,8 +17,9 @@ openclaw-setup \
 ```bash
 # should validate the process-environment fallback against every declared op environment
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env | grep -F 'process-environment'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env | grep -F 'environments' | grep -F '1'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --from-env)
+printf '%s\n' "$output" | grep -F 'process-environment'
+printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should reject installation before openclaw mutation when no stored credential is available
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -32,8 +33,9 @@ printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CO
 
 # should validate only the selected platform-native store
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE" | grep -F 'environments' | grep -F '1'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store "$DEFAULT_CREDENTIAL_STORE")
+printf '%s\n' "$output" | grep -F "store:$DEFAULT_CREDENTIAL_STORE"
+printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should resolve stored op environment values without the process token
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -46,6 +48,10 @@ env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-
 # should expose the selected policy in the installed gateway without reading provider resources
 openclaw-gateway start
 openclaw agent-system credentials cache status --json | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and .counts.resourceReads == 0'
+
+# should flush an empty gateway through both command spellings without provider reads
+openclaw agent-system credentials cache flush --agent credential-data --json | jq -e '.runtime == "gateway" and .invalidated.entries == 0 and .counts.resourceReads == 0'
+openclaw as credentials cache flush --json | jq -e '.runtime == "gateway" and .invalidated.entries == 0 and .counts.resourceReads == 0'
 
 # should remove every persisted credential copy
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -65,8 +71,9 @@ printf '%s\n' "$output" | grep -F 'code=op-credential-missing'
 # should store and validate an explicitly selected file credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
 printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" | env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --stdin --store file | grep -F 'file'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'store:file'
-XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file | grep -F 'environments' | grep -F '1'
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials validate op --store file)
+printf '%s\n' "$output" | grep -F 'store:file'
+printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
 
 # should remove the explicitly selected file credential
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -83,4 +90,16 @@ printf '%s\n' "$output" | grep -F 'code=op-credential-missing'
 ```bash
 # should stop the isolated gateway
 openclaw-gateway stop
+
+# should report pending invalidation after a store command when the gateway is unavailable
+cd "$GITHUB_WORKSPACE/examples/credentials/data"
+output=$(XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op --store file 2>&1)
+printf '%s\n' "$output" | grep -F 'unchanged'
+printf '%s\n' "$output" | grep -F 'Gateway invalidation is pending'
+
+# should fail cache controls when the gateway is unavailable
+if output=$(openclaw agent-system credentials cache status --json 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'Gateway cache request was not confirmed'
+if output=$(openclaw agent-system credentials cache flush --json 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'Gateway cache request was not confirmed'
 ```

@@ -4,15 +4,19 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import registerOpCache from '../core/register-op-cache.ts';
 import OpEnvironmentService from '../environment/op-service.ts';
+import processOpCache from '../environment/op-process-cache.ts';
 import credentialsCache from '../cli/credentials-cache.ts';
 
-function fixture() {
+function fixture(sharedScope?: string) {
   type Handler = Parameters<OpenClawPluginApi['registerGatewayMethod']>[1];
   const handlers = new Map<string, Handler>();
   const scopes = new Map<string, unknown>();
   let lifecycle!: Parameters<OpenClawPluginApi['registerService']>[0];
   let reads = 0;
   const service = new OpEnvironmentService({
+    ...(sharedScope
+      ? { cache: processOpCache({ packageDir: '/plugin', stateDir: sharedScope }) }
+      : {}),
     integrationVersion: 'test',
     credentialService: {
       async resolveServiceAccountToken() {
@@ -75,9 +79,9 @@ function fixture() {
       assert.ok(response);
       return response;
     },
-    warm: () =>
+    warm: (agentId = 'data') =>
       service.load(
-        'data',
+        agentId,
         {
           environmentIds: ['private-id'],
           secrets: [{ name: 'KEY', reference: 'op://private/item/key' }],
@@ -88,6 +92,37 @@ function fixture() {
 }
 
 describe('core/op-cache-gateway', () => {
+  it('should inspect and invalidate values loaded through another plugin registration', async () => {
+    const gateway = fixture('/test/gateway-shared-cache');
+    const tools = fixture('/test/gateway-shared-cache');
+    await tools.warm();
+    await tools.warm('other');
+    const warmed = await gateway.request('status');
+    assert.equal(warmed.ok, true);
+    assert.equal(gateway.service.status().entries.filter((entry) => entry.cached).length, 2);
+    await gateway.warm();
+    assert.equal(gateway.reads(), 0);
+    assert.equal(tools.reads(), 4);
+    assert.equal(gateway.service.status().counts.hits, 1);
+
+    const flushed = await gateway.request('flush', { agentId: 'data' });
+    assert.equal(flushed.ok, true);
+    assert.deepEqual(
+      tools.service.status().entries.map((entry) => entry.agentId),
+      ['other'],
+    );
+    assert.equal(tools.reads(), 4);
+    await tools.warm();
+    assert.equal(tools.reads(), 6);
+
+    // A late registration must join the same owner, not start another empty cache.
+    const late = fixture('/test/gateway-shared-cache');
+    await late.warm();
+    assert.equal(late.reads(), 0);
+    await gateway.lifecycle.stop?.({} as never);
+    assert.equal(late.service.status().entries.length, 0);
+  });
+
   it('should expose gateway status and flush without fetching or disclosing values', async () => {
     const f = fixture();
     await f.warm();
