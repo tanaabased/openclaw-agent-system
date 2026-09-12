@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 
+import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
 import {
-  githubExampleCacheChecks,
   githubExampleEmoriCallId,
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
@@ -56,9 +56,10 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
-  it('should resolve the two deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'github']);
+  it('should resolve the deterministic example scenarios', () => {
+    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'github']);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
+    assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
     assert.throws(
       () => resolveExampleModelScenario('unsupported'),
@@ -97,13 +98,6 @@ describe('scripts/example-model-scenarios', () => {
         message: githubExampleEmoriPrompt,
         tool: 'agent_system_github',
       },
-      ...githubExampleCacheChecks.map(({ callId, prompt }) => ({
-        agentId: 'emori',
-        callId,
-        expectedLogin: 'emoriwan',
-        message: prompt,
-        tool: 'agent_system_github',
-      })),
     ] as const;
 
     for (const entry of cases) {
@@ -144,6 +138,41 @@ describe('scripts/example-model-scenarios', () => {
         content: entry.expectedLogin,
         id: `${entry.callId}_final_response`,
       });
+    }
+  });
+
+  it('should complete each cache turn only after a successful local git tool result', () => {
+    const scenario = resolveExampleModelScenario('credentials');
+    for (const { agentId, callId, prompt } of credentialExampleChecks) {
+      const initial = matchFixture(
+        [...scenario.fixtures],
+        request(agentId, prompt, ['agent_system_git']),
+      );
+      assert.deepEqual(initial?.response, {
+        id: `${callId}_tool_response`,
+        toolCalls: [
+          {
+            arguments: JSON.stringify({ argv: ['--version'] }),
+            id: callId,
+            name: 'agent_system_git',
+          },
+        ],
+      });
+      assert.equal(
+        matchFixture(
+          [...scenario.fixtures],
+          request(agentId, prompt, ['agent_system_git'], {
+            callId,
+            content: 'credential unavailable',
+          }),
+        ),
+        null,
+      );
+      const final = matchFixture(
+        [...scenario.fixtures],
+        request(agentId, prompt, ['agent_system_git'], { callId, content: 'git version 2.50.0' }),
+      );
+      assert.deepEqual(final?.response, { content: 'git ready', id: `${callId}_final_response` });
     }
   });
 });
