@@ -173,7 +173,9 @@ runtime binding blocks the change rather than selecting another route. Removing
 `doctor` checks configuration drift, configured model presence, and effort support
 without changing configuration, resolving authentication, or running inference.
 OpenClaw owns authentication and runtime health through its model status and agent
-execution surfaces. Catalog inspection failures are reported separately from a
+execution surfaces. A configured model that OpenClaw explicitly reports as
+unavailable produces a warning rather than blocking Doctor. Unknown availability
+does not imply failure, while list inspection failures remain distinct from a
 model or effort known to be unsupported.
 
 Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)

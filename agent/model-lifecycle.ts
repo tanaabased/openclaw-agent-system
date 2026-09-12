@@ -19,6 +19,7 @@ interface ModelProfileEntry {
 }
 
 interface ModelListRow {
+  available: boolean | null;
   key: string;
   missing: boolean;
 }
@@ -320,6 +321,13 @@ async function modelFindings(
         message: `OpenClaw does not report ${value} in the configured model list for ${agentId}.`,
         remediation: 'Choose a known model or repair its provider installation.',
         status: 'blocked',
+      });
+    } else if (row.available === false) {
+      findings.push({
+        code: 'agent-model-unavailable',
+        message: `OpenClaw does not currently report ${value} as available for ${agentId}.`,
+        remediation: `Review openclaw models status --agent ${agentId} before relying on this model.`,
+        status: 'warning',
       });
     }
   }

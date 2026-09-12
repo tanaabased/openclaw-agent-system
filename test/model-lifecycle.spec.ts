@@ -22,14 +22,15 @@ const manifest: AgentManifest = {
 const context = { manifest, workspaceDir: '/workspace/emori' };
 
 interface ModelListRow {
+  available: boolean | null;
   key: string;
   missing: boolean;
 }
 
 const configuredModels: ModelListRow[] = [
-  { key: 'openai/gpt-6-astra', missing: false },
-  { key: 'openai/gpt-5.6-terra', missing: false },
-  { key: 'openai/gpt-5.6-sol', missing: false },
+  { available: true, key: 'openai/gpt-6-astra', missing: false },
+  { available: true, key: 'openai/gpt-5.6-terra', missing: false },
+  { available: true, key: 'openai/gpt-5.6-sol', missing: false },
 ];
 
 interface HarnessOptions {
@@ -300,6 +301,36 @@ describe('agent/model-lifecycle', () => {
       ),
       true,
     );
+  });
+
+  it('should warn about explicit model unavailability without blocking unknown availability', async () => {
+    const unavailable = createHarness(codexConfig(), {
+      configuredModels: configuredModels.map((row) =>
+        row.key === 'openai/gpt-5.6-terra' ? { ...row, available: false } : row,
+      ),
+    });
+    const unknown = createHarness(codexConfig(), {
+      configuredModels: configuredModels.map((row) =>
+        row.key === 'openai/gpt-5.6-terra' ? { ...row, available: null } : row,
+      ),
+    });
+
+    await unavailable.contribution.reconcile?.(context);
+    await unknown.contribution.reconcile?.(context);
+    const unavailableFindings = await unavailable.contribution.inspect?.(context);
+    const unknownFindings = await unknown.contribution.inspect?.(context);
+
+    assert.equal(
+      unavailableFindings?.some(
+        ({ code, status }) => code === 'agent-model-unavailable' && status === 'warning',
+      ),
+      true,
+    );
+    assert.equal(
+      unavailableFindings?.some(({ status }) => status === 'blocked'),
+      false,
+    );
+    assert.equal(unknownFindings?.[0]?.code, 'agent-models-ready');
   });
 
   it('should accept direct OPENCLAW runtime configuration without inspecting authentication', async () => {

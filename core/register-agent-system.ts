@@ -63,11 +63,16 @@ function parseModelCatalogRows(stdout: string) {
       throw new Error('OpenClaw models list returned an invalid model row.');
     }
     const key = Reflect.get(value, 'key');
+    const available = Reflect.get(value, 'available');
     const missing = Reflect.get(value, 'missing');
-    if (typeof key !== 'string' || typeof missing !== 'boolean') {
+    if (
+      typeof key !== 'string' ||
+      (available !== null && typeof available !== 'boolean') ||
+      typeof missing !== 'boolean'
+    ) {
       throw new Error('OpenClaw models list returned an invalid model row.');
     }
-    return { key, missing };
+    return { available, key, missing };
   });
 }
 
