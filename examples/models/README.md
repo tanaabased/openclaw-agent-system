@@ -29,8 +29,8 @@ openclaw config set 'agents.defaults.modelPolicy.allow' '["openai/gpt-5.5"]' --s
 ```bash
 # should diagnose the excluded runtime-bound model without mutating policy
 cd "$GITHUB_WORKSPACE/examples/models/data"
-openclaw agent-system doctor --json \
-  | jq -e '.findings | any(.component == "models" and .code == "agent-model-selection-policy-drift" and .status == "drift")'
+if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.findings | any(.component == "models" and .code == "agent-model-selection-policy-drift" and .status == "drift")'
 openclaw config get 'agents.entries.models-data' --json \
   | jq -e '.modelPolicy == null'
 
