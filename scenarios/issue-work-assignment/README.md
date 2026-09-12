@@ -195,6 +195,7 @@ jq -re 'select(length == 1) | .[0].path' <<< "$worktrees" > "$TMPDIR/independent
 printf '%s' "$conversation_id" > "$TMPDIR/independent-conversation-id-before"
 
 # should diagnose and reconcile only the missing classifier access
+cd "$TMPDIR/agent-system-notifications"
 doctor_before="$(openclaw agent-system doctor --json)"
 printf '%s\n' "$doctor_before" | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-drift" and .status == "drift" and (.message | contains($model)))'
 repair="$(openclaw agent-system install --json)"
@@ -205,6 +206,10 @@ repeat="$(openclaw agent-system install --json)"
 printf '%s\n' "$repeat" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "unchanged")'
 
 # should resume the same prepared independent assignment after access repair
+cd "$TMPDIR/agent-system-notifications"
+independent_issue="$(cat "$TMPDIR/independent-issue-number")"
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
 openclaw-github-notifications refresh-completed \
   --agent notification-data \
   --repository tanaabased/big-test-bucket \
