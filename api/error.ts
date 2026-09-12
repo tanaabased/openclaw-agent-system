@@ -19,6 +19,7 @@ export default class AgentSystemToolError extends Error {
   constructor(
     readonly code: AgentSystemToolErrorCode,
     message: string,
+    readonly credentialRejected = false,
   ) {
     super(message);
   }

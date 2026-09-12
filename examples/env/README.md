@@ -48,6 +48,7 @@ if printf '%s\n' "$output" | grep -Fq "$OP_SERVICE_ACCOUNT_TOKEN"; then exit 1; 
 
 # should validate access to every declared 1password resource without returning values
 cd "$GITHUB_WORKSPACE/examples/env/onepassword"
-openclaw agent-system credentials validate op --from-env | grep -F 'environments' | grep -F '1'
-openclaw agent-system credentials validate op --from-env | grep -F 'secrets' | grep -F '1'
+output=$(openclaw agent-system credentials validate op --from-env)
+printf '%s\n' "$output" | grep -F 'environments' | grep -F '1'
+printf '%s\n' "$output" | grep -F 'secrets' | grep -F '1'
 ```

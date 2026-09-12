@@ -9,7 +9,9 @@ import type { GitHubNotificationWaitInput } from '../channels/github/intake/moni
 import { createCliStyles } from '../cli/output.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 import registerAgentSystemCli from '../cli/register.ts';
+import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
+import OpCache from '../environment/op-cache.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -40,6 +42,7 @@ function createProgram(
   input?: Readable,
   dependencies: {
     notificationWaitError?: Error;
+    cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
     doctorFindings?: typeof doctorFindings;
     installOutcomes?: typeof installOutcomes;
@@ -86,6 +89,7 @@ function createProgram(
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    cacheGatewayRequest: dependencies.cacheGatewayRequest,
     completeOneShot: async (code) => {
       calls.oneShotCompletion.push(code);
     },
@@ -269,6 +273,66 @@ function createProgram(
 }
 
 describe('cli/register', () => {
+  it('should default cache controls to human output through both aliases', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const action of ['status', 'flush']) {
+        const { program, output, diagnostics } = createProgram(undefined, {
+          cacheGatewayRequest: async () => ({
+            ...new OpCache().status(),
+            runtime: 'gateway',
+            ...(action === 'flush'
+              ? { invalidated: { entries: 0, clients: 0, pending: 0, values: 0 } }
+              : {}),
+          }),
+        });
+        await program.parseAsync(['node', 'openclaw', alias, 'credentials', 'cache', action]);
+        assert.deepEqual(diagnostics, []);
+        assert.equal(output.length, 1);
+        assert.match(output[0]!, /gateway.*pid/);
+        assert.match(
+          output[0]!,
+          action === 'flush' ? /flushed.*all agents/ : /entries.*0 retained/,
+        );
+        assert.throws(() => JSON.parse(output[0]!));
+      }
+    }
+  });
+
+  it('should send cache controls to the gateway through both cli aliases', async () => {
+    const calls: unknown[] = [];
+    const { program, output } = createProgram(undefined, {
+      cacheGatewayRequest: async (action, agentId) => {
+        calls.push([action, agentId]);
+        return { runtime: 'gateway', invalidated: { entries: 1 } };
+      },
+    });
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'credentials',
+      'cache',
+      'status',
+      '--json',
+    ]);
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'credentials',
+      'cache',
+      'flush',
+      '--agent',
+      'data',
+      '--json',
+    ]);
+    assert.deepEqual(calls, [
+      ['status', undefined],
+      ['flush', 'data'],
+    ]);
+    assert.equal(JSON.parse(output[0]!).runtime, 'gateway');
+  });
+
   it('should register agent-system with the as alias and owned subcommands', () => {
     const command = createProgram().program.commands[0];
 

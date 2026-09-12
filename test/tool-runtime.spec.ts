@@ -15,6 +15,7 @@ function createRuntime(options: {
   environmentCalls?: string[];
   events?: string[];
   logs?: string[];
+  invalidations?: string[];
   runCli?: (request: AgentSystemCliRunRequest) => Promise<{
     exitCode: number | null;
     stderr: string;
@@ -36,6 +37,9 @@ function createRuntime(options: {
     },
     baseEnvironment: { PATH: '/usr/bin', SHOULD_NOT_INHERIT: 'host-private' },
     environmentService: {
+      invalidateCredentials(agentId) {
+        options.invalidations?.push(agentId);
+      },
       async loadForAgentId(agentId) {
         environmentCalls.push(agentId);
         events.push('environment');
@@ -80,6 +84,28 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should invalidate an owner-reported credential rejection without replaying the command', async () => {
+    const invalidations: string[] = [];
+    let executions = 0;
+    const runtime = createRuntime({
+      invalidations,
+      runCli: async () => {
+        executions += 1;
+        return { exitCode: 1, stdout: '', stderr: 'rejected', timedOut: false, truncated: false };
+      },
+    });
+    const definition = createToolTestDefinition();
+    definition.runner.credentialRejected = (result) => result.exitCode === 1;
+    const result = await runtime.executeCli(
+      definition,
+      { argument: 'write' },
+      { agentId: 'data', source: 'command' },
+    );
+    assert.equal(result.commandResult.exitCode, 1);
+    assert.equal(executions, 1);
+    assert.deepEqual(invalidations, ['data']);
+  });
+
   it('should run semantic operations through authorization, environment, and audit', async () => {
     const auditEvents: AgentSystemAuditEvent[] = [];
     const events: string[] = [];

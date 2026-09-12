@@ -156,6 +156,7 @@ export interface AgentSystemCliToolDefinition<
     ): Record<string, string>;
     executable: string;
     maxOutputBytes?: number;
+    credentialRejected?(result: AgentSystemCliResult): boolean;
     preflight?(configuration: TResolvedConfiguration):
       | {
           argv: string[];
