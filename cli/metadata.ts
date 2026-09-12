@@ -1,7 +1,8 @@
 import { getRootOptionAwareCommandPath } from 'openclaw/plugin-sdk/cli-argv';
 
 function toolOwnsStdout({ argv }: { argv: readonly string[]; stdoutIsTTY: boolean }): boolean {
-  return getRootOptionAwareCommandPath(argv, 2)[1] === 'tool';
+  const path = getRootOptionAwareCommandPath(argv, 3);
+  return path[1] === 'tool' || (path[1] === 'credentials' && path[2] === 'cache');
 }
 
 /** Describe command roots and stdout ownership before runtime capabilities are available. */

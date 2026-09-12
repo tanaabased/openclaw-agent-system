@@ -35,7 +35,8 @@ export interface AgentSystemToolRuntimeDependencies {
   audit?: { record(event: AgentSystemAuditEvent): Promise<void> | void };
   authorize?(request: AgentSystemAuthorizationRequest): Promise<AgentSystemAuthorizationDecision>;
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
-  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'>;
+  environmentService: Pick<AgentEnvironmentService, 'loadForAgentId'> &
+    Partial<Pick<AgentEnvironmentService, 'invalidateCredentials'>>;
   excludedExecutableDirectories?: readonly string[];
   logger: ToolLogger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
@@ -127,7 +128,13 @@ export default class AgentSystemToolRuntime {
         definition,
         excludedExecutableDirectories: this.#dependencies.excludedExecutableDirectories,
         input,
-        runCli: this.#runCli,
+        runCli: async (request) => {
+          const result = await this.#runCli(request);
+          if (definition.runner.credentialRejected?.(result)) {
+            this.#dependencies.environmentService.invalidateCredentials?.(context.agentId);
+          }
+          return result;
+        },
         scope,
         ...(signal === undefined ? {} : { signal }),
       }),
@@ -291,6 +298,9 @@ export default class AgentSystemToolRuntime {
               'execution_failed',
               `The ${definition.id} tool request failed.`,
             );
+      if (toolError.credentialRejected || toolError.code === 'tool_identity_mismatch') {
+        this.#dependencies.environmentService.invalidateCredentials?.(agentId);
+      }
       const durationMs = Date.now() - startedAt;
       await this.#recordAudit({
         ...baseAudit,

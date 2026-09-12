@@ -29,7 +29,8 @@ export interface AgentEnvironmentServiceDependencies {
     AgentManifestService,
     'loadForAgentId' | 'loadForCommandDirectory' | 'loadForWorkspace'
   >;
-  opEnvironmentService?: Pick<OpEnvironmentService, 'load'>;
+  opEnvironmentService?: Pick<OpEnvironmentService, 'load'> &
+    Partial<Pick<OpEnvironmentService, 'flush'>>;
 }
 
 function quote(value: string): string {
@@ -53,6 +54,10 @@ export default class AgentEnvironmentService {
     this.#dependencies = dependencies;
     this.#hostEnvironment = Object.freeze({ ...dependencies.hostEnvironment });
     this.#loadDotenv = dependencies.loadDotenv ?? loadAgentDotenv;
+  }
+
+  invalidateCredentials(agentId: string): void {
+    this.#dependencies.opEnvironmentService?.flush?.(agentId);
   }
 
   async loadForAgentId(
@@ -112,6 +117,8 @@ export default class AgentEnvironmentService {
     }
 
     const opRequirements = collectOpEnvironmentRequirements(result.manifest);
+    if (!hasOpEnvironmentRequirements(opRequirements))
+      this.invalidateCredentials(result.manifest.agent.id);
     let opSet: { sensitiveNames: string[]; values: Record<string, string> } | undefined;
     let opSources: AgentEnvironmentInputSource[] = [];
     if (hasOpEnvironmentRequirements(opRequirements)) {
@@ -134,7 +141,9 @@ export default class AgentEnvironmentService {
           diagnostics,
         };
       }
-      const op = await opEnvironmentService.load(result.manifest.agent.id, opRequirements);
+      const op = await opEnvironmentService.load(result.manifest.agent.id, opRequirements, {
+        workspaceDir: result.scope.workspaceDir,
+      });
       if (op.status === 'invalid') {
         const diagnostics = [...result.diagnostics, ...op.diagnostics];
         this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
@@ -155,6 +164,7 @@ export default class AgentEnvironmentService {
       ...(opSet ? { set: opSet } : {}),
     });
     if (resolution.status === 'invalid') {
+      this.invalidateCredentials(result.manifest.agent.id);
       const diagnostics = [...result.diagnostics, ...resolution.diagnostics];
       this.#logInvalidEnvironment(result.manifest.agent.id, trigger, diagnostics);
       return {
@@ -166,6 +176,14 @@ export default class AgentEnvironmentService {
     }
 
     const { environment } = resolution;
+    Object.freeze(environment.values);
+    Object.freeze(environment.sensitiveNames);
+    for (const variable of environment.variables) {
+      Object.freeze(variable.overriddenSources);
+      Object.freeze(variable);
+    }
+    Object.freeze(environment.variables);
+    Object.freeze(environment);
     this.#dependencies.logger.info(
       `environment_resolved trigger=${quote(trigger)} agentId=${quote(result.manifest.agent.id)} variables=${environment.variables.length} digest=${quote(environmentDigest(environment))}`,
     );

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import {
+  githubExampleCacheChecks,
   githubExampleEmoriCallId,
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
@@ -96,6 +97,13 @@ describe('scripts/example-model-scenarios', () => {
         message: githubExampleEmoriPrompt,
         tool: 'agent_system_github',
       },
+      ...githubExampleCacheChecks.map(({ callId, prompt }) => ({
+        agentId: 'emori',
+        callId,
+        expectedLogin: 'emoriwan',
+        message: prompt,
+        tool: 'agent_system_github',
+      })),
     ] as const;
 
     for (const entry of cases) {

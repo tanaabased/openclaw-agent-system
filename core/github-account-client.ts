@@ -6,6 +6,7 @@ import type { ManifestLoadTrigger } from '../manifest/service.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunner } from '../api/types.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveManifestValue from '../manifest/resolve-value.ts';
+import githubCredentialRejected from '../credentials/github-rejection.ts';
 
 const baselineEnvironmentNames = [
   'HOME',
@@ -28,7 +29,8 @@ export interface GitHubAccountClientDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   configStore: { configDirectory(agentId: string): string };
   credentialMaterializer?: GitHubCredentialMaterializer;
-  environmentService: Pick<AgentEnvironmentService, 'loadForWorkspace'>;
+  environmentService: Pick<AgentEnvironmentService, 'loadForWorkspace'> &
+    Partial<Pick<AgentEnvironmentService, 'invalidateCredentials'>>;
   excludedExecutableDirectories?: readonly string[];
   runCli: AgentSystemCliRunner;
 }
@@ -104,7 +106,7 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
   if (result.exitCode !== 0 || result.timedOut || result.truncated) {
     throw new GitHubAccountClientError(
       'github-account-identity-failed',
-      'GitHub rejected the account identity check.',
+      'The GitHub account identity check did not complete successfully.',
     );
   }
 
@@ -259,7 +261,7 @@ export default class GitHubAccountClient {
       const limits = normalizedExecutionOptions(options);
       const requestSignal = options?.signal ?? signal;
       try {
-        return redact(
+        const result = redact(
           await this.#runCli({
             argv,
             cwd: context.workspaceDir,
@@ -273,6 +275,9 @@ export default class GitHubAccountClient {
           }),
           normalizedToken,
         );
+        if (githubCredentialRejected(result))
+          this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
+        return result;
       } catch (error) {
         throw new GitHubAccountClientError(
           'github-account-tool-unavailable',
@@ -286,6 +291,7 @@ export default class GitHubAccountClient {
       await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']),
     );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
+      this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
       throw new GitHubAccountClientError(
         'github-account-identity-mismatch',
         `GitHub returned ${identity.login}, not the configured username ${username.value}.`,

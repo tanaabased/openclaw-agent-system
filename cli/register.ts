@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream';
 
 import envAgentSystem from './env.ts';
+import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
 import doctorAgentSystem from './doctor.ts';
 import runAgentSystemTool from './tool.ts';
 import setCredentialsAgentSystem from './credentials-set.ts';
@@ -37,6 +38,7 @@ export interface CommandLike {
 
 export interface RegisterAgentSystemCliOptions {
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve'>;
+  cacheGatewayRequest?: OpCacheGatewayRequest;
   completeOneShot?: (code: number) => Promise<void>;
   cwd?: () => string;
   credentialInput: Pick<OpCredentialInput, 'read'>;
@@ -176,6 +178,29 @@ export default function registerAgentSystemCli(
     .command('credentials')
     .description('Manage agent-scoped environment-provider credentials.')
     .action(() => writeHelp(credentials, output));
+  const cache = credentials
+    .command('cache')
+    .description('Inspect or flush the running Gateway OP cache.')
+    .action(() => writeHelp(cache, output));
+  for (const action of ['status', 'flush'] as const) {
+    const command = cache
+      .command(action)
+      .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
+      .option('--json', 'Write structured JSON output.')
+      .action(async () => {
+        const agentId = command.opts().agent;
+        await credentialsCache({
+          action,
+          json: command.opts().json === true,
+          ...(typeof agentId === 'string' ? { agentId } : {}),
+          output,
+          styles: options.styles,
+          setExitCode,
+          ...(options.cacheGatewayRequest ? { request: options.cacheGatewayRequest } : {}),
+        });
+      });
+    if (action === 'flush') command.option('--agent <id>', 'Select an agent for invalidation.');
+  }
   const credentialsSet = credentials
     .command('set <credential>')
     .description('Validate and store an agent-scoped credential.')

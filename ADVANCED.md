@@ -238,13 +238,15 @@ Environments and direct secret references. The current credential target is
 openclaw agent-system credentials set op [--agent <id>] [--from-env | --stdin] [--store <id>]
 openclaw agent-system credentials validate op [--agent <id>] [--from-env | --store <id>]
 openclaw agent-system credentials unset op [--agent <id>] [--store <id>]
+openclaw agent-system credentials cache status [--json]
+openclaw agent-system credentials cache flush [--agent <id>] [--json]
 ```
 
-| Option         | Commands          | Behavior                                                   |
-| -------------- | ----------------- | ---------------------------------------------------------- |
-| `--from-env`   | `set`, `validate` | Reads only `OP_SERVICE_ACCOUNT_TOKEN`.                     |
-| `--stdin`      | `set`             | Reads redirected input without exposing it as an argument. |
-| `--store <id>` | all               | Targets `keychain`, `secret-service`, or `file`.           |
+| Option         | Commands                   | Behavior                                                   |
+| -------------- | -------------------------- | ---------------------------------------------------------- |
+| `--from-env`   | `set`, `validate`          | Reads only `OP_SERVICE_ACCOUNT_TOKEN`.                     |
+| `--stdin`      | `set`                      | Reads redirected input without exposing it as an argument. |
+| `--store <id>` | `set`, `validate`, `unset` | Targets `keychain`, `secret-service`, or `file`.           |
 
 Without an input option, `set` uses a masked interactive prompt and fails with
 guidance in a noninteractive session. Tokens are never accepted as command
@@ -254,7 +256,9 @@ before storage.
 Automatic persistent selection prefers Keychain then file on macOS and Secret
 Service then file on Linux. `validate` checks those stores in order and then the
 process fallback; an exact `--store` or `--from-env` request disables fallback.
-`unset` is idempotent and affects persistent storage only.
+`unset` is idempotent: it removes persisted credentials and requests Gateway cache
+invalidation, but does not change the process-environment fallback. See
+[in-memory caching](#in-memory-1password-caching) for cache controls and pending invalidation.
 
 The file fallback lives at
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or under
@@ -378,6 +382,97 @@ Agent System does not inject the consolidated environment into generic OpenClaw,
 Codex, ACP, MCP, or third-party execution tools. Agent System tools resolve only
 the values they declare after trusted agent binding and authorization. PATH
 projection is the separate, limited contract described below.
+
+### In-memory 1Password caching
+
+Agent System reuses 1Password clients and resolved values in memory—not GitHub
+responses, permissions, or command results. Gateway tools and cache commands share
+this state; separate CLI processes do not, even within one CI job.
+
+Set `plugins.entries.agent-system.config.opCache` in operator-owned OpenClaw
+configuration. Repository manifests and `CI=true` cannot enable indefinite retention.
+The default is 300 seconds and 128 agent/workspace entries. `maxEntries` accepts
+1–1,024 and evicts oldest-first; each entry holds one client and one successful
+snapshot. Timed expiry refreshes values, not an unchanged authenticated client.
+
+| Mode             | Configuration                                             | Behavior                                                                                                    |
+| ---------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Off              | `{"mode":"off"}`                                          | No cross-operation client or value reuse; duplicate references within one operation are still deduplicated. |
+| Timed (default)  | `{"mode":"timed","durationSeconds":300,"maxEntries":128}` | Lazy, non-sliding expiry measured with a monotonic clock from successful retrieval.                         |
+| Process lifetime | `{"mode":"process-lifetime","maxEntries":128}`            | Retain until invalidation, eviction, or process exit. External provider edits require flush or restart.     |
+
+Timed durations must be positive finite numbers no greater than 4,503,599,627,370
+seconds. Sub-millisecond durations round up to one millisecond. One, five, and
+twelve hours are `3600`, `18000`, and `43200` seconds. Other modes reject a duration;
+negative numbers and JSON `Infinity` are not lifetime settings.
+
+```bash
+# retain stable values for five hours
+openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"timed","durationSeconds":18000}' --strict-json
+
+# inspect the running gateway, not this short-lived cli process
+openclaw agent-system credentials cache status --json
+
+# invalidate one agent, or omit --agent to invalidate all
+openclaw agent-system credentials cache flush --agent data --json
+```
+
+Status requires `operator.read`; flush requires `operator.admin`. Both identify
+the Gateway process and make no 1Password requests. Output is a human summary by
+default; `--json` returns the structured result. Status shows policy, agent IDs,
+ages/expiry, backoff, and counters for clients, reads, hits, misses, coalescing,
+failures, and backoff skips—never values, resource IDs, or token digests. Flush
+reports invalidated entries, clients, pending loads, and snapshots. An unreachable,
+unauthorized, or incompatible Gateway returns an error. `openclaw as` is an alias.
+
+#### Freshness and failures
+
+Authorization, manifests, dotenv, credential-store selection, and bootstrap
+credentials are checked on every operation. Reuse remains isolated by installation,
+state/store roots, agent/workspace, credential source/generation, and resource
+declarations. Each operation holds an immutable snapshot; concurrent misses share
+retrieval without sharing cancellation. Failed or partial loads are not retained.
+Expired refresh failures return errors, not stale credentials. There is no idle refresh.
+
+Configuration reload, agent removal, credential changes/rejection, flush, and
+shutdown invalidate retained state. Earlier pending loads cannot restore it;
+snapshots already in use are not revoked. CLI credential mutations and validation
+rejections notify the Gateway. If acknowledgment fails, commands report
+**invalidation pending**: restore Gateway access and flush. Uncertain store writes
+still trigger invalidation, but are never automatically retried.
+
+External 1Password edits appear after timed expiry or flush; process-lifetime mode
+requires flush or restart. External local-store changes are detected on the next lookup.
+
+[OTP query transforms](https://www.1password.dev/sdks/concepts) (`attribute`/`attr`
+with `otp`/`totp`) and unknown query transforms bypass snapshot retention; only the
+stable `ssh-format=openssh` transform is admitted. The Environment SDK response
+contains names, values, and masking flags, not validity deadlines. Keep other
+externally time-varying credentials under off mode when their validity cannot be
+bounded by the selected TTL.
+
+Provider failures share credential-scoped backoff within a process: 30 seconds
+increasing exponentially to one hour, or one hour for SDK quota errors. Flush
+preserves backoff; it does not reset quota. GitHub polling backoff is unchanged.
+Malformed Environment data fails only its load, without provider backoff.
+Transport failures preserve other healthy snapshots; confirmed authentication
+rejection and quota errors invalidate shared credential state.
+
+#### Measured SDK-boundary costs
+
+For 40 loads of one direct secret and one Environment, deterministic provider tests
+measured these SDK calls—not billed API units:
+
+| Workload                                    | Before: clients / reads | Default timed: clients / reads |
+| ------------------------------------------- | ----------------------- | ------------------------------ |
+| One retained process, sequential loads      | 40 / 80                 | 1 / 2                          |
+| One retained process, concurrent loads      | 40 / 80                 | 1 / 2                          |
+| Forty independent service/process lifetimes | 40 / 80                 | 40 / 80                        |
+
+That is 97.5% fewer calls within a retained process, not an account-wide savings
+forecast. Separate processes still fetch independently, as does explicit credential
+validation. See [the reproducible tests](test/op-cache.spec.ts) and
+[CI examples](DEVELOPMENT.md#leia-scenarios).
 
 ## Path
 

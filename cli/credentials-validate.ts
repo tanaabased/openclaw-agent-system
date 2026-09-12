@@ -62,6 +62,13 @@ export default async function validateCredentialsAgentSystem(
     ...(options.storeId ? { storeId: options.storeId } : {}),
   });
   if (result.status === 'invalid') {
+    if (result.gatewayInvalidation === 'pending') {
+      writeCliError(
+        options.output,
+        'credentials: Gateway invalidation is pending. Restore Gateway access and run openclaw agent-system credentials cache flush.',
+      );
+    }
+
     writeCliError(
       options.output,
       formatDiagnostic({ code: result.code, component: 'credentials', message: result.message }),

@@ -112,6 +112,12 @@ loop matters without model judgment, and use a live model only when provider
 transport, model interpretation, or Codex-native behavior is under test. The
 `agent` and `github` examples use AIMock; `path` and `security` remain live.
 
+Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#in-memory-1password-caching);
+unit tests set their own policy. The [credentials example](examples/credentials/README.md)
+tests storage and cache commands; the [GitHub example](examples/github/README.md)
+tests reuse, flush, and credential-mutation invalidation. Assert multiple fields
+from one validation result instead of repeating provider calls.
+
 #### GitHub Notification Scenarios
 
 The pull-request workflow runs six deterministic mock-provider scenarios on

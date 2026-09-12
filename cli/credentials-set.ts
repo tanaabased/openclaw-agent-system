@@ -73,6 +73,12 @@ export default async function setCredentialsAgentSystem(
   }
 
   const result = await options.credentialManager.set(loaded.manifest, input.token, options.storeId);
+  if (result.gatewayInvalidation === 'pending') {
+    writeCliError(
+      options.output,
+      'credentials: Gateway invalidation is pending. Run openclaw agent-system credentials cache flush after Gateway access is restored; the store mutation will not be replayed.',
+    );
+  }
   if (result.status === 'invalid') {
     writeCliError(
       options.output,
@@ -80,6 +86,13 @@ export default async function setCredentialsAgentSystem(
     );
     options.setExitCode(1);
     return;
+  }
+  if (result.gatewayInvalidation === 'confirmed') {
+    writeCliSummary(
+      options.output,
+      [{ label: 'gateway cache', style: 'status', value: 'invalidation confirmed' }],
+      options.styles,
+    );
   }
   writeCliSummary(
     options.output,

@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added configurable in-memory 1Password caching with Gateway status and flush commands. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
 - Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
   verified install reconciliation with shared grant provenance, and non-blocking
   initial-assignment session persistence checks.

@@ -6,6 +6,7 @@ import type OpCredentialService from './op-service.ts';
 import type OpEnvironmentService from '../environment/op-service.ts';
 
 export interface CredentialManagementFailure {
+  gatewayInvalidation?: 'confirmed' | 'pending';
   code: string;
   message: string;
   status: 'invalid';
@@ -13,7 +14,12 @@ export interface CredentialManagementFailure {
 
 export type CredentialSetResult =
   | CredentialManagementFailure
-  | { agentId: string; status: 'stored' | 'unchanged'; storeId: string };
+  | {
+      agentId: string;
+      status: 'stored' | 'unchanged';
+      storeId: string;
+      gatewayInvalidation?: 'confirmed' | 'pending';
+    };
 
 export type CredentialValidationResult =
   | CredentialManagementFailure
@@ -30,6 +36,7 @@ export type CredentialUnsetResult =
   | {
       agentId: string;
       status: 'removed' | 'missing';
+      gatewayInvalidation?: 'confirmed' | 'pending';
       storeIds: string[];
       unavailableStoreIds: string[];
     };
@@ -37,6 +44,7 @@ export type CredentialUnsetResult =
 export type CredentialInstallReadiness = CredentialManagementFailure | { status: 'ready' };
 
 export interface OpCredentialManagerDependencies {
+  invalidate?: (agentId: string) => Promise<'confirmed' | 'pending'>;
   credentialService: Pick<
     OpCredentialService,
     'environmentServiceAccountToken' | 'removeServiceAccountToken' | 'storeServiceAccountToken'
@@ -57,10 +65,12 @@ function failure(result: {
 
 /** Coordinate OP credential validation and persistent-store mutations for CLI consumers. */
 export default class OpCredentialManager {
+  readonly #invalidate: OpCredentialManagerDependencies['invalidate'];
   readonly #credentialService: OpCredentialManagerDependencies['credentialService'];
   readonly #environmentService: OpCredentialManagerDependencies['environmentService'];
 
   constructor(dependencies: OpCredentialManagerDependencies) {
+    this.#invalidate = dependencies.invalidate;
     this.#credentialService = dependencies.credentialService;
     this.#environmentService = dependencies.environmentService;
   }
@@ -72,17 +82,26 @@ export default class OpCredentialManager {
   ): Promise<CredentialSetResult> {
     const requirements = collectOpEnvironmentRequirements(manifest);
     const validation = await this.#environmentService.validateToken(token, requirements);
-    if (validation.status === 'invalid') return failure(validation);
+    if (validation.status === 'invalid')
+      return this.#validationFailure(manifest.agent.id, validation);
 
-    const stored = await this.#credentialService.storeServiceAccountToken(
-      manifest.agent.id,
-      storeId,
-      token,
+    const { result: stored, gatewayInvalidation } = await this.#mutate(manifest.agent.id, () =>
+      this.#credentialService.storeServiceAccountToken(manifest.agent.id, storeId, token),
     );
     if ('code' in stored) {
-      return { status: 'invalid', code: stored.code, message: stored.message };
+      return {
+        status: 'invalid',
+        code: stored.code,
+        message: stored.message,
+        ...gatewayInvalidation,
+      };
     }
-    return { status: stored.status, agentId: manifest.agent.id, storeId: stored.storeId };
+    return {
+      status: stored.status,
+      agentId: manifest.agent.id,
+      storeId: stored.storeId,
+      ...gatewayInvalidation,
+    };
   }
 
   async validate(
@@ -100,7 +119,8 @@ export default class OpCredentialManager {
         };
       }
       const validation = await this.#environmentService.validateToken(token, requirements);
-      if (validation.status === 'invalid') return failure(validation);
+      if (validation.status === 'invalid')
+        return this.#validationFailure(manifest.agent.id, validation);
       return {
         status: 'valid',
         agentId: manifest.agent.id,
@@ -115,7 +135,8 @@ export default class OpCredentialManager {
       requirements,
       options.storeId ? { storeId: options.storeId, allowEnvironmentFallback: false } : {},
     );
-    if (validated.status === 'invalid') return failure(validated);
+    if (validated.status === 'invalid')
+      return this.#validationFailure(manifest.agent.id, validated);
     return {
       status: 'valid',
       agentId: manifest.agent.id,
@@ -127,16 +148,63 @@ export default class OpCredentialManager {
   }
 
   async unset(agentId: string, storeId?: string): Promise<CredentialUnsetResult> {
-    const removed = await this.#credentialService.removeServiceAccountToken(agentId, storeId);
+    const { result: removed, gatewayInvalidation } = await this.#mutate(agentId, () =>
+      this.#credentialService.removeServiceAccountToken(agentId, storeId),
+    );
     if ('code' in removed) {
-      return { status: 'invalid', code: removed.code, message: removed.message };
+      return {
+        status: 'invalid',
+        code: removed.code,
+        message: removed.message,
+        ...gatewayInvalidation,
+      };
     }
     return {
       status: removed.status,
       agentId,
+      ...gatewayInvalidation,
       storeIds: removed.storeIds,
       unavailableStoreIds: removed.unavailableStoreIds,
     };
+  }
+
+  async #validationFailure(
+    agentId: string,
+    result: Parameters<typeof failure>[0],
+  ): Promise<CredentialManagementFailure> {
+    if (!this.#invalidate) return failure(result);
+    let gatewayInvalidation: 'confirmed' | 'pending';
+    try {
+      gatewayInvalidation = await this.#invalidate(agentId);
+    } catch {
+      gatewayInvalidation = 'pending';
+    }
+    return { ...failure(result), gatewayInvalidation };
+  }
+
+  async #mutate<T>(agentId: string, action: () => Promise<T>) {
+    let result: T | CredentialManagementFailure;
+    let gatewayInvalidation: { gatewayInvalidation?: 'confirmed' | 'pending' } = {};
+    try {
+      result = await action();
+    } catch {
+      result = {
+        status: 'invalid',
+        code: 'op-credential-mutation-uncertain',
+        message:
+          'The credential store mutation was not confirmed. Inspect the selected store before retrying; the mutation was not replayed.',
+      };
+    } finally {
+      // Even a partial or uncertain store mutation must invalidate; never replay the write.
+      if (this.#invalidate) {
+        try {
+          gatewayInvalidation = { gatewayInvalidation: await this.#invalidate(agentId) };
+        } catch {
+          gatewayInvalidation = { gatewayInvalidation: 'pending' };
+        }
+      }
+    }
+    return { result, gatewayInvalidation };
   }
 
   async validateStoredForInstall(manifest: AgentManifest): Promise<CredentialInstallReadiness> {
@@ -148,7 +216,7 @@ export default class OpCredentialManager {
     });
     if (validated.status === 'valid') return { status: 'ready' };
 
-    const invalid = failure(validated);
+    const invalid = await this.#validationFailure(manifest.agent.id, validated);
     if (invalid.code !== 'op-credential-missing') return invalid;
     return {
       status: 'invalid',

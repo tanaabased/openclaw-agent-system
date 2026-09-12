@@ -1,5 +1,6 @@
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
+import githubCredentialRejected from '../../credentials/github-rejection.ts';
 import type { AgentSystemCliResult } from '../../api/types.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -30,8 +31,12 @@ export interface GitHubToolDependencies {
   configStore: Pick<GitHubConfigStore, 'configDirectory' | 'reconcile'>;
 }
 
-function toolError(code: AgentSystemToolErrorCode, message: string): never {
-  throw new AgentSystemToolError(code, message);
+function toolError(
+  code: AgentSystemToolErrorCode,
+  message: string,
+  credentialRejected = false,
+): never {
+  throw new AgentSystemToolError(code, message, credentialRejected);
 }
 
 function validateInput(input: GitHubToolInput): void {
@@ -120,6 +125,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config.',
     },
     runner: {
+      credentialRejected: githubCredentialRejected,
       argv(input) {
         return [...input.argv];
       },
@@ -146,7 +152,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
           argv: ['api', 'user', '--jq', '.login'],
           validate(result) {
             if (result.exitCode !== 0) {
-              toolError('execution_failed', 'GitHub rejected the authenticated user check.');
+              toolError('execution_failed', 'GitHub rejected the authenticated user check.', true);
             }
             if (result.truncated) {
               toolError('execution_failed', 'GitHub returned an invalid authenticated user check.');
