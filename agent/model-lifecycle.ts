@@ -18,18 +18,17 @@ interface ModelProfileEntry {
   profile: AgentModelProfile;
 }
 
-interface ModelCatalogRow {
+interface ModelListRow {
   available: boolean | null;
   key: string;
   missing: boolean;
 }
 
 export interface ModelLifecycleDependencies {
-  inspectModelCatalog(params: {
+  inspectConfiguredModels(params: {
     agentId: string;
-    provider: string;
     workspaceDir: string;
-  }): Promise<ModelCatalogRow[]>;
+  }): Promise<ModelListRow[]>;
   mutateConfigFile(params: {
     afterWrite: { mode: 'auto' };
     base: 'source';
@@ -47,18 +46,12 @@ export interface ModelLifecycleDependencies {
   resolveThinkingPolicy(params: { agentRuntime: string; model: string; provider: string }): {
     levels: Array<{ id: string }>;
   };
-  verifyProviderAuth(params: {
-    config: OpenClawConfig;
-    provider: string;
-    workspaceDir: string;
-  }): Promise<{ mode: 'api-key' | 'aws-sdk' | 'oauth' | 'token' }>;
 }
 
 type ReadyModelConfigurationPlan = {
   changed: boolean;
   config: OpenClawConfig;
   declared: ModelProfileEntry[];
-  sourceModel: ModelRef;
   sourceRuntime: string;
   status: 'ready';
 };
@@ -286,145 +279,55 @@ function createConfigurationPlan(
     changed,
     config: prospective,
     declared,
-    sourceModel,
     sourceRuntime,
     status: 'ready',
   };
 }
 
-async function runtimeFinding(
-  params: {
-    agentId: string;
-    config: OpenClawConfig;
-    ref: ModelRef;
-    runtime: string;
-    workspaceDir: string;
-  },
-  dependencies: ModelLifecycleDependencies,
-): Promise<ContributionFinding | undefined> {
-  if (sameRuntime(params.runtime, 'openclaw')) {
-    try {
-      await dependencies.verifyProviderAuth({
-        config: params.config,
-        provider: params.ref.provider,
-        workspaceDir: params.workspaceDir,
-      });
-      return;
-    } catch {
-      return {
-        code: 'agent-model-runtime-auth-unavailable',
-        message: `OpenClaw runtime authentication is unavailable for ${modelKey(params.ref)}.`,
-        remediation: 'Repair the existing provider authentication, then run doctor again.',
-        status: 'blocked',
-      };
-    }
-  }
-
-  const eligibility = dependencies.resolveCliBackendDispatchEligibility({
-    agentId: params.agentId,
-    config: params.config,
-    model: params.ref.model,
-    provider: params.ref.provider,
-    workspaceDir: params.workspaceDir,
-  });
-  if (eligibility && sameRuntime(eligibility.provider, params.runtime)) return;
-  if (!eligibility) {
-    try {
-      const auth = await dependencies.verifyProviderAuth({
-        config: params.config,
-        provider: params.ref.provider,
-        workspaceDir: params.workspaceDir,
-      });
-      if (auth.mode === 'api-key') return;
-    } catch {
-      // Report the native route failure below without exposing credential details.
-    }
-  }
-  return {
-    code: 'agent-model-runtime-auth-unavailable',
-    message: `Native runtime ${params.runtime} is not ready for ${modelKey(params.ref)} with its current authentication.`,
-    remediation:
-      'Repair the existing native runtime or its stored authentication, then run doctor again.',
-    status: 'blocked',
-  };
-}
-
-async function readinessFindings(
+async function modelFindings(
   plan: ReadyModelConfigurationPlan,
   agentId: string,
   workspaceDir: string,
   dependencies: ModelLifecycleDependencies,
 ): Promise<ContributionFinding[]> {
-  const sourceFinding = await runtimeFinding(
-    {
-      agentId,
-      config: plan.config,
-      ref: plan.sourceModel,
-      runtime: plan.sourceRuntime,
-      workspaceDir,
-    },
-    dependencies,
-  );
-  if (sourceFinding) return [sourceFinding];
-
   const declaredRefs = [...new Set(plan.declared.map(({ profile }) => profile.model))].map(
     parseModelRef,
   );
   const findings: ContributionFinding[] = [];
-  for (const ref of declaredRefs) {
-    const routeFinding = await runtimeFinding(
-      {
-        agentId,
-        config: plan.config,
-        ref,
-        runtime: plan.sourceRuntime,
-        workspaceDir,
-      },
-      dependencies,
+  let configuredModels: Map<string, ModelListRow>;
+  try {
+    configuredModels = new Map(
+      (await dependencies.inspectConfiguredModels({ agentId, workspaceDir })).map((row) => [
+        row.key,
+        row,
+      ]),
     );
-    if (routeFinding) findings.push(routeFinding);
-  }
-
-  const catalogRows = new Map<string, ModelCatalogRow>();
-  const failedProviders = new Set<string>();
-  for (const provider of new Set(declaredRefs.map(({ provider }) => provider))) {
-    try {
-      for (const row of await dependencies.inspectModelCatalog({
-        agentId,
-        provider,
-        workspaceDir,
-      })) {
-        catalogRows.set(row.key, row);
-      }
-    } catch {
-      failedProviders.add(provider);
-    }
+  } catch {
+    return [
+      {
+        code: 'agent-model-catalog-evidence-unavailable',
+        message: `Configured model evidence is unavailable for ${agentId}.`,
+        remediation: 'Restore model listing, then run doctor again.',
+        status: 'blocked',
+      },
+    ];
   }
   for (const ref of declaredRefs) {
     const value = modelKey(ref);
-    if (failedProviders.has(ref.provider)) {
+    const row = configuredModels.get(value);
+    if (!row || row.missing) {
       findings.push({
-        code: 'agent-model-capability-evidence-unavailable',
-        message: `Capability evidence is unavailable for ${value}.`,
-        remediation: 'Restore model catalog discovery, then run doctor again.',
+        code: 'agent-model-missing',
+        message: `OpenClaw does not report ${value} in the configured model list for ${agentId}.`,
+        remediation: 'Choose a known model or repair its provider installation.',
         status: 'blocked',
       });
-      continue;
-    }
-    const row = catalogRows.get(value);
-    if (!row || row.missing || row.available === false) {
+    } else if (row.available === false) {
       findings.push({
         code: 'agent-model-unavailable',
-        message: `OpenClaw does not report ${value} as an available model.`,
-        remediation: 'Choose an available model or repair its provider installation.',
-        status: 'blocked',
-      });
-    } else if (row.available === null) {
-      findings.push({
-        code: 'agent-model-capability-evidence-unavailable',
-        message: `Capability evidence is unavailable for ${value}.`,
-        remediation: 'Restore model catalog discovery, then run doctor again.',
-        status: 'blocked',
+        message: `OpenClaw does not currently report ${value} as available for ${agentId}.`,
+        remediation: `Review openclaw models status --agent ${agentId} before relying on this model.`,
+        status: 'warning',
       });
     }
   }
@@ -480,7 +383,7 @@ function lifecycleError(finding: ContributionFinding): AgentSystemLifecycleError
   return new AgentSystemLifecycleError('models', finding.code, finding.message);
 }
 
-/** Own manifest-declared model defaults and readiness for one bound OpenClaw agent. */
+/** Own manifest-declared model configuration for one bound OpenClaw agent. */
 export default function createModelLifecycleContribution(
   dependencies: ModelLifecycleDependencies,
 ): AgentSystemLifecycleContribution {
@@ -501,14 +404,14 @@ export default function createModelLifecycleContribution(
         dependencies,
       );
       if (plan.status !== 'ready') return [planFinding(plan)];
-      const readiness = await readinessFindings(
+      const findings = await modelFindings(
         plan,
         context.manifest.agent.id,
         context.workspaceDir,
         dependencies,
       );
       return [
-        ...readiness,
+        ...findings,
         ...(plan.changed
           ? [
               {
@@ -518,11 +421,11 @@ export default function createModelLifecycleContribution(
                 status: 'drift' as const,
               },
             ]
-          : readiness.length === 0
+          : findings.length === 0
             ? [
                 {
                   code: 'agent-models-ready',
-                  message: `OpenClaw model defaults and readiness for ${context.manifest.agent.id} match the manifest.`,
+                  message: `OpenClaw model configuration for ${context.manifest.agent.id} matches the manifest.`,
                   status: 'healthy' as const,
                 },
               ]

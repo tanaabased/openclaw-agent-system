@@ -21,22 +21,22 @@ const manifest: AgentManifest = {
 };
 const context = { manifest, workspaceDir: '/workspace/emori' };
 
-interface CatalogRow {
+interface ModelListRow {
   available: boolean | null;
   key: string;
   missing: boolean;
 }
 
-const catalogRows: CatalogRow[] = [
+const configuredModels: ModelListRow[] = [
   { available: true, key: 'openai/gpt-6-astra', missing: false },
   { available: true, key: 'openai/gpt-5.6-terra', missing: false },
   { available: true, key: 'openai/gpt-5.6-sol', missing: false },
 ];
 
 interface HarnessOptions {
-  catalog?: CatalogRow[];
+  configuredModels?: ModelListRow[];
+  configuredModelsError?: boolean;
   nativeAuthReady?: boolean;
-  providerAuthReady?: boolean;
   supportedEfforts?: string[];
 }
 
@@ -47,10 +47,12 @@ function parseRef(value: string) {
 
 function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
   let mutations = 0;
-  let providerAuthChecks = 0;
+  let configuredModelChecks = 0;
   const dependencies: ModelLifecycleDependencies = {
-    async inspectModelCatalog() {
-      return options.catalog ?? catalogRows;
+    async inspectConfiguredModels() {
+      configuredModelChecks += 1;
+      if (options.configuredModelsError) throw new Error('model list unavailable');
+      return options.configuredModels ?? configuredModels;
     },
     async mutateConfigFile({ mutate }) {
       mutations += 1;
@@ -76,16 +78,11 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
         levels: (options.supportedEfforts ?? ['medium', 'high', 'xhigh']).map((id) => ({ id })),
       };
     },
-    async verifyProviderAuth() {
-      providerAuthChecks += 1;
-      if (options.providerAuthReady === false) throw new Error('missing auth');
-      return { mode: 'api-key' };
-    },
   };
   return {
+    configuredModelChecks: () => configuredModelChecks,
     contribution: createModelLifecycleContribution(dependencies),
     mutations: () => mutations,
-    providerAuthChecks: () => providerAuthChecks,
   };
 }
 
@@ -211,48 +208,42 @@ describe('agent/model-lifecycle', () => {
     );
   });
 
-  it('should preserve a native api key route without relabeling it as subscription', async () => {
+  it('should preserve a native route without inspecting authentication', async () => {
     const config = codexConfig();
-    const { contribution, providerAuthChecks } = createHarness(config, {
+    const { configuredModelChecks, contribution } = createHarness(config, {
       nativeAuthReady: false,
     });
 
     const installed = await contribution.reconcile?.(context);
 
     assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
-    assert.equal(providerAuthChecks(), 0);
+    assert.equal(configuredModelChecks(), 0);
     assert.equal(
       config.agents?.entries?.emori?.models?.['openai/gpt-6-astra']?.agentRuntime?.id,
       'codex',
     );
 
     assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
-    assert.equal(providerAuthChecks() > 0, true);
+    assert.equal(configuredModelChecks(), 1);
   });
 
-  it('should keep installation independent of ambient authentication readiness', async () => {
+  it('should keep installation independent of configured model inspection', async () => {
     const config = codexConfig();
-    const inspection = createHarness(config, {
+    const { configuredModelChecks, contribution, mutations } = createHarness(config, {
+      configuredModelsError: true,
       nativeAuthReady: false,
-      providerAuthReady: false,
     });
 
-    const findings = await inspection.contribution.inspect?.(context);
-
-    assert.equal(
-      findings?.some(({ code }) => code === 'agent-model-runtime-auth-unavailable'),
-      true,
-    );
-
-    const installation = createHarness(config, {
-      nativeAuthReady: false,
-      providerAuthReady: false,
-    });
-    const installed = await installation.contribution.reconcile?.(context);
+    const installed = await contribution.reconcile?.(context);
 
     assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
-    assert.equal(installation.providerAuthChecks(), 0);
-    assert.equal(installation.mutations(), 1);
+    assert.equal(configuredModelChecks(), 0);
+    assert.equal(mutations(), 1);
+    assert.equal(
+      (await contribution.inspect?.(context))?.[0]?.code,
+      'agent-model-catalog-evidence-unavailable',
+    );
+    assert.equal(configuredModelChecks(), 1);
   });
 
   it('should reconcile provider-neutral model references through an established route', async () => {
@@ -276,10 +267,7 @@ describe('agent/model-lifecycle', () => {
         },
       },
     };
-    const installation = createHarness(config, {
-      nativeAuthReady: false,
-      providerAuthReady: false,
-    });
+    const installation = createHarness(config, { nativeAuthReady: false });
 
     const installed = await installation.contribution.reconcile?.({
       manifest: alternativeManifest,
@@ -287,24 +275,23 @@ describe('agent/model-lifecycle', () => {
     });
 
     assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
-    assert.equal(installation.providerAuthChecks(), 0);
     assert.equal(
       config.agents?.entries?.emori?.models?.['anthropic/claude-sonnet-4-5']?.agentRuntime?.id,
       'claude-code',
     );
   });
 
-  it('should distinguish unavailable models from unsupported effort', async () => {
-    const unavailable = createHarness(codexConfig(), {
-      catalog: catalogRows.filter(({ key }) => key !== 'openai/gpt-5.6-terra'),
+  it('should distinguish missing configured models from unsupported effort', async () => {
+    const missing = createHarness(codexConfig(), {
+      configuredModels: configuredModels.filter(({ key }) => key !== 'openai/gpt-5.6-terra'),
     });
     const unsupported = createHarness(codexConfig(), {
       supportedEfforts: ['medium', 'high'],
     });
 
     assert.equal(
-      (await unavailable.contribution.inspect?.(context))?.some(
-        ({ code }) => code === 'agent-model-unavailable',
+      (await missing.contribution.inspect?.(context))?.some(
+        ({ code }) => code === 'agent-model-missing',
       ),
       true,
     );
@@ -316,22 +303,37 @@ describe('agent/model-lifecycle', () => {
     );
   });
 
-  it('should distinguish degraded capability evidence from model absence', async () => {
-    const { contribution } = createHarness(codexConfig(), {
-      catalog: catalogRows.map((row) =>
+  it('should warn about explicit model unavailability without blocking unknown availability', async () => {
+    const unavailable = createHarness(codexConfig(), {
+      configuredModels: configuredModels.map((row) =>
+        row.key === 'openai/gpt-5.6-terra' ? { ...row, available: false } : row,
+      ),
+    });
+    const unknown = createHarness(codexConfig(), {
+      configuredModels: configuredModels.map((row) =>
         row.key === 'openai/gpt-5.6-terra' ? { ...row, available: null } : row,
       ),
     });
 
+    await unavailable.contribution.reconcile?.(context);
+    await unknown.contribution.reconcile?.(context);
+    const unavailableFindings = await unavailable.contribution.inspect?.(context);
+    const unknownFindings = await unknown.contribution.inspect?.(context);
+
     assert.equal(
-      (await contribution.inspect?.(context))?.some(
-        ({ code }) => code === 'agent-model-capability-evidence-unavailable',
+      unavailableFindings?.some(
+        ({ code, status }) => code === 'agent-model-unavailable' && status === 'warning',
       ),
       true,
     );
+    assert.equal(
+      unavailableFindings?.some(({ status }) => status === 'blocked'),
+      false,
+    );
+    assert.equal(unknownFindings?.[0]?.code, 'agent-models-ready');
   });
 
-  it('should verify direct provider authentication without exposing credential material', async () => {
+  it('should accept direct OPENCLAW runtime configuration without inspecting authentication', async () => {
     const config: OpenClawConfig = {
       agents: {
         entries: {
@@ -347,10 +349,9 @@ describe('agent/model-lifecycle', () => {
         },
       },
     };
-    const { contribution, providerAuthChecks } = createHarness(config);
+    const { contribution } = createHarness(config);
 
     assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
-    assert.equal(providerAuthChecks() > 0, true);
   });
 
   it('should perform no cleanup after model declarations are removed', async () => {

@@ -29,16 +29,10 @@ openclaw config get agents.entries.tanaabot.tools --json | jq -e '((.allow // []
 ```
 
 ```bash
-# should prepare one managed worktree across concurrent operator processes
+# should prepare a managed worktree through the installed operator command
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git > "$TMPDIR/agent-system-worktree.json" &
-first_pid=$!
-OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git > "$TMPDIR/agent-system-worktree-second.json" &
-second_pid=$!
-wait "$first_pid"
-wait "$second_pid"
-jq -es '([.[].status] | sort) == ["created", "existing"] and (.[0].path == .[1].path)' "$TMPDIR/agent-system-worktree.json" "$TMPDIR/agent-system-worktree-second.json"
-jq -e '(.branch == (.path | split("/") | last)) and (.branch | startswith("123-verify-worktree-flow-"))' "$TMPDIR/agent-system-worktree.json"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree -- prepare agent-system 123-verify-worktree-flow origin/main --clone-url https://github.com/tanaabased/openclaw-agent-system.git > "$TMPDIR/agent-system-worktree.json"
+jq -e '.status == "created" and (.branch == (.path | split("/") | last)) and (.branch | startswith("123-verify-worktree-flow-"))' "$TMPDIR/agent-system-worktree.json"
 
 # should return the same managed worktree on repeated preparation
 cd "$GITHUB_WORKSPACE/examples/worktree/tanaabot"

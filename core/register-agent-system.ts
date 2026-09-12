@@ -279,19 +279,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
     }),
     createModelLifecycleContribution({
-      async inspectModelCatalog({ agentId, provider, workspaceDir }) {
+      async inspectConfiguredModels({ agentId, workspaceDir }) {
         const result = await runPluginCommandWithTimeout({
-          argv: [
-            ...openClawCommand,
-            'models',
-            'list',
-            '--all',
-            '--provider',
-            provider,
-            '--agent',
-            agentId,
-            '--json',
-          ],
+          argv: [...openClawCommand, 'models', 'list', '--agent', agentId, '--json'],
           cwd: workspaceDir,
           timeoutMs: 120_000,
         });
@@ -321,14 +311,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
       resolveThinkingPolicy(params) {
         return api.runtime.agent.resolveThinkingPolicy(params);
-      },
-      async verifyProviderAuth({ config, provider, workspaceDir }) {
-        const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
-          cfg: config,
-          provider,
-          workspaceDir,
-        });
-        return { mode: auth.mode };
       },
     }),
     createToolAccessLifecycleContribution({
