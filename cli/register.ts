@@ -53,6 +53,7 @@ export interface RegisterAgentSystemCliOptions {
   toolRuntime: AgentSystemToolRuntime;
   setExitCode?: (code: number) => void;
   styles?: CliStyles;
+  terminalColumns?: number;
 }
 
 function writeHelp(command: CommandLike, output: CliOutput): void {
@@ -127,6 +128,8 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        terminalColumns:
+          options.terminalColumns ?? (process.stdout.isTTY ? process.stdout.columns : undefined),
         workspaceDir: cwd(),
       });
     });
@@ -255,6 +258,8 @@ export default function registerAgentSystemCli(
         output,
         setExitCode,
         styles: options.styles,
+        terminalColumns:
+          options.terminalColumns ?? (process.stdout.isTTY ? process.stdout.columns : undefined),
         workspaceDir: cwd(),
       });
     });

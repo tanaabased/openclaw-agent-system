@@ -76,7 +76,7 @@ cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 
 # should report managed ssh dependencies as healthy
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-openclaw agent-system doctor | grep -F 'healthy' | grep -F 'git' | grep -F 'Git SSH authentication and signing dependencies are available'
+openclaw agent-system doctor --json | jq -e '.findings | any(.component == "git" and .status == "healthy" and .code == "git-ssh-dependencies-ready")'
 
 # should load both configured keys and authenticate with the registered generated key
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"

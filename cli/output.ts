@@ -1,4 +1,6 @@
 import ansis, { Ansis } from 'ansis';
+import stringWidth from 'fast-string-width';
+import { wrapAnsi } from 'fast-wrap-ansi';
 import { defaultRuntime, type OutputRuntimeEnv } from 'openclaw/plugin-sdk/runtime';
 
 export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
@@ -7,6 +9,7 @@ export type CliOutput = Pick<OutputRuntimeEnv, 'writeStdout'> & {
 
 export interface CliStyles {
   action(value: string): string;
+  bold(value: string): string;
   error(value: string): string;
   field(value: string): string;
   status(value: string): string;
@@ -19,6 +22,12 @@ export interface CliSummaryLine {
   label: string;
   style: 'action' | 'error' | 'field' | 'status' | 'target' | 'warning';
   value: string;
+}
+
+export interface CliLifecycleLine extends CliSummaryLine {
+  component: string;
+  attention: boolean;
+  quiet: boolean;
 }
 
 function colorLevel(environment: NodeJS.ProcessEnv): number {
@@ -39,6 +48,7 @@ export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): C
 
   return {
     action: (value) => color.tp(value),
+    bold: (value) => color.bold(value),
     error: (value) => color.bold(color.red(value)),
     field: (value) => color.dim(value),
     status: (value) => color.bold(color.green(value)),
@@ -80,6 +90,60 @@ export function writeCliSummary(
   styles?: CliStyles,
 ): void {
   writeCliLines(output, renderCliSummary(lines, styles));
+}
+
+/** Render Doctor and Install without changing other summary callers. */
+export function renderCliLifecycleTable(
+  lines: readonly CliLifecycleLine[],
+  workspaceDir: string,
+  styles: CliStyles = defaultCliStyles,
+  terminalColumns = 80,
+): string[] {
+  const columns =
+    Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
+  const componentWidth = Math.max(0, ...lines.map(({ component }) => stringWidth(component)));
+  const labelWidth = Math.max(0, ...lines.map(({ label }) => stringWidth(label)));
+  const prefixWidth = componentWidth + labelWidth + 4;
+  const stacked = columns - prefixWidth < 24;
+  const indent = ' '.repeat(stacked ? Math.min(2, columns - 1) : prefixWidth);
+  const explanationWidth = columns - indent.length;
+  const rows = lines.flatMap(({ attention, component, label, quiet, style, value }) => {
+    const name = attention ? styles.bold(component) : component;
+    const status =
+      style === 'action' || style === 'error' || style === 'status' || style === 'warning'
+        ? styles[style](label)
+        : attention
+          ? styles.bold(label)
+          : label;
+    const gap = ' '.repeat(componentWidth - stringWidth(component) + 2);
+    const header = `${name}${gap}${status}`;
+    const explanation = wrapAnsi(value, explanationWidth, { hard: true })
+      .split('\n')
+      .map((line) => (quiet ? styles.field(line) : line));
+    if (stacked) {
+      const compactHeader =
+        componentWidth + labelWidth + 2 > columns ? `${name}  ${status}` : header;
+      return [
+        ...wrapAnsi(compactHeader, columns, { hard: true }).split('\n'),
+        ...explanation.map((line) => `${indent}${line}`),
+      ];
+    }
+    const statusGap = ' '.repeat(labelWidth - stringWidth(label) + 2);
+    return explanation.map((line, index) =>
+      index === 0 ? `${header}${statusGap}${line}` : `${indent}${line}`,
+    );
+  });
+  return [...rows, ...(rows.length ? [''] : []), `workspace  ${styles.bold(workspaceDir)}`];
+}
+
+export function writeCliLifecycleTable(
+  output: CliOutput,
+  lines: readonly CliLifecycleLine[],
+  workspaceDir: string,
+  styles?: CliStyles,
+  terminalColumns?: number,
+): void {
+  writeCliLines(output, renderCliLifecycleTable(lines, workspaceDir, styles, terminalColumns));
 }
 
 export function writeCliJson(output: CliOutput, value: unknown): void {

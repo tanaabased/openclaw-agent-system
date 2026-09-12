@@ -7,6 +7,7 @@ import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
 import { createCliStyles } from '../cli/output.ts';
+import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 import registerAgentSystemCli from '../cli/register.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 
@@ -35,7 +36,15 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
   },
 };
 
-function createProgram(input?: Readable, dependencies: { notificationWaitError?: Error } = {}) {
+function createProgram(
+  input?: Readable,
+  dependencies: {
+    notificationWaitError?: Error;
+    terminalColumns?: number;
+    doctorFindings?: typeof doctorFindings;
+    installOutcomes?: typeof installOutcomes;
+  } = {},
+) {
   const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
@@ -127,7 +136,7 @@ function createProgram(input?: Readable, dependencies: { notificationWaitError?:
         });
         return {
           agentId: input.manifest.agent.id,
-          findings: [],
+          findings: dependencies.doctorFindings ?? [],
           status: 'healthy',
           workspaceDir: input.workspaceDir,
         };
@@ -146,7 +155,12 @@ function createProgram(input?: Readable, dependencies: { notificationWaitError?:
     installService: {
       async install(input) {
         calls.install.push(input);
-        return { outcomes: [], agentId: 'tanaabot', warnings: [], workspaceDir: '/workspace' };
+        return {
+          outcomes: dependencies.installOutcomes ?? [],
+          agentId: 'tanaabot',
+          warnings: [],
+          workspaceDir: '/workspace',
+        };
       },
     },
     ...(input ? { input } : {}),
@@ -249,6 +263,7 @@ function createProgram(input?: Readable, dependencies: { notificationWaitError?:
     },
     toolRuntime: {} as never,
     styles: createCliStyles({ NO_COLOR: '1' }),
+    terminalColumns: dependencies.terminalColumns,
   });
   return { calls, diagnostics, output, program };
 }
@@ -616,6 +631,21 @@ describe('cli/register', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
+  });
+
+  it('should pass terminal width to doctor and install human output', async () => {
+    for (const command of ['doctor', 'install']) {
+      const { output, program } = createProgram(undefined, {
+        terminalColumns: 32,
+        doctorFindings: doctorFindings.filter(({ status }) => status === 'healthy'),
+        installOutcomes,
+      });
+      await program.parseAsync(['node', 'openclaw', 'agent-system', command]);
+      const rows = output.join('').split('\n');
+      assert.match(rows[0]!, /^agent\s+(healthy|unchanged)$/);
+      assert.ok(rows[1]!.startsWith('  '));
+      assert.ok(rows.slice(0, -3).every((row) => row.length <= 32));
+    }
   });
 
   it('should register structured json installation output', async () => {

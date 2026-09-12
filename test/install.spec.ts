@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import installAgentSystem from '../cli/install.ts';
 import type { AgentInstallResult } from '../agent/install-service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-import { createCliStyles } from '../cli/output.ts';
+import { createCliStyles, type CliStyles } from '../cli/output.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
+import { installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -21,6 +22,8 @@ function createHarness(
     install?: AgentInstallResult | Error;
     json?: boolean;
     manifest?: AgentManifestLoadResult;
+    styles?: CliStyles;
+    terminalColumns?: number;
   } = {},
 ) {
   const diagnostics: string[] = [];
@@ -77,7 +80,8 @@ function createHarness(
           writeStdout: (message) => output.push(message),
         },
         setExitCode: (code) => exitCodes.push(code),
-        styles: createCliStyles({ NO_COLOR: '1' }),
+        styles: options.styles ?? createCliStyles({ NO_COLOR: '1' }),
+        terminalColumns: options.terminalColumns,
         workspaceDir: '/current',
       }),
   };
@@ -143,9 +147,20 @@ describe('cli/install', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace' },
     ]);
-    assert.deepEqual(output, [
-      'created    agent   OpenClaw agent tanaabot\nupdated    agent   OpenClaw identity for tanaabot\ncreated    path    workspace bin directory\nupdated    path    OpenClaw exec path for tanaabot\ncreated    path    Codex workspace path configuration\nupdated    path    workspace .gitignore\ncreated    github  private GitHub CLI config\nworkspace          /workspace\n',
-    ]);
+    const rows = output.join('').trimEnd().split('\n');
+    assert.deepEqual(
+      rows.slice(0, 7).map((row) => row.split(/\s+/).slice(0, 2)),
+      [
+        ['agent', 'created'],
+        ['agent', 'updated'],
+        ['path', 'created'],
+        ['path', 'updated'],
+        ['path', 'created'],
+        ['path', 'updated'],
+        ['github', 'created'],
+      ],
+    );
+    assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
   });
 
   it('should warn without styling a user-managed codex configuration', async () => {
@@ -209,9 +224,58 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(output, [
-      'unchanged  agent   OpenClaw registration and identity for tanaabot\nunchanged  path    Executable path projection for tanaabot\nunchanged  github  private GitHub CLI config\nworkspace          /workspace\n',
-    ]);
+    const rows = output.join('').trimEnd().split('\n');
+    assert.deepEqual(
+      rows.slice(0, 3).map((row) => row.split(/\s+/).slice(0, 2)),
+      [
+        ['agent', 'unchanged'],
+        ['path', 'unchanged'],
+        ['github', 'unchanged'],
+      ],
+    );
+    assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
+  });
+
+  it('should retain operation order and warning routing in human and json output', async () => {
+    const installed: AgentInstallResult = {
+      agentId: 'tanaabot',
+      outcomes: structuredClone(installOutcomes),
+      warnings: [{ code: 'manual-follow-up', component: 'path', message: 'Manual follow-up.' }],
+      workspaceDir: '/workspace',
+    };
+    const original = structuredClone(installed);
+    Object.freeze(installed.outcomes);
+    for (const json of [false, true]) {
+      const harness = createHarness({
+        install: installed,
+        json,
+        styles: createCliStyles(json ? { FORCE_COLOR: '3' } : { NO_COLOR: '1' }),
+        terminalColumns: 40,
+      });
+      await harness.run();
+      assert.deepEqual(harness.calls.install, [
+        { manifest: validResult.manifest, workspaceDir: '/workspace' },
+      ]);
+      assert.deepEqual(harness.exitCodes, []);
+      assert.deepEqual(harness.diagnostics, ['path: Manual follow-up. code=manual-follow-up\n']);
+      const text = harness.output.join('');
+      assert.equal(text.includes('manual-follow-up'), json);
+      if (json) {
+        assert.equal(harness.output.length, 1);
+        assert.equal(text, `${JSON.stringify(original, undefined, 2)}\n`);
+      } else {
+        const rows = text.split('\n').filter((row) => /^(agent|path|git|github)\s/.test(row));
+        assert.deepEqual(
+          rows.map((row) => row.split(/\s+/).slice(0, 2)),
+          installed.outcomes.map(({ component, status }) => [component, status]),
+        );
+        assert.ok(text.split('\n').some((row) => row.startsWith('  ')));
+        for (const { message } of installed.outcomes) {
+          assert.ok(text.replace(/\s+/g, ' ').includes(message));
+        }
+      }
+      assert.deepEqual(installed, original);
+    }
   });
 
   it('should write structured json from the same install result', async () => {

@@ -5,9 +5,9 @@ import {
   type CliStyles,
   writeCliDiagnostics,
   writeCliJson,
-  writeCliSummary,
+  writeCliLifecycleTable,
 } from './output.ts';
-import lifecyclePresentationLines from '../core/lifecycle-presentation.ts';
+import { lifecycleTableLines, orderDoctorFindings } from '../core/lifecycle-presentation.ts';
 import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
 
 export interface DoctorAgentSystemOptions {
@@ -18,6 +18,7 @@ export interface DoctorAgentSystemOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -44,19 +45,18 @@ export default async function doctorAgentSystem(options: DoctorAgentSystemOption
   });
   if (options.json) writeCliJson(options.output, result);
   else {
-    writeCliSummary(
+    writeCliLifecycleTable(
       options.output,
-      [
-        ...lifecyclePresentationLines(
-          result.findings.map((finding) => ({
-            component: finding.component,
-            message: `${finding.message}${finding.remediation ? ` ${finding.remediation}` : ''}`,
-            status: finding.status,
-          })),
-        ),
-        { label: 'workspace', style: 'target' as const, value: result.workspaceDir },
-      ],
+      lifecycleTableLines(
+        orderDoctorFindings(result.findings).map((finding) => ({
+          component: finding.component,
+          message: `${finding.message}${finding.remediation ? ` ${finding.remediation}` : ''}`,
+          status: finding.status,
+        })),
+      ),
+      result.workspaceDir,
       options.styles,
+      options.terminalColumns,
     );
   }
   if (result.status !== 'healthy') options.setExitCode(1);
