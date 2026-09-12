@@ -79,6 +79,7 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
     async verifyProviderAuth() {
       providerAuthChecks += 1;
       if (options.providerAuthReady === false) throw new Error('missing auth');
+      return { mode: 'api-key' };
     },
   };
   return {
@@ -210,9 +211,28 @@ describe('agent/model-lifecycle', () => {
     );
   });
 
-  it('should fail before mutation when native subscription authentication is unavailable', async () => {
+  it('should preserve a native api key route without relabeling it as subscription', async () => {
     const config = codexConfig();
-    const { contribution, mutations } = createHarness(config, { nativeAuthReady: false });
+    const { contribution, providerAuthChecks } = createHarness(config, {
+      nativeAuthReady: false,
+    });
+
+    const installed = await contribution.reconcile?.(context);
+
+    assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
+    assert.equal(providerAuthChecks() > 0, true);
+    assert.equal(
+      config.agents?.entries?.emori?.models?.['openai/gpt-6-astra']?.agentRuntime?.id,
+      'codex',
+    );
+  });
+
+  it('should fail before mutation when native runtime authentication is unavailable', async () => {
+    const config = codexConfig();
+    const { contribution, mutations } = createHarness(config, {
+      nativeAuthReady: false,
+      providerAuthReady: false,
+    });
 
     const findings = await contribution.inspect?.(context);
 

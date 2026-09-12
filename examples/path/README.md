@@ -1,6 +1,6 @@
 # Path Example
 
-This scenario runs the prepared Agent System package in the default Gateway with explicitly installed agents. It verifies native model and effort reconciliation, then proves that one manifest-declared executable directory reaches both Codex-native shell commands and OpenClaw exec with the documented precedence.
+This scenario runs the prepared Agent System package in the default Gateway with explicitly installed agents. It verifies that one manifest-declared executable directory reaches both Codex-native shell commands and OpenClaw exec with the documented precedence.
 
 ## Setup
 
@@ -12,27 +12,16 @@ openclaw-setup \
   --model "openai/$OPENAI_MODEL" \
   --yolo
 
-# should establish the existing codex route used for model reconciliation
-openclaw plugins enable codex
-openclaw agents add path-codex \
-  --workspace "$GITHUB_WORKSPACE/examples/path/codex" \
-  --non-interactive \
-  --json
-openclaw config set 'agents.entries.path-codex.model' "openai/$OPENAI_MODEL"
-openclaw config set 'agents.entries.path-codex.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
-
-# should install the native model and effort through agent system
+# should install both scenario-owned workspaces through agent system
 cd "$GITHUB_WORKSPACE/examples/path/codex"
-openclaw agent-system install --json \
-  | jq -e '.outcomes | any(.component == "models" and .code == "set-agent-models" and .status == "updated")'
-openclaw agent-system doctor --json \
-  | jq -e '.findings | any(.component == "models" and .code == "agent-models-ready" and .status == "healthy")'
-openclaw agent-system install --json \
-  | jq -e '.outcomes | any(.component == "models" and .code == "agent-models-unchanged" and .status == "unchanged")'
-
-# should install the openclaw scenario and retain its explicit runtime
+openclaw agent-system install
 cd "$GITHUB_WORKSPACE/examples/path/openclaw"
 openclaw agent-system install
+
+# should route one agent through codex and one through the openclaw runtime
+openclaw plugins enable codex
+openclaw config set 'agents.entries.path-codex.model' "openai/$OPENAI_MODEL"
+openclaw config set 'agents.entries.path-codex.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
 openclaw config set 'agents.entries.path-openclaw.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.path-openclaw.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"openclaw\"}}}" --strict-json
 

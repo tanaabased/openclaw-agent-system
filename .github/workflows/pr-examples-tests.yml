@@ -26,6 +26,7 @@ jobs:
           - doctor
           - agent
           - identity
+          - models
           - path
           - env
           - credentials

@@ -51,7 +51,7 @@ export interface ModelLifecycleDependencies {
     config: OpenClawConfig;
     provider: string;
     workspaceDir: string;
-  }): Promise<void>;
+  }): Promise<{ mode: 'api-key' | 'aws-sdk' | 'oauth' | 'token' }>;
 }
 
 type ReadyModelConfigurationPlan = {
@@ -328,9 +328,21 @@ async function runtimeFinding(
     workspaceDir: params.workspaceDir,
   });
   if (eligibility && sameRuntime(eligibility.provider, params.runtime)) return;
+  if (!eligibility) {
+    try {
+      const auth = await dependencies.verifyProviderAuth({
+        config: params.config,
+        provider: params.ref.provider,
+        workspaceDir: params.workspaceDir,
+      });
+      if (auth.mode === 'api-key') return;
+    } catch {
+      // Report the native route failure below without exposing credential details.
+    }
+  }
   return {
     code: 'agent-model-runtime-auth-unavailable',
-    message: `Native runtime ${params.runtime} is not ready for ${modelKey(params.ref)} with subscription authentication.`,
+    message: `Native runtime ${params.runtime} is not ready for ${modelKey(params.ref)} with its current authentication.`,
     remediation:
       'Repair the existing native runtime or its stored authentication, then run doctor again.',
     status: 'blocked',

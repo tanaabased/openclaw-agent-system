@@ -289,11 +289,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return api.runtime.agent.resolveThinkingPolicy(params);
       },
       async verifyProviderAuth({ config, provider, workspaceDir }) {
-        await api.runtime.modelAuth.resolveApiKeyForProvider({
+        const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
           cfg: config,
           provider,
           workspaceDir,
         });
+        return { mode: auth.mode };
       },
     }),
     createToolAccessLifecycleContribution({
