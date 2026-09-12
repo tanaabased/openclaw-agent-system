@@ -18,6 +18,7 @@ import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
+import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -48,6 +49,29 @@ import ConversationHookAccess, {
   requiredConversationHooks,
 } from './conversation-hook-access.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
+
+function parseModelCatalogRows(stdout: string) {
+  const parsed: unknown = JSON.parse(stdout);
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(Reflect.get(parsed, 'models'))) {
+    throw new Error('OpenClaw models list returned an invalid JSON result.');
+  }
+  return Reflect.get(parsed, 'models').map((value: unknown) => {
+    if (!value || typeof value !== 'object') {
+      throw new Error('OpenClaw models list returned an invalid model row.');
+    }
+    const key = Reflect.get(value, 'key');
+    const available = Reflect.get(value, 'available');
+    const missing = Reflect.get(value, 'missing');
+    if (
+      typeof key !== 'string' ||
+      (available !== null && typeof available !== 'boolean') ||
+      typeof missing !== 'boolean'
+    ) {
+      throw new Error('OpenClaw models list returned an invalid model row.');
+    }
+    return { available, key, missing };
+  });
+}
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
@@ -218,6 +242,58 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       runOpenClawCommand(args, cwd) {
         const argv = [...openClawCommand, ...args];
         return runPluginCommandWithTimeout({ argv, cwd, timeoutMs: 120_000 });
+      },
+    }),
+    createModelLifecycleContribution({
+      async inspectModelCatalog({ agentId, provider, workspaceDir }) {
+        const result = await runPluginCommandWithTimeout({
+          argv: [
+            ...openClawCommand,
+            'models',
+            'list',
+            '--all',
+            '--provider',
+            provider,
+            '--agent',
+            agentId,
+            '--json',
+          ],
+          cwd: workspaceDir,
+          timeoutMs: 120_000,
+        });
+        if (result.code !== 0) {
+          throw new Error(result.stderr.trim() || `OpenClaw models list exited ${result.code}.`);
+        }
+        return parseModelCatalogRows(result.stdout);
+      },
+      mutateConfigFile(params) {
+        return api.runtime.config.mutateConfigFile(params);
+      },
+      readConfig,
+      resolveCliBackendDispatchEligibility(params) {
+        return api.runtime.agent.resolveCliBackendDispatchEligibility({
+          agentId: params.agentId,
+          config: params.config,
+          model: params.model,
+          provider: params.provider,
+          workspaceDir: params.workspaceDir,
+        });
+      },
+      resolveDefaultModelForAgent({ agentId, config }) {
+        return api.runtime.modelConfig.resolveDefaultModelForAgent({
+          agentId,
+          cfg: config,
+        });
+      },
+      resolveThinkingPolicy(params) {
+        return api.runtime.agent.resolveThinkingPolicy(params);
+      },
+      async verifyProviderAuth({ config, provider, workspaceDir }) {
+        await api.runtime.modelAuth.resolveApiKeyForProvider({
+          cfg: config,
+          provider,
+          workspaceDir,
+        });
       },
     }),
     createToolAccessLifecycleContribution({

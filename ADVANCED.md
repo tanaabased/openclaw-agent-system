@@ -87,6 +87,12 @@ agent:
   avatar: avatar.png
   emoji: 🧑‍💻
 
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-5.6-terra, effort: medium }
+  medium: { model: openai/gpt-5.6-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: xhigh }
+
 environment:
   dotenv:
     - .agent-system/env/base.env
@@ -139,6 +145,35 @@ dollar-prefixed scalar in these fields remains literal.
 
 Identity fields do not configure tools by themselves; a tool may explicitly use
 them as defaults.
+
+### `models`
+
+`models` is optional. Omitting it leaves the agent's existing model configuration
+untouched. When present, `default` is required; `low`, `medium`, and `high` are an
+additive work-tier group and must be declared together or omitted together.
+
+Each profile requires both fields:
+
+| Field    | Type                         | Behavior                                                      |
+| -------- | ---------------------------- | ------------------------------------------------------------- |
+| `model`  | provider-qualified model ref | Exact `provider/model` reference; no model value is built in. |
+| `effort` | `medium`, `high`, or `xhigh` | Explicit profile effort, intersected with runtime support.    |
+
+Model refs cannot select an authentication profile. Runtime and credential
+configuration remain outside the manifest.
+
+`install` sets the bound agent's primary model and default thinking effort from
+`models.default`. It binds each distinct declared model to the same verified
+runtime and authentication route already used by that agent, without changing
+global defaults, fallbacks, unrelated per-model settings, or existing session
+selections. An explicit incompatible or ambiguous runtime binding blocks the
+change rather than selecting another route. Removing `models` later performs no
+cleanup and does not guess the previous default.
+
+`doctor` checks configuration drift, runtime and authentication readiness, model
+availability, and effort support without changing configuration or running
+inference. Catalog or capability failures are reported separately from a model or
+effort known to be unsupported.
 
 ### `environment`
 
@@ -263,8 +298,8 @@ directories, mode `0600`, and a regular non-symlinked credential file.
 
 ### `openclaw agent-system install`
 
-Installs the current workspace agent and reconciles its public identity,
-executable paths, and configured capability state.
+Installs the current workspace agent and reconciles its public identity, model
+defaults, executable paths, and configured capability state.
 
 ```text
 openclaw agent-system install [--json]
@@ -283,8 +318,8 @@ remains authoritative and blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 
-Inspects agent registration, public identity, path projection, and configured
-capabilities for drift without applying repairs.
+Inspects agent registration, public identity, model readiness, path projection,
+and configured capabilities for drift without applying repairs.
 
 ```text
 openclaw agent-system doctor [--agent <id>] [--json]

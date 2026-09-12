@@ -95,6 +95,12 @@ agent:
   email:
     from-environment: AGENT_EMAIL
 
+models:
+  default: { model: openai/gpt-6-astra, effort: high }
+  low: { model: openai/gpt-5.6-terra, effort: medium }
+  medium: { model: openai/gpt-5.6-sol, effort: high }
+  high: { model: openai/gpt-6-astra, effort: xhigh }
+
 environment:
   # import this agent's identity and tool credentials from 1password.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
@@ -133,7 +139,7 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
+`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. When `models` is present, it applies the default and binds every declared model to the agent's existing verified runtime and authentication route. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
 
 ## Development
 

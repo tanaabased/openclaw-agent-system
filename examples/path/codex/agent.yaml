@@ -4,5 +4,8 @@ agent:
   id: path-codex
   name: Path Codex
 
+models:
+  default: { model: openai/gpt-5.4-nano, effort: medium }
+
 environment:
   path-prepend: tools/bin

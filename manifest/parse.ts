@@ -5,6 +5,7 @@ import { isAlias, parseDocument, visit } from 'yaml';
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
 import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
 
@@ -72,6 +73,7 @@ const externalAgentManifestSchema = Type.Object(
     ),
     git: Type.Optional(externalGitSectionSchema),
     github: Type.Optional(externalGitHubSectionSchema),
+    models: Type.Optional(externalAgentModelsSchema),
   },
   { additionalProperties: false },
 );
@@ -127,6 +129,24 @@ function legacyPolicyDiagnostics(value: unknown): ManifestDiagnostic[] {
     message: `Policy decision ask at ${fieldPath} is no longer supported. An operator must choose deny or allow.`,
     severity: 'error',
   }));
+}
+
+function modelTierGroupDiagnostics(value: unknown): ManifestDiagnostic[] {
+  if (!isRecord(value)) return [];
+  const models = value['models'];
+  if (!isRecord(models)) return [];
+  const tiers = ['low', 'medium', 'high'] as const;
+  const configured = tiers.filter((tier) => Object.hasOwn(models, tier));
+  if (configured.length === 0 || configured.length === tiers.length) return [];
+  const missing = tiers.filter((tier) => !Object.hasOwn(models, tier));
+  return [
+    {
+      code: 'manifest-model-tier-group-incomplete',
+      fieldPath: '/models',
+      message: `Model work tiers must declare low, medium, and high together. Missing: ${missing.join(', ')}.`,
+      severity: 'error',
+    },
+  ];
 }
 
 function schemaDiagnostic(error: ReturnType<typeof Value.Errors>[number]): ManifestDiagnostic[] {
@@ -207,6 +227,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
         }),
     ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),
     ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
+    ...(value.models === undefined ? {} : { models: decodeAgentModels(value.models) }),
   };
 }
 
@@ -280,17 +301,22 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     };
   }
 
-  const migrationDiagnostics = legacyPolicyDiagnostics(value);
-  if (migrationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
-    const migrationPaths = new Set(
-      migrationDiagnostics.flatMap(({ fieldPath }) => (fieldPath === undefined ? [] : [fieldPath])),
+  const declarationDiagnostics = [
+    ...legacyPolicyDiagnostics(value),
+    ...modelTierGroupDiagnostics(value),
+  ];
+  if (declarationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
+    const declarationPaths = new Set(
+      declarationDiagnostics.flatMap(({ fieldPath }) =>
+        fieldPath === undefined ? [] : [fieldPath],
+      ),
     );
     const schemaDiagnostics = Value.Errors(externalAgentManifestSchema, value)
       .flatMap(schemaDiagnostic)
-      .filter(({ fieldPath }) => fieldPath === undefined || !migrationPaths.has(fieldPath));
+      .filter(({ fieldPath }) => fieldPath === undefined || !declarationPaths.has(fieldPath));
     return {
       status: 'invalid',
-      diagnostics: [...migrationDiagnostics, ...schemaDiagnostics],
+      diagnostics: [...declarationDiagnostics, ...schemaDiagnostics],
     };
   }
 

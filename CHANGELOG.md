@@ -2,17 +2,15 @@
 
 ### New Features
 
+- Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Added manifest-declared agent model defaults, work tiers, and readiness checks that preserve verified runtime and authentication routes. [#85](https://github.com/tanaabased/openclaw-agent-system/issues/85)
+- Added optional initial GitHub session owner, color, and group guidance through native OpenClaw session tools.
 - Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
   verified install reconciliation with shared grant provenance, and non-blocking
   initial-assignment session persistence checks.
-
-- Added optional initial GitHub session owner, color, and group guidance through native OpenClaw session tools.
-
 - Published complete GitHub notification channel metadata for package-time
   discovery and kept it aligned with runtime registration.
-
-- Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ### Bug Fixes
 
