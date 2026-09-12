@@ -84,6 +84,7 @@ openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active 
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
+routing_default_model="$(openclaw config get agents.defaults.model --json | jq -er 'if type == "string" then . else .primary end')"
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
