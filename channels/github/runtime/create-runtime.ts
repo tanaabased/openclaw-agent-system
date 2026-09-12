@@ -68,6 +68,9 @@ import NotificationRoutingService, {
 } from '../routing/service.ts';
 import { resolveNotificationRoute } from '../routing/routing.ts';
 import createNotificationLifecycleContribution from './lifecycle-contribution.ts';
+import GitHubOperatorAccess from '../operator-access.ts';
+import OperatorGrantStore from '../operator-grant-store.ts';
+import SessionSetupVerification from '../conversation/session-setup-verification.ts';
 
 export interface GitHubNotificationRuntimeDependencies {
   hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
@@ -158,7 +161,12 @@ export default function createGitHubNotificationRuntime(
   const turnDispatcher = new GitHubNotificationModelTurnDispatcher({
     dispatchChannelInboundTurn: dependencies.dispatchChannelInboundTurn,
   });
+  const sessionSetup = new SessionSetupVerification({
+    runtime: dependencies.sessionRuntime,
+    logger: dependencies.lifecycleLogger,
+  });
   const turnCoordinator = new GitHubNotificationModelTurnCoordinator({
+    sessionSetup,
     assertReady(surface) {
       if (surface === 'gateway') assertConversationHookReady(dependencies.inspectRuntimeHook());
     },
@@ -168,7 +176,16 @@ export default function createGitHubNotificationRuntime(
   });
 
   return {
+    sessionSetup,
     lifecycleContribution: createNotificationLifecycleContribution({
+      operatorAccess: new GitHubOperatorAccess({
+        accountClient: dependencies.accountClient,
+        store: new OperatorGrantStore(stateOptions),
+        mutateConfigFile: dependencies.mutateConfigFile,
+        readConfig: dependencies.readConfig,
+        readRuntimeConfig: dependencies.readRuntimeConfig,
+        reportPlan: (message) => dependencies.lifecycleLogger.info(message),
+      }),
       hookAccess: dependencies.hookAccess,
       monitorService: {
         runOnce(input) {

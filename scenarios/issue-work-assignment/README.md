@@ -1,9 +1,15 @@
 # GitHub Issue Work Assignment Scenario
 
+The one-shot CLI currently cannot resolve channel-qualified owner grants without
+the active channel registry. Its strict model fixture must still publish the plan
+when the optional `sessions` tool is absent. The
+[operator-access Gateway scenario](../issue-work-operator-access/README.md) owns
+the positive owner/color/group persistence and authorization controls.
+
 This GitHub Actions-only scenario proves the CLI `issue` + `work` + `assignment` turn. It
 checks assignment admission, lifecycle worktree preparation, the deterministic
 acknowledgment, delivery of the created issue title and body as bounded private
-context, best-effort session setup with a persisted color and group, one assessment and plan, and the
+context, graceful continuation without optional session setup, one assessment and plan, and the
 planning-only worktree checkpoint. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and
 the live provider through workflow dispatch. It does not continue into implementation.
@@ -44,8 +50,8 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-s
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
-# should authorize the fixture actor for native owner-only session tools
-openclaw config set commands.ownerAllowFrom '["U_kgDOEUqvpg"]' --strict-json
+# should leave operator grants for the normal manifest installation to reconcile
+openclaw config set commands.ownerAllowFrom '[]' --strict-json
 
 # should require normal install to repair missing hook consent
 openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
@@ -64,6 +70,7 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
+openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
@@ -232,9 +239,9 @@ cmp "$TMPDIR/independent-conversation-before.json" "$channel_state/github-notifi
 ```
 
 ```bash
-# should persist the bug color and fitting group despite unavailable cli owner assignment
+# should finish assignment planning despite unavailable optional cli session setup
 for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
-  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == "red" and .[0].category == "Active Work"'
+  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == null and .[0].category == null'
 done
 ```
 

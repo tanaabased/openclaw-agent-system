@@ -16,6 +16,14 @@ const externalGitHubIdentitySchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalGitHubApprovedActorSchema = Type.Object(
+  {
+    ...externalGitHubIdentitySchema.properties,
+    'operator-owner': Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 export const externalGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
@@ -24,7 +32,7 @@ export const externalGitHubNotificationsSchema = Type.Object(
         uniqueItems: true,
       }),
     ),
-    'approved-actors': Type.Array(externalGitHubIdentitySchema, {
+    'approved-actors': Type.Array(externalGitHubApprovedActorSchema, {
       minItems: 1,
       uniqueItems: true,
     }),
@@ -47,9 +55,13 @@ export interface GitHubIdentityPin {
   nodeId: string;
 }
 
+export interface GitHubApprovedActor extends GitHubIdentityPin {
+  operatorOwner?: boolean;
+}
+
 export interface GitHubNotificationsConfiguration {
   assignmentTypes: Array<'issue' | 'pull-request'>;
-  approvedActors: GitHubIdentityPin[];
+  approvedActors: GitHubApprovedActor[];
   allowedRepositoryOwners?: GitHubIdentityPin[];
   initialMode?: 'guided' | 'work';
   intervalMinutes: number;
@@ -68,7 +80,10 @@ export function decodeGitHubNotifications(
 
   return {
     assignmentTypes: value['assignment-types'] ?? ['issue', 'pull-request'],
-    approvedActors: value['approved-actors'].map(decodeIdentity),
+    approvedActors: value['approved-actors'].map((actor) => ({
+      ...decodeIdentity(actor),
+      ...(actor['operator-owner'] === undefined ? {} : { operatorOwner: actor['operator-owner'] }),
+    })),
     ...(value['allowed-repository-owners'] === undefined
       ? {}
       : {

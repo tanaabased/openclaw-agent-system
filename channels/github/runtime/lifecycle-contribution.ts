@@ -10,10 +10,12 @@ import {
 import type NotificationRoutingService from '../routing/service.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
+import type GitHubOperatorAccess from '../operator-access.ts';
 
 const notificationLifecycleLeaseWaitMs = 120_000;
 
 export interface NotificationLifecycleDependencies {
+  operatorAccess?: Pick<GitHubOperatorAccess, 'inspect' | 'reconcile'>;
   hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
   monitorService?: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   routingService: Pick<NotificationRoutingService, 'inspect' | 'reconcile'>;
@@ -127,10 +129,12 @@ export default function createNotificationLifecycleContribution(
       };
     },
     async inspect(context) {
+      const operatorFindings = (await dependencies.operatorAccess?.inspect(context)) ?? [];
       const hookFindings = context.manifest.github?.notifications
         ? [await dependencies.hookAccess.inspect(context.workspaceDir)]
         : [];
-      if (hookFindings.some(({ status }) => status === 'blocked')) return hookFindings;
+      if (hookFindings.some(({ status }) => status === 'blocked'))
+        return [...hookFindings, ...operatorFindings];
       const plan = await dependencies.routingService.inspect(desiredState(context));
       if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') {
         const state = await dependencies.stateStore?.read(context.manifest.agent.id);
@@ -143,7 +147,7 @@ export default function createNotificationLifecycleContribution(
                 status: 'warning' as const,
               },
             ]
-          : [];
+          : operatorFindings;
       }
       const routingFinding = [
         {
@@ -161,6 +165,7 @@ export default function createNotificationLifecycleContribution(
                 : ('drift' as const),
         },
         ...hookFindings,
+        ...operatorFindings,
       ];
       if (plan.kind !== 'noop' || plan.code !== 'notification-routing-ready') {
         return routingFinding;
@@ -225,6 +230,10 @@ export default function createNotificationLifecycleContribution(
         const hookOutcome = context.manifest.github?.notifications
           ? await dependencies.hookAccess.reconcile(context.workspaceDir)
           : undefined;
+        const operatorOutcome = (await dependencies.operatorAccess?.reconcile(context)) ?? {
+          outcomes: [],
+          warnings: [],
+        };
         const result = await dependencies.routingService.reconcile(desiredState(context));
         const disabled = !context.manifest.github?.notifications;
         const initialState = await dependencies.stateStore?.read(context.manifest.agent.id);
@@ -252,15 +261,18 @@ export default function createNotificationLifecycleContribution(
         ) {
           monitorStateRemoved = await dependencies.stateStore.remove(context.manifest.agent.id);
         }
-        const warnings = retirementPending
-          ? [
-              {
-                code: 'github-notification-retirement-pending',
-                message:
-                  'GitHub notification state was retained until intake retirement completes.',
-              },
-            ]
-          : [];
+        const warnings = [
+          ...operatorOutcome.warnings,
+          ...(retirementPending
+            ? [
+                {
+                  code: 'github-notification-retirement-pending',
+                  message:
+                    'GitHub notification state was retained until intake retirement completes.',
+                },
+              ]
+            : []),
+        ];
         let baselineOutcome;
         if (
           !disabled &&
@@ -293,15 +305,18 @@ export default function createNotificationLifecycleContribution(
         }
         if (result.plan.kind === 'noop' && result.plan.code === 'notification-routing-disabled') {
           return {
-            outcomes: monitorStateRemoved
-              ? [
-                  {
-                    code: 'github-notification-monitor-state-removed',
-                    message: 'private GitHub notification monitor state',
-                    status: 'removed' as const,
-                  },
-                ]
-              : [],
+            outcomes: [
+              ...operatorOutcome.outcomes,
+              ...(monitorStateRemoved
+                ? [
+                    {
+                      code: 'github-notification-monitor-state-removed',
+                      message: 'private GitHub notification monitor state',
+                      status: 'removed' as const,
+                    },
+                  ]
+                : []),
+            ],
             warnings,
           };
         }
@@ -317,6 +332,7 @@ export default function createNotificationLifecycleContribution(
                 : ('unchanged' as const);
         return {
           outcomes: [
+            ...operatorOutcome.outcomes,
             ...(hookOutcome ? [hookOutcome] : []),
             {
               code: result.plan.code,

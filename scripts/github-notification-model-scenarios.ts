@@ -5,6 +5,7 @@ import { commentScenario } from '../scenarios/issue-work-comment/model-fixture.t
 import { implementationScenario } from '../scenarios/issue-work-implementation/model-fixture.ts';
 import { pullRequestLifecycleScenario } from '../scenarios/issue-work-pr-lifecycle/model-fixture.ts';
 import { retirementScenario } from '../scenarios/issue-work-retirement/model-fixture.ts';
+import { operatorAccessScenario } from '../scenarios/issue-work-operator-access/model-fixture.ts';
 import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 
 export type GitHubNotificationModelToolCall = OpenClawAIMockToolCall;
@@ -18,6 +19,7 @@ const scenarios = new Map<string, GitHubNotificationModelScenario>([
   [pullRequestLifecycleScenario.id, pullRequestLifecycleScenario],
   [commentScenario.id, commentScenario],
   [retirementScenario.id, retirementScenario],
+  [operatorAccessScenario.id, operatorAccessScenario],
 ]);
 
 export const githubNotificationModelScenarioIds = Object.freeze([...scenarios.keys()]);

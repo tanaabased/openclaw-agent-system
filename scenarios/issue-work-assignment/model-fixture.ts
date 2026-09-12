@@ -130,6 +130,42 @@ const fixtures: Fixture[] = [
       id: 'agent-system-notification-assignment-final-response',
     },
   },
+  {
+    match: {
+      hasToolResult: false,
+      model: /^(?:aimock\/)?gpt-5\.5$/u,
+      predicate: (request) =>
+        hasAssignmentUserPrompt(request) &&
+        !request.tools?.some((tool) => tool.function?.name === 'sessions'),
+      systemMessage: [...assignmentSystemPromptSignals],
+      toolName: 'agent_system_github_reply',
+    },
+    response: {
+      id: 'agent-system-notification-assignment-without-setup-response',
+      toolCalls: [
+        {
+          arguments: JSON.stringify({ body: githubNotificationAssignmentCandidate }),
+          id: githubNotificationAssignmentCallId,
+          name: 'agent_system_github_reply',
+        },
+      ],
+    },
+  },
+  {
+    match: {
+      hasToolResult: true,
+      model: /^(?:aimock\/)?gpt-5\.5$/u,
+      predicate: (request) =>
+        hasAssignmentUserPrompt(request) &&
+        !request.tools?.some((tool) => tool.function?.name === 'sessions') &&
+        hasOpenClawAIMockToolResult(request.messages, githubNotificationAssignmentCallId),
+      systemMessage: [...assignmentSystemPromptSignals],
+    },
+    response: {
+      content: githubNotificationAssignmentFinalResponse,
+      id: 'agent-system-notification-assignment-without-setup-final-response',
+    },
+  },
 ];
 
 export const assignmentScenario = {

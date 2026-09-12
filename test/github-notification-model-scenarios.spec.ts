@@ -132,13 +132,14 @@ describe('scripts/github-notification-model-scenarios', () => {
       'pr-lifecycle',
       'comment',
       'retirement',
+      'operator-access',
     ]);
 
     const planningScenarioIds = ['assignment'] as const;
     const callIds = planningScenarioIds.map((scenarioId) => {
       const scenario = resolveGitHubNotificationModelScenario(scenarioId);
       assert.equal(scenario.id, scenarioId);
-      assert.equal(scenario.fixtures.length, 3);
+      assert.equal(scenario.fixtures.length, 5);
       const [toolCall] = scenario.toolCalls;
       assert.match(toolCall?.id ?? '', /^call_[A-Za-z0-9_-]{1,59}$/u);
       assert.deepEqual(scenario.toolCalls, [
@@ -269,6 +270,42 @@ describe('scripts/github-notification-model-scenarios', () => {
       .filter((signal) => signal !== 'Create assignment-planning-')
       .join('\n');
     assert.equal(matchFixture([...scenario.fixtures], request), null);
+  });
+
+  it('should publish the bounded assignment plan when optional sessions is unavailable', () => {
+    const scenario = resolveGitHubNotificationModelScenario('assignment');
+    const request: ChatCompletionRequest = {
+      messages: [
+        { content: scenario.systemPromptSignals.join('\n'), role: 'system' },
+        { content: scenario.userPromptSignals?.join('\n') ?? '', role: 'user' },
+      ],
+      model: 'gpt-5.5',
+      tools: [{ function: { name: 'agent_system_github_reply' }, type: 'function' }],
+    };
+    const fixture = matchFixture([...scenario.fixtures], request);
+    assert.ok(fixture && typeof fixture.response === 'object');
+    const response = fixture.response as ToolCallResponse;
+    assert.deepEqual(
+      response.toolCalls.map(({ name }) => name),
+      ['agent_system_github_reply'],
+    );
+    assert.equal(response.toolCalls[0]?.id, githubNotificationAssignmentCallId);
+
+    request.tools = [];
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+    request.tools = [{ function: { name: 'agent_system_github_reply' }, type: 'function' }];
+    request.messages[1]!.content = 'unrelated issue';
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+    request.messages[1]!.content = scenario.userPromptSignals?.join('\n') ?? '';
+    request.messages.push({ role: 'tool', tool_call_id: 'unrelated', content: '{"ok":true}' });
+    assert.equal(matchFixture([...scenario.fixtures], request), null);
+    request.messages[2]!.tool_call_id = `${githubNotificationAssignmentCallId}_fc-observed_123`;
+    const final = matchFixture([...scenario.fixtures], request);
+    assert.ok(final && typeof final.response === 'object');
+    assert.deepEqual(final.response, {
+      content: scenario.finalResponses[0],
+      id: 'agent-system-notification-assignment-without-setup-final-response',
+    });
   });
 
   it('should use listed groups before patching and fall back when none fit the assignment', async () => {

@@ -23,6 +23,7 @@ jobs:
           - pr-lifecycle
           - comment
           - retirement
+          - operator-access
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: mock

@@ -23,6 +23,7 @@ import {
   githubNotificationPrivateResponse,
 } from './private-response.ts';
 import type { GitHubNotificationTurnContract } from './turn-contract.ts';
+import type SessionSetupVerification from './session-setup-verification.ts';
 
 export type GitHubNotificationModelTurnPublication =
   | { status: 'none' }
@@ -55,6 +56,7 @@ export class GitHubNotificationModelTurnCoordinatorError extends Error {
 }
 
 export interface GitHubNotificationModelTurnCoordinatorDependencies {
+  sessionSetup?: Pick<SessionSetupVerification, 'run'>;
   assertReady(surface: GitHubNotificationExecutionSurface): void | Promise<void>;
   candidates: Pick<
     GitHubNotificationReplyCandidateStore,
@@ -231,23 +233,33 @@ export default class GitHubNotificationModelTurnCoordinator {
       if (input.executionSurface === 'cli-one-shot') {
         await this.#dependencies.candidates.attestPromptSelection(candidateIdentity);
       }
-      turnResult = await this.#dependencies.dispatcher.dispatch({
-        ...(input.afterRecord === undefined ? {} : { afterRecord: input.afterRecord }),
-        config: input.config,
-        contract: input.contract,
-        ...(input.createIfMissing === undefined ? {} : { createIfMissing: input.createIfMissing }),
-        ctxPayload: {
-          ...input.ctxPayload,
-          GatewayRunToolBindings: {
-            ...input.ctxPayload.GatewayRunToolBindings,
-            [githubNotificationReplyTurnBinding]: { ...candidateIdentity, turnId: candidateTurn },
+      const dispatch = () =>
+        this.#dependencies.dispatcher.dispatch({
+          ...(input.afterRecord === undefined ? {} : { afterRecord: input.afterRecord }),
+          config: input.config,
+          contract: input.contract,
+          ...(input.createIfMissing === undefined
+            ? {}
+            : { createIfMissing: input.createIfMissing }),
+          ctxPayload: {
+            ...input.ctxPayload,
+            GatewayRunToolBindings: {
+              ...input.ctxPayload.GatewayRunToolBindings,
+              [githubNotificationReplyTurnBinding]: { ...candidateIdentity, turnId: candidateTurn },
+            },
           },
-        },
-        executionSurface: input.executionSurface,
-        messageId: input.messageId,
-        route: input.route,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      });
+          executionSurface: input.executionSurface,
+          messageId: input.messageId,
+          route: input.route,
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        });
+      turnResult =
+        input.contract.identity.eventId === 'assignment' && this.#dependencies.sessionSetup
+          ? await this.#dependencies.sessionSetup.run(
+              { agentId: input.route.agentId, sessionKey: input.route.sessionKey },
+              dispatch,
+            )
+          : await dispatch();
     } catch (error) {
       await this.#dependencies.candidates
         .cancel({ ...candidateIdentity, turnId: candidateTurn })

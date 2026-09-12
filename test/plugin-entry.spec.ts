@@ -125,6 +125,7 @@ describe('index', () => {
     assert.equal(channelInboundDispatchAccessed, true);
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
+      'after_tool_call',
       'resolve_exec_env',
       'before_tool_call',
       'before_agent_run',

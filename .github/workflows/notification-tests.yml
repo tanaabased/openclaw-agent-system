@@ -16,6 +16,7 @@ on:
           - pr-lifecycle
           - comment
           - retirement
+          - operator-access
           - all
       runner:
         description: Runner
@@ -39,10 +40,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
+        scenario: ${{ inputs.scenario == 'all' && fromJSON('["assignment","guided-assignment","implementation","pr-lifecycle","comment","retirement","operator-access"]') || fromJSON(format('["{0}"]', inputs.scenario)) }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
-      provider: live
+      provider: ${{ matrix.scenario == 'operator-access' && 'mock' || 'live' }}
       runner: ${{ inputs.runner }}
       scenario: ${{ matrix.scenario }}
     secrets:

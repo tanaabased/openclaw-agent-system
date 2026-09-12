@@ -200,6 +200,9 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     sessionRuntime: api.runtime.agent.session,
     worktrees: gitCapability.trustedWorktreeService,
   });
+  api.on('after_tool_call', (event, context) =>
+    notificationRuntime.sessionSetup.observe(event, context),
+  );
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,

@@ -16,7 +16,7 @@ on:
       openai_api_key:
         required: false
       op_service_account_token:
-        required: true
+        required: false
 
 permissions:
   contents: read
