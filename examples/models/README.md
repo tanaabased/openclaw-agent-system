@@ -1,6 +1,6 @@
 # Models Example
 
-This scenario runs the prepared Agent System package against the repository's known API-key model. It verifies model and effort reconciliation, readiness, idempotency, and effective native Codex execution without borrowing another capability's example. The fresh CI runner supplies ambient authentication for the readiness and live-turn assertions; Agent System does not install or retain that credential.
+This scenario verifies model reconciliation, readiness, idempotency, and native Codex execution against the repository's API-key test model. CI supplies ambient authentication for doctor and the live turn; Agent System neither installs nor stores it.
 
 ## Setup
 
