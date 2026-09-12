@@ -1,3 +1,4 @@
+import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 export type AgentSystemToolErrorCode =
   | 'agent_not_resolved'
   | 'approval_denied'
@@ -20,7 +21,8 @@ export default class AgentSystemToolError extends Error {
     readonly code: AgentSystemToolErrorCode,
     message: string,
     readonly credentialRejected = false,
+    readonly providerDiagnostic?: ProviderDiagnostic,
   ) {
-    super(message);
+    super(withProviderDiagnostic(message, providerDiagnostic));
   }
 }

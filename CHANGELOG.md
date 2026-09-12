@@ -16,6 +16,8 @@
 
 ### Bug Fixes
 
+- Preserved safe credential-provider classifications through environment resolution, native tools, managed CLI, doctor, and bounded logs without exposing upstream error content or inventing quota/reset evidence. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87)
+
 - Stopped Doctor from treating model authentication or runtime health as Agent System configuration failures while retaining non-blocking warnings for explicitly unavailable models. [#93](https://github.com/tanaabased/openclaw-agent-system/issues/93)
 - Made Doctor and Install tables component-first with status-only color, neutral workspace metadata, readable wrapping, and stable attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
 - Preserved eligible unseen delivery pull-request comments and existing revision receipts during initial handoff, including interrupted retries, without changing reopen baselines. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)

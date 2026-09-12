@@ -1,3 +1,4 @@
+import GitHubAccountKeyError from '../tools/github/account-key-error.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -43,6 +44,35 @@ describe('tools/github/account-key-service', () => {
 
   afterEach(async () => {
     await rm(temporaryDirectory, { recursive: true });
+  });
+
+  it('should withhold upstream failure bodies while retaining safe authentication evidence', async () => {
+    const service = new GitHubAccountKeyService({
+      client: {
+        connect: async () => ({
+          execute: async () => ({
+            ...cliResult('PRIVATE_RESPONSE op://vault/item/key'),
+            exitCode: 1,
+            stderr: 'PRIVATE_TOKEN Authorization: private (HTTP 401)',
+          }),
+        }),
+      },
+    });
+    const manifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      github: { username: 'data', token: 'TOKEN', sshKeys: [{ source: publicKey, type: 'auto' }] },
+    };
+    await assert.rejects(
+      service.inspect({ manifest, workspaceDir: temporaryDirectory }),
+      (error: unknown) => {
+        assert.ok(error instanceof GitHubAccountKeyError);
+        assert.equal(error.providerDiagnostic?.classification, 'authentication');
+        assert.equal(error.providerDiagnostic?.httpStatus, 401);
+        assert.ok(!/PRIVATE_|op:\/\/|Authorization/.test(error.message));
+        return true;
+      },
+    );
   });
 
   it('should resolve path and inline sources before reporting remote drift', async () => {

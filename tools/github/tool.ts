@@ -1,3 +1,4 @@
+import { githubCliDiagnostic } from '../../credentials/github-diagnostic.ts';
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
 import githubCredentialRejected from '../../credentials/github-rejection.ts';
@@ -152,7 +153,12 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
           argv: ['api', 'user', '--jq', '.login'],
           validate(result) {
             if (result.exitCode !== 0) {
-              toolError('execution_failed', 'GitHub rejected the authenticated user check.', true);
+              throw new AgentSystemToolError(
+                'execution_failed',
+                'GitHub rejected the authenticated user check.',
+                githubCredentialRejected(result),
+                githubCliDiagnostic(result, 'identity-check'),
+              );
             }
             if (result.truncated) {
               toolError('execution_failed', 'GitHub returned an invalid authenticated user check.');
@@ -161,7 +167,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
             if (actual.toLowerCase() !== configuration.username?.toLowerCase()) {
               toolError(
                 'tool_identity_mismatch',
-                `GitHub returned ${actual || 'an unknown user'}, not the configured username ${configuration.username}.`,
+                'GitHub returned an account that does not match the configured username.',
               );
             }
           },

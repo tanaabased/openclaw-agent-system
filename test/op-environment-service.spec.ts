@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import assert from 'node:assert/strict';
 
 import OpEnvironmentService from '../environment/op-service.ts';
@@ -50,6 +51,11 @@ describe('environment/op-service', () => {
         diagnostics: [
           {
             code: 'op-credential-missing',
+            providerDiagnostic: providerDiagnostic(
+              '1password',
+              'credential-resolve',
+              'missing-credential',
+            ),
             fieldPath: '/environment',
             message: 'OP resource resolution requires an available service-account credential.',
             severity: 'error',

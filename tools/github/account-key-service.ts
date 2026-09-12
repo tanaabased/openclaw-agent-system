@@ -1,3 +1,5 @@
+import { githubCliDiagnostic } from '../../credentials/github-diagnostic.ts';
+import { withProviderDiagnostic } from '../../utils/provider-diagnostic.ts';
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
@@ -57,10 +59,12 @@ function commandError(
   action: string,
   result: AgentSystemCliResult,
 ): GitHubAccountKeyError {
-  const details = result.stderr.trim() || result.stdout.trim();
+  const evidence = githubCliDiagnostic(result);
   return new GitHubAccountKeyError(
     code,
-    details ? `GitHub could not ${action}: ${details}` : `GitHub could not ${action}.`,
+    withProviderDiagnostic(`GitHub could not ${action}.`, evidence),
+    undefined,
+    evidence,
   );
 }
 
@@ -159,6 +163,7 @@ export default class GitHubAccountKeyService {
         error.code.replace(/^github-account-/u, 'github-account-key-'),
         error.message,
         { cause: error },
+        error.providerDiagnostic,
       );
     }
   }

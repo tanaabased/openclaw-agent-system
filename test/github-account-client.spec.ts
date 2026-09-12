@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
-import GitHubAccountClient from '../core/github-account-client.ts';
+import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
@@ -94,6 +94,52 @@ describe('core/github-account-client', () => {
     await assert.rejects(client.connect({ manifest, workspaceDir }));
     assert.deepEqual(invalidated, ['tanaabot']);
     assert.equal(executions, 1);
+  });
+
+  it('should preserve safe evidence through managed profile identity verification without replay', async () => {
+    for (const classification of ['authentication', 'transport', 'unknown']) {
+      let executions = 0;
+      const client = new GitHubAccountClient({
+        baseEnvironment: {},
+        configStore: { configDirectory: () => '/private/gh' },
+        environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+        runCli: async () => {
+          executions++;
+          if (executions === 1)
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({ login: 'tanaabot', nodeId: 'U_agent' }),
+              stderr: '',
+              timedOut: false,
+              truncated: false,
+            };
+          if (classification === 'unknown') throw new Error('PRIVATE_PROVIDER_RESPONSE');
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr:
+              classification === 'authentication'
+                ? 'Bad credentials (HTTP 401) PRIVATE_PROVIDER_RESPONSE'
+                : 'PRIVATE_PROVIDER_RESPONSE',
+            timedOut: classification === 'transport',
+            truncated: false,
+          };
+        },
+      });
+      const connected = await client.connect({ manifest, workspaceDir });
+      await assert.rejects(
+        connected.verifyConfiguredIdentity!('/private/profile'),
+        (error: unknown) => {
+          assert.ok(error instanceof GitHubAccountClientError);
+          assert.equal(error.providerDiagnostic?.provider, 'github');
+          assert.equal(error.providerDiagnostic?.classification, classification);
+          assert.equal(error.cause, undefined);
+          assert.ok(!error.message.includes('PRIVATE_PROVIDER_RESPONSE'));
+          return true;
+        },
+      );
+      assert.equal(executions, 2);
+    }
   });
 
   it('should bind fixed calls to a sanitized child environment and configured identity', async () => {

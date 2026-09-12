@@ -1,3 +1,4 @@
+import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
 
 export interface AgentSystemLifecycleContext {
@@ -24,6 +25,7 @@ export type AgentSystemLifecycleFindingStatus =
   'blocked' | 'drift' | 'healthy' | 'manual' | 'warning';
 
 export interface AgentSystemLifecycleFinding {
+  providerDiagnostic?: ProviderDiagnostic;
   code: string;
   component: string;
   message: string;
@@ -56,8 +58,9 @@ export class AgentSystemLifecycleError extends Error {
     readonly code: string,
     message: string,
     options?: ErrorOptions,
+    readonly providerDiagnostic?: ProviderDiagnostic,
   ) {
-    super(message, options);
+    super(withProviderDiagnostic(message, providerDiagnostic), options);
   }
 }
 

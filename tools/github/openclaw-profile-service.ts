@@ -1,3 +1,5 @@
+import type { ProviderDiagnostic } from '../../utils/provider-diagnostic.ts';
+import githubDiagnostic from '../../credentials/github-diagnostic.ts';
 import { createHash } from 'node:crypto';
 import { chmod, lstat, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
@@ -55,6 +57,7 @@ type ManagedProfileConnection = ConnectedGitHubAccountClient & {
 };
 
 export interface OpenClawGitHubProfileInspection {
+  providerDiagnostic?: ProviderDiagnostic;
   code: string;
   message: string;
   status: 'blocked' | 'drift' | 'ready';
@@ -132,12 +135,15 @@ export default class OpenClawGitHubProfileService {
       connected = await this.#accountClient.connect(context);
     } catch (error) {
       return {
+        ...(error instanceof GitHubAccountClientError && error.providerDiagnostic
+          ? { providerDiagnostic: error.providerDiagnostic }
+          : {}),
         code:
           error instanceof GitHubAccountClientError
             ? error.code
             : 'openclaw-github-profile-account-unavailable',
         message:
-          error instanceof Error
+          error instanceof GitHubAccountClientError
             ? error.message
             : 'The Agent System GitHub account could not be inspected.',
         status: 'blocked',
@@ -178,9 +184,19 @@ export default class OpenClawGitHubProfileService {
           status: 'drift',
         };
       }
-      await profileConnection.verifyConfiguredIdentity(
-        this.#paths(context.manifest.agent.id, expected.profileId).profileDir,
-      );
+      try {
+        await profileConnection.verifyConfiguredIdentity(
+          this.#paths(context.manifest.agent.id, expected.profileId).profileDir,
+        );
+      } catch (error) {
+        if (error instanceof GitHubAccountClientError) throw error;
+        throw new GitHubAccountClientError(
+          'github-account-profile-identity-failed',
+          'GitHub rejected the managed profile identity check.',
+          undefined,
+          githubDiagnostic({}, 'identity-check'),
+        );
+      }
       return {
         code: 'openclaw-github-profile-ready',
         message: 'The agent-scoped OpenClaw GitHub identity matches the Agent System manifest.',
@@ -192,6 +208,9 @@ export default class OpenClawGitHubProfileService {
           error instanceof OpenClawGitHubProfileError || error instanceof GitHubAccountClientError
             ? error.code
             : 'openclaw-github-profile-inspection-failed',
+        ...(error instanceof GitHubAccountClientError && error.providerDiagnostic
+          ? { providerDiagnostic: error.providerDiagnostic }
+          : {}),
         message:
           error instanceof Error
             ? error.message

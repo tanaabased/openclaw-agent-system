@@ -1,3 +1,4 @@
+import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -51,8 +52,13 @@ function currentAgentState(
   };
 }
 
-function lifecycleError(code: string, message: string, options?: ErrorOptions) {
-  return new AgentSystemLifecycleError('agent', code, message, options);
+function lifecycleError(
+  code: string,
+  message: string,
+  options?: ErrorOptions,
+  evidence?: ProviderDiagnostic,
+) {
+  return new AgentSystemLifecycleError('agent', code, message, options, evidence);
 }
 
 function commandFailure(args: string[], result: AgentLifecycleCommandResult) {
@@ -97,6 +103,8 @@ async function desiredAgentState(
       throw lifecycleError(
         diagnostic?.code ?? 'agent-environment-unavailable',
         diagnostic?.message ?? 'Agent System could not resolve agent.name from the environment.',
+        undefined,
+        diagnostic?.providerDiagnostic,
       );
     }
     environment = result.environment.values;
@@ -181,6 +189,7 @@ export default function createAgentLifecycleContribution(
           {
             code: error.code,
             message: error.message,
+            ...(error.providerDiagnostic ? { providerDiagnostic: error.providerDiagnostic } : {}),
             remediation: 'Correct the agent declaration or environment, then run install.',
             status: 'blocked',
           },

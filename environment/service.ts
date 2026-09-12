@@ -1,3 +1,4 @@
+import { formatProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { createHash } from 'node:crypto';
 
 import collectOpEnvironmentRequirements, {
@@ -196,7 +197,11 @@ export default class AgentEnvironmentService {
     diagnostics: AgentManifestLoadResult['diagnostics'],
   ): void {
     this.#dependencies.logger.error(
-      `environment_invalid trigger=${quote(trigger)} agentId=${quote(agentId)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}`,
+      `environment_invalid trigger=${quote(trigger)} agentId=${quote(agentId)} codes=${quote(diagnostics.map(({ code }) => code).join(','))}${diagnostics
+        .filter((entry) => entry.providerDiagnostic)
+        .slice(0, 8)
+        .map((entry) => ` ${formatProviderDiagnostic(entry.providerDiagnostic!)}`)
+        .join('')}`,
     );
   }
 }
