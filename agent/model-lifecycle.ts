@@ -43,6 +43,12 @@ export interface ModelLifecycleDependencies {
     workspaceDir: string;
   }): { provider: string } | undefined;
   resolveDefaultModelForAgent(params: { agentId: string; config: OpenClawConfig }): ModelRef;
+  resolveAllowedModelRef(params: {
+    agentId?: string;
+    config: OpenClawConfig;
+    defaultProvider: string;
+    raw: string;
+  }): { error: string } | { key: string; ref: ModelRef };
   resolveThinkingPolicy(params: { agentRuntime: string; model: string; provider: string }): {
     levels: Array<{ id: string }>;
   };
@@ -52,6 +58,11 @@ type ReadyModelConfigurationPlan = {
   changed: boolean;
   config: OpenClawConfig;
   declared: ModelProfileEntry[];
+  modelConfigurationChanged: boolean;
+  selectionPolicy: {
+    findingModels: string[];
+    sourcePath: string;
+  };
   sourceRuntime: string;
   status: 'ready';
 };
@@ -182,6 +193,89 @@ function configurePrimaryModel(
       : model;
 }
 
+function selectionPolicySource(
+  config: OpenClawConfig,
+  agentId: string,
+): { agentId?: string; allow: string[]; path: string } {
+  const agentAllow = configuredAgentValue(config, agentId)?.modelPolicy?.allow;
+  if (agentAllow !== undefined) {
+    return {
+      agentId,
+      allow: agentAllow,
+      path: `agents.entries.${agentId}.modelPolicy.allow`,
+    };
+  }
+
+  const defaultAllow = config.agents?.defaults?.modelPolicy?.allow;
+  if (defaultAllow !== undefined) {
+    return {
+      allow: defaultAllow,
+      path: 'agents.defaults.modelPolicy.allow',
+    };
+  }
+
+  return {
+    allow: Object.keys(config.agents?.defaults?.models ?? {}),
+    path: 'agents.defaults.models',
+  };
+}
+
+function missingModelSelections(
+  config: OpenClawConfig,
+  agentId: string,
+  values: string[],
+  dependencies: ModelLifecycleDependencies,
+): string[] {
+  return values.filter((value) => {
+    const ref = parseModelRef(value);
+    const resolved = dependencies.resolveAllowedModelRef({
+      agentId,
+      config,
+      defaultProvider: ref.provider,
+      raw: value,
+    });
+    return 'error' in resolved;
+  });
+}
+
+function configureSelectionPolicy(
+  config: OpenClawConfig,
+  agentId: string,
+  missing: string[],
+  dependencies: ModelLifecycleDependencies,
+): OpenClawConfig {
+  if (missing.length === 0) return config;
+  const prospective = structuredClone(config);
+  const agent = configuredAgentValue(prospective, agentId);
+  if (!agent) return config;
+  const source = selectionPolicySource(config, agentId);
+  const defaultProvider = parseModelRef(missing[0]!).provider;
+  const allow: string[] = [];
+  for (const raw of source.allow) {
+    if (source.agentId !== undefined || raw.trim().endsWith('/*')) {
+      if (!allow.includes(raw)) allow.push(raw);
+      continue;
+    }
+    const resolved = dependencies.resolveAllowedModelRef({
+      agentId: source.agentId,
+      config,
+      defaultProvider,
+      raw,
+    });
+    if ('error' in resolved) continue;
+    const value = modelKey(resolved.ref);
+    if (!allow.includes(value)) allow.push(value);
+  }
+  for (const value of missing) {
+    if (!allow.includes(value)) allow.push(value);
+  }
+  agent.modelPolicy = {
+    ...agent.modelPolicy,
+    allow,
+  };
+  return prospective;
+}
+
 function createConfigurationPlan(
   config: OpenClawConfig,
   agentId: string,
@@ -203,6 +297,13 @@ function createConfigurationPlan(
 
   const declared = modelProfiles(models);
   const distinctRefs = [...new Set(declared.map(({ profile }) => profile.model))];
+  const currentPolicyMissing = missingModelSelections(config, agentId, distinctRefs, dependencies);
+  const policyFindingModels = currentPolicyMissing.filter((value) => {
+    const runtime = configuredRuntime(config, agentId, parseModelRef(value));
+    return (
+      runtime !== undefined && !isDefaultRuntime(runtime) && sameRuntime(runtime, sourceRuntime)
+    );
+  });
   for (const value of distinctRefs) {
     const ref = parseModelRef(value);
     const explicitRuntime = configuredRuntime(config, agentId, ref);
@@ -245,14 +346,14 @@ function createConfigurationPlan(
     };
   }
 
-  let changed = false;
+  let modelConfigurationChanged = false;
   if (configuredPrimaryModel(agent.model) !== models.default.model) {
     configurePrimaryModel(nextAgent, models.default.model);
-    changed = true;
+    modelConfigurationChanged = true;
   }
   if (agent.thinkingDefault !== models.default.effort) {
     nextAgent.thinkingDefault = models.default.effort;
-    changed = true;
+    modelConfigurationChanged = true;
   }
 
   nextAgent.models ??= {};
@@ -260,7 +361,7 @@ function createConfigurationPlan(
     const entry = agent.models?.[value];
     if (entry === undefined) {
       nextAgent.models[value] = { agentRuntime: { id: sourceRuntime } };
-      changed = true;
+      modelConfigurationChanged = true;
       continue;
     }
     if (!entry.agentRuntime?.id?.trim()) {
@@ -271,14 +372,22 @@ function createConfigurationPlan(
           id: sourceRuntime,
         },
       };
-      changed = true;
+      modelConfigurationChanged = true;
     }
   }
 
+  const policyMissing = missingModelSelections(prospective, agentId, distinctRefs, dependencies);
+  const policyConfig = configureSelectionPolicy(prospective, agentId, policyMissing, dependencies);
+
   return {
-    changed,
-    config: prospective,
+    changed: modelConfigurationChanged || policyMissing.length > 0,
+    config: policyConfig,
     declared,
+    modelConfigurationChanged,
+    selectionPolicy: {
+      findingModels: policyFindingModels,
+      sourcePath: selectionPolicySource(config, agentId).path,
+    },
     sourceRuntime,
     status: 'ready',
   };
@@ -410,9 +519,16 @@ export default function createModelLifecycleContribution(
         context.workspaceDir,
         dependencies,
       );
+      const policyFindings = plan.selectionPolicy.findingModels.map((model) => ({
+        code: 'agent-model-selection-policy-drift',
+        message: `OpenClaw model policy ${plan.selectionPolicy.sourcePath} does not allow ${model} for ${context.manifest.agent.id}.`,
+        remediation: 'Run openclaw agent-system install from this workspace.',
+        status: 'drift' as const,
+      }));
       return [
         ...findings,
-        ...(plan.changed
+        ...policyFindings,
+        ...(plan.modelConfigurationChanged
           ? [
               {
                 code: 'agent-model-config-drift',
@@ -421,7 +537,7 @@ export default function createModelLifecycleContribution(
                 status: 'drift' as const,
               },
             ]
-          : findings.length === 0
+          : findings.length === 0 && policyFindings.length === 0
             ? [
                 {
                   code: 'agent-models-ready',
@@ -476,6 +592,7 @@ export default function createModelLifecycleContribution(
           agent.model = structuredClone(nextAgent.model);
           agent.thinkingDefault = nextAgent.thinkingDefault;
           agent.models = structuredClone(nextAgent.models);
+          agent.modelPolicy = structuredClone(nextAgent.modelPolicy);
           return true;
         },
       });

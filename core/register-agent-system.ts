@@ -309,6 +309,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           cfg: config,
         });
       },
+      resolveAllowedModelRef({ agentId, config, defaultProvider, raw }) {
+        return api.runtime.modelConfig.resolveAllowedModelRef({
+          agentId,
+          catalog: [],
+          cfg: config,
+          defaultProvider,
+          raw,
+        });
+      },
       resolveThinkingPolicy(params) {
         return api.runtime.agent.resolveThinkingPolicy(params);
       },
