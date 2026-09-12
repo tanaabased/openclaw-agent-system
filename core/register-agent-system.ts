@@ -228,6 +228,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       ),
     });
   const notificationRuntime = createGitHubNotificationRuntime({
+    modelRoutingRuntime: {
+      complete: (params) => api.runtime.llm.complete(params),
+      session: api.runtime.agent.session,
+      resolveThinkingPolicy: (params) => api.runtime.agent.resolveThinkingPolicy(params),
+      resolveAllowedModelRef: (params) => api.runtime.modelConfig.resolveAllowedModelRef(params),
+    },
     hookAccess,
     inspectRuntimeHook,
     accountClient: githubCapability.accountClient,

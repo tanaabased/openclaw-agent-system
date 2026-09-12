@@ -22,6 +22,14 @@ CLI process. Releasing the first issue then proves that its resumed execution pr
 the second issue's state and receipts. The hold models a busy executor; overlapping
 model turns, comment workers, failure isolation, and shutdown are covered by unit tests.
 
+Complete model profiles opt both issues into a separate tool-free assessment. The
+strict fixture checks bounded issue content and absence of tools; the dispatcher
+requires the native work selection to report the saved model and medium effort.
+The durable record independently retains that selection across CLI runs. AIMock
+does not retain wire-level reasoning effort, so this scenario does not prove the
+provider's applied reasoning budget. Cost and rework sampling remains a separate,
+explicitly authorized live evaluation before broad rollout.
+
 The scenario creates uniquely named disposable issues in
 `tanaabased/big-test-bucket` and removes its generated SSH key during cleanup.
 
@@ -49,6 +57,14 @@ mkdir "$TMPDIR/agent-system-notification-actor"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
 cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/agent-system-notification-actor/agent.yaml"
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
+
+# should configure complete profiles with a high effort classifier and medium effort low tier
+printf '\nmodels:\n  default:\n    model: %s\n    effort: high\n  low:\n    model: %s\n    effort: medium\n  medium:\n    model: %s\n    effort: high\n  high:\n    model: %s\n    effort: high\n' "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" >> "$TMPDIR/agent-system-notifications/agent.yaml"
+
+# should grant isolated classification only the scenario model through native operator permissions
+openclaw config set plugins.entries.agent-system.llm.allowAgentIdOverride true --strict-json
+openclaw config set plugins.entries.agent-system.llm.allowModelOverride true --strict-json
+openclaw config set plugins.entries.agent-system.llm.allowedModels "$(jq -cn --arg model "$NOTIFICATION_MODEL" '[$model]')" --strict-json
 
 # should leave operator grants for the normal manifest installation to reconcile
 openclaw config set commands.ownerAllowFrom '[]' --strict-json
@@ -224,7 +240,7 @@ jq -e '.schemaVersion == 8 and .agentId == "notification-data" and (has("convers
 for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
   conversation_id="$(jq -er --arg number "$issue_number" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
   record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
-  jq -e --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 1 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
+  jq -e --arg model "$NOTIFICATION_MODEL" --arg id "$conversation_id" --arg number "$issue_number" --arg workspace "$TMPDIR/agent-system-notifications" '.schemaVersion == 2 and .agentId == "notification-data" and .conversationId == $id and (.conversationId | endswith(":" + $number)) and .workspaceDir == $workspace and .conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published" and .conversation.modelRouting.decision.model == $model and .conversation.modelRouting.decision.complexity == "low" and .conversation.modelRouting.applied == {model: $model, effort: "medium"}' "$channel_state/github-notification-conversations/$record_digest.json"
 done
 
 # should preserve the independent conversation exactly when the first issue resumes

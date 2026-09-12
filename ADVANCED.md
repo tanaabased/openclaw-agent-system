@@ -176,6 +176,9 @@ OpenClaw owns authentication and runtime health through its model status and age
 execution surfaces. Catalog inspection failures are reported separately from a
 model or effort known to be unsupported.
 
+Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
+for new issue conversations. A default-only manifest keeps ordinary model behavior.
+
 ### `environment`
 
 | Field          | Type                    | Required | Behavior                                                              |

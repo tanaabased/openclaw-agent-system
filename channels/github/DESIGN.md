@@ -167,7 +167,10 @@ admitted answer resumes the same session without a `clarification-needed`
 transition.
 
 The conversation record retains the current trusted mode, processed comment
-revision identifiers and digests, and publication receipts. If promotion from
+revision identifiers and digests, and publication receipts. Opted-in issue routing
+also retains the model-authored complexity decision, frozen configured profiles,
+and last applied model and effort so retries and continuations preserve selection
+while respecting explicit native overrides. If promotion from
 Plan to Work requires an authorized decision, add one bounded pending
 mode-transition record with its source, target, requester, and decision rather
 than introducing general planning and working phases. Human-facing labels such

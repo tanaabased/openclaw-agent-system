@@ -23,6 +23,50 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
+    const requests: string[][] = [];
+    let unavailable = false;
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'tanaabot', nodeId: 'U_agent' },
+      async execute(argv) {
+        requests.push(argv);
+        if (argv.some((argument) => argument.includes('/issue-field-values'))) {
+          if (unavailable) throw new Error('metadata unavailable');
+          return response([
+            { issue_field_name: 'Complexity', value: 'Low' },
+            { issue_field_name: 'Work size', value: 21 },
+          ]);
+        }
+        return response({
+          title: 'Repair a link',
+          body: 'Localized repair.',
+          labels: [],
+          commentCount: 0,
+        });
+      },
+    });
+    assert.equal(
+      (await client.getItemContext('tanaabased', 'example', 7)).routingMetadata,
+      undefined,
+    );
+    assert.equal(requests.length, 1);
+    const context = await client.getItemContext('tanaabased', 'example', 7, 'issue', true);
+    assert.equal(context.routingMetadata?.complexity.value, 'low');
+    assert.equal(context.routingMetadata?.workSize.value, 21);
+    assert.ok(
+      requests
+        .at(-1)
+        ?.includes('/repos/tanaabased/example/issues/7/issue-field-values?per_page=100'),
+    );
+    assert.ok(requests.at(-1)?.includes('X-GitHub-Api-Version: 2026-03-10'));
+    unavailable = true;
+    assert.equal(
+      (await client.getItemContext('tanaabased', 'example', 7, 'issue', true)).routingMetadata
+        ?.complexity.status,
+      'unavailable',
+    );
+  });
+
   it('should paginate assigned-item discovery through fixed bounded api calls', async () => {
     const requests: string[][] = [];
     const pages = [

@@ -6,6 +6,7 @@ import GitHubNotificationModelTurnDispatcher, {
   GitHubNotificationModelTurnDispatcherError,
 } from '../channels/github/conversation/model-turn-dispatcher.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
+import { ModelRoutingError } from '../channels/github/conversation/model-routing.ts';
 
 const route = {
   accountId: 'tanaabot',
@@ -19,6 +20,81 @@ const route = {
 const ctxPayload = {} as ChannelInboundTurnPlan['ctxPayload'];
 
 describe('channels/github/conversation/model-turn-dispatcher', () => {
+  it('should apply routing after recording and verify both native selections before publication', async () => {
+    for (const actual of [
+      { provider: 'openai', model: 'selected', thinkLevel: 'medium' },
+      { provider: 'openai', model: 'fallback', thinkLevel: 'medium' },
+      { provider: 'openai', model: 'selected', thinkLevel: 'high' },
+      undefined,
+    ] as const) {
+      let applied = false;
+      let recorded = false;
+      const dispatcher = new GitHubNotificationModelTurnDispatcher({
+        modelRouting: {
+          async apply(selectedRoute) {
+            assert.equal(recorded, true);
+            assert.equal(selectedRoute, route);
+            applied = true;
+            return {
+              expected: { model: 'openai/selected', effort: 'medium' },
+              guidance: 'saved private routing',
+            };
+          },
+        },
+        async dispatchChannelInboundTurn(input) {
+          input.record?.trackSessionMetaTask?.(
+            Promise.resolve().then(() => {
+              recorded = true;
+              return {};
+            }),
+          );
+          await input.afterRecord?.();
+          assert.equal(applied, true);
+          assert.match(input.ctxPayload.GroupSystemPrompt ?? '', /saved private routing/);
+          if (actual) {
+            try {
+              input.replyOptions?.onModelSelected?.(actual);
+            } catch (error) {
+              assert.ok(error instanceof ModelRoutingError);
+              assert.equal(input.replyOptions?.abortSignal?.aborted, true);
+              // Even a host that catches callback errors must not allow publication.
+            }
+          }
+          await input.delivery.deliver({ text: 'private result' }, { kind: 'final' });
+          return {
+            dispatched: true,
+            routeSessionKey: route.sessionKey,
+            dispatchResult: { counts: { final: 1, block: 0, tool: 0 }, queuedFinal: false },
+          } as never;
+        },
+      });
+      const result = dispatcher.dispatch({
+        config: {},
+        ctxPayload,
+        executionSurface: 'cli-one-shot',
+        messageId: 'assignment:1',
+        route,
+        contract: {
+          instructions: 'assignment',
+          mode: { id: 'work', disableTools: false },
+          identity: { lifecycleId: 'issue', modeId: 'work', eventId: 'assignment' },
+        },
+      });
+      if (actual?.model === 'selected' && actual.thinkLevel === 'medium')
+        assert.equal((await result).finalPayloads.length, 1);
+      else
+        await assert.rejects(
+          result,
+          (error: unknown) =>
+            error instanceof ModelRoutingError &&
+            error.code ===
+              (actual
+                ? 'github-notification-routing-effective-mismatch'
+                : 'github-notification-routing-effective-unverified'),
+        );
+    }
+  });
+
   it('should record and dispatch one resolved model turn through the shared host boundary', async () => {
     let recorded = false;
     let acknowledged = false;
