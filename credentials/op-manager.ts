@@ -1,3 +1,4 @@
+import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
@@ -6,6 +7,7 @@ import type OpCredentialService from './op-service.ts';
 import type OpEnvironmentService from '../environment/op-service.ts';
 
 export interface CredentialManagementFailure {
+  providerDiagnostic?: ProviderDiagnostic;
   gatewayInvalidation?: 'confirmed' | 'pending';
   code: string;
   message: string;
@@ -53,13 +55,19 @@ export interface OpCredentialManagerDependencies {
 }
 
 function failure(result: {
-  diagnostics: Array<{ code: string; message: string }>;
+  diagnostics: Array<{ code: string; message: string; providerDiagnostic?: ProviderDiagnostic }>;
 }): CredentialManagementFailure {
   const diagnostic = result.diagnostics[0];
   return {
     status: 'invalid',
     code: diagnostic?.code ?? 'op-credential-invalid',
-    message: diagnostic?.message ?? 'The OP credential could not be validated.',
+    message: withProviderDiagnostic(
+      diagnostic?.message ?? 'The OP credential could not be validated.',
+      diagnostic?.providerDiagnostic,
+    ),
+    ...(diagnostic?.providerDiagnostic
+      ? { providerDiagnostic: diagnostic.providerDiagnostic }
+      : {}),
   };
 }
 

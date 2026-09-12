@@ -216,6 +216,10 @@ export default class TrustedGitWorktreeService {
       throw new AgentSystemToolError(
         'credential_unavailable',
         `The Git worktree environment is unavailable for agent ${agentId}.`,
+        false,
+        environment.status === 'loaded'
+          ? undefined
+          : environment.diagnostics.find((entry) => entry.providerDiagnostic)?.providerDiagnostic,
       );
     }
     const values = environment.environment.values;
@@ -285,6 +289,10 @@ export default class TrustedGitWorktreeService {
       throw new AgentSystemToolError(
         'credential_unavailable',
         `The Git worktree environment is unavailable for agent ${agentId}.`,
+        false,
+        environment.status === 'loaded'
+          ? undefined
+          : environment.diagnostics.find((entry) => entry.providerDiagnostic)?.providerDiagnostic,
       );
     }
     const values = environment.environment.values;

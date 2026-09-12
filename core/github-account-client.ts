@@ -1,3 +1,9 @@
+import {
+  withProviderDiagnostic,
+  providerDiagnostic,
+  type ProviderDiagnostic,
+} from '../utils/provider-diagnostic.ts';
+import githubDiagnostic, { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -84,9 +90,11 @@ export class GitHubAccountClientError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    options?: ErrorOptions,
+    _options?: ErrorOptions,
+    readonly providerDiagnostic?: ProviderDiagnostic,
   ) {
-    super(message, options);
+    // Host error formatters traverse causes; retain only the safe provider evidence.
+    super(withProviderDiagnostic(message, providerDiagnostic));
   }
 }
 
@@ -98,8 +106,13 @@ function redact(result: AgentSystemCliResult, secret: string): AgentSystemCliRes
   };
 }
 
-function connectionError(message: string): GitHubAccountClientError {
-  return new GitHubAccountClientError('github-account-credential-unavailable', message);
+function connectionError(message: string, evidence?: ProviderDiagnostic): GitHubAccountClientError {
+  return new GitHubAccountClientError(
+    'github-account-credential-unavailable',
+    message,
+    undefined,
+    evidence,
+  );
 }
 
 function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
@@ -107,6 +120,8 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
     throw new GitHubAccountClientError(
       'github-account-identity-failed',
       'The GitHub account identity check did not complete successfully.',
+      undefined,
+      githubCliDiagnostic(result, 'identity-check'),
     );
   }
 
@@ -177,7 +192,10 @@ export default class GitHubAccountClient {
   ): Promise<ConnectedGitHubAccountClient> {
     const configuration = context.manifest.github;
     if (!configuration?.username || !configuration.token) {
-      throw connectionError('GitHub access requires explicit username and token declarations.');
+      throw connectionError(
+        'GitHub access requires explicit username and token declarations.',
+        providerDiagnostic('github', 'credential-resolve', 'missing-credential'),
+      );
     }
     const loaded = await this.#dependencies.environmentService.loadForWorkspace(
       context.workspaceDir,
@@ -188,6 +206,7 @@ export default class GitHubAccountClient {
       const diagnostic = loaded.diagnostics.find(({ severity }) => severity === 'error');
       throw connectionError(
         diagnostic?.message ?? 'The GitHub account environment could not be resolved.',
+        loaded.diagnostics.find((entry) => entry.providerDiagnostic)?.providerDiagnostic,
       );
     }
 
@@ -200,7 +219,8 @@ export default class GitHubAccountClient {
     const token = loaded.environment.values[configuration.token];
     if (!token) {
       throw connectionError(
-        `The GitHub credential ${configuration.token} is unavailable for agent ${context.manifest.agent.id}.`,
+        'The declared GitHub credential is unavailable.',
+        providerDiagnostic('github', 'credential-resolve', 'missing-credential'),
       );
     }
     const normalizedToken = token.trim();
@@ -283,6 +303,7 @@ export default class GitHubAccountClient {
           'github-account-tool-unavailable',
           'The GitHub CLI executable is unavailable for authenticated GitHub access.',
           { cause: error },
+          githubDiagnostic({}),
         );
       }
     };
@@ -328,6 +349,8 @@ export default class GitHubAccountClient {
         throw new GitHubAccountClientError(
           'github-account-profile-tool-unavailable',
           'The GitHub CLI executable is unavailable for managed profile setup.',
+          undefined,
+          githubDiagnostic({}, 'identity-check'),
         );
       }
     };
@@ -345,6 +368,9 @@ export default class GitHubAccountClient {
           'github-account-profile-identity-failed',
           'GitHub rejected the managed profile identity check.',
           { cause: error },
+          error instanceof GitHubAccountClientError
+            ? (error.providerDiagnostic ?? githubDiagnostic({}, 'identity-check'))
+            : githubDiagnostic({}, 'identity-check'),
         );
       }
       if (

@@ -14,7 +14,9 @@ export interface GitHubApiResponse {
 function finiteInteger(value: string | undefined): number | undefined {
   if (!value || !/^\d+$/u.test(value)) return undefined;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
+  return Number.isSafeInteger(parsed) && parsed <= Number.MAX_SAFE_INTEGER / 1000
+    ? parsed
+    : undefined;
 }
 
 /** Parse one bounded `gh api --include` response without retaining response headers. */

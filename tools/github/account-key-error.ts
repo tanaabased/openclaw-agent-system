@@ -1,3 +1,4 @@
+import type { ProviderDiagnostic } from '../../utils/provider-diagnostic.ts';
 /** Identify stable GitHub account-key failures across client, service, and lifecycle boundaries. */
 export default class GitHubAccountKeyError extends Error {
   override name = 'GitHubAccountKeyError';
@@ -5,8 +6,10 @@ export default class GitHubAccountKeyError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    options?: ErrorOptions,
+    _options?: ErrorOptions,
+    readonly providerDiagnostic?: ProviderDiagnostic,
   ) {
-    super(message, options);
+    // Host error formatters traverse causes; retain only the safe provider evidence.
+    super(message);
   }
 }

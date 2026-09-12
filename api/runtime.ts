@@ -1,3 +1,4 @@
+import { formatProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 
@@ -253,6 +254,11 @@ export default class AgentSystemToolRuntime {
         throw new AgentSystemToolError(
           'credential_unavailable',
           `The ${definition.id} tool environment is unavailable for agent ${agentId}.`,
+          false,
+          environmentResult.status === 'loaded'
+            ? undefined
+            : environmentResult.diagnostics.find((entry) => entry.providerDiagnostic)
+                ?.providerDiagnostic,
         );
       }
       const values = environmentResult.environment.values;
@@ -309,7 +315,7 @@ export default class AgentSystemToolRuntime {
         status: toolError.code,
       });
       this.#dependencies.logger.error(
-        `tool_call_failed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} code=${quote(toolError.code)}`,
+        `tool_call_failed auditId=${quote(auditId)} tool=${quote(definition.id)} openClawTool=${quote(definition.tool.name)} agentId=${quote(agentId)} action=${quote(operation.action)} source=${quote(scope.source)} durationMs=${durationMs} code=${quote(toolError.code)}${toolError.providerDiagnostic ? ` ${formatProviderDiagnostic(toolError.providerDiagnostic)}` : ''}`,
       );
       throw toolError;
     }
