@@ -98,6 +98,8 @@ describe('github notification workflows', () => {
     };
     for (const [path, token, username] of [
       ['examples/tool/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
       ['examples/routing/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['fixtures/github-notifications/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['fixtures/github-notifications/actor-agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],

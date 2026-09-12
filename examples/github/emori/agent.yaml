@@ -6,7 +6,10 @@ agent:
   email: emori@tanaab.dev
 
 environment:
-  op: jglytdfegfggijqkalco2cxexa
+  set:
+    GH_TOKEN_EMORI: ${GH_TOKEN_EMORI}
+  required:
+    - GH_TOKEN_EMORI
 
 github:
   host: github.com
