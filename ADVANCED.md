@@ -515,35 +515,6 @@ forecast. Separate processes still fetch independently, as does explicit credent
 validation. See [the reproducible tests](test/op-cache.spec.ts) and
 [CI examples](DEVELOPMENT.md#leia-scenarios).
 
-### Safe provider failures
-
-Environment diagnostics keep their contextual code/message and attach a
-`providerDiagnostic`: provider, fixed operation, stable classification, safe
-explanation, supplied HTTP/provider code, retry/reset metadata, quota scope, and
-local backoff. Missing evidence is `null` in structured data and `unknown` in
-human output. Native tools and managed CLI errors carry the same safe fields.
-Logs retain only bounded, allowlisted evidence—not upstream messages, commands,
-headers, secret references, response bodies, or credentials.
-
-SDK 0.5.0 distinguishes 1Password rate limiting and expired authentication.
-Its generic errors do not prove permission denial or transport failure. A typed
-`RateLimitExceededError` alone does **not** establish HTTP 429, a reset deadline,
-or hourly versus daily exhaustion. GitHub adapters reuse supplied HTTP/retry
-evidence: 401 means authentication rejection; 403 means permission denial unless
-throttling evidence is supplied; 429 means throttling. Unknown failures remain
-unknown. Local cache backoff is separate from provider reset, and no failed write
-is automatically replayed.
-
-Operators can inspect 1Password usage manually with
-[`op service-account ratelimit`](https://www.1password.dev/cli/reference/management-commands/service-account)
-using their existing authenticated CLI setup. Agent System does not run that
-command, fetch quota observations, or add retries when reporting a failure.
-
-The [deterministic provider tests](test/provider-diagnostic.spec.ts) exercise
-synthetic SDK failures through native tools, managed CLI, environment resolution,
-and logs. Installed synthetic checks live in the
-[GitHub Actions-only credentials example](examples/credentials/README.md).
-
 ## Path
 
 Installation builds one deterministic prefix:

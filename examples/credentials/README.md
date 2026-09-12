@@ -202,8 +202,7 @@ openclaw-aimock stop
 
 ## Synthetic provider boundaries
 
-These checks replace the SDK only in disposable test processes. They make no
-live provider request and do not change the installed provider package.
+These CI checks use a synthetic SDK failure without contacting 1Password.
 
 ```bash
 # should register a synthetic quota agent without resolving provider values
