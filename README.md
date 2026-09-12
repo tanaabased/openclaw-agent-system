@@ -139,7 +139,7 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. When `models` is present, it applies the default and binds every declared model to the agent's existing verified runtime and authentication route. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
+`install` is explicit and repeatable: it adds the OpenClaw agent when needed and reconciles only the state declared by the workspace. When `models` is present, it applies the default and binds every declared model to the agent's established runtime route without provisioning or resolving credentials. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
 
 ## Development
 

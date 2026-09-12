@@ -220,33 +220,78 @@ describe('agent/model-lifecycle', () => {
     const installed = await contribution.reconcile?.(context);
 
     assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
-    assert.equal(providerAuthChecks() > 0, true);
+    assert.equal(providerAuthChecks(), 0);
     assert.equal(
       config.agents?.entries?.emori?.models?.['openai/gpt-6-astra']?.agentRuntime?.id,
       'codex',
     );
+
+    assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
+    assert.equal(providerAuthChecks() > 0, true);
   });
 
-  it('should fail before mutation when native runtime authentication is unavailable', async () => {
+  it('should keep installation independent of ambient authentication readiness', async () => {
     const config = codexConfig();
-    const { contribution, mutations } = createHarness(config, {
+    const inspection = createHarness(config, {
       nativeAuthReady: false,
       providerAuthReady: false,
     });
 
-    const findings = await contribution.inspect?.(context);
+    const findings = await inspection.contribution.inspect?.(context);
 
     assert.equal(
       findings?.some(({ code }) => code === 'agent-model-runtime-auth-unavailable'),
       true,
     );
-    await assert.rejects(
-      () => contribution.reconcile!(context),
-      (error: unknown) =>
-        error instanceof AgentSystemLifecycleError &&
-        error.code === 'agent-model-runtime-auth-unavailable',
+
+    const installation = createHarness(config, {
+      nativeAuthReady: false,
+      providerAuthReady: false,
+    });
+    const installed = await installation.contribution.reconcile?.(context);
+
+    assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
+    assert.equal(installation.providerAuthChecks(), 0);
+    assert.equal(installation.mutations(), 1);
+  });
+
+  it('should reconcile provider-neutral model references through an established route', async () => {
+    const alternativeManifest: AgentManifest = {
+      schemaVersion: 1,
+      agent: manifest.agent,
+      models: {
+        default: { model: 'anthropic/claude-sonnet-4-5', effort: 'high' },
+      },
+    };
+    const config: OpenClawConfig = {
+      agents: {
+        entries: {
+          emori: {
+            model: 'anthropic/claude-haiku-4-5',
+            models: {
+              'anthropic/claude-haiku-4-5': { agentRuntime: { id: 'claude-code' } },
+            },
+            thinkingDefault: 'medium',
+          },
+        },
+      },
+    };
+    const installation = createHarness(config, {
+      nativeAuthReady: false,
+      providerAuthReady: false,
+    });
+
+    const installed = await installation.contribution.reconcile?.({
+      manifest: alternativeManifest,
+      workspaceDir: context.workspaceDir,
+    });
+
+    assert.equal(installed?.outcomes[0]?.code, 'set-agent-models');
+    assert.equal(installation.providerAuthChecks(), 0);
+    assert.equal(
+      config.agents?.entries?.emori?.models?.['anthropic/claude-sonnet-4-5']?.agentRuntime?.id,
+      'claude-code',
     );
-    assert.equal(mutations(), 0);
   });
 
   it('should distinguish unavailable models from unsupported effort', async () => {

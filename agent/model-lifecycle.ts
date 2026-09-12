@@ -540,14 +540,12 @@ export default function createModelLifecycleContribution(
         dependencies,
       );
       if (plan.status !== 'ready') throw lifecycleError(planFinding(plan));
-      const readiness = await readinessFindings(plan, agentId, context.workspaceDir, dependencies);
-      if (readiness.length > 0) throw lifecycleError(readiness[0]!);
       if (!plan.changed) {
         return {
           outcomes: [
             {
               code: 'agent-models-unchanged',
-              message: `OpenClaw model defaults and readiness for ${agentId}`,
+              message: `OpenClaw model defaults for ${agentId}`,
               status: 'unchanged',
             },
           ],
@@ -592,25 +590,18 @@ export default function createModelLifecycleContribution(
           `OpenClaw model defaults for ${agentId} did not match the manifest after installation.`,
         );
       }
-      const verifiedReadiness = await readinessFindings(
-        verification,
-        agentId,
-        context.workspaceDir,
-        dependencies,
-      );
-      if (verifiedReadiness.length > 0) throw lifecycleError(verifiedReadiness[0]!);
 
       return {
         outcomes: [
           mutation.result === true
             ? {
                 code: 'set-agent-models',
-                message: `OpenClaw model defaults and readiness for ${agentId}`,
+                message: `OpenClaw model defaults for ${agentId}`,
                 status: 'updated' as const,
               }
             : {
                 code: 'agent-models-unchanged',
-                message: `OpenClaw model defaults and readiness for ${agentId}`,
+                message: `OpenClaw model defaults for ${agentId}`,
                 status: 'unchanged' as const,
               },
         ],
