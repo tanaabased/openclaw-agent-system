@@ -120,7 +120,7 @@ export default class ModelRoutingService {
       throw new ModelRoutingError(
         'github-notification-routing-classification-failed',
         code === 'LLM_COMPLETION_NOT_AUTHORIZED'
-          ? 'Routing requires the operator-owned Agent System LLM grant for agent and model selection. Configure native llm permissions, then retry.'
+          ? 'Routing requires the operator-owned Agent System LLM grant for agent and model selection. Run openclaw agent-system install from the agent workspace, reload the Gateway if needed, then retry the same prepared assignment.'
           : 'The tool-free routing assessment failed. Check the native runtime and retry this issue; substantive work has not started.',
         { cause: error },
       );

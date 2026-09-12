@@ -11,10 +11,12 @@ import type NotificationRoutingService from '../routing/service.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubOperatorAccess from '../operator-access.ts';
+import type GitHubModelRoutingAccess from '../model-routing-access.ts';
 
 const notificationLifecycleLeaseWaitMs = 120_000;
 
 export interface NotificationLifecycleDependencies {
+  modelRoutingAccess?: Pick<GitHubModelRoutingAccess, 'inspect' | 'reconcile'>;
   operatorAccess?: Pick<GitHubOperatorAccess, 'inspect' | 'reconcile'>;
   hookAccess: Pick<ConversationHookAccess, 'inspect' | 'reconcile'>;
   monitorService?: Pick<GitHubNotificationMonitorService, 'runOnce'>;
@@ -130,11 +132,12 @@ export default function createNotificationLifecycleContribution(
     },
     async inspect(context) {
       const operatorFindings = (await dependencies.operatorAccess?.inspect(context)) ?? [];
+      const modelRoutingFindings = (await dependencies.modelRoutingAccess?.inspect(context)) ?? [];
       const hookFindings = context.manifest.github?.notifications
         ? [await dependencies.hookAccess.inspect(context.workspaceDir)]
         : [];
       if (hookFindings.some(({ status }) => status === 'blocked'))
-        return [...hookFindings, ...operatorFindings];
+        return [...hookFindings, ...modelRoutingFindings, ...operatorFindings];
       const plan = await dependencies.routingService.inspect(desiredState(context));
       if (plan.kind === 'noop' && plan.code === 'notification-routing-disabled') {
         const state = await dependencies.stateStore?.read(context.manifest.agent.id);
@@ -147,7 +150,7 @@ export default function createNotificationLifecycleContribution(
                 status: 'warning' as const,
               },
             ]
-          : operatorFindings;
+          : [...modelRoutingFindings, ...operatorFindings];
       }
       const routingFinding = [
         {
@@ -165,6 +168,7 @@ export default function createNotificationLifecycleContribution(
                 : ('drift' as const),
         },
         ...hookFindings,
+        ...modelRoutingFindings,
         ...operatorFindings,
       ];
       if (plan.kind !== 'noop' || plan.code !== 'notification-routing-ready') {
@@ -230,6 +234,10 @@ export default function createNotificationLifecycleContribution(
         const hookOutcome = context.manifest.github?.notifications
           ? await dependencies.hookAccess.reconcile(context.workspaceDir)
           : undefined;
+        const modelRoutingOutcome = (await dependencies.modelRoutingAccess?.reconcile(context)) ?? {
+          outcomes: [],
+          warnings: [],
+        };
         const operatorOutcome = (await dependencies.operatorAccess?.reconcile(context)) ?? {
           outcomes: [],
           warnings: [],
@@ -262,6 +270,7 @@ export default function createNotificationLifecycleContribution(
           monitorStateRemoved = await dependencies.stateStore.remove(context.manifest.agent.id);
         }
         const warnings = [
+          ...modelRoutingOutcome.warnings,
           ...operatorOutcome.warnings,
           ...(retirementPending
             ? [
@@ -306,6 +315,7 @@ export default function createNotificationLifecycleContribution(
         if (result.plan.kind === 'noop' && result.plan.code === 'notification-routing-disabled') {
           return {
             outcomes: [
+              ...modelRoutingOutcome.outcomes,
               ...operatorOutcome.outcomes,
               ...(monitorStateRemoved
                 ? [
@@ -334,6 +344,7 @@ export default function createNotificationLifecycleContribution(
           outcomes: [
             ...operatorOutcome.outcomes,
             ...(hookOutcome ? [hookOutcome] : []),
+            ...modelRoutingOutcome.outcomes,
             {
               code: result.plan.code,
               message: result.requiresManualRestart

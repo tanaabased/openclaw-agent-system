@@ -17,9 +17,10 @@ It also checks that the installed runtime saves publication receipts in the owni
 conversation file and keeps only routing identity in the shared index. A controlled
 per-issue execution lease verifies that intake can admit an issue before execution is available,
 and that the bounded CLI refresh reports its wait ending without losing that admission.
-While that lease remains held, a second issue completes planning through a separate
-CLI process. Releasing the first issue then proves that its resumed execution preserves
-the second issue's state and receipts. The hold models a busy executor; overlapping
+While that lease remains held, a second issue reaches a prepared worktree and fails
+after the scenario removes its classifier grant. `doctor` identifies the drift,
+`install` repairs it, and the issue resumes the same worktree and conversation.
+Releasing the first issue then proves that its resumed execution preserves the second issue. The hold models a busy executor; overlapping
 model turns, comment workers, failure isolation, and shutdown are covered by unit tests.
 
 Complete model profiles opt both issues into a separate tool-free assessment. The
@@ -61,10 +62,10 @@ printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 # should configure complete profiles with a high effort classifier and medium effort low tier
 printf '\nmodels:\n  default:\n    model: %s\n    effort: high\n  low:\n    model: %s\n    effort: medium\n  medium:\n    model: %s\n    effort: high\n  high:\n    model: %s\n    effort: high\n' "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" "$NOTIFICATION_MODEL" >> "$TMPDIR/agent-system-notifications/agent.yaml"
 
-# should grant isolated classification only the scenario model through native operator permissions
-openclaw config set plugins.entries.agent-system.llm.allowAgentIdOverride true --strict-json
-openclaw config set plugins.entries.agent-system.llm.allowModelOverride true --strict-json
-openclaw config set plugins.entries.agent-system.llm.allowedModels "$(jq -cn --arg model "$NOTIFICATION_MODEL" '[$model]')" --strict-json
+# should preserve unrelated llm permissions while classifier access remains absent
+openclaw config set plugins.entries.agent-system.llm.allowAuthProfileOverride true --strict-json
+openclaw config set plugins.entries.agent-system.llm.allowedModels '["aimock/retained"]' --strict-json
+openclaw config set plugins.entries.agent-system.llm.allowedCompletionModels '["aimock/retained"]' --strict-json
 
 # should leave operator grants for the normal manifest installation to reconcile
 openclaw config set commands.ownerAllowFrom '[]' --strict-json
@@ -83,12 +84,20 @@ cd "$TMPDIR/agent-system-notifications"
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
+printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
+openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$NOTIFICATION_MODEL" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
 openclaw agent-system doctor --json | jq -e '.findings[] | select(.component == "git" and .code == "git-worktrees-root-ready")'
 openclaw config get commands.ownerAllowFrom --json | jq -e 'index("agent-system-github:U_kgDOEUqvpg") != null'
 openclaw-github-notifications wait-route \
   --route-state present \
   --account-id notification-data
+
+# should remove only classifier access to reproduce installed configuration drift
+openclaw config unset plugins.entries.agent-system.llm.allowAgentIdOverride
+openclaw config unset plugins.entries.agent-system.llm.allowModelOverride
+openclaw config set plugins.entries.agent-system.llm.allowedModels '["aimock/retained"]' --strict-json
+openclaw config set plugins.entries.agent-system.llm.allowedCompletionModels '["aimock/retained"]' --strict-json
 
 # should register only the generated public key for tanaabot
 cd "$TMPDIR/agent-system-notifications"
@@ -159,7 +168,7 @@ blocked_refresh="$(openclaw agent-system notifications refresh --agent notificat
 jq -se 'length == 1 and (.[0] | .status == "skipped" and .code == "github-notification-cycle-aborted" and (.lastSuccessfulPollAt | type) == "number")' <<< "$blocked_refresh"
 openclaw agent-system notifications status --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$issue_number" --json | jq -e --argjson number "$issue_number" '.status == "ready" and (.items | length) == 1 and (.items[0] | .number == $number and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")'
 
-# should complete an independent assignment while the first issue remains busy
+# should retain a prepared independent assignment when native classification is denied
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
@@ -171,12 +180,8 @@ openclaw-github-issue create-and-assign \
   --issue-number-path "$TMPDIR/independent-issue-number"
 cd "$TMPDIR/agent-system-notifications"
 independent_issue="$(cat "$TMPDIR/independent-issue-number")"
-openclaw-github-notifications refresh-completed \
-  --agent notification-data \
-  --repository tanaabased/big-test-bucket \
-  --kind issue \
-  --number "$independent_issue" \
-  --timeout 420 | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+routing_failure="$(openclaw agent-system notifications refresh --agent notification-data --repository tanaabased/big-test-bucket --kind issue --number "$independent_issue" --timeout 420 --json || true)"
+jq -se 'length == 1 and (.[0] | .status == "failed" and .code == "github-notification-routing-classification-failed")' <<< "$routing_failure"
 test -d "$(cat "$TMPDIR/notification-execution-lock")"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications status --agent notification-data --json | jq -e --argjson blocked "$issue_number" --argjson ready "$independent_issue" '([.items[] | select(.number == $blocked and .disposition == "approved" and .stage == "admitted" and .worktree == "pending")] | length) == 1 and ([.items[] | select(.number == $ready and .disposition == "approved" and .stage == "prepared" and .worktree == "ready")] | length) == 1'
@@ -184,7 +189,39 @@ config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join
 channel_state="$config_root/tanaab/agent-system/notification-data/channels"
 conversation_id="$(jq -er --arg number "$independent_issue" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
 record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
-jq -e '.conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published"' "$channel_state/github-notification-conversations/$record_digest.json"
+jq -e '.conversation.modelRouting.profiles.default.model != null and (.conversation.modelRouting | has("decision") | not) and (.conversation | has("assignmentResponse") | not)' "$channel_state/github-notification-conversations/$record_digest.json"
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+jq -re 'select(length == 1) | .[0].path' <<< "$worktrees" > "$TMPDIR/independent-worktree-before"
+printf '%s' "$conversation_id" > "$TMPDIR/independent-conversation-id-before"
+
+# should diagnose and reconcile only the missing classifier access
+cd "$TMPDIR/agent-system-notifications"
+if doctor_before="$(openclaw agent-system doctor --json)"; then exit 1; fi
+printf '%s\n' "$doctor_before" | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-drift" and .status == "drift" and (.message | contains($model)))'
+repair="$(openclaw agent-system install --json)"
+printf '%s\n' "$repair" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
+openclaw config get plugins.entries.agent-system.llm --json | jq -e --arg model "$NOTIFICATION_MODEL" '.allowAgentIdOverride == true and .allowModelOverride == true and .allowAuthProfileOverride == true and .allowedModels == ["aimock/retained", $model] and .allowedCompletionModels == ["aimock/retained", $model]'
+openclaw agent-system doctor --json | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-ready" and .status == "healthy" and (.message | contains($model)))'
+repeat="$(openclaw agent-system install --json)"
+printf '%s\n' "$repeat" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "unchanged")'
+
+# should resume the same prepared independent assignment after access repair
+cd "$TMPDIR/agent-system-notifications"
+independent_issue="$(cat "$TMPDIR/independent-issue-number")"
+config_root="$(node -p 'process.env.XDG_CONFIG_HOME || require("node:path").join(process.env.HOME, ".config")')"
+channel_state="$config_root/tanaab/agent-system/notification-data/channels"
+openclaw-github-notifications refresh-completed \
+  --agent notification-data \
+  --repository tanaabased/big-test-bucket \
+  --kind issue \
+  --number "$independent_issue" \
+  --timeout 420 | jq -e '.status == "completed" and .code == "github-notification-poll-complete"'
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+jq -e --rawfile path "$TMPDIR/independent-worktree-before" 'length == 1 and .[0].path == ($path | rtrimstr("\n"))' <<< "$worktrees"
+conversation_id="$(jq -er --arg number "$independent_issue" '.conversationIds[] | select(endswith(":" + $number))' "$channel_state/github-notification-conversations.json")"
+test "$conversation_id" = "$(cat "$TMPDIR/independent-conversation-id-before")"
+record_digest="$(printf '%s' "$conversation_id" | shasum -a 256 | cut -d ' ' -f 1)"
+jq -e '.conversation.acknowledgment.status == "published" and .conversation.assignmentResponse.status == "published" and .conversation.modelRouting.decision.complexity == "low"' "$channel_state/github-notification-conversations/$record_digest.json"
 cp "$channel_state/github-notification-conversations/$record_digest.json" "$TMPDIR/independent-conversation-before.json"
 
 # should resume the admitted issue from a new process after execution is released

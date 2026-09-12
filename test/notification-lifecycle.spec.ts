@@ -122,6 +122,72 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
     assert.equal((await contribution.inspect?.(context))?.[0]?.status, 'blocked');
   });
 
+  it('should include model-routing access in doctor and install results', async () => {
+    const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
+      modelRoutingAccess: {
+        async inspect() {
+          return [
+            {
+              code: 'github-model-routing-access-drift',
+              message: 'missing',
+              status: 'drift' as const,
+            },
+          ];
+        },
+        async reconcile() {
+          return {
+            outcomes: [
+              {
+                code: 'github-model-routing-access-reconciled',
+                message: 'saved',
+                status: 'updated' as const,
+              },
+            ],
+            warnings: [
+              {
+                code: 'github-model-routing-loaded-access-stale',
+                message: 'reload',
+              },
+            ],
+          };
+        },
+      },
+      routingService: {
+        async inspect() {
+          return { code: 'notification-routing-ready', kind: 'noop' as const, message: 'ready' };
+        },
+        async reconcile() {
+          return {
+            configChanged: false,
+            plan: { code: 'notification-routing-ready', kind: 'noop' as const, message: 'ready' },
+            receiptAction: 'none' as const,
+            requiresManualRestart: false,
+          };
+        },
+      },
+    });
+
+    assert.equal(
+      (await contribution.inspect?.(context))?.some(
+        ({ code }) => code === 'github-model-routing-access-drift',
+      ),
+      true,
+    );
+    assert.deepEqual(await contribution.reconcile?.(context), {
+      outcomes: [
+        { code: 'github-notification-hook-ready', message: 'ready', status: 'unchanged' },
+        {
+          code: 'github-model-routing-access-reconciled',
+          message: 'saved',
+          status: 'updated',
+        },
+        { code: 'notification-routing-ready', message: 'ready', status: 'unchanged' },
+      ],
+      warnings: [{ code: 'github-model-routing-loaded-access-stale', message: 'reload' }],
+    });
+  });
+
   it('should report pending, successful, and deferred monitor observations', async () => {
     const healthyState: GitHubNotificationMonitorState = {
       agentId: 'data',
