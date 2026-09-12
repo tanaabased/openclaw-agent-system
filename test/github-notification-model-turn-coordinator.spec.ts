@@ -269,6 +269,51 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
+  it('should warn with requested and observed routing when a permitted fallback continues', async () => {
+    const warnings: string[] = [];
+    const coordinator = new GitHubNotificationModelTurnCoordinator({
+      assertReady() {},
+      candidates: {
+        async attestPromptSelection() {},
+        async begin() {
+          return 'turn-1';
+        },
+        async cancel() {},
+        async finish() {
+          return [];
+        },
+      },
+      dispatcher: {
+        async dispatch() {
+          return {
+            dispatch: { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false },
+            finalPayloads: [{ text: 'Complete private response.' }],
+            routing: {
+              requested: { model: 'openai/selected', effort: 'medium' },
+              observed: { model: 'openai/default', effort: 'high' },
+              status: 'continued' as const,
+            },
+          };
+        },
+      },
+      logger: { info() {}, warn: (message) => warnings.push(message) },
+    });
+
+    await coordinator.run({
+      ...input(),
+      contract: {
+        ...contract,
+        identity: { ...identity, eventId: 'implementation' },
+        publicationIntent: undefined,
+        publicationSource: undefined,
+      },
+    });
+    assert.match(
+      warnings[0] ?? '',
+      /routing=continued routing-code=github-notification-routing-effective-mismatch routing-requested=openai\/selected@medium routing-observed=openai\/default@high/u,
+    );
+  });
+
   it('should cancel the candidate handoff when model dispatch fails', async () => {
     const failure = new Error('dispatch failed');
     let cancellation: unknown;

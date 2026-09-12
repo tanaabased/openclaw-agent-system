@@ -15,6 +15,7 @@ import {
   modelRoutingDecision,
   modelRoutingGuidance,
   modelRoutingInstructions,
+  type ModelRoutingExecution,
   type RoutedProfile,
 } from './model-routing.ts';
 
@@ -34,6 +35,15 @@ export interface ModelRoutingServiceDependencies {
 function ref(model: string) {
   const index = model.indexOf('/');
   return { provider: model.slice(0, index), model: model.slice(index + 1) };
+}
+
+function configuredFallbacks(config: OpenClawConfig, agentId: string): string[] {
+  const agentModel = configuredAgentValue(config, agentId)?.model;
+  if (typeof agentModel === 'string') return [];
+  if (agentModel && Object.hasOwn(agentModel, 'fallbacks')) return agentModel.fallbacks ?? [];
+  if (agentModel?.primary) return [];
+  const defaultModel = config.agents?.defaults?.model;
+  return typeof defaultModel === 'object' ? (defaultModel.fallbacks ?? []) : [];
 }
 
 /** Support one model-authored decision with durable ownership and native execution controls. */
@@ -154,9 +164,15 @@ export default class ModelRoutingService {
   }
 
   /** Called only after the channel kernel has created or recorded this exact session. */
-  async apply(
-    route: ResolvedNotificationRoute,
-  ): Promise<{ expected: RoutedProfile; guidance: string } | undefined> {
+  async apply(route: ResolvedNotificationRoute): Promise<
+    | {
+        expected: RoutedProfile;
+        guidance: string;
+        permittedModels: string[];
+        strict: boolean;
+      }
+    | undefined
+  > {
     const snapshot = await this.dependencies.conversations.read(
       route.agentId,
       route.conversationId,
@@ -172,6 +188,7 @@ export default class ModelRoutingService {
     const config = await this.dependencies.readConfig();
     let selected: RoutedProfile | undefined;
     let overridden = false;
+    let strict = false;
     const entry = await this.dependencies.runtime.session.patchSessionEntry({
       agentId: route.agentId,
       sessionKey: route.sessionKey,
@@ -192,6 +209,7 @@ export default class ModelRoutingService {
         const humanEffort = Boolean(
           current.thinkingLevel && current.thinkingLevel !== routing.applied?.effort,
         );
+        strict = humanModel || humanEffort || current.modelSelectionLocked === true;
         selected = {
           model: humanModel ? currentRef : routing.decision!.model,
           effort: humanEffort
@@ -230,6 +248,11 @@ export default class ModelRoutingService {
             preserveAuthProfileOverride: true,
             markLiveSwitchPending: true,
           });
+        if (!humanModel) {
+          const selectedRef = ref(selected.model);
+          updated.modelOverrideFallbackOriginProvider = selectedRef.provider;
+          updated.modelOverrideFallbackOriginModel = selectedRef.model;
+        }
         updated.thinkingLevel = selected.effort;
         updated.updatedAt = current.updatedAt;
         // Return the complete entry so native-cleared stale runtime fields stay cleared.
@@ -245,7 +268,54 @@ export default class ModelRoutingService {
     const next = structuredClone(snapshot);
     next.conversation!.modelRouting!.applied = selected;
     next.conversation!.modelRouting!.overridden = overridden;
+    delete next.conversation!.modelRouting!.execution;
     await this.dependencies.conversations.write(next);
-    return { expected: selected, guidance: modelRoutingGuidance(next.conversation!.modelRouting) };
+    const selectedDefault = ref(routing.profiles.default.model);
+    const permittedModels = [
+      selected.model,
+      routing.profiles.default.model,
+      ...configuredFallbacks(config, route.agentId).flatMap((raw) => {
+        const allowed = this.dependencies.runtime.resolveAllowedModelRef({
+          cfg: config,
+          agentId: route.agentId,
+          catalog: [],
+          raw,
+          defaultProvider: selectedDefault.provider,
+          defaultModel: selectedDefault.model,
+        });
+        return 'error' in allowed ? [] : [`${allowed.ref.provider}/${allowed.ref.model}`];
+      }),
+    ];
+    return {
+      expected: selected,
+      guidance: modelRoutingGuidance(next.conversation!.modelRouting),
+      permittedModels: [...new Set(permittedModels)],
+      strict,
+    };
+  }
+
+  async recordExecution(
+    route: ResolvedNotificationRoute,
+    execution: ModelRoutingExecution,
+  ): Promise<void> {
+    const snapshot = await this.dependencies.conversations.read(
+      route.agentId,
+      route.conversationId,
+    );
+    const routing = snapshot?.conversation?.modelRouting;
+    if (
+      !snapshot ||
+      !routing?.applied ||
+      routing.applied.model !== execution.requested.model ||
+      routing.applied.effort !== execution.requested.effort
+    ) {
+      throw new ModelRoutingError(
+        'github-notification-routing-state-mismatch',
+        'The effective routing result no longer matches the saved selection.',
+      );
+    }
+    const next = structuredClone(snapshot);
+    next.conversation!.modelRouting!.execution = execution;
+    await this.dependencies.conversations.write(next);
   }
 }

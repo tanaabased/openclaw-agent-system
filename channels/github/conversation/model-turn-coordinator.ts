@@ -18,6 +18,7 @@ import type { ResolvedNotificationRoute } from '../routing/routing.ts';
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnDispatcher from './model-turn-dispatcher.ts';
 import type { GitHubNotificationHostDispatchResult } from './model-turn-dispatcher.ts';
+import type { ModelRoutingExecution } from './model-routing.ts';
 import {
   githubNotificationOrdinaryFinalPayloads,
   githubNotificationPrivateResponse,
@@ -193,6 +194,24 @@ function turnDetails(input: GitHubNotificationModelTurnCoordinatorInput): string
   ].join(' ');
 }
 
+function routingDetails(execution?: ModelRoutingExecution): string[] {
+  if (!execution) return [];
+  return [
+    `routing=${execution.status}`,
+    ...(execution.status === 'verified'
+      ? []
+      : [
+          `routing-code=${
+            execution.status === 'continued'
+              ? 'github-notification-routing-effective-mismatch'
+              : 'github-notification-routing-effective-unverified'
+          }`,
+        ]),
+    `routing-requested=${execution.requested.model}@${execution.requested.effort}`,
+    `routing-observed=${execution.observed ? `${execution.observed.model}@${execution.observed.effort ?? 'unknown'}` : 'unknown'}`,
+  ];
+}
+
 /** Coordinate one prepared model turn and its channel-owned response candidate. */
 export default class GitHubNotificationModelTurnCoordinator {
   readonly #dependencies: GitHubNotificationModelTurnCoordinatorDependencies;
@@ -351,12 +370,14 @@ export default class GitHubNotificationModelTurnCoordinator {
       ...(responsePublication.status === 'candidate' && responsePublication.safetyCategory
         ? [`safety=${responsePublication.safetyCategory}`]
         : []),
+      ...routingDetails(turnResult.routing),
       `aborted=${Boolean(input.signal?.aborted)}`,
       `duration-ms=${Date.now() - startedAt}`,
     ].join(' ');
     if (
       responsePublication.status === 'withheld' ||
-      (responsePublication.status === 'candidate' && responsePublication.fallbackCode)
+      (responsePublication.status === 'candidate' && responsePublication.fallbackCode) ||
+      (turnResult.routing !== undefined && turnResult.routing.status !== 'verified')
     ) {
       this.#dependencies.logger.warn(completion);
     } else {

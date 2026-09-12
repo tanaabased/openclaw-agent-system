@@ -19,6 +19,25 @@ const selectedProfileSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+const observedProfileSchema = Type.Object(
+  {
+    model: profileSchema.properties.model,
+    effort: Type.Optional(selectedProfileSchema.properties.effort),
+  },
+  { additionalProperties: false },
+);
+const executionSchema = Type.Object(
+  {
+    requested: selectedProfileSchema,
+    observed: Type.Optional(observedProfileSchema),
+    status: Type.Union([
+      Type.Literal('verified'),
+      Type.Literal('continued'),
+      Type.Literal('unverified'),
+    ]),
+  },
+  { additionalProperties: false },
+);
 const assessmentSchema = Type.Object(
   {
     complexity: Type.Union([
@@ -57,12 +76,15 @@ const routingSchema = Type.Object(
     ),
     applied: Type.Optional(selectedProfileSchema),
     overridden: Type.Optional(Type.Boolean()),
+    execution: Type.Optional(executionSchema),
   },
   { additionalProperties: false },
 );
 
 export type ModelRouting = Static<typeof routingSchema>;
 export type RoutedProfile = Static<typeof selectedProfileSchema>;
+export type ModelRoutingObservation = Static<typeof observedProfileSchema>;
+export type ModelRoutingExecution = Static<typeof executionSchema>;
 
 export class ModelRoutingError extends Error {
   constructor(
@@ -92,7 +114,23 @@ export function initializeModelRouting(
 
 export function validModelRouting(value: unknown): value is ModelRouting {
   if (!Value.Check(routingSchema, value)) return false;
-  if (!value.decision) return !value.applied && value.overridden === undefined;
+  if (!value.decision)
+    return !value.applied && value.overridden === undefined && value.execution === undefined;
+  if (
+    value.execution &&
+    (!value.applied ||
+      value.execution.requested.model !== value.applied.model ||
+      value.execution.requested.effort !== value.applied.effort ||
+      (value.execution.status === 'verified' &&
+        (value.execution.observed?.model !== value.execution.requested.model ||
+          value.execution.observed.effort !== value.execution.requested.effort)) ||
+      (value.execution.status === 'continued' &&
+        (!value.execution.observed?.effort ||
+          (value.execution.observed.model === value.execution.requested.model &&
+            value.execution.observed.effort === value.execution.requested.effort))) ||
+      (value.execution.status === 'unverified' && value.execution.observed?.effort !== undefined))
+  )
+    return false;
   const profile =
     value.profiles[value.decision.complexity === 'unset' ? 'default' : value.decision.complexity];
   return (

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
+import { getReplyFromConfig } from 'openclaw/plugin-sdk/reply-runtime';
+import { resolveStorePath, upsertSessionEntry } from 'openclaw/plugin-sdk/session-store-runtime';
 
 import ModelRoutingService, {
   type ModelRoutingRuntime,
@@ -159,14 +164,37 @@ describe('channels/github/conversation/model-routing-service', () => {
     assert.equal(saved.conversation?.modelRouting?.decision?.model, profiles.low.model);
     await h.service.assess(saved, context);
     assert.equal(h.requests.length, 1);
+    h.config.agents!.entries!.emori!.model = {
+      primary: profiles.default.model,
+      fallbacks: [profiles.medium.model],
+    };
     const applied = await h.service.apply(route);
     assert.deepEqual(applied?.expected, profiles.low);
     assert.equal(h.entry().modelOverride, 'gpt-5.6-terra');
+    assert.equal(h.entry().modelOverrideSource, 'auto');
+    assert.equal(h.entry().modelOverrideFallbackOriginProvider, 'openai');
+    assert.equal(h.entry().modelOverrideFallbackOriginModel, 'gpt-5.6-terra');
     assert.equal(h.entry().thinkingLevel, 'medium');
     assert.equal(h.entry().authProfileOverride, 'openai:subscription');
     assert.equal(h.entry().agentRuntimeOverride, 'codex');
     assert.equal(h.entry().sessionId, 'session-12');
     assert.equal(h.entry().updatedAt, 1);
+    assert.deepEqual(applied?.permittedModels, [
+      profiles.low.model,
+      profiles.default.model,
+      profiles.medium.model,
+    ]);
+    assert.equal(applied?.strict, false);
+    await h.service.recordExecution(route, {
+      requested: profiles.low,
+      observed: profiles.default,
+      status: 'continued',
+    });
+    assert.deepEqual(h.snapshots.get(route.conversationId)?.conversation?.modelRouting?.execution, {
+      requested: profiles.low,
+      observed: profiles.default,
+      status: 'continued',
+    });
     h.config.agents!.entries!.emori!.model = 'openai/gpt-5.6-sol';
     assert.deepEqual((await h.service.apply(route))?.expected, profiles.low);
   });
@@ -181,10 +209,12 @@ describe('channels/github/conversation/model-routing-service', () => {
       providerOverride: 'openai',
       modelOverrideSource: 'user',
     });
-    assert.deepEqual((await h.service.apply(route))?.expected, {
+    const manualModel = await h.service.apply(route);
+    assert.deepEqual(manualModel?.expected, {
       model: profiles.medium.model,
       effort: 'medium',
     });
+    assert.equal(manualModel?.strict, true);
     h.setEntry({ ...h.entry(), thinkingLevel: 'low' });
     assert.deepEqual((await h.service.apply(route))?.expected, {
       model: profiles.medium.model,
@@ -198,6 +228,85 @@ describe('channels/github/conversation/model-routing-service', () => {
       h.snapshots.get(route.conversationId)?.conversation?.modelRouting?.overridden,
       true,
     );
+  });
+
+  it('should preserve the first-turn override through the installed openclaw resolver', async () => {
+    const h = harness();
+    await h.service.assess(h.snapshot, context);
+    await h.service.apply(route);
+    const stateDir = await mkdtemp(join(tmpdir(), 'agent-system-routing-resolver-'));
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    try {
+      const workspace = join(stateDir, 'workspace');
+      await mkdir(workspace);
+      const storePath = resolveStorePath(undefined, { agentId: route.agentId, env: process.env });
+      const entry = structuredClone(h.entry());
+      delete entry.agentRuntimeOverride;
+      await upsertSessionEntry({
+        agentId: route.agentId,
+        sessionKey: route.sessionKey,
+        storePath,
+        env: process.env,
+        entry,
+      });
+      h.config.agents!.defaults = { model: { primary: profiles.default.model } };
+      h.config.agents!.entries!.emori!.workspace = workspace;
+      delete h.config.agents!.entries!.emori!.models;
+      h.config.models = {
+        providers: {
+          openai: {
+            api: 'openai-completions',
+            apiKey: 'test',
+            baseUrl: 'http://127.0.0.1:9/v1',
+            models: [...new Set(Object.values(profiles).map(({ model }) => model))].map(
+              (model) => ({
+                id: model.slice(model.indexOf('/') + 1),
+                name: model,
+                reasoning: true,
+                input: ['text'] as const,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128_000,
+                maxTokens: 4_096,
+              }),
+            ),
+          },
+        },
+      };
+      let selected: { provider: string; model: string; thinkLevel?: string } | undefined;
+      const controller = new AbortController();
+      await getReplyFromConfig(
+        {
+          AgentId: route.agentId,
+          Body: 'Inspect the prepared assignment.',
+          BodyForAgent: 'Inspect the prepared assignment.',
+          ChatType: 'direct',
+          From: 'github',
+          Provider: 'webchat',
+          SessionKey: route.sessionKey,
+          To: route.agentId,
+        },
+        {
+          abortSignal: controller.signal,
+          disableTools: true,
+          onModelSelected(value) {
+            selected = value;
+            controller.abort();
+          },
+          suppressTyping: true,
+        },
+        h.config,
+      );
+      assert.deepEqual(selected, {
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        thinkLevel: 'medium',
+      });
+    } finally {
+      if (previousStateDir === undefined) delete process.env.OPENCLAW_STATE_DIR;
+      else process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      await rm(stateDir, { recursive: true });
+    }
   });
 
   it('should reject missing decisions, missing sessions, unsupported effort, and runtime drift', async () => {

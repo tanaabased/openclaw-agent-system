@@ -16,6 +16,7 @@
 
 ### Bug Fixes
 
+- Fixed first-turn model routing provenance and permitted fallback continuation without stranding authorized work. [#102](https://github.com/tanaabased/openclaw-agent-system/issues/102)
 - Reconciled manifest-declared models with each agent's effective OpenClaw selection policy without broadening global defaults or other agents. [#99](https://github.com/tanaabased/openclaw-agent-system/issues/99)
 - Improved 1Password and GitHub failure diagnostics. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87)
 - Fixed GitHub issue-routing permission diagnosis, additive install repair, and prepared-assignment recovery. [#97](https://github.com/tanaabased/openclaw-agent-system/issues/97)

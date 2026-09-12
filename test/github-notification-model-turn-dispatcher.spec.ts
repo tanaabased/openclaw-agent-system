@@ -21,14 +21,15 @@ const ctxPayload = {} as ChannelInboundTurnPlan['ctxPayload'];
 
 describe('channels/github/conversation/model-turn-dispatcher', () => {
   it('should apply routing after recording and verify both native selections before publication', async () => {
-    for (const actual of [
-      { provider: 'openai', model: 'selected', thinkLevel: 'medium' },
-      { provider: 'openai', model: 'fallback', thinkLevel: 'medium' },
-      { provider: 'openai', model: 'selected', thinkLevel: 'high' },
-      undefined,
+    for (const [actual, status] of [
+      [{ provider: 'openai', model: 'selected', thinkLevel: 'medium' }, 'verified'],
+      [{ provider: 'openai', model: 'default', thinkLevel: 'medium' }, 'continued'],
+      [{ provider: 'openai', model: 'selected', thinkLevel: 'high' }, 'continued'],
+      [undefined, 'unverified'],
     ] as const) {
       let applied = false;
       let recorded = false;
+      let execution;
       const dispatcher = new GitHubNotificationModelTurnDispatcher({
         modelRouting: {
           async apply(selectedRoute) {
@@ -38,7 +39,13 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
             return {
               expected: { model: 'openai/selected', effort: 'medium' },
               guidance: 'saved private routing',
+              permittedModels: ['openai/selected', 'openai/default'],
+              strict: false,
             };
+          },
+          async recordExecution(selectedRoute, value) {
+            assert.equal(selectedRoute, route);
+            execution = value;
           },
         },
         async dispatchChannelInboundTurn(input) {
@@ -52,13 +59,7 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
           assert.equal(applied, true);
           assert.match(input.ctxPayload.GroupSystemPrompt ?? '', /saved private routing/);
           if (actual) {
-            try {
-              input.replyOptions?.onModelSelected?.(actual);
-            } catch (error) {
-              assert.ok(error instanceof ModelRoutingError);
-              assert.equal(input.replyOptions?.abortSignal?.aborted, true);
-              // Even a host that catches callback errors must not allow publication.
-            }
+            input.replyOptions?.onModelSelected?.(actual);
           }
           await input.delivery.deliver({ text: 'private result' }, { kind: 'final' });
           return {
@@ -80,18 +81,64 @@ describe('channels/github/conversation/model-turn-dispatcher', () => {
           identity: { lifecycleId: 'issue', modeId: 'work', eventId: 'assignment' },
         },
       });
-      if (actual?.model === 'selected' && actual.thinkLevel === 'medium')
-        assert.equal((await result).finalPayloads.length, 1);
-      else
-        await assert.rejects(
-          result,
-          (error: unknown) =>
-            error instanceof ModelRoutingError &&
-            error.code ===
-              (actual
-                ? 'github-notification-routing-effective-mismatch'
-                : 'github-notification-routing-effective-unverified'),
-        );
+      const completed = await result;
+      assert.equal(completed.finalPayloads.length, 1);
+      assert.equal(completed.routing?.status, status);
+      assert.deepEqual(completed.routing, execution);
+    }
+  });
+
+  it('should abort strict or unpermitted effective selections', async () => {
+    for (const strict of [false, true]) {
+      const dispatcher = new GitHubNotificationModelTurnDispatcher({
+        modelRouting: {
+          async apply() {
+            return {
+              expected: { model: 'openai/selected', effort: 'medium' },
+              guidance: '',
+              permittedModels: ['openai/selected', 'openai/fallback'],
+              strict,
+            };
+          },
+          async recordExecution() {
+            assert.fail('failed turns must not be recorded as completed');
+          },
+        },
+        async dispatchChannelInboundTurn(input) {
+          input.record?.trackSessionMetaTask?.(Promise.resolve({}));
+          await input.afterRecord?.();
+          const actual = strict
+            ? { provider: 'openai', model: 'fallback', thinkLevel: 'medium' }
+            : { provider: 'other', model: 'unknown', thinkLevel: 'medium' };
+          try {
+            input.replyOptions?.onModelSelected?.(actual);
+          } catch (error) {
+            assert.ok(error instanceof ModelRoutingError);
+            assert.equal(input.replyOptions?.abortSignal?.aborted, true);
+          }
+          return {
+            dispatched: true,
+            routeSessionKey: route.sessionKey,
+            dispatchResult: { counts: { final: 0, block: 0, tool: 0 }, queuedFinal: false },
+          } as never;
+        },
+      });
+      await assert.rejects(
+        dispatcher.dispatch({
+          config: {},
+          ctxPayload,
+          executionSurface: 'gateway',
+          messageId: 'assignment:1',
+          route,
+          contract: {
+            instructions: 'assignment',
+            mode: { id: 'work', disableTools: false },
+          },
+        }),
+        (error: unknown) =>
+          error instanceof ModelRoutingError &&
+          error.code === 'github-notification-routing-effective-mismatch',
+      );
     }
   });
 
