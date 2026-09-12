@@ -2,12 +2,7 @@
 
 ### New Features
 
-- Added operator-controlled in-memory 1Password client/value reuse with off,
-  timed, and process-lifetime modes, bounded secret-free counters, generation-safe
-  invalidation, shared provider backoff, and live Gateway status/flush commands.
-  Preserved fresh authorization and local configuration; added deterministic
-  cache coverage and installed CI checks. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
-
+- Added configurable in-memory 1Password caching with Gateway status and flush commands. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
 - Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
   verified install reconciliation with shared grant provenance, and non-blocking
   initial-assignment session persistence checks.
@@ -21,12 +16,6 @@
 - Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ### Bug Fixes
-
-- Shared the in-memory 1Password cache across Gateway and agent-tool plugin
-  registrations so status and flush operate on the values used by tools. Added
-  cross-registration regressions and installed reuse, refill, scoped flush, and
-  credential-mutation checks; consolidated repeated example validation calls.
-  [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
 
 - Made Doctor and Install tables component-first with status-only color, neutral workspace metadata, readable wrapping, and stable attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
 - Preserved eligible unseen delivery pull-request comments and existing revision receipts during initial handoff, including interrupted retries, without changing reopen baselines. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)

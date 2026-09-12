@@ -1,6 +1,8 @@
 # GitHub Tool Example
 
-This scenario runs the prepared Agent System package in the default Gateway with two explicitly installed agents and a strict AIMock fixture. It verifies that GitHub lifecycle installation projects distinct OpenClaw identities, adds and diagnoses fresh ephemeral SSH authentication and signing keys, proves the already-installed path, and then verifies that Agent System and OpenClaw select each agent's configured 1Password-backed credential and authenticated account without depending on live model behavior. It also verifies shared Gateway credential reuse, scoped and global flush, and invalidation of warmed values after a separate CLI credential mutation. General cache command and storage behavior belongs to the [credentials example](../credentials/README.md).
+Tests two agents' installation, SSH keys, distinct GitHub identities, and 1Password
+cache reuse, flush, and mutation invalidation through the real Gateway with AIMock.
+The [credentials example](../credentials/README.md) covers storage and cache commands.
 
 ## Setup
 

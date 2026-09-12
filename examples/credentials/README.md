@@ -1,6 +1,7 @@
 # Credentials Example
 
-This scenario verifies OP credential fallback, explicit environment validation, platform-native and file storage, stdin storage, install preflight, stored resolution without the process token, idempotent automatic removal, and Gateway cache controls on a fresh runner. Warm-cache reuse and mutation invalidation are exercised by the [GitHub example](../github/README.md).
+Tests 1Password credential storage, fallback, validation, install preflight, removal,
+and Gateway cache commands. The [GitHub example](../github/README.md) tests warm-cache reuse and invalidation.
 
 ## Setup
 
