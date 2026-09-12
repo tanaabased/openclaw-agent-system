@@ -470,9 +470,22 @@ export default class GitHubNotificationAssignmentSessionService {
       input.agentId,
       conversationId,
     );
-    if (existing?.conversation) return;
+    const conversation = existing?.conversation;
+    // Comment baselining creates a record before the first assignment turn.
+    // Preserve sessions that have already selected routing or begun model work.
+    if (
+      conversation &&
+      (conversation.modelRouting ||
+        conversation.activeTurn ||
+        conversation.acknowledgment ||
+        conversation.assignmentResponse ||
+        conversation.implementation ||
+        conversation.deliveryPullRequest ||
+        Object.values(conversation.revisions).some((revision) => revision.status !== 'baseline'))
+    )
+      return;
     const state =
-      existing ??
+      (existing ? structuredClone(existing) : undefined) ??
       createGitHubNotificationConversationSnapshot(
         input.agentId,
         input.workspaceDir,
@@ -484,14 +497,15 @@ export default class GitHubNotificationAssignmentSessionService {
       input.item.lifecycleId === 'issue'
         ? initializeModelRouting(await this.#dependencies.readModels?.(input))
         : undefined;
-    state.conversation = {
-      ...(routing ? { modelRouting: routing } : {}),
+    if (conversation && !routing) return;
+    state.conversation ??= {
       baselineEstablished: false,
       itemKey: githubWorkItemKey(input.item.repositoryNodeId, input.item.number),
       lifecycleId: input.item.lifecycleId,
       mode: input.mode.policy.id,
       revisions: {},
     };
+    if (routing) state.conversation.modelRouting = routing;
     await this.#dependencies.conversationStateStore.write(state);
   }
 

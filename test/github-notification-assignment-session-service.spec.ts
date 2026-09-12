@@ -169,6 +169,7 @@ function guidedResult(): GitHubNotificationModelTurnCoordinatorResult {
 }
 
 interface HarnessOptions {
+  initialConversation?: Partial<GitHubNotificationConversationState['conversations'][string]>;
   models?: AgentModelsConfiguration;
   initialConversationMissing?: boolean;
   acknowledgmentFailures?: number;
@@ -190,6 +191,7 @@ function harness(options: HarnessOptions = {}) {
   const expectedAssignmentContract =
     mode.policy.id === 'guided' ? guidedAssignmentContract : assignmentContract;
   let state = initialState(mode.policy.id === 'guided' ? 'guided' : 'work');
+  Object.assign(state.conversations[conversationId]!, options.initialConversation);
   if (options.initialConversationMissing) delete state.conversations[conversationId];
   let contextReads = 0;
   let classifications = 0;
@@ -414,13 +416,46 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.ok(scenario.state().conversations[conversationId]?.modelRouting?.decision);
     for (const options of [
       { initialConversationMissing: true, models: { default: profile } },
-      { models: { default: profile, low: profile, medium: profile, high: profile } },
+      {
+        models: { default: profile, low: profile, medium: profile, high: profile },
+        initialActiveTurn: { eventId: 'assignment' as const, sourceId: assignmentEventId! },
+      },
     ]) {
       const ordinary = harness(options);
       await ordinary.prepare();
       assert.equal(ordinary.classifications(), 0);
       assert.equal(ordinary.metadataReads(), 0);
     }
+  });
+
+  it('should route an assignment after comment baselining without replacing its mode or revisions', async () => {
+    const profile = { model: 'openai/gpt-5.5', effort: 'high' } as const;
+    const revisions: GitHubNotificationConversationState['conversations'][string]['revisions'] = {
+      IC_baseline: {
+        bodyDigest: 'baseline-digest',
+        commentDatabaseId: 91,
+        reasonCode: 'comment-baseline',
+        revisionId: 'baseline-revision',
+        source: { itemType: 'issue', number: 12 },
+        status: 'baseline',
+      },
+    };
+    const scenario = harness({
+      initialConversation: { baselineEstablished: true, revisions },
+      mode: githubNotificationGuidedMode,
+      acknowledgmentFailures: 1,
+      models: { default: profile, low: profile, medium: profile, high: profile },
+    });
+    await assert.rejects(scenario.prepare(), /acknowledgment interrupted/);
+    const routed = scenario.state().conversations[conversationId]!;
+    assert.ok(routed.modelRouting?.decision);
+    assert.equal(routed.baselineEstablished, true);
+    assert.equal(routed.mode, 'guided');
+    assert.deepEqual(routed.revisions, revisions);
+    await scenario.prepare();
+    assert.equal(scenario.classifications(), 1);
+    assert.equal(scenario.metadataReads(), 1);
+    assert.deepEqual(scenario.state().conversations[conversationId]?.revisions, revisions);
   });
 
   it('should initialize a new conversation before dispatch and retry an interrupted acknowledgment', async () => {
