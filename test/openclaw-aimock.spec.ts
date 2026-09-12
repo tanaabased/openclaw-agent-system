@@ -37,4 +37,11 @@ describe('scripts/openclaw-aimock', () => {
     assert.match(source, /aimock-server\.ts/u);
     assert.match(source, /strictMissCount == 0/u);
   });
+
+  it('should give assignment classification a distinct default model', async () => {
+    const source = await readFile(command, 'utf8');
+
+    assert.match(source, /scenario" == 'assignment'/u);
+    assert.match(source, /classifier_model_id="\$\{model_id\}-classifier"/u);
+  });
 });

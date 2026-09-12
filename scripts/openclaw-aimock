@@ -121,22 +121,36 @@ start_provider() {
 }
 
 configure_model() {
+  local classifier_model=''
+  local classifier_model_id=''
+  local default_model="$model"
   local model_config
   local model_defaults
   local model_id="${model#aimock/}"
 
   [[ -n "$model_id" ]] || error 'the AIMock model id is empty' 2
+  if [[ "$scenario" == 'assignment' ]]; then
+    classifier_model="${model}-classifier"
+    classifier_model_id="${model_id}-classifier"
+    default_model="$classifier_model"
+  fi
   model_config="$(
     jq -cn \
       --arg base_url "$provider_base_url" \
+      --arg classifier_model_id "$classifier_model_id" \
       --arg model_id "$model_id" \
-      '{baseUrl:$base_url,apiKey:"test",api:"openai-responses",request:{allowPrivateNetwork:true},models:[{id:$model_id,name:$model_id,api:"openai-responses",reasoning:true,input:["text","image"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:4096}]}'
+      'def model($id): {id:$id,name:$id,api:"openai-responses",reasoning:true,input:["text","image"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:128000,maxTokens:4096}; {baseUrl:$base_url,apiKey:"test",api:"openai-responses",request:{allowPrivateNetwork:true},models:([model($model_id)] + if $classifier_model_id == "" then [] else [model($classifier_model_id)] end)}'
   )"
-  model_defaults="$(jq -cn --arg model "$model" '{($model):{params:{transport:"sse"}}}')"
+  model_defaults="$(
+    jq -cn \
+      --arg classifier_model "$classifier_model" \
+      --arg model "$model" \
+      '[$model,$classifier_model] | map(select(length > 0)) | map({key:.,value:{params:{transport:"sse"}}}) | from_entries'
+  )"
 
   openclaw config set models.mode replace
   openclaw config set models.providers.aimock "$model_config" --strict-json
-  openclaw models set "$model"
+  openclaw models set "$default_model"
   openclaw config set agents.defaults.models "$model_defaults" --strict-json --merge
   openclaw config validate --json | jq -e '.valid == true'
 }
