@@ -12,11 +12,6 @@ export const githubExampleEmoriPrompt =
 
 export const githubExampleTanaabotCallId = 'call_example_github_tanaabot';
 export const githubExampleEmoriCallId = 'call_example_github_emori';
-export const githubExampleCacheChecks = ['hit', 'refill', 'mutation'].map((phase) => ({
-  callId: `call_example_github_cache_${phase}`,
-  prompt: `Identify the EMORI GitHub account for the cache ${phase} check.`,
-}));
-
 function roleText(request: ChatCompletionRequest, role: string): string {
   return request.messages
     .filter((message) => message.role === role)
@@ -74,9 +69,6 @@ function githubIdentityFixtures(prompt: string, expectedLogin: string, callId: s
 const fixtures: Fixture[] = [
   ...githubIdentityFixtures(githubExampleTanaabotPrompt, 'tanaabot', githubExampleTanaabotCallId),
   ...githubIdentityFixtures(githubExampleEmoriPrompt, 'emoriwan', githubExampleEmoriCallId),
-  ...githubExampleCacheChecks.flatMap(({ prompt, callId }) =>
-    githubIdentityFixtures(prompt, 'emoriwan', callId),
-  ),
 ];
 
 export const githubExampleScenario: OpenClawAIMockScenario = {
@@ -91,7 +83,6 @@ export const githubExampleScenario: OpenClawAIMockScenario = {
   toolCalls: [
     { id: githubExampleTanaabotCallId, name: 'agent_system_github' },
     { id: githubExampleEmoriCallId, name: 'agent_system_github' },
-    ...githubExampleCacheChecks.map(({ callId }) => ({ id: callId, name: 'agent_system_github' })),
   ],
   userPromptSignals: [],
 };

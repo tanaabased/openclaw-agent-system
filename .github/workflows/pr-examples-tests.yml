@@ -86,6 +86,8 @@ jobs:
         env:
           DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
+          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
+          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}

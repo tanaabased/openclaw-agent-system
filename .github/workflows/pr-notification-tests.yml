@@ -30,7 +30,8 @@ jobs:
       runner: ubuntu-24.04
       scenario: ${{ matrix.scenario }}
     secrets:
-      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+      gh_token_emori: ${{ secrets.GH_TOKEN_EMORI }}
+      gh_token_tanaabot: ${{ secrets.GH_TOKEN_TANAABOT }}
   concurrency:
     needs: notifications
     if: ${{ always() && !cancelled() }}
@@ -40,4 +41,5 @@ jobs:
       runner: ubuntu-24.04
       scenario: concurrency
     secrets:
-      op_service_account_token: ${{ secrets.TANAAB_OP_TESTVAULT }}
+      gh_token_emori: ${{ secrets.GH_TOKEN_EMORI }}
+      gh_token_tanaabot: ${{ secrets.GH_TOKEN_TANAABOT }}

@@ -40,7 +40,6 @@ OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
@@ -54,7 +53,6 @@ OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh -- api --method POST /use
 
 # should install the approved github actor through agent system
 cd "$TMPDIR/agent-system-notification-actor"
-openclaw agent-system credentials set op --from-env
 openclaw agent-system install
 
 # should prepare one planned issue for implementation
