@@ -196,7 +196,7 @@ printf '%s' "$conversation_id" > "$TMPDIR/independent-conversation-id-before"
 
 # should diagnose and reconcile only the missing classifier access
 cd "$TMPDIR/agent-system-notifications"
-doctor_before="$(openclaw agent-system doctor --json)"
+if doctor_before="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$doctor_before" | jq -e --arg model "$NOTIFICATION_MODEL" '.findings[] | select(.component == "github-notifications" and .code == "github-model-routing-access-drift" and .status == "drift" and (.message | contains($model)))'
 repair="$(openclaw agent-system install --json)"
 printf '%s\n' "$repair" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-model-routing-access-reconciled" and .status == "updated")'
