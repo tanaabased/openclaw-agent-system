@@ -11,6 +11,7 @@ import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtur
 import registerAgentSystemCli from '../cli/register.ts';
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
+import OpCache from '../environment/op-cache.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -272,6 +273,31 @@ function createProgram(
 }
 
 describe('cli/register', () => {
+  it('should default cache controls to human output through both aliases', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const action of ['status', 'flush']) {
+        const { program, output, diagnostics } = createProgram(undefined, {
+          cacheGatewayRequest: async () => ({
+            ...new OpCache().status(),
+            runtime: 'gateway',
+            ...(action === 'flush'
+              ? { invalidated: { entries: 0, clients: 0, pending: 0, values: 0 } }
+              : {}),
+          }),
+        });
+        await program.parseAsync(['node', 'openclaw', alias, 'credentials', 'cache', action]);
+        assert.deepEqual(diagnostics, []);
+        assert.equal(output.length, 1);
+        assert.match(output[0]!, /gateway.*pid/);
+        assert.match(
+          output[0]!,
+          action === 'flush' ? /flushed.*all agents/ : /entries.*0 retained/,
+        );
+        assert.throws(() => JSON.parse(output[0]!));
+      }
+    }
+  });
+
   it('should send cache controls to the gateway through both cli aliases', async () => {
     const calls: unknown[] = [];
     const { program, output } = createProgram(undefined, {

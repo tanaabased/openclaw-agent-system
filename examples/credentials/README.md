@@ -50,6 +50,15 @@ env -u OP_SERVICE_ACCOUNT_TOKEN XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-
 openclaw-gateway start
 openclaw agent-system credentials cache status --json | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and .counts.resourceReads == 0'
 
+# should summarize cache policy for human readers
+output=$(NO_COLOR=1 openclaw agent-system credentials cache status)
+printf '%s\n' "$output" | grep -F 'gateway' | grep -F 'process-local'
+printf '%s\n' "$output" | grep -F 'policy' | grep -F 'process-lifetime'
+printf '%s\n' "$output" | grep -F 'counts' | grep -F '0 reads'
+
+# should summarize an empty agent flush without json
+NO_COLOR=1 openclaw as credentials cache flush --agent credential-data | grep -F 'flushed' | grep -F 'credential-data: 0 entries'
+
 # should flush an empty gateway through both command spellings without provider reads
 openclaw agent-system credentials cache flush --agent credential-data --json | jq -e '.runtime == "gateway" and .invalidated.entries == 0 and .counts.resourceReads == 0'
 openclaw as credentials cache flush --json | jq -e '.runtime == "gateway" and .invalidated.entries == 0 and .counts.resourceReads == 0'

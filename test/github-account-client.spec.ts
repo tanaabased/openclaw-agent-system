@@ -37,6 +37,65 @@ function loadedEnvironment() {
 }
 
 describe('core/github-account-client', () => {
+  it('should fail identity checks without eviction or replay when credentials were not rejected', async () => {
+    for (const failure of [
+      { exitCode: 1, stderr: '', stdout: '', timedOut: true, truncated: false },
+      { exitCode: 1, stderr: 'HTTP 503', stdout: '', timedOut: false, truncated: false },
+      { exitCode: 0, stderr: '', stdout: '{', timedOut: false, truncated: true },
+      { exitCode: 0, stderr: '', stdout: '{}', timedOut: false, truncated: false },
+      new Error('private-network-error'),
+    ]) {
+      let executions = 0;
+      const invalidated: string[] = [];
+      const client = new GitHubAccountClient({
+        baseEnvironment: {},
+        configStore: { configDirectory: () => '/private/gh' },
+        environmentService: {
+          loadForWorkspace: async () => loadedEnvironment(),
+          invalidateCredentials: (agentId) => {
+            invalidated.push(agentId);
+          },
+        },
+        runCli: async () => {
+          executions += 1;
+          if (failure instanceof Error) throw failure;
+          return failure;
+        },
+      });
+      await assert.rejects(client.connect({ manifest, workspaceDir }));
+      assert.deepEqual(invalidated, []);
+      assert.equal(executions, 1);
+    }
+  });
+
+  it('should invalidate once when the identity request confirms credential rejection', async () => {
+    const invalidated: string[] = [];
+    let executions = 0;
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: {
+        loadForWorkspace: async () => loadedEnvironment(),
+        invalidateCredentials: (agentId) => {
+          invalidated.push(agentId);
+        },
+      },
+      runCli: async () => {
+        executions += 1;
+        return {
+          exitCode: 1,
+          stderr: 'gh: Bad credentials (HTTP 401)',
+          stdout: '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    await assert.rejects(client.connect({ manifest, workspaceDir }));
+    assert.deepEqual(invalidated, ['tanaabot']);
+    assert.equal(executions, 1);
+  });
+
   it('should bind fixed calls to a sanitized child environment and configured identity', async () => {
     const requests: AgentSystemCliRunRequest[] = [];
     const materializations: string[] = [];
@@ -154,10 +213,16 @@ describe('core/github-account-client', () => {
   });
 
   it('should reject a github account that does not match the declaration', async () => {
+    const invalidated: string[] = [];
     const client = new GitHubAccountClient({
       baseEnvironment: { PATH: '/usr/bin' },
       configStore: { configDirectory: () => '/private/tanaabot/tools/gh' },
-      environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+      environmentService: {
+        loadForWorkspace: async () => loadedEnvironment(),
+        invalidateCredentials: (agentId) => {
+          invalidated.push(agentId);
+        },
+      },
       runCli: async () => ({
         exitCode: 0,
         stderr: '',
@@ -171,5 +236,6 @@ describe('core/github-account-client', () => {
       client.connect({ manifest, workspaceDir }),
       /not the configured username tanaabot/u,
     );
+    assert.deepEqual(invalidated, ['tanaabot']);
   });
 });

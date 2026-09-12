@@ -106,7 +106,7 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
   if (result.exitCode !== 0 || result.timedOut || result.truncated) {
     throw new GitHubAccountClientError(
       'github-account-identity-failed',
-      'GitHub rejected the account identity check.',
+      'The GitHub account identity check did not complete successfully.',
     );
   }
 
@@ -287,15 +287,9 @@ export default class GitHubAccountClient {
       }
     };
 
-    let identity: GitHubAccountIdentity;
-    try {
-      identity = parseIdentity(
-        await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']),
-      );
-    } catch (error) {
-      this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
-      throw error;
-    }
+    const identity = parseIdentity(
+      await execute(['api', 'user', '--jq', '{login:.login,nodeId:.node_id}']),
+    );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
       throw new GitHubAccountClientError(

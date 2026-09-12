@@ -6,6 +6,7 @@ import registerOpCache from '../core/register-op-cache.ts';
 import OpEnvironmentService from '../environment/op-service.ts';
 import processOpCache from '../environment/op-process-cache.ts';
 import credentialsCache from '../cli/credentials-cache.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 function fixture(sharedScope?: string) {
   type Handler = Parameters<OpenClawPluginApi['registerGatewayMethod']>[1];
@@ -92,6 +93,57 @@ function fixture(sharedScope?: string) {
 }
 
 describe('core/op-cache-gateway', () => {
+  it('should render gateway cache summaries and preserve undecorated json from the same result', async () => {
+    for (const action of ['status', 'flush'] as const) {
+      for (const json of [false, true]) {
+        const f = fixture();
+        await f.warm();
+        const response = await f.request(action, action === 'flush' ? { agentId: 'data' } : {});
+        const output: string[] = [];
+        const errors: string[] = [];
+        let code = 0;
+        await credentialsCache({
+          action,
+          agentId: action === 'flush' ? 'data' : undefined,
+          json,
+          request: async () => response.payload as Record<string, unknown>,
+          output: {
+            writeStdout: (value) => {
+              output.push(value);
+            },
+            writeStderr: (value) => {
+              errors.push(value);
+            },
+          },
+          styles: createCliStyles(json ? { FORCE_COLOR: '3' } : { NO_COLOR: '1' }),
+          setExitCode: (value) => {
+            code = value;
+          },
+        });
+        assert.equal(code, 0);
+        assert.deepEqual(errors, []);
+        assert.equal(output.length, 1);
+        const text = output[0]!;
+        assert.equal(text.includes('\u001b'), false);
+        assert.equal(text.includes('private'), false);
+        if (json) {
+          assert.deepEqual(JSON.parse(text), response.payload);
+        } else {
+          assert.match(text, /gateway.*pid.*process-local/);
+          assert.match(text, /policy.*timed.*300s/);
+          assert.match(text, /backoff.*none/);
+          if (action === 'status') {
+            assert.match(text, /agent.*data:.*age.*expires in/);
+            assert.match(text, /counts.*2 reads/);
+          } else {
+            assert.match(text, /flushed.*data: 1 entries, 1 clients, 0 pending loads, 1 snapshots/);
+          }
+        }
+        assert.equal(f.reads(), 2);
+      }
+    }
+  });
+
   it('should inspect and invalidate values loaded through another plugin registration', async () => {
     const gateway = fixture('/test/gateway-shared-cache');
     const tools = fixture('/test/gateway-shared-cache');

@@ -191,8 +191,10 @@ export default function registerAgentSystemCli(
         const agentId = command.opts().agent;
         await credentialsCache({
           action,
+          json: command.opts().json === true,
           ...(typeof agentId === 'string' ? { agentId } : {}),
           output,
+          styles: options.styles,
           setExitCode,
           ...(options.cacheGatewayRequest ? { request: options.cacheGatewayRequest } : {}),
         });

@@ -347,7 +347,7 @@ export default class OpEnvironmentService {
       const sensitiveNames: string[] = [];
       for (const variable of response.variables) {
         if (!environmentVariableNamePattern.test(variable.name)) {
-          this.#cache.failure(token, undefined);
+          this.#cache.count('failures');
           return invalid(
             'op-variable-invalid',
             'A declared OP Environment returned an invalid variable name.',
@@ -355,7 +355,7 @@ export default class OpEnvironmentService {
           );
         }
         if (values.has(variable.name)) {
-          this.#cache.failure(token, undefined);
+          this.#cache.count('failures');
           return invalid(
             'op-variable-duplicate',
             'A declared OP Environment returned duplicate variable names.',

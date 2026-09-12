@@ -148,11 +148,16 @@ export default class OpCache {
     this.count('failures');
     const now = this.#now();
     const key = opDigest(token);
-    for (const [id, entry] of this.#entries) {
-      if (entry.credentialFingerprint === key) this.#entries.delete(id);
+    const errorType = error instanceof Error ? error.constructor.name : '';
+    const quota = errorType === 'RateLimitExceededError';
+    const rejected = errorType === 'AuthExpiredError' || errorType === 'DesktopSessionExpiredError';
+    // Transport failures block new fetches, not healthy snapshots in other scopes.
+    if (quota || rejected) {
+      for (const [id, entry] of this.#entries) {
+        if (entry.credentialFingerprint === key) this.#entries.delete(id);
+      }
     }
     const failures = Math.min(8, (this.#backoff.get(key)?.failures ?? 0) + 1);
-    const quota = error instanceof Error && error.constructor.name === 'RateLimitExceededError';
     const retryAt = Math.max(
       this.#backoff.get(key)?.retryAt ?? 0,
       now + (quota ? 3_600_000 : Math.min(3_600_000, 30_000 * 2 ** (failures - 1))),

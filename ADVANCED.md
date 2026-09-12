@@ -238,13 +238,15 @@ Environments and direct secret references. The current credential target is
 openclaw agent-system credentials set op [--agent <id>] [--from-env | --stdin] [--store <id>]
 openclaw agent-system credentials validate op [--agent <id>] [--from-env | --store <id>]
 openclaw agent-system credentials unset op [--agent <id>] [--store <id>]
+openclaw agent-system credentials cache status [--json]
+openclaw agent-system credentials cache flush [--agent <id>] [--json]
 ```
 
-| Option         | Commands          | Behavior                                                   |
-| -------------- | ----------------- | ---------------------------------------------------------- |
-| `--from-env`   | `set`, `validate` | Reads only `OP_SERVICE_ACCOUNT_TOKEN`.                     |
-| `--stdin`      | `set`             | Reads redirected input without exposing it as an argument. |
-| `--store <id>` | all               | Targets `keychain`, `secret-service`, or `file`.           |
+| Option         | Commands                   | Behavior                                                   |
+| -------------- | -------------------------- | ---------------------------------------------------------- |
+| `--from-env`   | `set`, `validate`          | Reads only `OP_SERVICE_ACCOUNT_TOKEN`.                     |
+| `--stdin`      | `set`                      | Reads redirected input without exposing it as an argument. |
+| `--store <id>` | `set`, `validate`, `unset` | Targets `keychain`, `secret-service`, or `file`.           |
 
 Without an input option, `set` uses a masked interactive prompt and fails with
 guidance in a noninteractive session. Tokens are never accepted as command
@@ -254,7 +256,9 @@ before storage.
 Automatic persistent selection prefers Keychain then file on macOS and Secret
 Service then file on Linux. `validate` checks those stores in order and then the
 process fallback; an exact `--store` or `--from-env` request disables fallback.
-`unset` is idempotent and affects persistent storage only.
+`unset` is idempotent: it removes persisted credentials and requests Gateway cache
+invalidation, but does not change the process-environment fallback. See
+[in-memory caching](#in-memory-1password-caching) for cache controls and pending invalidation.
 
 The file fallback lives at
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or under
@@ -414,7 +418,8 @@ openclaw agent-system credentials cache flush --agent data --json
 ```
 
 Status requires `operator.read`; flush requires `operator.admin`. Both identify
-the Gateway process and make no 1Password requests. Status shows policy, agent IDs,
+the Gateway process and make no 1Password requests. Output is a human summary by
+default; `--json` returns the structured result. Status shows policy, agent IDs,
 ages/expiry, backoff, and counters for clients, reads, hits, misses, coalescing,
 failures, and backoff skips—never values, resource IDs, or token digests. Flush
 reports invalidated entries, clients, pending loads, and snapshots. An unreachable,
@@ -449,6 +454,9 @@ bounded by the selected TTL.
 Provider failures share credential-scoped backoff within a process: 30 seconds
 increasing exponentially to one hour, or one hour for SDK quota errors. Flush
 preserves backoff; it does not reset quota. GitHub polling backoff is unchanged.
+Malformed Environment data fails only its load, without provider backoff.
+Transport failures preserve other healthy snapshots; confirmed authentication
+rejection and quota errors invalidate shared credential state.
 
 #### Measured SDK-boundary costs
 

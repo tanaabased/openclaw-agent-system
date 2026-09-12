@@ -90,6 +90,90 @@ function gate() {
 }
 
 describe('environment/op-cache', () => {
+  it('should isolate malformed environment data without provider backoff or partial retention', async () => {
+    for (const variables of [
+      [{ name: 'INVALID-NAME', value: 'private', masked: true }],
+      [
+        { name: 'DUPLICATE', value: 'private-one', masked: true },
+        { name: 'DUPLICATE', value: 'private-two', masked: true },
+      ],
+    ]) {
+      let repaired = false;
+      const service = new OpEnvironmentService({
+        integrationVersion: 'test',
+        credentialService: {
+          async resolveServiceAccountToken() {
+            return { status: 'resolved', token: 'shared', source: { id: 'file', type: 'store' } };
+          },
+        },
+        async createClient() {
+          return {
+            async resolveSecret() {
+              return 'private-secret';
+            },
+            async getVariables(id) {
+              return { variables: id === 'broken' && !repaired ? variables : [] };
+            },
+          };
+        },
+      });
+      const load = (agentId: string) =>
+        service.load(agentId, {
+          ...requirements,
+          environmentIds: [agentId],
+        });
+      const healthy = await load('healthy');
+      assert.equal(healthy.status, 'loaded');
+      const failed = await load('broken');
+      assert.equal(failed.status, 'invalid');
+      if (failed.status === 'invalid') {
+        assert.match(failed.diagnostics[0]!.code, /^op-variable-(invalid|duplicate)$/);
+      }
+      assert.deepEqual(
+        service.status().entries.map(({ agentId }) => agentId),
+        ['healthy'],
+      );
+      assert.equal(service.status().backoff.retryInMs, 0);
+      assert.equal(service.status().counts.failures, 1);
+      const reads = service.status().counts.resourceReads;
+      assert.equal(await load('healthy'), healthy);
+      assert.equal(service.status().counts.resourceReads, reads);
+      repaired = true;
+      assert.equal((await load('broken')).status, 'loaded');
+      assert.equal(service.status().counts.resourceReads, reads + 2);
+    }
+  });
+
+  it('should preserve healthy snapshots during provider transport backoff but block new fetches', async () => {
+    const f = fixture();
+    const healthy = await f.load('healthy');
+    f.fail(new Error('private-network-timeout'));
+    assert.equal((await f.load('other')).status, 'invalid');
+    assert.equal(await f.load('healthy'), healthy);
+    assert.equal(f.counts().reads, 4);
+    const blocked = await f.load('third');
+    assert.equal(blocked.status, 'invalid');
+    if (blocked.status === 'invalid')
+      assert.equal(blocked.diagnostics[0]!.code, 'op-provider-backoff');
+    assert.equal(f.counts().reads, 4);
+    f.service.flush();
+    assert.equal(f.service.status().backoff.retryInMs, 30_000);
+    assert.equal((await f.load('healthy')).status, 'invalid');
+    assert.equal(f.counts().reads, 4);
+  });
+
+  it('should invalidate shared credentials on confirmed sdk authentication rejection', async () => {
+    class AuthExpiredError extends Error {}
+    const f = fixture();
+    await f.load('healthy');
+    f.fail(new AuthExpiredError('private-rejection'));
+    assert.equal((await f.load('other')).status, 'invalid');
+    assert.equal(f.service.status().entries.length, 0);
+    assert.equal((await f.load('healthy')).status, 'invalid');
+    assert.equal(f.counts().reads, 4);
+    assert.equal(f.service.status().backoff.retryInMs, 30_000);
+  });
+
   it('should validate explicit modes, finite positive durations and bounded entries', () => {
     assert.deepEqual(resolveOpCachePolicy(undefined), {
       mode: 'timed',
