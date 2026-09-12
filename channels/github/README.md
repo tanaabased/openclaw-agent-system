@@ -93,14 +93,14 @@ unsupported profile, or failed classifier blocks that issue for retry; it does
 not select an expensive default or a fallback chain. Automatic efforts are
 `medium`, `high`, or justified `xhigh`.
 
-Run `install` and `doctor` to establish the declared model bindings. Isolated
-classification additionally requires operator-owned OpenClaw permissions under
-`plugins.entries.agent-system.llm`: `allowAgentIdOverride: true` and
-`allowModelOverride: true`. Restrict `allowedModels` to the agents' classifier
-default models where appropriate; any `allowedCompletionModels` restriction
-must also permit them. Agent System does not grant itself these permissions,
-provision authentication, or replace an unsupported native runtime with a direct
-provider call.
+For complete issue routing, `install` additively grants Agent System permission
+to select the agent and classifier model, allowing the manifest default in both
+OpenClaw LLM allowlists. It preserves unrelated grants and settings; default-only,
+disabled, and pull-request-only declarations request nothing.
+
+`doctor` distinguishes saved access from permissions loaded by its process. If
+loaded access is stale, restart the Gateway and retry the prepared assignment.
+Background polling never grants permissions or substitutes for authentication.
 
 The saved model and effort survive retries, restarts, comments, and delivery
 pull-request continuation. Later manifest edits do not reclassify existing
@@ -117,7 +117,7 @@ do not justify escalation. When native tools cannot set and verify both model
 and effort, the operator must make the change through supported session controls.
 
 The existing [assignment scenario](../../scenarios/issue-work-assignment/README.md)
-covers installed selection and persistence. Provider-level effort and a bounded
+covers missing-grant recovery and saved selection. Provider-level effort and a bounded
 completed-issue cost/rework sample require separately authorized live evaluation
 before broad rollout.
 

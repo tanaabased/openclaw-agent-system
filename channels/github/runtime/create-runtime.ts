@@ -69,6 +69,7 @@ import NotificationRoutingService, {
 import { resolveNotificationRoute } from '../routing/routing.ts';
 import createNotificationLifecycleContribution from './lifecycle-contribution.ts';
 import GitHubOperatorAccess from '../operator-access.ts';
+import GitHubModelRoutingAccess from '../model-routing-access.ts';
 import OperatorGrantStore from '../operator-grant-store.ts';
 import SessionSetupVerification from '../conversation/session-setup-verification.ts';
 import ModelRoutingService, {
@@ -188,6 +189,11 @@ export default function createGitHubNotificationRuntime(
   return {
     sessionSetup,
     lifecycleContribution: createNotificationLifecycleContribution({
+      modelRoutingAccess: new GitHubModelRoutingAccess({
+        mutateConfigFile: dependencies.mutateConfigFile,
+        readConfig: dependencies.readConfig,
+        readRuntimeConfig: dependencies.readRuntimeConfig,
+      }),
       operatorAccess: new GitHubOperatorAccess({
         accountClient: dependencies.accountClient,
         store: new OperatorGrantStore(stateOptions),
