@@ -114,6 +114,9 @@ export default function createGitHubLifecycleContribution(
           findings.push({
             code: profile.code,
             message: profile.message,
+            ...(profile.providerDiagnostic
+              ? { providerDiagnostic: profile.providerDiagnostic }
+              : {}),
             ...(profile.status === 'ready'
               ? {}
               : { remediation: 'Run openclaw agent-system install from this workspace.' }),
@@ -165,7 +168,12 @@ export default function createGitHubLifecycleContribution(
               ? error.code
               : 'github-account-key-inspection-failed',
           message:
-            error instanceof Error ? error.message : 'GitHub account keys could not be inspected.',
+            error instanceof GitHubAccountKeyError
+              ? error.message
+              : 'GitHub account keys could not be inspected.',
+          ...(error instanceof GitHubAccountKeyError && error.providerDiagnostic
+            ? { providerDiagnostic: error.providerDiagnostic }
+            : {}),
           remediation: 'Correct the GitHub key declaration or account access, then run install.',
           status: 'blocked' as const,
         });

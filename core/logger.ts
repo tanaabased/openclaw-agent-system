@@ -1,3 +1,4 @@
+import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 import type { PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
@@ -6,6 +7,7 @@ import type { AgentManifestLoadResult } from '../manifest/service.ts';
 export type Logger = PluginLogger;
 
 export interface AgentSystemDiagnostic {
+  providerDiagnostic?: ProviderDiagnostic;
   code?: string;
   component: string;
   fieldPath?: string;
@@ -92,7 +94,7 @@ export function createAgentSystemLifecycleLogger(
 
 export function formatDiagnostic(diagnostic: AgentSystemDiagnostic): string {
   return [
-    `${diagnostic.component}: ${diagnostic.message}`,
+    `${diagnostic.component}: ${withProviderDiagnostic(diagnostic.message, diagnostic.providerDiagnostic)}`,
     diagnostic.code ? `code=${diagnostic.code}` : undefined,
     diagnostic.fieldPath ? `field=${diagnostic.fieldPath}` : undefined,
   ]
@@ -118,6 +120,9 @@ export function formatManifestDiagnostics(
       component: diagnostic.component ?? 'manifest',
       ...(diagnostic.fieldPath ? { fieldPath: diagnostic.fieldPath } : {}),
       message: diagnostic.message,
+      ...(diagnostic.providerDiagnostic
+        ? { providerDiagnostic: diagnostic.providerDiagnostic }
+        : {}),
     }),
   }));
 }

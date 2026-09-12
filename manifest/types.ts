@@ -1,3 +1,4 @@
+import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from './github-schema.ts';
@@ -26,6 +27,7 @@ export interface AgentManifest {
 }
 
 export interface ManifestDiagnostic {
+  providerDiagnostic?: ProviderDiagnostic;
   code: string;
   component?: string;
   message: string;

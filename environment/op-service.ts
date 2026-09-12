@@ -1,3 +1,5 @@
+import opDiagnostic from './op-diagnostic.ts';
+import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { GetVariablesResponse } from '@1password/sdk';
 
 import OpCache, { opDigest } from './op-cache.ts';
@@ -93,8 +95,21 @@ function diagnostic(
   return { code, fieldPath, message, severity: 'error' };
 }
 
-function invalid(code: string, message: string, fieldPath = environmentFieldPath) {
-  return { status: 'invalid' as const, diagnostics: [diagnostic(code, message, fieldPath)] };
+function invalid(
+  code: string,
+  message: string,
+  fieldPath = environmentFieldPath,
+  evidence?: ProviderDiagnostic,
+) {
+  return {
+    status: 'invalid' as const,
+    diagnostics: [
+      {
+        ...diagnostic(code, message, fieldPath),
+        ...(evidence ? { providerDiagnostic: evidence } : {}),
+      },
+    ],
+  };
 }
 
 /** Lazily authenticate, validate access, and load declared OP resources. */
@@ -251,6 +266,8 @@ export default class OpEnvironmentService {
       return invalid(
         'op-credential-unavailable',
         'Agent System could not resolve an OP service-account credential.',
+        environmentFieldPath,
+        providerDiagnostic('1password', 'credential-resolve', 'unknown'),
       );
     }
     if (credential.status === 'resolved') return credential;
@@ -258,9 +275,16 @@ export default class OpEnvironmentService {
       return invalid(
         'op-credential-missing',
         'OP resource resolution requires an available service-account credential.',
+        environmentFieldPath,
+        providerDiagnostic('1password', 'credential-resolve', 'missing-credential'),
       );
     }
-    return invalid(credential.code, credential.message);
+    return invalid(
+      credential.code,
+      credential.message,
+      environmentFieldPath,
+      providerDiagnostic('1password', 'credential-resolve', 'unknown'),
+    );
   }
 
   async #cachedLoad(
@@ -316,11 +340,12 @@ export default class OpEnvironmentService {
         }
         setValues.set(secret.name, secrets.get(secret.reference)!);
       } catch (error) {
-        this.#cache.failure(token, error);
+        const evidence = this.#cache.failure(token, opDiagnostic(error, 'secret-resolve'));
         return invalid(
           'op-secret-unavailable',
           'A declared OP secret could not be resolved.',
           `/environment/set/${secret.name}`,
+          evidence,
         );
       }
     }
@@ -335,11 +360,12 @@ export default class OpEnvironmentService {
         }
         response = environments.get(environmentId)!;
       } catch (error) {
-        this.#cache.failure(token, error);
+        const evidence = this.#cache.failure(token, opDiagnostic(error, 'environment-read'));
         return invalid(
           'op-environment-unavailable',
           'A declared OP Environment could not be resolved.',
           `${opFieldPath}/${index}`,
+          evidence,
         );
       }
 

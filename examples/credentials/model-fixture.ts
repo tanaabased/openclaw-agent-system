@@ -53,15 +53,62 @@ const fixtures: Fixture[] = credentialExampleChecks.flatMap(({ callId, prompt })
   },
 ]);
 
+const quotaCallId = 'call_example_quota_diagnostic';
+fixtures.push(
+  {
+    match: {
+      hasToolResult: false,
+      model,
+      toolName: 'agent_system_git',
+      predicate: (request) =>
+        request.messages.some(
+          (message) =>
+            message.role === 'user' &&
+            getTextContent(message.content)?.includes('synthetic provider diagnostic check'),
+        ),
+    },
+    response: {
+      id: 'quota_tool_response',
+      toolCalls: [
+        {
+          id: quotaCallId,
+          name: 'agent_system_git',
+          arguments: JSON.stringify({ argv: ['--version'] }),
+        },
+      ],
+    },
+  },
+  {
+    match: {
+      hasToolResult: true,
+      model,
+      predicate: (request) => {
+        const result = openClawAIMockToolResultText(request.messages, quotaCallId) ?? '';
+        return (
+          result.includes('provider="1password"') &&
+          result.includes('classification="rate-limit"') &&
+          result.includes('httpStatus="unknown"') &&
+          result.includes('resetAt="unknown"') &&
+          !/SYNTHETIC_PRIVATE|op:\/\/synthetic|Authorization:/.test(result)
+        );
+      },
+    },
+    response: { id: 'quota_final_response', content: 'quota reported' },
+  },
+);
+
 export const credentialExampleScenario: OpenClawAIMockScenario = {
-  finalResponses: ['git ready'],
+  finalResponses: ['git ready', 'quota reported'],
   fixtures,
   id: 'credentials',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],
-  toolCalls: credentialExampleChecks.map(({ callId }) => ({
-    id: callId,
-    name: 'agent_system_git',
-  })),
+  toolCalls: [
+    ...credentialExampleChecks.map(({ callId }) => ({
+      id: callId,
+      name: 'agent_system_git',
+    })),
+    { id: quotaCallId, name: 'agent_system_git' },
+  ],
   userPromptSignals: [],
 };

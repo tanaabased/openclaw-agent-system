@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, lstat, mkdtemp, readFile, rm, symlink, unlink } from 'node:fs/promises';
@@ -219,17 +220,27 @@ describe('tools/github/openclaw-profile-service', () => {
     const harness = await createHarness();
     try {
       const reconciliation = await harness.service.reconcile(context);
-      harness.setVerificationError(
-        new GitHubAccountClientError(
-          'github-account-profile-identity-failed',
-          'GitHub rejected the managed profile identity check.',
-        ),
+      const evidence = providerDiagnostic('github', 'identity-check', 'authentication', {
+        httpStatus: 401,
+      });
+      const failure = new GitHubAccountClientError(
+        'github-account-profile-identity-failed',
+        'GitHub rejected the managed profile identity check.',
+        undefined,
+        evidence,
       );
+      harness.setVerificationError(failure);
       assert.deepEqual(await harness.service.inspect(context), {
         code: 'github-account-profile-identity-failed',
-        message: 'GitHub rejected the managed profile identity check.',
+        message: failure.message,
+        providerDiagnostic: evidence,
         status: 'blocked',
       });
+
+      harness.setVerificationError(new Error('PRIVATE_PROVIDER_RESPONSE'));
+      const unknown = await harness.service.inspect(context);
+      assert.equal(unknown.status, 'blocked');
+      assert.ok(!unknown.message.includes('PRIVATE_PROVIDER_RESPONSE'));
 
       harness.setVerificationError(undefined);
       const markerPath = join(

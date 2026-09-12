@@ -1,3 +1,4 @@
+import { AuthExpiredError, RateLimitExceededError } from '@1password/sdk';
 import assert from 'node:assert/strict';
 
 import OpEnvironmentService from '../environment/op-service.ts';
@@ -163,7 +164,6 @@ describe('environment/op-cache', () => {
   });
 
   it('should invalidate shared credentials on confirmed sdk authentication rejection', async () => {
-    class AuthExpiredError extends Error {}
     const f = fixture();
     await f.load('healthy');
     f.fail(new AuthExpiredError('private-rejection'));
@@ -424,7 +424,6 @@ describe('environment/op-cache', () => {
   });
 
   it('should preserve backoff when another same-credential request completes after a quota failure', async () => {
-    class RateLimitExceededError extends Error {}
     const g = gate();
     let clients = 0;
     const service = new OpEnvironmentService({
@@ -500,7 +499,6 @@ describe('environment/op-cache', () => {
   });
 
   it('should preserve shared quota backoff across consumers and flush', async () => {
-    class RateLimitExceededError extends Error {}
     const f = fixture();
     f.fail(new RateLimitExceededError('private-quota'));
     await f.load();

@@ -1,3 +1,5 @@
+import opDiagnostic from './op-diagnostic.ts';
+import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
@@ -52,7 +54,10 @@ function freezeSnapshot(snapshot: Snapshot): Snapshot {
 export default class OpCache {
   readonly #now: () => number;
   readonly #entries = new Map<string, Entry>();
-  readonly #backoff = new Map<string, { failures: number; retryAt: number }>();
+  readonly #backoff = new Map<
+    string,
+    { failures: number; retryAt: number; diagnostic: ProviderDiagnostic }
+  >();
   #overflowRetryAt = 0;
   #policy: OpCachePolicy = resolveOpCachePolicy(undefined);
   #requestOrder = 0;
@@ -144,13 +149,12 @@ export default class OpCache {
     return blocked;
   }
 
-  failure(token: string, error: unknown): void {
+  failure(token: string, diagnostic: ProviderDiagnostic): ProviderDiagnostic {
     this.count('failures');
     const now = this.#now();
     const key = opDigest(token);
-    const errorType = error instanceof Error ? error.constructor.name : '';
-    const quota = errorType === 'RateLimitExceededError';
-    const rejected = errorType === 'AuthExpiredError' || errorType === 'DesktopSessionExpiredError';
+    const quota = diagnostic.classification === 'rate-limit';
+    const rejected = diagnostic.classification === 'authentication';
     // Transport failures block new fetches, not healthy snapshots in other scopes.
     if (quota || rejected) {
       for (const [id, entry] of this.#entries) {
@@ -166,11 +170,34 @@ export default class OpCache {
       if (state.retryAt <= now && id !== key) this.#backoff.delete(id);
     }
     if (this.#backoff.has(key) || this.#backoff.size < 1024) {
-      this.#backoff.set(key, { failures, retryAt });
+      const previous = this.#backoff.get(key);
+      const retainedDiagnostic =
+        previous && previous.retryAt > now && previous.diagnostic.classification === 'rate-limit'
+          ? previous.diagnostic
+          : diagnostic;
+      this.#backoff.set(key, { failures, retryAt, diagnostic: retainedDiagnostic });
     } else {
       // Saturation fails closed without evicting an active provider backoff.
       this.#overflowRetryAt = Math.max(this.#overflowRetryAt, retryAt);
     }
+    return providerDiagnostic(
+      diagnostic.provider,
+      diagnostic.operation,
+      diagnostic.classification,
+      { ...diagnostic, localBackoffMs: Math.ceil(Math.max(0, retryAt - now)) },
+    );
+  }
+
+  backoffDiagnostic(token: string): ProviderDiagnostic {
+    const state = this.#backoff.get(opDigest(token));
+    const evidence =
+      state?.diagnostic ?? providerDiagnostic('1password', 'client-create', 'unknown');
+    return providerDiagnostic(evidence.provider, evidence.operation, evidence.classification, {
+      ...evidence,
+      localBackoffMs: Math.ceil(
+        Math.max(0, Math.max(state?.retryAt ?? 0, this.#overflowRetryAt) - this.#now()),
+      ),
+    });
   }
 
   status() {
@@ -267,6 +294,7 @@ export default class OpCache {
             code: 'op-provider-backoff',
             fieldPath: '/environment',
             message: 'OP provider backoff is active; no provider request was made.',
+            providerDiagnostic: this.backoffDiagnostic(input.token),
           },
         ],
       };
@@ -282,7 +310,7 @@ export default class OpCache {
         })();
         result = await input.fetch(await selected.client);
       } catch (error) {
-        this.failure(input.token, error);
+        const evidence = this.failure(input.token, opDiagnostic(error, 'client-create'));
         result = {
           status: 'invalid',
           diagnostics: [
@@ -291,6 +319,7 @@ export default class OpCache {
               code: 'op-authentication-failed',
               fieldPath: '/environment',
               message: 'Agent System could not authenticate the OP SDK client.',
+              providerDiagnostic: evidence,
             },
           ],
         };
