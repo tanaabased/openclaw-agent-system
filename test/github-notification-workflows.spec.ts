@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 
 import { parse } from 'yaml';
 
+import resolveAgentEnvironment from '../environment/resolve.ts';
+import parseAgentManifest from '../manifest/parse.ts';
 import { githubNotificationAssignmentCandidate } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import { githubNotificationModelScenarioIds } from '../scripts/github-notification-model-scenarios.ts';
 
@@ -89,6 +91,38 @@ interface ExampleWorkflow {
 }
 
 describe('github notification workflows', () => {
+  it('should resolve only each token-only fixture account and reject missing or empty tokens', async () => {
+    const tokens = {
+      GH_TOKEN_EMORI: 'synthetic-emori-token',
+      GH_TOKEN_TANAABOT: 'synthetic-tanaabot-token',
+    };
+    for (const [path, token, username] of [
+      ['examples/tool/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/routing/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['fixtures/github-notifications/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['fixtures/github-notifications/actor-agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+    ] as const) {
+      const parsed = parseAgentManifest(await readFile(path, 'utf8'));
+      assert.equal(parsed.status, 'valid', path);
+      assert.ok(parsed.manifest);
+      assert.equal(parsed.manifest.environment?.op, undefined);
+      assert.equal(parsed.manifest.github?.username, username);
+      assert.equal(parsed.manifest.github?.token, token);
+      const resolved = resolveAgentEnvironment(parsed.manifest, tokens);
+      assert.equal(resolved.status, 'resolved', path);
+      assert.ok(resolved.status === 'resolved');
+      assert.deepEqual(resolved.environment.values, { [token]: tokens[token] });
+      for (const missing of [undefined, '']) {
+        const result = resolveAgentEnvironment(parsed.manifest, { ...tokens, [token]: missing });
+        assert.equal(result.status, 'invalid', path);
+        assert.ok(result.status === 'invalid');
+        const expectedCode =
+          missing === undefined ? 'environment-reference-missing' : 'environment-required-missing';
+        assert.ok(result.diagnostics.some(({ code }) => code === expectedCode));
+      }
+    }
+  });
+
   it('should discover executable tests for every selected notification scenario without running them', () => {
     const leia = new Leia();
     for (const id of githubNotificationModelScenarioIds) {
@@ -96,6 +130,9 @@ describe('github notification workflows', () => {
       const suites = leia.parse([resolve('scenarios', directory, 'README.md')]);
       assert.equal(suites.length, 1, `${id} must contain one discoverable suite`);
       assert.ok(suites[0]?.tests.test?.length, `${id} must contain executable tests`);
+      for (const { command } of Object.values(suites[0]!.tests).flat()) {
+        assert.doesNotMatch(command, /credentials set op|OP_SERVICE_ACCOUNT_TOKEN|from-op/u);
+      }
       if (id === 'operator-access') {
         assert.equal(suites[0].tests.setup?.length, 1);
         assert.equal(suites[0].tests.test.length, 7);
@@ -168,10 +205,11 @@ describe('github notification workflows', () => {
     );
     assert.equal(notifications?.with?.runner, '${{ inputs.runner }}');
     assert.equal(notifications?.with?.scenario, '${{ matrix.scenario }}');
-    assert.equal(
-      notifications?.secrets?.op_service_account_token,
-      '${{ secrets.TANAAB_OP_TESTVAULT }}',
-    );
+    for (const job of [notifications, workflow.jobs?.concurrency]) {
+      assert.equal(job?.secrets?.op_service_account_token, undefined);
+      assert.equal(job?.secrets?.gh_token_emori, '${{ secrets.GH_TOKEN_EMORI }}');
+      assert.equal(job?.secrets?.gh_token_tanaabot, '${{ secrets.GH_TOKEN_TANAABOT }}');
+    }
     assert.equal(
       notifications?.secrets?.openai_api_key,
       '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}',
@@ -225,8 +263,8 @@ describe('github notification workflows', () => {
     assert.deepEqual(notifications?.secrets, {
       gh_token_emori: '${{ secrets.GH_TOKEN_EMORI }}',
       gh_token_tanaabot: '${{ secrets.GH_TOKEN_TANAABOT }}',
-      op_service_account_token: '${{ secrets.TANAAB_OP_TESTVAULT }}',
     });
+    assert.deepEqual(workflow.jobs?.concurrency?.secrets, notifications?.secrets);
     assert.equal(workflow.jobs?.concurrency?.needs, 'notifications');
     assert.equal(workflow.jobs?.concurrency?.if, '${{ always() && !cancelled() }}');
     assert.deepEqual(workflow.jobs?.concurrency?.with, {
@@ -255,7 +293,6 @@ describe('github notification workflows', () => {
       'gh_token_emori',
       'gh_token_tanaabot',
       'openai_api_key',
-      'op_service_account_token',
     ]);
     assert.equal(notification?.name, "${{ inputs.provider == 'mock' && 'mock-ai' || 'live-ai' }}");
     assert.equal(notification?.concurrency, undefined);
@@ -277,10 +314,9 @@ describe('github notification workflows', () => {
       "${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}",
     );
     assert.equal(leiaStep?.env?.OPENAI_API_KEY, '${{ secrets.openai_api_key }}');
-    assert.equal(
-      leiaStep?.env?.OP_SERVICE_ACCOUNT_TOKEN,
-      '${{ secrets.op_service_account_token }}',
-    );
+    assert.equal(leiaStep?.env?.OP_SERVICE_ACCOUNT_TOKEN, undefined);
+    assert.equal(leiaStep?.env?.GH_TOKEN_EMORI, '${{ secrets.gh_token_emori }}');
+    assert.equal(leiaStep?.env?.GH_TOKEN_TANAABOT, '${{ secrets.gh_token_tanaabot }}');
     assert.match(leiaStep?.run ?? '', /scenario_path="issue-work-\$\{\{ inputs\.scenario \}\}"/u);
     assert.match(leiaStep?.run ?? '', /scenario_path=issue-guided-assignment/u);
     assert.match(source, /HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed/u);

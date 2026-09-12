@@ -19,8 +19,6 @@ on:
         required: false
       openai_api_key:
         required: false
-      op_service_account_token:
-        required: false
 
 permissions:
   contents: read
@@ -95,7 +93,6 @@ jobs:
           OPENCLAW_LOG_LEVEL: ${{ runner.debug == '1' && 'debug' || '' }}
           OPENCLAW_PLUGIN_LIFECYCLE_TRACE: ${{ runner.debug == '1' && '1' || '' }}
           OPENAI_API_KEY: ${{ secrets.openai_api_key }}
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.op_service_account_token }}
         run: |
           scenario_path="issue-work-${{ inputs.scenario }}"
           if test "${{ inputs.scenario }}" = guided-assignment; then

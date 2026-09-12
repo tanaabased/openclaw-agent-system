@@ -24,7 +24,6 @@ openclaw config set plugins.entries.agent-system.hooks.timeoutMs 30000
 
 # should report the missing hook prerequisite without granting access
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system credentials set op --from-env
 if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-access-required" and .status == "blocked" and (.message | contains("plugins.entries.agent-system.hooks.allowConversationAccess")))'
 
@@ -33,7 +32,6 @@ OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
 # should install the route and establish the current baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
-openclaw agent-system credentials set op --from-env
 output="$(openclaw agent-system install --json)"
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-baseline-established")'
