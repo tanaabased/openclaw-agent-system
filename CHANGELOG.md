@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)
+
 ### New Features
 
 - Added `operator-owner` access for approved GitHub actors, with optional session owner, color, and group setup. [#74](https://github.com/tanaabased/openclaw-agent-system/pull/74) [#81](https://github.com/tanaabased/openclaw-agent-system/issues/81) [#84](https://github.com/tanaabased/openclaw-agent-system/pull/84)
