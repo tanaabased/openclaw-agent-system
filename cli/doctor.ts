@@ -1,14 +1,8 @@
+import loadCommandManifest from './load-command-manifest.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
-import {
-  type CliOutput,
-  type CliStyles,
-  writeCliDiagnostics,
-  writeCliJson,
-  writeCliLifecycleTable,
-} from './output.ts';
+import { type CliOutput, type CliStyles, writeCliJson, writeCliLifecycleTable } from './output.ts';
 import { lifecycleTableLines, orderDoctorFindings } from '../core/lifecycle-presentation.ts';
-import { formatManifestDiagnostics, formatManifestFailure } from '../core/logger.ts';
 
 export interface DoctorAgentSystemOptions {
   agentId?: string;
@@ -24,21 +18,8 @@ export interface DoctorAgentSystemOptions {
 
 /** Inspect every configured Agent System lifecycle component without applying repairs. */
 export default async function doctorAgentSystem(options: DoctorAgentSystemOptions): Promise<void> {
-  const manifest = options.agentId
-    ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
-  if (manifest.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(manifest).map(({ message }) => message),
-    );
-    options.setExitCode(1);
-    return;
-  }
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(manifest).map(({ message }) => message),
-  );
+  const manifest = await loadCommandManifest(options);
+  if (!manifest) return;
   const result = await options.doctorService.inspect({
     manifest: manifest.manifest,
     workspaceDir: manifest.scope.workspaceDir,

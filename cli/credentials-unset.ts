@@ -1,17 +1,8 @@
+import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import {
-  type CliOutput,
-  type CliStyles,
-  writeCliDiagnostics,
-  writeCliError,
-  writeCliSummary,
-} from './output.ts';
-import {
-  formatDiagnostic,
-  formatManifestDiagnostics,
-  formatManifestFailure,
-} from '../core/logger.ts';
+import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import { formatDiagnostic } from '../core/logger.ts';
 
 export interface UnsetCredentialsAgentSystemOptions {
   agentId?: string;
@@ -34,22 +25,8 @@ export default async function unsetCredentialsAgentSystem(
     options.setExitCode(1);
     return;
   }
-  const loaded = options.agentId
-    ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
-  if (loaded.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(loaded).map(({ message }) => message),
-    );
-    options.setExitCode(1);
-    return;
-  }
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(loaded).map(({ message }) => message),
-  );
-
+  const loaded = await loadCommandManifest(options);
+  if (!loaded) return;
   const result = await options.credentialManager.unset(loaded.manifest.agent.id, options.storeId);
   if (result.gatewayInvalidation === 'pending') {
     writeCliError(

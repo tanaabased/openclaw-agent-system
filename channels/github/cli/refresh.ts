@@ -1,13 +1,13 @@
+import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
-  writeCliDiagnostics,
   writeCliError,
   writeCliJson,
   writeCliSummary,
 } from '../../../cli/output.ts';
-import { formatErrorDiagnostic, formatManifestFailure } from '../../../core/logger.ts';
+import { formatErrorDiagnostic } from '../../../core/logger.ts';
 import type GitHubNotificationMonitorService from '../intake/monitor/service.ts';
 import {
   NotificationCliOptionError,
@@ -62,17 +62,8 @@ export default async function refreshNotificationsAgentSystem(
     options.setExitCode(2);
     return;
   }
-  const manifest = options.agentId
-    ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
-  if (manifest.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(manifest).map(({ message }) => message),
-    );
-    options.setExitCode(1);
-    return;
-  }
+  const manifest = await loadCommandManifest(options);
+  if (!manifest) return;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), parsed.timeoutMs);

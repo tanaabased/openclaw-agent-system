@@ -1,18 +1,9 @@
+import loadCommandManifest from './load-command-manifest.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type OpCredentialInput from '../credentials/op-input.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
-import {
-  type CliOutput,
-  type CliStyles,
-  writeCliDiagnostics,
-  writeCliError,
-  writeCliSummary,
-} from './output.ts';
-import {
-  formatDiagnostic,
-  formatManifestDiagnostics,
-  formatManifestFailure,
-} from '../core/logger.ts';
+import { type CliOutput, type CliStyles, writeCliError, writeCliSummary } from './output.ts';
+import { formatDiagnostic } from '../core/logger.ts';
 
 export interface SetCredentialsAgentSystemOptions {
   agentId?: string;
@@ -44,22 +35,8 @@ export default async function setCredentialsAgentSystem(
     return;
   }
 
-  const loaded = options.agentId
-    ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
-  if (loaded.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(loaded).map(({ message }) => message),
-    );
-    options.setExitCode(1);
-    return;
-  }
-  writeCliDiagnostics(
-    options.output,
-    formatManifestDiagnostics(loaded).map(({ message }) => message),
-  );
-
+  const loaded = await loadCommandManifest(options);
+  if (!loaded) return;
   const input = await options.credentialInput.read(
     options.fromEnvironment ? 'environment' : options.fromStdin ? 'stdin' : 'prompt',
   );

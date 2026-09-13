@@ -148,6 +148,18 @@ openclaw agent-system notifications wait \
 openclaw-gateway stop
 OPENCLAW_NO_RESPAWN=1 OPENCLAW_SKIP_CHANNELS=1 openclaw-gateway start
 
+# should keep loaded manifest warnings on stderr and notification status json parseable at every log level
+cd "$TMPDIR/agent-system-notifications"
+test ! -e .agent-system/agent.yaml
+mkdir -p .agent-system
+cp agent.yaml .agent-system/agent.yaml
+trap 'rm -f .agent-system/agent.yaml' EXIT
+for level in error info debug; do
+  OPENCLAW_LOG_LEVEL="$level" openclaw agent-system notifications status --json > "$TMPDIR/notification-status.json" 2> "$TMPDIR/notification-status.stderr"
+  jq -se 'length == 1 and .[0].agentId == "notification-data"' "$TMPDIR/notification-status.json"
+  grep -F 'code=manifest-shadowed' "$TMPDIR/notification-status.stderr"
+done
+
 # should admit an approved issue while a bounded refresh cannot acquire its execution lease
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
