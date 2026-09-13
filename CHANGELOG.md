@@ -11,6 +11,8 @@
 - Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
   verified install reconciliation with shared grant provenance, and non-blocking
   initial-assignment session persistence checks.
+- Improved install notices so completed warnings follow the results table with clear
+  severity and readable remediation. [#89](https://github.com/tanaabased/openclaw-agent-system/issues/89)
 - Published complete GitHub notification channel metadata for package-time
   discovery and kept it aligned with runtime registration.
 

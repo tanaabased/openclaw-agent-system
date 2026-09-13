@@ -13,6 +13,7 @@ const markerStyles: CliStyles = {
   bold: (value) => `<bold>${value}</bold>`,
   error: (value) => `<error>${value}</error>`,
   field: (value) => `<dim>${value}</dim>`,
+  notice: (value) => `<notice>${value}</notice>`,
   status: (value) => `<status>${value}</status>`,
   target: (value) => `<target>${value}</target>`,
   warning: (value) => `<warning>${value}</warning>`,

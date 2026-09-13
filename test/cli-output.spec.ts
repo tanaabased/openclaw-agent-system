@@ -4,6 +4,7 @@ import ansis from 'ansis';
 
 import {
   createCliStyles,
+  renderCliNotices,
   renderCliSummary,
   writeCliDiagnostics,
   writeCliJson,
@@ -52,6 +53,7 @@ describe('cli/output', () => {
       bold: (value: string) => `<bold>${value}</bold>`,
       error: (value: string) => `<error>${value}</error>`,
       field: (value: string) => `<field>${value}</field>`,
+      notice: (value: string) => `<notice>${value}</notice>`,
       status: (value: string) => `<status>${value}</status>`,
       target: (value: string) => `<target>${value}</target>`,
       warning: (value: string) => `<warning>${value}</warning>`,
@@ -127,5 +129,43 @@ describe('cli/output', () => {
 
     assert.deepEqual(stderr, ['first diagnostic\nsecond diagnostic\n']);
     assert.deepEqual(stdout, []);
+  });
+
+  it('should render labelled notices with hanging indentation and neutral content', () => {
+    const lines = renderCliNotices(
+      [
+        {
+          severity: 'notice',
+          message: 'Channel-wide operator recognition remains subject to tool policy.',
+        },
+        { severity: 'warning', message: 'Reload the Gateway, then verify a fresh assignment.' },
+      ],
+      plainStyles,
+      32,
+    );
+
+    assert.deepEqual(lines, [
+      '',
+      'Notices',
+      '',
+      'ℹ Notice',
+      '  Channel-wide operator',
+      '  recognition remains subject to',
+      '  tool policy.',
+      '⚠ Warning',
+      '  Reload the Gateway, then',
+      '  verify a fresh assignment.',
+    ]);
+  });
+
+  it('should style only notice labels when color is enabled', () => {
+    const lines = renderCliNotices(
+      [{ severity: 'notice', message: 'Information remains readable.' }],
+      createCliStyles({ FORCE_COLOR: '1' }),
+    );
+
+    assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ Notice');
+    assert.equal(lines[4], '  Information remains readable.');
+    assert.notEqual(lines[3], ansis.strip(lines[3] ?? ''));
   });
 });

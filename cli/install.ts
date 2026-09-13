@@ -6,10 +6,12 @@ import type AgentManifestService from '../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
+  type CliNotice,
   writeCliDiagnostics,
   writeCliError,
   writeCliJson,
   writeCliLifecycleTable,
+  writeCliNotices,
 } from './output.ts';
 import { lifecycleTableLines } from '../core/lifecycle-presentation.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -29,6 +31,22 @@ export interface InstallAgentSystemOptions {
   styles?: CliStyles;
   terminalColumns?: number;
   workspaceDir: string;
+}
+
+function installNotices(warnings: ReadonlyArray<{ code: string; message: string }>): CliNotice[] {
+  return warnings.flatMap(({ code, message }) => {
+    if (code === 'github-operator-loaded-access-unverified') {
+      return [
+        {
+          severity: 'notice',
+          message:
+            'Operator recognition is channel-wide OpenClaw access, not repository-scoped access; independent tool policy still applies.',
+        },
+        { severity: 'warning', message },
+      ];
+    }
+    return [{ severity: 'warning', message }];
+  });
 }
 
 /** Reconcile every configured lifecycle component for the current workspace manifest. */
@@ -54,22 +72,29 @@ export default async function installAgentSystem(
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
     });
-    writeCliDiagnostics(
-      options.output,
-      installed.warnings.map((warning) =>
-        formatDiagnostic({
-          code: warning.code,
-          component: warning.component,
-          message: warning.message,
-        }),
-      ),
-    );
-    if (options.json) writeCliJson(options.output, installed);
-    else {
+    if (options.json) {
+      writeCliDiagnostics(
+        options.output,
+        installed.warnings.map((warning) =>
+          formatDiagnostic({
+            code: warning.code,
+            component: warning.component,
+            message: warning.message,
+          }),
+        ),
+      );
+      writeCliJson(options.output, installed);
+    } else {
       writeCliLifecycleTable(
         options.output,
         lifecycleTableLines(installed.outcomes),
         installed.workspaceDir,
+        options.styles,
+        options.terminalColumns,
+      );
+      writeCliNotices(
+        options.output,
+        installNotices(installed.warnings),
         options.styles,
         options.terminalColumns,
       );
