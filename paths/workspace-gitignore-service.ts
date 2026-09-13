@@ -1,46 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, open, readFile, rename, unlink } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import readRegularFile from './read-regular-file.ts';
+import writeAtomic from './write-atomic.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 
 export interface WorkspaceGitignoreBlock {
   comment: string;
   entries: readonly string[];
-}
-
-async function readRegularFile(path: string): Promise<string | undefined> {
-  try {
-    const stats = await lstat(path);
-    if (!stats.isFile()) {
-      throw new Error(`${path} must be a regular file and may not be a symbolic link.`);
-    }
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (nodeErrorCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-}
-
-async function writeAtomic(path: string, source: string, mode: number): Promise<void> {
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  let handle;
-  try {
-    handle = await open(
-      temporaryPath,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      mode,
-    );
-    await handle.writeFile(source, 'utf8');
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporaryPath, path);
-  } finally {
-    await handle?.close().catch(() => undefined);
-    await unlink(temporaryPath).catch(() => undefined);
-  }
 }
 
 async function existingFileMode(path: string): Promise<number> {

@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import nodeErrorCode from '../utils/node-error-code.ts';
+import readRegularFile from './read-regular-file.ts';
+import writeAtomic from './write-atomic.ts';
 import {
   classifyCodexPathConfig,
   inspectCodexPathConfig,
@@ -30,39 +29,6 @@ export interface CodexPathConfigInspection {
 export interface CodexPathConfigReconcileResult extends CodexPathConfigInspection {
   gitignoreUpdated: boolean;
   status: CodexPathConfigStatus;
-}
-
-async function readRegularFile(path: string): Promise<string | undefined> {
-  try {
-    const stats = await lstat(path);
-    if (!stats.isFile()) {
-      throw new Error(`${path} must be a regular file and may not be a symbolic link.`);
-    }
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (nodeErrorCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-}
-
-async function writeAtomic(path: string, source: string, mode = 0o600): Promise<void> {
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  let handle;
-  try {
-    handle = await open(
-      temporaryPath,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      mode,
-    );
-    await handle.writeFile(source, 'utf8');
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporaryPath, path);
-  } finally {
-    await handle?.close().catch(() => undefined);
-    await unlink(temporaryPath).catch(() => undefined);
-  }
 }
 
 export interface CodexPathConfigServiceDependencies {
@@ -125,7 +91,7 @@ export default class CodexPathConfigService {
         : existingSource === desiredSource
           ? 'unchanged'
           : 'updated';
-    if (status !== 'unchanged') await writeAtomic(configPath, desiredSource);
+    if (status !== 'unchanged') await writeAtomic(configPath, desiredSource, 0o600);
 
     const gitignoreUpdated = await this.#gitignoreService.reconcile(workspaceDir, gitignoreBlock);
     return {
