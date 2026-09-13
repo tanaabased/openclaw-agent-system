@@ -33,9 +33,7 @@ export interface InstallAgentSystemOptions {
   workspaceDir: string;
 }
 
-function installNotices(
-  warnings: ReadonlyArray<{ code: string; message: string }>,
-): CliNotice[] {
+function installNotices(warnings: ReadonlyArray<{ code: string; message: string }>): CliNotice[] {
   return warnings.flatMap(({ code, message }) => {
     if (code === 'github-operator-loaded-access-unverified') {
       return [

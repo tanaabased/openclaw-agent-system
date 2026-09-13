@@ -169,7 +169,9 @@ export function renderCliNotices(
     const styledLabel = severity === 'notice' ? styles.notice(label) : styles.warning(label);
     return [
       styledLabel,
-      ...wrapAnsi(message, messageWidth, { hard: true }).split('\n').map((line) => `${indent}${line}`),
+      ...wrapAnsi(message, messageWidth, { hard: true })
+        .split('\n')
+        .map((line) => `${indent}${line}`),
     ];
   });
   return ['', styles.bold('Notices'), '', ...blocks];

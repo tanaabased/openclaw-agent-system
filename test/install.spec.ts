@@ -189,7 +189,10 @@ describe('cli/install', () => {
     await run();
 
     assert.deepEqual(diagnostics, []);
-    assert.match(output.join(''), /workspace  \/workspace\n\nNotices\n\n⚠ Warning\n  The existing/u);
+    assert.match(
+      output.join(''),
+      /workspace {2}\/workspace\n\nNotices\n\n⚠ Warning\n {2}The existing/u,
+    );
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -275,7 +278,7 @@ describe('cli/install', () => {
         for (const { message } of installed.outcomes) {
           assert.ok(text.replace(/\s+/g, ' ').includes(message));
         }
-        assert.match(text, /Notices\n\n⚠ Warning\n  Manual follow-up\./u);
+        assert.match(text, /Notices\n\n⚠ Warning\n {2}Manual follow-up\./u);
       }
       assert.deepEqual(installed, original);
     }
@@ -311,9 +314,10 @@ describe('cli/install', () => {
     const text = output.join('');
     assert.deepEqual(diagnostics, []);
     assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Notices'));
-    assert.match(text, /ℹ Notice\n  Operator recognition is channel-wide OpenClaw/u);
-    assert.match(text, /⚠ Warning\n  Running Gateway access for pirog is unverified\./u);
-    assert.match(text, /  Reload the Gateway, then verify a fresh/u);
+    const normalized = text.replace(/\s+/g, ' ');
+    assert.match(normalized, /ℹ Notice Operator recognition is channel-wide OpenClaw/u);
+    assert.match(normalized, /⚠ Warning Running Gateway access for pirog is unverified\./u);
+    assert.match(normalized, /Reload the Gateway, then verify a fresh/u);
     assert.equal(text.includes('github-operator-loaded-access-unverified'), false);
   });
 

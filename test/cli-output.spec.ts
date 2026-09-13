@@ -166,6 +166,6 @@ describe('cli/output', () => {
 
     assert.equal(ansis.strip(lines[3] ?? ''), 'ℹ Notice');
     assert.equal(lines[4], '  Information remains readable.');
-    assert.match(lines[3] ?? '', /\u001B\[/u);
+    assert.notEqual(lines[3], ansis.strip(lines[3] ?? ''));
   });
 });

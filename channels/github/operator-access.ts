@@ -282,7 +282,6 @@ export default class GitHubOperatorAccess {
             grant.origin = 'created';
           }
         }
-        const planned = [...desired, ...removals];
         this.dependencies.reportPlan(
           `GitHub operator reconciliation: desired=${[...desired].join(', ') || 'none'}; remove=${[...removals].join(', ') || 'none'}. ${scope}`,
         );

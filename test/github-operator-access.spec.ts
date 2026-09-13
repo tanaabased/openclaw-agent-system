@@ -132,7 +132,10 @@ describe('github operator access', () => {
     assert.equal(f.writes, 0);
     const result = await f.service.reconcile(ctx);
     assert.equal(result.outcomes[0]?.status, 'updated');
-    assert.match(result.outcomes[0]?.message ?? '', /^Operator entries for actor, second are saved\.$/u);
+    assert.match(
+      result.outcomes[0]?.message ?? '',
+      /^Operator entries for actor, second are saved\.$/u,
+    );
     assert.deepEqual(f.config.commands?.ownerAllowFrom, [
       'discord:keep',
       123,
