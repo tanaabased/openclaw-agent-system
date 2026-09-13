@@ -63,15 +63,9 @@ component-provided sections.
 
 ## Configuration
 
-Agent System currently owns no global plugin settings. Its public configuration
-is the per-workspace manifest plus any configured component sections. When
-[`github.notifications`](./channels/github/README.md#configuration-reference) is present,
-`install` projects only a non-secret channel account and exact agent binding into
-global OpenClaw configuration; notification policy and credentials remain
-workspace-owned. When a workspace declares both `github.username` and
-`github.token`, `install` also projects a distinct managed GitHub profile into
-that agent's `tools.github` configuration. Agent System remains authoritative;
-no token enters `openclaw.json` and no system-level GitHub identity is adopted.
+The workspace manifest declares the agent's desired state. `install` reconciles
+owned OpenClaw settings; credentials remain outside `openclaw.json`.
+[Global Configuration](#global-configuration) covers operator-owned plugin settings.
 
 A complete core configuration can contain:
 
@@ -204,7 +198,7 @@ for new issue conversations. A default-only manifest keeps ordinary model behavi
 
 Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
-[Environment](#environment) for source precedence and resolution behavior, and
+[Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
 
 ### Component Configuration
@@ -219,8 +213,58 @@ implementation:
 | tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)    |
 | channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/README.md#configuration-reference) |
 
-Adding a component to this table does not enable it globally; the corresponding
-manifest section opts the workspace into that capability.
+A manifest section opts the workspace into its capability.
+
+## Global Configuration
+
+Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
+configuration. These settings belong to the operator, not `agent.yaml`.
+
+### `opCache`
+
+Controls in-memory reuse of 1Password clients and resolved values. Gateway tools
+share the cache; separate CLI processes do not. GitHub responses, permissions,
+and command results are not cached.
+
+| Field             | Type    | Default | Behavior                                                                               |
+| ----------------- | ------- | ------- | -------------------------------------------------------------------------------------- |
+| `mode`            | string  | `timed` | `off`, `timed`, or `process-lifetime`.                                                 |
+| `durationSeconds` | number  | `300`   | Timed mode only; greater than zero, at most `4503599627370`.                           |
+| `maxEntries`      | integer | `128`   | Maximum agent/workspace entries, from `1` to `1024`; oldest entries are evicted first. |
+
+Timed values expire after the configured duration from retrieval; cache hits do
+not extend it. Expiry refreshes values on demand, not an unchanged authenticated
+client. Process-lifetime mode retains values until invalidation, eviction, or
+exit. Off mode disables reuse between operations.
+
+```bash
+# retain values for five hours
+openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"timed","durationSeconds":18000}' --strict-json
+
+# inspect the running gateway cache
+openclaw agent-system credentials cache status --json
+
+# flush one agent; omit --agent to flush all
+openclaw agent-system credentials cache flush --agent data --json
+```
+
+Status requires `operator.read`; flush requires `operator.admin`. Both contact
+the running Gateway without reading 1Password. Status reports policy, occupancy,
+expiry, backoff, and usage counters without secrets. An unreachable or
+unauthorized Gateway returns an error.
+
+Authorization and local credential/configuration changes are checked on each
+operation. Reload, agent removal, credential changes, flush, and shutdown
+invalidate retained state; snapshots already in use are not revoked. If a
+credential command reports **invalidation pending**, restore Gateway access and
+flush. External 1Password edits appear after timed expiry or flush; lifetime
+mode requires flush or restart.
+
+Failed or partial loads are not cached, and failed refreshes return errors rather
+than stale credentials. OTP and unknown reference transforms bypass value
+retention. Use off mode for other time-varying credentials whose validity is
+shorter than the cache duration. Provider failures back off from 30 seconds to
+one hour; SDK quota errors wait one hour. Flush does not reset backoff or quota.
 
 ## CLI
 
@@ -229,13 +273,14 @@ alias. Bare `agent-system` or `as` prints help.
 
 ### Common Behavior
 
-| Option         | Commands                                                                                                                  | Behavior                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `--agent <id>` | `validate`, `env`, `tool`, `credentials`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait` | Uses the exact configured OpenClaw agent workspace instead of discovery. |
-| `--json`       | `validate`, `env`, `install`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait`             | Writes undecorated structured output.                                    |
+| Option         | Commands                                                                                                                                        | Behavior                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--agent <id>` | `validate`, `env`, `tool`, `credentials set/validate/unset`, `doctor`, `notifications refresh`, `notifications status`, `notifications wait`    | Uses the exact configured OpenClaw agent workspace instead of discovery. |
+| `--json`       | `validate`, `env`, `install`, `doctor`, `credentials cache status/flush`, `notifications refresh`, `notifications status`, `notifications wait` | Writes undecorated structured output.                                    |
 
 Human output honors `NO_COLOR` and `FORCE_COLOR=0`. A failed operation sets a
-nonzero exit code.
+nonzero exit code. `credentials cache flush --agent <id>` limits invalidation to
+one agent; cache status always covers the Gateway.
 
 ### Trust Boundary
 
@@ -310,7 +355,7 @@ Service then file on Linux. `validate` checks those stores in order and then the
 process fallback; an exact `--store` or `--from-env` request disables fallback.
 `unset` is idempotent: it removes persisted credentials and requests Gateway cache
 invalidation, but does not change the process-environment fallback. See
-[in-memory caching](#in-memory-1password-caching) for cache controls and pending invalidation.
+[global cache configuration](#opcache) for cache controls and pending invalidation.
 
 The file fallback lives at
 `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/op-token`, or under
@@ -382,27 +427,24 @@ openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.
 
-## Environment
+## Environment Resolution
 
-Environment names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Configured values are
-YAML strings or direct OP secret reference objects. Source precedence is fixed:
+Source precedence is fixed:
 
 ```text
 environment.dotenv[0] < later dotenv files < environment.set < environment.op[0] < later 1Password Environments
 ```
 
-Dotenv paths must remain inside the workspace and identify distinct regular
-files. Agent System accepts blank lines, comments, optional `export`, and quoted
-or unquoted `NAME=value` entries. Dotenv values do not interpolate or execute
-shell syntax.
+Variable names match `^[A-Za-z_][A-Za-z0-9_]*$`; values are YAML strings or
+`from-op` objects. Dotenv files must be distinct regular files inside the
+workspace. They accept comments, optional `export`, and quoted or unquoted
+`NAME=value` entries without interpolation or shell execution.
 
-`environment.set` strings support one-pass `$NAME` and `${NAME}` references for
-uppercase names; `$$` emits a literal `$`. References use a snapshot of the
-plugin process environment plus the ordered external sources. Host values are
-lookup-only, and set values do not reference one another.
+`environment.set` strings expand uppercase `$NAME` and `${NAME}` references
+once; `$$` emits `$`. Lookups use the process environment and ordered external
+sources, never sibling `set` values. Host values are lookup-only.
 
-A `from-op` object resolves one 1Password secret reference directly into the
-named environment value:
+A `from-op` object resolves a secret directly:
 
 ```yaml
 environment:
@@ -411,120 +453,20 @@ environment:
       from-op: 'op://vault/item/private key?ssh-format=openssh'
 ```
 
-Direct values are always sensitive and retain `environment.set` provenance.
-The reference itself is never returned in diagnostics. A scalar beginning with
-`op://` remains a literal string; direct resolution requires the object form.
+These values are always sensitive; diagnostics omit the reference itself.
+A plain `op://` string stays literal. `environment.op` takes opaque
+[1Password Environment IDs](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id),
+not display names, and loads them in order through the SDK.
 
-`environment.op` loads each declared 1Password Environment in order through the
-official JavaScript SDK. Each value is the opaque ID returned by
-[Copy environment ID in the 1Password app](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id),
-not the Environment's display name. Agent System loads dotenv and 1Password
-values only for an explicit environment consumer; passive manifest discovery
-never reads them. `environment.required` applies when the complete environment
-is resolved, not to unrelated actions that do not consume it.
+Only explicit consumers load dotenv or 1Password values; passive discovery never
+does. `environment.required` applies to complete environment resolution, not
+unrelated actions. [Credential storage](#openclaw-agent-system-credentials)
+defines lookup order. Install requires a persistent credential; the bootstrap
+token is never exported, required, or interpolated by the manifest.
 
-For 1Password access, Agent System checks macOS Keychain or Linux Secret Service,
-then the agent-scoped owner-only file store, and finally the
-`OP_SERVICE_ACCOUNT_TOKEN` process fallback. Installation requires persistent
-access and does not use the process fallback. The bootstrap token is never added
-to the resolved environment and cannot be exported, required, or interpolated by
-the manifest.
-
-Agent System does not inject the consolidated environment into generic OpenClaw,
-Codex, ACP, MCP, or third-party execution tools. Agent System tools resolve only
-the values they declare after trusted agent binding and authorization. PATH
-projection is the separate, limited contract described below.
-
-### In-memory 1Password caching
-
-Agent System reuses 1Password clients and resolved values in memory—not GitHub
-responses, permissions, or command results. Gateway tools and cache commands share
-this state; separate CLI processes do not, even within one CI job.
-
-Set `plugins.entries.agent-system.config.opCache` in operator-owned OpenClaw
-configuration. Repository manifests and `CI=true` cannot enable indefinite retention.
-The default is 300 seconds and 128 agent/workspace entries. `maxEntries` accepts
-1–1,024 and evicts oldest-first; each entry holds one client and one successful
-snapshot. Timed expiry refreshes values, not an unchanged authenticated client.
-
-| Mode             | Configuration                                             | Behavior                                                                                                    |
-| ---------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Off              | `{"mode":"off"}`                                          | No cross-operation client or value reuse; duplicate references within one operation are still deduplicated. |
-| Timed (default)  | `{"mode":"timed","durationSeconds":300,"maxEntries":128}` | Lazy, non-sliding expiry measured with a monotonic clock from successful retrieval.                         |
-| Process lifetime | `{"mode":"process-lifetime","maxEntries":128}`            | Retain until invalidation, eviction, or process exit. External provider edits require flush or restart.     |
-
-Timed durations must be positive finite numbers no greater than 4,503,599,627,370
-seconds. Sub-millisecond durations round up to one millisecond. One, five, and
-twelve hours are `3600`, `18000`, and `43200` seconds. Other modes reject a duration;
-negative numbers and JSON `Infinity` are not lifetime settings.
-
-```bash
-# retain stable values for five hours
-openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"timed","durationSeconds":18000}' --strict-json
-
-# inspect the running gateway, not this short-lived cli process
-openclaw agent-system credentials cache status --json
-
-# invalidate one agent, or omit --agent to invalidate all
-openclaw agent-system credentials cache flush --agent data --json
-```
-
-Status requires `operator.read`; flush requires `operator.admin`. Both identify
-the Gateway process and make no 1Password requests. Output is a human summary by
-default; `--json` returns the structured result. Status shows policy, agent IDs,
-ages/expiry, backoff, and counters for clients, reads, hits, misses, coalescing,
-failures, and backoff skips—never values, resource IDs, or token digests. Flush
-reports invalidated entries, clients, pending loads, and snapshots. An unreachable,
-unauthorized, or incompatible Gateway returns an error. `openclaw as` is an alias.
-
-#### Freshness and failures
-
-Authorization, manifests, dotenv, credential-store selection, and bootstrap
-credentials are checked on every operation. Reuse remains isolated by installation,
-state/store roots, agent/workspace, credential source/generation, and resource
-declarations. Each operation holds an immutable snapshot; concurrent misses share
-retrieval without sharing cancellation. Failed or partial loads are not retained.
-Expired refresh failures return errors, not stale credentials. There is no idle refresh.
-
-Configuration reload, agent removal, credential changes/rejection, flush, and
-shutdown invalidate retained state. Earlier pending loads cannot restore it;
-snapshots already in use are not revoked. CLI credential mutations and validation
-rejections notify the Gateway. If acknowledgment fails, commands report
-**invalidation pending**: restore Gateway access and flush. Uncertain store writes
-still trigger invalidation, but are never automatically retried.
-
-External 1Password edits appear after timed expiry or flush; process-lifetime mode
-requires flush or restart. External local-store changes are detected on the next lookup.
-
-[OTP query transforms](https://www.1password.dev/sdks/concepts) (`attribute`/`attr`
-with `otp`/`totp`) and unknown query transforms bypass snapshot retention; only the
-stable `ssh-format=openssh` transform is admitted. The Environment SDK response
-contains names, values, and masking flags, not validity deadlines. Keep other
-externally time-varying credentials under off mode when their validity cannot be
-bounded by the selected TTL.
-
-Provider failures share credential-scoped backoff within a process: 30 seconds
-increasing exponentially to one hour, or one hour for SDK quota errors. Flush
-preserves backoff; it does not reset quota. GitHub polling backoff is unchanged.
-Malformed Environment data fails only its load, without provider backoff.
-Transport failures preserve other healthy snapshots; confirmed authentication
-rejection and quota errors invalidate shared credential state.
-
-#### Measured SDK-boundary costs
-
-For 40 loads of one direct secret and one Environment, deterministic provider tests
-measured these SDK calls—not billed API units:
-
-| Workload                                    | Before: clients / reads | Default timed: clients / reads |
-| ------------------------------------------- | ----------------------- | ------------------------------ |
-| One retained process, sequential loads      | 40 / 80                 | 1 / 2                          |
-| One retained process, concurrent loads      | 40 / 80                 | 1 / 2                          |
-| Forty independent service/process lifetimes | 40 / 80                 | 40 / 80                        |
-
-That is 97.5% fewer calls within a retained process, not an account-wide savings
-forecast. Separate processes still fetch independently, as does explicit credential
-validation. See [the reproducible tests](test/op-cache.spec.ts) and
-[CI examples](DEVELOPMENT.md#leia-scenarios).
+Agent System tools resolve declared values after trusted binding and authorization.
+The consolidated environment is not injected into generic OpenClaw, Codex, ACP,
+MCP, or third-party tools. PATH projection is the separate contract below.
 
 ## Path
 

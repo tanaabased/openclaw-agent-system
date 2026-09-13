@@ -328,9 +328,3 @@ The channel source is organized by the behavior being changed:
 Keep small scopes flat. Add a nested `lib/` or `utils/` only when a scope has
 enough files to make that distinction useful, and do not add placeholder mode or
 lifecycle files before an implementation exists.
-
-## Current Behavior
-
-See the [GitHub notifications channel README](./README.md) for currently
-implemented configuration, commands, checkpoints, security boundaries, and
-limitations.

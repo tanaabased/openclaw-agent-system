@@ -2,35 +2,30 @@
 
 ### New Features
 
-- Added agent-scoped GitHub identity projection for OpenClaw `install`, `doctor`, and native status tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Added canonical OpenClaw plugin and GitHub notification channel icons. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Added manifest-declared model defaults and work tiers with separate installation and readiness checks. [#85](https://github.com/tanaabased/openclaw-agent-system/issues/85)
-- Added model-assessed GitHub issue routing with saved model and effort selections and native session verification. [#86](https://github.com/tanaabased/openclaw-agent-system/issues/86)
-- Added optional initial GitHub session owner, color, and group guidance through native OpenClaw session tools.
 - Added configurable in-memory 1Password caching with Gateway status and flush commands. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
-- Added per-approved-actor `operator-owner` opt-in, read-only doctor diagnostics,
-  verified install reconciliation with shared grant provenance, and non-blocking
-  initial-assignment session persistence checks.
-- Improved install notices so completed warnings follow the results table with clear
-  severity and readable remediation. [#89](https://github.com/tanaabased/openclaw-agent-system/issues/89)
-- Published complete GitHub notification channel metadata for package-time
-  discovery and kept it aligned with runtime registration.
+- Added manifest model defaults and complexity tiers with installation and readiness checks. [#85](https://github.com/tanaabased/openclaw-agent-system/issues/85)
+- Added per-actor OpenClaw owner access and optional GitHub session owner, color, and group setup. [#81](https://github.com/tanaabased/openclaw-agent-system/issues/81)
+- Added per-agent GitHub identity for OpenClaw tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Added persisted model and effort routing for GitHub issues based on complexity. [#86](https://github.com/tanaabased/openclaw-agent-system/issues/86)
+
+### Improvements
+
+- Clarified 1Password and GitHub failure diagnostics. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87)
+- Improved Doctor and Install tables with status-only color, readable wrapping, and attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
+- Moved install notices below results with clearer severity and remediation. [#89](https://github.com/tanaabased/openclaw-agent-system/issues/89)
+- Updated OpenClaw compatibility to 2026.9.2 or newer, with development on 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ### Bug Fixes
 
-- Fixed first-turn model routing provenance and permitted fallback continuation without stranding authorized work. [#102](https://github.com/tanaabased/openclaw-agent-system/issues/102)
-- Reconciled manifest-declared models with each agent's effective OpenClaw selection policy without broadening global defaults or other agents. [#99](https://github.com/tanaabased/openclaw-agent-system/issues/99)
-- Improved 1Password and GitHub failure diagnostics. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87)
-- Fixed GitHub issue-routing permission diagnosis, additive install repair, and prepared-assignment recovery. [#97](https://github.com/tanaabased/openclaw-agent-system/issues/97)
-- Stopped Doctor from treating model authentication or runtime health as Agent System configuration failures while retaining non-blocking warnings for explicitly unavailable models. [#93](https://github.com/tanaabased/openclaw-agent-system/issues/93)
-- Made Doctor and Install tables component-first with status-only color, neutral workspace metadata, readable wrapping, and stable attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
-- Preserved eligible unseen delivery pull-request comments and existing revision receipts during initial handoff, including interrupted retries, without changing reopen baselines. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)
-- Isolated GitHub reply-candidate turns by lifecycle conversation, bound staging to the active attempt, delayed acknowledgments until session recording, and retained assignment failure codes in refresh results. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)
-- Made notification doctor report blocked conversation-hook access, normal install reconcile and verify it, and Gateway turns require prompt attestation before model execution. [#76](https://github.com/tanaabased/openclaw-agent-system/issues/76)
-- Fixed busy GitHub issues blocking intake and independent issue execution, with separate lifecycle state and shared repository preparation locks. [#71](https://github.com/tanaabased/openclaw-agent-system/issues/71) [#73](https://github.com/tanaabased/openclaw-agent-system/pull/73)
-- Fixed managed GitHub worktrees to reuse configured SSH authentication across direct and notification preparation. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Made the installed agent and GitHub examples deterministic with strict AIMock fixtures while preserving real Gateway and tool execution. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Updated Agent System to support OpenClaw 2026.9.2 and newer while building against 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Fixed busy GitHub issues blocking new assignments and independent issue execution. [#71](https://github.com/tanaabased/openclaw-agent-system/issues/71) [#73](https://github.com/tanaabased/openclaw-agent-system/pull/73)
+- Fixed conversation-hook access diagnosis and install repair; required trusted prompt selection before Gateway turns. [#76](https://github.com/tanaabased/openclaw-agent-system/issues/76)
+- Fixed first-turn model routing provenance and allowed permitted native fallbacks to continue work. [#102](https://github.com/tanaabased/openclaw-agent-system/issues/102)
+- Fixed issue-routing permission checks, install repair, and prepared-assignment recovery. [#97](https://github.com/tanaabased/openclaw-agent-system/issues/97)
+- Fixed managed GitHub worktrees to reuse configured SSH authentication. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Included manifest models in the agent selection allowlist without broadening other agents or global defaults. [#99](https://github.com/tanaabased/openclaw-agent-system/issues/99)
+- Isolated GitHub reply turns per conversation and deferred acknowledgments until durable session recording. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)
+- Preserved unseen delivery pull-request comments and revision receipts across handoff retries. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)
+- Stopped Doctor from blocking on model authentication or runtime health; unavailable models still warn. [#93](https://github.com/tanaabased/openclaw-agent-system/issues/93)
 
 ## v0.5.3 - [August 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.5.3)
 

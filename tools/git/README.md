@@ -122,7 +122,7 @@ the agent workspace; absolute and `~/` paths are explicit operator choices.
 `from-environment` reads the named value from the completed Agent System
 environment, so dotenv, 1Password Environments, and direct OP secret references
 can supply the key. Secret acquisition belongs to the shared
-[environment contract](../../ADVANCED.md#environment), so the Git schema does
+[environment contract](../../ADVANCED.md#environment-resolution), so the Git schema does
 not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
 isolates the declared keys from ambient SSH identities and presents them only
 for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
@@ -263,10 +263,9 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 
 ## CLI
 
-These are trusted operator interfaces for administration, testing, and
-debugging. Agents should use `agent_system_git` and
-`agent_system_git_worktree`; an agent with unrestricted host command access
-could otherwise select another installed agent.
+These are operator commands; agents use `agent_system_git` and `agent_system_git_worktree`. See the
+[shared trust boundary](../../ADVANCED.md#trust-boundary) for identity binding and
+host-access limits.
 
 ### Usage
 
@@ -322,10 +321,8 @@ git --agent-system
 git status --short
 ```
 
-The shim routes ordinary commands through `openclaw agent-system tool git`. In a
-direct shell it is an operator convenience; in a supported agent command it
-remains bound to the active agent and admitted directories. Absolute binaries,
-replaced `PATH` values, and unrelated host processes can bypass it.
+The shim routes commands through `openclaw agent-system tool git` under the
+[same identity binding](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

@@ -40,22 +40,12 @@ The channel also:
 - supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
   for an explicit, mode-neutral public progress update
 
-The Gateway polls at the configured interval independently of its issue workers.
-New assignments can appear in status and begin work while another issue is running.
-Each issue's preparation, comments, responses, and retirement share one execution
-lease across Gateway and CLI processes. Different issues can proceed independently;
-preparation is serialized per shared repository, and model turns use
-OpenClaw's existing dispatcher and capacity limits. Comments on the busy issue
-itself wait for its worker. Candidate records and locks are scoped to the canonical
-issue conversation, and reply tools require the host-bound active attempt.
-Assignment acknowledgments publish only after OpenClaw confirms durable session
-recording. Shutdown cancels and drains all workers; CLI refreshes
-await their selected issues within the existing timeout.
-
-The former agent-wide reply-turn file is read only for migration: its owning
-conversation imports the active receipt and candidates atomically on next use;
-other conversations proceed independently. Stop old runtime processes before
-upgrading; running old and new state writers together is unsupported.
+The Gateway polls independently of issue workers, so new assignments can begin
+while another issue is running. Each issue serializes preparation, comments,
+responses, and retirement across Gateway and CLI processes. Different issues
+can proceed concurrently within OpenClaw capacity limits; shared repository
+preparation is serialized. Assignment acknowledgments wait for durable session
+recording.
 
 ## Requirements
 
@@ -105,21 +95,21 @@ Background polling never grants permissions or substitutes for authentication.
 The saved model and effort survive retries, restarts, comments, and delivery
 pull-request continuation. Later manifest edits do not reclassify existing
 conversations. Explicit supported native model and effort overrides take
-precedence independently. OpenClaw must report both selected values before a
-routed turn can publish. The initial private assessment includes a short routing
-note with model, effort, complexity, source, and reason; the note itself is not
-runtime evidence and is excluded from the public reply candidate.
+precedence independently. Automatic routing can continue on a permitted native
+fallback; a mismatch with a strict selection or an unapproved model cancels work.
+Execution records distinguish verified selections, permitted continuations, and
+unverified settings when native evidence is incomplete. Missing evidence alone
+does not block publication or prove the requested route ran.
+
+The initial private assessment includes a short routing note with model, effort,
+complexity, source, and reason. It is excluded from the public reply and is not
+runtime verification.
 
 For a demonstrated reasoning blocker, the agent explains the failed approach
 and requests a specific stronger profile through the existing clarification
 flow. Authentication failures, rate limits, slow tests, and missing requirements
 do not justify escalation. When native tools cannot set and verify both model
 and effort, the operator must make the change through supported session controls.
-
-The existing [assignment scenario](../../scenarios/issue-work-assignment/README.md)
-covers missing-grant recovery and saved selection. Provider-level effort and a bounded
-completed-issue cost/rework sample require separately authorized live evaluation
-before broad rollout.
 
 ## Configuration Reference
 
@@ -209,52 +199,28 @@ github:
         operator-owner: false
 ```
 
-- **None:** omit the flag or set it false on every actor.
-- **One:** the example opts in only pirog.
-- **Multiple:** set it true on each selected existing actor record.
-- **All current actors:** set it true on every current record. New records remain
-  unprivileged unless they are explicitly flagged too.
+Each actor opts in independently; omitted or false flags grant nothing. Run
+`doctor` to inspect access and `install` to reconcile it. Missing or unverifiable
+optional access warns without blocking intake. Install verifies login/node-ID
+pins before changing grants; passive discovery and issue prose never grant access.
 
-After editing the manifest, run `openclaw agent-system doctor` to inspect desired
-access, then `openclaw agent-system install` from the declaring workspace to apply
-it. Doctor is read-only: missing or unverifiable optional access is a per-actor
-warning, not an intake blocker. Deliberate opt-outs do not produce missing-access
-warnings. Install verifies GitHub login/node-ID pins before changing grants, reports
-the planned identities and scope, and reads configuration back after writing it.
-Passive discovery, checkout, issue prose, and notification intake never grant access.
+Install requests a configuration reload. If the Gateway remains stale, restart
+it and verify a fresh assignment. Doctor inspects its own process's loaded policy,
+not a separate Gateway. Explicit tool denials, narrower allowlists, and session
+visibility restrictions still apply.
 
-Saved configuration and effective Gateway permissions are separate evidence.
-Install requests the supported automatic config reload; if reload is disabled or
-the running Gateway is stale, restart it through the normal operator workflow.
-Doctor's loaded-policy check describes its own process, not proof of a separate
-Gateway's effective tool list. Verify a **fresh assignment** after reload. Explicit
-tool denials, narrower allowlists, and session visibility restrictions remain intact;
-this flag does not guarantee model compliance or successful setup.
+Removing a flag, actor, or notification declaration retires its grant claim on
+the next install. Pre-existing/manual grants and grants needed by other
+installations remain. Uncertain ownership warns and preserves access; do not
+delete the provenance ledger to repair it. Before uninstalling the plugin or
+deleting a workspace, remove the flags and run install to verify cleanup while
+the declaration and receipts are available. Plugin removal cannot revoke grants.
 
-Removing the flag, setting it false, removing an actor, or removing notifications
-requests retirement of this installation's grant claim on the next install. It is
-not a global denial. A shared private provenance ledger preserves pre-existing/manual
-grants and grants still required by another installation. Only a verified,
-feature-created grant with no remaining claims is removed. Duplicate/drifted or
-interrupted provenance is preserved with an explicit warning; retained access is
-never reported as revoked. Do not delete the ledger to repair an uncertain grant.
-
-Before uninstalling Agent System or deleting an agent workspace, remove its requested
-flags and run install while the plugin and declaration are still available; confirm
-the cleanup outcome. Plugin removal itself has no reconciliation callback and cannot
-revoke grants after the code or receipts have been removed. If cleanup cannot be
-verified, retain the receipts and review remaining owner entries as an operator.
-
-Initial assignments still use the native `sessions` tool. A read-only post-turn
-check inspects persisted routed-agent ownership, a supported color, and the selected
-group. Tool observations provide setup evidence and bounded failure categories;
-missing observations or unreadable state are reported as unverified. Existing/manual
-fields are preserved, not counted as automation success. Diagnostics stay in private
-logs, never retry setup, and do not block normal work or add GitHub comments.
-
-This optional access does **not** replace the required conversation-hook permission
-introduced separately: `plugins.entries.agent-system.hooks.allowConversationAccess`.
-The hook must still be enabled for notification work.
+Initial assignments use native `sessions` tools for owner, color, and group
+setup. A read-only check records persisted results privately, preserves manual
+fields, and reports missing evidence as unverified. Setup failures do not retry,
+block work, or add GitHub comments. This optional access does not replace the
+[required conversation hook](#required-conversation-hook).
 
 ### `github.notifications.allowed-repository-owners`
 
@@ -344,8 +310,8 @@ Runs one GitHub notification intake cycle immediately.
 Without an item selector, `refresh` processes the agent's eligible assignments.
 A selector limits the cycle to one exact item. A completed cycle may establish
 the baseline, prepare an issue, continue one pending Work implementation,
-process one admitted comment, or retire work. Deferred and failed cycles return
-nonzero.
+process a bounded pair of admitted comments, or retire work. Deferred and failed
+cycles return nonzero.
 
 The CLI first polls and saves intake, then waits for execution within the refresh
 timeout. If execution is busy or the wait ends, newly admitted items remain visible
@@ -442,19 +408,15 @@ openclaw agent-system notifications wait \
 
 ### Durable State and Upgrades
 
-Intake saves short checkpoints in the agent's shared monitor file before advancing
-the provider cursor. Conversation state and publication receipts live in separate,
-independently locked lifecycle files under `channels/github-notification-conversations/`
-in the agent's private state directory. The adjacent
-`github-notification-conversations.json` is a small schema 8 routing index.
+Intake checkpoints and per-issue conversation state are stored separately in the
+agent's private state directory. Stop old runtime processes before upgrading;
+running old and new state writers together is unsupported.
 
-On the first conversation write, older supported conversation snapshots migrate
-automatically: the original bytes are retained in
-`github-notification-conversations.legacy.json`, each lifecycle record is written,
-and the index switches last. Interrupted migration can retry from the original
-snapshot. A missing or invalid indexed record fails closed for that lifecycle.
-Older plugin versions cannot read the new index; the retained legacy snapshot is
-a migration backup and does not receive subsequent conversation updates.
+Supported older conversation snapshots and reply-turn records migrate on use.
+The retained `github-notification-conversations.legacy.json` snapshot allows an
+interrupted migration to retry, but receives no later updates and is not a
+current backup. Older plugin versions cannot read the new index. Missing or
+invalid conversation records block only the affected lifecycle.
 
 ## Further Reading
 
