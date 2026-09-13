@@ -106,10 +106,13 @@ complexity, source, and reason. It is excluded from the public reply and is not
 runtime verification.
 
 For a demonstrated reasoning blocker, the agent explains the failed approach
-and requests a specific stronger profile through the existing clarification
-flow. Authentication failures, rate limits, slow tests, and missing requirements
-do not justify escalation. When native tools cannot set and verify both model
-and effort, the operator must make the change through supported session controls.
+and asks the operator to approve a specific stronger profile. This is a
+conversational request, not an automatic escalation or structured clarification
+outcome. An approved change requires native controls that support and preserve
+both model and effort; otherwise the operator uses supported session controls.
+Authentication failures, rate limits, slow tests, and missing requirements do
+not justify escalation. A stronger profile is only confirmed by native runtime
+evidence.
 
 ## Configuration Reference
 
