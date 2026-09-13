@@ -2,17 +2,18 @@
 
 ### New Features
 
+- Added `operator-owner` access for approved GitHub actors, with optional session owner, color, and group setup. [#74](https://github.com/tanaabased/openclaw-agent-system/pull/74) [#81](https://github.com/tanaabased/openclaw-agent-system/issues/81) [#84](https://github.com/tanaabased/openclaw-agent-system/pull/84)
+- Added complexity-based GitHub issue routing with saved model and effort selections and brief private selection notes. [#86](https://github.com/tanaabased/openclaw-agent-system/issues/86) [#92](https://github.com/tanaabased/openclaw-agent-system/pull/92)
 - Added configurable in-memory 1Password caching with Gateway status and flush commands. [#88](https://github.com/tanaabased/openclaw-agent-system/issues/88)
 - Added manifest model defaults and complexity tiers with installation and readiness checks. [#85](https://github.com/tanaabased/openclaw-agent-system/issues/85)
-- Added per-actor OpenClaw owner access and optional GitHub session owner, color, and group setup. [#81](https://github.com/tanaabased/openclaw-agent-system/issues/81)
 - Added per-agent GitHub identity for OpenClaw tools. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
-- Added persisted model and effort routing for GitHub issues based on complexity. [#86](https://github.com/tanaabased/openclaw-agent-system/issues/86)
 
 ### Improvements
 
-- Clarified 1Password and GitHub failure diagnostics. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87)
-- Improved Doctor and Install tables with status-only color, readable wrapping, and attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80)
-- Moved install notices below results with clearer severity and remediation. [#89](https://github.com/tanaabased/openclaw-agent-system/issues/89)
+- Distinguished 1Password and GitHub rate limits from authentication failures. [#87](https://github.com/tanaabased/openclaw-agent-system/issues/87) [#100](https://github.com/tanaabased/openclaw-agent-system/pull/100)
+- Improved Doctor and Install with component-first tables, status-only color, wrapped text, and attention-first Doctor ordering. [#80](https://github.com/tanaabased/openclaw-agent-system/issues/80) [#83](https://github.com/tanaabased/openclaw-agent-system/pull/83)
+- Improved OpenClaw discovery of the GitHub notification channel. [#70](https://github.com/tanaabased/openclaw-agent-system/pull/70)
+- Moved Install notices below results with clearer severity and remediation. [#89](https://github.com/tanaabased/openclaw-agent-system/issues/89)
 - Updated OpenClaw compatibility to 2026.9.2 or newer, with development on 2026.9.3. [#55](https://github.com/tanaabased/openclaw-agent-system/issues/55) [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
 
 ### Bug Fixes
@@ -22,6 +23,8 @@
 - Fixed first-turn model routing provenance and allowed permitted native fallbacks to continue work. [#102](https://github.com/tanaabased/openclaw-agent-system/issues/102)
 - Fixed issue-routing permission checks, install repair, and prepared-assignment recovery. [#97](https://github.com/tanaabased/openclaw-agent-system/issues/97)
 - Fixed managed GitHub worktrees to reuse configured SSH authentication. [#67](https://github.com/tanaabased/openclaw-agent-system/issues/67)
+- Fixed missing manifest warnings in `notifications` commands without contaminating JSON output. [#105](https://github.com/tanaabased/openclaw-agent-system/pull/105)
+- Fixed unfinished handoffs running for closed delivery pull requests; reopening resumes them. [#79](https://github.com/tanaabased/openclaw-agent-system/pull/79)
 - Included manifest models in the agent selection allowlist without broadening other agents or global defaults. [#99](https://github.com/tanaabased/openclaw-agent-system/issues/99)
 - Isolated GitHub reply turns per conversation and deferred acknowledgments until durable session recording. [#75](https://github.com/tanaabased/openclaw-agent-system/issues/75)
 - Preserved unseen delivery pull-request comments and revision receipts across handoff retries. [#72](https://github.com/tanaabased/openclaw-agent-system/issues/72)
