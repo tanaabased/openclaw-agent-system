@@ -18,6 +18,7 @@ import { githubNotificationChannelId } from './routing/routing.ts';
 type Finding = Omit<AgentSystemLifecycleFinding, 'component'>;
 const remediation =
   'Run openclaw agent-system install from the declaring agent workspace. Reload the Gateway if its loaded permissions are stale, then verify a fresh assignment.';
+const loadedAccessRemediation = 'Reload the Gateway, then verify a fresh assignment.';
 const scope =
   'This is channel-wide OpenClaw operator recognition, not repository-scoped or styling-only access; independent tool policy still applies.';
 
@@ -65,8 +66,8 @@ function ownerEntries(config: OpenClawConfig): Array<string | number> {
   return [...value];
 }
 
-function warning(code: string, message: string): Finding {
-  return { code: `github-operator-${code}`, message, remediation, status: 'warning' };
+function warning(code: string, message: string, remedy = remediation): Finding {
+  return { code: `github-operator-${code}`, message, remediation: remedy, status: 'warning' };
 }
 
 /** Ask the host's authorization resolver; do not dispatch a turn or replace its sender. */
@@ -191,7 +192,8 @@ export default class GitHubOperatorAccess {
               }
             : warning(
                 'loaded-access-unverified',
-                `${actor.login} (${identity}) is saved, but loaded operator recognition could not be verified. ${scope}`,
+                `Running Gateway access for ${actor.login} is unverified. Reload the Gateway, then verify a fresh assignment.`,
+                loadedAccessRemediation,
               ),
         );
       }
@@ -335,7 +337,7 @@ export default class GitHubOperatorAccess {
         outcomes.push({
           code: 'github-operator-grants-reconciled',
           status: changed ? 'updated' : 'unchanged',
-          message: `Verified saved operator entries for ${planned.join(', ') || 'retired declarations'}. ${scope} Saved configuration is not proof of effective Gateway permissions; reload and verify a fresh assignment.`,
+          message: `Operator ${actors.length === 1 ? 'entry' : 'entries'} for ${actors.map(({ login }) => login).join(', ') || 'retired declarations'} ${actors.length === 1 ? 'is' : 'are'} saved.`,
         });
       });
     } catch {

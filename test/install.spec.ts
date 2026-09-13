@@ -163,8 +163,8 @@ describe('cli/install', () => {
     assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
   });
 
-  it('should warn without styling a user-managed codex configuration', async () => {
-    const { diagnostics, run } = createHarness({
+  it('should render completed warnings beneath the results table', async () => {
+    const { diagnostics, output, run } = createHarness({
       install: {
         outcomes: [
           {
@@ -188,9 +188,8 @@ describe('cli/install', () => {
 
     await run();
 
-    assert.deepEqual(diagnostics, [
-      'path: The existing .codex/config.toml is user-managed. code=codex-config-user-managed\n',
-    ]);
+    assert.deepEqual(diagnostics, []);
+    assert.match(output.join(''), /workspace  \/workspace\n\nNotices\n\n⚠ Warning\n  The existing/u);
   });
 
   it('should report explicit unchanged outcomes for every component', async () => {
@@ -236,7 +235,7 @@ describe('cli/install', () => {
     assert.deepEqual(rows.slice(-2), ['', 'workspace  /workspace']);
   });
 
-  it('should retain operation order and warning routing in human and json output', async () => {
+  it('should retain operation order and keep warning codes in json diagnostics', async () => {
     const installed: AgentInstallResult = {
       agentId: 'tanaabot',
       outcomes: structuredClone(installOutcomes),
@@ -257,7 +256,10 @@ describe('cli/install', () => {
         { manifest: validResult.manifest, workspaceDir: '/workspace' },
       ]);
       assert.deepEqual(harness.exitCodes, []);
-      assert.deepEqual(harness.diagnostics, ['path: Manual follow-up. code=manual-follow-up\n']);
+      assert.deepEqual(
+        harness.diagnostics,
+        json ? ['path: Manual follow-up. code=manual-follow-up\n'] : [],
+      );
       const text = harness.output.join('');
       assert.equal(text.includes('manual-follow-up'), json);
       if (json) {
@@ -273,9 +275,46 @@ describe('cli/install', () => {
         for (const { message } of installed.outcomes) {
           assert.ok(text.replace(/\s+/g, ' ').includes(message));
         }
+        assert.match(text, /Notices\n\n⚠ Warning\n  Manual follow-up\./u);
       }
       assert.deepEqual(installed, original);
     }
+  });
+
+  it('should separate operator scope from an unverified Gateway warning', async () => {
+    const { diagnostics, output, run } = createHarness({
+      terminalColumns: 46,
+      install: {
+        outcomes: [
+          {
+            code: 'github-operator-grants-reconciled',
+            component: 'github',
+            message: 'Operator entry for pirog is saved.',
+            status: 'unchanged',
+          },
+        ],
+        agentId: 'tanaabot',
+        warnings: [
+          {
+            code: 'github-operator-loaded-access-unverified',
+            component: 'github',
+            message:
+              'Running Gateway access for pirog is unverified. Reload the Gateway, then verify a fresh assignment.',
+          },
+        ],
+        workspaceDir: '/workspace',
+      },
+    });
+
+    await run();
+
+    const text = output.join('');
+    assert.deepEqual(diagnostics, []);
+    assert.ok(text.indexOf('workspace  /workspace') < text.indexOf('Notices'));
+    assert.match(text, /ℹ Notice\n  Operator recognition is channel-wide OpenClaw/u);
+    assert.match(text, /⚠ Warning\n  Running Gateway access for pirog is unverified\./u);
+    assert.match(text, /  Reload the Gateway, then verify a fresh/u);
+    assert.equal(text.includes('github-operator-loaded-access-unverified'), false);
   });
 
   it('should write structured json from the same install result', async () => {
