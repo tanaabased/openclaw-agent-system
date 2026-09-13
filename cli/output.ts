@@ -12,6 +12,7 @@ export interface CliStyles {
   bold(value: string): string;
   error(value: string): string;
   field(value: string): string;
+  notice(value: string): string;
   status(value: string): string;
   target(value: string): string;
   warning(value: string): string;
@@ -51,6 +52,7 @@ export function createCliStyles(environment: NodeJS.ProcessEnv = process.env): C
     bold: (value) => color.bold(value),
     error: (value) => color.bold(color.red(value)),
     field: (value) => color.dim(value),
+    notice: (value) => color.bold(color.cyan(value)),
     status: (value) => color.bold(color.green(value)),
     target: (value) => color.ts(value),
     warning: (value) => color.bold(color.yellow(value)),
@@ -144,6 +146,44 @@ export function writeCliLifecycleTable(
   terminalColumns?: number,
 ): void {
   writeCliLines(output, renderCliLifecycleTable(lines, workspaceDir, styles, terminalColumns));
+}
+
+export interface CliNotice {
+  message: string;
+  severity: 'notice' | 'warning';
+}
+
+/** Render completed install notices after the lifecycle table without dimming their guidance. */
+export function renderCliNotices(
+  notices: readonly CliNotice[],
+  styles: CliStyles = defaultCliStyles,
+  terminalColumns = 80,
+): string[] {
+  if (notices.length === 0) return [];
+  const columns =
+    Number.isFinite(terminalColumns) && terminalColumns >= 1 ? Math.floor(terminalColumns) : 80;
+  const indent = '  ';
+  const messageWidth = Math.max(1, columns - indent.length);
+  const blocks = notices.flatMap(({ message, severity }) => {
+    const label = severity === 'notice' ? 'ℹ Notice' : '⚠ Warning';
+    const styledLabel = severity === 'notice' ? styles.notice(label) : styles.warning(label);
+    return [
+      styledLabel,
+      ...wrapAnsi(message, messageWidth, { hard: true })
+        .split('\n')
+        .map((line) => `${indent}${line}`),
+    ];
+  });
+  return ['', styles.bold('Notices'), '', ...blocks];
+}
+
+export function writeCliNotices(
+  output: CliOutput,
+  notices: readonly CliNotice[],
+  styles?: CliStyles,
+  terminalColumns?: number,
+): void {
+  writeCliLines(output, renderCliNotices(notices, styles, terminalColumns));
 }
 
 export function writeCliJson(output: CliOutput, value: unknown): void {
