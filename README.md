@@ -12,13 +12,17 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System makes an OpenClaw agent workspace self-onboarding: run `openclaw agent-system install` there to register and identify the agent, reconcile its supported configuration, and equip its managed tools to operate with that agent's own environment and credentials instead of a shared global identity.
+Agent System equips each OpenClaw agent with its own identity, environment, and
+credentials. Declare the agent's configuration in `agent.yaml`, then run
+`openclaw agent-system install` from the workspace to register it and configure
+its managed tools.
 
 **Current cool capabilities:**
 
 - **1Password-backed per-agent SSH private keys are never written to disk.**
 - **Each agent gets its own Git authorship, signing, and GitHub identity.**
 - **Work mode turns an assigned GitHub issue into a delivery pull request.**
+- **Automatically route GitHub issues to models matched to their complexity.**
 
 > [!NOTE]
 > Requires OpenClaw 2026.9.2 or newer and is developed against 2026.9.3. See
@@ -36,7 +40,6 @@ Today, Agent System:
 - registers an agent workspace with OpenClaw and reconciles its public identity
 - assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
 - wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
-- reconciles each agent's per-agent grants for the native Agent System tools enabled by its manifest
 - applies each tool's operation-specific `allow` or `deny` policy before resolving credentials or executing the operation
 - validates manifests, installs configured components, projects executable paths, and reports installed-state drift
 

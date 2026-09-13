@@ -104,11 +104,11 @@ export interface AgentSystemToolResourceLease {
   sensitiveValues?: readonly string[];
 }
 
-export interface AgentSystemCliToolDefinition<
+/** Shared static contract for CLI-backed and semantic tools. */
+export interface AgentSystemToolDefinition<
   TParameters extends TSchema,
   TDeclaredConfiguration,
-  TResolvedConfiguration,
-  TOutput,
+  TResolvedConfiguration = unknown,
 > {
   apiVersion: 1;
   authorization?: {
@@ -128,6 +128,27 @@ export interface AgentSystemCliToolDefinition<
   };
   commands?: AgentSystemToolCommand[];
   guidance?: AgentSystemToolGuidance;
+  tool: {
+    available?(context: OpenClawPluginToolContext): boolean;
+    classify(
+      input: Static<TParameters>,
+      configuration: TDeclaredConfiguration,
+    ): AgentSystemOperation;
+    description: string;
+    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
+    label: string;
+    name: string;
+    parameters: TParameters;
+    validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
+  };
+}
+
+export interface AgentSystemCliToolDefinition<
+  TParameters extends TSchema,
+  TDeclaredConfiguration,
+  TResolvedConfiguration,
+  TOutput,
+> extends AgentSystemToolDefinition<TParameters, TDeclaredConfiguration, TResolvedConfiguration> {
   runner: {
     /** Acquire after authorization; implementations must clean partial resources before throwing. */
     acquireResources?(
@@ -187,19 +208,12 @@ export interface AgentSystemCliToolDefinition<
       },
     ): Promise<string | undefined> | string | undefined;
   };
-  tool: {
-    available?(context: OpenClawPluginToolContext): boolean;
-    classify(
-      input: Static<TParameters>,
-      configuration: TDeclaredConfiguration,
-    ): AgentSystemOperation;
-    description: string;
-    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
-    label: string;
-    name: string;
+  tool: AgentSystemToolDefinition<
+    TParameters,
+    TDeclaredConfiguration,
+    TResolvedConfiguration
+  >['tool'] & {
     normalize(result: AgentSystemCliResult, configuration: TResolvedConfiguration): TOutput;
-    parameters: TParameters;
-    validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
   };
 }
 
@@ -208,21 +222,7 @@ export interface AgentSystemSemanticToolDefinition<
   TDeclaredConfiguration,
   TResolvedConfiguration,
   TOutput,
-> {
-  apiVersion: 1;
-  authorization?: AgentSystemCliToolDefinition<
-    TParameters,
-    TDeclaredConfiguration,
-    TResolvedConfiguration,
-    TOutput
-  >['authorization'];
-  configuration: AgentSystemCliToolDefinition<
-    TParameters,
-    TDeclaredConfiguration,
-    TResolvedConfiguration,
-    TOutput
-  >['configuration'];
-  commands?: AgentSystemToolCommand[];
+> extends AgentSystemToolDefinition<TParameters, TDeclaredConfiguration, TResolvedConfiguration> {
   execute(
     input: Static<TParameters>,
     configuration: TResolvedConfiguration,
@@ -235,21 +235,6 @@ export interface AgentSystemSemanticToolDefinition<
       workspaceDir: string;
     },
   ): Promise<TOutput>;
-  guidance?: AgentSystemToolGuidance;
-  id: string;
-  tool: {
-    available?(context: OpenClawPluginToolContext): boolean;
-    classify(
-      input: Static<TParameters>,
-      configuration: TDeclaredConfiguration,
-    ): AgentSystemOperation;
-    description: string;
-    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
-    label: string;
-    name: string;
-    parameters: TParameters;
-    validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
-  };
 }
 
 export interface AgentSystemToolExecutionMetadata {

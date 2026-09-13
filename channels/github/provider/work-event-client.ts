@@ -2,6 +2,7 @@ import type { ConnectedGitHubAccountClient } from '../../../core/github-account-
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
 import type { GitHubRateLimit } from './api-response.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';
+import readItemContext from './read-item-context.ts';
 import GitHubWorkEventApiClient from './work-event-api-client.ts';
 import type {
   GitHubAssignedItemDiscovery,
@@ -82,7 +83,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     itemType: 'issue' | 'pull-request' = 'issue',
     includeRoutingMetadata = false,
   ): Promise<GitHubNotificationItemContext> {
-    return this.#items.getItemContext(owner, name, number, itemType, includeRoutingMetadata);
+    return readItemContext(this.#api, owner, name, number, itemType, includeRoutingMetadata);
   }
 
   listAssignmentEvents(

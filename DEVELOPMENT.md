@@ -113,17 +113,17 @@ transport, model interpretation, or Codex-native behavior is under test. The
 `agent` and `github` examples and `credentials` cache checks use AIMock;
 `models`, `path`, and `security` remain live.
 
-Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#in-memory-1password-caching);
+Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#opcache);
 unit tests set their own policy. The [credentials example](examples/credentials/README.md)
 tests storage, cache reuse, flush, and credential-mutation invalidation. Assert multiple fields
 from one validation result instead of repeating provider calls.
 
 #### GitHub Notification Scenarios
 
-The pull-request workflow runs six deterministic mock-provider scenarios on
-Ubuntu: Work assignment, Guided assignment, implementation, pull-request
-lifecycle, comment, and retirement. The manual workflow can run any one of those
-scenarios, or the complete matrix, with a live provider on Ubuntu or macOS.
+The [pull-request workflow](./.github/workflows/pr-notification-tests.yml) runs
+deterministic notification scenarios on Ubuntu. The
+[manual workflow](./.github/workflows/notification-tests.yml) selects individual
+scenarios or the complete matrix with a live provider on Ubuntu or macOS.
 
 Each scenario exercises a release-shaped Agent System package through the
 installed OpenClaw Gateway. Mock pull-request checks compare lifecycle, tool,

@@ -194,9 +194,9 @@ configuration, routing, lifecycle, and security contract.
 
 ## CLI
 
-This is a trusted operator interface for administration, testing, and debugging.
-Agents should use `agent_system_github`; an agent with unrestricted host command
-access could otherwise select another installed agent.
+These are operator commands; agents use `agent_system_github`. See the
+[shared trust boundary](../../ADVANCED.md#trust-boundary) for identity binding and
+host-access limits.
 
 ### Usage
 
@@ -231,11 +231,9 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-The shim routes ordinary commands through `openclaw agent-system tool gh` and
-never receives a credential. In a direct shell it is an operator convenience;
-in a supported agent command it remains bound to the active agent and admitted
-directories. Absolute binaries, replaced `PATH` values, direct HTTP, SDKs, MCP
-tools, and unrelated host processes can bypass it.
+The shim routes commands through `openclaw agent-system tool gh` under the
+[same identity binding](../../ADVANCED.md#trust-boundary). The shim itself never
+receives a credential.
 
 ## Further Reading
 

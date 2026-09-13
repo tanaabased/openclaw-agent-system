@@ -38,7 +38,7 @@ Use `agent_system_github` for GitHub work when the active agent manifest contain
 
 ## When Not to Use
 
-- Use ordinary `git` tooling for local working-tree, branch, commit, or push operations.
+- Use [Git CLI](../git-cli/SKILL.md) for local working-tree, branch, commit, or push operations.
 - Do not use this skill when the active agent manifest does not configure `github`.
 - Do not use it to manage GitHub authentication, aliases, extensions, or Agent System's generated config.
 

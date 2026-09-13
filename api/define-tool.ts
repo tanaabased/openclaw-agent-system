@@ -1,57 +1,15 @@
-import type {
-  OpenClawPluginToolContext,
-  OpenClawPluginToolFactory,
-} from 'openclaw/plugin-sdk/plugin-entry';
+import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { AgentManifest } from '../manifest/types.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentSystemToolRuntime from './runtime.ts';
 import type {
-  AgentSystemAuthorizationDecision,
-  AgentSystemManifestValueResolver,
-  AgentSystemOperation,
-  AgentSystemToolCommand,
+  AgentSystemToolDefinition,
   AgentSystemToolExecutionResult,
-  AgentSystemToolGuidance,
   AgentSystemToolScope,
   RegisteredAgentSystemTool,
 } from './types.ts';
-
-interface ToolDefinition<TParameters extends TSchema, TDeclaredConfiguration> {
-  apiVersion: 1;
-  authorization?: {
-    authorize?(
-      operation: AgentSystemOperation,
-      configuration: TDeclaredConfiguration,
-    ): AgentSystemAuthorizationDecision | Promise<AgentSystemAuthorizationDecision>;
-    policyId?: string;
-  };
-  commands?: AgentSystemToolCommand[];
-  configuration: {
-    read(manifest: AgentManifest): TDeclaredConfiguration | undefined;
-    resolve(
-      configuration: TDeclaredConfiguration,
-      resolver: AgentSystemManifestValueResolver,
-    ): unknown;
-  };
-  guidance?: AgentSystemToolGuidance;
-  id: string;
-  tool: {
-    available?(context: OpenClawPluginToolContext): boolean;
-    classify(
-      input: Static<TParameters>,
-      configuration: TDeclaredConfiguration,
-    ): AgentSystemOperation;
-    description: string;
-    inputFromCommand(argv: string[], stdin?: string): Static<TParameters>;
-    label: string;
-    name: string;
-    parameters: TParameters;
-    validate?(input: Static<TParameters>, configuration: TDeclaredConfiguration): void;
-  };
-}
 
 type ExecuteTool<TParameters extends TSchema> = (
   runtime: AgentSystemToolRuntime,
@@ -69,7 +27,7 @@ function toolResult(output: unknown, auditId: string) {
 
 /** Compile one static Agent System definition into native, command, and policy surfaces. */
 export default function defineAgentSystemTool<TParameters extends TSchema, TDeclaredConfiguration>(
-  definition: ToolDefinition<TParameters, TDeclaredConfiguration>,
+  definition: AgentSystemToolDefinition<TParameters, TDeclaredConfiguration>,
   execute: ExecuteTool<TParameters>,
 ): RegisteredAgentSystemTool {
   const factory =

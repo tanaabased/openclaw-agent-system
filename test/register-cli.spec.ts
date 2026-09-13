@@ -41,6 +41,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
 function createProgram(
   input?: Readable,
   dependencies: {
+    manifestResult?: AgentManifestLoadResult;
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
@@ -171,11 +172,11 @@ function createProgram(
     manifestService: {
       async loadForAgentId(agentId) {
         calls.agent.push(agentId);
-        return validResult;
+        return dependencies.manifestResult ?? validResult;
       },
       async loadForCommandDirectory(workspaceDir) {
         calls.workspace.push(workspaceDir);
-        return validResult;
+        return dependencies.manifestResult ?? validResult;
       },
     },
     notificationMonitorService: {
@@ -273,6 +274,37 @@ function createProgram(
 }
 
 describe('cli/register', () => {
+  it('should report loaded manifest warnings consistently without corrupting command output', async () => {
+    const commands = [
+      ['doctor', '--json'],
+      ['credentials', 'set', 'op', '--from-env'],
+      ['credentials', 'unset', 'op'],
+      ['credentials', 'validate', 'op', '--from-env'],
+      ['notifications', 'status', '--json'],
+      ['notifications', 'refresh', '--json'],
+      ['notifications', 'wait', '--for', 'baseline-ready', '--json'],
+    ];
+    for (const argv of commands) {
+      for (const selection of [[], ['--agent', 'tanaabot']]) {
+        const { calls, diagnostics, output, program } = createProgram(undefined, {
+          manifestResult: {
+            ...validResult,
+            diagnostics: [
+              { code: 'manifest-shadowed', message: 'Root manifest ignored.', severity: 'warning' },
+            ],
+          },
+        });
+        await program.parseAsync(['node', 'openclaw', 'agent-system', ...argv, ...selection]);
+        assert.equal(diagnostics.length, 1);
+        assert.match(diagnostics[0]!, /code=manifest-shadowed/u);
+        assert.equal(output.join('').includes('manifest-shadowed'), false);
+        if (argv.includes('--json')) assert.doesNotThrow(() => JSON.parse(output.join('')));
+        assert.deepEqual(calls.agent, selection.length ? ['tanaabot'] : []);
+        assert.deepEqual(calls.workspace, selection.length ? [] : ['/current']);
+      }
+    }
+  });
+
   it('should default cache controls to human output through both aliases', async () => {
     for (const alias of ['agent-system', 'as']) {
       for (const action of ['status', 'flush']) {

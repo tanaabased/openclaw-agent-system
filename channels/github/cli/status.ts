@@ -1,13 +1,12 @@
+import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
 import {
   type CliOutput,
   type CliStyles,
-  writeCliDiagnostics,
   writeCliError,
   writeCliJson,
   writeCliSummary,
 } from '../../../cli/output.ts';
-import { formatManifestFailure } from '../../../core/logger.ts';
 import type GitHubNotificationStatusService from '../intake/monitor/status-service.ts';
 import { NotificationCliOptionError, notificationItemSelector } from './options.ts';
 
@@ -44,17 +43,8 @@ export default async function statusNotificationsAgentSystem(
     options.setExitCode(2);
     return;
   }
-  const manifest = options.agentId
-    ? await options.manifestService.loadForAgentId(options.agentId, 'cli')
-    : await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli');
-  if (manifest.status !== 'loaded') {
-    writeCliDiagnostics(
-      options.output,
-      formatManifestFailure(manifest).map(({ message }) => message),
-    );
-    options.setExitCode(1);
-    return;
-  }
+  const manifest = await loadCommandManifest(options);
+  if (!manifest) return;
 
   const result = await options.statusService.inspect(manifest.manifest.agent.id, selector);
   if (options.json) {
