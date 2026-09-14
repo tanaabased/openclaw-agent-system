@@ -28,19 +28,14 @@ openclaw agent-system doctor --json \
 ```
 
 ```bash
-# should reconcile local memory and diagnose its separately managed provider
+# should reconcile local memory and report readiness without initializing its model
 cd "$GITHUB_WORKSPACE/examples/memory/local"
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
 openclaw config get 'agents.entries.memory-local.memory.search' --json \
   | jq -e '.provider == "local" and .fallback == "none" and (has("remote") | not)'
-if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
-printf '%s\n' "$output" \
-  | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-provider-unavailable" and .status == "blocked" and (.remediation | contains("--provider llama-cpp --method local")))' \
-  || {
-    printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
-    exit 1
-  }
+openclaw agent-system doctor --json \
+  | jq -e '.findings | any(.component == "memory" and ((.code == "agent-memory-local-ready" and .status == "healthy") or (.code == "agent-memory-local-unprobed" and .status == "manual")))'
 ```
 
 ```bash
