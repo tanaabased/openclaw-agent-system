@@ -150,12 +150,10 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is repeatable and reconciles only workspace-declared state. Declared
-models use the agent's established runtime route; Agent System does not provision
-or resolve model credentials. Memory search may use OpenAI, OpenClaw's local
-provider, or keyword-only search; its credential remains an agent environment
-binding rather than an `openclaw.json` value. See [Advanced](./ADVANCED.md) for
-the core manifest and CLI references and the component documentation index.
+`install` is repeatable and reconciles only workspace-declared state. Agent
+System does not provision model credentials, and memory credentials remain agent
+environment bindings rather than `openclaw.json` values. See
+[Advanced](./ADVANCED.md) for the complete manifest and CLI references.
 
 ## Development
 

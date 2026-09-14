@@ -204,31 +204,21 @@ required:
 | `model`    | string                    | no       | Overrides OpenClaw's embedding model; valid only with `openai`.           |
 | `api-key`  | environment name          | no       | Reads one declared Agent System environment binding; valid with `openai`. |
 
-`install` owns only the bound agent's memory provider, model, fallback, and
-remote API-key reference. It sets fallback to `none`, preserves unrelated
-per-agent memory settings, and leaves other agents alone. The `none` provider
-keeps full-text keyword search available. The `local` provider requires
-OpenClaw's local embedding plugin; install it separately with
-`openclaw plugins install @openclaw/llama-cpp-provider` before expecting semantic
-search.
+`install` sets the bound agent's provider and fallback, plus the optional model
+and API-key reference, while preserving other memory settings and agents. The
+`none` provider retains keyword search. Configure `local` through OpenClaw before
+expecting semantic search:
 
-An OpenAI `api-key` becomes an OpenClaw `SecretRef`, not plaintext configuration.
-OpenClaw asks Agent System's registered exec secret provider for that one binding
-when it builds or reloads its secret snapshot. The provider rechecks the bound
-agent's current manifest and returns only the requested value. It does not inject
-the completed agent environment into OpenClaw or unrelated tools.
+```sh
+openclaw models --agent tanaabot auth login --provider llama-cpp --method local
+```
 
-This is startup/reload resolution, not just-in-time injection for each embedding
-request; OpenClaw does not expose a public third-party hook at that narrower
-boundary. Changes to the binding therefore require the ordinary OpenClaw reload
-or restart. The reference is scoped by agent id and binding name, but this remains
-a same-host operator boundary: anyone allowed to rewrite native `openclaw.json`
-can also copy a valid reference.
-
-For restart-safe production configuration, source the binding from a declared
-dotenv file or stored 1Password credential. A host `OPENAI_API_KEY` is passed to
-the provider for isolated CI and direct-run setups, but arbitrary process
-environment values are deliberately not inherited.
+An OpenAI `api-key` becomes an agent-and-binding-scoped OpenClaw `SecretRef`, not
+plaintext configuration. Agent System resolves only that declared binding when
+OpenClaw builds or reloads its secret snapshot; changing it requires a reload or
+restart. Use a declared dotenv file or stored 1Password credential for
+restart-safe configuration. This remains a same-host operator boundary because
+an operator who can rewrite `openclaw.json` can copy the reference.
 
 `doctor` never changes or deletes the memory database. It reports keyword-index
 readiness for `none`, verifies local-provider availability for `local`, and makes

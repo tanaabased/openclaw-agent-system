@@ -36,7 +36,7 @@ openclaw config get 'agents.entries.memory-local.memory.search' --json \
   | jq -e '.provider == "local" and .fallback == "none" and (has("remote") | not)'
 if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$output" \
-  | jq -e '.findings | any(.component == "memory" and .status == "blocked" and (.remediation | contains("@openclaw/llama-cpp-provider")))'
+  | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-provider-unavailable" and .status == "blocked" and (.remediation | contains("--provider llama-cpp --method local")))'
 ```
 
 ```bash
@@ -53,7 +53,11 @@ if [[ "$configured" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
 ```bash
 # should prove openai embedding readiness through the public doctor surface
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
-openclaw agent-system doctor --json \
+output="$(openclaw agent-system doctor --json)" || {
+  printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
+  exit 1
+}
+printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
@@ -65,7 +69,11 @@ openclaw-gateway start
 openclaw-gateway stop
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
-openclaw agent-system doctor --json \
+output="$(openclaw agent-system doctor --json)" || {
+  printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
+  exit 1
+}
+printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 ```
 

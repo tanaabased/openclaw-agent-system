@@ -83,17 +83,24 @@ function providerMismatchFinding(
 ): ContributionFinding[] {
   const requested = status.requestedProvider ?? status.provider;
   if (requested === provider && status.provider === provider && !status.fallback) return [];
+  if (provider === 'local') return [localProviderSetupFinding(agentId)];
   return [
     {
       code: 'agent-memory-provider-unavailable',
       message: `OpenClaw did not activate the declared ${provider} memory provider for ${agentId}.`,
-      remediation:
-        provider === 'local'
-          ? `Install the managed local provider with openclaw plugins install @openclaw/llama-cpp-provider, then run openclaw memory status --agent ${agentId} --deep.`
-          : `Review openclaw memory status --agent ${agentId} --deep and restore the declared provider.`,
+      remediation: `Review openclaw memory status --agent ${agentId} --deep and restore the declared provider.`,
       status: 'blocked',
     },
   ];
+}
+
+function localProviderSetupFinding(agentId: string): ContributionFinding {
+  return {
+    code: 'agent-memory-provider-unavailable',
+    message: `OpenClaw local memory search is not ready for ${agentId}.`,
+    remediation: `Configure the managed local provider with openclaw models --agent ${agentId} auth login --provider llama-cpp --method local, then run openclaw memory status --agent ${agentId} --deep.`,
+    status: 'blocked',
+  };
 }
 
 function ftsFinding(status: MemoryStatus['status'], agentId: string): ContributionFinding[] {
@@ -195,6 +202,7 @@ export default function createMemoryLifecycleContribution(
           workspaceDir: context.workspaceDir,
         });
       } catch {
+        if (memory.search.provider === 'local') return [localProviderSetupFinding(agentId)];
         return [
           {
             code: 'agent-memory-status-unavailable',

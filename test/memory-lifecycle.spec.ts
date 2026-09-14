@@ -53,7 +53,7 @@ function readyStatus(provider = 'openai'): MemoryStatus {
 
 interface HarnessOptions {
   binding?: 'available' | 'missing' | 'unavailable';
-  status?: MemoryStatus;
+  status?: Error | MemoryStatus;
 }
 
 function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
@@ -62,6 +62,7 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
   const dependencies: MemoryLifecycleDependencies = {
     async inspectMemoryStatus({ deep }) {
       statusCalls.push(deep);
+      if (options.status instanceof Error) throw options.status;
       return options.status ?? readyStatus();
     },
     async inspectBinding() {
@@ -158,23 +159,15 @@ describe('agent/memory-lifecycle', () => {
     };
     const localContext = { manifest: localManifest, workspaceDir: context.workspaceDir };
     const config = baseConfig();
-    const harness = createHarness(config, {
-      status: {
-        status: {
-          provider: 'none',
-          requestedProvider: 'local',
-          fts: { enabled: true, available: true },
-          vector: { enabled: true, storeAvailable: false },
-        },
-      },
-    });
+    const harness = createHarness(config, { status: new Error('provider setup required') });
     await harness.contribution.reconcile?.(localContext);
 
     const findings = await harness.contribution.inspect?.(localContext);
 
     assert.deepEqual(harness.statusCalls, [false]);
     assert.equal(findings?.[0]?.code, 'agent-memory-provider-unavailable');
-    assert.equal(findings?.[0]?.remediation?.includes('@openclaw/llama-cpp-provider'), true);
+    assert.equal(findings?.[0]?.remediation?.includes('--provider llama-cpp --method local'), true);
+    assert.equal(findings?.[0]?.remediation?.includes('plugins install'), false);
   });
 
   it('should distinguish keyword readiness and incompatible indexes', async () => {
