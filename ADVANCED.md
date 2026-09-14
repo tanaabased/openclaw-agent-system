@@ -87,6 +87,12 @@ models:
   medium: { model: openai/gpt-5.6-sol, effort: high }
   high: { model: openai/gpt-6-astra, effort: xhigh }
 
+memory:
+  search:
+    provider: openai
+    model: text-embedding-3-small
+    api-key: EMBEDDINGS_API_KEY
+
 environment:
   dotenv:
     - .agent-system/env/base.env
@@ -185,6 +191,49 @@ unsupported.
 
 Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.
+
+### `memory`
+
+`memory` is optional. Omitting it leaves the bound agent's existing OpenClaw
+memory search configuration untouched. When present, `search.provider` is
+required:
+
+| Field      | Type                      | Required | Behavior                                                                  |
+| ---------- | ------------------------- | -------- | ------------------------------------------------------------------------- |
+| `provider` | `none`, `local`, `openai` | yes      | Selects keyword-only, local embedding, or OpenAI embedding search.        |
+| `model`    | string                    | no       | Overrides OpenClaw's embedding model; valid only with `openai`.           |
+| `api-key`  | environment name          | no       | Reads one declared Agent System environment binding; valid with `openai`. |
+
+`install` sets the bound agent's provider and fallback, plus the optional model
+and API-key reference, while preserving other memory settings and agents. The
+`none` provider retains keyword search. Configure `local` through OpenClaw before
+expecting semantic search:
+
+```sh
+openclaw models --agent tanaabot auth login --provider llama-cpp --method local
+```
+
+An OpenAI `api-key` becomes an agent-and-binding-scoped OpenClaw `SecretRef`, not
+plaintext configuration. Agent System resolves only that declared binding when
+OpenClaw builds or reloads its secret snapshot; changing it requires a reload or
+restart. Use a declared dotenv file or stored 1Password credential for
+restart-safe configuration. This remains a same-host operator boundary because
+an operator who can rewrite `openclaw.json` can copy the reference.
+
+`doctor` never changes or deletes the memory database. It reports keyword-index
+readiness for `none`, verifies local-provider availability for `local`, and makes
+one bounded embedding probe for `openai`; authentication, permission,
+billing/quota, and transport failures are reported without reproducing upstream
+error bodies. Index identity or synchronization drift remains a separate finding.
+Use OpenClaw's explicit memory commands when you intend to mutate the index:
+
+```sh
+# inspect the bound agent without rebuilding its index.
+openclaw memory status --agent tanaabot --deep --json
+
+# rebuild only when doctor reports index drift and you intend the write.
+openclaw memory status --index --force --agent tanaabot
+```
 
 ### `environment`
 
@@ -365,7 +414,7 @@ directories, mode `0600`, and a regular non-symlinked credential file.
 ### `openclaw agent-system install`
 
 Installs the current workspace agent and reconciles its public identity, model
-defaults, executable paths, and configured capability state.
+defaults, memory search, executable paths, and configured capability state.
 
 ```text
 openclaw agent-system install [--json]
@@ -384,8 +433,8 @@ remains authoritative and blocks reconciliation.
 
 ### `openclaw agent-system doctor`
 
-Inspects agent registration, public identity, model configuration, path projection,
-and configured capabilities for drift without applying repairs.
+Inspects agent registration, public identity, model and memory configuration,
+path projection, and configured capabilities for drift without applying repairs.
 
 ```text
 openclaw agent-system doctor [--agent <id>] [--json]
@@ -394,7 +443,9 @@ openclaw agent-system doctor [--agent <id>] [--json]
 Doctor reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
 responsibility. It also reports tool-access and execution-boundary findings;
-tool-specific checks are documented in each tool guide.
+tool-specific checks are documented in each tool guide. OpenAI memory inspection
+performs one bounded embedding request, which may incur a small provider charge;
+other providers remain read-only and unprobed.
 
 ### `openclaw agent-system notifications`
 

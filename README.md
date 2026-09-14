@@ -104,14 +104,22 @@ models:
   medium: { model: openai/gpt-5.6-sol, effort: high }
   high: { model: openai/gpt-6-astra, effort: xhigh }
 
+memory:
+  search:
+    provider: openai
+    model: text-embedding-3-small
+    api-key: EMBEDDINGS_API_KEY
+
 environment:
   # import this agent's identity and tool credentials from 1password.
   op: z7q4m2n9v6k3p8r5t1w0x4c2ba
   set:
+    EMBEDDINGS_API_KEY: $OPENAI_API_KEY
     SSH_KEY:
       from-op: 'op://v4u7l2t9n5p8r1c6x3z0m4q7da/ssh-key/private key?ssh-format=openssh'
   required:
     - AGENT_EMAIL
+    - EMBEDDINGS_API_KEY
     - GH_TOKEN_TANAABOT
     - SSH_KEY
 
@@ -142,7 +150,10 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is repeatable and reconciles only workspace-declared state. Declared models use the agent's established runtime route; Agent System does not provision or resolve model credentials. See [Advanced](./ADVANCED.md) for the core manifest and CLI references and the component documentation index.
+`install` is repeatable and reconciles only workspace-declared state. Agent
+System does not provision model credentials, and memory credentials remain agent
+environment bindings rather than `openclaw.json` values. See
+[Advanced](./ADVANCED.md) for the complete manifest and CLI references.
 
 ## Development
 

@@ -1,0 +1,9 @@
+schema-version: 1
+
+agent:
+  id: memory-none
+  name: Memory None
+
+memory:
+  search:
+    provider: none

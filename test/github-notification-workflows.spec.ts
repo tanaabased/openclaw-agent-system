@@ -508,6 +508,7 @@ describe('github notification workflows', () => {
         'doctor',
         'agent',
         'identity',
+        'memory',
         'models',
         'path',
         'env',

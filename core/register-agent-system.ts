@@ -19,6 +19,8 @@ import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
+import createMemoryLifecycleContribution from '../agent/memory-lifecycle.ts';
+import { parseMemoryStatus } from '../agent/memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
 import CodexPathConfigService from '../paths/codex-config-service.ts';
@@ -321,6 +323,40 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       resolveThinkingPolicy(params) {
         return api.runtime.agent.resolveThinkingPolicy(params);
       },
+    }),
+    createMemoryLifecycleContribution({
+      async inspectMemoryStatus({ agentId, deep, workspaceDir }) {
+        const result = await runPluginCommandWithTimeout({
+          argv: [
+            ...openClawCommand,
+            'memory',
+            'status',
+            '--agent',
+            agentId,
+            ...(deep ? ['--deep'] : []),
+            '--json',
+          ],
+          cwd: workspaceDir,
+          timeoutMs: deep ? 120_000 : 30_000,
+        });
+        try {
+          return parseMemoryStatus(result.stdout, agentId);
+        } catch {
+          throw new Error(result.stderr.trim() || `OpenClaw memory status exited ${result.code}.`);
+        }
+      },
+      async inspectBinding({ agentId, binding }) {
+        const service = environmentServiceRef.current;
+        if (!service) return 'unavailable';
+        const loaded = await service.loadForAgentId(agentId, 'cli');
+        if (loaded.status !== 'loaded') return 'unavailable';
+        const value = loaded.environment.values[binding];
+        return value === undefined || value === '' ? 'missing' : 'available';
+      },
+      mutateConfigFile(params) {
+        return api.runtime.config.mutateConfigFile(params);
+      },
+      readConfig,
     }),
     createToolAccessLifecycleContribution({
       readConfig,
