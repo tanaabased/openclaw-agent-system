@@ -185,6 +185,23 @@ describe('agent/memory-lifecycle', () => {
       'agent-memory-keyword-ready',
     );
 
+    const empty = await installReady({
+      status: {
+        ...readyStatus(),
+        status: {
+          ...readyStatus().status,
+          files: 0,
+          chunks: 0,
+          vector: { ...readyStatus().status.vector!, index: { state: 'empty' } },
+          custom: { indexIdentity: { status: 'missing' } },
+        },
+      },
+    });
+    assert.equal(
+      (await empty.contribution.inspect?.(context))?.[0]?.code,
+      'agent-memory-openai-ready',
+    );
+
     const incompatible = await installReady({
       status: {
         ...readyStatus(),

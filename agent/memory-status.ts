@@ -5,8 +5,10 @@ export interface MemoryStatus {
     ok: boolean;
   };
   status: {
+    chunks?: number;
     custom?: Record<string, unknown>;
     fallback?: { from?: string };
+    files?: number;
     fts?: { available: boolean; enabled: boolean };
     lastSyncError?: string;
     provider: string;
@@ -30,6 +32,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalCount(value: unknown): number | undefined {
+  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : undefined;
 }
 
 function parseStatus(value: unknown): MemoryStatus['status'] {
@@ -70,6 +76,8 @@ function parseStatus(value: unknown): MemoryStatus['status'] {
       : undefined;
   return {
     provider: value.provider,
+    ...(optionalCount(value.files) === undefined ? {} : { files: optionalCount(value.files) }),
+    ...(optionalCount(value.chunks) === undefined ? {} : { chunks: optionalCount(value.chunks) }),
     ...(typeof value.requestedProvider === 'string'
       ? { requestedProvider: value.requestedProvider }
       : {}),

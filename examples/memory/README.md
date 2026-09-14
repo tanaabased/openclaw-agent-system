@@ -36,7 +36,11 @@ openclaw config get 'agents.entries.memory-local.memory.search' --json \
   | jq -e '.provider == "local" and .fallback == "none" and (has("remote") | not)'
 if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$output" \
-  | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-provider-unavailable" and .status == "blocked" and (.remediation | contains("--provider llama-cpp --method local")))'
+  | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-provider-unavailable" and .status == "blocked" and (.remediation | contains("--provider llama-cpp --method local")))' \
+  || {
+    printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
+    exit 1
+  }
 ```
 
 ```bash

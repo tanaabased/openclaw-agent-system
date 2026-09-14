@@ -14,6 +14,8 @@ describe('agent/memory-status', () => {
           agentId: 'emori',
           status: {
             backend: 'builtin',
+            files: 0,
+            chunks: 0,
             provider: 'openai',
             requestedProvider: 'openai',
             fts: { enabled: true, available: true, error: 'ignored' },
@@ -34,6 +36,8 @@ describe('agent/memory-status', () => {
 
     assert.deepEqual(result, {
       status: {
+        files: 0,
+        chunks: 0,
         provider: 'openai',
         requestedProvider: 'openai',
         fts: { enabled: true, available: true },

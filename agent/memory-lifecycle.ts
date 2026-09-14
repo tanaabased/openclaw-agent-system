@@ -60,9 +60,12 @@ function lifecycleError(finding: ContributionFinding): AgentSystemLifecycleError
 
 function indexFinding(status: MemoryStatus['status'], agentId: string): ContributionFinding[] {
   const state = memoryIndexState(status);
+  const isEmptyUninitializedIndex =
+    state === 'missing' && status.files === 0 && status.chunks === 0 && !status.lastSyncError;
   if (
-    !status.lastSyncError &&
-    !['incomplete', 'unverified', 'mismatched', 'missing'].includes(state ?? '')
+    isEmptyUninitializedIndex ||
+    (!status.lastSyncError &&
+      !['incomplete', 'unverified', 'mismatched', 'missing'].includes(state ?? ''))
   ) {
     return [];
   }
