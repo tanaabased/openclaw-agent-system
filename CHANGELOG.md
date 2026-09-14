@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
+
 ## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)
 
 ### New Features

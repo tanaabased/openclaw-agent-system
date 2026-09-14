@@ -5,6 +5,7 @@ import { isAlias, parseDocument, visit } from 'yaml';
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
 import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
@@ -73,6 +74,7 @@ const externalAgentManifestSchema = Type.Object(
     ),
     git: Type.Optional(externalGitSectionSchema),
     github: Type.Optional(externalGitHubSectionSchema),
+    memory: Type.Optional(externalAgentMemorySchema),
     models: Type.Optional(externalAgentModelsSchema),
   },
   { additionalProperties: false },
@@ -227,6 +229,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
         }),
     ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),
     ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
+    ...(value.memory === undefined ? {} : { memory: decodeAgentMemory(value.memory) }),
     ...(value.models === undefined ? {} : { models: decodeAgentModels(value.models) }),
   };
 }

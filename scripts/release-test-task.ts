@@ -30,6 +30,7 @@ interface PackResult {
 
 interface PluginManifest {
   id?: string;
+  secretProviderIntegrations?: Record<string, Record<string, unknown>>;
   skills?: string[];
   version?: string;
 }
@@ -141,6 +142,8 @@ try {
     'openclaw.plugin.json',
     'dist/index.js',
     'dist/index.js.map',
+    'dist/memory-secret-provider-entry.js',
+    'dist/memory-secret-provider-entry.js.map',
     'index.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
@@ -220,6 +223,28 @@ try {
     assert.equal(packageMetadata.version, manifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(manifest.skills, ['./skills']);
+    assert.deepEqual(manifest.secretProviderIntegrations?.environment, {
+      providerAlias: 'agent-system-environment',
+      displayName: 'Agent System environment',
+      description:
+        'Resolves one manifest-authorized agent environment binding for built-in memory search.',
+      source: 'exec',
+      command: '${node}',
+      args: ['./dist/memory-secret-provider-entry.js'],
+      timeoutMs: 90_000,
+      noOutputTimeoutMs: 90_000,
+      maxOutputBytes: 1_048_576,
+      jsonOnly: true,
+      passEnv: [
+        'DBUS_SESSION_BUS_ADDRESS',
+        'HOME',
+        'OPENAI_API_KEY',
+        'OPENCLAW_CONFIG_PATH',
+        'OPENCLAW_STATE_DIR',
+        'XDG_CONFIG_HOME',
+        'XDG_RUNTIME_DIR',
+      ],
+    });
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
   });
 
@@ -247,6 +272,14 @@ try {
     assert.equal(builtModule.default?.id, 'agent-system');
     assert.equal(builtModule.default?.name, 'Agent System');
     assert.equal(typeof builtModule.default?.register, 'function');
+  });
+
+  await check('ship the built Agent System memory secret provider entry', async () => {
+    const [localEntry, packedEntry] = await Promise.all([
+      readFile(join(process.cwd(), 'dist', 'memory-secret-provider-entry.js')),
+      readFile(join(packageRoot, 'dist', 'memory-secret-provider-entry.js')),
+    ]);
+    assert.deepEqual(packedEntry, localEntry);
   });
 
   await check('ship an executable Agent System gh command', async () => {

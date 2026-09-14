@@ -1,5 +1,5 @@
 const result = await Bun.build({
-  entrypoints: ['index.ts'],
+  entrypoints: ['index.ts', 'environment/memory-secret-provider-entry.ts'],
   outdir: 'dist',
   target: 'node',
   format: 'esm',

@@ -1,0 +1,17 @@
+schema-version: 1
+
+agent:
+  id: memory-openai
+  name: Memory OpenAI
+
+memory:
+  search:
+    provider: openai
+    model: text-embedding-3-small
+    api-key: EMBEDDINGS_API_KEY
+
+environment:
+  set:
+    EMBEDDINGS_API_KEY: $OPENAI_API_KEY
+  required:
+    - EMBEDDINGS_API_KEY

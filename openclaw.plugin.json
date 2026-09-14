@@ -64,6 +64,29 @@
     "trustedToolPolicies": ["agent-system.git", "agent-system.git-worktree", "agent-system.github"]
   },
   "skills": ["./skills"],
+  "secretProviderIntegrations": {
+    "environment": {
+      "providerAlias": "agent-system-environment",
+      "displayName": "Agent System environment",
+      "description": "Resolves one manifest-authorized agent environment binding for built-in memory search.",
+      "source": "exec",
+      "command": "${node}",
+      "args": ["./dist/memory-secret-provider-entry.js"],
+      "timeoutMs": 90000,
+      "noOutputTimeoutMs": 90000,
+      "maxOutputBytes": 1048576,
+      "jsonOnly": true,
+      "passEnv": [
+        "DBUS_SESSION_BUS_ADDRESS",
+        "HOME",
+        "OPENAI_API_KEY",
+        "OPENCLAW_CONFIG_PATH",
+        "OPENCLAW_STATE_DIR",
+        "XDG_CONFIG_HOME",
+        "XDG_RUNTIME_DIR"
+      ]
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

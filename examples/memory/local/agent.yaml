@@ -1,0 +1,9 @@
+schema-version: 1
+
+agent:
+  id: memory-local
+  name: Memory Local
+
+memory:
+  search:
+    provider: local
