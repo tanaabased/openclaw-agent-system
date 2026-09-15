@@ -7,7 +7,11 @@ import acquirePrivateStateFileLock, {
   privateStateFileLockBusyErrorCode,
 } from '../core/private-state-file-lock.ts';
 import GitWorktreeService, { type GitWorktreeGitRunner } from '../tools/git/worktree-service.ts';
-import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
+import {
+  gitHubIssueBranchName,
+  gitWorktreeDirectoryName,
+  gitWorktreeRepositoryDirectoryName,
+} from '../tools/git/worktree-names.ts';
 
 interface FakeWorktree {
   branch: string;
@@ -62,7 +66,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
     if (command === 'show-ref') {
       const branch = argv.at(-1)?.replace(/^refs\/heads\//u, '');
       return {
-        exitCode: [...this.worktrees.values()].some((entry) => entry.branch === branch) ? 0 : 1,
+        exitCode: this.branches.has(branch ?? '') ? 0 : 1,
         stderr: '',
         stdout: '',
       };
@@ -390,6 +394,85 @@ describe('tools/git/worktree-service', () => {
         git.calls.some(({ argv }) => ['branch', 'reflog', 'update-ref'].includes(argv[0] ?? '')),
         false,
       );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should reuse readable and legacy issue worktrees by stable path through title edits', async () => {
+    const { context, createService, git, service, workspaceDir } = await fixture();
+    try {
+      const base = {
+        baseRef: 'origin/main',
+        cloneUrl: 'https://example.com/owner/repository.git',
+        repositoryId: 'github-7',
+        workId: 'issue-3',
+      };
+      const issueBranch = { number: 42, suffix: 'abcde', title: 'Fix bad thing' };
+      const created = await service.prepare(context, { ...base, issueBranch });
+      assert.equal(created.branch, gitHubIssueBranchName(42, 'Fix bad thing', 'abcde'));
+      assert.equal(
+        basename(created.path),
+        gitWorktreeDirectoryName(base.repositoryId, base.workId),
+      );
+      const recovered = await createService().prepare(context, {
+        ...base,
+        issueBranch: { ...issueBranch, title: 'A very different title' },
+      });
+      assert.equal(recovered.status, 'existing');
+      assert.equal(recovered.branch, created.branch);
+      git.dirty = true;
+      assert.equal(
+        (await service.cleanup(context, base.repositoryId, base.workId, created.branch)).status,
+        'dirty',
+      );
+      git.dirty = false;
+      assert.equal(
+        (await service.cleanup(context, base.repositoryId, base.workId, created.branch)).status,
+        'removed',
+      );
+      const legacy = await service.prepare(context, base);
+      const adopted = await createService().prepare(context, { ...base, issueBranch });
+      assert.equal(adopted.status, 'existing');
+      assert.equal(adopted.branch, legacy.branch);
+      assert.equal(
+        (await service.cleanup(context, base.repositoryId, base.workId, legacy.branch)).status,
+        'removed',
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should reject an unrelated issue branch or occupied stable worktree path', async () => {
+    const { context, git, service, workspaceDir } = await fixture();
+    try {
+      const input = {
+        baseRef: 'origin/main',
+        cloneUrl: 'https://example.com/owner/repository.git',
+        issueBranch: { number: 42, suffix: 'abcde', title: 'Fix bad thing' },
+        repositoryId: 'github-7',
+        workId: 'issue-3',
+      };
+      const branch = gitHubIssueBranchName(42, 'Fix bad thing', 'abcde');
+      git.branches.add(branch);
+      await assert.rejects(
+        service.prepare(context, input),
+        /already exists outside its owned worktree/u,
+      );
+      assert.equal(git.worktrees.size, 0);
+      git.branches.delete(branch);
+      const created = await service.prepare(context, input);
+      git.worktrees.set(created.path, {
+        branch: 'unrelated',
+        repository: git.worktrees.get(created.path)!.repository,
+      });
+      await assert.rejects(service.prepare(context, input), /path uses another branch/u);
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId, created.branch)).status,
+        'unsafe',
+      );
+      assert.equal(git.worktrees.size, 1);
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });
     }

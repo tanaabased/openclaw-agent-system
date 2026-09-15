@@ -562,6 +562,7 @@ describe('channels/github/intake/monitor/service', () => {
                   nodeId: 'I_item',
                   number: 12,
                   state: 'open',
+                  title: 'Monitor comment failure',
                   updatedAt: '2026-08-15T12:00:00.000Z',
                 });
               }

@@ -12,7 +12,12 @@ import nodeErrorCode from '../../utils/node-error-code.ts';
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 import type { GitWorktreeLayout } from './worktree-layout.ts';
-import { gitWorktreeDirectoryName, gitWorktreeRepositoryDirectoryName } from './worktree-names.ts';
+import {
+  gitHubIssueBranchName,
+  gitWorktreeDirectoryName,
+  gitWorktreeRepositoryDirectoryName,
+  isGitHubIssueBranchName,
+} from './worktree-names.ts';
 import normalizeGitWorktreeRemote from './worktree-remote.ts';
 
 export interface GitWorktreeGitResult {
@@ -35,6 +40,7 @@ export interface GitWorktreeServiceContext {
 export interface GitWorktreePrepareInput {
   baseRef: string;
   cloneUrl?: string;
+  issueBranch?: { number: number; suffix: string; title: string };
   reconcileOrigin?: boolean;
   repositoryId: string;
   workId: string;
@@ -194,12 +200,27 @@ export default class GitWorktreeService {
       input.cloneUrl,
       input.reconcileOrigin ?? false,
     );
-    const branch = gitWorktreeDirectoryName(input.repositoryId, input.workId);
-    const path = this.#worktreePath(layout, input.repositoryId, branch);
+    const stableName = gitWorktreeDirectoryName(input.repositoryId, input.workId);
+    const branch = input.issueBranch
+      ? gitHubIssueBranchName(
+          input.issueBranch.number,
+          input.issueBranch.title,
+          input.issueBranch.suffix,
+        )
+      : stableName;
+    const path = this.#worktreePath(layout, input.repositoryId, stableName);
     const registered = await this.#registeredWorktrees(context, repository);
     const existing = registered.find((worktree) => worktree.path === path);
     if (existing) {
-      if (existing.branch !== branch) {
+      if (
+        existing.branch !== stableName &&
+        (!input.issueBranch ||
+          !isGitHubIssueBranchName(
+            existing.branch,
+            input.issueBranch.number,
+            input.issueBranch.suffix,
+          ))
+      ) {
         throw new Error('The deterministic Git worktree path uses another branch.');
       }
       return this.#result(input.repositoryId, input.workId, existing, 'existing');
@@ -240,6 +261,11 @@ export default class GitWorktreeService {
           `refs/heads/${branch}`,
         ])
       ).exitCode === 0;
+    if (branchExists && input.issueBranch) {
+      throw new Error(
+        'The readable GitHub issue branch already exists outside its owned worktree.',
+      );
+    }
     await mkdir(dirname(path), { mode: 0o700, recursive: true });
     requireGitSuccess(
       'worktree preparation',
@@ -314,12 +340,15 @@ export default class GitWorktreeService {
     context: GitWorktreeServiceContext,
     repositoryId: string,
     workId: string,
+    expectedBranch?: string,
   ): Promise<GitWorktreeCleanupResult> {
     validateIdentifier(repositoryId, 'repository id');
     validateIdentifier(workId, 'work id');
     const layout = await this.#readyLayout(context);
-    const branch = gitWorktreeDirectoryName(repositoryId, workId);
-    const path = this.#worktreePath(layout, repositoryId, branch);
+    if (expectedBranch !== undefined) validateIdentifier(expectedBranch, 'expected branch');
+    const stableName = gitWorktreeDirectoryName(repositoryId, workId);
+    const branch = expectedBranch ?? stableName;
+    const path = this.#worktreePath(layout, repositoryId, stableName);
     const base = { branch, path, repositoryId, workId };
     const repository = await this.#resolveRepository(context, layout, repositoryId);
     const existing = (await this.#registeredWorktrees(context, repository)).find(
@@ -364,6 +393,14 @@ export default class GitWorktreeService {
     validateIdentifier(input.repositoryId, 'repository id');
     validateIdentifier(input.workId, 'work id');
     validateIdentifier(input.baseRef, 'base ref');
+    if (
+      input.issueBranch &&
+      (!Number.isSafeInteger(input.issueBranch.number) ||
+        input.issueBranch.number < 1 ||
+        !/^[a-f0-9]{5}$/u.test(input.issueBranch.suffix))
+    ) {
+      throw new Error('The GitHub issue branch identity is invalid.');
+    }
     if (input.cloneUrl !== undefined) normalizeGitWorktreeRemote(input.cloneUrl);
   }
 

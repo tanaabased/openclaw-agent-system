@@ -89,6 +89,13 @@ printf '%s' "$worktree_branch" > "$TMPDIR/approved-worktree-branch"
 ## Testing
 
 ```bash
+# should name the owned issue branch from its public number and bounded title
+issue_number="$(cat "$TMPDIR/approved-issue-number")"
+worktree_branch="$(cat "$TMPDIR/approved-worktree-branch")"
+jq -n -e --arg number "$issue_number" --arg branch "$worktree_branch" '$branch | test("^" + $number + "-add-implementation-fixture-[a-z0-9-]+-[a-f0-9]{5}$")'
+```
+
+```bash
 # should keep the notification worktree on the configured ssh transport
 cd "$TMPDIR/agent-system-notifications"
 worktree_path="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list | jq -re 'select(length == 1) | .[0].path')"

@@ -27,6 +27,7 @@ export type GitHubNotificationAssignmentInspection<Client = GitHubNotificationPr
       authorized: true;
       client: Client;
       configuration: GitHubNotificationsConfiguration;
+      issueTitle?: string;
       permission?: Awaited<ReturnType<GitHubNotificationProviderClient['getPermission']>>;
       repository?: Awaited<ReturnType<GitHubNotificationProviderClient['getRepository']>>;
     };
@@ -58,6 +59,7 @@ export default class GitHubNotificationAssignmentProvider
           authorized: true,
           ...(inspection.permission === undefined ? {} : { permission: inspection.permission }),
           ...(inspection.repository === undefined ? {} : { repository: inspection.repository }),
+          ...(inspection.issueTitle === undefined ? {} : { issueTitle: inspection.issueTitle }),
         }
       : {
           authorized: false,
@@ -187,6 +189,9 @@ export default class GitHubNotificationAssignmentProvider
         authorized: true,
         client: context.client,
         configuration: context.configuration,
+        ...(item.itemType === 'issue' && item.title !== undefined
+          ? { issueTitle: item.title }
+          : {}),
         permission,
         repository,
       };

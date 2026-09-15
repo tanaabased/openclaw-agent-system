@@ -21,3 +21,24 @@ export function gitWorktreeRepositoryDirectoryName(repositoryId: string): string
 export function gitWorktreeDirectoryName(repositoryId: string, workId: string): string {
   return `${slug(workId, 'work')}-${digest(`${repositoryId}\0${workId}`)}`;
 }
+
+export function gitHubIssueBranchSuffix(
+  agentId: string,
+  workspaceDir: string,
+  repositoryId: string,
+  workId: string,
+): string {
+  return createHash('sha256')
+    .update([agentId, workspaceDir, repositoryId, workId].join('\0'))
+    .digest('hex')
+    .slice(0, 5);
+}
+
+export function gitHubIssueBranchName(number: number, title: string, suffix: string): string {
+  const description = slug(title, 'issue').replace(/-+$/u, '') || 'issue';
+  return `${number}-${description}-${suffix}`;
+}
+
+export function isGitHubIssueBranchName(branch: string, number: number, suffix: string): boolean {
+  return new RegExp(`^${number}-[a-z0-9]+(?:-[a-z0-9]+)*-${suffix}$`, 'u').test(branch);
+}

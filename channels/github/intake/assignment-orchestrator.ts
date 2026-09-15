@@ -188,18 +188,16 @@ export default class GitHubNotificationAssignmentOrchestrator {
       if (action.kind === 'prepare-worktree') {
         const checkpoint = this.#boundary(state, itemKey);
         if (!checkpoint) return;
-        if (
-          !(await this.#authorize(
-            agentId,
-            state.workspaceDir,
-            checkpoint.item,
-            checkpoint.intake,
-            signal,
-            state,
-            itemKey,
-          ))
-        )
-          continue;
+        const authority = await this.#authorize(
+          agentId,
+          state.workspaceDir,
+          checkpoint.item,
+          checkpoint.intake,
+          signal,
+          state,
+          itemKey,
+        );
+        if (!authority) continue;
         const worktreeOwner = lifecycle.worktree;
         if (!worktreeOwner.required) {
           throw new GitHubNotificationAssignmentOrchestratorError(
@@ -214,6 +212,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
             worktreeOwner.prepare({
               agentId,
               ...checkpoint,
+              ...(authority.issueTitle === undefined ? {} : { issueTitle: authority.issueTitle }),
               signal,
               workspaceDir: state.workspaceDir,
             }),
@@ -343,7 +342,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     signal: AbortSignal | undefined,
     state: GitHubNotificationMonitorState,
     itemKey: string,
-  ): Promise<boolean> {
+  ): Promise<Extract<GitHubNotificationIntakeAuthority, { authorized: true }> | undefined> {
     const authority = await this.#diagnosticBoundary(
       'github-notification-authority-inspection-failed',
       'The notification assignment authority could not be inspected.',
@@ -357,7 +356,9 @@ export default class GitHubNotificationAssignmentOrchestrator {
         }),
     );
     if (authority.authorized) {
-      return !(await this.#checkpointCanonicalRepository(state, itemKey, authority));
+      return (await this.#checkpointCanonicalRepository(state, itemKey, authority))
+        ? undefined
+        : authority;
     }
     await this.#requestRetirement(
       state,
@@ -365,7 +366,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       authority.reasonCode ?? 'github-notification-authority-revoked',
       authority.providerVerified,
     );
-    return false;
+    return undefined;
   }
 
   async #checkpointCanonicalRepository(

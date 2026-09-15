@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import type { AgentManifest } from '../manifest/types.ts';
 import TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { createGitWorktreeToolDefinition } from '../tools/git/worktree-tool.ts';
-import { gitWorktreeDirectoryName } from '../tools/git/worktree-names.ts';
+import {
+  gitHubIssueBranchName,
+  gitHubIssueBranchSuffix,
+  gitWorktreeDirectoryName,
+  gitWorktreeRepositoryDirectoryName,
+} from '../tools/git/worktree-names.ts';
+
+const repositoryId = 'github-7';
+const workId = 'issue-3';
+const legacyBranch = gitWorktreeDirectoryName(repositoryId, workId);
+const ownedPath = `/workspace/data/.agent-system/worktrees/${gitWorktreeRepositoryDirectoryName(repositoryId).replace(/\.git$/u, '')}/${legacyBranch}`;
+const suffix = gitHubIssueBranchSuffix('data', '/workspace/data', repositoryId, workId);
 
 const manifest: AgentManifest = {
   agent: { email: 'data@example.com', id: 'data', name: 'Data' },
@@ -11,11 +22,14 @@ const manifest: AgentManifest = {
   schemaVersion: 1,
 };
 
-function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = {}) {
+function fixture(
+  options: { deny?: boolean; listed?: boolean; listedBranch?: string; ssh?: boolean } = {},
+) {
   const events: string[] = [];
   const prepared: Array<{
     baseRef: string;
     cloneUrl?: string;
+    issueBranch?: { number: number; suffix: string; title: string };
     reconcileOrigin?: boolean;
     repositoryId: string;
     workId: string;
@@ -56,21 +70,21 @@ function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = 
         return options.listed
           ? [
               {
-                branch: gitWorktreeDirectoryName('github-7', 'issue-3'),
-                path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+                branch: options.listedBranch ?? legacyBranch,
+                path: ownedPath,
                 repositoryId: 'github-7',
                 status: 'active' as const,
               },
             ]
           : [];
       },
-      async cleanup(_context, repositoryId, workId) {
+      async cleanup(_context, repositoryId, workId, expectedBranch) {
         events.push('cleanup');
         assert.equal(repositoryId, 'github-7');
         assert.equal(workId, 'issue-3');
         return {
-          branch: gitWorktreeDirectoryName(repositoryId, workId),
-          path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+          branch: expectedBranch ?? legacyBranch,
+          path: ownedPath,
           repositoryId,
           status: 'removed' as const,
           workId,
@@ -80,8 +94,14 @@ function fixture(options: { deny?: boolean; listed?: boolean; ssh?: boolean } = 
         events.push('prepare');
         prepared.push(input);
         return {
-          branch: 'issue-3-branch',
-          path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+          branch: input.issueBranch
+            ? gitHubIssueBranchName(
+                input.issueBranch.number,
+                input.issueBranch.title,
+                input.issueBranch.suffix,
+              )
+            : legacyBranch,
+          path: ownedPath,
           repositoryId: input.repositoryId,
           status: 'created' as const,
           workId: input.workId,
@@ -156,8 +176,10 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 42,
       itemType: 'issue',
       repositoryDatabaseId: 7,
+      title: 'Fix agent path resolution',
     });
 
     assert.deepEqual(events, [
@@ -172,6 +194,7 @@ describe('tools/git/trusted-worktree-service', () => {
       {
         baseRef: 'origin/main',
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+        issueBranch: { number: 42, suffix, title: 'Fix agent path resolution' },
         reconcileOrigin: true,
         repositoryId: 'github-7',
         workId: 'issue-3',
@@ -179,6 +202,7 @@ describe('tools/git/trusted-worktree-service', () => {
     ]);
     assert.equal(result.repositoryId, 'github-7');
     assert.equal(result.workId, 'issue-3');
+    assert.equal(result.branch, `42-fix-agent-path-resolution-${suffix}`);
   });
 
   it('should not resolve environment values when git authorization is denied', async () => {
@@ -190,8 +214,10 @@ describe('tools/git/trusted-worktree-service', () => {
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
         defaultBranch: 'main',
         itemDatabaseId: 3,
+        itemNumber: 42,
         itemType: 'issue',
         repositoryDatabaseId: 7,
+        title: 'Fix agent path resolution',
       }),
       /denied for test/u,
     );
@@ -206,8 +232,10 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 42,
       itemType: 'issue',
       repositoryDatabaseId: 7,
+      title: 'Fix agent path resolution',
     });
 
     assert.equal(prepared[0]?.cloneUrl, 'git@github.com:tanaabased/openclaw-agent-system.git');
@@ -221,6 +249,7 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 42,
       itemType: 'issue',
       repositoryDatabaseId: 7,
     });
@@ -237,11 +266,46 @@ describe('tools/git/trusted-worktree-service', () => {
     ]);
   });
 
+  it('should recover and clean up a readable branch from its stable owned path', async () => {
+    const branch = gitHubIssueBranchName(42, 'An edited issue title', suffix);
+    const { service } = fixture({ listed: true, listedBranch: branch });
+    const input = {
+      agentId: 'data',
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+    };
+    assert.equal((await service.inspectGitHub(input))?.branch, branch);
+    assert.equal(
+      (await service.cleanupGitHub({ ...input, worktree: { branch, path: ownedPath } })).status,
+      'removed',
+    );
+  });
+
+  it('should reject a branch at the owned path when its issue scope does not match', async () => {
+    const { service } = fixture({ listed: true, listedBranch: '42-fix-bad-thing-fffff' });
+    await assert.rejects(
+      service.inspectGitHub({
+        agentId: 'data',
+        cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+        defaultBranch: 'main',
+        itemDatabaseId: 3,
+        itemNumber: 42,
+        itemType: 'issue',
+        repositoryDatabaseId: 7,
+      }),
+      /owned GitHub worktree path uses an unrelated branch/u,
+    );
+  });
+
   it('should re-inspect the exact checkpoint before trusted cleanup', async () => {
     const { events, service } = fixture({ listed: true });
     const expected = {
       branch: gitWorktreeDirectoryName('github-7', 'issue-3'),
-      path: '/workspace/data/.agent-system/worktrees/github-7/issue-3',
+      path: ownedPath,
     };
 
     const result = await service.cleanupGitHub({
@@ -249,6 +313,7 @@ describe('tools/git/trusted-worktree-service', () => {
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,
+      itemNumber: 42,
       itemType: 'issue',
       repositoryDatabaseId: 7,
       worktree: expected,
@@ -285,8 +350,10 @@ describe('tools/git/trusted-worktree-service', () => {
         cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
         defaultBranch: 'main',
         itemDatabaseId: 0,
+        itemNumber: 42,
         itemType: 'issue',
         repositoryDatabaseId: 7,
+        title: 'Fix agent path resolution',
       }),
       /work-item database id must be a positive integer/u,
     );

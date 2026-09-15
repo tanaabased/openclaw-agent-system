@@ -44,11 +44,13 @@ export type GitWorktreeToolDefinition = GitWorktreeToolDefinitionBase & {
     input: { repositoryId: string; workId: string },
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
+    expectedBranch?: string,
   ): Promise<GitWorktreeCleanupResult>;
   executeTrustedGitHubPrepare(
     input: GitWorktreePrepareToolInput,
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
+    issueBranch?: { number: number; suffix: string; title: string },
   ): Promise<GitWorktreeResult>;
 };
 
@@ -163,6 +165,7 @@ export function createGitWorktreeToolDefinition(
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
     reconcileOrigin: boolean,
+    issueBranch?: { number: number; suffix: string; title: string },
   ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
     const lease = await dependencies.runnerFactory.acquire(
       configuration,
@@ -195,6 +198,7 @@ export function createGitWorktreeToolDefinition(
                     : preferGitHubSshWorktreeRemote(cloneUrl),
               }),
           ...(reconcileOrigin ? { reconcileOrigin: true } : {}),
+          ...(issueBranch === undefined ? {} : { issueBranch }),
           repositoryId: input.repository.id,
           workId: input.workId,
         });
@@ -228,6 +232,7 @@ export function createGitWorktreeToolDefinition(
     input: { repositoryId: string; workId: string },
     configuration: ResolvedGitWorktreeToolConfiguration,
     scope: GitWorktreeToolExecutionScope,
+    expectedBranch?: string,
   ): Promise<GitWorktreeCleanupResult> {
     if (!dependencies.service.cleanup) {
       throw new AgentSystemToolError(
@@ -254,6 +259,7 @@ export function createGitWorktreeToolDefinition(
         },
         input.repositoryId,
         input.workId,
+        expectedBranch,
       );
     } finally {
       await lease.dispose();
@@ -282,8 +288,8 @@ export function createGitWorktreeToolDefinition(
       return execute(input, configuration, scope, false);
     },
     executeTrustedGitHubCleanup: executeCleanup,
-    async executeTrustedGitHubPrepare(input, configuration, scope) {
-      const result = await execute(input, configuration, scope, true);
+    async executeTrustedGitHubPrepare(input, configuration, scope, issueBranch) {
+      const result = await execute(input, configuration, scope, true, issueBranch);
       if (Array.isArray(result)) {
         throw new AgentSystemToolError(
           'execution_failed',

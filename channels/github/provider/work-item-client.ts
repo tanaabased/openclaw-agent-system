@@ -182,7 +182,7 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       [
         endpoint,
         '--jq',
-        '{databaseId:.id,nodeId:.node_id,number,state,updatedAt:.updated_at,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}',
+        '{databaseId:.id,nodeId:.node_id,number,state,updatedAt:.updated_at,title,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}',
       ],
       'work item',
     );
@@ -201,7 +201,9 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       updatedAt: githubResponseTimestamp(value.updatedAt, 'work-item update time'),
     };
     if (!githubResponseBoolean(value.isPullRequest, 'work-item type')) {
-      return { ...item, itemType: 'issue' };
+      if (typeof value.title !== 'string')
+        throw new Error('GitHub returned an invalid issue title.');
+      return { ...item, itemType: 'issue', title: value.title };
     }
 
     const pullResponse = await this.#api.request(

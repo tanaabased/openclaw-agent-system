@@ -132,6 +132,7 @@ export default async function createGitHubNotificationSchedulingFixture(
             nodeId: item.itemNodeId,
             number: item.number,
             state: 'open',
+            title: `Scheduling issue ${item.number}`,
             updatedAt: timestamp,
           });
         }
