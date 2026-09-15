@@ -214,17 +214,24 @@ openclaw models --agent tanaabot auth login --provider llama-cpp --method local
 ```
 
 An OpenAI `api-key` becomes an agent-and-binding-scoped OpenClaw `SecretRef`, not
-plaintext configuration. Agent System resolves only that declared binding when
-OpenClaw builds or reloads its secret snapshot; changing it requires a reload or
-restart. Use a declared dotenv file or stored 1Password credential for
-restart-safe configuration. This remains a same-host operator boundary because
-an operator who can rewrite `openclaw.json` can copy the reference.
+plaintext configuration. Managed package installs use Agent System's plugin
+integration; source-linked installs use a bounded standalone provider pointing
+to the checkout's built entrypoint because OpenClaw does not expose plugin
+integrations from a `config` origin. Agent System resolves only the exact
+declared reference when OpenClaw builds or reloads its secret snapshot. Build
+the checkout before reconciliation, then restart the Gateway after changing the
+provider form or binding. Use a declared dotenv file or stored 1Password
+credential for restart-safe configuration. This remains a same-host operator
+boundary because an operator who can rewrite `openclaw.json` can copy the
+reference.
 
 `doctor` never changes or deletes the memory database. It reports keyword-index
-readiness for `none`, verifies local-provider availability for `local`, and makes
-one bounded embedding probe for `openai`; authentication, permission,
-billing/quota, and transport failures are reported without reproducing upstream
-error bodies. Index identity or synchronization drift remains a separate finding.
+readiness for `none`, verifies local-provider availability for `local`, resolves
+the exact configured OpenAI credential before making one bounded embedding
+probe, and never treats an unrelated fallback credential as readiness.
+Authentication, permission, billing/quota, and transport failures are reported
+without reproducing upstream error bodies. Index identity or synchronization
+drift remains a separate finding.
 Use OpenClaw's explicit memory commands when you intend to mutate the index:
 
 ```sh
@@ -232,7 +239,7 @@ Use OpenClaw's explicit memory commands when you intend to mutate the index:
 openclaw memory status --agent tanaabot --deep --json
 
 # rebuild only when doctor reports index drift and you intend the write.
-openclaw memory status --index --force --agent tanaabot
+openclaw memory status --index --agent tanaabot
 ```
 
 ### `environment`

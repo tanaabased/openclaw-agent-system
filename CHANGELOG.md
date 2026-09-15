@@ -4,6 +4,10 @@
 
 - Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
 
+### Bug Fixes
+
+- Fixed source-linked memory secret resolution and prevented unrelated embedding probes from reporting readiness. [#108](https://github.com/tanaabased/openclaw-agent-system/issues/108)
+
 ## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)
 
 ### New Features

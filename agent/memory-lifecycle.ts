@@ -11,6 +11,8 @@ import createMemoryConfigurationPlan, {
   type MemoryConfigurationPlan,
   type ReadyMemoryConfigurationPlan,
 } from './memory-configuration-plan.ts';
+import { memorySecretId } from './memory-secret-provider-configuration.ts';
+import type { AgentMemoryConfiguration } from '../manifest/memory-schema.ts';
 import {
   classifyMemoryEmbeddingFailure,
   memoryIndexState,
@@ -27,12 +29,19 @@ export interface MemoryLifecycleDependencies {
     agentId: string;
     binding: string;
   }): Promise<'available' | 'missing' | 'unavailable'>;
+  inspectConfiguredSecret(params: {
+    config: OpenClawConfig;
+    id: string;
+  }): Promise<'available' | 'unavailable'>;
   mutateConfigFile(params: {
     afterWrite: { mode: 'auto' };
     base: 'source';
     mutate(config: OpenClawConfig): boolean | void;
   }): Promise<{ result?: boolean }>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  resolveSecretProviderConfiguration(
+    config: OpenClawConfig,
+  ): NonNullable<NonNullable<OpenClawConfig['secrets']>['providers']>[string];
 }
 
 type ContributionFinding = Omit<AgentSystemLifecycleFinding, 'component'>;
@@ -44,14 +53,38 @@ function planFinding(
     code:
       plan.status === 'missing-agent'
         ? 'agent-memory-agent-missing'
-        : 'agent-memory-secret-provider-conflict',
+        : plan.status === 'provider-unavailable'
+          ? 'agent-memory-secret-provider-unavailable'
+          : 'agent-memory-secret-provider-conflict',
     message: plan.message,
     remediation:
       plan.status === 'missing-agent'
         ? 'Run openclaw agent-system install from this workspace.'
-        : `Move or remove the conflicting ${memorySecretProviderAlias} secret provider, then run doctor again.`,
+        : plan.status === 'provider-unavailable'
+          ? 'Build the linked Agent System checkout, verify its executable paths, then run install again.'
+          : `Move or remove the conflicting ${memorySecretProviderAlias} secret provider, then run doctor again.`,
     status: plan.status === 'missing-agent' ? 'drift' : 'blocked',
   };
+}
+
+async function resolveMemoryConfigurationPlan(
+  dependencies: MemoryLifecycleDependencies,
+  config: OpenClawConfig,
+  agentId: string,
+  memory: AgentMemoryConfiguration,
+): Promise<MemoryConfigurationPlan> {
+  let secretProviderConfiguration;
+  if (memory.search.provider === 'openai' && memory.search.apiKey !== undefined) {
+    try {
+      secretProviderConfiguration = dependencies.resolveSecretProviderConfiguration(config);
+    } catch {
+      return {
+        message: `The Agent System memory secret provider is unavailable for ${agentId}.`,
+        status: 'provider-unavailable',
+      };
+    }
+  }
+  return createMemoryConfigurationPlan(config, agentId, memory, secretProviderConfiguration);
 }
 
 function lifecycleError(finding: ContributionFinding): AgentSystemLifecycleError {
@@ -73,7 +106,7 @@ function indexFinding(status: MemoryStatus['status'], agentId: string): Contribu
     {
       code: 'agent-memory-index-incomplete',
       message: `OpenClaw reports incomplete or incompatible memory index evidence for ${agentId}.`,
-      remediation: `Review openclaw memory status --agent ${agentId} --deep, then run openclaw memory status --index --force --agent ${agentId} when a rebuild is appropriate.`,
+      remediation: `Review openclaw memory status --agent ${agentId} --deep, then run openclaw memory status --index --agent ${agentId} when a rebuild is appropriate.`,
       status: 'drift',
     },
   ];
@@ -163,7 +196,8 @@ export default function createMemoryLifecycleContribution(
       const memory = context.manifest.memory;
       if (!memory) return [];
       const agentId = context.manifest.agent.id;
-      const plan = createMemoryConfigurationPlan(await dependencies.readConfig(), agentId, memory);
+      const config = await dependencies.readConfig();
+      const plan = await resolveMemoryConfigurationPlan(dependencies, config, agentId, memory);
       if (plan.status !== 'ready') return [planFinding(plan)];
       if (plan.changed) {
         return [
@@ -191,6 +225,21 @@ export default function createMemoryLifecycleContribution(
               message: `The declared memory credential binding for ${agentId} is ${binding}.`,
               remediation:
                 'Restore the declared Agent System environment binding, then run doctor again.',
+              status: 'blocked',
+            },
+          ];
+        }
+        const configuredSecret = await dependencies.inspectConfiguredSecret({
+          config,
+          id: memorySecretId(agentId, memory.search.apiKey),
+        });
+        if (configuredSecret !== 'available') {
+          return [
+            {
+              code: 'agent-memory-credential-unresolved',
+              message: `OpenClaw could not resolve the configured memory credential for ${agentId}.`,
+              remediation:
+                'Restore the configured Agent System secret provider, reload OpenClaw, then run doctor again.',
               status: 'blocked',
             },
           ];
@@ -287,7 +336,12 @@ export default function createMemoryLifecycleContribution(
       const memory = context.manifest.memory;
       if (!memory) return { outcomes: [] };
       const agentId = context.manifest.agent.id;
-      const plan = createMemoryConfigurationPlan(await dependencies.readConfig(), agentId, memory);
+      const plan = await resolveMemoryConfigurationPlan(
+        dependencies,
+        await dependencies.readConfig(),
+        agentId,
+        memory,
+      );
       if (plan.status !== 'ready') throw lifecycleError(planFinding(plan));
       if (!plan.changed) {
         return {
@@ -305,7 +359,14 @@ export default function createMemoryLifecycleContribution(
         base: 'source',
         afterWrite: { mode: 'auto' },
         mutate(config) {
-          const currentPlan = createMemoryConfigurationPlan(config, agentId, memory);
+          const secretProviderConfiguration =
+            plan.config.secrets?.providers?.[memorySecretProviderAlias];
+          const currentPlan = createMemoryConfigurationPlan(
+            config,
+            agentId,
+            memory,
+            secretProviderConfiguration,
+          );
           if (currentPlan.status !== 'ready') throw lifecycleError(planFinding(currentPlan));
           if (!currentPlan.changed) return false;
           const agent = configuredAgentValue(config, agentId);
@@ -323,7 +384,8 @@ export default function createMemoryLifecycleContribution(
         },
       });
 
-      const verification = createMemoryConfigurationPlan(
+      const verification = await resolveMemoryConfigurationPlan(
+        dependencies,
         await dependencies.readConfig(),
         agentId,
         memory,

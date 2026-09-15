@@ -34,6 +34,13 @@ If OpenClaw reports a conflicting installation, remove it with
 workflow below uses an isolated profile and does not require a normal-profile
 installation.
 
+Linked installs load from this checkout with a `config` origin. After changing
+the memory secret-provider source, run `bun run build`, run
+`openclaw agent-system install` from the agent workspace, and restart the
+Gateway. Reconciliation uses the built standalone provider for a linked checkout;
+the declared credential remains a SecretRef and never belongs in
+`openclaw.json` as plaintext.
+
 ## Usage
 
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.

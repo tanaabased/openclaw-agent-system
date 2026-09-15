@@ -6,6 +6,31 @@ import createMemoryConfigurationPlan, {
   memorySecretId,
   memorySecretProviderAlias,
 } from '../agent/memory-configuration-plan.ts';
+import type { MemorySecretProviderConfiguration } from '../agent/memory-secret-provider-configuration.ts';
+
+function standaloneProvider(
+  packageDir = '/checkout/agent-system',
+): MemorySecretProviderConfiguration {
+  return {
+    source: 'exec',
+    command: '/runtime/node',
+    args: [`${packageDir}/dist/memory-secret-provider-entry.js`],
+    timeoutMs: 90_000,
+    noOutputTimeoutMs: 90_000,
+    maxOutputBytes: 1024 * 1024,
+    jsonOnly: true,
+    passEnv: [
+      'DBUS_SESSION_BUS_ADDRESS',
+      'HOME',
+      'OPENAI_API_KEY',
+      'OPENCLAW_CONFIG_PATH',
+      'OPENCLAW_STATE_DIR',
+      'XDG_CONFIG_HOME',
+      'XDG_RUNTIME_DIR',
+    ],
+    trustedDirs: ['/runtime', packageDir],
+  };
+}
 
 function config(): OpenClawConfig {
   return {
@@ -82,6 +107,7 @@ describe('agent/memory-configuration-plan', () => {
       },
       sources: ['sessions'],
     };
+    source.secrets!.providers![memorySecretProviderAlias] = standaloneProvider();
 
     const plan = createMemoryConfigurationPlan(source, 'emori', {
       search: { provider: 'none' },
@@ -94,6 +120,50 @@ describe('agent/memory-configuration-plan', () => {
       fallback: 'none',
       remote: { batch: { enabled: false } },
       sources: ['sessions'],
+    });
+    assert.deepEqual(
+      plan.config.secrets?.providers?.[memorySecretProviderAlias],
+      standaloneProvider(),
+    );
+  });
+
+  it('should migrate between linked and managed provider forms idempotently', () => {
+    const linked = standaloneProvider();
+    const first = createMemoryConfigurationPlan(
+      config(),
+      'emori',
+      { search: { provider: 'openai', apiKey: 'OPENAI_API_KEY' } },
+      linked,
+    );
+    assert.equal(first.status, 'ready');
+    if (first.status !== 'ready') return;
+    assert.deepEqual(first.config.secrets?.providers?.[memorySecretProviderAlias], linked);
+    assert.equal(first.providerChanged, true);
+
+    const repeated = createMemoryConfigurationPlan(
+      first.config,
+      'emori',
+      { search: { provider: 'openai', apiKey: 'OPENAI_API_KEY' } },
+      linked,
+    );
+    assert.equal(repeated.status, 'ready');
+    if (repeated.status !== 'ready') return;
+    assert.equal(repeated.changed, false);
+
+    const managed = createMemoryConfigurationPlan(
+      repeated.config,
+      'emori',
+      { search: { provider: 'openai', apiKey: 'OPENAI_API_KEY' } },
+      {
+        source: 'exec',
+        pluginIntegration: { pluginId: 'agent-system', integrationId: 'environment' },
+      },
+    );
+    assert.equal(managed.status, 'ready');
+    if (managed.status !== 'ready') return;
+    assert.deepEqual(managed.config.secrets?.providers?.[memorySecretProviderAlias], {
+      source: 'exec',
+      pluginIntegration: { pluginId: 'agent-system', integrationId: 'environment' },
     });
   });
 
@@ -118,9 +188,19 @@ describe('agent/memory-configuration-plan', () => {
     conflict.secrets!.providers![memorySecretProviderAlias] = {
       source: 'store',
     };
+    const alteredStandalone = config();
+    const alteredProvider = standaloneProvider();
+    if ('command' in alteredProvider) alteredProvider.timeoutMs = 1;
+    alteredStandalone.secrets!.providers![memorySecretProviderAlias] = alteredProvider;
 
     assert.equal(
       createMemoryConfigurationPlan(conflict, 'emori', {
+        search: { provider: 'openai', apiKey: 'OPENAI_API_KEY' },
+      }).status,
+      'conflict',
+    );
+    assert.equal(
+      createMemoryConfigurationPlan(alteredStandalone, 'emori', {
         search: { provider: 'openai', apiKey: 'OPENAI_API_KEY' },
       }).status,
       'conflict',

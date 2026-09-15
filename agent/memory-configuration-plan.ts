@@ -4,13 +4,18 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { configuredAgentValue } from '../core/configured-agents.ts';
 import type { AgentMemoryConfiguration } from '../manifest/memory-schema.ts';
+import {
+  isAgentSystemMemorySecretProvider,
+  memorySecretId,
+  memorySecretProviderAlias,
+  type MemorySecretProviderConfiguration,
+} from './memory-secret-provider-configuration.ts';
 
-export const memorySecretProviderAlias = 'agent-system-environment';
-export const memorySecretProviderIntegrationId = 'environment';
-
-export function memorySecretId(agentId: string, binding: string): string {
-  return `agents/${agentId}/environment/${binding}`;
-}
+export {
+  memorySecretId,
+  memorySecretProviderAlias,
+  memorySecretProviderIntegrationId,
+} from './memory-secret-provider-configuration.ts';
 
 export type ReadyMemoryConfigurationPlan = {
   changed: boolean;
@@ -21,26 +26,15 @@ export type ReadyMemoryConfigurationPlan = {
 };
 
 export type MemoryConfigurationPlan =
-  ReadyMemoryConfigurationPlan | { message: string; status: 'conflict' | 'missing-agent' };
-
-function isManagedProvider(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const integration = Reflect.get(value, 'pluginIntegration');
-  return (
-    Reflect.get(value, 'source') === 'exec' &&
-    integration !== null &&
-    typeof integration === 'object' &&
-    !Array.isArray(integration) &&
-    Reflect.get(integration, 'pluginId') === 'agent-system' &&
-    Reflect.get(integration, 'integrationId') === memorySecretProviderIntegrationId
-  );
-}
+  | ReadyMemoryConfigurationPlan
+  | { message: string; status: 'conflict' | 'missing-agent' | 'provider-unavailable' };
 
 /** Plan per-agent memory configuration without mutating the supplied snapshot. */
 export default function createMemoryConfigurationPlan(
   config: OpenClawConfig,
   agentId: string,
   memory: AgentMemoryConfiguration,
+  secretProviderConfiguration?: MemorySecretProviderConfiguration,
 ): MemoryConfigurationPlan {
   const agent = configuredAgentValue(config, agentId);
   if (!agent) {
@@ -53,7 +47,11 @@ export default function createMemoryConfigurationPlan(
   const needsSecretProvider =
     memory.search.provider === 'openai' && memory.search.apiKey !== undefined;
   const configuredProvider = config.secrets?.providers?.[memorySecretProviderAlias];
-  if (needsSecretProvider && configuredProvider && !isManagedProvider(configuredProvider)) {
+  if (
+    needsSecretProvider &&
+    configuredProvider &&
+    !isAgentSystemMemorySecretProvider(configuredProvider)
+  ) {
     return {
       message: `OpenClaw secret provider ${memorySecretProviderAlias} is already owned by another configuration.`,
       status: 'conflict',
@@ -98,16 +96,18 @@ export default function createMemoryConfigurationPlan(
     search: nextSearch,
   };
 
-  if (needsSecretProvider && configuredProvider === undefined) {
+  if (needsSecretProvider) {
     prospective.secrets ??= {};
     prospective.secrets.providers ??= {};
-    prospective.secrets.providers[memorySecretProviderAlias] = {
-      source: 'exec',
-      pluginIntegration: {
-        pluginId: 'agent-system',
-        integrationId: memorySecretProviderIntegrationId,
+    prospective.secrets.providers[memorySecretProviderAlias] = structuredClone(
+      secretProviderConfiguration ?? {
+        source: 'exec',
+        pluginIntegration: {
+          pluginId: 'agent-system',
+          integrationId: 'environment',
+        },
       },
-    };
+    );
   }
 
   const memoryChanged = !isDeepStrictEqual(agent.memory?.search, nextAgent.memory.search);
