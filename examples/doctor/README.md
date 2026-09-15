@@ -28,6 +28,7 @@ cd "$GITHUB_WORKSPACE/examples/doctor/data"
 openclaw agent-system doctor --json | jq -e '.status == "healthy" and (.findings | any(.component == "agent"))'
 
 # should report the same healthy aggregate state through both status aliases
+cd "$GITHUB_WORKSPACE/examples/doctor/data"
 openclaw agent-system status --json | jq -e '.status == "healthy" and (.findings | any(.component == "agent"))'
 openclaw as status --json | jq -e '.status == "healthy" and (.findings | any(.component == "agent"))'
 
