@@ -116,6 +116,7 @@ export default function registerAgentSystemCli(
     });
   const doctor = agentSystem
     .command('doctor')
+    .alias('status')
     .description('Inspect Agent System agent, path, and configured capability drift.')
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')

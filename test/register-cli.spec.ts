@@ -496,6 +496,7 @@ describe('cli/register', () => {
     assert.equal(output.join('').includes('env'), true);
     assert.equal(output.join('').includes('credentials'), true);
     assert.equal(output.join('').includes('doctor'), true);
+    assert.equal(output.join('').includes('status'), true);
   });
 
   it('should delegate doctor inspection for an explicit agent', async () => {
@@ -513,6 +514,25 @@ describe('cli/register', () => {
 
     assert.deepEqual(calls.agent, ['data']);
     assert.deepEqual(calls.doctor, [{ agentId: 'tanaabot', workspaceDir: '/workspace' }]);
+  });
+
+  it('should delegate status aliases to doctor inspection', async () => {
+    for (const commandRoot of ['agent-system', 'as']) {
+      const { calls, program } = createProgram();
+
+      await program.parseAsync([
+        'node',
+        'openclaw',
+        commandRoot,
+        'status',
+        '--agent',
+        'data',
+        '--json',
+      ]);
+
+      assert.deepEqual(calls.agent, ['data']);
+      assert.deepEqual(calls.doctor, [{ agentId: 'tanaabot', workspaceDir: '/workspace' }]);
+    }
   });
 
   it('should delegate environment inspection with explicit agent and json options', async () => {
