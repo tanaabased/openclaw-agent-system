@@ -53,6 +53,8 @@ function readyStatus(provider = 'openai'): MemoryStatus {
 
 interface HarnessOptions {
   binding?: 'available' | 'missing' | 'unavailable';
+  configuredSecret?: 'available' | 'unavailable';
+  providerError?: boolean;
   status?: Error | MemoryStatus;
 }
 
@@ -68,11 +70,21 @@ function createHarness(config: OpenClawConfig, options: HarnessOptions = {}) {
     async inspectBinding() {
       return options.binding ?? 'available';
     },
+    async inspectConfiguredSecret() {
+      return options.configuredSecret ?? 'available';
+    },
     async mutateConfigFile({ mutate }) {
       mutations += 1;
       return { result: mutate(config) as boolean | undefined };
     },
     readConfig: () => config,
+    resolveSecretProviderConfiguration() {
+      if (options.providerError) throw new Error('unavailable');
+      return {
+        source: 'exec',
+        pluginIntegration: { pluginId: 'agent-system', integrationId: 'environment' },
+      };
+    },
   };
   return {
     contribution: createMemoryLifecycleContribution(dependencies),
@@ -148,6 +160,27 @@ describe('agent/memory-lifecycle', () => {
     const findings = await contribution.inspect?.(context);
 
     assert.equal(findings?.[0]?.code, 'agent-memory-credential-missing');
+    assert.deepEqual(statusCalls, []);
+  });
+
+  it('should reject an unresolved configured secret before accepting an embedding probe', async () => {
+    const { contribution, statusCalls } = await installReady({
+      configuredSecret: 'unavailable',
+      status: readyStatus(),
+    });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(findings?.[0]?.code, 'agent-memory-credential-unresolved');
+    assert.deepEqual(statusCalls, []);
+  });
+
+  it('should report an unavailable linked provider before configuration drift', async () => {
+    const { contribution, statusCalls } = createHarness(baseConfig(), { providerError: true });
+
+    const findings = await contribution.inspect?.(context);
+
+    assert.equal(findings?.[0]?.code, 'agent-memory-secret-provider-unavailable');
     assert.deepEqual(statusCalls, []);
   });
 

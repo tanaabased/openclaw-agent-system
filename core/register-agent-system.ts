@@ -7,6 +7,7 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { parseAgentSessionKey } from 'openclaw/plugin-sdk/routing';
 import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';
 import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
+import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';
 
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
 import createGitCapability from '../tools/git/capability.ts';
@@ -20,6 +21,10 @@ import AgentInstallService from '../agent/install-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
 import createMemoryLifecycleContribution from '../agent/memory-lifecycle.ts';
+import {
+  createMemorySecretProviderConfiguration,
+  memorySecretProviderAlias,
+} from '../agent/memory-secret-provider-configuration.ts';
 import { parseMemoryStatus } from '../agent/memory-status.ts';
 import AgentManifestService, { type ManifestLoadTrigger } from '../manifest/service.ts';
 import AgentPathService from '../paths/service.ts';
@@ -353,10 +358,29 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         const value = loaded.environment.values[binding];
         return value === undefined || value === '' ? 'missing' : 'available';
       },
+      async inspectConfiguredSecret({ config, id }) {
+        try {
+          const resolved = await resolveSecretRefValues(
+            [{ source: 'exec', provider: memorySecretProviderAlias, id }],
+            { config, env: process.env },
+          );
+          const value = resolved.values().next().value;
+          return typeof value === 'string' && value !== '' ? 'available' : 'unavailable';
+        } catch {
+          return 'unavailable';
+        }
+      },
       mutateConfigFile(params) {
         return api.runtime.config.mutateConfigFile(params);
       },
       readConfig,
+      resolveSecretProviderConfiguration(config) {
+        return createMemorySecretProviderConfiguration({
+          config,
+          nodeExecutable: process.execPath,
+          packageDir,
+        });
+      },
     }),
     createToolAccessLifecycleContribution({
       readConfig,

@@ -37,6 +37,7 @@ const supportedPluginSdkSubpaths = new Set([
   'run-command',
   'runtime',
   'runtime-config-snapshot',
+  'secret-ref-runtime',
   'session-store-runtime',
   'status-helpers',
 ]);
@@ -156,6 +157,7 @@ describe('openclaw api policy', () => {
       "import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';",
       "import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-outbound';",
       "import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';",
+      "import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';",
     ].join('\n');
 
     assert.deepEqual(openClawImportFailures(source, 'fixture.ts'), []);

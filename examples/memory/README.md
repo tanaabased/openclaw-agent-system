@@ -2,8 +2,9 @@
 
 This scenario verifies manifest-managed built-in memory search for keyword-only,
 local, and OpenAI providers. It also proves that the OpenAI credential remains a
-secret reference, resolves through the packed plugin after service restart, and
-produces bounded readiness diagnostics without rebuilding an index.
+secret reference, resolves through packed and source-linked installations after
+service restart, and produces bounded readiness diagnostics without rebuilding
+an existing index.
 
 ## Setup
 
@@ -74,6 +75,53 @@ output="$(openclaw agent-system doctor --json)" || {
 }
 printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
+```
+
+```bash
+# should migrate to a source-linked provider and remain idempotent
+openclaw-gateway stop
+openclaw plugins uninstall agent-system --force
+openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
+openclaw plugins enable agent-system
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+openclaw plugins inspect agent-system --runtime --json \
+  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded"'
+cd "$GITHUB_WORKSPACE/examples/memory/openai"
+openclaw agent-system install --json \
+  | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
+provider="$(openclaw config get 'secrets.providers.agent-system-environment' --json)"
+printf '%s\n' "$provider" \
+  | jq -e --arg root "$GITHUB_WORKSPACE" --arg entrypoint "$GITHUB_WORKSPACE/dist/memory-secret-provider-entry.js" '
+    .source == "exec" and
+    (.command | startswith("/")) and
+    .args == [$entrypoint] and
+    .timeoutMs == 90000 and
+    .noOutputTimeoutMs == 90000 and
+    .maxOutputBytes == 1048576 and
+    .jsonOnly == true and
+    .trustedDirs[1] == $root and
+    (.passEnv | index("OPENCLAW_CONFIG_PATH") != null) and
+    (.passEnv | index("OPENCLAW_STATE_DIR") != null) and
+    (.pluginIntegration | not)
+  '
+if [[ "$provider" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
+openclaw agent-system install --json \
+  | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
+```
+
+```bash
+# should retrieve a source-linked fixture through the real gateway method
+openclaw-gateway start
+openclaw memory status --index --force --agent memory-openai --json >/dev/null
+openclaw gateway call memory.search \
+  --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \
+  --timeout 120000 \
+  --json | jq -e '
+    .agentId == "memory-openai" and
+    .provider == "openai" and
+    .searchMode == "hybrid" and
+    (.results | any(.path | endswith("memory/linked-provider.md")))
+  '
 ```
 
 ## Cleanup
