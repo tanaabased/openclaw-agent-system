@@ -438,16 +438,17 @@ OpenClaw managed profile when explicit account and credential bindings are
 present. An explicit operator-owned denial or unmarked conflicting profile
 remains authoritative and blocks reconciliation.
 
-### `openclaw agent-system doctor`
+### `openclaw agent-system doctor` (alias: `status`)
 
 Inspects agent registration, public identity, model and memory configuration,
 path projection, and configured capabilities for drift without applying repairs.
 
 ```text
 openclaw agent-system doctor [--agent <id>] [--json]
+openclaw agent-system status [--agent <id>] [--json]
 ```
 
-Doctor reports all findings, returns nonzero for failing drift, and recommends
+Doctor, also available as `status`, reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
 responsibility. It also reports tool-access and execution-boundary findings;
 tool-specific checks are documented in each tool guide. OpenAI memory inspection
