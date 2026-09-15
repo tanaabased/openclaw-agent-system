@@ -93,17 +93,79 @@ openclaw agent-system install --json \
 provider="$(openclaw config get 'secrets.providers.agent-system-environment' --json)"
 printf '%s\n' "$provider" \
   | jq -e --arg root "$GITHUB_WORKSPACE" --arg entrypoint "$GITHUB_WORKSPACE/dist/memory-secret-provider-entry.js" '
-    .source == "exec" and
-    (.command | startswith("/")) and
-    .args == [$entrypoint] and
-    .timeoutMs == 90000 and
-    .noOutputTimeoutMs == 90000 and
-    .maxOutputBytes == 1048576 and
-    .jsonOnly == true and
-    .trustedDirs[1] == $root and
-    (.passEnv | index("OPENCLAW_CONFIG_PATH") != null) and
-    (.passEnv | index("OPENCLAW_STATE_DIR") != null) and
-    (.pluginIntegration | not)
+    [
+      {
+        field: "source",
+        expected: "exec",
+        actual: (.source // null),
+        ok: (.source == "exec")
+      },
+      {
+        field: "command",
+        expected: "absolute path",
+        actual: (.command // null),
+        ok: (if (.command | type) == "string" then (.command | startswith("/")) else false end)
+      },
+      {
+        field: "args",
+        expected: [$entrypoint],
+        actual: (.args // null),
+        ok: (.args == [$entrypoint])
+      },
+      {
+        field: "timeoutMs",
+        expected: 90000,
+        actual: (.timeoutMs // null),
+        ok: (.timeoutMs == 90000)
+      },
+      {
+        field: "noOutputTimeoutMs",
+        expected: 90000,
+        actual: (.noOutputTimeoutMs // null),
+        ok: (.noOutputTimeoutMs == 90000)
+      },
+      {
+        field: "maxOutputBytes",
+        expected: 1048576,
+        actual: (.maxOutputBytes // null),
+        ok: (.maxOutputBytes == 1048576)
+      },
+      {
+        field: "jsonOnly",
+        expected: true,
+        actual: (.jsonOnly // null),
+        ok: (.jsonOnly == true)
+      },
+      {
+        field: "trustedDirs[1]",
+        expected: $root,
+        actual: (.trustedDirs[1] // null),
+        ok: (.trustedDirs[1] == $root)
+      },
+      {
+        field: "passEnv",
+        expected: ["OPENCLAW_CONFIG_PATH", "OPENCLAW_STATE_DIR"],
+        actual: (.passEnv // null),
+        ok: (if (.passEnv | type) == "array" then
+          (.passEnv | index("OPENCLAW_CONFIG_PATH") != null) and
+          (.passEnv | index("OPENCLAW_STATE_DIR") != null)
+        else
+          false
+        end)
+      },
+      {
+        field: "pluginIntegration",
+        expected: "absent",
+        actual: (has("pluginIntegration")),
+        ok: (has("pluginIntegration") | not)
+      }
+    ]
+    | map(select(.ok != true) | del(.ok)) as $failures
+    | if ($failures | length) == 0 then
+        true
+      else
+        error("standalone provider mismatches: \($failures | tojson)")
+      end
   '
 if [[ "$provider" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
 openclaw agent-system install --json \
