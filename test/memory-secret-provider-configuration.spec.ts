@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -22,7 +22,10 @@ async function createLinkedFixture() {
   await writeFile(nodeExecutable, '#!/bin/sh\n');
   await chmod(nodeExecutable, 0o700);
   await writeFile(join(distDir, 'memory-secret-provider-entry.js'), 'export {};\n');
-  return { nodeExecutable, packageDir };
+  return {
+    nodeExecutable: await realpath(nodeExecutable),
+    packageDir: await realpath(packageDir),
+  };
 }
 
 describe('agent/memory-secret-provider-configuration', () => {

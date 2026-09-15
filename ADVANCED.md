@@ -239,7 +239,7 @@ Use OpenClaw's explicit memory commands when you intend to mutate the index:
 openclaw memory status --agent tanaabot --deep --json
 
 # rebuild only when doctor reports index drift and you intend the write.
-openclaw memory status --index --force --agent tanaabot
+openclaw memory status --index --agent tanaabot
 ```
 
 ### `environment`

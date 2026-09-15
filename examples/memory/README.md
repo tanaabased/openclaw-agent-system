@@ -82,6 +82,7 @@ printf '%s\n' "$output" \
 openclaw-gateway stop
 openclaw plugins uninstall agent-system --force
 openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
+openclaw plugins registry --refresh --json >/dev/null
 openclaw plugins enable agent-system
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json \
@@ -112,7 +113,7 @@ openclaw agent-system install --json \
 ```bash
 # should retrieve a source-linked fixture through the real gateway method
 openclaw-gateway start
-openclaw memory status --index --force --agent memory-openai --json >/dev/null
+openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw gateway call memory.search \
   --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \
   --timeout 120000 \

@@ -106,7 +106,7 @@ function indexFinding(status: MemoryStatus['status'], agentId: string): Contribu
     {
       code: 'agent-memory-index-incomplete',
       message: `OpenClaw reports incomplete or incompatible memory index evidence for ${agentId}.`,
-      remediation: `Review openclaw memory status --agent ${agentId} --deep, then run openclaw memory status --index --force --agent ${agentId} when a rebuild is appropriate.`,
+      remediation: `Review openclaw memory status --agent ${agentId} --deep, then run openclaw memory status --index --agent ${agentId} when a rebuild is appropriate.`,
       status: 'drift',
     },
   ];
