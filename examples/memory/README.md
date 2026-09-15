@@ -4,7 +4,8 @@ This scenario verifies manifest-managed built-in memory search for keyword-only,
 local, and OpenAI providers. It also proves that the OpenAI credential remains a
 secret reference, resolves through packed and source-linked installations after
 service restart, and produces bounded readiness diagnostics without rebuilding
-an existing index.
+an existing index. The source-linked case replaces the packed install in the
+same profile to verify configuration migration and index preservation.
 
 ## Setup
 
@@ -78,12 +79,11 @@ printf '%s\n' "$output" \
 ```
 
 ```bash
-# should migrate to a source-linked provider and remain idempotent
+# should migrate to a source-linked provider, remain idempotent, and retrieve through the gateway
 openclaw-gateway stop
-openclaw plugins uninstall agent-system --force
 openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
-openclaw plugins registry --refresh --json >/dev/null
-openclaw plugins enable agent-system
+openclaw plugins registry --json \
+  | jq -e '.state == "fresh" and (.differences | length == 0)'
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 openclaw plugins inspect agent-system --runtime --json \
   | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded"'
@@ -108,10 +108,6 @@ printf '%s\n' "$provider" \
 if [[ "$provider" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
-```
-
-```bash
-# should retrieve a source-linked fixture through the real gateway method
 openclaw-gateway start
 openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw gateway call memory.search \
