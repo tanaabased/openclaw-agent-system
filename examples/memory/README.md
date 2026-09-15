@@ -90,84 +90,16 @@ openclaw plugins inspect agent-system --runtime --json \
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
-provider="$(openclaw config get 'secrets.providers.agent-system-environment' --json)"
-printf '%s\n' "$provider" \
-  | jq -e --arg root "$GITHUB_WORKSPACE" --arg entrypoint "$GITHUB_WORKSPACE/dist/memory-secret-provider-entry.js" '
-    [
-      {
-        field: "source",
-        expected: "exec",
-        actual: (.source // null),
-        ok: (.source == "exec")
-      },
-      {
-        field: "command",
-        expected: "absolute path",
-        actual: (.command // null),
-        ok: (if (.command | type) == "string" then (.command | startswith("/")) else false end)
-      },
-      {
-        field: "args",
-        expected: [$entrypoint],
-        actual: (.args // null),
-        ok: (.args == [$entrypoint])
-      },
-      {
-        field: "timeoutMs",
-        expected: 90000,
-        actual: (.timeoutMs // null),
-        ok: (.timeoutMs == 90000)
-      },
-      {
-        field: "noOutputTimeoutMs",
-        expected: 90000,
-        actual: (.noOutputTimeoutMs // null),
-        ok: (.noOutputTimeoutMs == 90000)
-      },
-      {
-        field: "maxOutputBytes",
-        expected: 1048576,
-        actual: (.maxOutputBytes // null),
-        ok: (.maxOutputBytes == 1048576)
-      },
-      {
-        field: "jsonOnly",
-        expected: true,
-        actual: (.jsonOnly // null),
-        ok: (.jsonOnly == true)
-      },
-      {
-        field: "trustedDirs[1]",
-        expected: $root,
-        actual: (.trustedDirs[1] // null),
-        ok: (.trustedDirs[1] == $root)
-      },
-      {
-        field: "passEnv",
-        expected: ["OPENCLAW_CONFIG_PATH", "OPENCLAW_STATE_DIR"],
-        actual: (.passEnv // null),
-        ok: (if (.passEnv | type) == "array" then
-          (.passEnv | index("OPENCLAW_CONFIG_PATH") != null) and
-          (.passEnv | index("OPENCLAW_STATE_DIR") != null)
-        else
-          false
-        end)
-      },
-      {
-        field: "pluginIntegration",
-        expected: "absent",
-        actual: (has("pluginIntegration")),
-        ok: (has("pluginIntegration") | not)
-      }
-    ]
-    | map(select(.ok != true) | del(.ok)) as $failures
-    | if ($failures | length) == 0 then
-        true
-      else
-        error("standalone provider mismatches: \($failures | tojson)")
-      end
-  '
-if [[ "$provider" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
+configured="$(openclaw config get 'agents.entries.memory-openai.memory.search' --json)"
+printf '%s\n' "$configured" \
+  | jq -e '.provider == "openai" and .fallback == "none" and .model == "text-embedding-3-small" and .remote.apiKey.source == "exec" and .remote.apiKey.provider == "agent-system-environment"'
+if [[ "$configured" == *"$OPENAI_API_KEY"* ]]; then exit 1; fi
+output="$(openclaw agent-system doctor --json)" || {
+  printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
+  exit 1
+}
+printf '%s\n' "$output" \
+  | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
 openclaw-gateway start
