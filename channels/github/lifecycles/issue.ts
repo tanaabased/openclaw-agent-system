@@ -13,6 +13,7 @@ export interface GitHubIssueLifecycleWorktreeService {
     cloneUrl: string;
     defaultBranch: string;
     itemDatabaseId: number;
+    itemNumber: number;
     itemType: 'issue';
     repositoryDatabaseId: number;
     signal?: AbortSignal;
@@ -23,6 +24,7 @@ export interface GitHubIssueLifecycleWorktreeService {
     cloneUrl: string;
     defaultBranch: string;
     itemDatabaseId: number;
+    itemNumber: number;
     itemType: 'issue';
     repositoryDatabaseId: number;
     signal?: AbortSignal;
@@ -32,7 +34,9 @@ export interface GitHubIssueLifecycleWorktreeService {
     cloneUrl: string;
     defaultBranch: string;
     itemDatabaseId: number;
+    itemNumber: number;
     itemType: 'issue';
+    title: string;
     repositoryDatabaseId: number;
     signal?: AbortSignal;
   }): Promise<GitHubNotificationLifecycleWorktree>;
@@ -47,6 +51,7 @@ function worktreeInput(input: GitHubNotificationLifecycleBoundaryInput) {
     cloneUrl: input.item.repositoryCloneUrl,
     defaultBranch: input.item.repositoryDefaultBranch,
     itemDatabaseId: input.item.itemDatabaseId,
+    itemNumber: input.item.number,
     itemType: input.item.itemType,
     repositoryDatabaseId: input.item.repositoryDatabaseId,
     ...(input.signal === undefined ? {} : { signal: input.signal }),
@@ -118,7 +123,7 @@ export default class GitHubIssueLifecycle implements GitHubNotificationLifecycle
       inspect: (input: GitHubNotificationLifecycleBoundaryInput) =>
         worktrees.inspectGitHub(worktreeInput(input)),
       prepare: (input: GitHubNotificationLifecycleBoundaryInput) =>
-        worktrees.prepareGitHub(worktreeInput(input)),
+        worktrees.prepareGitHub({ ...worktreeInput(input), title: input.issueTitle ?? '' }),
       required: true as const,
     };
   }

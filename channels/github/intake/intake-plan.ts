@@ -9,6 +9,7 @@ export type GitHubNotificationIntakeAuthority =
   | { authorized: false; providerVerified: boolean; reasonCode?: string }
   | {
       authorized: true;
+      issueTitle?: string;
       permission?: GitHubRepositoryPermission;
       reasonCode?: never;
       repository?: GitHubRepositoryIdentity;

@@ -56,6 +56,7 @@ describe('channels/github/lifecycles', () => {
         cloneUrl: issue.repositoryCloneUrl,
         defaultBranch: issue.repositoryDefaultBranch,
         itemDatabaseId: issue.itemDatabaseId,
+        itemNumber: issue.number,
         itemType: 'issue',
         repositoryDatabaseId: issue.repositoryDatabaseId,
       },

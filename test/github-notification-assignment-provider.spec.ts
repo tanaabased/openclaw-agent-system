@@ -125,6 +125,7 @@ function provider(
                 nodeId: pullRequest ? 'PR_item' : 'I_item',
                 number: itemNumber,
                 state: 'open',
+                title: 'Implement notification planning',
                 updatedAt: '2026-08-11T12:00:00Z',
               });
             }
@@ -174,6 +175,7 @@ describe('channels/github/intake/assignment-provider', () => {
   it('should recheck the exact approved assignment from canonical control facts', async () => {
     assert.deepEqual(await provider().inspect(input()), {
       authorized: true,
+      issueTitle: 'Implement notification planning',
       permission: 'write',
       repository: notificationRepository,
     });
@@ -189,6 +191,7 @@ describe('channels/github/intake/assignment-provider', () => {
 
     assert.deepEqual(await provider(true, true, () => undefined, false, renamed).inspect(input()), {
       authorized: true,
+      issueTitle: 'Implement notification planning',
       permission: 'write',
       repository: renamed,
     });

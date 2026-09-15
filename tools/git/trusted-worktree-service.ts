@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
 import type AgentEnvironmentService from '../../environment/service.ts';
 import type AgentManifestService from '../../manifest/service.ts';
@@ -6,7 +6,12 @@ import AgentSystemToolError from '../../api/error.ts';
 import resolveManifestValue from '../../manifest/resolve-value.ts';
 import type { GitWorktreeToolDefinition } from './worktree-tool.ts';
 import type { GitWorktreeToolInput } from './worktree-tool-schema.ts';
-import { gitWorktreeDirectoryName } from './worktree-names.ts';
+import {
+  gitHubIssueBranchSuffix,
+  gitWorktreeDirectoryName,
+  gitWorktreeRepositoryDirectoryName,
+  isGitHubIssueBranchName,
+} from './worktree-names.ts';
 import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-service.ts';
 
 export interface TrustedGitHubWorktreeInput {
@@ -14,6 +19,7 @@ export interface TrustedGitHubWorktreeInput {
   cloneUrl: string;
   defaultBranch: string;
   itemDatabaseId: number;
+  itemNumber: number;
   itemType: 'issue' | 'pull-request';
   repositoryDatabaseId: number;
   signal?: AbortSignal;
@@ -21,6 +27,10 @@ export interface TrustedGitHubWorktreeInput {
 
 export interface TrustedGitHubWorktreeResult extends GitWorktreeResult {
   workId: string;
+}
+
+export interface TrustedGitHubWorktreePrepareInput extends TrustedGitHubWorktreeInput {
+  title: string;
 }
 
 export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
@@ -79,27 +89,51 @@ export default class TrustedGitWorktreeService {
       input.itemDatabaseId,
       'The GitHub work-item database id',
     );
+    const itemNumber = positiveInteger(input.itemNumber, 'The GitHub work-item number');
     if (input.itemType !== 'issue' && input.itemType !== 'pull-request') {
       throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
     }
     const repositoryId = `github-${repositoryDatabaseId}`;
     const workId = `${input.itemType}-${itemDatabaseId}`;
-    const result = await this.#execute(agentId, { action: 'list', repositoryId }, input.signal);
+    const { result, workspaceDir } = await this.#execute(
+      agentId,
+      { action: 'list', repositoryId },
+      input.signal,
+    );
     if (!Array.isArray(result)) {
       throw new AgentSystemToolError(
         'execution_failed',
         'Git worktree inspection returned an unexpected result.',
       );
     }
-    const branch = gitWorktreeDirectoryName(repositoryId, workId);
-    const match = result.find(
-      (worktree) => worktree.repositoryId === repositoryId && worktree.branch === branch,
+    const stableName = gitWorktreeDirectoryName(repositoryId, workId);
+    const repositoryDirectory = gitWorktreeRepositoryDirectoryName(repositoryId).replace(
+      /\.git$/u,
+      '',
     );
+    const match = result.find(
+      (worktree) =>
+        worktree.repositoryId === repositoryId &&
+        basename(worktree.path) === stableName &&
+        basename(dirname(worktree.path)) === repositoryDirectory,
+    );
+    if (match && match.branch !== stableName) {
+      const suffix = gitHubIssueBranchSuffix(agentId, workspaceDir, repositoryId, workId);
+      if (
+        input.itemType !== 'issue' ||
+        !isGitHubIssueBranchName(match.branch, itemNumber, suffix)
+      ) {
+        throw new AgentSystemToolError(
+          'execution_failed',
+          'The owned GitHub worktree path uses an unrelated branch.',
+        );
+      }
+    }
     return match ? { ...match, workId } : undefined;
   }
 
   public async prepareGitHub(
-    input: TrustedGitHubWorktreeInput,
+    input: TrustedGitHubWorktreePrepareInput,
   ): Promise<TrustedGitHubWorktreeResult> {
     const agentId = requiredText(input.agentId, 'The notification agent id');
     const defaultBranch = requiredText(input.defaultBranch, 'The GitHub default branch');
@@ -111,6 +145,7 @@ export default class TrustedGitWorktreeService {
       input.itemDatabaseId,
       'The GitHub work-item database id',
     );
+    const itemNumber = positiveInteger(input.itemNumber, 'The GitHub work-item number');
     if (input.itemType !== 'issue' && input.itemType !== 'pull-request') {
       throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
     }
@@ -126,7 +161,12 @@ export default class TrustedGitWorktreeService {
       workId,
     };
 
-    const result = await this.#execute(agentId, toolInput, input.signal);
+    const { result } = await this.#execute(
+      agentId,
+      toolInput,
+      input.signal,
+      input.itemType === 'issue' ? { number: itemNumber, title: input.title } : undefined,
+    );
     if (
       Array.isArray(result) ||
       !result.workId ||
@@ -171,13 +211,14 @@ export default class TrustedGitWorktreeService {
         workId,
       };
     }
-    return this.#executeCleanup(input.agentId, repositoryId, workId, input.signal);
+    return this.#executeCleanup(input.agentId, repositoryId, workId, observed.branch, input.signal);
   }
 
   async #executeCleanup(
     agentId: string,
     repositoryId: string,
     workId: string,
+    expectedBranch: string,
     signal?: AbortSignal,
   ): Promise<GitWorktreeCleanupResult> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
@@ -244,6 +285,7 @@ export default class TrustedGitWorktreeService {
         source: 'command',
         workspaceDir: loaded.scope.workspaceDir,
       },
+      expectedBranch,
     );
   }
 
@@ -251,7 +293,8 @@ export default class TrustedGitWorktreeService {
     agentId: string,
     toolInput: GitWorktreeToolInput,
     signal?: AbortSignal,
-  ): Promise<GitWorktreeResult | GitWorktreeResult[]> {
+    issueBranch?: { number: number; title: string },
+  ): Promise<{ result: GitWorktreeResult | GitWorktreeResult[]; workspaceDir: string }> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {
       throw unavailable(agentId, 'the trusted manifest is not loaded');
@@ -314,8 +357,25 @@ export default class TrustedGitWorktreeService {
       source: 'command' as const,
       workspaceDir: loaded.scope.workspaceDir,
     };
-    return toolInput.action === 'prepare'
-      ? this.#dependencies.definition.executeTrustedGitHubPrepare(toolInput, configuration, scope)
-      : this.#dependencies.definition.execute(toolInput, configuration, scope);
+    const result =
+      toolInput.action === 'prepare'
+        ? await this.#dependencies.definition.executeTrustedGitHubPrepare(
+            toolInput,
+            configuration,
+            scope,
+            issueBranch === undefined
+              ? undefined
+              : {
+                  ...issueBranch,
+                  suffix: gitHubIssueBranchSuffix(
+                    agentId,
+                    scope.workspaceDir,
+                    toolInput.repository.id,
+                    toolInput.workId,
+                  ),
+                },
+          )
+        : await this.#dependencies.definition.execute(toolInput, configuration, scope);
+    return { result, workspaceDir: scope.workspaceDir };
   }
 }

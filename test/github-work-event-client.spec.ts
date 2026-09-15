@@ -145,6 +145,7 @@ describe('channels/github/provider/work-event-client', () => {
           nodeId: 'I_item',
           number: 7,
           state: 'open',
+          title: 'Fix issue branch naming',
           updatedAt: '2026-08-11T12:00:00Z',
         });
       },
@@ -153,6 +154,7 @@ describe('channels/github/provider/work-event-client', () => {
     const item = await client.getItem('tanaabased', 'example', 7);
 
     assert.equal(item.databaseId, 42);
+    assert.equal(item.itemType === 'issue' ? item.title : undefined, 'Fix issue branch naming');
     assert.ok(requests[0]?.includes('/repos/tanaabased/example/issues/7'));
     assert.ok(requests[0]?.some((value) => value.includes('databaseId:.id')));
   });

@@ -67,7 +67,7 @@ interface GitHubCanonicalWorkItemBase {
 
 export type GitHubCanonicalWorkItem = GitHubCanonicalWorkItemBase &
   (
-    | { itemType: 'issue'; pullRequest?: never }
+    | { itemType: 'issue'; pullRequest?: never; title?: string }
     | { itemType: 'pull-request'; pullRequest: GitHubPullRequestIdentity }
   );
 

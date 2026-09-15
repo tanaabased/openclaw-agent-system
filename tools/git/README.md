@@ -304,9 +304,14 @@ repositories; undeclared paths remain unavailable.
 `prepare` is idempotent, `list` is read-only, and `remove` uses non-forced Git
 removal. Dirty worktrees, branches, and refs remain intact.
 
-Agent System names both the branch and directory `<work-id-slug>-<digest>`.
-Prefer `<task-id>-<brief-kebab-case-description>` for the work id when a
-description is available; otherwise use `<task-id>`.
+For ordinary managed work, Agent System names both the branch and directory
+`<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
+the work id when a description is available; otherwise use `<task-id>`.
+New GitHub issue worktrees keep the immutable-id directory but name the branch
+`<issue-number>-<title-slug>-<five-character-hash>`. The title slug is limited to
+48 characters and falls back to `issue` when the title cannot be slugged. The
+hash separates agent-scoped worktrees for the same issue. Existing GitHub issue
+branches keep their original names through retries, title edits, and cleanup.
 
 ## Shim
 

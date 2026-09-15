@@ -24,6 +24,7 @@ export interface GitHubNotificationLifecycleBoundaryInput {
   agentId: string;
   intake: GitHubNotificationIntakeState;
   item: GitHubNotificationItemState;
+  issueTitle?: string;
   signal?: AbortSignal;
   workspaceDir: string;
 }
