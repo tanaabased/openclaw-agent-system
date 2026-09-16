@@ -198,6 +198,7 @@ if test -f "$TMPDIR/approved-issue-number"; then
   OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$issue_number" --repo tanaabased/big-test-bucket
 fi
 
+# should close the completed issue fixture
 if test -f "$TMPDIR/completed-issue-number"; then
   cd "$TMPDIR/agent-system-notification-actor"
   completed_issue_number="$(cat "$TMPDIR/completed-issue-number")"
