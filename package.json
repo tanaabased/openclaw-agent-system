@@ -91,7 +91,7 @@
     "build": "bun scripts/build-task.ts",
     "format:check": "prettier . --check --ignore-unknown",
     "format:write": "prettier . --write --ignore-unknown",
-    "leia": "leia",
+    "leia": "bun ./node_modules/.bin/leia",
     "lint:eslint": "eslint .",
     "lint:shellcheck": "shellcheck bin/* scripts/openclaw-*",
     "lint": "bun run lint:eslint && bun run format:check && bun run lint:shellcheck",
