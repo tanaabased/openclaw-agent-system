@@ -7,6 +7,7 @@
 
 ### Bug Fixes
 
+- Fixed Doctor rejecting available models when OpenClaw 2026.9.4 omits the `missing` flag. [#120](https://github.com/tanaabased/openclaw-agent-system/issues/120)
 - Fixed source-linked memory secret resolution and prevented unrelated embedding probes from reporting readiness. [#108](https://github.com/tanaabased/openclaw-agent-system/issues/108)
 
 ### Improvements
