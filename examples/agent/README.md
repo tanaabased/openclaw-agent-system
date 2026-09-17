@@ -16,7 +16,7 @@ cd "$GITHUB_WORKSPACE/examples/agent/data"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
-OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+openclaw-gateway start --debug
 ```
 
 ## Testing
@@ -30,6 +30,7 @@ openclaw agent \
   --timeout 120
 
 # should load the data manifest through a passive gateway lifecycle
+gateway_log_path="$(openclaw-gateway log-path)"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   openclaw logs --plain --limit 1000 --max-bytes 1000000 > "$TMPDIR/agent-lifecycle.log"
   if grep -Eq \
@@ -40,7 +41,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
   if [ "$attempt" -eq 10 ]; then
     grep -F '[agent-system]' "$TMPDIR/agent-lifecycle.log" || true
     tail -n 100 "$TMPDIR/agent-lifecycle.log"
-    tail -n 100 "$TMPDIR/gateway.log"
+    tail -n 100 "$gateway_log_path"
     exit 1
   fi
   sleep 1
@@ -48,7 +49,7 @@ done
 
 # should keep manifest values out of lifecycle and gateway logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
-if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/gateway.log"; then exit 1; fi
+if grep -Fq 'leia-initial-manifest-value' "$gateway_log_path"; then exit 1; fi
 
 # should match the complete strict mock exchange
 openclaw-aimock evidence \
