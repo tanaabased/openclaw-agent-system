@@ -2,6 +2,15 @@
 
 This scenario installs the prepared Agent System package on a fresh runner and verifies that install resolves an environment-backed display name from the completed Agent System environment.
 
+## Setup
+
+```bash
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE"
+```
+
 ## Testing
 
 ```bash

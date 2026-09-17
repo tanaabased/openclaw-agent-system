@@ -21,18 +21,13 @@ jobs:
           fetch-depth: 0
       - name: Install Bun
         uses: tanaabased/actions/setup-bun@v1
-        with:
-          test-mode: true
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1
-        with:
-          test-mode: true
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Prepare synthetic release
         uses: tanaabased/actions/prepare-release@v1
         with:
-          test-mode: true
           version: ${{ env.STAMPED_VERSION }}
           release-date: ${{ env.STAMPED_DATE }}
           release-url: ${{ env.STAMPED_URL }}
@@ -47,8 +42,6 @@ jobs:
       - name: Pack prepared package
         id: pack
         uses: tanaabased/actions/npm-pack@v1
-        with:
-          test-mode: true
       - name: Run release package tests
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
@@ -56,35 +49,16 @@ jobs:
       - name: Validate npm publisher
         uses: tanaabased/actions/publish-npm@v1
         with:
-          test-mode: true
+          dry-run: true
           tarball: ${{ steps.pack.outputs.tarball-path }}
           update-prerelease-tag-on-stable: true
       - name: Validate ClawHub publisher
         uses: tanaabased/actions/publish-clawhub@v1
         with:
-          test-mode: true
+          dry-run: true
           tarball: ${{ steps.pack.outputs.tarball-path }}
           owner: tanaab
           tags: edge
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.event.pull_request.head.sha }}
           wait-timeout: 1800
-
-  repository-release-tests:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Validate repository publisher
-        uses: tanaabased/actions/publish-repo@v1
-        with:
-          test-mode: true
-          version: ${{ env.STAMPED_VERSION }}
-          release-date: ${{ env.STAMPED_DATE }}
-          release-url: ${{ env.STAMPED_URL }}
-          commands: |
-            bun install --frozen-lockfile --ignore-scripts
-            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
-            bun run format:write

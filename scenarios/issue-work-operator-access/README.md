@@ -23,7 +23,9 @@ export OPENCLAW_PATH_BOOTSTRAPPED=1
 export PATH="$TMPDIR/operator-access/bin:$PATH"
 openclaw-notification-setup prepare \
   --model aimock/gpt-5.5 \
-  --scenario operator-access
+  --scenario operator-access \
+  --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 openclaw config set commands.ownerAllowFrom '[]' --strict-json
 ```
 
@@ -50,7 +52,7 @@ openclaw agent-system install --json > "$TMPDIR/operator-install.json"
 jq -e '.outcomes[] | select(.code == "github-operator-grants-reconciled")' "$TMPDIR/operator-install.json"
 openclaw config get commands.ownerAllowFrom --json | jq -e '. == ["agent-system-github:U_flagged"]'
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.code == "github-operator-grants-reconciled" and .status == "unchanged")'
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 touch "$TMPDIR/operator-access/install-verified"
 ```
 
@@ -81,8 +83,8 @@ export OPENCLAW_PATH_BOOTSTRAPPED=1
 export PATH="$TMPDIR/operator-access/bin:$PATH"
 cd "$TMPDIR/operator-access/agent"
 openclaw config set agents.entries.notification-data.tools.deny '["sessions"]' --strict-json
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" add denied
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" wait 3 unconfigured
 ```
@@ -95,8 +97,8 @@ export PATH="$TMPDIR/operator-access/bin:$PATH"
 cd "$TMPDIR/operator-access/agent"
 openclaw config set agents.entries.notification-data.tools.deny '[]' --strict-json
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" work
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" add work
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" wait 4 configured
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" evidence
@@ -108,7 +110,7 @@ test -f "$TMPDIR/operator-access/implementation-4-verified"
 export OPENCLAW_PATH_BOOTSTRAPPED=1
 export PATH="$TMPDIR/operator-access/bin:$PATH"
 cd "$TMPDIR/operator-access/agent"
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 node "$GITHUB_WORKSPACE/scenarios/issue-work-operator-access/control.mjs" opt-out
 openclaw agent-system install --json | jq -e '.outcomes[] | select(.code == "github-operator-grants-reconciled")'
 openclaw config get commands.ownerAllowFrom --json | jq -e 'length == 0'
@@ -120,6 +122,6 @@ openclaw config get commands.ownerAllowFrom --json | jq -e 'length == 0'
 # should stop the disposable gateway and model provider even after an assertion fails
 export OPENCLAW_PATH_BOOTSTRAPPED=1
 export PATH="$TMPDIR/operator-access/bin:$PATH"
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 openclaw-notification-setup stop --model aimock/gpt-5.5 --scenario operator-access
 ```

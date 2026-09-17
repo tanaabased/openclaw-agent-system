@@ -1,13 +1,16 @@
 # Path Example
 
-This scenario runs the prepared Agent System package in an isolated Gateway with explicitly installed agents. It verifies that one manifest-declared executable directory reaches both Codex-native shell commands and OpenClaw exec with the documented precedence.
+This scenario runs the prepared Agent System package in the default Gateway with explicitly installed agents. It verifies that one manifest-declared executable directory reaches both Codex-native shell commands and OpenClaw exec with the documented precedence.
 
 ## Setup
 
 ```bash
-# should configure the isolated profile with the ci model
-openclaw models set "openai/$OPENAI_MODEL"
-openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+# should configure the default profile with the ci model
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --model "openai/$OPENAI_MODEL" \
+  --yolo
 
 # should install both scenario-owned workspaces through agent system
 cd "$GITHUB_WORKSPACE/examples/path/codex"
@@ -23,7 +26,7 @@ openclaw config set 'agents.entries.path-openclaw.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.path-openclaw.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"openclaw\"}}}" --strict-json
 
 # should start the default gateway as a supervised background process
-openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway start
 ```
 
 ## Testing
@@ -50,5 +53,5 @@ grep -F 'manifest-path-prepend-precedence' "$GITHUB_WORKSPACE/examples/path/open
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 ```

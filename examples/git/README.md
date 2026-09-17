@@ -9,6 +9,12 @@ This example does not start a Gateway or invoke a model.
 ## Setup
 
 ```bash
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --needs-ssh-key
+
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"

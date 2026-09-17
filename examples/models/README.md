@@ -5,9 +5,11 @@ This scenario verifies model reconciliation, effective selection policy, configu
 ## Setup
 
 ```bash
-# should configure the isolated profile with the known api key model
-openclaw models set openai/gpt-5.4-nano
-openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+# should configure the default profile with the known api key model
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
+  --model "openai/gpt-5.4-nano"
 
 # should establish the existing api key backed codex route
 openclaw plugins enable codex
@@ -52,7 +54,7 @@ openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "models" and .code == "agent-models-unchanged" and .status == "unchanged")'
 
 # should execute the installed model through the retained native runtime
-openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway start
 openclaw agent \
   --agent models-data \
   --session-key agent:models-data:agent-system-models-leia \
@@ -65,5 +67,5 @@ openclaw agent \
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 ```

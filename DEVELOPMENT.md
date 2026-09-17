@@ -120,8 +120,8 @@ transport, model interpretation, or Codex-native behavior is under test. The
 `agent` and `github` examples and `credentials` cache checks use AIMock;
 `models`, `path`, and `security` remain live.
 
-The shared-action workflows install Agent System into an isolated OpenClaw profile and select
-[process-lifetime 1Password caching](ADVANCED.md#opcache); unit tests set their own policy. The [credentials example](examples/credentials/README.md)
+Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#opcache);
+unit tests set their own policy. The [credentials example](examples/credentials/README.md)
 tests storage, cache reuse, flush, and credential-mutation invalidation. Assert multiple fields
 from one validation result instead of repeating provider calls.
 

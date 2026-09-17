@@ -41,8 +41,6 @@ describe('scripts/openclaw-notification-setup', () => {
       source,
       /configure_notification_profile\n\n {2}if \[\[ "\$model_provider" == mock \]\]/u,
     );
-    assert.doesNotMatch(source, /openclaw-setup|agent-system-plugin|needs-secret-service/u);
-    assert.match(source, /openclaw models set "\$model"/u);
   });
 
   it('should delegate strict mock lifecycle handling to the shared helper', async () => {
@@ -52,5 +50,13 @@ describe('scripts/openclaw-notification-setup', () => {
     assert.match(source, /openclaw-aimock" evidence/u);
     assert.match(source, /openclaw-aimock" stop/u);
     assert.doesNotMatch(source, /aimock-server\.ts/u);
+  });
+
+  it('should delegate OpenClaw preparation to the catalog helper', async () => {
+    const source = await readFile(command, 'utf8');
+
+    assert.match(source, /--agent-system "\$agent_system_plugin"/u);
+    assert.match(source, /\n {4}openclaw-setup "\$\{setup_args\[@\]\}"/u);
+    assert.doesNotMatch(source, /command_dir\/openclaw-setup/u);
   });
 });

@@ -5,6 +5,11 @@ This scenario uses scenario-owned workspaces on a fresh runner. It verifies orde
 ## Setup
 
 ```bash
+# should configure an unauthenticated local openclaw profile with the packed plugin
+openclaw-setup \
+  --workspace "$TMPDIR/main" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE"
+
 # should install the scenario-owned data workspace through agent system
 cd "$GITHUB_WORKSPACE/examples/env/data"
 openclaw agent-system install

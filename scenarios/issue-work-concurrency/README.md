@@ -22,7 +22,9 @@ a later poll can advance these planning-only fixtures into implementation.
 # should prepare the selected notification model and isolated profile
 openclaw-notification-setup prepare \
   --model "$NOTIFICATION_MODEL" \
-  --scenario concurrency
+  --scenario concurrency \
+  --workspace "$TMPDIR/main" \
+  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
 ```
 
 ```bash
@@ -50,7 +52,7 @@ openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
 openclaw config set agents.defaults.maxConcurrent 4 --strict-json
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
 
 # should make existing custom groups available for assignment setup
 openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active Work"]}' --json | jq -e '.ok == true'
@@ -119,7 +121,7 @@ test -f "$TMPDIR/notification-concurrency/open-verified"
 cd "$GITHUB_WORKSPACE"
 printf '%s' released > "$TMPDIR/notification-concurrency/release"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" published
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 cd "$TMPDIR/agent-system-notification-actor"
 for label in a b c; do
   issue_number="$(cat "$TMPDIR/notification-concurrency/$label")"
@@ -143,7 +145,7 @@ openclaw-notification-setup evidence \
 if test -d "$TMPDIR/notification-concurrency"; then
   printf '%s' released > "$TMPDIR/notification-concurrency/release"
 fi
-openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop
 
 # should close only the three generated issue fixtures
 if test -d "$TMPDIR/agent-system-notification-actor"; then

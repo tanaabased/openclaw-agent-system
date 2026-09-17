@@ -11,7 +11,7 @@
 
 ### Improvements
 
-- Migrated release and installed-runtime CI to the shared Tanaab action catalog with independent repository, npm, and ClawHub publishers. [#118](https://github.com/tanaabased/openclaw-agent-system/issues/118)
+- Migrated release and ordinary CI setup to the shared Tanaab action catalog with independent repository, npm, and ClawHub publishers. [#118](https://github.com/tanaabased/openclaw-agent-system/issues/118)
 
 ## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)
 

@@ -146,13 +146,6 @@ run_refresh() {
   fi
 }
 
-gateway_diagnostics() {
-  openclaw-gateway diagnostics \
-    --profile "${OPENCLAW_CI_PROFILE:?}" \
-    --workspace "${OPENCLAW_CI_WORKSPACE:?}" \
-    --state-dir "${OPENCLAW_CI_STATE_DIR:?}" || true
-}
-
 refresh_completed() {
   [[ -n "$agent_id" ]] || error '--agent or OPENCLAW_GITHUB_NOTIFICATIONS_AGENT is required' 2
   if [[ -n "$kind" && "$kind" != 'issue' && "$kind" != 'pull-request' ]]; then
@@ -193,7 +186,7 @@ refresh_completed() {
       if ((SECONDS >= deadline)); then
         error_message "notification refresh backoff remained active for $timeout_seconds seconds for agent $agent_id"
         printf '%s\n' "$output" >&2
-        gateway_diagnostics
+        openclaw-gateway diagnostics
         return 1
       fi
       debug "notification refresh backoff is active; retrying agent=$agent_id"
@@ -206,13 +199,13 @@ refresh_completed() {
       if [[ -n "$output" ]]; then
         printf '%s\n' "$output" >&2
       fi
-      gateway_diagnostics
+      openclaw-gateway diagnostics
       return "$status"
     fi
 
     error_message "notification refresh did not complete a GitHub poll for agent $agent_id"
     printf '%s\n' "$output" >&2
-    gateway_diagnostics
+    openclaw-gateway diagnostics
     return 1
   done
 }
@@ -245,7 +238,7 @@ wait_route() {
       if [[ -n "$status_output" ]]; then
         printf '%s\n' "$status_output" >&2
       fi
-      gateway_diagnostics
+      openclaw-gateway diagnostics
       return 1
     fi
     sleep 1
