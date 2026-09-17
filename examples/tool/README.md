@@ -8,7 +8,7 @@ This scenario verifies the public Agent System tool runner and Agent System `gh`
 # should configure an unauthenticated local openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --agent-system "$AGENT_SYSTEM_PACKAGE"
 
 # should install the scenario-owned agent through agent system
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"

@@ -12,7 +12,7 @@ state.
 # should configure an unauthenticated local openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --agent-system "$AGENT_SYSTEM_PACKAGE"
 
 # should prepare an isolated notification workspace
 mkdir "$TMPDIR/agent-system-notifications"

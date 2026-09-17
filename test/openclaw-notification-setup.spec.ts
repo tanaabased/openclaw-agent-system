@@ -51,4 +51,12 @@ describe('scripts/openclaw-notification-setup', () => {
     assert.match(source, /openclaw-aimock" stop/u);
     assert.doesNotMatch(source, /aimock-server\.ts/u);
   });
+
+  it('should delegate OpenClaw preparation to the catalog helper', async () => {
+    const source = await readFile(command, 'utf8');
+
+    assert.match(source, /--agent-system "\$agent_system_plugin"/u);
+    assert.match(source, /\n {4}openclaw-setup "\$\{setup_args\[@\]\}"/u);
+    assert.doesNotMatch(source, /command_dir\/openclaw-setup/u);
+  });
 });

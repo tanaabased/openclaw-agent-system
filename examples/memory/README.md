@@ -13,7 +13,7 @@ same profile to verify configuration migration and index preservation.
 # should configure an isolated openclaw profile with the packed plugin
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --agent-system "$AGENT_SYSTEM_PACKAGE"
 ```
 
 ## Testing

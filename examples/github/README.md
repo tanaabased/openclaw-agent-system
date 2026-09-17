@@ -10,7 +10,7 @@ the real Gateway with AIMock and host-provided GitHub tokens. The
 # should configure the default profile with the prepared plugin and strict mock model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --yolo
 openclaw-aimock prepare --scenario github
 

@@ -10,7 +10,7 @@ direct commands; cache checks use two local Git consumers through strict AIMock.
 # should configure an isolated openclaw profile with the packed plugin and strict mock model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --needs-secret-service \
   --yolo
 openclaw-aimock prepare --scenario credentials

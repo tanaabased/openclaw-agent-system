@@ -8,7 +8,7 @@ This scenario verifies model reconciliation, effective selection policy, configu
 # should configure the default profile with the known api key model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/gpt-5.4-nano"
 
 # should establish the existing api key backed codex route

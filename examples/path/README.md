@@ -8,7 +8,7 @@ This scenario runs the prepared Agent System package in the default Gateway with
 # should configure the default profile with the ci model
 openclaw-setup \
   --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
+  --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --model "openai/$OPENAI_MODEL" \
   --yolo
 
