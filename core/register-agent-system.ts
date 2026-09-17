@@ -20,6 +20,7 @@ import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
+import parseModelCatalogRows from '../agent/model-catalog.ts';
 import createMemoryLifecycleContribution from '../agent/memory-lifecycle.ts';
 import {
   createMemorySecretProviderConfiguration,
@@ -59,29 +60,6 @@ import ConversationHookAccess, {
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
 import registerOpCache from './register-op-cache.ts';
 import { requestOpCacheGateway } from '../cli/credentials-cache.ts';
-
-function parseModelCatalogRows(stdout: string) {
-  const parsed: unknown = JSON.parse(stdout);
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(Reflect.get(parsed, 'models'))) {
-    throw new Error('OpenClaw models list returned an invalid JSON result.');
-  }
-  return Reflect.get(parsed, 'models').map((value: unknown) => {
-    if (!value || typeof value !== 'object') {
-      throw new Error('OpenClaw models list returned an invalid model row.');
-    }
-    const key = Reflect.get(value, 'key');
-    const available = Reflect.get(value, 'available');
-    const missing = Reflect.get(value, 'missing');
-    if (
-      typeof key !== 'string' ||
-      (available !== null && typeof available !== 'boolean') ||
-      typeof missing !== 'boolean'
-    ) {
-      throw new Error('OpenClaw models list returned an invalid model row.');
-    }
-    return { available, key, missing };
-  });
-}
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {

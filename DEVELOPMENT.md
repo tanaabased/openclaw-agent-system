@@ -7,7 +7,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.9.3 for development; package compatibility starts at 2026.9.2
+- OpenClaw 2026.9.4 for development; package compatibility starts at 2026.9.2
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
@@ -34,8 +34,9 @@ If OpenClaw reports a conflicting installation, remove it with
 workflow below uses an isolated profile and does not require a normal-profile
 installation.
 
-Linked installs load from this checkout with a `config` origin. After changing
-the memory secret-provider source, run `bun run build`, run
+Linked installs load from this checkout with a `config` origin. After updating
+the OpenClaw dependency, run `bun install --frozen-lockfile`. After that update
+or a change to the memory secret-provider source, run `bun run build`, run
 `openclaw agent-system install` from the agent workspace, and restart the
 Gateway. Reconciliation uses the built standalone provider for a linked checkout;
 the declared credential remains a SecretRef and never belongs in

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { resolveAllowedModelRef as resolveOpenClawAllowedModelRef } from 'openclaw/plugin-sdk/agent-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
+import parseModelCatalogRows from '../agent/model-catalog.ts';
 import createModelLifecycleContribution, {
   type ModelLifecycleDependencies,
 } from '../agent/model-lifecycle.ts';
@@ -378,6 +379,20 @@ describe('agent/model-lifecycle', () => {
 
     assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
     assert.equal(configuredModelChecks(), 1);
+  });
+
+  it('should report healthy models when configured evidence omits missing flags', async () => {
+    const { contribution } = createHarness(codexConfig(), {
+      configuredModels: parseModelCatalogRows(
+        JSON.stringify({
+          models: configuredModels.map(({ key, available }) => ({ key, available })),
+        }),
+      ),
+    });
+
+    await contribution.reconcile?.(context);
+
+    assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-models-ready');
   });
 
   it('should keep installation independent of configured model inspection', async () => {

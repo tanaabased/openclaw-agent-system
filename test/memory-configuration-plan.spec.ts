@@ -183,6 +183,28 @@ describe('agent/memory-configuration-plan', () => {
     assert.equal(repeated.changed, false);
   });
 
+  it('should refresh an owned runtime executable and leave repeated reconciliation unchanged', () => {
+    const source = config();
+    source.secrets!.providers![memorySecretProviderAlias] = standaloneProvider();
+    const replacement = {
+      ...standaloneProvider(),
+      command: '/runtime/new/node',
+      trustedDirs: ['/runtime/new', '/checkout/agent-system'],
+    };
+    const memory = { search: { provider: 'openai' as const, apiKey: 'OPENAI_API_KEY' } };
+
+    const plan = createMemoryConfigurationPlan(source, 'emori', memory, replacement);
+
+    assert.equal(plan.status, 'ready');
+    if (plan.status !== 'ready') return;
+    assert.equal(plan.providerChanged, true);
+    assert.deepEqual(plan.config.secrets?.providers?.[memorySecretProviderAlias], replacement);
+    const repeated = createMemoryConfigurationPlan(plan.config, 'emori', memory, replacement);
+    assert.equal(repeated.status, 'ready');
+    if (repeated.status !== 'ready') return;
+    assert.equal(repeated.changed, false);
+  });
+
   it('should block a conflicting shared provider and a missing agent', () => {
     const conflict = config();
     conflict.secrets!.providers![memorySecretProviderAlias] = {

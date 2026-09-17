@@ -25,7 +25,7 @@ its managed tools.
 - **Automatically route GitHub issues to models matched to their complexity.**
 
 > [!NOTE]
-> Requires OpenClaw 2026.9.2 or newer and is developed against 2026.9.3. See
+> Requires OpenClaw 2026.9.2 or newer and is developed against 2026.9.4. See
 > [version compatibility](./ADVANCED.md#version-compatibility).
 
 > [!WARNING]
