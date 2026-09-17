@@ -9,8 +9,6 @@ source "$command_dir/openclaw-common.sh"
 action="${1:-}"
 model="${OPENCLAW_NOTIFICATION_MODEL:-}"
 scenario="${OPENCLAW_NOTIFICATION_SCENARIO:-}"
-workspace="${OPENCLAW_NOTIFICATION_WORKSPACE:-}"
-agent_system_plugin="${OPENCLAW_NOTIFICATION_AGENT_SYSTEM_PLUGIN:-}"
 expected_evidence="${OPENCLAW_NOTIFICATION_EXPECTED_EVIDENCE:-}"
 
 usage() {
@@ -20,8 +18,6 @@ Usage: ${tty_bold}openclaw-notification-setup${tty_reset} <prepare|evidence|stop
 ${tty_tp}Options:${tty_reset}
   --model <provider/model>       selects the live OpenAI or local AIMock model
   --scenario <id>               selects the checked-in notification scenario
-  --workspace <path>            sets the isolated OpenClaw workspace for prepare
-  --agent-system-plugin <path>  installs the prepared Agent System package for prepare
   --expected-evidence <path>    compares mock evidence with the checked-in fixture
   --debug                       shows diagnostic messages
   -h, --help                    displays this help message
@@ -29,8 +25,6 @@ ${tty_tp}Options:${tty_reset}
 ${tty_tp}Environment Variables:${tty_reset}
   OPENCLAW_NOTIFICATION_MODEL               same as --model
   OPENCLAW_NOTIFICATION_SCENARIO            same as --scenario
-  OPENCLAW_NOTIFICATION_WORKSPACE           same as --workspace
-  OPENCLAW_NOTIFICATION_AGENT_SYSTEM_PLUGIN same as --agent-system-plugin
   OPENCLAW_NOTIFICATION_EXPECTED_EVIDENCE   same as --expected-evidence
   OPENAI_API_KEY                            required only for an openai model
   TMPDIR                                    owns provider process state and evidence
@@ -61,16 +55,6 @@ while (($# > 0)); do
     --scenario)
       (($# >= 2)) || error '--scenario requires an id' 2
       scenario="$2"
-      shift 2
-      ;;
-    --workspace)
-      (($# >= 2)) || error '--workspace requires a path' 2
-      workspace="$2"
-      shift 2
-      ;;
-    --agent-system-plugin)
-      (($# >= 2)) || error '--agent-system-plugin requires a path' 2
-      agent_system_plugin="$2"
       shift 2
       ;;
     --expected-evidence)
@@ -116,31 +100,19 @@ configure_notification_profile() {
 }
 
 prepare_notification() {
-  local -a setup_args=(
-    --workspace "$workspace"
-    --agent-system-plugin "$agent_system_plugin"
-    --needs-secret-service
-    --needs-ssh-key
-    --yolo
-  )
-
   [[ -n "$scenario" ]] || error '--scenario is required for prepare' 2
-  [[ -n "$workspace" ]] || error '--workspace is required for prepare' 2
-  [[ "$workspace" == /* ]] || error "workspace must be absolute: $workspace" 2
-  [[ -n "$agent_system_plugin" ]] || error '--agent-system-plugin is required for prepare' 2
-  [[ "$agent_system_plugin" == /* ]] || error "Agent System plugin path must be absolute: $agent_system_plugin" 2
-  [[ -f "$agent_system_plugin" ]] || error "Agent System plugin pack is unavailable: $agent_system_plugin" 2
-
-  if [[ "$model_provider" == mock ]]; then
-    "$command_dir/openclaw-setup" "${setup_args[@]}"
-  else
-    "$command_dir/openclaw-setup" "${setup_args[@]}" --model "$model"
-  fi
 
   configure_notification_profile
 
   if [[ "$model_provider" == mock ]]; then
     "$command_dir/openclaw-aimock" prepare --model "$model" --scenario "$scenario"
+  else
+    openclaw models set "$model"
+    case "$model" in
+      openai/gpt-5.4 | openai/gpt-5.4-*)
+        openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
+        ;;
+    esac
   fi
 }
 

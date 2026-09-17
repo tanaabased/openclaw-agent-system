@@ -42,6 +42,9 @@ jobs:
         shell: bash
         run: |
           echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "OPENCLAW_CI_PROFILE=agent-system-ci" >> "$GITHUB_ENV"
+          echo "OPENCLAW_CI_WORKSPACE=$RUNNER_TEMP/main" >> "$GITHUB_ENV"
+          echo "OPENCLAW_CI_STATE_DIR=$RUNNER_TEMP/openclaw-ci" >> "$GITHUB_ENV"
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
           echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
@@ -51,33 +54,77 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
           brew install coreutils
       - name: Install Node
-        uses: actions/setup-node@v6
+        uses: tanaabased/actions/setup-node@v1
         with:
-          node-version-file: .node-version
-          package-manager-cache: false
+          test-mode: true
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: tanaabased/actions/setup-bun@v1
         with:
-          bun-version-file: .bun-version
+          test-mode: true
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
-      - name: Prepare release-shaped build
-        uses: tanaabased/prepare-release-action@v1
+      - name: Prepare release-shaped source
+        uses: tanaabased/actions/prepare-release@v1
         with:
-          version: dev
-          sync: false
+          test-mode: true
+          version: 0.0.0-ci.${{ github.sha }}
+          release-date: '2026-01-01T00:00:00Z'
+          release-url: https://github.com/${{ github.repository }}/releases/tag/0.0.0-ci.${{ github.sha }}
           commands: |
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
             bun run build
-      - name: Pack prepared plugin
+      - name: Check prepared source
+        run: bun run format:check
+      - name: Install OpenClaw
+        uses: tanaabased/actions/setup-openclaw@v1
+        with:
+          test-mode: true
+      - name: Prepare isolated OpenClaw
         shell: bash
         run: |
-          bun run plugin:check
-          bun run format:check
-          archive_name="$(npm pack --silent --pack-destination "$RUNNER_TEMP")"
-          test -n "$archive_name"
-          echo "AGENT_SYSTEM_PACKAGE=$RUNNER_TEMP/$archive_name" >> "$GITHUB_ENV"
+          openclaw-setup \
+            --profile "$OPENCLAW_CI_PROFILE" \
+            --workspace "$OPENCLAW_CI_WORKSPACE" \
+            --state-dir "$OPENCLAW_CI_STATE_DIR"
+      - name: Install prepared Agent System
+        uses: tanaabased/actions/setup-agent-system@v1
+        with:
+          test-mode: true
+          source-directory: .
+      - name: Configure Agent System test policy
+        shell: bash
+        run: |
+          openclaw config set plugins.entries.agent-system.config.opCache '{"mode":"process-lifetime","maxEntries":128}' --strict-json
+          openclaw exec-policy preset yolo
+      - name: Create SSH test key
+        id: ssh-key
+        uses: tanaabased/actions/ssh-test-key@v1
+        with:
+          test-mode: true
+          destination: ${{ runner.temp }}/big-test-bucket-ssh
+          comment: agent-system-leia
+      - name: Install SSH test key
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          cp "${{ steps.ssh-key.outputs.private-key-path }}" "$HOME/.ssh/big-test-bucket-ssh"
+          cp "${{ steps.ssh-key.outputs.public-key-path }}" "$HOME/.ssh/big-test-bucket-ssh.pub"
+          chmod 600 "$HOME/.ssh/big-test-bucket-ssh"
+          chmod 644 "$HOME/.ssh/big-test-bucket-ssh.pub"
+      - name: Prepare Secret Service
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          DBUS_SESSION_BUS_ADDRESS: unix:path=${{ runner.temp }}/secret-service-bus
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes dbus-x11 gnome-keyring libsecret-tools
+          mkdir -p "$RUNNER_TEMP/secret-service-home"
+          dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS" --print-address=1
+          printf '%s' 'test-keyring-password' \
+            | HOME="$RUNNER_TEMP/secret-service-home" gnome-keyring-daemon --unlock --components=secrets >/dev/null
       - name: Run Leia-backed notification scenario
         shell: bash
         env:
@@ -103,7 +150,11 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          openclaw-diagnostics
+          openclaw-diagnostics \
+            --profile "$OPENCLAW_CI_PROFILE" \
+            --workspace "$OPENCLAW_CI_WORKSPACE" \
+            --state-dir "$OPENCLAW_CI_STATE_DIR"
+          openclaw doctor || true
           if test -f "$RUNNER_TEMP/notification-model.log"; then
             tail -n 120 "$RUNNER_TEMP/notification-model.log" >&2
           fi

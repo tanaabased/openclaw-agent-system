@@ -7,12 +7,7 @@ direct commands; cache checks use two local Git consumers through strict AIMock.
 ## Setup
 
 ```bash
-# should configure an isolated openclaw profile with the packed plugin and strict mock model
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --needs-secret-service \
-  --yolo
+# should configure the isolated profile with the strict mock model
 openclaw-aimock prepare --scenario credentials
 ```
 
@@ -55,7 +50,7 @@ XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials set op --from
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system install
 
 # should expose the selected policy in the installed gateway without reading provider resources
-openclaw-gateway start
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 openclaw agent-system credentials cache status --json | jq -e '.runtime == "gateway" and .policy.mode == "process-lifetime" and .counts.resourceReads == 0'
 
 # should summarize cache policy for human readers
@@ -182,7 +177,7 @@ cd "$GITHUB_WORKSPACE/examples/credentials/peer"
 XDG_CONFIG_HOME="$TMPDIR/config" openclaw agent-system credentials unset op | grep -F 'removed'
 
 # should stop the isolated gateway
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should report pending invalidation after a store command when the gateway is unavailable
 cd "$GITHUB_WORKSPACE/examples/credentials/data"
@@ -215,14 +210,14 @@ if printf '%s\n' "$output" | grep -E 'SYNTHETIC_PRIVATE|op://synthetic|Authoriza
 
 # should start an isolated gateway with a synthetic sdk failure
 openclaw-aimock prepare --scenario credentials
-OP_SERVICE_ACCOUNT_TOKEN=agent-system-synthetic-quota NODE_OPTIONS="--require=$GITHUB_WORKSPACE/examples/credentials/provider-failure.cjs" openclaw-gateway start
+OP_SERVICE_ACCOUNT_TOKEN=agent-system-synthetic-quota NODE_OPTIONS="--require=$GITHUB_WORKSPACE/examples/credentials/provider-failure.cjs" openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should deliver safe quota classification to the installed native tool consumer
 openclaw agent --agent quota-diagnostic --session-key agent:quota-diagnostic:provider-diagnostic --message 'Use the configured Git tool to report its version for the synthetic provider diagnostic check.' --timeout 120 | grep -F 'quota reported'
 openclaw-aimock evidence --scenario credentials --expected-evidence "$GITHUB_WORKSPACE/examples/credentials/quota-evidence.json"
 
 # should stop the synthetic gateway
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should stop the synthetic diagnostic model
 openclaw-aimock stop

@@ -2,15 +2,6 @@
 
 This scenario installs the prepared Agent System package and verifies manifest discovery and diagnostics through the public command surface.
 
-## Setup
-
-```bash
-# should configure an unauthenticated local openclaw profile with the packed plugin
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
-```
-
 ## Testing
 
 ```bash

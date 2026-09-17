@@ -41,6 +41,8 @@ describe('scripts/openclaw-notification-setup', () => {
       source,
       /configure_notification_profile\n\n {2}if \[\[ "\$model_provider" == mock \]\]/u,
     );
+    assert.doesNotMatch(source, /openclaw-setup|agent-system-plugin|needs-secret-service/u);
+    assert.match(source, /openclaw models set "\$model"/u);
   });
 
   it('should delegate strict mock lifecycle handling to the shared helper', async () => {

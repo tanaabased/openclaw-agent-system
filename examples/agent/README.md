@@ -1,14 +1,11 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging without depending on live model behavior.
+This scenario runs the prepared Agent System package in an isolated Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging without depending on live model behavior.
 
 ## Setup
 
 ```bash
-# should configure the default profile with the prepared plugin and strict mock model
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+# should configure the isolated profile with the strict mock model
 openclaw-aimock prepare --scenario agent
 
 # should install the scenario-owned data workspace through agent system
@@ -16,7 +13,7 @@ cd "$GITHUB_WORKSPACE/examples/agent/data"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
-OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR" --debug true
 ```
 
 ## Testing
@@ -60,7 +57,7 @@ openclaw-aimock evidence \
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should stop the strict mock model cleanly
 openclaw-aimock stop

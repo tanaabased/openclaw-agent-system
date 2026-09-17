@@ -9,11 +9,6 @@ state.
 ## Setup
 
 ```bash
-# should configure an unauthenticated local openclaw profile with the packed plugin
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
-
 # should prepare an isolated notification workspace
 mkdir "$TMPDIR/agent-system-notifications"
 cp "$GITHUB_WORKSPACE/examples/routing/agent.yaml" "$TMPDIR/agent-system-notifications/agent.yaml"
@@ -28,7 +23,7 @@ if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-hook-access-required" and .status == "blocked" and (.message | contains("plugins.entries.agent-system.hooks.allowConversationAccess")))'
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should install the route and establish the current baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -71,7 +66,7 @@ openclaw sessions --agent notification-data --json | jq -e '(.sessions // []) | 
 
 ```bash
 # should reconcile explicitly denied hook access through normal install
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false
 cd "$TMPDIR/agent-system-notifications"
 if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
@@ -79,14 +74,14 @@ printf '%s\n' "$output" | jq -e '.findings | any(.code == "github-notification-h
 openclaw config get plugins.entries.agent-system.hooks --json | jq -e '.allowConversationAccess == false and .timeoutMs == 30000'
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "github-notification-hook-ready" and .status == "updated")'
 openclaw plugins inspect agent-system --runtime --json | jq -e '.policy.allowConversationAccess == true and any(.typedHooks[]; .name == "before_prompt_build")'
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should keep repeated notification installation unchanged
 cd "$TMPDIR/agent-system-notifications"
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "github-notification-hook-ready" and .status == "unchanged")'
 
 # should stop the gateway before deterministic routing removal
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should remove the owned route and converged private monitor state
 cd "$TMPDIR/agent-system-notifications"
@@ -96,7 +91,7 @@ printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-noti
 printf '%s\n' "$output" | jq -e '.outcomes[] | select(.component == "github-notifications" and .code == "github-notification-monitor-state-removed")'
 
 # should start the gateway without the removed notification route
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 cd "$TMPDIR/agent-system-notifications"
 openclaw-github-notifications wait-route \
   --route-state absent \
@@ -110,5 +105,5 @@ openclaw agent-system doctor --json | jq -e '.status == "healthy"'
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```

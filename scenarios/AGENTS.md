@@ -12,9 +12,9 @@
 
 ## Runtime
 
-- Use the fresh runner's default OpenClaw profile and Gateway directly, with the prepared Agent System package supplied by the workflow.
+- Use the fresh runner's isolated OpenClaw profile and Gateway directly, with the source-built Agent System package installed by the workflow through the shared action catalog.
 - Pass scenario-owned inputs to shared Leia helpers as command-line options. Reserve environment variables for the process or underlying runtime.
-- Use `openclaw-notification-setup` as the notification-specific wrapper for profile preparation, evidence comparison, and shutdown. It delegates strict AIMock lifecycle to `openclaw-aimock`; keep provider branches out of scenario README files.
+- Use `openclaw-notification-setup` as the notification-specific wrapper for model preparation, evidence comparison, and shutdown. The workflow owns profile and plugin preparation; the helper delegates strict AIMock lifecycle to `openclaw-aimock`. Keep provider branches out of scenario README files.
 - Register named agents explicitly, bind them to scenario-owned workspaces, and keep generated state beneath `TMPDIR`.
 - Use `--yolo` only for unattended live-agent work in the isolated ephemeral runner.
 - Make live 1Password requests only when the test verifies 1Password behavior. Use host environment variables with explicit manifest imports for ordinary test authentication.

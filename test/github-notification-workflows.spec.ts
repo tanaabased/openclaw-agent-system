@@ -21,8 +21,11 @@ const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
 interface WorkflowStep {
   env?: Record<string, unknown>;
   if?: string;
+  id?: string;
   name?: string;
   run?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
 }
 
 interface CallerJob {
@@ -321,6 +324,26 @@ describe('github notification workflows', () => {
     assert.equal(leiaStep?.env?.GH_TOKEN_TANAABOT, '${{ secrets.gh_token_tanaabot }}');
     assert.match(leiaStep?.run ?? '', /scenario_path="issue-work-\$\{\{ inputs\.scenario \}\}"/u);
     assert.match(leiaStep?.run ?? '', /scenario_path=issue-guided-assignment/u);
+    assert.equal(leiaStep?.env?.AGENT_SYSTEM_PACKAGE, undefined);
+    assert.deepEqual(
+      steps.filter(({ uses }) => uses?.startsWith('tanaabased/actions/')).map(({ uses }) => uses),
+      [
+        'tanaabased/actions/setup-node@v1',
+        'tanaabased/actions/setup-bun@v1',
+        'tanaabased/actions/prepare-release@v1',
+        'tanaabased/actions/setup-openclaw@v1',
+        'tanaabased/actions/setup-agent-system@v1',
+        'tanaabased/actions/ssh-test-key@v1',
+      ],
+    );
+    assert.equal(
+      steps.find(({ uses }) => uses === 'tanaabased/actions/setup-agent-system@v1')?.with?.[
+        'source-directory'
+      ],
+      '.',
+    );
+    assert.match(source, /openclaw-setup[^]*--profile "\$OPENCLAW_CI_PROFILE"/u);
+    assert.match(source, /openclaw-diagnostics[^]*--profile "\$OPENCLAW_CI_PROFILE"/u);
     assert.match(source, /HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed/u);
     assert.match(source, /bun install --frozen-lockfile --ignore-scripts/u);
   });

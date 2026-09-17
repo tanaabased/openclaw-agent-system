@@ -7,15 +7,6 @@ service restart, and produces bounded readiness diagnostics without rebuilding
 an existing index. The source-linked case replaces the packed install in the
 same profile to verify configuration migration and index preservation.
 
-## Setup
-
-```bash
-# should configure an isolated openclaw profile with the packed plugin
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
-```
-
 ## Testing
 
 ```bash
@@ -66,9 +57,9 @@ openclaw agent-system install --json \
 
 ```bash
 # should resolve the same secret reference after an openclaw service restart
-openclaw-gateway start
-openclaw-gateway stop
-openclaw-gateway start
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 output="$(openclaw agent-system doctor --json)" || {
   printf '%s\n' "$output" | jq -c '{memory: [.findings[] | select(.component == "memory") | {code, status}]}' >&2
@@ -80,7 +71,7 @@ printf '%s\n' "$output" \
 
 ```bash
 # should migrate to a source-linked provider, remain idempotent, and retrieve through the gateway
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
 openclaw plugins registry --json \
   | jq -e '.state == "fresh" and (.differences | length == 0)'
@@ -102,7 +93,7 @@ printf '%s\n' "$output" \
   | jq -e '.findings | any(.component == "memory" and .code == "agent-memory-openai-ready" and .status == "healthy")'
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
-openclaw-gateway start
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 openclaw memory status --index --agent memory-openai --json >/dev/null
 openclaw gateway call memory.search \
   --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \
@@ -119,5 +110,5 @@ openclaw gateway call memory.search \
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```

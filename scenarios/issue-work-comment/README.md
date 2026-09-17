@@ -16,9 +16,7 @@ removes its pull request, branch, generated SSH key, and issue during cleanup.
 # should prepare the selected notification model and isolated profile
 openclaw-notification-setup prepare \
   --model "$NOTIFICATION_MODEL" \
-  --scenario comment \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --scenario comment
 ```
 
 ```bash
@@ -36,7 +34,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/a
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -160,7 +158,7 @@ if test -f "$TMPDIR/approved-issue-number"; then
 fi
 
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```
 
 ```bash

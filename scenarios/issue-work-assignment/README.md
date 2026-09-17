@@ -42,9 +42,7 @@ The scenario creates uniquely named disposable issues in
 # should prepare the selected notification model and isolated profile
 openclaw-notification-setup prepare \
   --model "$NOTIFICATION_MODEL" \
-  --scenario assignment \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --scenario assignment
 ```
 
 ```bash
@@ -77,7 +75,7 @@ openclaw config set commands.ownerAllowFrom '[]' --strict-json
 openclaw config unset plugins.entries.agent-system.hooks.allowConversationAccess
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should make existing custom groups available for assignment setup
 openclaw gateway call sessions.groups.put --params '{"names":["Reading","Active Work"]}' --json | jq -e '.ok == true'
@@ -145,8 +143,8 @@ openclaw agent-system notifications wait \
   --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-self" and .worktree == "pending" and (has("stage") | not))'
 
 # should keep native session tools available while the cli owns notification execution
-openclaw-gateway stop
-OPENCLAW_NO_RESPAWN=1 OPENCLAW_SKIP_CHANNELS=1 openclaw-gateway start
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
+OPENCLAW_NO_RESPAWN=1 OPENCLAW_SKIP_CHANNELS=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should keep loaded manifest warnings on stderr and notification status json parseable at every log level
 cd "$TMPDIR/agent-system-notifications"
@@ -374,7 +372,7 @@ if test -d "$TMPDIR/agent-system-notification-actor"; then
 fi
 
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```
 
 ```bash

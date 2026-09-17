@@ -7,11 +7,7 @@ the real Gateway with AIMock and host-provided GitHub tokens. The
 ## Setup
 
 ```bash
-# should configure the default profile with the prepared plugin and strict mock model
-openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE" \
-  --yolo
+# should configure the isolated profile with the strict mock model
 openclaw-aimock prepare --scenario github
 
 # should prepare scenario-owned generated public keys under the temporary workspace
@@ -38,7 +34,7 @@ cd "$GITHUB_WORKSPACE/examples/github/emori"
 openclaw agent-system install
 
 # should start the default gateway as a supervised background process
-openclaw-gateway start
+openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```
 
 ## Testing
@@ -143,7 +139,7 @@ remaining="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent tana
 test -z "$remaining"
 
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should stop the strict mock model cleanly
 openclaw-aimock stop

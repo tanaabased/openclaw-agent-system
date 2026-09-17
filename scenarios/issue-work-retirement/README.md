@@ -15,9 +15,7 @@ removes its generated SSH key, issues, pull request, and branch during cleanup.
 # should prepare the selected notification model and isolated profile
 openclaw-notification-setup prepare \
   --model "$NOTIFICATION_MODEL" \
-  --scenario retirement \
-  --workspace "$TMPDIR/main" \
-  --agent-system-plugin "$AGENT_SYSTEM_PACKAGE"
+  --scenario retirement
 
 # should trust the github host key for the prepared ssh identity
 mkdir -p "$HOME/.ssh"
@@ -34,7 +32,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github-notifications/actor-agent.yaml" "$TMPDIR/a
 printf '%s' 'tanaabot' > "$TMPDIR/notification-agent-login"
 
 # should start the default gateway before routing installation
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway start
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway start --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 
 # should install the route and establish the first baseline synchronously
 cd "$TMPDIR/agent-system-notifications"
@@ -76,7 +74,7 @@ refresh_result="$(
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 
 # should preserve the durable issue worktree checkpoint across gateway restart
-OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart
+OPENCLAW_NO_RESPAWN=1 openclaw-gateway restart --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 cd "$TMPDIR/agent-system-notifications"
 issue_number="$(cat "$TMPDIR/approved-issue-number")"
 openclaw agent-system notifications wait \
@@ -219,7 +217,7 @@ if test -s "$TMPDIR/completed-worktree-branch"; then
 fi
 
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --profile "$OPENCLAW_CI_PROFILE" --workspace "$OPENCLAW_CI_WORKSPACE" --state-dir "$OPENCLAW_CI_STATE_DIR"
 ```
 
 ```bash
