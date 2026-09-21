@@ -91,6 +91,12 @@ openclaw plugins inspect agent-system --runtime --json \
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
+openclaw config get secrets.providers.agent-system-environment --json \
+  | jq -e --arg root "$GITHUB_WORKSPACE" '
+    .source == "exec" and .jsonOnly == true and
+    .args == [$root + "/dist/memory-secret-provider-entry.js"] and
+    (has("pluginIntegration") | not)
+  '
 configured="$(openclaw config get 'agents.entries.memory-openai.memory.search' --json)"
 printf '%s\n' "$configured" \
   | jq -e '.provider == "openai" and .fallback == "none" and .model == "text-embedding-3-small" and .remote.apiKey.source == "exec" and .remote.apiKey.provider == "agent-system-environment"'
@@ -104,6 +110,7 @@ printf '%s\n' "$output" \
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "agent-memory-unchanged" and .status == "unchanged")'
 openclaw-gateway start
+openclaw secrets reload --json >/dev/null
 openclaw gateway call memory.search \
   --params '{"agentId":"memory-openai","query":"Which observatory stores cobalt astrolabes?","maxResults":5}' \
   --timeout 120000 \

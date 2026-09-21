@@ -1,5 +1,4 @@
-import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 
 import { listAgentIds } from 'openclaw/plugin-sdk/agent-scope-runtime';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -58,13 +57,13 @@ import ConversationHookAccess, {
   requiredConversationHooks,
 } from './conversation-hook-access.ts';
 import readFreshRuntimeConfig from './read-fresh-runtime-config.ts';
+import resolvePackageDirectory from './package-directory.ts';
 import registerOpCache from './register-op-cache.ts';
 import { requestOpCacheGateway } from '../cli/credentials-cache.ts';
 
 /** Assemble and register the complete Agent System runtime. */
 export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: string): void {
-  const runtimeDir = dirname(fileURLToPath(runtimeUrl));
-  const packageDir = basename(runtimeDir) === 'dist' ? dirname(runtimeDir) : runtimeDir;
+  const packageDir = resolvePackageDirectory(api, runtimeUrl);
   const logger = createAgentSystemLogger(api.logger, api.id);
   const lifecycleLogger = createAgentSystemLifecycleLogger(api.logger, api.id, {
     getChildLogger(bindings) {
