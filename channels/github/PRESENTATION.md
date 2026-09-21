@@ -81,8 +81,8 @@ model-facing message uses this presentation.
 ```markdown
 ## 🔀 Pull request opened
 
-- **Issue:** tanaabased/example#7
-- **Pull request:** tanaabased/example#18
+- **Issue:** [tanaabased/example#7](https://github.com/tanaabased/example/issues/7)
+- **Pull request:** [tanaabased/example#18](https://github.com/tanaabased/example/pull/18)
 - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 

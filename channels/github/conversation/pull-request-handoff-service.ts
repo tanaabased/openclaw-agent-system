@@ -300,7 +300,8 @@ export default class GitHubNotificationPullRequestHandoffService {
     const body = githubNotificationPullRequestOpenedCard({
       issueNumber: input.item.number,
       pullRequestNumber: checkpoint.source.number,
-      repository,
+      repositoryName: input.item.repositoryName,
+      repositoryOwner: input.item.repositoryOwner,
     });
     const messageId = `pull-request-opened:${checkpoint.source.nodeId}`;
     const contract = this.#dependencies.turnContracts.resolve(

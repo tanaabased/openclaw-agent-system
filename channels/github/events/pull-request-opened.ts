@@ -1,4 +1,6 @@
-import githubNotificationCard from '../conversation/presentation/card.ts';
+import githubNotificationCard, {
+  githubNotificationMarkdownText,
+} from '../conversation/presentation/card.ts';
 import githubNotificationPullRequestOpenedEventInstructions from '../conversation/prompts/event-pull-request-opened.ts';
 import githubNotificationPullRequestOpenedResponseInstructions from '../conversation/prompts/response-pull-request-opened.ts';
 import type { GitHubNotificationEvent } from './types.ts';
@@ -6,18 +8,29 @@ import type { GitHubNotificationEvent } from './types.ts';
 interface GitHubNotificationPullRequestOpenedPresentationInput {
   issueNumber: number;
   pullRequestNumber: number;
-  repository: string;
+  repositoryName: string;
+  repositoryOwner: string;
 }
 
 /** Render one trusted private card for an issue lifecycle's delivery pull request. */
 export function githubNotificationPullRequestOpenedCard(
   input: GitHubNotificationPullRequestOpenedPresentationInput,
 ): string {
+  const repository = `${input.repositoryOwner}/${input.repositoryName}`;
+  const repositoryUrl =
+    `https://github.com/${encodeURIComponent(input.repositoryOwner)}` +
+    `/${encodeURIComponent(input.repositoryName)}`;
   return githubNotificationCard({
     emoji: '🔀',
     facts: [
-      { label: 'Issue', value: `${input.repository}#${input.issueNumber}` },
-      { label: 'Pull request', value: `${input.repository}#${input.pullRequestNumber}` },
+      {
+        label: 'Issue',
+        value: `[${githubNotificationMarkdownText(`${repository}#${input.issueNumber}`)}](${repositoryUrl}/issues/${input.issueNumber})`,
+      },
+      {
+        label: 'Pull request',
+        value: `[${githubNotificationMarkdownText(`${repository}#${input.pullRequestNumber}`)}](${repositoryUrl}/pull/${input.pullRequestNumber})`,
+      },
       {
         label: 'Comment flow',
         value:

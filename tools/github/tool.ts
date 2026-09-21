@@ -123,7 +123,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
     },
     guidance: {
       prompt:
-        'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config.',
+        'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config. For repository-scoped operations, pass the trusted target repository explicitly with `--repo owner/name` or a repository-qualified API route instead of relying on the agent workspace. When reporting a GitHub item link, use the canonical URL returned by GitHub and preserve intentional cross-repository targets.',
     },
     runner: {
       credentialRejected: githubCredentialRejected,
