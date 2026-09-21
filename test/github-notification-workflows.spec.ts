@@ -321,6 +321,8 @@ describe('github notification workflows', () => {
     assert.equal(leiaStep?.env?.GH_TOKEN_TANAABOT, '${{ secrets.gh_token_tanaabot }}');
     assert.match(leiaStep?.run ?? '', /scenario_path="issue-work-\$\{\{ inputs\.scenario \}\}"/u);
     assert.match(leiaStep?.run ?? '', /scenario_path=issue-guided-assignment/u);
+    assert.match(source, /NODE_COMPILE_CACHE=\$RUNNER_TEMP\/openclaw-node-compile-cache/u);
+    assert.match(source, /mkdir -p "\$RUNNER_TEMP\/openclaw-node-compile-cache"/u);
     assert.match(source, /HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed/u);
     assert.match(source, /bun install --frozen-lockfile --ignore-scripts/u);
   });
@@ -525,6 +527,8 @@ describe('github notification workflows', () => {
       os: ['macos-26', 'ubuntu-24.04'],
     });
     assert.deepEqual(exampleDirectories, [...examples].sort());
+    assert.match(source, /NODE_COMPILE_CACHE=\$RUNNER_TEMP\/openclaw-node-compile-cache/u);
+    assert.match(source, /mkdir -p "\$RUNNER_TEMP\/openclaw-node-compile-cache"/u);
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 

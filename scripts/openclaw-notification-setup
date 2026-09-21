@@ -112,9 +112,10 @@ esac
 
 configure_notification_profile() {
   debug 'configuring the notification capability profile and disabling the unrelated default-agent heartbeat'
-  openclaw config set tools.profile coding
-  openclaw config get tools.profile --json | jq -e '. == "coding"' >/dev/null
-  openclaw config set agents.defaults.heartbeat.every 0m
+  openclaw config set --batch-json '[
+    {"path":"tools.profile","value":"coding"},
+    {"path":"agents.defaults.heartbeat.every","value":"0m"}
+  ]'
 }
 
 prepare_notification() {

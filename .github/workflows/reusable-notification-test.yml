@@ -41,6 +41,8 @@ jobs:
       - name: PATH updates
         shell: bash
         run: |
+          mkdir -p "$RUNNER_TEMP/openclaw-node-compile-cache"
+          echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/openclaw-node-compile-cache" >> "$GITHUB_ENV"
           echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
           echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
           echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"

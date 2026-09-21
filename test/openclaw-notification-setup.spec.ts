@@ -36,12 +36,11 @@ describe('scripts/openclaw-notification-setup', () => {
   it('should establish notification capabilities and disable unrelated heartbeats', async () => {
     const source = await readFile(command, 'utf8');
 
-    assert.match(source, /openclaw config set tools\.profile coding/u);
-    assert.match(
-      source,
-      /openclaw config get tools\.profile --json \| jq -e '\. == "coding"' >\/dev\/null/u,
-    );
-    assert.match(source, /openclaw config set agents\.defaults\.heartbeat\.every 0m/u);
+    assert.match(source, /openclaw config set --batch-json/u);
+    assert.match(source, /\{"path":"tools\.profile","value":"coding"\}/u);
+    assert.match(source, /\{"path":"agents\.defaults\.heartbeat\.every","value":"0m"\}/u);
+    assert.equal(source.match(/openclaw config set/gu)?.length, 1);
+    assert.doesNotMatch(source, /openclaw config get/u);
     assert.match(
       source,
       /configure_notification_profile\n\n {2}if \[\[ "\$model_provider" == mock \]\]/u,
