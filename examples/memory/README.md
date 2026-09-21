@@ -51,14 +51,14 @@ openclaw agent-system doctor --json \
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
-openclaw config get 'secrets.providers.agent-system-environment' --json \
-  | jq -e '
-    .source == "exec" and
-    (.pluginIntegration | not) and
-    (.args | length == 1) and
-    (.args[0] | endswith("/dist/memory-secret-provider-entry.js")) and
-    (.trustedDirs | length == 2)
-  '
+jq -e '
+  .secrets.providers["agent-system-environment"] as $provider |
+  ($provider.source == "exec") and
+  ($provider.pluginIntegration | not) and
+  ($provider.args | length == 1) and
+  ($provider.args[0] | endswith("/dist/memory-secret-provider-entry.js")) and
+  ($provider.trustedDirs | length == 2)
+' "$OPENCLAW_CONFIG_PATH"
 configured="$(openclaw config get 'agents.entries.memory-openai.memory.search' --json)"
 printf '%s\n' "$configured" \
   | jq -e '.provider == "openai" and .fallback == "none" and .model == "text-embedding-3-small" and .remote.apiKey.source == "exec" and .remote.apiKey.provider == "agent-system-environment"'
@@ -97,14 +97,14 @@ printf '%s\n' "$output" \
 # should keep the config-origin provider idempotent and retrieve through the gateway
 openclaw-gateway stop
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
-openclaw config get 'secrets.providers.agent-system-environment' --json \
-  | jq -e '
-    .source == "exec" and
-    (.pluginIntegration | not) and
-    (.args | length == 1) and
-    (.args[0] | endswith("/dist/memory-secret-provider-entry.js")) and
-    (.trustedDirs | length == 2)
-  '
+jq -e '
+  .secrets.providers["agent-system-environment"] as $provider |
+  ($provider.source == "exec") and
+  ($provider.pluginIntegration | not) and
+  ($provider.args | length == 1) and
+  ($provider.args[0] | endswith("/dist/memory-secret-provider-entry.js")) and
+  ($provider.trustedDirs | length == 2)
+' "$OPENCLAW_CONFIG_PATH"
 configured="$(openclaw config get 'agents.entries.memory-openai.memory.search' --json)"
 printf '%s\n' "$configured" \
   | jq -e '.provider == "openai" and .fallback == "none" and .model == "text-embedding-3-small" and .remote.apiKey.source == "exec" and .remote.apiKey.provider == "agent-system-environment"'

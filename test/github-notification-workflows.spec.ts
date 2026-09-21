@@ -538,6 +538,8 @@ describe('github notification workflows', () => {
     assert.doesNotMatch(source, /AGENT_SYSTEM_PACKAGE/u);
     assert.doesNotMatch(source, /"pluginIntegration":\{"pluginId":"agent-system"/u);
     assert.match(source, /\.pluginIntegration \| not/u);
+    assert.match(source, /' "\$OPENCLAW_CONFIG_PATH"/u);
+    assert.doesNotMatch(source, /openclaw config get 'secrets\.providers/u);
   });
 
   it('should configure live codex routes before enabling the runtime plugin', async () => {
