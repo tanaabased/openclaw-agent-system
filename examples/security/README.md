@@ -12,9 +12,6 @@ openclaw-setup \
   --model "openai/$OPENAI_MODEL" \
   --yolo
 
-# should enable the codex runtime
-openclaw plugins enable codex
-
 # should install both scenario-owned workspaces through agent system
 cd "$GITHUB_WORKSPACE/examples/security/tanaabot"
 openclaw agent-system install
@@ -24,6 +21,9 @@ openclaw agent-system install
 # should route tanaabot through codex with the ci model
 openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.tanaabot.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
+
+# should enable the codex runtime after its route is configured
+openclaw plugins enable codex
 
 # should start the default gateway as a supervised background process
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start

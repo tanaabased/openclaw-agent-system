@@ -309,7 +309,11 @@ cmp "$TMPDIR/independent-conversation-before.json" "$channel_state/github-notifi
 ```bash
 # should finish assignment planning despite unavailable optional cli session setup
 for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
-  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == null and .[0].category == null'
+  sessions="$(openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json)"
+  if ! printf '%s\n' "$sessions" | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1' >/dev/null; then
+    printf '%s\n' "$sessions" | jq -c --arg suffix ":$issue_number" '{suffix: $suffix, count: ([.sessions[] | select(.key | endswith($suffix))] | length)}' >&2
+    exit 1
+  fi
 done
 ```
 

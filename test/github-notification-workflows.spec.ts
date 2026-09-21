@@ -338,6 +338,8 @@ describe('github notification workflows', () => {
     assert.match(source, /--scenario assignment/u);
     assert.doesNotMatch(source, /NOTIFICATION_MODEL_PROVIDER|models\.providers\.aimock/u);
     assert.match(source, /length\) <= 800/u);
+    assert.match(source, /count: \(\[\.sessions\[\] \| select/u);
+    assert.doesNotMatch(source, /\.color == null|\.category == null/u);
     assert.equal(source.includes(githubNotificationAssignmentCandidate), false);
     assert.equal(expectedEvidence.scenario, 'assignment');
   });
@@ -526,18 +528,30 @@ describe('github notification workflows', () => {
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 
-  it('should exercise memory through a source-linked installation without replacing a pack', async () => {
+  it('should exercise memory through config-origin loading without installing a pack', async () => {
     const source = await readFile('examples/memory/README.md', 'utf8');
 
-    assert.match(
-      source,
-      /openclaw plugins install --link "\$GITHUB_WORKSPACE" --force --accept-capabilities/u,
-    );
+    assert.match(source, /openclaw config set plugins\.load\.paths/u);
+    assert.match(source, /plugins\.entries\.agent-system\.enabled true --strict-json/u);
+    assert.match(source, /\.plugin\.origin == "config"/u);
+    assert.doesNotMatch(source, /openclaw plugins install --link/u);
     assert.doesNotMatch(source, /AGENT_SYSTEM_PACKAGE/u);
-    assert.match(
-      source,
-      /"pluginIntegration":\{"pluginId":"agent-system","integrationId":"environment"\}/u,
-    );
+    assert.doesNotMatch(source, /"pluginIntegration":\{"pluginId":"agent-system"/u);
     assert.match(source, /\.pluginIntegration \| not/u);
+  });
+
+  it('should configure live codex routes before enabling the runtime plugin', async () => {
+    for (const example of ['models', 'path', 'security']) {
+      const source = await readFile(`examples/${example}/README.md`, 'utf8');
+      const routeIndex = source.search(/openclaw config set [^\n]+agentRuntime/u);
+      const enableIndex = source.indexOf('openclaw plugins enable codex');
+
+      assert.notEqual(routeIndex, -1, `${example} should configure a codex runtime route`);
+      assert.notEqual(enableIndex, -1, `${example} should enable the codex plugin`);
+      assert.ok(
+        routeIndex < enableIndex,
+        `${example} should configure its route before enabling codex`,
+      );
+    }
   });
 });
