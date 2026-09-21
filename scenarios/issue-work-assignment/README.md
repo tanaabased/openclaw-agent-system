@@ -123,14 +123,14 @@ openclaw agent-system notifications wait \
   --timeout 30 \
   --json | jq -e '.status == "completed" and .code == "github-notification-baseline-ready" and .observation.status == "ready" and .observation.baseline.status == "ready" and (.observation.items | length) == 0'
 
-# should reject a self authored issue before lifecycle resource preparation
+# should reject an unapproved self-authored issue before lifecycle resource preparation
 cd "$TMPDIR/agent-system-notifications"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
 openclaw-github-issue create-and-assign \
   --creator-agent notification-data \
   --repository tanaabased/big-test-bucket \
   --title "agent system rejected assignment $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
-  --body 'This self-authored assignment must not start local work.' \
+  --body 'This unapproved self-authored assignment must not start local work.' \
   --assignee "$agent_login" \
   --issue-number-path "$TMPDIR/rejected-issue-number"
 rejected_issue="$(cat "$TMPDIR/rejected-issue-number")"
@@ -142,7 +142,7 @@ openclaw agent-system notifications wait \
   --for assignment-rejected \
   --refresh \
   --timeout 180 \
-  --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-self" and .worktree == "pending" and (has("stage") | not))'
+  --json | jq -e --argjson number "$rejected_issue" '.status == "completed" and .code == "github-notification-assignment-rejected" and (.observation.items[0] | .itemType == "issue" and .number == $number and .disposition == "rejected" and .reasonCode == "assignment-actor-unapproved" and .worktree == "pending" and (has("stage") | not))'
 
 # should keep native session tools available while the cli owns notification execution
 openclaw-gateway stop

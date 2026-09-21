@@ -8,7 +8,6 @@ import type {
 } from '../provider/work-item.ts';
 
 export type GitHubAssignmentAdmissionCode =
-  | 'assignment-actor-self'
   | 'assignment-actor-unsupported'
   | 'assignment-actor-unapproved'
   | 'assignment-approved'
@@ -82,9 +81,6 @@ export function admitGitHubAssignment(
   }
   if (Date.parse(event.createdAt) <= input.baselineAt) {
     return { code: 'assignment-before-baseline', disposition: 'rejected', event };
-  }
-  if (event.actor.nodeId === input.account.nodeId) {
-    return { code: 'assignment-actor-self', disposition: 'rejected', event };
   }
   if (event.actor.type !== 'User') {
     return { code: 'assignment-actor-unsupported', disposition: 'rejected', event };

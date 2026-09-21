@@ -66,7 +66,22 @@ describe('channels/github/intake/admit-assignment', () => {
     );
   });
 
-  it('should reject an unapproved or self-authored assignment', () => {
+  it('should admit a self-authored assignment when the verified self actor is approved', () => {
+    assert.deepEqual(
+      admitGitHubAssignment({
+        ...base,
+        configuration: { ...base.configuration, approvedActors: [account] },
+        events: [{ ...event, actor: account }],
+      }),
+      {
+        code: 'assignment-approved',
+        disposition: 'approved',
+        event: { ...event, actor: account },
+      },
+    );
+  });
+
+  it('should reject an unapproved assignment, including an unapproved self actor', () => {
     assert.equal(
       admitGitHubAssignment({
         ...base,
@@ -76,7 +91,7 @@ describe('channels/github/intake/admit-assignment', () => {
     );
     assert.equal(
       admitGitHubAssignment({ ...base, events: [{ ...event, actor: account }] }).code,
-      'assignment-actor-self',
+      'assignment-actor-unapproved',
     );
   });
 

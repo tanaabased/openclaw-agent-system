@@ -169,8 +169,9 @@ or both supported values without duplicates.
 | -------------------- | -------- | ------- |
 | GitHub identity list | yes      | none    |
 
-Lists the GitHub users allowed to assign work to the notification agent. At
-least one identity is required.
+Lists the GitHub users allowed to assign work to the notification agent. This
+may include the agent's own verified identity when self-assignment is intended.
+At least one identity is required.
 
 | Field            | Type    | Required | Behavior                                                   |
 | ---------------- | ------- | -------- | ---------------------------------------------------------- |
