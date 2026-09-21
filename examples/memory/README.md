@@ -14,7 +14,7 @@ the other release-shaped examples and is not replaced in place.
 # should configure an isolated openclaw profile with the source-linked plugin
 openclaw-setup \
   --workspace "$TMPDIR/main"
-openclaw plugins install --link "$GITHUB_WORKSPACE" --accept-capabilities
+openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
 openclaw plugins registry --json \
   | jq -e '.state == "fresh" and (.differences | length == 0)'
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true

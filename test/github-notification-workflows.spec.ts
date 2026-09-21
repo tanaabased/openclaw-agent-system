@@ -531,9 +531,9 @@ describe('github notification workflows', () => {
 
     assert.match(
       source,
-      /openclaw plugins install --link "\$GITHUB_WORKSPACE" --accept-capabilities/u,
+      /openclaw plugins install --link "\$GITHUB_WORKSPACE" --force --accept-capabilities/u,
     );
-    assert.doesNotMatch(source, /AGENT_SYSTEM_PACKAGE|plugins install --link .* --force/u);
+    assert.doesNotMatch(source, /AGENT_SYSTEM_PACKAGE/u);
     assert.match(
       source,
       /"pluginIntegration":\{"pluginId":"agent-system","integrationId":"environment"\}/u,
