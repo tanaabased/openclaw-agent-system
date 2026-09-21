@@ -9,6 +9,7 @@ import { maximumGitHubNotificationReplyLength } from './limits.ts';
 import {
   GitHubNotificationReplyCandidateStoreError,
   type GitHubNotificationReplyCandidateFinishInput,
+  type GitHubNotificationReplyCandidateRejection,
 } from './reply-candidate-store.ts';
 import {
   githubNotificationReplyToolName,
@@ -17,6 +18,10 @@ import {
 import isGitHubNotificationReplyToolContext from './reply-tool-context.ts';
 import type GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
 import { resolveGitHubNotificationReplyTurnBinding } from './reply-turn-binding.ts';
+import {
+  GitHubNotificationPublicationError,
+  githubNotificationPublicationText,
+} from './publication.ts';
 
 export { githubNotificationReplyToolName } from './reply-tool-result.ts';
 
@@ -30,6 +35,10 @@ const githubNotificationReplyToolSchema = Type.Object(
 type GitHubNotificationReplyToolInput = Static<typeof githubNotificationReplyToolSchema>;
 
 interface GitHubNotificationReplyCandidateStager {
+  reject(
+    input: GitHubNotificationReplyCandidateFinishInput,
+    receipt: GitHubNotificationReplyCandidateRejection,
+  ): Promise<void>;
   stage(input: GitHubNotificationReplyCandidateFinishInput, candidate: string): Promise<void>;
 }
 
@@ -78,6 +87,41 @@ export default function createGitHubNotificationReplyTool(
           'tool_unavailable',
           'The GitHub reply candidate has no matching trusted turn binding.',
         );
+      }
+      if (turn.identity.eventId === 'assignment') {
+        try {
+          githubNotificationPublicationText('assignment-response', [{ text: input.body }]);
+        } catch (error) {
+          if (!(error instanceof GitHubNotificationPublicationError)) throw error;
+          const receipt: GitHubNotificationReplyCandidateRejection = {
+            code: error.code,
+            ...(error.safetyCategory === undefined
+              ? {}
+              : { safetyCategory: error.safetyCategory }),
+            stage: 'publication-validation',
+          };
+          try {
+            await candidates.reject(turn, receipt);
+          } catch (candidateError) {
+            if (candidateError instanceof GitHubNotificationReplyCandidateStoreError) {
+              throw new AgentSystemToolError(
+                'tool_unavailable',
+                `The GitHub reply rejection could not be recorded (${candidateError.code}).`,
+              );
+            }
+            throw candidateError;
+          }
+          throw new AgentSystemToolError(
+            'invalid_arguments',
+            [
+              `The GitHub reply candidate failed at ${receipt.stage} (${receipt.code}`,
+              ...(receipt.safetyCategory === undefined
+                ? []
+                : [`; safety=${receipt.safetyCategory}`]),
+              '). Automatic implementation will not start.',
+            ].join(''),
+          );
+        }
       }
       try {
         await candidates.stage(turn, input.body);

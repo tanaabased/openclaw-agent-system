@@ -15,7 +15,7 @@ export type GitHubNotificationPublicationIntent =
   'assignment-response' | 'github-reply' | 'initial-acknowledgment' | 'pull-request-handoff';
 
 export type GitHubNotificationPublicationSafetyCategory =
-  'credential-prefix' | 'environment-assignment' | 'mention' | 'redaction';
+  'credential-prefix' | 'environment-assignment' | 'redaction';
 
 const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'assignment-response',
@@ -81,7 +81,6 @@ function safeText(value: string, publicationIntent: GitHubNotificationPublicatio
   if (/\b[A-Z][A-Z0-9_]{2,}=/u.test(text)) {
     reject(secretSafetyCode, 'environment-assignment');
   }
-  if (/@[A-Za-z0-9]/iu.test(text)) reject(secretSafetyCode, 'mention');
   if (/(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-|AKIA)[A-Za-z0-9_-]+/u.test(text)) {
     reject(secretSafetyCode, 'credential-prefix');
   }

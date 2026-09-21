@@ -73,9 +73,9 @@ Work state, start implementation, or otherwise advance the task lifecycle.
    final-response path.
 5. Draft one GitHub-flavored Markdown update in the agent's own voice, at most
    800 characters. Include only verified facts. Use repository-relative file
-   names, omit `@` mentions, and exclude credentials, secret-like values,
-   environment assignments, absolute paths, private quotations, hidden context,
-   raw logs, and model or provider details.
+   names and exclude credentials, secret-like values, environment assignments,
+   absolute paths, private quotations, hidden context, raw logs, and model or
+   provider details.
 6. Publish through exactly one update path:
    - For an admitted comment on the owning issue, make the update the ordinary
      final response. The notification channel owns validation, reauthorization,

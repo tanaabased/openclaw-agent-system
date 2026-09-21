@@ -7,7 +7,10 @@ import GitHubNotificationModelTurnCoordinator, {
 } from '../channels/github/conversation/model-turn-coordinator.ts';
 import { GitHubNotificationPrivateResponseError } from '../channels/github/conversation/private-response.ts';
 import type { GitHubNotificationTurnContract } from '../channels/github/conversation/turn-contract.ts';
-import { GitHubNotificationReplyCandidateStoreError } from '../channels/github/publication/reply-candidate-store.ts';
+import {
+  GitHubNotificationReplyCandidateRejectedError,
+  GitHubNotificationReplyCandidateStoreError,
+} from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
 const identity = { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const;
@@ -445,7 +448,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     );
   });
 
-  it('should report a value-free publication safety category', async () => {
+  it('should surface a value-free assignment rejection diagnostic', async () => {
     const warnings: string[] = [];
     const coordinator = new GitHubNotificationModelTurnCoordinator({
       assertReady() {},
@@ -458,7 +461,11 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         },
         async cancel() {},
         async finish() {
-          return ['See @pirog for the private result.'];
+          throw new GitHubNotificationReplyCandidateRejectedError({
+            code: 'github-notification-publication-secret-safety-rejected',
+            safetyCategory: 'credential-prefix',
+            stage: 'publication-validation',
+          });
         },
       },
       dispatcher: {
@@ -482,19 +489,24 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       publicationSource: 'candidate' as const,
     };
 
+    const result = await coordinator.run({ ...input(), contract: candidateContract });
     assert.deepEqual(
-      (await coordinator.run({ ...input(), contract: candidateContract })).publication,
+      result.publication,
       {
         code: 'github-notification-publication-secret-safety-rejected',
-        safetyCategory: 'mention',
+        safetyCategory: 'credential-prefix',
         status: 'withheld',
       },
     );
+    assert.equal(
+      result.privateText,
+      'GitHub publication failed at publication-validation (github-notification-publication-secret-safety-rejected; safety=credential-prefix). Automatic implementation did not start. The rejected public candidate was not retained.',
+    );
     assert.match(
       warnings[0] ?? '',
-      /publication=withheld code=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
+      /publication=withheld code=github-notification-publication-secret-safety-rejected safety=credential-prefix aborted=false/u,
     );
-    assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
+    assert.doesNotMatch(warnings[0] ?? '', /ghp_|abcdef/u);
   });
 
   it('should publish a safe notice when an ordinary final response fails safety validation', async () => {
@@ -517,7 +529,7 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
         async dispatch() {
           return {
             dispatch: { counts: { block: 0, final: 1, tool: 0 }, queuedFinal: false },
-            finalPayloads: [{ text: 'See @pirog for the private result.' }],
+            finalPayloads: [{ text: 'Token ghp_abcdef' }],
           };
         },
       },
@@ -531,14 +543,14 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
       fallbackCode: 'github-notification-publication-secret-safety-rejected',
       publicText:
         "I received your comment, but I couldn't safely publish the detailed response. I've kept it in the linked private session for review.",
-      safetyCategory: 'mention',
+      safetyCategory: 'credential-prefix',
       status: 'candidate',
     });
     assert.match(
       warnings[0] ?? '',
-      /publication=candidate fallback=github-notification-publication-secret-safety-rejected safety=mention aborted=false/u,
+      /publication=candidate fallback=github-notification-publication-secret-safety-rejected safety=credential-prefix aborted=false/u,
     );
-    assert.doesNotMatch(warnings[0] ?? '', /private result|@pirog/u);
+    assert.doesNotMatch(warnings[0] ?? '', /ghp_|abcdef/u);
   });
 
   it('should classify a missing prompt-selection attestation', async () => {
