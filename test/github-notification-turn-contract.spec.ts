@@ -36,7 +36,7 @@ describe('channels/github/conversation/turn-contract', () => {
         '## Style',
         'Write a concise, conversational GitHub comment. GitHub-flavored Markdown is allowed when it improves clarity, including headings, lists, tables, blockquotes, code formatting, and links. Prefer natural prose and minimal structure; this is a comment, not a report. Answer ordinary questions and acknowledgments directly so the exchange feels like a human conversation.',
         '## Publication safety',
-        'Do not include secrets, credentials, raw tool output, hidden or private context, private machine details, or literal `@mentions`. When mentioning files, prefer repository-relative paths over absolute worktree paths. Agent System validates the final response, reauthorizes its exact destination, and adds the provider-verified commenter mention before publication.',
+        'Do not include secrets, credentials, raw tool output, hidden or private context, or private machine details. When mentioning files, prefer repository-relative paths over absolute worktree paths. Agent System validates the final response, reauthorizes its exact destination, and adds the provider-verified commenter mention before publication.',
         '## Clarification',
         'Only when missing information materially prevents a safe or correct response, ask exactly one precise clarification question and stop. Otherwise, do not ask a question solely to satisfy this instruction. Do not guess, continue blocked work, or claim a lifecycle-state transition; the next admitted comment will continue the same conversation.',
       ].join('\n\n'),

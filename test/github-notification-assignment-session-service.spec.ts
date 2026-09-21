@@ -133,7 +133,7 @@ function candidateResult(): GitHubNotificationModelTurnCoordinatorResult {
     privateText: '## Assessment\n\nUser-centric assessment.\n\n## Plan\n\nTechnical plan.',
     publication: {
       publicText:
-        "The requested fixture is missing. I'm going to add it and validate it to resolve the issue.",
+        "The requested `tanaabased/actions/openclaw-setup@v1` fixture is missing. I'm going to add it and validate it to resolve the issue.",
       status: 'candidate',
     },
   };
@@ -568,6 +568,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
     if (response?.status !== 'published') throw new Error('missing published response');
     assert.equal(response.commentDatabaseId, 44);
     assert.match(response.publicText, /I'm going to/u);
+    assert.match(response.publicText, /tanaabased\/actions\/openclaw-setup@v1/u);
     assert.match(response.publicTextDigest, /^[a-f0-9]{64}$/u);
     assert.match(response.target, /:publication:assignment-response:[a-f0-9]{32}$/u);
 

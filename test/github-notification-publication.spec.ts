@@ -89,6 +89,15 @@ describe('channels/github/publication/publication', () => {
     assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
   });
 
+  it('should preserve action references, scoped packages, and github mentions', () => {
+    const text =
+      'I will update `tanaabased/actions/openclaw-setup@v1`, verify `@lando/leia`, and ask @pirog to review.';
+
+    assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
+    assert.equal(githubNotificationPublicationText('github-reply', [{ text }]), text);
+    assert.equal(githubNotificationAttributedReplyText(text, 'emoriwan'), `@emoriwan\n\n${text}`);
+  });
+
   it('should substitute the verified commenter wherever the reserved token reads naturally', () => {
     assert.equal(
       githubNotificationAttributedReplyText(
@@ -127,7 +136,6 @@ describe('channels/github/publication/publication', () => {
   it('should classify secret safety rejections without retaining candidate text', () => {
     for (const [text, safetyCategory] of [
       ['OPENAI_API_KEY=value', 'environment-assignment'],
-      ['See @pirog.', 'mention'],
       ['Token ghp_abcdef', 'credential-prefix'],
     ] as const) {
       assert.throws(
@@ -151,10 +159,6 @@ describe('channels/github/publication/publication', () => {
     );
     assert.throws(
       () => githubNotificationPublicationText('github-reply', [{ text: 'Token ghp_abcdef' }]),
-      /not safe to publish/u,
-    );
-    assert.throws(
-      () => githubNotificationPublicationText('github-reply', [{ text: 'See @pirog.' }]),
       /not safe to publish/u,
     );
     for (const text of [
