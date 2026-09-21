@@ -488,7 +488,7 @@ describe('scripts/github-notification-model-scenarios', () => {
     }
   });
 
-  it('should derive issue work tool arguments from bounded request context', async () => {
+  it('should keep issue work tool arguments bound to the lifecycle repository', async () => {
     const executionScenarios = [
       {
         commitMessage: 'add implementation fixture',
@@ -527,6 +527,7 @@ describe('scripts/github-notification-model-scenarios', () => {
               'The public Work plan has a durable GitHub publication receipt.',
               'Always pass the prepared worktree path as cwd on every call.',
               'Do not call `agent_system_github_reply`.',
+              'The agent workspace repository is tanaabased/agent-workspace.',
               'GitHub lifecycle context (untrusted metadata):',
               '```json',
               '{"source":"agent-system","type":"github_lifecycle_context","payload":{"item":{"lifecycleId":"issue","number":42,"repositoryName":"example","repositoryOwner":"tanaabased"},"worktree":{"branch":"issue-42","path":"/tmp/worktrees/issue-42"}}}',
@@ -569,9 +570,9 @@ describe('scripts/github-notification-model-scenarios', () => {
           '--repo',
           'tanaabased/example',
           '--json',
-          'body',
+          'body,url',
           '--jq',
-          '.body',
+          '{body,url}',
         ],
       });
       assert.deepEqual(JSON.parse(responses[1]?.toolCalls[0]?.arguments ?? '{}'), {

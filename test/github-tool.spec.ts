@@ -121,7 +121,11 @@ describe('tools/github/tool', () => {
   it('should expose skill guidance only when github is configured', () => {
     const registry = new AgentSystemToolRegistry([createTool()]);
 
-    assert.equal(registry.guidance(manifest)[0]?.includes('$agent-system-github-cli'), true);
+    const guidance = registry.guidance(manifest)[0] ?? '';
+    assert.match(guidance, /\$agent-system-github-cli/u);
+    assert.match(guidance, /trusted target repository explicitly/u);
+    assert.match(guidance, /canonical URL returned by GitHub/u);
+    assert.match(guidance, /preserve intentional cross-repository targets/u);
     assert.deepEqual(registry.guidance({ schemaVersion: 1, agent: { id: 'data' } }), []);
   });
 

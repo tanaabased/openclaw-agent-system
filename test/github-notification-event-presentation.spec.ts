@@ -80,13 +80,14 @@ describe('channels/github/events/presentation', () => {
       githubNotificationPullRequestOpenedCard({
         issueNumber: 12,
         pullRequestNumber: 45,
-        repository: 'tanaabased/example',
+        repositoryName: 'example',
+        repositoryOwner: 'tanaabased',
       }),
       [
         '## 🔀 Pull request opened',
         '',
-        '- **Issue:** tanaabased/example#12',
-        '- **Pull request:** tanaabased/example#45',
+        '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
+        '- **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
         '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
     );
