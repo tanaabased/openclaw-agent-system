@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { AgentSystemCliResult } from '../api/types.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
 
 const publicationMarker =
   '<!-- agent-system-github-publication:pull-request-handoff:0123456789abcdef0123456789abcdef -->';
@@ -358,6 +359,7 @@ describe('channels/github/provider/work-event-client', () => {
   });
 
   it('should list and re-read bounded canonical issue comments', async () => {
+    const maximumCommentCharacters = 12_000;
     const requests: string[][] = [];
     const canonical = {
       author: { login: 'pirog', nodeId: 'U_actor', type: 'User' },
@@ -368,18 +370,21 @@ describe('channels/github/provider/work-event-client', () => {
       nodeId: 'IC_comment',
       updatedAt: '2026-08-14T12:01:00Z',
     };
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        return argv.includes('/repos/tanaabased/example/issues/comments/91')
-          ? response({
-              ...canonical,
-              issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
-            })
-          : response([canonical]);
+    const client = new GitHubWorkEventClient(
+      {
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv) {
+          requests.push(argv);
+          return argv.includes('/repos/tanaabased/example/issues/comments/91')
+            ? response({
+                ...canonical,
+                issueUrl: 'https://api.github.com/repos/tanaabased/example/issues/7',
+              })
+            : response([canonical]);
+        },
       },
-    });
+      maximumCommentCharacters,
+    );
 
     const page = await client.listIssueComments('tanaabased', 'example', 7);
     const exact = await client.getIssueComment('tanaabased', 'example', 7, 91);
@@ -387,7 +392,11 @@ describe('channels/github/provider/work-event-client', () => {
     assert.equal(page.truncated, false);
     assert.equal(page.comments[0]?.author?.nodeId, 'U_actor');
     assert.equal(exact.nodeId, 'IC_comment');
-    assert.ok(requests[0]?.includes('per_page=100'));
+    assert.ok(
+      requests[0]?.includes(`per_page=${githubCommentPageSize(maximumCommentCharacters)}`),
+    );
+    assert.ok(requests[0]?.some((value) => value.includes('[0:12001]')));
+    assert.ok(requests[1]?.some((value) => value.includes('[0:12001]')));
   });
 
   it('should reconcile and publish pull request handoffs without putting bodies in argv', async () => {

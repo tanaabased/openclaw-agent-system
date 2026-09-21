@@ -277,6 +277,13 @@ A manifest section opts the workspace into its capability.
 Set plugin-wide options under `plugins.entries.agent-system.config` in OpenClaw
 configuration. These settings belong to the operator, not `agent.yaml`.
 
+### `githubNotifications`
+
+Controls operator-wide GitHub notification intake limits. `maxCommentCharacters`
+is an integer from `1` through `64000` and defaults to `8000`. Comments above the
+effective limit are rejected without executing truncated prose. This setting does
+not change the separate outgoing reply or routing-assessment excerpt limits.
+
 ### `opCache`
 
 Controls in-memory reuse of 1Password clients and resolved values. Gateway tools

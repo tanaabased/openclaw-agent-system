@@ -13,6 +13,10 @@ import type {
   GitHubNotificationProviderClient,
 } from './work-event-types.ts';
 import GitHubWorkItemClient from './work-item-client.ts';
+import {
+  defaultMaximumCommentCharacters,
+  validateMaximumCommentCharacters,
+} from './comment-limit.ts';
 import type {
   GitHubAssignmentEvent,
   GitHubCanonicalWorkItem,
@@ -42,10 +46,15 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
   readonly #items: GitHubWorkItemClient;
+  readonly maximumCommentCharacters: number;
 
-  constructor(client: ConnectedGitHubAccountClient) {
+  constructor(
+    client: ConnectedGitHubAccountClient,
+    maximumCommentCharacters = defaultMaximumCommentCharacters,
+  ) {
+    this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
     this.#api = new GitHubWorkEventApiClient(client);
-    this.#comments = new GitHubIssueCommentClient(this.#api);
+    this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
   }
 

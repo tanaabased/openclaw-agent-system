@@ -147,4 +147,26 @@ describe('channels/github/conversation/comment-admission', () => {
       githubCommentRevision(edited).revisionId,
     );
   });
+
+  it('should apply the effective intake boundary during admission', () => {
+    const exact = comment('@tanaabot');
+    assert.equal(
+      admitGitHubComment({
+        account: notificationAccount,
+        comment: exact,
+        configuration,
+        maximumCommentCharacters: exact.body.length,
+      }).code,
+      'comment-approved',
+    );
+    assert.equal(
+      admitGitHubComment({
+        account: notificationAccount,
+        comment: exact,
+        configuration,
+        maximumCommentCharacters: exact.body.length - 1,
+      }).code,
+      'comment-body-truncated',
+    );
+  });
 });

@@ -253,6 +253,7 @@ export default class GitHubNotificationPullRequestHandoffService {
           account: opened.client.identity,
           comment,
           configuration: opened.configuration,
+          maximumCommentCharacters: opened.client.maximumCommentCharacters,
         });
         if (admission.disposition === 'approved') continue;
       }

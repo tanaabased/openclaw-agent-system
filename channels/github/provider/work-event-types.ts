@@ -83,6 +83,7 @@ export interface GitHubNotificationItemContextClient {
 
 export interface GitHubNotificationCommentClient {
   readonly identity: GitHubIdentity;
+  readonly maximumCommentCharacters?: number;
   getIssueComment(
     owner: string,
     name: string,

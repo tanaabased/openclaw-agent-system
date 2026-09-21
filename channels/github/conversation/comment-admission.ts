@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
+import { defaultMaximumCommentCharacters } from '../provider/comment-limit.ts';
 import type { GitHubIdentity } from '../provider/work-item.ts';
 
 export interface GitHubCanonicalIssueComment {
@@ -140,6 +141,7 @@ export function admitGitHubComment(input: {
   account: GitHubIdentity;
   comment: GitHubCanonicalIssueComment;
   configuration: GitHubNotificationsConfiguration;
+  maximumCommentCharacters?: number;
 }): GitHubCommentAdmission {
   const author = input.comment.author;
   if (!author) return { code: 'comment-actor-missing', disposition: 'rejected' };
@@ -152,7 +154,12 @@ export function admitGitHubComment(input: {
   if (!input.configuration.approvedActors.some(({ nodeId }) => nodeId === author.nodeId)) {
     return { code: 'comment-actor-unapproved', disposition: 'rejected' };
   }
-  if (input.comment.bodyTruncated) {
+  const maximumCommentCharacters =
+    input.maximumCommentCharacters ?? defaultMaximumCommentCharacters;
+  if (
+    input.comment.bodyTruncated ||
+    [...input.comment.body].length > maximumCommentCharacters
+  ) {
     return { code: 'comment-body-truncated', disposition: 'rejected' };
   }
   const mentions = authorMentions(input.comment.body, input.account.login);
