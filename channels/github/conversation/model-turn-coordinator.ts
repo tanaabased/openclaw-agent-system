@@ -5,7 +5,9 @@ import type { ReplyPayload } from 'openclaw/plugin-sdk/reply-payload';
 import type { Logger } from '../../../core/logger.ts';
 import { githubNotificationReplyTurnBinding } from '../publication/reply-turn-binding.ts';
 import {
+  GitHubNotificationReplyCandidateRejectedError,
   GitHubNotificationReplyCandidateStoreError,
+  type GitHubNotificationReplyCandidateRejection,
   type GitHubNotificationReplyCandidateStoreErrorCode,
   type default as GitHubNotificationReplyCandidateStore,
 } from '../publication/reply-candidate-store.ts';
@@ -103,6 +105,20 @@ function publicationFailure(error: unknown): {
       ? { safetyCategory: error.safetyCategory }
       : {}),
   };
+}
+
+function assignmentPublicationDiagnostic(
+  failure: Extract<GitHubNotificationModelTurnPublication, { status: 'withheld' }>,
+  receipt?: GitHubNotificationReplyCandidateRejection,
+): string {
+  const stage =
+    receipt?.stage ??
+    (failure.code.includes('-candidate-') ? 'candidate-handoff' : 'publication-validation');
+  return [
+    `GitHub publication failed at ${stage} (${failure.code}`,
+    ...(failure.safetyCategory === undefined ? [] : [`; safety=${failure.safetyCategory}`]),
+    '). Automatic implementation did not start. The rejected public candidate was not retained.',
+  ].join('');
 }
 
 function publication(
@@ -296,35 +312,40 @@ export default class GitHubNotificationModelTurnCoordinator {
       throw error;
     }
 
-    let publicCandidates: string[];
+    let publicCandidates: string[] = [];
+    let candidateRejection: GitHubNotificationReplyCandidateRejection | undefined;
     try {
       publicCandidates = await this.#dependencies.candidates.finish({
         ...candidateIdentity,
         turnId: candidateTurn,
       });
     } catch (error) {
-      this.#dependencies.logger.warn(
-        [
-          'github-notifications: model turn failed',
-          details,
-          'phase=candidate-handoff',
-          `code=${diagnosticCode(error)}`,
-          `final-payloads=${turnResult.finalPayloads.length}`,
-          `block=${turnResult.dispatch.counts.block}`,
-          `final=${turnResult.dispatch.counts.final}`,
-          `tool=${turnResult.dispatch.counts.tool}`,
-          `queued-final=${turnResult.dispatch.queuedFinal}`,
-          `aborted=${Boolean(input.signal?.aborted)}`,
-          `duration-ms=${Date.now() - startedAt}`,
-        ].join(' '),
-      );
-      throw new GitHubNotificationModelTurnCoordinatorError(
-        error instanceof GitHubNotificationReplyCandidateStoreError &&
-          error.code === 'reply-turn-prompt-selection-missing'
-          ? 'github-notification-model-turn-prompt-selection-missing'
-          : 'github-notification-model-turn-reply-candidate-failed',
-        { cause: error },
-      );
+      if (error instanceof GitHubNotificationReplyCandidateRejectedError) {
+        candidateRejection = error.rejection;
+      } else {
+        this.#dependencies.logger.warn(
+          [
+            'github-notifications: model turn failed',
+            details,
+            'phase=candidate-handoff',
+            `code=${diagnosticCode(error)}`,
+            `final-payloads=${turnResult.finalPayloads.length}`,
+            `block=${turnResult.dispatch.counts.block}`,
+            `final=${turnResult.dispatch.counts.final}`,
+            `tool=${turnResult.dispatch.counts.tool}`,
+            `queued-final=${turnResult.dispatch.queuedFinal}`,
+            `aborted=${Boolean(input.signal?.aborted)}`,
+            `duration-ms=${Date.now() - startedAt}`,
+          ].join(' '),
+        );
+        throw new GitHubNotificationModelTurnCoordinatorError(
+          error instanceof GitHubNotificationReplyCandidateStoreError &&
+            error.code === 'reply-turn-prompt-selection-missing'
+            ? 'github-notification-model-turn-prompt-selection-missing'
+            : 'github-notification-model-turn-reply-candidate-failed',
+          { cause: error },
+        );
+      }
     }
 
     const ordinaryFinalPayloads = githubNotificationOrdinaryFinalPayloads(turnResult.finalPayloads);
@@ -344,12 +365,26 @@ export default class GitHubNotificationModelTurnCoordinator {
       );
       throw error;
     }
-    const responsePublication = publication(
-      publicCandidates,
-      ordinaryFinalPayloads,
-      input.contract.publicationIntent,
-      input.contract.publicationSource,
-    );
+    const responsePublication: GitHubNotificationModelTurnPublication = candidateRejection
+      ? {
+          code: candidateRejection.code,
+          ...(candidateRejection.safetyCategory === undefined
+            ? {}
+            : { safetyCategory: candidateRejection.safetyCategory }),
+          status: 'withheld',
+        }
+      : publication(
+          publicCandidates,
+          ordinaryFinalPayloads,
+          input.contract.publicationIntent,
+          input.contract.publicationSource,
+        );
+    if (
+      input.contract.identity.eventId === 'assignment' &&
+      responsePublication.status === 'withheld'
+    ) {
+      privateText = assignmentPublicationDiagnostic(responsePublication, candidateRejection);
+    }
     const completion = [
       'github-notifications: model turn completed',
       details,

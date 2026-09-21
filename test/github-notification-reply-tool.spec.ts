@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +12,9 @@ import type {
 import createGitHubNotificationReplyTool, {
   githubNotificationReplyToolName,
 } from '../channels/github/publication/reply-tool.ts';
-import GitHubNotificationReplyCandidateStore from '../channels/github/publication/reply-candidate-store.ts';
+import GitHubNotificationReplyCandidateStore, {
+  GitHubNotificationReplyCandidateRejectedError,
+} from '../channels/github/publication/reply-candidate-store.ts';
 import { githubNotificationReplyTurnBinding } from '../channels/github/publication/reply-turn-binding.ts';
 import { githubNotificationChannelId } from '../channels/github/routing/routing.ts';
 
@@ -25,7 +28,7 @@ describe('channels/github/publication/reply-tool', () => {
     const identity = {
       agentId: 'tanaabot',
       conversationId: 'github:issue:repository:12',
-      identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const,
+      identity: { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' } as const,
       sourceId: 'revision-1',
     };
     const turn = await parentCandidates.begin(identity);
@@ -140,7 +143,7 @@ describe('channels/github/publication/reply-tool', () => {
         { ...identity, turnId: turn, agentId: 'other' },
         { ...codexIdentity, turnId: codexTurn },
         { ...identity, turnId: turn, sourceId: 'stale-source' },
-        { ...identity, turnId: turn, identity: { ...identity.identity, eventId: 'assignment' } },
+        { ...identity, turnId: turn, identity: { ...identity.identity, eventId: 'comment' } },
         { ...identity, turnId: 'stale-attempt' },
       ]) {
         const mismatched: ReturnType<OpenClawPluginToolFactory> = factory({
@@ -177,17 +180,64 @@ describe('channels/github/publication/reply-tool', () => {
         },
       });
       assert.ok(nextCodexTool && !Array.isArray(nextCodexTool));
-      const codexResult = await nextCodexTool.execute('call-2', { body: ' codex ready ' });
+      const mentionCandidate =
+        'Use `tanaabased/actions/openclaw-setup@v1`, verify `@lando/leia`, and notify @pirog.';
+      const codexResult = await nextCodexTool.execute('call-2', { body: mentionCandidate });
       assert.deepEqual(codexResult.details, {
         auditId: 'audit-1',
-        output: { body: 'codex ready', kind: 'github-reply-candidate', version: 1 },
+        output: { body: mentionCandidate, kind: 'github-reply-candidate', version: 1 },
       });
       assert.deepEqual(
         await parentCandidates.finish({
           ...codexIdentity,
           turnId: codexTurn,
         }),
-        ['codex ready'],
+        [mentionCandidate],
+      );
+
+      const rejectedIdentity = {
+        ...codexIdentity,
+        conversationId: 'github:issue:repository:14',
+        sourceId: 'revision-3',
+      };
+      selectedTurns.set(rejectedIdentity.conversationId, rejectedIdentity);
+      const rejectedTurn = await parentCandidates.begin(rejectedIdentity);
+      await toolCandidates.attestPromptSelection(rejectedIdentity);
+      const rejectedTool = factory({
+        agentId: 'tanaabot',
+        sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:14',
+        toolBindings: {
+          [githubNotificationReplyTurnBinding]: {
+            ...rejectedIdentity,
+            turnId: rejectedTurn,
+          },
+        },
+      });
+      assert.ok(rejectedTool && !Array.isArray(rejectedTool));
+      await assert.rejects(
+        rejectedTool.execute('call-3', { body: 'Token ghp_abcdef' }),
+        /publication-validation.*credential-prefix.*will not start/u,
+      );
+      const rejectionState = await readFile(
+        join(
+          rootDir,
+          rejectedIdentity.agentId,
+          'channels',
+          'github-notification-reply-turns',
+          `${createHash('sha256').update(rejectedIdentity.conversationId).digest('hex')}.json`,
+        ),
+        'utf8',
+      );
+      assert.match(rejectionState, /github-notification-publication-secret-safety-rejected/u);
+      assert.doesNotMatch(rejectionState, /ghp_abcdef/u);
+      await assert.rejects(
+        parentCandidates.finish({ ...rejectedIdentity, turnId: rejectedTurn }),
+        (error: unknown) =>
+          error instanceof GitHubNotificationReplyCandidateRejectedError &&
+          error.rejection.code === 'github-notification-publication-secret-safety-rejected' &&
+          error.rejection.safetyCategory === 'credential-prefix' &&
+          error.rejection.stage === 'publication-validation' &&
+          !error.message.includes('ghp_abcdef'),
       );
     } finally {
       await rm(temporaryDirectory, { force: true, recursive: true });

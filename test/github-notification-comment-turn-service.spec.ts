@@ -442,14 +442,14 @@ describe('channels/github/conversation/comment-turn-service', () => {
       undefined,
       undefined,
       config,
-      'See @pirog for a secret.',
+      'Token ghp_abcdef',
     );
 
     assert.deepEqual(result.publication, {
       fallbackCode: 'github-notification-publication-secret-safety-rejected',
       publicText:
         "I received your comment, but I couldn't safely publish the detailed response. I've kept it in the linked private session for review.",
-      safetyCategory: 'mention',
+      safetyCategory: 'credential-prefix',
       status: 'candidate',
     });
   });

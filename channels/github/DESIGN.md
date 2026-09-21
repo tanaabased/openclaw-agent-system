@@ -216,12 +216,14 @@ reauthorization. Publication never depends on presentation rendering.
 
 The GitHub-facing response is a conversational comment, not a report. It may
 use GitHub-flavored Markdown when structure improves clarity, while deterministic
-publication validation continues to reject secrets, credentials, hidden context,
-and literal model-authored mentions. File references should use
+publication validation continues to reject secrets, credentials, and hidden
+context. Model-authored action references, scoped packages, and GitHub mentions
+remain unchanged; outbound notification authority does not grant inbound
+authority. File references should use
 repository-relative paths instead of absolute worktree paths. Typed candidates
 may place the reserved `{{commenter}}` token once wherever addressing the source
-author reads naturally. Ordinary comment finals omit literal mentions; after
-exact-source reauthorization, publication prefixes the provider-verified login.
+author reads naturally. After exact-source reauthorization, publication
+substitutes that token or prefixes the provider-verified login.
 
 The optional GitHub Update skill is an explicit, mode-neutral reconciliation
 workflow around this channel, not another lifecycle event. It compares the

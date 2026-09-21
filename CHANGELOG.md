@@ -7,10 +7,11 @@
 
 ### Bug Fixes
 
-- Restored source-linked memory credentials on OpenClaw 2026.9.5 by reading its current configuration schema and selecting the standalone provider from the plugin source root. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132)
-- Made pull-request handoff card references clickable and added repository-explicit GitHub lifecycle guidance for item links. [#123](https://github.com/tanaabased/openclaw-agent-system/issues/123)
+- Allowed action references, scoped packages, and GitHub mentions in notification publications while surfacing genuine assignment-publication failures privately. [#126](https://github.com/tanaabased/openclaw-agent-system/issues/126)
 - Fixed Doctor rejecting available models when OpenClaw 2026.9.4 omits the `missing` flag. [#120](https://github.com/tanaabased/openclaw-agent-system/issues/120)
 - Fixed source-linked memory secret resolution and prevented unrelated embedding probes from reporting readiness. [#108](https://github.com/tanaabased/openclaw-agent-system/issues/108)
+- Made pull-request handoff card references clickable and added repository-explicit GitHub lifecycle guidance for item links. [#123](https://github.com/tanaabased/openclaw-agent-system/issues/123)
+- Restored source-linked memory credentials on OpenClaw 2026.9.5 by reading its current configuration schema and selecting the standalone provider from the plugin source root. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132)
 
 ### Improvements
 

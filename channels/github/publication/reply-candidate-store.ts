@@ -11,12 +11,14 @@ import { isGitHubNotificationLifecycleId } from '../lifecycles/types.ts';
 import { isGitHubNotificationModeId } from '../modes/types.ts';
 import type { GitHubNotificationTurnIdentity } from '../conversation/turn-identity.ts';
 import { maximumGitHubNotificationReplyLength } from './limits.ts';
+import type { GitHubNotificationPublicationSafetyCategory } from './publication.ts';
 
 const defaultTtlMs = 30 * 60 * 1000;
 const maximumStateBytes = 4 * 1024;
 
 export type GitHubNotificationReplyCandidateStoreErrorCode =
   | 'reply-turn-already-active'
+  | 'reply-turn-candidate-rejected'
   | 'reply-turn-candidate-limit'
   | 'reply-turn-expired'
   | 'reply-turn-mismatch'
@@ -33,6 +35,24 @@ export class GitHubNotificationReplyCandidateStoreError extends Error {
   }
 }
 
+export interface GitHubNotificationReplyCandidateRejection {
+  code: string;
+  safetyCategory?: GitHubNotificationPublicationSafetyCategory;
+  stage: 'publication-validation';
+}
+
+export class GitHubNotificationReplyCandidateRejectedError extends Error {
+  override name = 'GitHubNotificationReplyCandidateRejectedError';
+
+  constructor(readonly rejection: GitHubNotificationReplyCandidateRejection) {
+    super('The GitHub notification reply candidate failed publication validation.');
+  }
+}
+
+interface GitHubNotificationReplyCandidateStoredRejection extends GitHubNotificationReplyCandidateRejection {
+  rejectedAt: string;
+}
+
 interface GitHubNotificationReplyCandidateState {
   agentId: string;
   candidates: Array<{ body: string; stagedAt: string }>;
@@ -41,7 +61,8 @@ interface GitHubNotificationReplyCandidateState {
   identity: GitHubNotificationTurnIdentity;
   openedAt: string;
   promptSelectedAt?: string;
-  schemaVersion: 2;
+  rejection?: GitHubNotificationReplyCandidateStoredRejection;
+  schemaVersion: 3;
   sourceId: string;
   turnId: string;
 }
@@ -89,6 +110,33 @@ function turnIdentity(value: unknown): value is GitHubNotificationTurnIdentity {
   );
 }
 
+function rejection(value: unknown): GitHubNotificationReplyCandidateStoredRejection | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    fail('reply-turn-state-invalid');
+  }
+  const receipt = value as Record<string, unknown>;
+  if (
+    receipt.stage !== 'publication-validation' ||
+    !boundedString(receipt.code, 128) ||
+    !/^[a-z0-9-]+$/u.test(receipt.code) ||
+    (receipt.safetyCategory !== undefined &&
+      receipt.safetyCategory !== 'credential-prefix' &&
+      receipt.safetyCategory !== 'environment-assignment' &&
+      receipt.safetyCategory !== 'redaction') ||
+    !boundedString(receipt.rejectedAt, 64) ||
+    !Number.isFinite(Date.parse(receipt.rejectedAt))
+  ) {
+    fail('reply-turn-state-invalid');
+  }
+  return {
+    code: receipt.code,
+    rejectedAt: receipt.rejectedAt,
+    ...(receipt.safetyCategory === undefined ? {} : { safetyCategory: receipt.safetyCategory }),
+    stage: 'publication-validation',
+  } as GitHubNotificationReplyCandidateStoredRejection;
+}
+
 function sameTurn(
   state: GitHubNotificationReplyCandidateState,
   input: GitHubNotificationReplyCandidateTurnInput,
@@ -112,7 +160,7 @@ function decodeState(
   const state = value as Record<string, unknown>;
   const candidates = state.candidates;
   if (
-    state.schemaVersion !== 2 ||
+    (state.schemaVersion !== 2 && state.schemaVersion !== 3) ||
     state.agentId !== expectedAgentId ||
     !boundedString(state.turnId, 128) ||
     !boundedString(state.conversationId, 512) ||
@@ -126,7 +174,8 @@ function decodeState(
     !Number.isFinite(Date.parse(state.openedAt)) ||
     !Number.isFinite(Date.parse(state.expiresAt)) ||
     !Array.isArray(candidates) ||
-    candidates.length > 2
+    candidates.length > 2 ||
+    (state.schemaVersion === 2 && state.rejection !== undefined)
   ) {
     fail('reply-turn-state-invalid');
   }
@@ -145,6 +194,8 @@ function decodeState(
     }
     return { body: entry.body, stagedAt: entry.stagedAt };
   });
+  const decodedRejection = rejection(state.rejection);
+  if (decodedRejection && decodedCandidates.length > 0) fail('reply-turn-state-invalid');
   return {
     agentId: expectedAgentId,
     candidates: decodedCandidates,
@@ -153,7 +204,8 @@ function decodeState(
     identity: state.identity,
     openedAt: state.openedAt,
     ...(state.promptSelectedAt === undefined ? {} : { promptSelectedAt: state.promptSelectedAt }),
-    schemaVersion: 2,
+    ...(decodedRejection === undefined ? {} : { rejection: decodedRejection }),
+    schemaVersion: 3,
     sourceId: state.sourceId,
     turnId: state.turnId,
   };
@@ -193,7 +245,7 @@ export default class GitHubNotificationReplyCandidateStore {
         expiresAt: new Date(openedAt + this.#ttlMs).toISOString(),
         identity: input.identity,
         openedAt: new Date(openedAt).toISOString(),
-        schemaVersion: 2,
+        schemaVersion: 3,
         sourceId: input.sourceId,
         turnId: this.#randomId(),
       };
@@ -214,6 +266,15 @@ export default class GitHubNotificationReplyCandidateStore {
       const active = await this.#matchingState(file, input);
       await file.remove();
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
+      if (active.rejection) {
+        throw new GitHubNotificationReplyCandidateRejectedError({
+          code: active.rejection.code,
+          ...(active.rejection.safetyCategory === undefined
+            ? {}
+            : { safetyCategory: active.rejection.safetyCategory }),
+          stage: active.rejection.stage,
+        });
+      }
       return active.candidates.map(({ body }) => body);
     });
   }
@@ -242,12 +303,30 @@ export default class GitHubNotificationReplyCandidateStore {
     await this.#exclusive(input, async (file) => {
       const active = await this.#matchingState(file, input);
       if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
+      if (active.rejection) fail('reply-turn-candidate-rejected');
       if (active.candidates.length >= 2) fail('reply-turn-candidate-limit');
       const body = candidate.trim();
       if (!body || body.length > maximumGitHubNotificationReplyLength) {
         fail('reply-turn-state-invalid');
       }
       active.candidates.push({ body, stagedAt: new Date(this.#now()).toISOString() });
+      await file.write(`${JSON.stringify(active, undefined, 2)}\n`);
+    });
+  }
+
+  async reject(
+    input: GitHubNotificationReplyCandidateFinishInput,
+    receipt: GitHubNotificationReplyCandidateRejection,
+  ): Promise<void> {
+    await this.#exclusive(input, async (file) => {
+      const active = await this.#matchingState(file, input);
+      if (!active.promptSelectedAt) fail('reply-turn-prompt-selection-missing');
+      if (active.rejection || active.candidates.length > 0) fail('reply-turn-candidate-rejected');
+      active.rejection = rejection({
+        ...receipt,
+        rejectedAt: new Date(this.#now()).toISOString(),
+      });
+      if (!active.rejection) fail('reply-turn-state-invalid');
       await file.write(`${JSON.stringify(active, undefined, 2)}\n`);
     });
   }
