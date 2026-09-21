@@ -20,8 +20,7 @@ Install a linked development checkout in the normal OpenClaw profile:
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
 brew bundle
-bun install
-bun run build
+bun run sync
 openclaw plugins install --link . --accept-capabilities
 openclaw plugins enable agent-system
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
@@ -35,8 +34,9 @@ workflow below uses an isolated profile and does not require a normal-profile
 installation.
 
 Linked installs load from this checkout with a `config` origin. After updating
-the OpenClaw dependency, run `bun install --frozen-lockfile`. After that update
-or a change to the memory secret-provider source, run `bun run build`, run
+the OpenClaw dependency or changing the memory secret-provider source, run
+`bun run sync` to reconcile the locked dependencies, build the checkout, and
+verify the built provider with a deliberately nonexistent binding. Then run
 `openclaw agent-system install` from the agent workspace, and restart the
 Gateway. Reconciliation uses the built standalone provider for a linked checkout;
 the declared credential remains a SecretRef and never belongs in
