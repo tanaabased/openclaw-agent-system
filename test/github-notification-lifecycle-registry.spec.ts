@@ -44,10 +44,7 @@ describe('channels/github/lifecycles', () => {
     assert.equal(selected.id, 'issue');
     assert.match(selected.instructions, /repositoryOwner and repositoryName/u);
     assert.match(selected.instructions, /canonical URL returned by GitHub/u);
-    assert.match(
-      selected.instructions,
-      /Preserve intentional cross-repository references/u,
-    );
+    assert.match(selected.instructions, /Preserve intentional cross-repository references/u);
     assert.equal(selected.worktree.required, true);
     if (!selected.worktree.required) assert.fail('expected an issue worktree owner');
     await selected.worktree.inspect({
