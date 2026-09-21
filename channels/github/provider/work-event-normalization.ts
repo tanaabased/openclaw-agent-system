@@ -1,7 +1,7 @@
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
 import type { GitHubIdentity } from './work-item.ts';
+import { defaultMaximumCommentCharacters } from './comment-limit.ts';
 
-export const maximumCommentBodyLength = 1_000;
 export const maximumPublicationBodyLength = 1_200;
 
 export function githubResponseRecord(value: unknown, label: string): Record<string, unknown> {
@@ -70,6 +70,22 @@ export function githubResponseBoundedProse(
   };
 }
 
+function githubResponseBoundedCharacters(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): { text: string; truncated: boolean } {
+  if (value === null) return { text: '', truncated: false };
+  if (typeof value !== 'string' || value.includes('\0')) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  const characters = [...value];
+  return {
+    text: characters.slice(0, maximumLength).join(''),
+    truncated: characters.length > maximumLength,
+  };
+}
+
 export function githubResponseIdentity(value: unknown, label: string): GitHubIdentity {
   const item = githubResponseRecord(value, label);
   const login = githubResponseString(item.login, `${label} login`);
@@ -127,18 +143,21 @@ export function githubResponseOptionalRepositoryReference(
     : githubResponseRepositoryReference(value, label);
 }
 
-export function githubResponseIssueComment(value: unknown): GitHubCanonicalIssueComment {
+export function githubResponseIssueComment(
+  value: unknown,
+  maximumCommentCharacters = defaultMaximumCommentCharacters,
+): GitHubCanonicalIssueComment {
   const item = githubResponseRecord(value, 'issue comment');
-  const body = githubResponseBoundedProse(
+  const body = githubResponseBoundedCharacters(
     item.body,
     'issue-comment body',
-    maximumCommentBodyLength,
+    maximumCommentCharacters,
   );
   const bodyLength = githubResponseInteger(item.bodyLength, 'issue-comment body length');
   return {
     author: githubResponseOptionalIdentity(item.author, 'issue-comment author'),
     body: body.text,
-    bodyTruncated: body.truncated || bodyLength > maximumCommentBodyLength,
+    bodyTruncated: body.truncated || bodyLength > maximumCommentCharacters,
     createdAt: githubResponseTimestamp(item.createdAt, 'issue-comment creation time'),
     databaseId: githubResponsePositiveInteger(item.databaseId, 'issue-comment database id'),
     nodeId: githubResponseNodeId(item.nodeId, 'issue-comment node id'),

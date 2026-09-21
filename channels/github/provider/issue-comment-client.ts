@@ -13,7 +13,6 @@ import {
   githubResponsePositiveInteger,
   githubResponseRecord,
   githubResponseString,
-  maximumCommentBodyLength,
   maximumPublicationBodyLength,
 } from './work-event-normalization.ts';
 import type {
@@ -25,18 +24,31 @@ import type {
 } from './work-event-types.ts';
 import type { GitHubIdentity } from './work-item.ts';
 
-const pageSize = 100;
+const maximumPageSize = 100;
+const maximumProjectedPageBytes = 480 * 1_024;
+const projectedMetadataBytesPerComment = 1_024;
 const maximumCommentPages = 10;
 const maximumTrackedCommentPages = 3;
+
+export function githubCommentPageSize(maximumCommentCharacters: number): number {
+  const projectedBytesPerComment =
+    (maximumCommentCharacters + 1) * 6 + projectedMetadataBytesPerComment;
+  return Math.max(
+    1,
+    Math.min(maximumPageSize, Math.floor(maximumProjectedPageBytes / projectedBytesPerComment)),
+  );
+}
 
 /** Read and publish bounded top-level issue comments through fixed GitHub endpoints. */
 export default class GitHubIssueCommentClient
   implements GitHubNotificationCommentClient, GitHubNotificationPublicationClient
 {
   readonly #api: GitHubWorkEventApiClient;
+  readonly maximumCommentCharacters: number;
 
-  constructor(api: GitHubWorkEventApiClient) {
+  constructor(api: GitHubWorkEventApiClient, maximumCommentCharacters: number) {
     this.#api = api;
+    this.maximumCommentCharacters = maximumCommentCharacters;
   }
 
   get identity(): GitHubIdentity {
@@ -50,6 +62,7 @@ export default class GitHubIssueCommentClient
     number: number,
   ): Promise<GitHubIssueCommentPage> {
     const comments: GitHubCanonicalIssueComment[] = [];
+    const pageSize = githubCommentPageSize(this.maximumCommentCharacters);
     let hasNextPage = false;
     for (let page = 1; page <= maximumTrackedCommentPages; page += 1) {
       const response = await this.#api.request(
@@ -62,14 +75,18 @@ export default class GitHubIssueCommentClient
           '-F',
           `page=${page}`,
           '--jq',
-          `[.[]|{databaseId:.id,nodeId:.node_id,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${maximumCommentBodyLength + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}]`,
+          `[.[]|{databaseId:.id,nodeId:.node_id,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${this.maximumCommentCharacters + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}]`,
         ],
         'issue comments',
       );
       if (!Array.isArray(response.value)) {
         throw new Error('GitHub returned invalid issue comments.');
       }
-      comments.push(...response.value.map(githubResponseIssueComment));
+      comments.push(
+        ...response.value.map((comment) =>
+          githubResponseIssueComment(comment, this.maximumCommentCharacters),
+        ),
+      );
       hasNextPage = response.hasNextPage;
       if (!hasNextPage) break;
     }
@@ -92,7 +109,7 @@ export default class GitHubIssueCommentClient
         'GET',
         `${githubRepositoryEndpoint(owner, name)}/issues/comments/${commentDatabaseId}`,
         '--jq',
-        `{databaseId:.id,nodeId:.node_id,issueUrl:.issue_url,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${maximumCommentBodyLength + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}`,
+        `{databaseId:.id,nodeId:.node_id,issueUrl:.issue_url,author:(if .user==null then null else {login:.user.login,nodeId:.user.node_id,type:.user.type} end),body:((.body//"")[0:${this.maximumCommentCharacters + 1}]),bodyLength:(.body//""|length),createdAt:.created_at,updatedAt:.updated_at}`,
       ],
       'issue comment',
     );
@@ -110,7 +127,7 @@ export default class GitHubIssueCommentClient
     ) {
       throw new Error('GitHub returned an issue comment for another work item.');
     }
-    return githubResponseIssueComment(value);
+    return githubResponseIssueComment(value, this.maximumCommentCharacters);
   }
 
   async findOwnIssueComment(
@@ -127,6 +144,7 @@ export default class GitHubIssueCommentClient
       throw new Error('GitHub notification publication markers are invalid.');
     }
     let hasNextPage = false;
+    const pageSize = maximumPageSize;
     for (let page = 1; page <= maximumCommentPages; page += 1) {
       const response = await this.#api.request(
         [

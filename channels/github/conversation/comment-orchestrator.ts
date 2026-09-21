@@ -34,6 +34,7 @@ import type {
   GitHubNotificationCommentClient,
   GitHubNotificationIntakeClient,
 } from '../provider/work-event-client.ts';
+import { defaultMaximumCommentCharacters } from '../provider/comment-limit.ts';
 
 type GitHubNotificationConversationClient = GitHubNotificationCommentClient &
   Pick<GitHubNotificationIntakeClient, 'getItem'>;
@@ -345,6 +346,7 @@ export default class GitHubNotificationCommentOrchestrator {
         account: opened.client.identity,
         comment: exact,
         configuration: opened.configuration,
+        maximumCommentCharacters: opened.client.maximumCommentCharacters,
       });
       if (admission.disposition !== 'approved') {
         await this.#checkpointRevision(agentId, conversationId, exact.nodeId, {
@@ -355,6 +357,11 @@ export default class GitHubNotificationCommentOrchestrator {
           source: { itemType: source.itemType, number: source.number },
           status: 'rejected',
         });
+        if (admission.code === 'comment-body-truncated') {
+          this.#dependencies.logger.warn(
+            `github-notifications: comment rejected agent=${agentId} item=${item.repositoryOwner}/${item.repositoryName}#${source.number} code=${admission.code} maxCommentCharacters=${opened.client.maximumCommentCharacters ?? defaultMaximumCommentCharacters}`,
+          );
+        }
         continue;
       }
       await this.#checkpointRevision(agentId, conversationId, exact.nodeId, {

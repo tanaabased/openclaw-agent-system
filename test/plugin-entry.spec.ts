@@ -13,6 +13,9 @@ describe('index', () => {
     assert.equal(plugin.description, 'Better per-agent management for OpenClaw.');
     assert.equal(typeof plugin.register, 'function');
     assert.equal(plugin.configSchema.jsonSchema?.additionalProperties, false);
+    assert.ok(
+      Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('githubNotifications'),
+    );
     assert.ok(Object.keys(plugin.configSchema.jsonSchema?.properties ?? {}).includes('opCache'));
   });
 

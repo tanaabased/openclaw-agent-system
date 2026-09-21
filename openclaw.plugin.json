@@ -91,6 +91,19 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "githubNotifications": {
+        "description": "Operator-wide GitHub notification intake limits.",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxCommentCharacters": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64000,
+            "default": 8000
+          }
+        }
+      },
       "opCache": {
         "description": "Process-local OP credential caching controlled by the operator.",
         "oneOf": [

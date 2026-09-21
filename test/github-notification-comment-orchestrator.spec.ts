@@ -89,11 +89,13 @@ function comment(
 function authority(
   comments: GitHubCanonicalIssueComment[],
   truncated = false,
+  maximumCommentCharacters = 8_000,
 ): {
   open(): Promise<GitHubNotificationAssignmentInspection<CommentClient>>;
 } {
   const client: CommentClient = {
     identity: notificationAccount,
+    maximumCommentCharacters,
     async getIssueComment(
       _owner: string,
       _repository: string,
@@ -408,6 +410,53 @@ describe('channels/github/conversation/comment-orchestrator', () => {
       status: 'published',
       target: publication.target,
     });
+  });
+
+  it('should diagnose an oversized comment without dispatching it', async () => {
+    const monitor = preparedMonitor();
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    const id = conversationId(monitor);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'work',
+      revisions: {},
+    };
+    const incoming = comment('@tanaabot oversized');
+    const store = memoryStateStore(state);
+    const warnings: string[] = [];
+    const orchestrator = new GitHubNotificationCommentOrchestrator({
+      assignmentAuthority: authority([incoming], false, 9),
+      conversationStateStore: store,
+      initialModeId: 'work',
+      lifecycles: lifecycles(),
+      logger: {
+        error() {},
+        info() {},
+        warn(message) {
+          warnings.push(message);
+        },
+      },
+      monitorStateStore: monitorStateStore(monitor),
+      publications: { publish: async () => Promise.reject(new Error('unexpected publication')) },
+      turnCatalog,
+      turns: { respond: async () => Promise.reject(new Error('unexpected turn')) },
+    });
+
+    await orchestrator.reconcile(agentId, notificationItemKey);
+
+    assert.equal(
+      store.snapshot()?.conversations[id]?.revisions[incoming.nodeId]?.reasonCode,
+      'comment-body-truncated',
+    );
+    assert.ok(
+      warnings.some(
+        (message) =>
+          message.includes('code=comment-body-truncated') &&
+          message.includes('maxCommentCharacters=9'),
+      ),
+    );
   });
 
   it('should drain two admitted comments serially before yielding the poll cycle', async () => {

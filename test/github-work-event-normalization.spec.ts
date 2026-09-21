@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   githubResponseIssueComment,
   githubResponseNodeId,
-  maximumCommentBodyLength,
 } from '../channels/github/provider/work-event-normalization.ts';
+import { defaultMaximumCommentCharacters } from '../channels/github/provider/comment-limit.ts';
 
 function comment(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,13 +33,43 @@ describe('channels/github/provider/work-event-normalization', () => {
   });
 
   it('should bound comment prose independently from its reported source length', () => {
-    const body = 'a'.repeat(maximumCommentBodyLength + 1);
+    const boundary = githubResponseIssueComment(
+      comment({
+        body: 'a'.repeat(defaultMaximumCommentCharacters),
+        bodyLength: defaultMaximumCommentCharacters,
+      }),
+    );
+    const body = 'a'.repeat(defaultMaximumCommentCharacters + 1);
 
     const normalized = githubResponseIssueComment(
-      comment({ body, bodyLength: maximumCommentBodyLength + 1 }),
+      comment({ body, bodyLength: defaultMaximumCommentCharacters + 1 }),
     );
 
-    assert.equal(normalized.body, 'a'.repeat(maximumCommentBodyLength));
+    assert.equal(boundary.bodyTruncated, false);
+    assert.equal(normalized.body, 'a'.repeat(defaultMaximumCommentCharacters));
+    assert.equal(normalized.bodyTruncated, true);
+  });
+
+  it('should apply an overridden boundary exactly', () => {
+    const complete = githubResponseIssueComment(
+      comment({ body: 'a'.repeat(12), bodyLength: 12 }),
+      12,
+    );
+    const oversized = githubResponseIssueComment(
+      comment({ body: 'a'.repeat(13), bodyLength: 13 }),
+      12,
+    );
+
+    assert.equal(complete.body.length, 12);
+    assert.equal(complete.bodyTruncated, false);
+    assert.equal(oversized.body.length, 12);
+    assert.equal(oversized.bodyTruncated, true);
+  });
+
+  it('should count unicode code points consistently with the provider projection', () => {
+    const normalized = githubResponseIssueComment(comment({ body: '🚀🚀🚀', bodyLength: 3 }), 2);
+
+    assert.equal(normalized.body, '🚀🚀');
     assert.equal(normalized.bodyTruncated, true);
   });
 

@@ -208,6 +208,7 @@ export default class GitHubNotificationCommentPublicationService {
           account: opened.client.identity,
           comment: exact,
           configuration: opened.configuration,
+          maximumCommentCharacters: opened.client.maximumCommentCharacters,
         });
         if (
           admission.disposition !== 'approved' ||

@@ -6,6 +6,7 @@ import type { GitHubNotificationLifecycleBoundaryInput } from '../lifecycles/typ
 import type { GitHubNotificationAssignmentAuthority } from './assignment-orchestrator.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type { GitHubNotificationsConfiguration } from '../config-schema.ts';
+import { resolveMaximumCommentCharacters } from '../provider/comment-limit.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import { admitGitHubAssignment } from './admit-assignment.ts';
 import type { NotificationRouteResolver } from '../routing/routing.ts';
@@ -230,8 +231,9 @@ export default class GitHubNotificationAssignmentProvider
       'service',
       input.signal,
     );
+    const config = await this.#dependencies.readConfig();
     return {
-      client: new GitHubWorkEventClient(connected),
+      client: new GitHubWorkEventClient(connected, resolveMaximumCommentCharacters(config)),
       configuration: loaded.manifest.github.notifications,
     };
   }

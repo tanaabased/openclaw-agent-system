@@ -18,6 +18,7 @@ import { checkpointGitHubNotificationPoll } from './state-checkpoint.ts';
 import { pollGitHubNotifications } from './poller.ts';
 import type NotificationRoutingService from '../../routing/service.ts';
 import GitHubWorkEventClient from '../../provider/work-event-client.ts';
+import { resolveMaximumCommentCharacters } from '../../provider/comment-limit.ts';
 import { githubNotificationDiagnostic } from './diagnostic.ts';
 import createGitHubNotificationFailureState from './failure-state.ts';
 import {
@@ -441,7 +442,10 @@ export default class GitHubNotificationMonitorService {
         'service',
         signal,
       );
-      const client = new GitHubWorkEventClient(connected);
+      const client = new GitHubWorkEventClient(
+        connected,
+        resolveMaximumCommentCharacters(await this.#dependencies.readConfig()),
+      );
       const result = await pollGitHubNotifications({
         agentId,
         client,
