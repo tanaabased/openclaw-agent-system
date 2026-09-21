@@ -111,7 +111,9 @@ case "$model" in
 esac
 
 configure_notification_profile() {
-  debug 'disabling the unrelated default-agent heartbeat for notification acceptance'
+  debug 'configuring the notification capability profile and disabling the unrelated default-agent heartbeat'
+  openclaw config set tools.profile coding
+  openclaw config get tools.profile --json | jq -e '. == "coding"' >/dev/null
   openclaw config set agents.defaults.heartbeat.every 0m
 }
 

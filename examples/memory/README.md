@@ -1,19 +1,25 @@
 # Memory Example
 
 This scenario verifies manifest-managed built-in memory search for keyword-only,
-local, and OpenAI providers. It also proves that the OpenAI credential remains a
-secret reference, resolves through packed and source-linked installations after
-service restart, and produces bounded readiness diagnostics without rebuilding
-an existing index. The source-linked case replaces the packed install in the
-same profile to verify configuration migration and index preservation.
+local, and OpenAI providers through a source-linked Agent System checkout. It
+also proves that the OpenAI credential remains a secret reference, that
+reconciliation repairs a stale plugin-integrated provider, and that the
+credential still resolves after service restart. Readiness diagnostics remain
+bounded and do not rebuild an existing index. Packed installation is covered by
+the other release-shaped examples and is not replaced in place.
 
 ## Setup
 
 ```bash
-# should configure an isolated openclaw profile with the packed plugin
+# should configure an isolated openclaw profile with the source-linked plugin
 openclaw-setup \
-  --workspace "$TMPDIR/main" \
-  --agent-system "$AGENT_SYSTEM_PACKAGE"
+  --workspace "$TMPDIR/main"
+openclaw plugins install --link "$GITHUB_WORKSPACE" --accept-capabilities
+openclaw plugins registry --json \
+  | jq -e '.state == "fresh" and (.differences | length == 0)'
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+openclaw plugins inspect agent-system --runtime --json \
+  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded"'
 ```
 
 ## Testing
@@ -41,10 +47,21 @@ openclaw agent-system doctor --json \
 ```
 
 ```bash
-# should install an agent-bound openai secret reference without exposing its value
+# should repair a stale provider and install an agent-bound openai secret reference without exposing its value
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
+openclaw config set 'secrets.providers.agent-system-environment' \
+  '{"source":"exec","pluginIntegration":{"pluginId":"agent-system","integrationId":"environment"}}' \
+  --strict-json
 openclaw agent-system install --json \
   | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
+openclaw config get 'secrets.providers.agent-system-environment' --json \
+  | jq -e '
+    .source == "exec" and
+    (.pluginIntegration | not) and
+    (.args | length == 1) and
+    (.args[0] | endswith("/dist/memory-secret-provider-entry.js")) and
+    (.trustedDirs | length == 2)
+  '
 configured="$(openclaw config get 'agents.entries.memory-openai.memory.search' --json)"
 printf '%s\n' "$configured" \
   | jq -e '.provider == "openai" and .fallback == "none" and .model == "text-embedding-3-small" and .remote.apiKey.source == "exec" and .remote.apiKey.provider == "agent-system-environment"'
@@ -80,17 +97,9 @@ printf '%s\n' "$output" \
 ```
 
 ```bash
-# should migrate to a source-linked provider, remain idempotent, and retrieve through the gateway
+# should keep the source-linked provider idempotent and retrieve through the gateway
 openclaw-gateway stop
-openclaw plugins install --link "$GITHUB_WORKSPACE" --force --accept-capabilities
-openclaw plugins registry --json \
-  | jq -e '.state == "fresh" and (.differences | length == 0)'
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
-openclaw plugins inspect agent-system --runtime --json \
-  | jq -e '.plugin.id == "agent-system" and .plugin.origin == "config" and .plugin.status == "loaded"'
 cd "$GITHUB_WORKSPACE/examples/memory/openai"
-openclaw agent-system install --json \
-  | jq -e '.outcomes | any(.component == "memory" and .code == "set-agent-memory" and .status == "updated")'
 openclaw config get 'secrets.providers.agent-system-environment' --json \
   | jq -e '
     .source == "exec" and

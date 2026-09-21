@@ -525,4 +525,19 @@ describe('github notification workflows', () => {
     assert.deepEqual(exampleDirectories, [...examples].sort());
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
+
+  it('should exercise memory through a source-linked installation without replacing a pack', async () => {
+    const source = await readFile('examples/memory/README.md', 'utf8');
+
+    assert.match(
+      source,
+      /openclaw plugins install --link "\$GITHUB_WORKSPACE" --accept-capabilities/u,
+    );
+    assert.doesNotMatch(source, /AGENT_SYSTEM_PACKAGE|plugins install --link .* --force/u);
+    assert.match(
+      source,
+      /"pluginIntegration":\{"pluginId":"agent-system","integrationId":"environment"\}/u,
+    );
+    assert.match(source, /\.pluginIntegration \| not/u);
+  });
 });

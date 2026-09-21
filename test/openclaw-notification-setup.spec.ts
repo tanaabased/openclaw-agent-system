@@ -33,9 +33,14 @@ describe('scripts/openclaw-notification-setup', () => {
     );
   });
 
-  it('should disable unrelated default-agent heartbeats for notification runs', async () => {
+  it('should establish notification capabilities and disable unrelated heartbeats', async () => {
     const source = await readFile(command, 'utf8');
 
+    assert.match(source, /openclaw config set tools\.profile coding/u);
+    assert.match(
+      source,
+      /openclaw config get tools\.profile --json \| jq -e '\. == "coding"' >\/dev\/null/u,
+    );
     assert.match(source, /openclaw config set agents\.defaults\.heartbeat\.every 0m/u);
     assert.match(
       source,
