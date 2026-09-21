@@ -95,9 +95,7 @@ export default function createGitHubNotificationReplyTool(
           if (!(error instanceof GitHubNotificationPublicationError)) throw error;
           const receipt: GitHubNotificationReplyCandidateRejection = {
             code: error.code,
-            ...(error.safetyCategory === undefined
-              ? {}
-              : { safetyCategory: error.safetyCategory }),
+            ...(error.safetyCategory === undefined ? {} : { safetyCategory: error.safetyCategory }),
             stage: 'publication-validation',
           };
           try {

@@ -49,8 +49,7 @@ export class GitHubNotificationReplyCandidateRejectedError extends Error {
   }
 }
 
-interface GitHubNotificationReplyCandidateStoredRejection
-  extends GitHubNotificationReplyCandidateRejection {
+interface GitHubNotificationReplyCandidateStoredRejection extends GitHubNotificationReplyCandidateRejection {
   rejectedAt: string;
 }
 
@@ -133,9 +132,7 @@ function rejection(value: unknown): GitHubNotificationReplyCandidateStoredReject
   return {
     code: receipt.code,
     rejectedAt: receipt.rejectedAt,
-    ...(receipt.safetyCategory === undefined
-      ? {}
-      : { safetyCategory: receipt.safetyCategory }),
+    ...(receipt.safetyCategory === undefined ? {} : { safetyCategory: receipt.safetyCategory }),
     stage: 'publication-validation',
   } as GitHubNotificationReplyCandidateStoredRejection;
 }

@@ -95,10 +95,7 @@ describe('channels/github/publication/publication', () => {
 
     assert.equal(githubNotificationPublicationText('assignment-response', [{ text }]), text);
     assert.equal(githubNotificationPublicationText('github-reply', [{ text }]), text);
-    assert.equal(
-      githubNotificationAttributedReplyText(text, 'emoriwan'),
-      `@emoriwan\n\n${text}`,
-    );
+    assert.equal(githubNotificationAttributedReplyText(text, 'emoriwan'), `@emoriwan\n\n${text}`);
   });
 
   it('should substitute the verified commenter wherever the reserved token reads naturally', () => {

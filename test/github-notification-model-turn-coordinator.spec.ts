@@ -490,14 +490,11 @@ describe('channels/github/conversation/model-turn-coordinator', () => {
     };
 
     const result = await coordinator.run({ ...input(), contract: candidateContract });
-    assert.deepEqual(
-      result.publication,
-      {
-        code: 'github-notification-publication-secret-safety-rejected',
-        safetyCategory: 'credential-prefix',
-        status: 'withheld',
-      },
-    );
+    assert.deepEqual(result.publication, {
+      code: 'github-notification-publication-secret-safety-rejected',
+      safetyCategory: 'credential-prefix',
+      status: 'withheld',
+    });
     assert.equal(
       result.privateText,
       'GitHub publication failed at publication-validation (github-notification-publication-secret-safety-rejected; safety=credential-prefix). Automatic implementation did not start. The rejected public candidate was not retained.',

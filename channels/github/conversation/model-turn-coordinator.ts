@@ -116,9 +116,7 @@ function assignmentPublicationDiagnostic(
     (failure.code.includes('-candidate-') ? 'candidate-handoff' : 'publication-validation');
   return [
     `GitHub publication failed at ${stage} (${failure.code}`,
-    ...(failure.safetyCategory === undefined
-      ? []
-      : [`; safety=${failure.safetyCategory}`]),
+    ...(failure.safetyCategory === undefined ? [] : [`; safety=${failure.safetyCategory}`]),
     '). Automatic implementation did not start. The rejected public candidate was not retained.',
   ].join('');
 }

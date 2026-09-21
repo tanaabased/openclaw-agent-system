@@ -205,8 +205,7 @@ describe('channels/github/publication/reply-tool', () => {
       await toolCandidates.attestPromptSelection(rejectedIdentity);
       const rejectedTool = factory({
         agentId: 'tanaabot',
-        sessionKey:
-          'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:14',
+        sessionKey: 'agent:tanaabot:agent-system-github:tanaabot:direct:github:issue:repository:14',
         toolBindings: {
           [githubNotificationReplyTurnBinding]: {
             ...rejectedIdentity,
@@ -229,17 +228,13 @@ describe('channels/github/publication/reply-tool', () => {
         ),
         'utf8',
       );
-      assert.match(
-        rejectionState,
-        /github-notification-publication-secret-safety-rejected/u,
-      );
+      assert.match(rejectionState, /github-notification-publication-secret-safety-rejected/u);
       assert.doesNotMatch(rejectionState, /ghp_abcdef/u);
       await assert.rejects(
         parentCandidates.finish({ ...rejectedIdentity, turnId: rejectedTurn }),
         (error: unknown) =>
           error instanceof GitHubNotificationReplyCandidateRejectedError &&
-          error.rejection.code ===
-            'github-notification-publication-secret-safety-rejected' &&
+          error.rejection.code === 'github-notification-publication-secret-safety-rejected' &&
           error.rejection.safetyCategory === 'credential-prefix' &&
           error.rejection.stage === 'publication-validation' &&
           !error.message.includes('ghp_abcdef'),
