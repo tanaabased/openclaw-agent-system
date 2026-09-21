@@ -444,7 +444,7 @@ export default class GitHubNotificationMonitorService {
       );
       const client = new GitHubWorkEventClient(
         connected,
-        resolveMaximumCommentCharacters(config),
+        resolveMaximumCommentCharacters(await this.#dependencies.readConfig()),
       );
       const result = await pollGitHubNotifications({
         agentId,
