@@ -338,7 +338,7 @@ describe('github notification workflows', () => {
     assert.match(source, /--scenario assignment/u);
     assert.doesNotMatch(source, /NOTIFICATION_MODEL_PROVIDER|models\.providers\.aimock/u);
     assert.match(source, /length\) <= 800/u);
-    assert.match(source, /count: \(\[\.sessions\[\] \| select/u);
+    assert.doesNotMatch(source, /gateway call sessions\.list/u);
     assert.doesNotMatch(source, /\.color == null|\.category == null/u);
     assert.equal(source.includes(githubNotificationAssignmentCandidate), false);
     assert.equal(expectedEvidence.scenario, 'assignment');
