@@ -392,9 +392,7 @@ describe('channels/github/provider/work-event-client', () => {
     assert.equal(page.truncated, false);
     assert.equal(page.comments[0]?.author?.nodeId, 'U_actor');
     assert.equal(exact.nodeId, 'IC_comment');
-    assert.ok(
-      requests[0]?.includes(`per_page=${githubCommentPageSize(maximumCommentCharacters)}`),
-    );
+    assert.ok(requests[0]?.includes(`per_page=${githubCommentPageSize(maximumCommentCharacters)}`));
     assert.ok(requests[0]?.some((value) => value.includes('[0:12001]')));
     assert.ok(requests[1]?.some((value) => value.includes('[0:12001]')));
   });

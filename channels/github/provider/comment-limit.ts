@@ -25,8 +25,7 @@ export function validateMaximumCommentCharacters(value: unknown): number {
 /** Resolve the operator-wide comment intake boundary from live OpenClaw configuration. */
 export function resolveMaximumCommentCharacters(config: OpenClawConfig): number {
   const pluginConfig = config.plugins?.entries?.['agent-system']?.config as
-    | AgentSystemPluginConfiguration
-    | undefined;
+    AgentSystemPluginConfiguration | undefined;
   const value = pluginConfig?.githubNotifications?.maxCommentCharacters;
   if (value === undefined) return defaultMaximumCommentCharacters;
   return validateMaximumCommentCharacters(value);

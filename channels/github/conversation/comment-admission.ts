@@ -156,10 +156,7 @@ export function admitGitHubComment(input: {
   }
   const maximumCommentCharacters =
     input.maximumCommentCharacters ?? defaultMaximumCommentCharacters;
-  if (
-    input.comment.bodyTruncated ||
-    [...input.comment.body].length > maximumCommentCharacters
-  ) {
+  if (input.comment.bodyTruncated || [...input.comment.body].length > maximumCommentCharacters) {
     return { code: 'comment-body-truncated', disposition: 'rejected' };
   }
   const mentions = authorMentions(input.comment.body, input.account.login);

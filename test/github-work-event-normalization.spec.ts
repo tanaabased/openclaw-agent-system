@@ -67,10 +67,7 @@ describe('channels/github/provider/work-event-normalization', () => {
   });
 
   it('should count unicode code points consistently with the provider projection', () => {
-    const normalized = githubResponseIssueComment(
-      comment({ body: '🚀🚀🚀', bodyLength: 3 }),
-      2,
-    );
+    const normalized = githubResponseIssueComment(comment({ body: '🚀🚀🚀', bodyLength: 3 }), 2);
 
     assert.equal(normalized.body, '🚀🚀');
     assert.equal(normalized.bodyTruncated, true);
