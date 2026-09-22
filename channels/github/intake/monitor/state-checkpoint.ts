@@ -108,6 +108,12 @@ export function checkpointGitHubNotificationPoll(
       items[key] = observed;
       continue;
     }
+    const scheduling =
+      isDeepStrictEqual(latest.intake.scheduling, before?.intake?.scheduling) &&
+      !isDeepStrictEqual(observed.intake?.scheduling, before?.intake?.scheduling) &&
+      observed.intake?.scheduling !== undefined
+        ? { scheduling: observed.intake.scheduling }
+        : {};
     items[key] = {
       ...observed,
       ...(latest.disposition === 'retired' && observed.disposition !== 'retired'
@@ -115,6 +121,7 @@ export function checkpointGitHubNotificationPoll(
         : {}),
       intake: {
         ...latest.intake,
+        ...scheduling,
         ...(observed.intake?.stage === 'retired'
           ? {
               stage: 'retired',

@@ -106,6 +106,37 @@ describe('channels/github/intake/monitor/state-checkpoint', () => {
     assert.equal(polled.items['github:R_repo:14']?.intake?.scheduling?.sequence, 2);
   });
 
+  it('should checkpoint a follow-up admission without replacing concurrent scheduling', () => {
+    const before = notificationMonitorState();
+    before.items[itemKey]!.intake!.scheduling = {
+      reasonCode: 'github-notification-pull-request-delivered',
+      sequence: 1,
+      status: 'waiting',
+    };
+    const polled = structuredClone(before);
+    polled.items[itemKey]!.intake!.scheduling = {
+      reasonCode: 'github-notification-follow-up-poll',
+      sequence: 2,
+      status: 'queued',
+    };
+    polled.nextSchedulingSequence = 3;
+
+    const admitted = checkpointGitHubNotificationPoll(before, before, polled);
+    assert.deepEqual(admitted.items[itemKey]?.intake?.scheduling, {
+      reasonCode: 'github-notification-follow-up-poll',
+      sequence: 2,
+      status: 'queued',
+    });
+
+    const current = structuredClone(before);
+    current.items[itemKey]!.intake!.scheduling = { sequence: 1, status: 'active' };
+    const concurrent = checkpointGitHubNotificationPoll(current, before, polled);
+    assert.deepEqual(concurrent.items[itemKey]?.intake?.scheduling, {
+      sequence: 1,
+      status: 'active',
+    });
+  });
+
   for (const first of ['retirement', 'preparation']) {
     it(`should retain retirement and worktree facts when ${first} checkpoints first`, () => {
       const before = notificationMonitorState();
