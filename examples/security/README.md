@@ -38,7 +38,12 @@ openclaw agent \
   --session-key agent:tanaabot:agent-system-security-leia \
   --message-file "$GITHUB_WORKSPACE/examples/security/cross-agent.md" \
   --timeout 120
-grep -F 'tanaabot-security@example.invalid' "$TMPDIR/agent-system-active-agent-result.txt"
+if ! grep -F 'tanaabot-security@example.invalid' "$TMPDIR/agent-system-active-agent-result.txt"; then
+  openclaw gateway call chat.history \
+    --params '{"sessionKey":"agent:tanaabot:agent-system-security-leia","limit":10,"maxBytes":32768}' \
+    --json | jq '{messages: [.messages[] | select(.role == "assistant" or .role == "toolResult")]}'
+  exit 1
+fi
 test ! -e "$TMPDIR/agent-system-cross-agent-result.txt"
 ```
 
