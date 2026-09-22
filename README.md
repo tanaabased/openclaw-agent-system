@@ -150,9 +150,23 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-`install` is repeatable and reconciles only workspace-declared state. Agent
-System does not provision model credentials, and memory credentials remain agent
-environment bindings rather than `openclaw.json` values. See
+For workspace preparation, add an optional `setup` declaration:
+
+```yaml
+setup:
+  check: test -d repos
+  apply: mkdir -p repos
+```
+
+`install` prepares the agent's managed tools before running setup, asks for
+confirmation interactively, and proceeds without a prompt in CI or with `--yes`.
+Doctor runs setup checks without applying changes. Use checks and repeatable
+applies to make subsequent installs safe; arbitrary setup effects are not rolled
+back. See [Setup](./ADVANCED.md#setup) for inline scripts, named steps, runtime
+filters, and cloning repositories with the agent's Git/GitHub identity.
+
+Agent System does not provision model credentials, and memory credentials remain
+agent environment bindings rather than `openclaw.json` values. See
 [Advanced](./ADVANCED.md) for the complete manifest and CLI references.
 
 ## Development
