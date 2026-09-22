@@ -1,4 +1,4 @@
-Use `exec_command` exactly once to run the following literal command from the current workspace. This checked-in helper tests two synthetic identities in an isolated CI environment. Its first managed Git invocation must use Tanaabot; Agent System should reject its later attempt to select Emori by changing directories. Do not substitute another tool or create either result file by another route.
+Use `exec_command` exactly once to run the following literal command from the current workspace. This checked-in helper tests two synthetic identities in an isolated CI environment. It must also confirm that setup operator commands are rejected. Its first managed Git invocation must use Tanaabot; Agent System should reject its later attempt to select Emori by changing directories. Do not substitute another tool or create either result file by another route.
 
 ```bash
 sh ./shim-boundary-probe.sh

@@ -2,7 +2,9 @@
 
 Tests public setup installation, agent-bound GitHub identity and SSH cloning,
 check/apply/recheck, unchanged reruns, unchecked steps, Doctor, and skipping setup.
-It uses direct assertions against the packed plugin, with no Gateway or model.
+It also covers partial failures, retries, nonconvergence, timeouts, and granular
+Doctor findings. It uses direct assertions against the packed plugin, with no
+Gateway or model.
 
 ## Setup
 
@@ -65,6 +67,56 @@ printf '%s\n' "$output" | jq -e '(.warnings | any(.code == "setup-skipped")) and
 grep -F 'setup was skipped' "$TMPDIR/setup-skip.stderr"
 test "$(wc -l < checked-runs | tr -d ' ')" = 1
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
+
+# should preserve completed setup effects and stop later work after an apply failure
+mkdir -p "$TMPDIR/setup-failures"
+cp "$GITHUB_WORKSPACE/examples/setup/failures/agent.yaml" "$TMPDIR/setup-failures/agent.yaml"
+cd "$TMPDIR/setup-failures"
+touch block-later-check
+if openclaw as install --yes --json > "$TMPDIR/setup-failed.stdout" 2> "$TMPDIR/setup-failed.stderr"; then exit 1; fi
+grep -F 'setup-apply-failed' "$TMPDIR/setup-failed.stderr" | grep -F 'repair'
+test ! -s "$TMPDIR/setup-failed.stdout"
+if grep -F 'setup-private-output-sentinel' "$TMPDIR/setup-failed.stderr"; then exit 1; fi
+grep -F 'Setup Failure Fixture <setup-failures@example.invalid>' git-identity
+test "$(wc -l < preserved | tr -d ' ')" = 1
+test ! -e later
+test ! -e manual
+
+# should inspect every step after failure without applying or repairing dependent state
+cd "$TMPDIR/setup-failures"
+if openclaw as doctor --json > "$TMPDIR/setup-failed-doctor.json"; then exit 1; fi
+jq -e '.findings | any(.stepId == "preserved" and .status == "healthy") and any(.stepId == "repair" and .status == "drift") and any(.stepId == "later" and .status == "blocked") and any(.stepId == "manual" and .status == "manual") and any(.component == "tool-access" and .status == "drift")' "$TMPDIR/setup-failed-doctor.json"
+test "$(wc -l < attempts | tr -d ' ')" = 1
+test ! -e later
+test ! -e manual
+
+# should resume a partial installation unattended without repeating completed steps
+cd "$TMPDIR/setup-failures"
+touch allow-repair
+rm block-later-check
+CI=0 NONINTERACTIVE=0 openclaw as install --json < /dev/null | jq -e '.outcomes | any(.stepId == "preserved" and .status == "unchanged") and any(.stepId == "repair" and .status == "updated") and any(.stepId == "later" and .status == "updated") and any(.component == "tool-access" and .status == "updated")'
+test "$(wc -l < preserved | tr -d ' ')" = 1
+test "$(wc -l < attempts | tr -d ' ')" = 2
+test -f later
+test -f manual
+
+# should reject a successful apply whose check still reports drift
+cd "$TMPDIR/setup-failures"
+cp "$GITHUB_WORKSPACE/examples/setup/failures/nonconvergent.yaml" agent.yaml
+if openclaw as install --yes --json > "$TMPDIR/setup-nonconvergent.stdout" 2> "$TMPDIR/setup-nonconvergent.stderr"; then exit 1; fi
+grep -F 'setup-not-converged' "$TMPDIR/setup-nonconvergent.stderr" | grep -F 'nonconvergent'
+test ! -s "$TMPDIR/setup-nonconvergent.stdout"
+test -f nonconvergent-applied
+test ! -e forbidden-later
+
+# should stop installation after a direct command times out
+cd "$TMPDIR/setup-failures"
+cp "$GITHUB_WORKSPACE/examples/setup/failures/timeout.yaml" agent.yaml
+if openclaw as install --non-interactive --json > "$TMPDIR/setup-timeout.stdout" 2> "$TMPDIR/setup-timeout.stderr"; then exit 1; fi
+grep -F 'setup-apply-failed' "$TMPDIR/setup-timeout.stderr" | grep -F 'timeout'
+test ! -s "$TMPDIR/setup-timeout.stdout"
+test ! -e forbidden-later
+test ! -e timeout-survived
 ```
 
 ## Cleanup

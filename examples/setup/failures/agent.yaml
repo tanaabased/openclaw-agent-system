@@ -1,0 +1,28 @@
+schema-version: 1
+agent:
+  id: setup-failures
+  name: Setup Failure Fixture
+  email: setup-failures@example.invalid
+git: {}
+setup:
+  steps:
+    - id: preserved
+      check: [test, -f, preserved]
+      apply: |
+        git var GIT_AUTHOR_IDENT > git-identity
+        printf 'completed\n' >> preserved
+    - id: repair
+      check: [test, -f, repaired]
+      apply: |
+        printf 'attempted\n' >> attempts
+        printf 'setup-private-output-sentinel\n'
+        printf 'setup-private-output-sentinel\n' >&2
+        test -f allow-repair
+        touch repaired
+    - id: later
+      check: |
+        if test -f block-later-check; then exit 2; fi
+        test -f later
+      apply: touch later
+    - id: manual
+      apply: touch manual

@@ -6,3 +6,5 @@ agent:
   email: tanaabot-security@example.invalid
 
 git: {}
+
+setup: touch "$TMPDIR/agent-system-forbidden-setup"

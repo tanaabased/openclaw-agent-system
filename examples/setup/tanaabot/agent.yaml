@@ -26,7 +26,10 @@ github:
 setup:
   steps:
     - id: checkout
-      check: test -d repository/.git && test -f checked-runs
+      check: |
+        test -d repository/.git
+        test -f checked-runs
+        gh api user --jq .login
       apply: |
         test -z "$GH_TOKEN_TANAABOT"
         test -z "$GH_TOKEN"
