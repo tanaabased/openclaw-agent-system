@@ -9,7 +9,18 @@ import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schem
 import isPathContained from '../utils/is-path-contained.ts';
 
 const maximumOutputBytes = 65_536;
-const inheritedEnvironmentNames = ['HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TMP', 'TEMP'] as const;
+const inheritedEnvironmentNames = [
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  // Managed launchers must load the same OpenClaw profile as the installing operator.
+  'OPENCLAW_PROFILE',
+  'OPENCLAW_STATE_DIR',
+  'OPENCLAW_CONFIG_PATH',
+] as const;
 const shellArguments: Record<AgentSetupShell, readonly string[]> = {
   sh: ['-e'],
   bash: ['--noprofile', '--norc', '-e', '-o', 'pipefail'],

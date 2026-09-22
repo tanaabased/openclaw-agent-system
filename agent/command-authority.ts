@@ -18,6 +18,7 @@ const authorityIdPattern = /^[a-f0-9]{16}$/u;
 const capabilityPattern = /^[A-Za-z0-9_-]{43}$/u;
 const agentIdPattern = /^[a-z0-9][a-z0-9-]*$/u;
 const maximumMessageBytes = 8_192;
+const maximumCommandMessageBytes = 1_048_576;
 const maximumLeases = 1_024;
 const defaultLeaseLifetimeMs = 30 * 60 * 1_000;
 const defaultSocketTimeoutMs = 2_000;
@@ -32,6 +33,19 @@ interface CapabilityLease {
 interface AuthorityRequest {
   capability: string;
   cwd: string;
+  command?: AgentBoundCommand;
+}
+
+export interface AgentBoundCommand {
+  command: string;
+  argv: string[];
+  stdin?: string;
+}
+
+export interface AgentBoundCommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
 }
 
 export interface CodexCommandContext {
@@ -46,6 +60,7 @@ type AuthorityResponse =
       agentId: string;
       status: 'allowed';
       workingDirectory: string;
+      executesCommands?: true;
     }
   | { status: 'denied' };
 
@@ -53,6 +68,7 @@ export interface AgentCommandBinding {
   admittedWorkingDirectories: readonly string[];
   agentId: string;
   workingDirectory: string;
+  executeCommand?(command: AgentBoundCommand): Promise<AgentBoundCommandResult>;
 }
 
 export interface AgentCommandAuthorityDependencies {
@@ -63,6 +79,12 @@ export interface AgentCommandAuthorityDependencies {
   resolveCodexAgentId?(context: CodexCommandContext): Promise<string | undefined>;
   rootDir?: string;
   socketTimeoutMs?: number;
+  /** Only an explicit setup owner supplies execution; Gateway authorities remain binding-only. */
+  executeCommand?(
+    command: AgentBoundCommand,
+    binding: AgentCommandBinding,
+    signal: AbortSignal,
+  ): Promise<AgentBoundCommandResult>;
 }
 
 /** Mark one Gateway command descendant as explicitly unbound when authority is unavailable. */
@@ -87,7 +109,35 @@ function isRequest(value: unknown): value is AuthorityRequest {
     request.cwd.length > 0 &&
     request.cwd.length <= 4_096 &&
     !request.cwd.includes('\0') &&
-    isAbsolute(request.cwd)
+    isAbsolute(request.cwd) &&
+    (request.command === undefined || isCommand(request.command))
+  );
+}
+
+function isCommand(value: unknown): value is AgentBoundCommand {
+  if (!value || typeof value !== 'object') return false;
+  const command = value as Partial<AgentBoundCommand>;
+  return (
+    typeof command.command === 'string' &&
+    /^[a-z][a-z0-9-]{0,63}$/u.test(command.command) &&
+    Array.isArray(command.argv) &&
+    command.argv.length <= 4_096 &&
+    command.argv.every((argument) => typeof argument === 'string' && !argument.includes('\0')) &&
+    (command.stdin === undefined ||
+      (typeof command.stdin === 'string' && Buffer.byteLength(command.stdin) <= 65_536))
+  );
+}
+
+function isCommandResult(value: unknown): value is AgentBoundCommandResult {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Partial<AgentBoundCommandResult>;
+  return (
+    (result.exitCode === null ||
+      (Number.isInteger(result.exitCode) &&
+        Number(result.exitCode) >= 0 &&
+        Number(result.exitCode) <= 255)) &&
+    typeof result.stdout === 'string' &&
+    typeof result.stderr === 'string'
   );
 }
 
@@ -109,7 +159,10 @@ function isAllowedResponse(
   );
 }
 
-async function readSocketMessage(socket: Socket): Promise<string> {
+async function readSocketMessage(
+  socket: Socket,
+  maximumBytes = maximumMessageBytes,
+): Promise<string> {
   return new Promise<string>((resolveMessage, rejectMessage) => {
     let source = '';
     let settled = false;
@@ -129,7 +182,7 @@ async function readSocketMessage(socket: Socket): Promise<string> {
       rejectOnce(new Error('The Agent System command-authority connection closed early.'));
     const onData = (chunk: string | Buffer) => {
       source += String(chunk);
-      if (Buffer.byteLength(source) > maximumMessageBytes) {
+      if (Buffer.byteLength(source) > maximumBytes) {
         rejectOnce(new Error('The Agent System command-authority message is too large.'));
         return;
       }
@@ -160,6 +213,11 @@ export default class AgentCommandAuthority {
   readonly #resolveCodexAgentId?: (context: CodexCommandContext) => Promise<string | undefined>;
   readonly #rootDir: string;
   readonly #socketTimeoutMs: number;
+  readonly #executeCommand?: AgentCommandAuthorityDependencies['executeCommand'];
+  readonly #executions = new Map<
+    Socket,
+    { controller: AbortController; completion: Promise<unknown> }
+  >();
   #authorityId?: string;
   #server?: Server;
   #socketPath?: string;
@@ -172,6 +230,7 @@ export default class AgentCommandAuthority {
     this.#resolveCodexAgentId = dependencies.resolveCodexAgentId;
     this.#rootDir = resolve(dependencies.rootDir ?? defaultAuthorityRoot());
     this.#socketTimeoutMs = dependencies.socketTimeoutMs ?? defaultSocketTimeoutMs;
+    this.#executeCommand = dependencies.executeCommand;
   }
 
   async start(): Promise<void> {
@@ -216,6 +275,12 @@ export default class AgentCommandAuthority {
     this.#socketPath = undefined;
     this.#authorityId = undefined;
     this.#leases.clear();
+    const executions = [...this.#executions.entries()];
+    for (const [socket, execution] of executions) {
+      execution.controller.abort();
+      socket.destroy();
+    }
+    await Promise.allSettled(executions.map(([, execution]) => execution.completion));
     if (server) {
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
     }
@@ -273,6 +338,12 @@ export default class AgentCommandAuthority {
         admittedWorkingDirectories: response.admittedWorkingDirectories,
         agentId: response.agentId,
         workingDirectory: response.workingDirectory,
+        ...(response.executesCommands === true
+          ? {
+              executeCommand: (command: AgentBoundCommand) =>
+                this.#runCommand(socketPath, capability, cwd, command),
+            }
+          : {}),
       };
     } catch (error) {
       if (error instanceof AgentSystemToolError) throw error;
@@ -282,7 +353,38 @@ export default class AgentCommandAuthority {
     }
   }
 
+  async #runCommand(
+    socketPath: string,
+    capability: string,
+    cwd: string,
+    command: AgentBoundCommand,
+  ): Promise<AgentBoundCommandResult> {
+    const request = JSON.stringify({ capability, cwd, command });
+    if (!isCommand(command) || Buffer.byteLength(request) > maximumCommandMessageBytes)
+      throw this.#unresolved();
+    const socket = createConnection(socketPath);
+    // The issuing setup scope owns the shorter execution deadline and closes this socket on expiry.
+    socket.setTimeout(3_601_000, () => socket.destroy());
+    try {
+      await once(socket, 'connect');
+      socket.write(`${request}\n`);
+      const response: unknown = JSON.parse(
+        await readSocketMessage(socket, maximumCommandMessageBytes),
+      );
+      if (!isCommandResult(response)) throw this.#unresolved();
+      return response;
+    } catch {
+      throw new AgentSystemToolError(
+        'execution_failed',
+        'The bound Agent System command could not complete.',
+      );
+    } finally {
+      socket.destroy();
+    }
+  }
+
   #accept(socket: Socket): void {
+    socket.on('error', () => socket.destroy());
     socket.setTimeout(this.#socketTimeoutMs, () => socket.destroy());
     void this.#respond(socket).catch(() => {
       if (!socket.destroyed) socket.end(`${JSON.stringify({ status: 'denied' })}\n`);
@@ -290,7 +392,10 @@ export default class AgentCommandAuthority {
   }
 
   async #respond(socket: Socket): Promise<void> {
-    const source = await readSocketMessage(socket);
+    const source = await readSocketMessage(
+      socket,
+      this.#executeCommand ? maximumCommandMessageBytes : maximumMessageBytes,
+    );
     let parsed: unknown;
     try {
       parsed = JSON.parse(source);
@@ -300,7 +405,47 @@ export default class AgentCommandAuthority {
     const response = isRequest(parsed)
       ? await this.#authorize(parsed)
       : ({ status: 'denied' } as const);
-    socket.end(`${JSON.stringify(response)}\n`);
+    if (isRequest(parsed) && parsed.command && response.status === 'allowed') {
+      if (
+        !this.#executeCommand ||
+        !this.#server ||
+        socket.destroyed ||
+        this.#executions.size >= 16
+      ) {
+        socket.end(`${JSON.stringify({ status: 'denied' })}\n`);
+        return;
+      }
+      socket.setTimeout(0);
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      socket.once('close', abort);
+      const completion = Promise.resolve().then(() =>
+        this.#executeCommand!(
+          parsed.command!,
+          {
+            agentId: response.agentId,
+            workingDirectory: response.workingDirectory,
+            admittedWorkingDirectories: response.admittedWorkingDirectories,
+          },
+          controller.signal,
+        ),
+      );
+      this.#executions.set(socket, { controller, completion });
+      try {
+        const result = await completion;
+        const serialized = JSON.stringify(result);
+        if (!isCommandResult(result) || Buffer.byteLength(serialized) > maximumCommandMessageBytes)
+          throw this.#unresolved();
+        socket.end(`${serialized}\n`);
+      } finally {
+        socket.off('close', abort);
+        this.#executions.delete(socket);
+      }
+      return;
+    }
+    socket.end(
+      `${JSON.stringify(response.status === 'allowed' && this.#executeCommand ? { ...response, executesCommands: true } : response)}\n`,
+    );
   }
 
   async #authorize(request: AuthorityRequest): Promise<AuthorityResponse> {

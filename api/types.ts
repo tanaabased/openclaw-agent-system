@@ -276,6 +276,7 @@ export interface RegisteredAgentSystemTool {
     argv: string[],
     scope: AgentSystemToolScope,
     stdin?: string,
+    signal?: AbortSignal,
   ): Promise<AgentSystemToolExecutionResult>;
   registerTools(
     api: Pick<OpenClawPluginApi, 'registerTool'>,

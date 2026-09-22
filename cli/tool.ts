@@ -48,6 +48,17 @@ export default async function runAgentSystemTool(
         'An active agent command binding may not select another agent.',
       );
     }
+    if (binding?.executeCommand) {
+      const result = await binding.executeCommand({
+        command: options.command,
+        argv: options.argv,
+        ...(stdin === undefined ? {} : { stdin }),
+      });
+      if (result.stdout) options.output.writeStdout(result.stdout);
+      if (result.stderr) options.output.writeStderr(result.stderr);
+      if (result.exitCode !== 0) options.setExitCode(result.exitCode ?? 1);
+      return;
+    }
     const result = await options.toolRegistry.invoke(
       options.command,
       options.toolRuntime,

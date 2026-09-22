@@ -13,7 +13,11 @@ import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
 import type GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
-import type AgentCommandAuthority from '../agent/command-authority.ts';
+import {
+  type default as AgentCommandAuthority,
+  agentCommandAuthorityEnvironmentName,
+  agentCommandCapabilityEnvironmentName,
+} from '../agent/command-authority.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentInstallService from '../agent/install-service.ts';
@@ -73,6 +77,22 @@ export default function registerAgentSystemCli(
   const completeOneShot = options.completeOneShot ?? completeCliOneShot;
   const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
+  const allowOperatorCommand = async () => {
+    if (
+      !process.env[agentCommandAuthorityEnvironmentName] &&
+      !process.env[agentCommandCapabilityEnvironmentName]
+    )
+      return true;
+    try {
+      const binding = await commandAuthority?.resolve(process.env, cwd());
+      if (binding && !binding.executeCommand) return true;
+    } catch {
+      // Invalid authority must not downgrade a setup descendant to an operator.
+    }
+    output.writeStderr('Agent System operator commands are unavailable to setup descendants.\n');
+    setExitCode(1);
+    return false;
+  };
   const agentSystem = program
     .command('agent-system')
     .alias('as')
@@ -121,6 +141,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = doctor.opts();
       const agentId = commandOptions.agent;
       await doctorAgentSystem({
@@ -189,6 +210,7 @@ export default function registerAgentSystemCli(
       .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
       .option('--json', 'Write structured JSON output.')
       .action(async () => {
+        if (!(await allowOperatorCommand())) return;
         const agentId = command.opts().agent;
         await credentialsCache({
           action,
@@ -210,6 +232,7 @@ export default function registerAgentSystemCli(
     .option('--from-env', 'Read OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
     .option('--stdin', 'Read the credential from standard input.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsSet.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -235,6 +258,7 @@ export default function registerAgentSystemCli(
     .option('--store <id>', 'Validate one exact credential store.')
     .option('--from-env', 'Validate OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsValidate.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -257,6 +281,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
     .option('--store <id>', 'Remove from one exact credential store.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsUnset.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -277,6 +302,7 @@ export default function registerAgentSystemCli(
     .description('Install the workspace agent and reconcile configured lifecycle state.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
+      if (!(await allowOperatorCommand())) return;
       await installAgentSystem({
         installService: options.installService,
         json: install.opts().json === true,

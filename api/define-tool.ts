@@ -107,8 +107,8 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
     ...(definition.guidance ? { guidance: definition.guidance } : {}),
     id: definition.id,
     isConfigured: (manifest) => definition.configuration.read(manifest) !== undefined,
-    invoke(runtime, argv, scope, stdin) {
-      return execute(runtime, definition.tool.inputFromCommand(argv, stdin), scope);
+    invoke(runtime, argv, scope, stdin, signal) {
+      return execute(runtime, definition.tool.inputFromCommand(argv, stdin), scope, signal);
     },
     registerTools(api, runtime) {
       api.registerTool(factory(runtime), { name: definition.tool.name });
