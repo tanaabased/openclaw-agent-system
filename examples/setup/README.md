@@ -77,7 +77,7 @@ if openclaw as install --yes --json > "$TMPDIR/setup-failed.stdout" 2> "$TMPDIR/
 grep -F 'setup-apply-failed' "$TMPDIR/setup-failed.stderr" | grep -F 'repair'
 test ! -s "$TMPDIR/setup-failed.stdout"
 if grep -F 'setup-private-output-sentinel' "$TMPDIR/setup-failed.stderr"; then exit 1; fi
-grep -F 'Setup Failure Fixture <setup-failures@example.invalid>' git-identity
+grep -F 'Setup Test Agent <setup-failures@example.invalid>' git-identity
 test "$(wc -l < preserved | tr -d ' ')" = 1
 test ! -e later
 test ! -e manual
@@ -103,8 +103,14 @@ test -f manual
 # should reject a successful apply whose check still reports drift
 cd "$TMPDIR/setup-failures"
 cp "$GITHUB_WORKSPACE/examples/setup/failures/nonconvergent.yaml" agent.yaml
-if openclaw as install --yes --json > "$TMPDIR/setup-nonconvergent.stdout" 2> "$TMPDIR/setup-nonconvergent.stderr"; then exit 1; fi
-grep -F 'setup-not-converged' "$TMPDIR/setup-nonconvergent.stderr" | grep -F 'nonconvergent'
+if openclaw as install --yes --json > "$TMPDIR/setup-nonconvergent.stdout" 2> "$TMPDIR/setup-nonconvergent.stderr"; then
+  cat "$TMPDIR/setup-nonconvergent.stdout" "$TMPDIR/setup-nonconvergent.stderr" >&2
+  exit 1
+fi
+if ! grep -F 'setup-not-converged' "$TMPDIR/setup-nonconvergent.stderr" | grep -F 'nonconvergent'; then
+  cat "$TMPDIR/setup-nonconvergent.stdout" "$TMPDIR/setup-nonconvergent.stderr" >&2
+  exit 1
+fi
 test ! -s "$TMPDIR/setup-nonconvergent.stdout"
 test -f nonconvergent-applied
 test ! -e forbidden-later
@@ -112,8 +118,14 @@ test ! -e forbidden-later
 # should stop installation after a direct command times out
 cd "$TMPDIR/setup-failures"
 cp "$GITHUB_WORKSPACE/examples/setup/failures/timeout.yaml" agent.yaml
-if openclaw as install --non-interactive --json > "$TMPDIR/setup-timeout.stdout" 2> "$TMPDIR/setup-timeout.stderr"; then exit 1; fi
-grep -F 'setup-apply-failed' "$TMPDIR/setup-timeout.stderr" | grep -F 'timeout'
+if openclaw as install --non-interactive --json > "$TMPDIR/setup-timeout.stdout" 2> "$TMPDIR/setup-timeout.stderr"; then
+  cat "$TMPDIR/setup-timeout.stdout" "$TMPDIR/setup-timeout.stderr" >&2
+  exit 1
+fi
+if ! grep -F 'setup-apply-failed' "$TMPDIR/setup-timeout.stderr" | grep -F 'timeout'; then
+  cat "$TMPDIR/setup-timeout.stdout" "$TMPDIR/setup-timeout.stderr" >&2
+  exit 1
+fi
 test ! -s "$TMPDIR/setup-timeout.stdout"
 test ! -e forbidden-later
 test ! -e timeout-survived
