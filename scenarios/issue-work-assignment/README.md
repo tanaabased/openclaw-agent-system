@@ -307,13 +307,6 @@ cmp "$TMPDIR/independent-conversation-before.json" "$channel_state/github-notifi
 ```
 
 ```bash
-# should finish assignment planning despite unavailable optional cli session setup
-for issue_number in "$(cat "$TMPDIR/approved-issue-number")" "$(cat "$TMPDIR/independent-issue-number")"; do
-  openclaw gateway call sessions.list --params '{"agentId":"notification-data"}' --json | jq -e --arg suffix ":$issue_number" '[.sessions[] | select(.key | endswith($suffix))] | length == 1 and .[0].color == null and .[0].category == null'
-done
-```
-
-```bash
 # should expose bounded evidence for the selected notification model
 openclaw-notification-setup evidence \
   --model "$NOTIFICATION_MODEL" \

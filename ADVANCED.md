@@ -22,7 +22,7 @@ while the channel ID uses hyphens.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Unreleased           | 2026.9.2         | 2026.9.4           |
+| Unreleased           | 2026.9.2         | 2026.9.5           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
 
