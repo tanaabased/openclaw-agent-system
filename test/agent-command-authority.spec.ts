@@ -20,6 +20,7 @@ describe('agent/command-authority', () => {
   let openClawStateDir: string;
   let authority: AgentCommandAuthority;
   let now: number;
+  let loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }>;
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/agent-system-command-authority-'));
@@ -40,7 +41,7 @@ describe('agent/command-authority', () => {
       ].map((path) => mkdir(path, { recursive: true })),
     );
     now = 10_000;
-    const loaded: AgentManifestLoadResult = {
+    loaded = {
       status: 'loaded',
       scope: { agentId: 'data', workspaceDir },
       path: join(workspaceDir, '.agent-system', 'agent.yaml'),
@@ -201,5 +202,84 @@ describe('agent/command-authority', () => {
 
   it('should leave ordinary operator commands unbound', async () => {
     assert.equal(await authority.resolve({}, workspaceDir), undefined);
+  });
+
+  it('should revalidate setup execution capabilities and reject oversized requests before dispatch', async () => {
+    await authority.stop();
+    let calls = 0;
+    authority = new AgentCommandAuthority({
+      manifestService: {
+        async loadForAgentId() {
+          return loaded;
+        },
+      },
+      rootDir: join(root, 'authority'),
+      now: () => now,
+      leaseLifetimeMs: 1_000,
+      async executeCommand(command, binding) {
+        calls++;
+        assert.equal(binding.agentId, 'data');
+        assert.equal(command.command, 'gh');
+        return { exitCode: 0, stdout: 'data', stderr: '' };
+      },
+    });
+    await authority.start();
+    const environment = authority.issue('data');
+    const binding = await authority.resolve(environment, workspaceDir);
+    assert.ok(binding?.executeCommand);
+    assert.deepEqual(await binding.executeCommand({ command: 'gh', argv: ['api', 'user'] }), {
+      exitCode: 0,
+      stdout: 'data',
+      stderr: '',
+    });
+    await assert.rejects(binding.executeCommand({ command: 'gh', argv: ['x'.repeat(1_048_576)] }));
+    await assert.rejects(
+      binding.executeCommand({ command: 'gh', argv: [], stdin: 'x'.repeat(65_537) }),
+    );
+    await assert.rejects(
+      authority.resolve(
+        { ...environment, [agentCommandCapabilityEnvironmentName]: 'x'.repeat(43) },
+        workspaceDir,
+      ),
+    );
+    now += 1_001;
+    await assert.rejects(binding.executeCommand({ command: 'gh', argv: [] }));
+    assert.equal(calls, 1);
+  });
+
+  it('should abort and settle in-flight tool execution before authority disposal completes', async () => {
+    await authority.stop();
+    const started = Promise.withResolvers<void>();
+    let disposed = false;
+    authority = new AgentCommandAuthority({
+      manifestService: {
+        async loadForAgentId() {
+          return loaded;
+        },
+      },
+      rootDir: join(root, 'authority'),
+      async executeCommand(_command, _binding, signal) {
+        started.resolve();
+        await new Promise<void>((resolveAbort) =>
+          signal.addEventListener('abort', () => resolveAbort(), { once: true }),
+        );
+        disposed = true;
+        return { exitCode: null, stdout: '', stderr: '' };
+      },
+    });
+    await authority.start();
+    const binding = await authority.resolve(authority.issue('data'), workspaceDir);
+    assert.ok(binding?.executeCommand);
+    const execution = assert.rejects(binding.executeCommand({ command: 'gh', argv: [] }));
+    await started.promise;
+    await authority.stop();
+    await execution;
+    assert.equal(disposed, true);
+  });
+
+  it('should not expose tool execution on gateway binding-only authorities', async () => {
+    const binding = await authority.resolve(authority.issue('data'), workspaceDir);
+    assert.ok(binding);
+    assert.equal(binding.executeCommand, undefined);
   });
 });

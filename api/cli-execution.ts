@@ -128,7 +128,13 @@ export default async function executeAgentSystemCliTool<
     }
   }
 
-  await options.definition.runner.prepare?.(resolvedConfiguration, { agentId, workspaceDir });
+  await options.definition.runner.prepare?.(resolvedConfiguration, {
+    agentId,
+    workspaceDir,
+    ...(options.scope.configurationMode
+      ? { configurationMode: options.scope.configurationMode }
+      : {}),
+  });
   const childEnvironment: NodeJS.ProcessEnv = {};
   for (const name of baselineEnvironmentNames) {
     const value = options.baseEnvironment[name];

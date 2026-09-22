@@ -95,6 +95,30 @@ describe('agent/command-security', () => {
     assert.equal(logs.warn[0]?.includes('secret-marker'), false);
   });
 
+  it('should block install and doctor aliases before agent execution without logging commands', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const command of [
+        'install --yes',
+        'install --non-interactive',
+        'install --skip-setup',
+        'doctor',
+        'status',
+      ]) {
+        for (const toolName of ['exec', 'exec_command']) {
+          const { handler, logs } = setup();
+          const text = `CI=1 openclaw ${alias} ${command} --json private-marker`;
+          const result = await handler(
+            { toolName, params: toolName === 'exec' ? { command: text } : { cmd: text } } as never,
+            context() as never,
+          );
+          assert.equal((result as { block?: boolean }).block, true);
+          assert.match(logs.error.join(''), /agent-setup-command-blocked/u);
+          assert.doesNotMatch(logs.error.join(''), /private-marker/u);
+        }
+      }
+    }
+  });
+
   it('should allow a managed shim to use the injected active-agent authority', async () => {
     const { handler, logs } = setup();
     const result = await handler(

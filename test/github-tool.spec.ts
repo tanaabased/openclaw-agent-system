@@ -58,6 +58,9 @@ function createTool(reconciliations: string[] = []) {
   return createGitHubTool({
     configStore: {
       configDirectory: (agentId) => `/private/${agentId}/tools/gh`,
+      async inspect(agentId) {
+        return { configDir: `/private/${agentId}/tools/gh`, status: 'ready' };
+      },
       async reconcile(agentId) {
         reconciliations.push(agentId);
         return { configDir: `/private/${agentId}/tools/gh`, status: 'unchanged' };

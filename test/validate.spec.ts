@@ -69,6 +69,42 @@ describe('cli/validate', () => {
     ]);
   });
 
+  it('should report setup metadata without serializing command text', async () => {
+    const { output, diagnostics, run } = createHarness({
+      json: true,
+      workspace: {
+        ...validResult,
+        manifest: {
+          ...validResult.manifest,
+          setup: {
+            steps: [
+              {
+                id: 'default',
+                apply: {
+                  kind: 'shell',
+                  shell: 'sh',
+                  script: 'echo private-command',
+                  timeoutSeconds: 300,
+                },
+              },
+            ],
+          },
+        },
+        validationChecks: [
+          {
+            code: 'setup-declaration-valid',
+            component: 'setup',
+            status: 'valid',
+            message: 'Setup declaration with 1 ordered steps',
+          },
+        ],
+      },
+    });
+    await run();
+    assert.equal(JSON.parse(output.join('')).checks[1].component, 'setup');
+    assert.doesNotMatch(output.join('') + diagnostics.join(''), /private-command/u);
+  });
+
   it('should validate an explicit agent workspace', async () => {
     const { calls, run } = createHarness({ agentId: 'tanaabot' });
 

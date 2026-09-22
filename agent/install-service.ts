@@ -1,10 +1,10 @@
-import type { AgentManifest } from '../manifest/types.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
 } from '../environment/op-requirements.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
 import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import type {
+  AgentSystemLifecycleExecutionContext,
   AgentSystemLifecycleOutcome,
   AgentSystemLifecycleWarning,
 } from '../core/lifecycle-registry.ts';
@@ -21,9 +21,8 @@ export interface AgentInstallServiceDependencies {
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
 
-export interface AgentInstallInput {
-  manifest: AgentManifest;
-  workspaceDir: string;
+export interface AgentInstallInput extends AgentSystemLifecycleExecutionContext {
+  skipSetup?: boolean;
 }
 
 export class AgentInstallError extends Error {
@@ -60,11 +59,24 @@ export default class AgentInstallService {
       }
     }
 
-    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input);
+    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input, {
+      skipSetup: input.skipSetup === true,
+    });
     return {
       agentId: input.manifest.agent.id,
       outcomes: lifecycle.outcomes,
-      warnings: lifecycle.warnings,
+      warnings: [
+        ...(input.skipSetup && input.manifest.setup
+          ? [
+              {
+                code: 'setup-skipped',
+                component: 'setup',
+                message: 'Setup was skipped; declared steps have not been verified or applied.',
+              },
+            ]
+          : []),
+        ...lifecycle.warnings,
+      ],
       workspaceDir: input.workspaceDir,
     };
   }

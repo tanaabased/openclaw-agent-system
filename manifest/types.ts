@@ -2,6 +2,7 @@ import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from './github-schema.ts';
+import type { AgentSetupConfiguration } from './setup-schema.ts';
 import type { AgentModelsConfiguration } from './models-schema.ts';
 import type { AgentMemoryConfiguration } from './memory-schema.ts';
 
@@ -26,6 +27,7 @@ export interface AgentManifest {
   github?: GitHubManifestConfiguration;
   memory?: AgentMemoryConfiguration;
   models?: AgentModelsConfiguration;
+  setup?: AgentSetupConfiguration;
 }
 
 export interface ManifestDiagnostic {

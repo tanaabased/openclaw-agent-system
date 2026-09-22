@@ -10,7 +10,7 @@ const manifest: AgentManifest = {
   agent: { id: 'data' },
   github: {},
 };
-const context = { manifest, workspaceDir: '/workspace' };
+const context = { manifest, workspaceDir: '/workspace', runtime: 'openclaw' as const };
 
 describe('core/lifecycle-registry', () => {
   it('should collect configured validation, inspection, and reconciliation results', async () => {

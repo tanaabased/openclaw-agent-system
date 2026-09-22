@@ -8,7 +8,7 @@ import type { AgentEnvironmentLoadResult } from '../environment/service.ts';
 import type { GitHubNotificationWaitInput } from '../channels/github/intake/monitor/status-service.ts';
 import { createCliStyles } from '../cli/output.ts';
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
-import registerAgentSystemCli from '../cli/register.ts';
+import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../cli/register.ts';
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import OpCache from '../environment/op-cache.ts';
@@ -42,6 +42,9 @@ function createProgram(
   input?: Readable,
   dependencies: {
     manifestResult?: AgentManifestLoadResult;
+    environment?: Readonly<NodeJS.ProcessEnv>;
+    commandAuthority?: RegisterAgentSystemCliOptions['commandAuthority'];
+    setupPrompt?: RegisterAgentSystemCliOptions['setupPrompt'];
     notificationWaitError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
@@ -90,6 +93,9 @@ function createProgram(
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    environment: dependencies.environment ?? {},
+    ...(dependencies.commandAuthority ? { commandAuthority: dependencies.commandAuthority } : {}),
+    ...(dependencies.setupPrompt ? { setupPrompt: dependencies.setupPrompt } : {}),
     cacheGatewayRequest: dependencies.cacheGatewayRequest,
     completeOneShot: async (code) => {
       calls.oneShotCompletion.push(code);
@@ -135,6 +141,7 @@ function createProgram(
     },
     doctorService: {
       async inspect(input) {
+        assert.equal(input.runtime, 'openclaw');
         calls.doctor.push({
           agentId: input.manifest.agent.id,
           workspaceDir: input.workspaceDir,
@@ -740,6 +747,79 @@ describe('cli/register', () => {
     assert.deepEqual(calls.agent, ['tanaabot']);
   });
 
+  it('should expose value-less setup switches and reject attached boolean values', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const flag of ['--yes', '--non-interactive', '--skip-setup']) {
+        const { program, calls } = createProgram();
+        await program.parseAsync(['node', 'openclaw', alias, 'install', flag]);
+        assert.equal(calls.install.length, 1);
+        for (const value of ['true', 'false']) {
+          const rejected = createProgram();
+          rejected.program.configureOutput({ writeErr() {} });
+          await assert.rejects(
+            rejected.program.parseAsync(['node', 'openclaw', alias, 'install', `${flag}=${value}`]),
+          );
+          assert.deepEqual(rejected.calls.install, []);
+          assert.deepEqual(rejected.calls.workspace, []);
+        }
+      }
+    }
+  });
+
+  it('should deny setup operator routes for native and codex descendants before manifest loading', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      for (const args of [
+        ['install', '--yes'],
+        ['install', '--non-interactive'],
+        ['install', '--skip-setup'],
+        ['doctor'],
+        ['status', '--agent', 'tanaabot'],
+      ]) {
+        for (const environment of [
+          {
+            AGENT_SYSTEM_EXEC_AUTHORITY: 'authority',
+            AGENT_SYSTEM_EXEC_CAPABILITY: 'capability',
+            CI: '1',
+          },
+          {
+            CODEX_THREAD_ID: 'thread',
+            CODEX_HOME: '/agent/codex-home',
+            OPENCLAW_STATE_DIR: '/state',
+          },
+        ]) {
+          const test = createProgram(undefined, {
+            environment,
+            commandAuthority: {
+              async resolve() {
+                return {
+                  agentId: 'tanaabot',
+                  workingDirectory: '/workspace',
+                  admittedWorkingDirectories: ['/workspace'],
+                };
+              },
+            },
+          });
+          await test.program.parseAsync(['node', 'openclaw', alias, ...args]);
+          assert.deepEqual(test.calls.install, []);
+          assert.deepEqual(test.calls.doctor, []);
+          assert.deepEqual(test.calls.workspace, []);
+          assert.match(test.diagnostics.join(''), /operator commands/u);
+        }
+      }
+    }
+    const invalid = createProgram(undefined, {
+      environment: { AGENT_SYSTEM_EXEC_CAPABILITY: 'invalid' },
+      commandAuthority: {
+        async resolve() {
+          throw new Error('private authority failure');
+        },
+      },
+    });
+    await invalid.program.parseAsync(['node', 'openclaw', 'as', 'install', '--yes']);
+    assert.deepEqual(invalid.calls.install, []);
+    assert.doesNotMatch(invalid.diagnostics.join(''), /private authority failure/u);
+  });
+
   it('should delegate installation for the current workspace manifest', async () => {
     const { calls, program } = createProgram();
 
@@ -747,7 +827,7 @@ describe('cli/register', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(calls.install, [
-      { manifest: validResult.manifest, workspaceDir: '/workspace' },
+      { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
   });
 
@@ -772,6 +852,35 @@ describe('cli/register', () => {
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'install', '--json']);
 
     assert.equal(JSON.parse(output.join('')).agentId, 'tanaabot');
+  });
+
+  it('should preserve non-applicable setup in human and json results', async () => {
+    const skipped = {
+      component: 'setup',
+      stepId: 'codex-only',
+      code: 'setup-not-applicable',
+      status: 'skipped' as const,
+      message: 'Setup step codex-only does not apply to openclaw.',
+    };
+    for (const command of ['doctor', 'install']) {
+      for (const json of [false, true]) {
+        const { output, diagnostics, program } = createProgram(undefined, {
+          doctorFindings: [skipped],
+          installOutcomes: [skipped],
+          environment: { CODEX_HOME: '/codex', AGENT_SYSTEM_RUNTIME: 'codex' },
+        });
+        await program.parseAsync(['node', 'openclaw', 'as', command, ...(json ? ['--json'] : [])]);
+        assert.deepEqual(diagnostics, []);
+        if (json) {
+          const result = JSON.parse(output.join(''));
+          assert.deepEqual(command === 'doctor' ? result.findings : result.outcomes, [skipped]);
+        } else {
+          assert.match(output.join(''), /skipped/u);
+          assert.match(output.join(''), /codex-only/u);
+          assert.match(output.join(''), /does not apply/u);
+        }
+      }
+    }
   });
 
   it('should delegate credential storage from the process environment', async () => {

@@ -1,3 +1,4 @@
+import confirmSetupInstall, { type SetupConsentOptions } from './setup-consent.ts';
 import {
   AgentInstallError,
   type default as AgentInstallService,
@@ -22,7 +23,10 @@ import {
   formatManifestFailure,
 } from '../core/logger.ts';
 
-export interface InstallAgentSystemOptions {
+export interface InstallAgentSystemOptions extends Pick<
+  SetupConsentOptions,
+  'yes' | 'nonInteractive' | 'skipSetup' | 'environment' | 'input' | 'prompt'
+> {
   installService: Pick<AgentInstallService, 'install'>;
   json: boolean;
   manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
@@ -67,21 +71,40 @@ export default async function installAgentSystem(
     options.output,
     formatManifestDiagnostics(result).map(({ message }) => message),
   );
+  if (
+    !(await confirmSetupInstall({
+      ...options,
+      runtime: 'openclaw',
+      setup: result.manifest.setup,
+      workspaceDir: result.scope.workspaceDir,
+    }))
+  ) {
+    writeCliError(
+      options.output,
+      'install: installation cancelled before making changes. code=setup-declined',
+    );
+    options.setExitCode(1);
+    return;
+  }
   try {
     const installed = await options.installService.install({
+      runtime: 'openclaw',
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
+      ...(options.skipSetup ? { skipSetup: true } : {}),
     });
     if (options.json) {
       writeCliDiagnostics(
         options.output,
-        installed.warnings.map((warning) =>
-          formatDiagnostic({
-            code: warning.code,
-            component: warning.component,
-            message: warning.message,
-          }),
-        ),
+        installed.warnings
+          .filter(({ code }) => code !== 'setup-skipped')
+          .map((warning) =>
+            formatDiagnostic({
+              code: warning.code,
+              component: warning.component,
+              message: warning.message,
+            }),
+          ),
       );
       writeCliJson(options.output, installed);
     } else {
@@ -94,7 +117,7 @@ export default async function installAgentSystem(
       );
       writeCliNotices(
         options.output,
-        installNotices(installed.warnings),
+        installNotices(installed.warnings.filter(({ code }) => code !== 'setup-skipped')),
         options.styles,
         options.terminalColumns,
       );

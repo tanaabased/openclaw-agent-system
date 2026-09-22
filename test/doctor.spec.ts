@@ -62,7 +62,9 @@ describe('cli/doctor', () => {
         terminalColumns: 60,
         workspaceDir: '/workspace',
       });
-      assert.deepEqual(calls, [{ manifest: manifest.manifest, workspaceDir: '/workspace' }]);
+      assert.deepEqual(calls, [
+        { manifest: manifest.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
+      ]);
       assert.deepEqual(exitCodes, [1]);
       assert.equal(diagnostics.length, 1);
       assert.ok(diagnostics[0]!.includes('code=manifest-warning'));

@@ -1,0 +1,11 @@
+schema-version: 1
+agent:
+  id: setup-failures
+  name: Setup Test Agent
+setup:
+  steps:
+    - id: nonconvergent
+      check: [test, -f, never-created]
+      apply: touch nonconvergent-applied
+    - id: forbidden
+      apply: touch forbidden-later

@@ -13,7 +13,11 @@ import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
 import type GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
-import type AgentCommandAuthority from '../agent/command-authority.ts';
+import {
+  type default as AgentCommandAuthority,
+  agentCommandAuthorityEnvironmentName,
+  agentCommandCapabilityEnvironmentName,
+} from '../agent/command-authority.ts';
 import type AgentDoctorService from '../agent/doctor-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentInstallService from '../agent/install-service.ts';
@@ -47,6 +51,8 @@ export interface RegisterAgentSystemCliOptions {
   environmentService: Pick<AgentEnvironmentService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   installService: Pick<AgentInstallService, 'install'>;
   input?: Readable;
+  environment?: Readonly<NodeJS.ProcessEnv>;
+  setupPrompt?: () => Promise<boolean | symbol>;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
@@ -73,6 +79,26 @@ export default function registerAgentSystemCli(
   const completeOneShot = options.completeOneShot ?? completeCliOneShot;
   const output = options.output ?? defaultCliOutput;
   const setExitCode = options.setExitCode ?? ((code: number) => (process.exitCode = code));
+  const environment = options.environment ?? process.env;
+  const allowOperatorCommand = async () => {
+    try {
+      const binding = await commandAuthority?.resolve(environment, cwd());
+      if (
+        !binding &&
+        !environment[agentCommandAuthorityEnvironmentName] &&
+        !environment[agentCommandCapabilityEnvironmentName] &&
+        !(environment.CODEX_THREAD_ID && environment.OPENCLAW_STATE_DIR)
+      )
+        return true;
+    } catch {
+      // Invalid authority must not downgrade an agent descendant to an operator.
+    }
+    output.writeStderr(
+      'Agent System operator commands are unavailable to agent or setup descendants.\n',
+    );
+    setExitCode(1);
+    return false;
+  };
   const agentSystem = program
     .command('agent-system')
     .alias('as')
@@ -121,6 +147,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Inspect the configured workspace for an OpenClaw agent.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = doctor.opts();
       const agentId = commandOptions.agent;
       await doctorAgentSystem({
@@ -189,6 +216,7 @@ export default function registerAgentSystemCli(
       .description(`${action === 'status' ? 'Inspect' : 'Flush'} the running Gateway OP cache.`)
       .option('--json', 'Write structured JSON output.')
       .action(async () => {
+        if (!(await allowOperatorCommand())) return;
         const agentId = command.opts().agent;
         await credentialsCache({
           action,
@@ -210,6 +238,7 @@ export default function registerAgentSystemCli(
     .option('--from-env', 'Read OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
     .option('--stdin', 'Read the credential from standard input.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsSet.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -235,6 +264,7 @@ export default function registerAgentSystemCli(
     .option('--store <id>', 'Validate one exact credential store.')
     .option('--from-env', 'Validate OP_SERVICE_ACCOUNT_TOKEN from the process environment.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsValidate.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -257,6 +287,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
     .option('--store <id>', 'Remove from one exact credential store.')
     .action(async (credential) => {
+      if (!(await allowOperatorCommand())) return;
       const commandOptions = credentialsUnset.opts();
       const agentId = commandOptions.agent;
       const storeId = commandOptions.store;
@@ -275,11 +306,21 @@ export default function registerAgentSystemCli(
   const install = agentSystem
     .command('install')
     .description('Install the workspace agent and reconcile configured lifecycle state.')
+    .option('--yes', 'Confirm setup without prompting.')
+    .option('--non-interactive', 'Run without interactive prompts.')
+    .option('--skip-setup', 'Skip all setup checks and applies with a warning.')
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
+      if (!(await allowOperatorCommand())) return;
       await installAgentSystem({
         installService: options.installService,
         json: install.opts().json === true,
+        yes: install.opts().yes === true,
+        nonInteractive: install.opts().nonInteractive === true,
+        skipSetup: install.opts().skipSetup === true,
+        environment,
+        ...(options.input ? { input: options.input } : {}),
+        ...(options.setupPrompt ? { prompt: options.setupPrompt } : {}),
         manifestService: options.manifestService,
         output,
         setExitCode,

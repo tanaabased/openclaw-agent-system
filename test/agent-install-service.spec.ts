@@ -30,7 +30,11 @@ describe('agent/install-service', () => {
       },
     });
 
-    const result = await service.install({ manifest, workspaceDir: '/workspace/data' });
+    const result = await service.install({
+      runtime: 'openclaw',
+      manifest,
+      workspaceDir: '/workspace/data',
+    });
 
     assert.deepEqual(calls, ['reconcile:data']);
     assert.equal(result.agentId, 'data');
@@ -59,7 +63,11 @@ describe('agent/install-service', () => {
       },
     });
 
-    await service.install({ manifest: opManifest, workspaceDir: '/workspace/data' });
+    await service.install({
+      runtime: 'openclaw',
+      manifest: opManifest,
+      workspaceDir: '/workspace/data',
+    });
 
     assert.deepEqual(calls, ['credential:data', 'reconcile']);
   });
@@ -82,6 +90,7 @@ describe('agent/install-service', () => {
     });
 
     await service.install({
+      runtime: 'openclaw',
       manifest: {
         ...manifest,
         environment: { set: { SSH_KEY: { fromOp: 'op://vault/item/private key' } } },
@@ -114,6 +123,7 @@ describe('agent/install-service', () => {
 
     await assert.rejects(
       service.install({
+        runtime: 'openclaw',
         manifest: { ...manifest, environment: { op: ['private-environment-id'] } },
         workspaceDir: '/workspace/data',
       }),
@@ -139,6 +149,7 @@ describe('agent/install-service', () => {
 
     await assert.rejects(
       service.install({
+        runtime: 'openclaw',
         manifest: { ...manifest, environment: { op: ['private-environment-id'] } },
         workspaceDir: '/workspace/data',
       }),

@@ -1,0 +1,13 @@
+schema-version: 1
+agent:
+  id: setup-failures
+  name: Setup Test Agent
+setup:
+  steps:
+    - id: timeout
+      apply:
+        command: sh
+        args: [-c, 'sleep 10; touch timeout-survived']
+        timeout-seconds: 1
+    - id: forbidden
+      apply: touch forbidden-later

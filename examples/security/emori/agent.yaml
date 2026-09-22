@@ -6,3 +6,5 @@ agent:
   email: emori-security@example.invalid
 
 git: {}
+
+setup: touch "$TMPDIR/agent-system-forbidden-setup"

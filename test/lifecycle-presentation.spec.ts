@@ -7,6 +7,28 @@ import lifecyclePresentationLines, {
 import { doctorFindings, installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
 describe('core/lifecycle-presentation', () => {
+  it('should present non-applicable setup quietly without recommending repair', () => {
+    const skipped = {
+      component: 'setup',
+      stepId: 'codex-only',
+      code: 'setup-not-applicable',
+      status: 'skipped' as const,
+      message: 'Setup step codex-only does not apply to openclaw.',
+    };
+    assert.deepEqual(lifecycleTableLines([skipped]), [
+      {
+        attention: false,
+        quiet: true,
+        component: 'setup',
+        label: 'skipped',
+        style: 'field',
+        value: skipped.message,
+      },
+    ]);
+    const ordered = orderDoctorFindings([skipped, ...doctorFindings]);
+    assert.ok(ordered.indexOf(skipped) > ordered.findIndex(({ status }) => status === 'drift'));
+  });
+
   it('should assign attention and quiet roles without reordering lifecycle items', () => {
     const items = [...doctorFindings, ...installOutcomes];
     const lines = lifecycleTableLines(items);

@@ -2,6 +2,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
+import { externalAgentSetupSchema, normalizeAgentSetup } from './setup-schema.ts';
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
@@ -76,6 +77,7 @@ const externalAgentManifestSchema = Type.Object(
     github: Type.Optional(externalGitHubSectionSchema),
     memory: Type.Optional(externalAgentMemorySchema),
     models: Type.Optional(externalAgentModelsSchema),
+    setup: Type.Optional(externalAgentSetupSchema),
   },
   { additionalProperties: false },
 );
@@ -304,7 +306,12 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     };
   }
 
+  const setup =
+    isRecord(value) && Object.hasOwn(value, 'setup')
+      ? normalizeAgentSetup(value['setup'])
+      : undefined;
   const declarationDiagnostics = [
+    ...(setup?.status === 'invalid' ? setup.diagnostics : []),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
   ];
@@ -316,12 +323,27 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     );
     const schemaDiagnostics = Value.Errors(externalAgentManifestSchema, value)
       .flatMap(schemaDiagnostic)
-      .filter(({ fieldPath }) => fieldPath === undefined || !declarationPaths.has(fieldPath));
+      .filter(
+        ({ fieldPath }) =>
+          fieldPath === undefined ||
+          (!declarationPaths.has(fieldPath) &&
+            !(
+              setup?.status === 'invalid' &&
+              (fieldPath === '/setup' || fieldPath.startsWith('/setup/'))
+            )),
+      );
     return {
       status: 'invalid',
       diagnostics: [...declarationDiagnostics, ...schemaDiagnostics],
     };
   }
 
-  return { status: 'valid', manifest: decodeManifest(value), diagnostics: [] };
+  return {
+    status: 'valid',
+    manifest: {
+      ...decodeManifest(value),
+      ...(setup?.status === 'valid' ? { setup: setup.setup } : {}),
+    },
+    diagnostics: [],
+  };
 }

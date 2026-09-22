@@ -17,6 +17,8 @@ import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
+import SetupCommandService from '../agent/setup-command-service.ts';
+import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import createModelLifecycleContribution from '../agent/model-lifecycle.ts';
 import parseModelCatalogRows from '../agent/model-catalog.ts';
@@ -250,7 +252,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.tools,
     notificationRuntime.replyTool,
   ]);
-  const lifecycleRegistry = new AgentSystemLifecycleRegistry([
+  const setupLifecycle = new SetupLifecycleService({
+    run: (command, target, signal) => setupCommands.run(command, target, signal),
+    prepare: (context) => setupCommands.prepare(context),
+  });
+  const lifecycleContributions = [
     createAgentLifecycleContribution({
       environmentService: lifecycleEnvironmentService,
       readConfig,
@@ -373,9 +379,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
     notificationRuntime.lifecycleContribution,
-  ]);
+  ];
+  const lifecycleRegistry = new AgentSystemLifecycleRegistry(
+    lifecycleContributions,
+    setupLifecycle,
+  );
   const manifestService = new AgentManifestService({
-    getConfig: () => api.runtime.config.current(),
+    getConfig: readConfig,
     logger: lifecycleLogger,
     parseSessionAgentId(sessionKey) {
       return parseAgentSessionKey(sessionKey)?.agentId;
@@ -417,6 +427,16 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     excludedExecutableDirectories: excludedToolExecutableDirectories,
     logger: lifecycleLogger,
     manifestService,
+  });
+  const setupCommands: SetupCommandService = new SetupCommandService({
+    baseEnvironment: process.env,
+    ...(currentUid === undefined ? {} : { currentUid }),
+    manifestService,
+    packageDir,
+    runCommandWithTimeout: (argv, options) =>
+      api.runtime.system.runCommandWithTimeout(argv, options),
+    toolRegistry,
+    toolRuntime,
   });
   const installService = new AgentInstallService({
     credentialManager,

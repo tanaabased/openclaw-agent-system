@@ -121,6 +121,7 @@ describe('core/conversation-hook-access', () => {
       lifecycleRegistry: new AgentSystemLifecycleRegistry([contribution]),
     });
     const result = await doctor.inspect({
+      runtime: 'openclaw',
       manifest: {
         schemaVersion: 1,
         agent: { id: 'data' },

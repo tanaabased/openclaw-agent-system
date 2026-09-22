@@ -21,6 +21,7 @@ export default async function doctorAgentSystem(options: DoctorAgentSystemOption
   const manifest = await loadCommandManifest(options);
   if (!manifest) return;
   const result = await options.doctorService.inspect({
+    runtime: 'openclaw',
     manifest: manifest.manifest,
     workspaceDir: manifest.scope.workspaceDir,
   });

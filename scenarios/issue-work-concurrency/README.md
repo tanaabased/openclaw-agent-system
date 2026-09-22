@@ -2,9 +2,9 @@
 
 This GitHub Actions-only strict AIMock scenario submits three real assignments
 against a durable limit of two. A starts first; B must acquire a separate session
-while C remains queued during the next one-minute poll. No execution lease is
-fabricated. A scenario-owned release file controls the provider barrier, not
-model-authored instructions.
+while C remains queued. Readiness waits for all three assignments to be discovered
+by the background polls. No execution lease is fabricated. A scenario-owned
+release file controls the provider barrier, not model-authored instructions.
 
 Notification workflows share a CI account lock, and this background-poll scenario
 runs after sibling scenarios have cleaned up. That keeps other jobs' assignments

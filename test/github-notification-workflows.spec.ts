@@ -504,6 +504,7 @@ describe('github notification workflows', () => {
     assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
       example: [
         'install',
+        'setup',
         'validate',
         'doctor',
         'agent',

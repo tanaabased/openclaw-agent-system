@@ -258,6 +258,235 @@ identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
 
+### `setup`
+
+Declares workspace preparation that an operator runs through `install`, with
+optional checks for repeat installation and Doctor. Omit `setup` when the
+first-party configuration already handles the work. Setup scripts can change
+files or external services; their authors must make checks read-only and applies
+safe to repeat.
+
+#### Syntax, from shortest to most detailed
+
+A string is shorthand for `setup.apply`, using `sh`:
+
+```yaml
+setup: mkdir -p repos
+```
+
+A YAML block embeds a script using the same shorthand:
+
+```yaml
+setup: |
+  mkdir -p repos
+  mkdir -p artifacts
+```
+
+The short mapping adds an optional check and shell selection:
+
+```yaml
+setup:
+  shell: zsh
+  check: test -d repos
+  apply: mkdir -p repos
+```
+
+Each `check` or `apply` also accepts a direct argument array. Arguments are passed
+literally, without shell parsing, variable expansion, pipes, or redirection:
+
+```yaml
+setup:
+  check: [test, -d, repos]
+  apply: [mkdir, -p, repos]
+```
+
+A direct command object accepts optional arguments and a custom timeout:
+
+```yaml
+setup:
+  check: [test, -d, repos]
+  apply:
+    command: mkdir
+    args: [-p, repos]
+    timeout-seconds: 60
+```
+
+Use `steps` for multiple commands in declaration order. The container's shell is
+inherited by string commands unless a step overrides it; direct commands ignore
+shell selection. This example assumes the referenced scripts exist:
+
+```yaml
+setup:
+  shell: bash
+  steps:
+    - id: directories
+      check: test -d repos && test -d artifacts
+      apply: |
+        mkdir -p repos
+        mkdir -p artifacts
+    - id: workspace-configuration
+      shell: zsh
+      check: ./scripts/workspace check
+      apply: |
+        ./scripts/workspace configure
+        ./scripts/workspace verify
+    - id: dependencies
+      check: [./scripts/dependencies, check]
+      apply:
+        command: ./scripts/dependencies
+        args: [install]
+        timeout-seconds: 600
+```
+
+The string, block, and short mapping normalize to one step with id `default`.
+Every named step requires a unique lowercase kebab-case `id` and an `apply`;
+`check` is optional. `steps` must be nonempty. The short mapping and `steps`
+container cannot be mixed, and a bare setup array or command object is not
+shorthand: place those commands under `check` or `apply`.
+
+#### Shells, executables, and limits
+
+`shell` accepts only `sh`, `bash`, or `zsh`; the default is `sh` on every platform,
+including macOS. The selected shell must already be installed. Strings are
+written to private temporary scripts, run with these fixed arguments, and
+removed afterward:
+
+| Shell  | Invocation                                        |
+| ------ | ------------------------------------------------- |
+| `sh`   | `sh -e <script>`                                  |
+| `bash` | `bash --noprofile --norc -e -o pipefail <script>` |
+| `zsh`  | `zsh -f -e -o PIPE_FAIL <script>`                 |
+
+There are no custom shell wrappers or automatic login-shell selection. Every
+command defaults to a 300-second timeout. Only the direct command object accepts
+`timeout-seconds`, an integer from `1` through `3600`; strings and arrays retain
+the default.
+
+Commands start in the bound workspace with closed stdin and a 64 KiB combined
+output capture limit. Timeouts terminate the command's process tree. Ordinary
+diagnostics and JSON results report step ids and diagnostic codes without
+including raw command output. The interactive confirmation deliberately shows
+the declared commands, so keep secrets out of declarations.
+
+The child receives a minimal host environment for home, locale, temporary paths,
+and OpenClaw profile selection, plus managed command bindings. Its `PATH` places
+managed launchers before trusted host executable directories. The completed
+Agent System environment and operator provider tokens are not copied into the
+setup shell. Managed tools resolve their own declared environment and credentials
+after binding the target agent and applying policy.
+
+Direct workspace executables such as `./scripts/dependencies` must be executable
+regular files within the workspace, with no symlinks or group/world-writable
+path segments. Direct executable declarations reject `..` traversal. These
+checks and the command limits do not sandbox arbitrary shell code or isolate
+processes sharing the same OS user.
+
+#### Runtime applicability
+
+An optional `runtimes` list selects `openclaw`, `codex`, or both. Omission means
+both; bare strings and blocks are therefore shared. The short mapping accepts a
+runtime filter for its single step:
+
+```yaml
+setup:
+  runtimes: [openclaw]
+  check: test -d repos
+  apply: mkdir -p repos
+```
+
+In the long form, put the filter on individual steps:
+
+```yaml
+setup:
+  steps:
+    - id: shared-directories
+      runtimes: [openclaw, codex]
+      check: test -d artifacts
+      apply: mkdir -p artifacts
+    - id: openclaw-directories
+      runtimes: [openclaw]
+      check: test -d repos
+      apply: mkdir -p repos
+    - id: codex-directories
+      runtimes: [codex]
+      check: test -d codex-artifacts
+      apply: mkdir -p codex-artifacts
+```
+
+Lists must be nonempty and contain unique supported values. There is no
+`runtimes` field or runtime inheritance on the `steps` container.
+
+The invoking integration supplies the runtime through trusted context. The
+current OpenClaw CLI always selects `openclaw`, including when Codex drives its
+model turns. Installed binaries, environment variables, and model selection do
+not select the runtime. The `codex` label reserves applicability for a future
+integration; this release does not include a Codex setup adapter.
+
+Nonmatching steps run neither command and report `status: skipped`,
+`code: setup-not-applicable`, and their `stepId` in install and Doctor results.
+They do not count as drift or failure and need no repair. Filtering happens
+before setup preparation and execution; when no steps match, setup-only
+prerequisite gates stay idle. Independently configured components still run
+normally. All declarations are validated, including nonmatching steps, and
+applicable steps keep their declared order. There is no skip exit code or `when`
+expression.
+
+#### Checks, installation, and retries
+
+| Applicable step                                     | Doctor    | Install                                          |
+| --------------------------------------------------- | --------- | ------------------------------------------------ |
+| Check exits `0`                                     | `healthy` | Leaves the step `unchanged`.                     |
+| Check exits `1`                                     | `drift`   | Runs apply, then requires the check to exit `0`. |
+| Check exits otherwise, cannot execute, or times out | `blocked` | Stops without applying the step.                 |
+| No check                                            | `manual`  | Runs apply on every installation.                |
+
+Apply must exit `0`. A failed apply, blocked check, or check that still reports
+drift after apply stops later steps and dependent lifecycle work. Earlier
+completed work remains in place; there is no transaction or rollback of
+arbitrary setup effects. On retry, healthy checked steps are skipped and
+unchecked steps run again. Coordinate host-wide or shared-resource changes
+outside this per-agent mechanism.
+
+Write checks so that `1` means expected drift and other nonzero exits mean an
+inspection failure. The runner cannot distinguish intended drift from an
+unhandled command error that also returns `1`. Doctor runs applicable checks
+without prompting, applying setup, or repairing prerequisites, and aggregates
+their findings. A check is trusted code: its read-only behavior is the author's
+responsibility. `validate` only validates declarations and never executes them.
+
+#### Agent identity and repository cloning
+
+For applicable setup, installation establishes agent registration, managed
+paths, and configured Git/GitHub tools, including declared GitHub SSH-key
+registration, before running setup. Remaining lifecycle components follow
+setup. Unavailable prerequisites block execution; setup cannot bootstrap a tool
+or credential required to reach its own commands.
+
+To clone as the agent, first declare its [Git identity and SSH
+keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
+and public keys](./tools/github/README.md#configuration-reference). Executables,
+credential sources, and key files must already be available. Then add:
+
+```yaml
+setup:
+  steps:
+    - id: clone-project
+      runtimes: [openclaw]
+      check: test -d repos/project/.git
+      apply: |
+        gh api user --jq .login
+        mkdir -p repos
+        git clone git@github.com:your-org/project.git repos/project
+```
+
+Replace `your-org/project` with the repository to clone. Managed `gh` uses the
+agent's token and verifies the declared `github.username`; managed `git` uses
+the agent's identity and SSH configuration. Both shell and direct commands use
+the same binding, policy, and working-directory boundaries, without falling
+back to the operator's tool identity. This does not switch OS accounts: the
+process still runs as the installing OS user. The example is OpenClaw-only
+because it relies on that integration's managed tools.
+
 ### Component Configuration
 
 Components own their manifest schemas and document them beside their
@@ -358,6 +587,11 @@ managed worktrees. They cannot select another agent after that binding. Direct
 `tool` and `credentials` commands remain trusted operator interfaces and may
 select an installed agent explicitly.
 
+`install` and Doctor (including `status`) are also operator-only through both
+CLI aliases. Model-facing tools, supported native/Codex agent commands, and
+setup descendants cannot invoke them. Unattended install options bypass consent
+prompts, not this authority boundary.
+
 These are practical same-user guardrails, not process isolation. Absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
 processes can bypass them. See OpenClaw's
@@ -429,16 +663,40 @@ directories, mode `0600`, and a regular non-symlinked credential file.
 ### `openclaw agent-system install`
 
 Installs the current workspace agent and reconciles its public identity, model
-defaults, memory search, executable paths, and configured capability state.
+defaults, memory search, executable paths, setup, and configured capability state.
 
 ```text
-openclaw agent-system install [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--json]
 ```
+
+| Option              | Behavior                                                                          |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `--yes`             | Consents to setup without prompting.                                              |
+| `--non-interactive` | Runs without prompting, implying setup consent.                                   |
+| `--skip-setup`      | Skips every setup check and apply with a warning; other components still install. |
+
+These switches take no values: presence sets the option to true and absence
+leaves it false. `--skip-setup` takes precedence over consent. With applicable
+setup, interactive installation previews the workspace and ordered check/apply
+commands, shells, and timeouts on stderr before asking yes or no. Declining or
+cancelling stops before any install mutation. No applicable setup means no
+setup prompt.
+
+Noninteractive stdin also implies consent. The `CI` and `NONINTERACTIVE`
+environment variables each enable unattended consent for trimmed,
+case-insensitive `1`, `true`, `yes`, or `on`. Unset, empty, `0`, `false`, `no`,
+`off`, and unrecognized values do not enable that source; they do not override
+another enabling option or noninteractive stdin. `--json` alone does not imply
+consent, and prompts or warnings never become part of stdout JSON.
+
+Consent is not persisted. An unattended invocation trusts the current workspace
+declarations, including changes since the previous run.
 
 Installation validates first and, when an OP Environment or direct secret is
 declared, requires a working persistent credential before applying changes. It
-creates or updates only owned state, verifies the result, and reports unchanged
-state on repeated runs. An existing agent id bound to another workspace fails
+verifies owned state and reports it unchanged when already reconciled. Setup
+may also change external state; its [check and retry rules](#checks-installation-and-retries)
+determine what repeats. An existing agent id bound to another workspace fails
 instead of being repointed. It also reconciles per-agent grants for the native
 Git, managed-worktree, and GitHub tools selected by the manifest while preserving
 unrelated grants. GitHub installation additionally reconciles an agent-scoped
@@ -459,7 +717,9 @@ openclaw agent-system status [--agent <id>] [--json]
 Doctor, also available as `status`, reports all findings, returns nonzero for failing drift, and recommends
 `install` for repairable owned state. Manual state remains the operator's
 responsibility. It also reports tool-access and execution-boundary findings;
-tool-specific checks are documented in each tool guide. OpenAI memory inspection
+tool-specific checks are documented in each tool guide. For [setup](#setup),
+Doctor runs applicable checks without consent or repairs, reports unchecked
+steps as manual, and marks nonmatching runtime steps as skipped. OpenAI memory inspection
 performs one bounded embedding request, which may incur a small provider charge;
 other providers remain read-only and unprobed.
 
