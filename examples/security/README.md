@@ -19,8 +19,6 @@ cd "$GITHUB_WORKSPACE/examples/security/emori"
 openclaw agent-system install
 
 # should route tanaabot through codex with the ci model
-# temporary openclaw 9.5 cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
-openclaw plugins disable codex
 openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.tanaabot.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
 
