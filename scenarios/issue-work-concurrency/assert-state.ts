@@ -9,10 +9,10 @@ import { inspect } from 'node:util';
 
 async function main(): Promise<void> {
   const phase = process.argv[2];
-  assert.ok(['entered', 'limited', 'published'].includes(phase ?? ''));
+  assert.ok(['entered', 'limited'].includes(phase ?? ''));
   const gate = join(tmpdir(), 'notification-concurrency');
   const repository = (await readFile(join(gate, 'repository'), 'utf8')).trim();
-  const labels = phase === 'entered' ? ['a'] : phase === 'limited' ? ['a', 'b'] : ['a', 'b', 'c'];
+  const labels = phase === 'entered' ? ['a'] : ['a', 'b'];
   const numbers = await Promise.all(
     labels.map(async (label) => (await readFile(join(gate, label), 'utf8')).trim()),
   );
@@ -68,18 +68,12 @@ async function main(): Promise<void> {
           'github-notification-reply-turns',
           `${digest}.json`,
         );
-        if (phase === 'published') {
-          assert.equal(snapshot.conversation.assignmentResponse.status, 'published');
-          assert.equal(snapshot.conversation.activeTurn, undefined);
-          await assert.rejects(readFile(candidatePath), { code: 'ENOENT' });
-        } else {
-          assert.equal(snapshot.conversation.assignmentResponse, undefined);
-          const candidate = JSON.parse(await readFile(candidatePath, 'utf8'));
-          assert.equal(candidate.conversationId, conversationId);
-          assert.equal(candidate.identity.eventId, 'assignment');
-          assert.ok(candidate.promptSelectedAt);
-          assert.ok(Date.parse(candidate.expiresAt) > Date.now());
-        }
+        assert.equal(snapshot.conversation.assignmentResponse, undefined);
+        const candidate = JSON.parse(await readFile(candidatePath, 'utf8'));
+        assert.equal(candidate.conversationId, conversationId);
+        assert.equal(candidate.identity.eventId, 'assignment');
+        assert.ok(candidate.promptSelectedAt);
+        assert.ok(Date.parse(candidate.expiresAt) > Date.now());
       }
       assert.equal(sessionIds.size, numbers.length);
       break;

@@ -8,14 +8,13 @@ model-authored instructions.
 
 Notification workflows share a CI account lock, and this background-poll scenario
 runs after sibling scenarios have cleaned up. That keeps other jobs' assignments
-out of its strict provider fixture without serializing the three turns under test.
+out of its strict provider fixture without serializing the two admitted turns.
 
-The assertions inspect the installed Gateway, redacted scheduler status,
-file-backed candidate and conversation records, and bounded GitHub publication
-receipts. With A and B active and C durably queued, releasing the barrier proves
-the queue drains into an isolated third session and publishes exactly one
-acknowledgment and assignment response per issue. Stop the Gateway before a
-later poll can advance these planning-only fixtures into implementation.
+The assertions inspect the installed Gateway, redacted scheduler status, and
+file-backed candidate and conversation records. They stop at the installed
+capacity boundary: A and B are active while C remains durably queued without a
+session. Queue draining and automatic implementation remain deterministic direct
+test contracts rather than an attempt to race the next background poll.
 
 ## Setup
 
@@ -113,40 +112,16 @@ for label in b c; do
 done
 cd "$GITHUB_WORKSPACE"
 node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" limited
-touch "$TMPDIR/notification-concurrency/limited-verified"
-```
-
-```bash
-# should drain and publish isolated candidates after releasing the active model turns
-test -f "$TMPDIR/notification-concurrency/limited-verified"
-cd "$GITHUB_WORKSPACE"
-printf '%s' released > "$TMPDIR/notification-concurrency/release"
-node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-state.ts" published
-openclaw-gateway stop
-cd "$TMPDIR/agent-system-notification-actor"
-for label in a b c; do
-  issue_number="$(cat "$TMPDIR/notification-concurrency/$label")"
-  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot")' > "$TMPDIR/notification-concurrency/comments-$label.json"
-  jq -se --arg number "$issue_number" '([.[] | select(.body | contains("agent-system-github-publication:initial-acknowledgment:"))] | length) == 1 and ([.[] | select(.body | contains("agent-system-github-publication:assignment-response:"))] | length) == 1 and ([.[] | select(.body | contains("agent-system-github-publication:assignment-response:")) | .body | contains("issue " + $number + ".")] | all)' "$TMPDIR/notification-concurrency/comments-$label.json"
-done
-```
-
-```bash
-# should expose six successful strict provider exchanges without unmatched requests
-openclaw-notification-setup evidence \
-  --model "$NOTIFICATION_MODEL" \
-  --scenario concurrency \
-  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/expected-evidence.json"
 ```
 
 ## Cleanup
 
 ```bash
-# should release the scenario barrier before draining workers
+# should stop the gateway before releasing the held provider turns
+openclaw-gateway stop
 if test -d "$TMPDIR/notification-concurrency"; then
   printf '%s' released > "$TMPDIR/notification-concurrency/release"
 fi
-openclaw-gateway stop
 
 # should close only the three generated issue fixtures
 if test -d "$TMPDIR/agent-system-notification-actor"; then
