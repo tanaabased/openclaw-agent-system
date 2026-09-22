@@ -29,7 +29,7 @@ export interface GitHubCommandResult {
 }
 
 export interface GitHubToolDependencies {
-  configStore: Pick<GitHubConfigStore, 'configDirectory' | 'reconcile'>;
+  configStore: Pick<GitHubConfigStore, 'configDirectory' | 'inspect' | 'reconcile'>;
 }
 
 function toolError(
@@ -174,6 +174,16 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         };
       },
       async prepare(configuration, scope) {
+        if (scope.configurationMode === 'inspect') {
+          const inspection = await dependencies.configStore.inspect(
+            scope.agentId,
+            configuration.cli,
+          );
+          if (inspection.status !== 'ready') {
+            toolError('execution_failed', 'Generated GitHub CLI configuration requires install.');
+          }
+          return;
+        }
         await dependencies.configStore.reconcile(scope.agentId, configuration.cli);
       },
       stdin(input) {

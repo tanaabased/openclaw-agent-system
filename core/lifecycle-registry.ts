@@ -1,8 +1,11 @@
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import type { AgentSetupConfiguration } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
 
 export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
+  setup?: AgentSetupConfiguration;
   workspaceDir: string;
 }
 
@@ -11,6 +14,7 @@ export type AgentSystemLifecycleOutcomeStatus = 'created' | 'removed' | 'unchang
 export interface AgentSystemLifecycleOutcome {
   code: string;
   component: string;
+  stepId?: string;
   message: string;
   status: AgentSystemLifecycleOutcomeStatus;
 }
@@ -18,6 +22,7 @@ export interface AgentSystemLifecycleOutcome {
 export interface AgentSystemLifecycleWarning {
   code: string;
   component: string;
+  stepId?: string;
   message: string;
 }
 
@@ -28,6 +33,7 @@ export interface AgentSystemLifecycleFinding {
   providerDiagnostic?: ProviderDiagnostic;
   code: string;
   component: string;
+  stepId?: string;
   message: string;
   remediation?: string;
   status: AgentSystemLifecycleFindingStatus;
@@ -59,6 +65,7 @@ export class AgentSystemLifecycleError extends Error {
     message: string,
     options?: ErrorOptions,
     readonly providerDiagnostic?: ProviderDiagnostic,
+    readonly stepId?: string,
   ) {
     super(withProviderDiagnostic(message, providerDiagnostic), options);
   }
@@ -89,13 +96,17 @@ export interface AgentSystemLifecycleContribution {
   }>;
 }
 
-/** Coordinate statically registered lifecycle contributions in registration order. */
+/** Preserve registration order unless setup requires its fixed prerequisite boundary. */
 export default class AgentSystemLifecycleRegistry {
   readonly #contributions: readonly AgentSystemLifecycleContribution[];
 
-  constructor(contributions: readonly AgentSystemLifecycleContribution[]) {
+  constructor(
+    contributions: readonly AgentSystemLifecycleContribution[],
+    private readonly setupLifecycle?: Pick<SetupLifecycleService, 'inspect' | 'reconcile'>,
+  ) {
     const ids = new Set<string>();
     for (const contribution of contributions) {
+      if (contribution.id === 'setup') throw new Error('The setup lifecycle id is reserved.');
       if (ids.has(contribution.id)) {
         throw new Error(`Duplicate Agent System lifecycle contribution id: ${contribution.id}.`);
       }
@@ -140,7 +151,7 @@ export default class AgentSystemLifecycleRegistry {
 
   async inspect(context: AgentSystemLifecycleContext): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
-    for (const contribution of this.#configured(context.manifest)) {
+    for (const contribution of this.#ordered(context)) {
       let result;
       try {
         result = await contribution.inspect?.(context);
@@ -164,7 +175,7 @@ export default class AgentSystemLifecycleRegistry {
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
     const warnings: AgentSystemLifecycleWarning[] = [];
-    for (const contribution of this.#configured(context.manifest)) {
+    for (const contribution of this.#ordered(context)) {
       let result;
       try {
         result = await contribution.reconcile?.(context);
@@ -189,6 +200,56 @@ export default class AgentSystemLifecycleRegistry {
       );
     }
     return { outcomes, warnings };
+  }
+
+  #ordered(context: AgentSystemLifecycleContext): AgentSystemLifecycleContribution[] {
+    const configured = this.#configured(context.manifest);
+    if (!context.setup) return configured;
+    const setupLifecycle = this.setupLifecycle;
+    if (!setupLifecycle) {
+      throw new AgentSystemLifecycleError(
+        'setup',
+        'setup-unavailable',
+        'Setup execution is unavailable.',
+      );
+    }
+    // These owners establish the identity, launchers, and credentials needed by setup.
+    const prerequisiteIds = ['agent', 'path', 'git', 'github'];
+    const prerequisites = prerequisiteIds.flatMap((id) =>
+      configured.filter((entry) => entry.id === id),
+    );
+    const dependent = configured.filter((entry) => !prerequisiteIds.includes(entry.id));
+    return [
+      ...prerequisites,
+      {
+        id: 'setup',
+        isConfigured: () => true,
+        inspect: (input) => setupLifecycle.inspect(input),
+        reconcile: async (input) => {
+          for (const prerequisite of prerequisites) {
+            let findings;
+            try {
+              findings = await prerequisite.inspect?.(input);
+            } catch {
+              throw new AgentSystemLifecycleError(
+                prerequisite.id,
+                'setup-prerequisite-blocked',
+                `Setup prerequisite ${prerequisite.id} could not be inspected.`,
+              );
+            }
+            if (findings?.some(({ status }) => status === 'blocked')) {
+              throw new AgentSystemLifecycleError(
+                prerequisite.id,
+                'setup-prerequisite-blocked',
+                `Setup prerequisite ${prerequisite.id} is blocked.`,
+              );
+            }
+          }
+          return setupLifecycle.reconcile(input);
+        },
+      },
+      ...dependent,
+    ];
   }
 
   #configured(manifest: AgentManifest): AgentSystemLifecycleContribution[] {

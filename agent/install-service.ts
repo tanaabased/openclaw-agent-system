@@ -1,10 +1,10 @@
-import type { AgentManifest } from '../manifest/types.ts';
 import collectOpEnvironmentRequirements, {
   hasOpEnvironmentRequirements,
 } from '../environment/op-requirements.ts';
 import type OpCredentialManager from '../credentials/op-manager.ts';
 import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import type {
+  AgentSystemLifecycleContext,
   AgentSystemLifecycleOutcome,
   AgentSystemLifecycleWarning,
 } from '../core/lifecycle-registry.ts';
@@ -21,10 +21,7 @@ export interface AgentInstallServiceDependencies {
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
 
-export interface AgentInstallInput {
-  manifest: AgentManifest;
-  workspaceDir: string;
-}
+export type AgentInstallInput = AgentSystemLifecycleContext;
 
 export class AgentInstallError extends Error {
   override name = 'AgentInstallError';

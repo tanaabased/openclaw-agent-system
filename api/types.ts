@@ -57,6 +57,7 @@ export type AgentSystemCliRunner = (
 ) => Promise<AgentSystemCliResult>;
 
 export interface AgentSystemToolScope {
+  configurationMode?: 'inspect';
   source: 'agent-command' | 'command' | 'tool';
   admittedWorkingDirectories?: readonly string[];
   agentId?: string;
@@ -186,7 +187,7 @@ export interface AgentSystemCliToolDefinition<
       | undefined;
     prepare?(
       configuration: TResolvedConfiguration,
-      scope: { agentId: string; workspaceDir: string },
+      scope: { agentId: string; workspaceDir: string; configurationMode?: 'inspect' },
     ): Promise<void> | void;
     stdin?(input: Static<TParameters>, configuration: TResolvedConfiguration): string | undefined;
     timeoutMs?: number;

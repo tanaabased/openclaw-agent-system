@@ -44,6 +44,8 @@ describe('agent/setup-command-service', function () {
   let credentials: Record<string, string>;
   let dependencies: SetupCommandServiceDependencies;
   let sshDisposals: number;
+  let configurationStatus: 'ready' | 'missing' | 'drift';
+  let configurationRepairs: number;
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/setup-binding-'));
@@ -80,6 +82,8 @@ describe('agent/setup-command-service', function () {
       EMORI_SSH_KEY: 'agent-private-key-fixture',
     };
     sshDisposals = 0;
+    configurationStatus = 'ready';
+    configurationRepairs = 0;
     const manifestService = {
       async loadForAgentId(id: string): Promise<AgentManifestLoadResult> {
         return id === 'emori' ? loaded : { status: 'unresolved', diagnostics: [] };
@@ -110,7 +114,11 @@ describe('agent/setup-command-service', function () {
       createGitHubTool({
         configStore: {
           configDirectory: (agentId) => join(root, agentId, 'gh-config'),
+          async inspect(agentId) {
+            return { configDir: join(root, agentId, 'gh-config'), status: configurationStatus };
+          },
           async reconcile(agentId) {
+            configurationRepairs++;
             return { configDir: join(root, agentId, 'gh-config'), status: 'unchanged' };
           },
         },
@@ -201,10 +209,11 @@ describe('agent/setup-command-service', function () {
     return result.setup.steps[0]!.apply;
   }
 
-  function run(apply: unknown) {
+  function run(apply: unknown, mode: 'check' | 'apply' = 'apply') {
     return new SetupCommandService(dependencies).run(command(apply), {
       agentId: 'emori',
       workspaceDir,
+      mode,
     });
   }
 
@@ -268,16 +277,65 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should apply tool policy before resolving credentials', async () => {
-    assert.equal((await run('gh release delete v1 --repo owner/repo --yes')).exitCode, 1);
+    await assert.rejects(run('gh release delete v1 --repo owner/repo --yes'), {
+      code: 'setup-tool-unavailable',
+    });
     assert.deepEqual(environmentCalls, []);
     assert.deepEqual(requests, []);
   });
 
   it('should fail when credentials are missing without using operator credentials', async () => {
     credentials = {};
-    assert.equal((await run('gh api user')).exitCode, 1);
+    await assert.rejects(run('gh api user'), { code: 'setup-tool-unavailable' });
     assert.deepEqual(environmentCalls, ['emori']);
     assert.deepEqual(requests, []);
+  });
+
+  it('should inspect managed configuration during checks without repairing it', async () => {
+    assert.equal((await run('gh api user', 'check')).exitCode, 0);
+    assert.equal(configurationRepairs, 0);
+    requests.length = 0;
+    for (const status of ['missing', 'drift'] as const) {
+      configurationStatus = status;
+      await assert.rejects(run('gh api user || true', 'check'), { code: 'setup-tool-unavailable' });
+      assert.deepEqual(requests, []);
+      assert.equal(configurationRepairs, 0);
+    }
+  });
+
+  it('should distinguish ordinary tool exit one from unavailable tool execution', async () => {
+    loaded.manifest.github = { token: 'EMORI_TOKEN' };
+    const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    dependencies.toolRegistry = {
+      async invoke(...args) {
+        const result = await original(...args);
+        assert.equal(result.kind, 'cli');
+        if (result.kind === 'cli') result.commandResult.exitCode = 1;
+        return result;
+      },
+    };
+    assert.equal((await run('gh api repos/owner/missing', 'check')).exitCode, 1);
+    assert.equal(configurationRepairs, 0);
+  });
+
+  it('should surface managed tool timeouts and signals even when a script catches failure', async () => {
+    const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    for (const timedOut of [true, false]) {
+      dependencies.toolRegistry = {
+        async invoke(...args) {
+          const result = await original(...args);
+          assert.equal(result.kind, 'cli');
+          if (result.kind === 'cli') {
+            result.commandResult.timedOut = timedOut;
+            result.commandResult.exitCode = timedOut ? 1 : null;
+          }
+          return result;
+        },
+      };
+      await assert.rejects(run('gh api user || true', 'check'), {
+        code: 'setup-tool-unavailable',
+      });
+    }
   });
 
   it('should reject setup and credential operator routes before invoking their services', async () => {

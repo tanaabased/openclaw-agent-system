@@ -33,10 +33,11 @@ export default class SetupCommandService {
 
   async run(
     command: AgentSetupCommand,
-    target: { agentId: string; workspaceDir: string },
+    target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
     signal?: AbortSignal,
   ): Promise<SetupCommandResult> {
     const dependencies = this.dependencies;
+    let toolFailed = false;
     const authority = new AgentCommandAuthority({
       manifestService: dependencies.manifestService,
       currentUid: dependencies.currentUid ?? process.getuid?.(),
@@ -51,6 +52,7 @@ export default class SetupCommandService {
             input.argv,
             {
               source: 'agent-command',
+              ...(target.mode === 'check' ? { configurationMode: 'inspect' as const } : {}),
               agentId: binding.agentId,
               workspaceDir: binding.workingDirectory,
               admittedWorkingDirectories: binding.admittedWorkingDirectories,
@@ -60,6 +62,7 @@ export default class SetupCommandService {
           );
           if (result.kind === 'cli') {
             const { exitCode, stdout, stderr } = result.commandResult;
+            if (result.commandResult.timedOut || exitCode === null) toolFailed = true;
             return { exitCode, stdout, stderr };
           }
           const serialized = JSON.stringify(result.output, undefined, 2);
@@ -69,6 +72,7 @@ export default class SetupCommandService {
             stderr: '',
           };
         } catch (error) {
+          toolFailed = true;
           const code = error instanceof AgentSystemToolError ? error.code : 'execution_failed';
           return {
             exitCode: 1,
@@ -78,6 +82,7 @@ export default class SetupCommandService {
         }
       },
     });
+    let result: SetupCommandResult;
     try {
       signal?.throwIfAborted();
       const loaded = await dependencies.manifestService.loadForAgentId(target.agentId, 'service');
@@ -94,7 +99,7 @@ export default class SetupCommandService {
       if (!binding?.executeCommand || binding.agentId !== target.agentId) {
         throw new SetupCommandError('setup-agent-not-resolved');
       }
-      return await createSetupCommandRunner(dependencies)(
+      result = await createSetupCommandRunner(dependencies)(
         command,
         {
           workspaceDir: target.workspaceDir,
@@ -113,5 +118,7 @@ export default class SetupCommandService {
     } finally {
       await authority.stop();
     }
+    if (toolFailed) throw new SetupCommandError('setup-tool-unavailable');
+    return result;
   }
 }
