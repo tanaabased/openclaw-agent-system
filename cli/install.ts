@@ -74,6 +74,7 @@ export default async function installAgentSystem(
   if (
     !(await confirmSetupInstall({
       ...options,
+      runtime: 'openclaw',
       setup: result.manifest.setup,
       workspaceDir: result.scope.workspaceDir,
     }))
@@ -87,6 +88,7 @@ export default async function installAgentSystem(
   }
   try {
     const installed = await options.installService.install({
+      runtime: 'openclaw',
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
       ...(options.skipSetup ? { skipSetup: true } : {}),

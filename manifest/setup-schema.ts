@@ -7,6 +7,7 @@ export const setupDefaultTimeoutSeconds = 300;
 export const setupMaximumTimeoutSeconds = 3_600;
 
 const shellSchema = Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]);
+const runtimeSchema = Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]);
 const scriptSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000]*(?![\\s\\S])' });
 const executableSchema = Type.String({
   pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])',
@@ -28,6 +29,7 @@ const commandObjectSchema = Type.Object(
 );
 const commandSchema = Type.Union([scriptSchema, argvSchema, commandObjectSchema]);
 const stepProperties = {
+  runtimes: Type.Optional(Type.Array(runtimeSchema, { minItems: 1, uniqueItems: true })),
   shell: Type.Optional(shellSchema),
   check: Type.Optional(commandSchema),
   apply: commandSchema,
@@ -53,12 +55,14 @@ const stepsSchema = Type.Object(
 export const externalAgentSetupSchema = Type.Union([scriptSchema, shortSchema, stepsSchema]);
 
 export type AgentSetupShell = Static<typeof shellSchema>;
+export type AgentSetupRuntime = Static<typeof runtimeSchema>;
 export type AgentSetupCommand =
   | { kind: 'shell'; script: string; shell: AgentSetupShell; timeoutSeconds: number }
   | { kind: 'exec'; executable: string; args: string[]; timeoutSeconds: number };
 
 export interface AgentSetupStep {
   id: string;
+  runtimes?: AgentSetupRuntime[];
   apply: AgentSetupCommand;
   check?: AgentSetupCommand;
 }
@@ -193,6 +197,7 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
     }
     return {
       id: entry.id,
+      ...(entry.runtimes === undefined ? {} : { runtimes: [...entry.runtimes] }),
       apply: decodeCommand(entry.apply, entry.shell ?? shell),
       ...(entry.check === undefined
         ? {}

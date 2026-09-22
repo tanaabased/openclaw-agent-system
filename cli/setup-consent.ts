@@ -2,10 +2,16 @@ import type { Readable } from 'node:stream';
 
 import { confirm } from '@clack/prompts';
 
-import type { AgentSetupCommand, AgentSetupConfiguration } from '../manifest/setup-schema.ts';
+import type {
+  AgentSetupCommand,
+  AgentSetupConfiguration,
+  AgentSetupRuntime,
+} from '../manifest/setup-schema.ts';
+import setupStepApplies from '../agent/setup-runtime.ts';
 import type { CliOutput } from './output.ts';
 
 export interface SetupConsentOptions {
+  runtime: AgentSetupRuntime;
   setup?: AgentSetupConfiguration;
   workspaceDir: string;
   yes?: boolean;
@@ -36,6 +42,8 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
     );
     return true;
   }
+  const applicable = options.setup.steps.filter((step) => setupStepApplies(step, options.runtime));
+  if (applicable.length === 0) return true;
   const environment = options.environment ?? process.env;
   const input = options.input ?? process.stdin;
   if (
@@ -49,7 +57,7 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
 
   const lines = [
     `Install workspace ${JSON.stringify(options.workspaceDir)} with these setup steps:`,
-    ...options.setup.steps.flatMap((step) => [
+    ...applicable.flatMap((step) => [
       `  ${step.id}`,
       ...(step.check
         ? [`    check (${describeCommand(step.check)})`]

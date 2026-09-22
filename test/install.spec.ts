@@ -145,7 +145,7 @@ describe('cli/install', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(calls.install, [
-      { manifest: validResult.manifest, workspaceDir: '/workspace' },
+      { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
     const rows = output.join('').trimEnd().split('\n');
     assert.deepEqual(
@@ -256,7 +256,7 @@ describe('cli/install', () => {
       });
       await harness.run();
       assert.deepEqual(harness.calls.install, [
-        { manifest: validResult.manifest, workspaceDir: '/workspace' },
+        { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
       ]);
       assert.deepEqual(harness.exitCodes, []);
       assert.deepEqual(

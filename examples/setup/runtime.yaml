@@ -1,0 +1,12 @@
+schema-version: 1
+agent:
+  id: setup-failures
+  name: Setup Test Agent
+setup:
+  runtimes: [codex]
+  check: |
+    touch forbidden-runtime-check
+    exit 2
+  apply: |
+    touch forbidden-runtime-apply
+    exit 2

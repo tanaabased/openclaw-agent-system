@@ -1,6 +1,6 @@
 import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import type {
-  AgentSystemLifecycleContext,
+  AgentSystemLifecycleExecutionContext,
   AgentSystemLifecycleFinding,
 } from '../core/lifecycle-registry.ts';
 
@@ -25,7 +25,7 @@ export default class AgentDoctorService {
     this.#dependencies = dependencies;
   }
 
-  async inspect(input: AgentSystemLifecycleContext): Promise<AgentDoctorResult> {
+  async inspect(input: AgentSystemLifecycleExecutionContext): Promise<AgentDoctorResult> {
     const findings = await this.#dependencies.lifecycleRegistry.inspect(input);
     return {
       agentId: input.manifest.agent.id,

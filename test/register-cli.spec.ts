@@ -141,6 +141,7 @@ function createProgram(
     },
     doctorService: {
       async inspect(input) {
+        assert.equal(input.runtime, 'openclaw');
         calls.doctor.push({
           agentId: input.manifest.agent.id,
           workspaceDir: input.workspaceDir,
@@ -826,7 +827,7 @@ describe('cli/register', () => {
 
     assert.deepEqual(calls.workspace, ['/current']);
     assert.deepEqual(calls.install, [
-      { manifest: validResult.manifest, workspaceDir: '/workspace' },
+      { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
   });
 
@@ -851,6 +852,35 @@ describe('cli/register', () => {
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'install', '--json']);
 
     assert.equal(JSON.parse(output.join('')).agentId, 'tanaabot');
+  });
+
+  it('should preserve non-applicable setup in human and json results', async () => {
+    const skipped = {
+      component: 'setup',
+      stepId: 'codex-only',
+      code: 'setup-not-applicable',
+      status: 'skipped' as const,
+      message: 'Setup step codex-only does not apply to openclaw.',
+    };
+    for (const command of ['doctor', 'install']) {
+      for (const json of [false, true]) {
+        const { output, diagnostics, program } = createProgram(undefined, {
+          doctorFindings: [skipped],
+          installOutcomes: [skipped],
+          environment: { CODEX_HOME: '/codex', AGENT_SYSTEM_RUNTIME: 'codex' },
+        });
+        await program.parseAsync(['node', 'openclaw', 'as', command, ...(json ? ['--json'] : [])]);
+        assert.deepEqual(diagnostics, []);
+        if (json) {
+          const result = JSON.parse(output.join(''));
+          assert.deepEqual(command === 'doctor' ? result.findings : result.outcomes, [skipped]);
+        } else {
+          assert.match(output.join(''), /skipped/u);
+          assert.match(output.join(''), /codex-only/u);
+          assert.match(output.join(''), /does not apply/u);
+        }
+      }
+    }
   });
 
   it('should delegate credential storage from the process environment', async () => {

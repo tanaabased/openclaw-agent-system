@@ -4,7 +4,7 @@ import collectOpEnvironmentRequirements, {
 import type OpCredentialManager from '../credentials/op-manager.ts';
 import type AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import type {
-  AgentSystemLifecycleContext,
+  AgentSystemLifecycleExecutionContext,
   AgentSystemLifecycleOutcome,
   AgentSystemLifecycleWarning,
 } from '../core/lifecycle-registry.ts';
@@ -21,7 +21,7 @@ export interface AgentInstallServiceDependencies {
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
 
-export interface AgentInstallInput extends AgentSystemLifecycleContext {
+export interface AgentInstallInput extends AgentSystemLifecycleExecutionContext {
   skipSetup?: boolean;
 }
 

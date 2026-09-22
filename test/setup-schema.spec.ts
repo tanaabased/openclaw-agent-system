@@ -26,6 +26,44 @@ function invalid(value: unknown, code: string, fieldPath: string) {
 }
 
 describe('manifest/setup-schema', () => {
+  it('should preserve independent runtime filters in short and long forms', () => {
+    for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
+      const short = normalized({ runtimes, apply: 'true' });
+      assert.deepEqual(short.steps[0]?.runtimes, runtimes);
+      assert.notEqual(short.steps[0]?.runtimes, runtimes);
+      const long = normalized({ steps: [{ id: 'default', runtimes, apply: 'true' }] });
+      assert.deepEqual(short, long);
+    }
+    assert.equal(normalized('true').steps[0]?.runtimes, undefined);
+    invalid(
+      { runtimes: ['openclaw'], steps: [{ id: 'one', apply: 'true' }] },
+      'manifest-unknown-key',
+      '/setup/runtimes',
+    );
+  });
+
+  it('should reject invalid runtime lists and validate commands on every runtime', () => {
+    for (const runtimes of [[], null, 'codex', ['openclaw', 'openclaw'], ['other'], ['Codex']]) {
+      for (const input of [
+        { runtimes, apply: 'true' },
+        { steps: [{ id: 'one', runtimes, apply: 'true' }] },
+      ]) {
+        const result = normalizeAgentSetup(input);
+        assert.equal(result.status, 'invalid');
+        assert.ok(result.diagnostics.some(({ fieldPath }) => fieldPath?.includes('/runtimes')));
+      }
+    }
+    const parsed = parseAgentManifest(
+      stringify({
+        'schema-version': 1,
+        agent: { id: 'test' },
+        setup: { steps: [{ id: 'codex-only', runtimes: ['codex'], apply: ['../unsafe'] }] },
+      }),
+    );
+    assert.equal(parsed.status, 'invalid');
+    assert.ok(parsed.diagnostics.some(({ code }) => code === 'manifest-setup-unsafe-path'));
+  });
+
   it('should normalize equivalent shell layouts to the default step', () => {
     const expected = {
       steps: [

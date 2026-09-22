@@ -17,6 +17,7 @@ function fixture() {
   });
   assert.equal(normalized.status, 'valid');
   const context = {
+    runtime: 'openclaw' as const,
     manifest: { schemaVersion: 1 as const, agent: { id: 'emori' }, setup: normalized.setup },
     workspaceDir: '/workspace/emori',
   };
@@ -88,6 +89,41 @@ function fixture() {
 }
 
 describe('setup installation lifecycle', () => {
+  it('should skip setup-only prerequisite gates while keeping configured components active', async () => {
+    const { context, calls, state, install, doctor, ids } = fixture();
+    for (const step of context.manifest.setup.steps) step.runtimes = ['codex'];
+    state.blockedOwner = 'git';
+    state.unavailable = true;
+    const installed = await install.install(context);
+    assert.deepEqual(
+      calls,
+      ids.map((id) => `install:${id}`),
+    );
+    assert.deepEqual(
+      installed.outcomes
+        .filter(({ component }) => component === 'setup')
+        .map(({ stepId, status, code }) => [stepId, status, code]),
+      [
+        ['clone', 'skipped', 'setup-not-applicable'],
+        ['configure', 'skipped', 'setup-not-applicable'],
+      ],
+    );
+    calls.length = 0;
+    const inspected = await doctor.inspect(context);
+    assert.equal(inspected.status, 'blocked');
+    assert.deepEqual(
+      calls,
+      ids.map((id) => `inspect:${id}`),
+    );
+    assert.ok(
+      inspected.findings
+        .filter(({ component }) => component === 'setup')
+        .every(({ status }) => status === 'skipped'),
+    );
+    state.blockedOwner = '';
+    assert.equal((await doctor.inspect(context)).status, 'healthy');
+  });
+
   it('should reconcile prerequisites before setup and dependent state afterward', async () => {
     const { install, context, calls } = fixture();
     const result = await install.install(context);
@@ -139,6 +175,7 @@ describe('setup installation lifecycle', () => {
       ids,
     } = fixture();
     await install.install({
+      runtime: 'openclaw',
       manifest: { schemaVersion: manifest.schemaVersion, agent: manifest.agent },
       workspaceDir,
     });

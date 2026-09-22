@@ -2,7 +2,7 @@
 
 Tests public setup installation, agent-bound GitHub identity and SSH cloning,
 check/apply/recheck, unchanged reruns, unchecked steps, Doctor, and skipping setup.
-It also covers partial failures, retries, nonconvergence, timeouts, and granular
+It also covers runtime filtering, partial failures, retries, nonconvergence, timeouts, and granular
 Doctor findings. It uses direct assertions against the packed plugin, with no
 Gateway or model.
 
@@ -43,6 +43,10 @@ cd "$TMPDIR/setup-tanaabot"
 output="$(openclaw agent-system install --yes --json)"
 printf '%s\n' "$output" | jq -e '.outcomes | any(.component == "github" and .code == "add-github-ssh-keys") and any(.stepId == "checkout" and .status == "updated") and any(.stepId == "repeatable" and .status == "updated")'
 printf '%s\n' "$output" | jq -e '.outcomes | map(.component) | index("github") < index("setup") and index("setup") < index("tool-access")'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "updated")'
+test ! -e forbidden-codex-check
+test ! -e forbidden-codex-apply
+test -f shared-ready
 test -d repository/.git
 grep -Fx 'tanaabot' github-login
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' git-identity
@@ -57,7 +61,9 @@ test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
 
 # should inspect setup without running unchecked applies or requiring consent
 cd "$TMPDIR/setup-tanaabot"
-openclaw as doctor --json | jq -e '.findings | any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual")'
+openclaw as doctor --json | jq -e '.findings | any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual") and any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "healthy")'
+test ! -e forbidden-codex-check
+test ! -e forbidden-codex-apply
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
 
 # should skip setup while preserving one json result and a visible warning
@@ -129,6 +135,14 @@ fi
 test ! -s "$TMPDIR/setup-timeout.stdout"
 test ! -e forbidden-later
 test ! -e timeout-survived
+
+# should report an entirely non-applicable setup without running checks or applies
+cd "$TMPDIR/setup-failures"
+cp "$GITHUB_WORKSPACE/examples/setup/runtime.yaml" agent.yaml
+openclaw as install --yes --json | jq -e '[.outcomes[] | select(.component == "setup")] | length == 1 and all(.stepId == "default" and .code == "setup-not-applicable" and .status == "skipped")'
+openclaw as doctor --json | jq -e '.status == "healthy" and (.findings | any(.stepId == "default" and .code == "setup-not-applicable" and .status == "skipped"))'
+test ! -e forbidden-runtime-check
+test ! -e forbidden-runtime-apply
 ```
 
 ## Cleanup

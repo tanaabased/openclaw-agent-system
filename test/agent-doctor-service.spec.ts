@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import AgentDoctorService from '../agent/doctor-service.ts';
 
 const input = {
+  runtime: 'openclaw' as const,
   manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
   workspaceDir: '/workspace',
 };

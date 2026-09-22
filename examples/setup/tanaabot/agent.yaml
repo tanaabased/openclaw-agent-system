@@ -25,7 +25,16 @@ github:
 
 setup:
   steps:
+    - id: codex-only
+      runtimes: [codex]
+      check: |
+        touch forbidden-codex-check
+        exit 2
+      apply: |
+        touch forbidden-codex-apply
+        exit 2
     - id: checkout
+      runtimes: [openclaw]
       check: |
         test -d repository/.git
         test -f checked-runs
@@ -41,3 +50,7 @@ setup:
         printf 'checked\n' >> checked-runs
     - id: repeatable
       apply: printf 'unchecked\n' >> unchecked-runs
+    - id: shared
+      runtimes: [openclaw, codex]
+      check: [test, -f, shared-ready]
+      apply: touch shared-ready

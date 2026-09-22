@@ -20,6 +20,7 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
   const exitCodes: number[] = [];
   const input = Object.assign(Readable.from([]), { isTTY: true });
   const options: SetupConsentOptions = {
+    runtime: 'openclaw',
     setup,
     workspaceDir: '/workspace',
     environment: {},
@@ -65,6 +66,7 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
         },
         installService: {
           async install(input) {
+            assert.equal(input.runtime, 'openclaw');
             events.push(input.skipSetup ? 'install:skip' : 'install:apply');
             return {
               agentId: 'emori',
@@ -92,6 +94,46 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
 }
 
 describe('cli/setup-consent', () => {
+  it('should preview only applicable steps and require no prompt when none apply', async () => {
+    for (const runtime of ['openclaw', 'codex'] as const) {
+      const filtered = normalizeAgentSetup({
+        steps: [
+          { id: 'shared', apply: 'shared command' },
+          { id: 'selected', runtimes: [runtime], apply: 'selected command' },
+          {
+            id: 'excluded',
+            runtimes: [runtime === 'openclaw' ? 'codex' : 'openclaw'],
+            apply: 'private excluded command',
+          },
+        ],
+      });
+      assert.equal(filtered.status, 'valid');
+      const test = fixture({ runtime, setup: filtered.setup });
+      assert.equal(await confirmSetupInstall(test.options), true);
+      assert.deepEqual(test.events, ['prompt']);
+      assert.match(test.stderr.join(''), /shared command/u);
+      assert.match(test.stderr.join(''), /selected command/u);
+      assert.doesNotMatch(test.stderr.join(''), /excluded/u);
+      const skipped = fixture({ runtime, setup: { steps: [filtered.setup.steps[2]!] } });
+      assert.equal(await confirmSetupInstall(skipped.options), true);
+      assert.deepEqual(skipped.events, []);
+      assert.deepEqual(skipped.stderr, []);
+    }
+  });
+
+  it('should select openclaw explicitly at the install boundary', async () => {
+    const filtered = normalizeAgentSetup({ runtimes: ['codex'], apply: 'private codex command' });
+    assert.equal(filtered.status, 'valid');
+    const test = fixture({
+      runtime: 'codex',
+      setup: filtered.setup,
+      environment: { CODEX_HOME: '/codex', AGENT_SYSTEM_RUNTIME: 'codex' },
+    });
+    await test.install(true);
+    assert.deepEqual(test.events, ['validate', 'install:apply']);
+    assert.deepEqual(test.stderr, []);
+  });
+
   it('should confirm before installation even in json mode and keep the preview on stderr', async () => {
     const test = fixture();
     await test.install(true);

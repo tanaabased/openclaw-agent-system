@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import type SetupCommandService from '../agent/setup-command-service.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
-import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
+import { normalizeAgentSetup, type AgentSetupRuntime } from '../manifest/setup-schema.ts';
 
-function context(value: unknown) {
+function context(value: unknown, runtime: AgentSetupRuntime = 'openclaw') {
   const normalized = normalizeAgentSetup(value);
   assert.equal(normalized.status, 'valid');
   return {
+    runtime,
     manifest: { schemaVersion: 1 as const, agent: { id: 'emori' }, setup: normalized.setup },
     workspaceDir: '/workspace/emori',
   };
@@ -33,6 +34,102 @@ function fixture(results: Array<number | null | Error | 'timeout'>) {
 }
 
 describe('agent/setup-lifecycle', () => {
+  for (const runtime of ['openclaw', 'codex'] as const) {
+    it(`should filter ${runtime} checks and applies while retaining shared steps and order`, async () => {
+      const other = runtime === 'openclaw' ? 'codex' : 'openclaw';
+      const input = context(
+        {
+          steps: [
+            { id: 'excluded', runtimes: [other], check: 'excluded check', apply: 'excluded apply' },
+            { id: 'shared', check: 'shared check', apply: 'shared apply' },
+            {
+              id: 'selected',
+              runtimes: [runtime],
+              check: 'selected check',
+              apply: 'selected apply',
+            },
+            { id: 'both', runtimes: ['codex', 'openclaw'], apply: 'both apply' },
+            { id: 'excluded-unchecked', runtimes: [other], apply: 'excluded unchecked' },
+          ],
+        },
+        runtime,
+      );
+      const inspection = fixture([0, 1]);
+      const findings = await inspection.service.inspect(input);
+      assert.deepEqual(
+        findings.map(({ stepId, status }) => [stepId, status]),
+        [
+          ['excluded', 'skipped'],
+          ['shared', 'healthy'],
+          ['selected', 'drift'],
+          ['both', 'manual'],
+          ['excluded-unchecked', 'skipped'],
+        ],
+      );
+      assert.ok(
+        findings
+          .filter(({ status }) => status === 'skipped')
+          .every(
+            ({ code, remediation }) => code === 'setup-not-applicable' && remediation === undefined,
+          ),
+      );
+      const installation = fixture([1, 0, 0, 0, 0]);
+      const result = await installation.service.reconcile(input);
+      assert.deepEqual(
+        result.outcomes.map(({ stepId, status }) => [stepId, status]),
+        [
+          ['excluded', 'skipped'],
+          ['shared', 'updated'],
+          ['selected', 'unchanged'],
+          ['both', 'updated'],
+          ['excluded-unchecked', 'skipped'],
+        ],
+      );
+      assert.deepEqual(
+        installation.calls.map(({ command }) => command),
+        [
+          input.manifest.setup.steps[1]!.check,
+          input.manifest.setup.steps[1]!.apply,
+          input.manifest.setup.steps[1]!.check,
+          input.manifest.setup.steps[2]!.check,
+          input.manifest.setup.steps[3]!.apply,
+        ],
+      );
+    });
+
+    it(`should avoid setup preparation and credential access when no steps match ${runtime}`, async () => {
+      const input = context(
+        {
+          runtimes: [runtime === 'openclaw' ? 'codex' : 'openclaw'],
+          check: 'private check',
+          apply: 'private apply',
+        },
+        runtime,
+      );
+      let preparations = 0;
+      let executions = 0;
+      const service = new SetupLifecycleService({
+        async prepare() {
+          preparations++;
+          throw new Error('unavailable credentials');
+        },
+        async run() {
+          executions++;
+          throw new Error('unavailable tool');
+        },
+      });
+      const installed = await service.reconcile(input);
+      const findings = await service.inspect(input);
+      assert.equal(preparations, 0);
+      assert.equal(executions, 0);
+      assert.equal(installed.outcomes[0]?.status, 'skipped');
+      assert.equal(installed.outcomes[0]?.code, 'setup-not-applicable');
+      assert.deepEqual(findings, installed.outcomes);
+      assert.deepEqual(installed.warnings, []);
+      assert.doesNotMatch(JSON.stringify(installed), /private/u);
+    });
+  }
+
   it('should inspect every check, preserve step ids, and leave unchecked steps manual', async () => {
     const { service, calls } = fixture([0, 1, 2, null, 'timeout', new Error('private output')]);
     const input = context({

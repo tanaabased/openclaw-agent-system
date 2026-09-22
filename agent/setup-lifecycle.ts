@@ -1,22 +1,29 @@
 import {
   AgentSystemLifecycleError,
-  type AgentSystemLifecycleContext,
+  type AgentSystemLifecycleExecutionContext,
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleReconcileResult,
 } from '../core/lifecycle-registry.ts';
 import type SetupCommandService from './setup-command-service.ts';
+import setupStepApplies from './setup-runtime.ts';
 import type { AgentSetupCommand, AgentSetupStep } from '../manifest/setup-schema.ts';
 
-/** Inspect every declared check; reconcile ordered steps without rolling back external effects. */
+/** Inspect applicable checks; reconcile ordered steps without rolling back external effects. */
 export default class SetupLifecycleService {
   constructor(
     private readonly commands: Pick<SetupCommandService, 'run'> &
       Partial<Pick<SetupCommandService, 'prepare'>>,
   ) {}
 
-  async inspect(context: AgentSystemLifecycleContext): Promise<AgentSystemLifecycleFinding[]> {
+  async inspect(
+    context: AgentSystemLifecycleExecutionContext,
+  ): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
     for (const step of context.manifest.setup?.steps ?? []) {
+      if (!setupStepApplies(step, context.runtime)) {
+        findings.push(this.notApplicable(step, context));
+        continue;
+      }
       const status = step.check ? await this.check(step.check, context) : 'manual';
       findings.push({
         component: 'setup',
@@ -38,11 +45,13 @@ export default class SetupLifecycleService {
   }
 
   async reconcile(
-    context: AgentSystemLifecycleContext,
+    context: AgentSystemLifecycleExecutionContext,
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleReconcileResult['outcomes'] = [];
     try {
-      await this.commands.prepare?.(context);
+      if (context.manifest.setup?.steps.some((step) => setupStepApplies(step, context.runtime))) {
+        await this.commands.prepare?.(context);
+      }
     } catch {
       throw new AgentSystemLifecycleError(
         'setup',
@@ -51,6 +60,10 @@ export default class SetupLifecycleService {
       );
     }
     for (const step of context.manifest.setup?.steps ?? []) {
+      if (!setupStepApplies(step, context.runtime)) {
+        outcomes.push(this.notApplicable(step, context));
+        continue;
+      }
       const before = step.check ? await this.check(step.check, context) : 'manual';
       if (before === 'blocked') this.fail(step, 'setup-check-blocked');
       if (before !== 'healthy') {
@@ -73,14 +86,24 @@ export default class SetupLifecycleService {
     return { outcomes, warnings: [] };
   }
 
-  private async check(command: AgentSetupCommand, context: AgentSystemLifecycleContext) {
+  private notApplicable(step: AgentSetupStep, context: AgentSystemLifecycleExecutionContext) {
+    return {
+      component: 'setup',
+      stepId: step.id,
+      code: 'setup-not-applicable',
+      status: 'skipped' as const,
+      message: `Setup step ${step.id} does not apply to ${context.runtime}.`,
+    };
+  }
+
+  private async check(command: AgentSetupCommand, context: AgentSystemLifecycleExecutionContext) {
     const code = await this.execute(command, context, 'check');
     return code === 0 ? 'healthy' : code === 1 ? 'drift' : 'blocked';
   }
 
   private async execute(
     command: AgentSetupCommand,
-    context: AgentSystemLifecycleContext,
+    context: AgentSystemLifecycleExecutionContext,
     mode: 'check' | 'apply',
   ): Promise<number | null> {
     try {

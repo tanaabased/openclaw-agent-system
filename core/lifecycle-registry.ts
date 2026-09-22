@@ -1,5 +1,7 @@
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import setupStepApplies from '../agent/setup-runtime.ts';
+import type { AgentSetupRuntime } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
 
 export interface AgentSystemLifecycleContext {
@@ -7,7 +9,13 @@ export interface AgentSystemLifecycleContext {
   workspaceDir: string;
 }
 
-export type AgentSystemLifecycleOutcomeStatus = 'created' | 'removed' | 'unchanged' | 'updated';
+export interface AgentSystemLifecycleExecutionContext extends AgentSystemLifecycleContext {
+  /** Selected by the invoking integration, never by manifest or environment values. */
+  runtime: AgentSetupRuntime;
+}
+
+export type AgentSystemLifecycleOutcomeStatus =
+  'created' | 'removed' | 'skipped' | 'unchanged' | 'updated';
 
 export interface AgentSystemLifecycleOutcome {
   code: string;
@@ -25,7 +33,7 @@ export interface AgentSystemLifecycleWarning {
 }
 
 export type AgentSystemLifecycleFindingStatus =
-  'blocked' | 'drift' | 'healthy' | 'manual' | 'warning';
+  'blocked' | 'drift' | 'healthy' | 'manual' | 'skipped' | 'warning';
 
 export interface AgentSystemLifecycleFinding {
   providerDiagnostic?: ProviderDiagnostic;
@@ -154,7 +162,9 @@ export default class AgentSystemLifecycleRegistry {
     return { checks, diagnostics };
   }
 
-  async inspect(context: AgentSystemLifecycleContext): Promise<AgentSystemLifecycleFinding[]> {
+  async inspect(
+    context: AgentSystemLifecycleExecutionContext,
+  ): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
     for (const contribution of this.#ordered(context)) {
       let result;
@@ -176,7 +186,7 @@ export default class AgentSystemLifecycleRegistry {
   }
 
   async reconcile(
-    context: AgentSystemLifecycleContext,
+    context: AgentSystemLifecycleExecutionContext,
     options: { skipSetup?: boolean } = {},
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
@@ -209,7 +219,7 @@ export default class AgentSystemLifecycleRegistry {
   }
 
   #ordered(
-    context: AgentSystemLifecycleContext,
+    context: AgentSystemLifecycleExecutionContext,
     skipSetup = false,
   ): AgentSystemLifecycleContribution[] {
     const configured = this.#configured(context.manifest);
@@ -223,7 +233,11 @@ export default class AgentSystemLifecycleRegistry {
       );
     }
     // These owners establish the identity, launchers, and credentials needed by setup.
-    const prerequisiteIds = ['agent', 'path', 'git', 'github'];
+    const prerequisiteIds = context.manifest.setup.steps.some((step) =>
+      setupStepApplies(step, context.runtime),
+    )
+      ? ['agent', 'path', 'git', 'github']
+      : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
       configured.filter((entry) => entry.id === id),
     );
@@ -233,7 +247,7 @@ export default class AgentSystemLifecycleRegistry {
       {
         id: 'setup',
         isConfigured: () => true,
-        inspect: (input) => setupLifecycle.inspect(input),
+        inspect: () => setupLifecycle.inspect(context),
         reconcile: async (input) => {
           for (const prerequisite of prerequisites) {
             let findings;
@@ -254,7 +268,7 @@ export default class AgentSystemLifecycleRegistry {
               );
             }
           }
-          return setupLifecycle.reconcile(input);
+          return setupLifecycle.reconcile(context);
         },
       },
       ...dependent,

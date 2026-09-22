@@ -8,6 +8,7 @@ export type AgentSystemLifecyclePresentationStatus =
   | 'healthy'
   | 'manual'
   | 'removed'
+  | 'skipped'
   | 'unchanged'
   | 'updated'
   | 'valid'
@@ -51,7 +52,7 @@ export function lifecycleTableLines(
     attention: ['blocked', 'drift', 'warning', 'manual'].includes(status),
     component,
     label: status,
-    quiet: status === 'healthy' || status === 'unchanged',
+    quiet: status === 'healthy' || status === 'unchanged' || status === 'skipped',
     style: presentationStyle(status),
     value: message,
   }));
@@ -62,6 +63,6 @@ export function orderDoctorFindings(
   findings: readonly AgentSystemLifecycleFinding[],
 ): AgentSystemLifecycleFinding[] {
   const priority = ({ status }: AgentSystemLifecycleFinding) =>
-    status === 'blocked' ? 0 : status === 'healthy' ? 2 : 1;
+    status === 'blocked' ? 0 : status === 'healthy' || status === 'skipped' ? 2 : 1;
   return [...findings].sort((left, right) => priority(left) - priority(right));
 }
