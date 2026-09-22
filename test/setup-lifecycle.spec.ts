@@ -9,8 +9,7 @@ function context(value: unknown) {
   const normalized = normalizeAgentSetup(value);
   assert.equal(normalized.status, 'valid');
   return {
-    manifest: { schemaVersion: 1 as const, agent: { id: 'emori' } },
-    setup: normalized.setup,
+    manifest: { schemaVersion: 1 as const, agent: { id: 'emori' }, setup: normalized.setup },
     workspaceDir: '/workspace/emori',
   };
 }
@@ -85,11 +84,11 @@ describe('agent/setup-lifecycle', () => {
     assert.deepEqual(
       calls.map(({ command }) => command),
       [
-        input.setup.steps[0]!.check,
-        input.setup.steps[1]!.check,
-        input.setup.steps[1]!.apply,
-        input.setup.steps[1]!.check,
-        input.setup.steps[2]!.apply,
+        input.manifest.setup.steps[0]!.check,
+        input.manifest.setup.steps[1]!.check,
+        input.manifest.setup.steps[1]!.apply,
+        input.manifest.setup.steps[1]!.check,
+        input.manifest.setup.steps[2]!.apply,
       ],
     );
     assert.deepEqual(

@@ -217,6 +217,23 @@ describe('agent/setup-command-service', function () {
     });
   }
 
+  it('should prepare configured tool credentials and key resources before launching any setup command', async () => {
+    const service = new SetupCommandService(dependencies);
+    await service.prepare({ manifest: loaded.manifest, workspaceDir });
+    assert.deepEqual(
+      requests.map(({ executable }) => executable),
+      ['git', 'gh', 'gh'],
+    );
+    assert.equal(sshDisposals, 1);
+    assert.equal(configurationRepairs, 0);
+    assert.deepEqual(childEnvironments, []);
+    credentials = {};
+    await assert.rejects(service.prepare({ manifest: loaded.manifest, workspaceDir }), {
+      code: 'setup-prerequisite-blocked',
+    });
+    assert.deepEqual(childEnvironments, []);
+  });
+
   it('should use agent credentials through real managed launcher subprocesses in every command form', async () => {
     for (const apply of [
       'gh api user --jq .login',

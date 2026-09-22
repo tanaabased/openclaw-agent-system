@@ -1,0 +1,38 @@
+schema-version: 1
+
+agent:
+  id: setup-tanaabot
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required:
+    - GH_TOKEN_TANAABOT
+
+git:
+  ssh:
+    private-keys:
+      path: ~/.ssh/big-test-bucket-ssh
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    path: setup-key.pub
+    title: agent-system-setup-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__
+
+setup:
+  steps:
+    - id: checkout
+      check: [test, -d, repository/.git]
+      apply: |
+        test -z "$GH_TOKEN_TANAABOT"
+        test -z "$GH_TOKEN"
+        gh api user --jq .login > github-login
+        git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git repository
+        git -C repository var GIT_AUTHOR_IDENT > git-identity
+        printf 'checked\n' >> checked-runs
+    - id: repeatable
+      apply: printf 'unchecked\n' >> unchecked-runs

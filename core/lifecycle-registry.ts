@@ -1,11 +1,9 @@
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
-import type { AgentSetupConfiguration } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
 
 export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
-  setup?: AgentSetupConfiguration;
   workspaceDir: string;
 }
 
@@ -146,6 +144,13 @@ export default class AgentSystemLifecycleRegistry {
         });
       }
     }
+    if (context.manifest.setup)
+      checks.push({
+        code: 'setup-declaration-valid',
+        component: 'setup',
+        status: 'valid',
+        message: `Setup declaration with ${context.manifest.setup.steps.length} ordered steps`,
+      });
     return { checks, diagnostics };
   }
 
@@ -172,10 +177,11 @@ export default class AgentSystemLifecycleRegistry {
 
   async reconcile(
     context: AgentSystemLifecycleContext,
+    options: { skipSetup?: boolean } = {},
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
     const warnings: AgentSystemLifecycleWarning[] = [];
-    for (const contribution of this.#ordered(context)) {
+    for (const contribution of this.#ordered(context, options.skipSetup)) {
       let result;
       try {
         result = await contribution.reconcile?.(context);
@@ -202,9 +208,12 @@ export default class AgentSystemLifecycleRegistry {
     return { outcomes, warnings };
   }
 
-  #ordered(context: AgentSystemLifecycleContext): AgentSystemLifecycleContribution[] {
+  #ordered(
+    context: AgentSystemLifecycleContext,
+    skipSetup = false,
+  ): AgentSystemLifecycleContribution[] {
     const configured = this.#configured(context.manifest);
-    if (!context.setup) return configured;
+    if (!context.manifest.setup || skipSetup) return configured;
     const setupLifecycle = this.setupLifecycle;
     if (!setupLifecycle) {
       throw new AgentSystemLifecycleError(

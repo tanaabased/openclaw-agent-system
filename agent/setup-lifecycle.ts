@@ -9,11 +9,14 @@ import type { AgentSetupCommand, AgentSetupStep } from '../manifest/setup-schema
 
 /** Inspect every declared check; reconcile ordered steps without rolling back external effects. */
 export default class SetupLifecycleService {
-  constructor(private readonly commands: Pick<SetupCommandService, 'run'>) {}
+  constructor(
+    private readonly commands: Pick<SetupCommandService, 'run'> &
+      Partial<Pick<SetupCommandService, 'prepare'>>,
+  ) {}
 
   async inspect(context: AgentSystemLifecycleContext): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
-    for (const step of context.setup?.steps ?? []) {
+    for (const step of context.manifest.setup?.steps ?? []) {
       const status = step.check ? await this.check(step.check, context) : 'manual';
       findings.push({
         component: 'setup',
@@ -38,7 +41,16 @@ export default class SetupLifecycleService {
     context: AgentSystemLifecycleContext,
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleReconcileResult['outcomes'] = [];
-    for (const step of context.setup?.steps ?? []) {
+    try {
+      await this.commands.prepare?.(context);
+    } catch {
+      throw new AgentSystemLifecycleError(
+        'setup',
+        'setup-prerequisite-blocked',
+        'Configured setup tools require available executables, credentials, and key sources.',
+      );
+    }
+    for (const step of context.manifest.setup?.steps ?? []) {
       const before = step.check ? await this.check(step.check, context) : 'manual';
       if (before === 'blocked') this.fail(step, 'setup-check-blocked');
       if (before !== 'healthy') {

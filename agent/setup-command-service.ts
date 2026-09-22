@@ -13,6 +13,7 @@ import AgentSystemToolError from '../api/error.ts';
 import type AgentSystemToolRegistry from '../api/registry.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 import type AgentManifestService from '../manifest/service.ts';
 
 export interface SetupCommandServiceDependencies {
@@ -30,6 +31,44 @@ export interface SetupCommandServiceDependencies {
 /** Own one setup command's authority and keep credential-bearing tool execution in its operator process. */
 export default class SetupCommandService {
   constructor(private readonly dependencies: SetupCommandServiceDependencies) {}
+
+  async prepare(context: { manifest: AgentManifest; workspaceDir: string }): Promise<void> {
+    const controller = new AbortController();
+    const probes = [
+      ...(context.manifest.git ? [{ command: 'git', argv: ['--version'] }] : []),
+      ...(context.manifest.github
+        ? [{ command: 'gh', argv: ['api', 'user', '--jq', '.login'] }]
+        : []),
+    ];
+    try {
+      for (const probe of probes) {
+        const result = await this.dependencies.toolRegistry.invoke(
+          probe.command,
+          this.dependencies.toolRuntime,
+          probe.argv,
+          {
+            source: 'command',
+            agentId: context.manifest.agent.id,
+            workspaceDir: context.workspaceDir,
+            configurationMode: 'inspect',
+          },
+          undefined,
+          controller.signal,
+        );
+        if (
+          result.kind !== 'cli' ||
+          result.commandResult.exitCode !== 0 ||
+          result.commandResult.timedOut
+        ) {
+          throw new Error('unavailable prerequisite');
+        }
+      }
+    } catch {
+      throw new SetupCommandError('setup-prerequisite-blocked');
+    } finally {
+      controller.abort();
+    }
+  }
 
   async run(
     command: AgentSetupCommand,

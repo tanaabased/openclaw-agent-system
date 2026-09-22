@@ -21,7 +21,9 @@ export interface AgentInstallServiceDependencies {
   lifecycleRegistry: Pick<AgentSystemLifecycleRegistry, 'reconcile'>;
 }
 
-export type AgentInstallInput = AgentSystemLifecycleContext;
+export interface AgentInstallInput extends AgentSystemLifecycleContext {
+  skipSetup?: boolean;
+}
 
 export class AgentInstallError extends Error {
   override name = 'AgentInstallError';
@@ -57,11 +59,24 @@ export default class AgentInstallService {
       }
     }
 
-    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input);
+    const lifecycle = await this.#dependencies.lifecycleRegistry.reconcile(input, {
+      skipSetup: input.skipSetup === true,
+    });
     return {
       agentId: input.manifest.agent.id,
       outcomes: lifecycle.outcomes,
-      warnings: lifecycle.warnings,
+      warnings: [
+        ...(input.skipSetup && input.manifest.setup
+          ? [
+              {
+                code: 'setup-skipped',
+                component: 'setup',
+                message: 'Setup was skipped; declared steps have not been verified or applied.',
+              },
+            ]
+          : []),
+        ...lifecycle.warnings,
+      ],
       workspaceDir: input.workspaceDir,
     };
   }

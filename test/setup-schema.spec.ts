@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 
 import {
   normalizeAgentSetup,
@@ -242,13 +242,52 @@ describe('manifest/setup-schema', () => {
     });
   });
 
-  it('should leave setup unavailable in the public manifest parser until integration', () => {
-    const result = parseAgentManifest('schema-version: 1\nagent:\n  id: test\nsetup: echo ready\n');
+  it('should accept every supported public form and preserve setup diagnostic paths', () => {
+    for (const setup of [
+      'echo simple',
+      'echo one\necho two\n',
+      { shell: 'zsh', apply: 'echo script' },
+      {
+        check: ['test', '-d', 'repo'],
+        apply: { command: './setup', args: ['apply'], 'timeout-seconds': 30 },
+      },
+      {
+        shell: 'bash',
+        steps: [
+          { id: 'first', check: 'test -f ready', apply: 'touch ready' },
+          { id: 'second', shell: 'zsh', apply: 'true' },
+        ],
+      },
+    ]) {
+      const result = parseAgentManifest(
+        stringify({ 'schema-version': 1, agent: { id: 'test' }, setup }),
+      );
+      assert.equal(result.status, 'valid');
+      if (result.status === 'valid') assert.deepEqual(result.manifest.setup, normalized(setup));
+    }
+    const setup = {
+      steps: [
+        { id: 'duplicate', apply: 'private-command' },
+        { id: 'duplicate', apply: 'private-command' },
+      ],
+    };
+    const result = parseAgentManifest(
+      stringify({ 'schema-version': 1, agent: { id: 'test' }, setup }),
+    );
     assert.equal(result.status, 'invalid');
     assert.ok(
       result.diagnostics.some(
-        ({ code, fieldPath }) => code === 'manifest-unknown-key' && fieldPath === '/setup',
+        ({ code, fieldPath }) =>
+          code === 'manifest-setup-duplicate-id' && fieldPath === '/setup/steps/1/id',
       ),
     );
+    assert.doesNotMatch(JSON.stringify(result.diagnostics), /private-command/u);
+  });
+
+  it('should normalize setup through the public manifest parser', () => {
+    const result = parseAgentManifest('schema-version: 1\nagent:\n  id: test\nsetup: echo ready\n');
+    assert.equal(result.status, 'valid');
+    if (result.status === 'valid')
+      assert.deepEqual(result.manifest.setup, normalized('echo ready'));
   });
 });

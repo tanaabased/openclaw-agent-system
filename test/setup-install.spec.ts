@@ -17,9 +17,8 @@ function fixture() {
   });
   assert.equal(normalized.status, 'valid');
   const context = {
-    manifest: { schemaVersion: 1 as const, agent: { id: 'emori' } },
+    manifest: { schemaVersion: 1 as const, agent: { id: 'emori' }, setup: normalized.setup },
     workspaceDir: '/workspace/emori',
-    setup: normalized.setup,
   };
   const calls: string[] = [];
   const installed = new Set<string>();
@@ -139,7 +138,10 @@ describe('setup installation lifecycle', () => {
       calls,
       ids,
     } = fixture();
-    await install.install({ manifest, workspaceDir });
+    await install.install({
+      manifest: { schemaVersion: manifest.schemaVersion, agent: manifest.agent },
+      workspaceDir,
+    });
     assert.deepEqual(
       calls,
       ids.map((id) => `install:${id}`),
@@ -209,6 +211,41 @@ describe('setup installation lifecycle', () => {
     assert.ok(calls.includes('inspect:notifications'));
     assert.ok(!calls.some((call) => call.startsWith('install:') || call.endsWith(':apply')));
     assert.equal(installed.size, 0);
+  });
+
+  it('should skip the entire setup phase without changing doctor findings', async () => {
+    const { install, doctor, context, calls, ids, state } = fixture();
+    state.unavailable = true;
+    const result = await install.install({ ...context, skipSetup: true });
+    assert.deepEqual(
+      calls,
+      ids.map((id) => `install:${id}`),
+    );
+    assert.ok(!result.outcomes.some(({ component }) => component === 'setup'));
+    assert.equal(result.warnings[0]?.code, 'setup-skipped');
+    calls.length = 0;
+    const findings = await doctor.inspect(context);
+    assert.equal(findings.status, 'blocked');
+    assert.ok(calls.includes('setup:clone:check'));
+  });
+
+  it('should stop before setup when tool preparation fails', async () => {
+    let commands = 0;
+    const { context } = fixture();
+    const setup = new SetupLifecycleService({
+      async prepare() {
+        throw new Error('private credential failure');
+      },
+      async run() {
+        commands++;
+        return { exitCode: 0, timedOut: false, truncated: false };
+      },
+    });
+    await assert.rejects(setup.reconcile(context), { code: 'setup-prerequisite-blocked' });
+    assert.equal(commands, 0);
+    const findings = await setup.inspect(context);
+    assert.ok(findings.every(({ status }) => status === 'healthy'));
+    assert.equal(commands, 2);
   });
 
   it('should keep validation nonexecuting and reject unconfigured setup execution', async () => {

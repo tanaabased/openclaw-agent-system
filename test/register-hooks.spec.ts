@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
+
 import { agentCommandSecurityGuidance } from '../agent/command-security.ts';
 import registerAgentSystemHooks from '../core/register-hooks.ts';
 
@@ -32,7 +34,9 @@ describe('core/register-hooks', () => {
     ]);
   });
 
-  it('should append central and configured tool guidance for the active manifest', async () => {
+  it('should append central and configured tool guidance without setup command text', async () => {
+    const normalized = normalizeAgentSetup('echo private-setup-command');
+    assert.equal(normalized.status, 'valid');
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     registerAgentSystemHooks(
       {
@@ -47,7 +51,7 @@ describe('core/register-hooks', () => {
             scope: { agentId: 'data', workspaceDir: '/workspace' },
             path: '/workspace/agent.yaml',
             digest: 'digest',
-            manifest: { schemaVersion: 1, agent: { id: 'data' } },
+            manifest: { schemaVersion: 1, agent: { id: 'data' }, setup: normalized.setup },
             diagnostics: [],
             validationChecks: [],
           } as const;
