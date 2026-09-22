@@ -20,25 +20,24 @@ jobs:
         os:
           - macos-26
           - ubuntu-24.04
-        # temporarily focus #64 on setup; restore the full matrix after it passes.
         example:
-          # - install
+          - install
           - setup
-          # - validate
-          # - doctor
-          # - agent
-          # - identity
-          # - memory
-          # - models
-          # - path
-          # - env
-          # - credentials
-          # - git
-          # - worktree
-          # - github
-          # - routing
-          # - tool
-          # - security
+          - validate
+          - doctor
+          - agent
+          - identity
+          - memory
+          - models
+          - path
+          - env
+          - credentials
+          - git
+          - worktree
+          - github
+          - routing
+          - tool
+          - security
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

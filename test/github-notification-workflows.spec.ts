@@ -228,7 +228,7 @@ describe('github notification workflows', () => {
     });
   });
 
-  it('should temporarily pause notifications while setup examples are debugged', async () => {
+  it('should finish sibling fixtures before starting background concurrency polling', async () => {
     const source = await readFile('.github/workflows/pr-notification-tests.yml', 'utf8');
     const workflow = parse(source) as CallerWorkflow;
     const notifications = workflow.jobs?.notifications;
@@ -240,7 +240,7 @@ describe('github notification workflows', () => {
       group: 'notification-test-account',
       'cancel-in-progress': false,
     });
-    assert.equal(notifications?.if, false);
+    assert.equal(notifications?.if, undefined);
     assert.equal(notifications?.uses, './.github/workflows/reusable-notification-test.yml');
     assert.equal(notifications?.name, '${{ matrix.scenario }}');
     assert.equal(notifications?.concurrency, undefined);
@@ -268,7 +268,7 @@ describe('github notification workflows', () => {
     });
     assert.deepEqual(workflow.jobs?.concurrency?.secrets, notifications?.secrets);
     assert.equal(workflow.jobs?.concurrency?.needs, 'notifications');
-    assert.equal(workflow.jobs?.concurrency?.if, false);
+    assert.equal(workflow.jobs?.concurrency?.if, '${{ always() && !cancelled() }}');
     assert.deepEqual(workflow.jobs?.concurrency?.with, {
       provider: 'mock',
       runner: 'ubuntu-24.04',
@@ -492,7 +492,7 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should temporarily focus the pull request matrix on the setup example', async () => {
+  it('should keep every general example in the non-notification pull request matrix', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const examples = workflow.jobs?.examples?.strategy?.matrix?.example ?? [];
@@ -502,10 +502,28 @@ describe('github notification workflows', () => {
       .sort();
 
     assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
-      example: ['setup'],
+      example: [
+        'install',
+        'setup',
+        'validate',
+        'doctor',
+        'agent',
+        'identity',
+        'memory',
+        'models',
+        'path',
+        'env',
+        'credentials',
+        'git',
+        'worktree',
+        'github',
+        'routing',
+        'tool',
+        'security',
+      ],
       os: ['macos-26', 'ubuntu-24.04'],
     });
-    assert.ok(examples.every((example) => exampleDirectories.includes(example)));
+    assert.deepEqual(exampleDirectories, [...examples].sort());
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 });

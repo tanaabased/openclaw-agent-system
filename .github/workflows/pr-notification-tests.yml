@@ -12,8 +12,6 @@ concurrency:
 
 jobs:
   notifications:
-    # temporarily paused while #64 setup examples are debugged.
-    if: false
     name: ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -36,8 +34,7 @@ jobs:
       gh_token_tanaabot: ${{ secrets.GH_TOKEN_TANAABOT }}
   concurrency:
     needs: notifications
-    # if: ${{ always() && !cancelled() }}
-    if: false
+    if: ${{ always() && !cancelled() }}
     uses: ./.github/workflows/reusable-notification-test.yml
     with:
       provider: mock
