@@ -26,13 +26,15 @@ github:
 setup:
   steps:
     - id: checkout
-      check: [test, -d, repository/.git]
+      check: test -d repository/.git && test -f checked-runs
       apply: |
         test -z "$GH_TOKEN_TANAABOT"
         test -z "$GH_TOKEN"
         gh api user --jq .login > github-login
-        git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git repository
-        git -C repository var GIT_AUTHOR_IDENT > git-identity
+        if ! test -d repository/.git; then
+          git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git repository
+        fi
+        (cd repository && git var GIT_AUTHOR_IDENT) > git-identity
         printf 'checked\n' >> checked-runs
     - id: repeatable
       apply: printf 'unchecked\n' >> unchecked-runs

@@ -277,7 +277,19 @@ describe('agent/setup-command-service', function () {
   });
 
   it('should retain identity after an admitted cwd change and redact provider output before returning it', async () => {
-    assert.equal((await run('cd repo\ngh api repos/owner/repo > result')).exitCode, 0);
+    assert.equal(
+      (
+        await run(
+          '(cd repo && git var GIT_AUTHOR_IDENT) > git-result\ncd repo\ngh api repos/owner/repo > result',
+        )
+      ).exitCode,
+      0,
+    );
+    assert.deepEqual(requests[0]?.argv, ['var', 'GIT_AUTHOR_IDENT']);
+    assert.equal(requests[0]?.cwd, join(workspaceDir, 'repo'));
+    assert.equal(requests[0]?.environment.GIT_AUTHOR_NAME, 'Emori');
+    assert.equal(requests[0]?.environment.GIT_AUTHOR_EMAIL, 'emori@example.invalid');
+    assert.equal(await readFile(join(workspaceDir, 'git-result'), 'utf8'), '[REDACTED]\n');
     assert.equal(requests.at(-1)?.cwd, join(workspaceDir, 'repo'));
     assert.equal(await readFile(join(workspaceDir, 'repo', 'result'), 'utf8'), '[REDACTED]\n');
   });
