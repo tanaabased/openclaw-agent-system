@@ -117,11 +117,11 @@ node --import tsx "$GITHUB_WORKSPACE/scenarios/issue-work-concurrency/assert-sta
 ## Cleanup
 
 ```bash
-# should stop the gateway before releasing the held provider turns
-openclaw-gateway stop
+# should release the held provider turns before stopping the gateway
 if test -d "$TMPDIR/notification-concurrency"; then
   printf '%s' released > "$TMPDIR/notification-concurrency/release"
 fi
+openclaw-gateway stop
 
 # should close only the three generated issue fixtures
 if test -d "$TMPDIR/agent-system-notification-actor"; then
