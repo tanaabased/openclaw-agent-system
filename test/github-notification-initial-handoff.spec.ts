@@ -192,6 +192,7 @@ async function handoffFixture() {
           approvedActors: [notificationActor],
           assignmentTypes: ['issue' as const],
           intervalMinutes: 5,
+          maxConcurrentIssues: 2,
         },
       };
     },

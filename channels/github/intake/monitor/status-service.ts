@@ -15,6 +15,7 @@ const maximumRefreshLeaseWaitMs = 30_000;
 export interface GitHubNotificationStatusServiceDependencies {
   clock?: () => number;
   monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
+  maximumConcurrentIssues?(agentId: string): Promise<number>;
   sleep?: (milliseconds: number) => Promise<void>;
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
 }
@@ -45,12 +46,14 @@ function defaultSleep(milliseconds: number): Promise<void> {
 export default class GitHubNotificationStatusService {
   readonly #clock: () => number;
   readonly #monitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
+  readonly #maximumConcurrentIssues: (agentId: string) => Promise<number>;
   readonly #sleep: (milliseconds: number) => Promise<void>;
   readonly #stateStore: Pick<GitHubNotificationMonitorStateStore, 'read'>;
 
   constructor(dependencies: GitHubNotificationStatusServiceDependencies) {
     this.#clock = dependencies.clock ?? Date.now;
     this.#monitorService = dependencies.monitorService;
+    this.#maximumConcurrentIssues = dependencies.maximumConcurrentIssues ?? (async () => 2);
     this.#sleep = dependencies.sleep ?? defaultSleep;
     this.#stateStore = dependencies.stateStore;
   }
@@ -59,7 +62,12 @@ export default class GitHubNotificationStatusService {
     agentId: string,
     selector?: GitHubNotificationItemSelector,
   ): Promise<GitHubNotificationStatusResult> {
-    return githubNotificationMonitorStatus(agentId, await this.#stateStore.read(agentId), selector);
+    return githubNotificationMonitorStatus(
+      agentId,
+      await this.#stateStore.read(agentId),
+      selector,
+      await this.#maximumConcurrentIssues(agentId),
+    );
   }
 
   async wait(input: GitHubNotificationWaitInput): Promise<GitHubNotificationWaitResult> {

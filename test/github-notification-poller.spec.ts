@@ -77,6 +77,7 @@ const configuration = {
   approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
   allowedRepositoryOwners: [{ login: repository.owner.login, nodeId: repository.owner.nodeId }],
   intervalMinutes: 5,
+  maxConcurrentIssues: 2,
 };
 
 function client(
@@ -183,6 +184,7 @@ describe('channels/github/intake/monitor/poller', () => {
     assert.equal(approved.baselineEstablished, false);
     assert.deepEqual(Object.values(approved.state.items)[0]?.intake, {
       assignmentEventId: assignment.nodeId,
+      scheduling: { sequence: 1, status: 'queued' },
       stage: 'admitted',
     });
     assert.equal(restarted.approved, 0);

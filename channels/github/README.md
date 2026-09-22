@@ -43,9 +43,9 @@ The channel also:
 The Gateway polls independently of issue workers, so new assignments can begin
 while another issue is running. Each issue serializes preparation, comments,
 responses, and retirement across Gateway and CLI processes. Different issues
-can proceed concurrently within OpenClaw capacity limits; shared repository
-preparation is serialized. Assignment acknowledgments wait for durable session
-recording.
+can proceed concurrently up to the agent's durable issue-work limit; shared
+repository preparation is serialized. Assignment acknowledgments wait for
+durable session recording.
 
 ## Requirements
 
@@ -146,6 +146,7 @@ github:
       - issue
     initial-mode: work
     interval-minutes: 5
+    max-concurrent-issues: 2
     approved-actors:
       - login: pirog
         node-id: U_kgDOB9x7Qw
@@ -255,6 +256,19 @@ turn.
 
 Sets the polling interval from `1` through `1440` minutes.
 
+### `github.notifications.max-concurrent-issues`
+
+| Type    | Required | Default |
+| ------- | -------- | ------- |
+| integer | no       | `2`     |
+
+Limits concurrent issue work for one agent. The durable queue is shared by the
+Gateway and one-shot CLI refreshes, so a second process cannot evade the limit.
+An issue keeps its slot across planning and automatic implementation. Delivery,
+an explicit wait for follow-up, or a retryable failure releases the slot; failed
+work moves to the back of the queue. Pull-request assignment intake is not
+counted against this issue-work limit.
+
 `github.token` names an environment variable and never accepts a literal token.
 Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
 for the authenticated branch push. The matching public key must already belong
@@ -327,8 +341,9 @@ any execution it starts to settle before exiting.
 Reads the durable notification state without advancing intake.
 
 The result reports a redacted baseline and item projection, including lifecycle,
-worktree, and cleanup status when available. A durable monitor diagnostic
-returns `degraded` and a nonzero exit code.
+worktree, cleanup, scheduling state, and aggregate active, queued, and limit
+counts when available. Waiting items include a stable reason code. A durable
+monitor diagnostic returns `degraded` and a nonzero exit code.
 
 ### `openclaw agent-system notifications wait`
 

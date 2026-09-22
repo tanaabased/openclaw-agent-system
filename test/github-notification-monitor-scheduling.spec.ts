@@ -318,7 +318,17 @@ describe('channels/github/intake/monitor/service scheduling', () => {
         assert.equal(admitted?.status, 'completed');
         assert.equal(admitted?.approved, 0);
         const after = await fixture.readState();
-        assert.deepEqual(after?.items[itemKeyA]?.intake, before?.items[itemKeyA]?.intake);
+        assert.deepEqual(
+          {
+            ...after?.items[itemKeyA]?.intake,
+            scheduling: before?.items[itemKeyA]?.intake?.scheduling,
+          },
+          before?.items[itemKeyA]?.intake,
+        );
+        assert.equal(
+          after?.items[itemKeyA]?.intake?.scheduling?.status,
+          outcome === 'failed' ? 'queued' : 'waiting',
+        );
         assert.equal(after?.items[itemKeyA]?.disposition, before?.items[itemKeyA]?.disposition);
         assert.equal(after?.items[itemKeyB]?.disposition, 'approved');
         assert.equal(after?.items[itemKeyB]?.intake?.stage, 'prepared');

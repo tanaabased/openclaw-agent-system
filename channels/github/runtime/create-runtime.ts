@@ -352,6 +352,12 @@ export default function createGitHubNotificationRuntime(
         stateStore: monitorStateStore,
       });
       const statusService = new GitHubNotificationStatusService({
+        async maximumConcurrentIssues(agentId) {
+          const loaded = await manifestService.loadForAgentId(agentId, 'service');
+          return loaded.status === 'loaded'
+            ? (loaded.manifest.github?.notifications?.maxConcurrentIssues ?? 2)
+            : 2;
+        },
         monitorService,
         stateStore: monitorStateStore,
       });

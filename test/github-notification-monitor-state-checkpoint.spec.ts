@@ -24,7 +24,16 @@ const cleanup = {
 function pollResult() {
   const state = notificationMonitorState();
   state.items[itemKey]!.lastObservedAt += 1;
-  state.items['R_repo:13'] = { ...state.items[itemKey]!, number: 13, itemNodeId: 'I_other' };
+  state.items['github:R_repo:13'] = {
+    ...state.items[itemKey]!,
+    intake: {
+      ...state.items[itemKey]!.intake!,
+      scheduling: { sequence: 2, status: 'queued' },
+    },
+    number: 13,
+    itemNodeId: 'I_other',
+  };
+  state.nextSchedulingSequence = 3;
   state.searchBoundary = '2026-09-10T12:00:00.000Z';
   state.lastSuccessfulPollAt = 2_000;
   state.nextPollAt = 3_000;
@@ -52,7 +61,7 @@ describe('channels/github/intake/monitor/state-checkpoint', () => {
               polled,
             );
 
-      assert.deepEqual(latest.items['R_repo:13'], polled.items['R_repo:13']);
+      assert.deepEqual(latest.items['github:R_repo:13'], polled.items['github:R_repo:13']);
       assert.equal(latest.searchBoundary, polled.searchBoundary);
       assert.equal(latest.nextPollAt, polled.nextPollAt);
       assert.deepEqual(latest.processedEventNodeIds, polled.processedEventNodeIds);
@@ -63,6 +72,70 @@ describe('channels/github/intake/monitor/state-checkpoint', () => {
       assert.deepEqual(before, notificationMonitorState());
     });
   }
+
+  it('should preserve an earlier concurrent admission and rebase only the stale poll admission', () => {
+    const before = notificationMonitorState();
+    const current = structuredClone(before);
+    current.items['github:R_repo:13'] = {
+      ...before.items[itemKey]!,
+      intake: {
+        ...before.items[itemKey]!.intake!,
+        scheduling: { sequence: 2, status: 'queued' },
+      },
+      itemNodeId: 'I_current',
+      number: 13,
+    };
+    current.nextSchedulingSequence = 3;
+    const polled = structuredClone(before);
+    polled.items['github:R_repo:14'] = {
+      ...before.items[itemKey]!,
+      intake: {
+        ...before.items[itemKey]!.intake!,
+        scheduling: { sequence: 2, status: 'queued' },
+      },
+      itemNodeId: 'I_polled',
+      number: 14,
+    };
+    polled.nextSchedulingSequence = 3;
+
+    const latest = checkpointGitHubNotificationPoll(current, before, polled);
+
+    assert.equal(latest.items['github:R_repo:13']?.intake?.scheduling?.sequence, 2);
+    assert.equal(latest.items['github:R_repo:14']?.intake?.scheduling?.sequence, 3);
+    assert.equal(latest.nextSchedulingSequence, 4);
+    assert.equal(polled.items['github:R_repo:14']?.intake?.scheduling?.sequence, 2);
+  });
+
+  it('should checkpoint a follow-up admission without replacing concurrent scheduling', () => {
+    const before = notificationMonitorState();
+    before.items[itemKey]!.intake!.scheduling = {
+      reasonCode: 'github-notification-pull-request-delivered',
+      sequence: 1,
+      status: 'waiting',
+    };
+    const polled = structuredClone(before);
+    polled.items[itemKey]!.intake!.scheduling = {
+      reasonCode: 'github-notification-follow-up-poll',
+      sequence: 2,
+      status: 'queued',
+    };
+    polled.nextSchedulingSequence = 3;
+
+    const admitted = checkpointGitHubNotificationPoll(before, before, polled);
+    assert.deepEqual(admitted.items[itemKey]?.intake?.scheduling, {
+      reasonCode: 'github-notification-follow-up-poll',
+      sequence: 2,
+      status: 'queued',
+    });
+
+    const current = structuredClone(before);
+    current.items[itemKey]!.intake!.scheduling = { sequence: 1, status: 'active' };
+    const concurrent = checkpointGitHubNotificationPoll(current, before, polled);
+    assert.deepEqual(concurrent.items[itemKey]?.intake?.scheduling, {
+      sequence: 1,
+      status: 'active',
+    });
+  });
 
   for (const first of ['retirement', 'preparation']) {
     it(`should retain retirement and worktree facts when ${first} checkpoints first`, () => {

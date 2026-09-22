@@ -209,6 +209,7 @@ function createProgram(
         return {
           agentId,
           baseline: { observedAt: 1_000, status: 'ready' as const },
+          capacity: { active: 0, limit: 2, queued: 0 },
           code: 'github-notification-status-ready',
           items: [],
           schemaVersion: 2 as const,
@@ -224,6 +225,7 @@ function createProgram(
           observation: {
             agentId: input.agentId,
             baseline: { observedAt: 1_000, status: 'ready' as const },
+            capacity: { active: 0, limit: 2, queued: 0 },
             code: 'github-notification-status-ready',
             items: [],
             schemaVersion: 2 as const,

@@ -37,13 +37,16 @@ export interface GitHubNotificationStatusItem {
   };
   reasonCode: string;
   repository: string;
+  scheduling?: 'active' | 'queued' | 'waiting';
   stage?: GitHubNotificationIntakeStage;
+  waitingReason?: string;
   worktree: 'not-applicable' | 'pending' | 'ready';
 }
 
 export interface GitHubNotificationStatusResult {
   agentId: string;
   baseline: { observedAt?: number; status: 'pending' | 'ready' };
+  capacity: { active: number; limit: number; queued: number };
   code: string;
   diagnosticCode?: string;
   items: GitHubNotificationStatusItem[];
@@ -68,11 +71,13 @@ export function githubNotificationMonitorStatus(
   agentId: string,
   state: GitHubNotificationMonitorState | undefined,
   selector?: GitHubNotificationItemSelector,
+  maximumConcurrentIssues = 2,
 ): GitHubNotificationStatusResult {
   if (!state) {
     return {
       agentId,
       baseline: { status: 'pending' },
+      capacity: { active: 0, limit: maximumConcurrentIssues, queued: 0 },
       code: 'github-notification-status-pending',
       items: [],
       schemaVersion: 2,
@@ -102,7 +107,11 @@ export function githubNotificationMonitorStatus(
             }),
         reasonCode: item.reasonCode,
         repository: `${item.repositoryOwner}/${item.repositoryName}`,
+        ...(intake?.scheduling === undefined ? {} : { scheduling: intake.scheduling.status }),
         ...(intake?.stage === undefined ? {} : { stage: intake.stage }),
+        ...(intake?.scheduling?.status === 'waiting' && intake.scheduling.reasonCode
+          ? { waitingReason: intake.scheduling.reasonCode }
+          : {}),
         worktree:
           item.itemType === 'pull-request'
             ? 'not-applicable'
@@ -119,11 +128,25 @@ export function githubNotificationMonitorStatus(
         left.itemType.localeCompare(right.itemType),
     );
   const pending = state.baselineAt === undefined || state.lastSuccessfulPollAt === undefined;
+  const scheduling = Object.values(state.items)
+    .filter(
+      (item) =>
+        item.disposition === 'approved' &&
+        item.lifecycleId === 'issue' &&
+        item.intake?.stage !== 'retired',
+    )
+    .map((item) => item.intake?.scheduling)
+    .filter((value) => value !== undefined);
   return {
     agentId,
     baseline: {
       ...(state.baselineAt === undefined ? {} : { observedAt: state.baselineAt }),
       status: state.baselineAt === undefined ? 'pending' : 'ready',
+    },
+    capacity: {
+      active: scheduling.filter(({ status }) => status === 'active').length,
+      limit: maximumConcurrentIssues,
+      queued: scheduling.filter(({ status }) => status === 'queued').length,
     },
     code: state.diagnosticCode
       ? state.diagnosticCode

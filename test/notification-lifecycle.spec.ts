@@ -17,6 +17,7 @@ const manifest: AgentManifest = {
       assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
       intervalMinutes: 5,
+      maxConcurrentIssues: 2,
     },
   },
 };
@@ -82,6 +83,7 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
             { login: 'renamed', nodeId: 'U_1' },
           ],
           intervalMinutes: 5,
+          maxConcurrentIssues: 2,
         },
       },
     };
@@ -195,8 +197,9 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
       failureCount: 0,
       items: {},
       lastSuccessfulPollAt: 1,
+      nextSchedulingSequence: 1,
       processedEventNodeIds: [],
-      schemaVersion: 5,
+      schemaVersion: 6,
       workspaceDir: context.workspaceDir,
     };
     const states: Array<GitHubNotificationMonitorState | undefined> = [

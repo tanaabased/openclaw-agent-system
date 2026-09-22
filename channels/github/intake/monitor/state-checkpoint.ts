@@ -108,6 +108,12 @@ export function checkpointGitHubNotificationPoll(
       items[key] = observed;
       continue;
     }
+    const scheduling =
+      isDeepStrictEqual(latest.intake.scheduling, before?.intake?.scheduling) &&
+      !isDeepStrictEqual(observed.intake?.scheduling, before?.intake?.scheduling) &&
+      observed.intake?.scheduling !== undefined
+        ? { scheduling: observed.intake.scheduling }
+        : {};
     items[key] = {
       ...observed,
       ...(latest.disposition === 'retired' && observed.disposition !== 'retired'
@@ -115,6 +121,7 @@ export function checkpointGitHubNotificationPoll(
         : {}),
       intake: {
         ...latest.intake,
+        ...scheduling,
         ...(observed.intake?.stage === 'retired'
           ? {
               stage: 'retired',
@@ -126,5 +133,36 @@ export function checkpointGitHubNotificationPoll(
       },
     };
   }
-  return { ...polled, items };
+  let nextSchedulingSequence = Math.max(
+    current.nextSchedulingSequence,
+    polled.nextSchedulingSequence,
+  );
+  const concurrentAdmissions = Object.entries(items)
+    .filter(
+      ([key, item]) =>
+        previous?.items[key] === undefined &&
+        current.items[key] === undefined &&
+        item.intake?.scheduling !== undefined &&
+        item.intake.scheduling.sequence < current.nextSchedulingSequence,
+    )
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        left.intake!.scheduling!.sequence - right.intake!.scheduling!.sequence ||
+        leftKey.localeCompare(rightKey),
+    );
+  for (const [key, item] of concurrentAdmissions) {
+    items[key] = {
+      ...item,
+      intake: {
+        ...item.intake!,
+        scheduling: { ...item.intake!.scheduling!, sequence: nextSchedulingSequence },
+      },
+    };
+    nextSchedulingSequence += 1;
+  }
+  return {
+    ...polled,
+    items,
+    nextSchedulingSequence,
+  };
 }

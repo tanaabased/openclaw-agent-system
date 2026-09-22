@@ -1,6 +1,7 @@
 import type { Logger } from '../../../../core/logger.ts';
 import type { GitHubNotificationCommentReconcileOptions } from '../../conversation/comment-orchestrator.ts';
 import type { GitHubNotificationExecutionSurface } from '../../conversation/execution.ts';
+import type { GitHubNotificationAssignmentSessionOutcome } from '../../conversation/assignment-session-service.ts';
 import { githubNotificationDiagnostic, githubNotificationToolCauseCode } from './diagnostic.ts';
 import { preparedGitHubNotificationIssueItemKeys } from './item-queries.ts';
 import {
@@ -16,7 +17,7 @@ export interface GitHubNotificationAssignmentReconciler {
     itemKey: string,
     signal?: AbortSignal,
     executionSurface?: GitHubNotificationExecutionSurface,
-  ): Promise<void>;
+  ): Promise<GitHubNotificationAssignmentSessionOutcome | undefined>;
 }
 
 export interface GitHubNotificationCommentReconciler {
@@ -59,26 +60,31 @@ export default class GitHubNotificationMonitorReconciler {
     itemKey: string,
     executionSurface: GitHubNotificationExecutionSurface,
     signal?: AbortSignal,
-  ): Promise<{ code: string } | undefined> {
+  ): Promise<
+    | { code: string; status: 'failed' }
+    | { outcome?: GitHubNotificationAssignmentSessionOutcome; status: 'completed' }
+  > {
     const state = await this.#dependencies.stateStore.read(agentId);
     if (preparedGitHubNotificationIssueItemKeys(state).includes(itemKey)) {
-      if (signal?.aborted) return;
+      if (signal?.aborted) return { status: 'completed' };
       try {
-        await this.#dependencies.assignmentOrchestrator.respond(
+        const outcome = await this.#dependencies.assignmentOrchestrator.respond(
           agentId,
           itemKey,
           signal,
           executionSurface,
         );
+        return { ...(outcome === undefined ? {} : { outcome }), status: 'completed' };
       } catch (error) {
         const diagnostic = githubNotificationDiagnostic(error);
         const causeCode = githubNotificationToolCauseCode(error);
         this.#dependencies.logger.warn(
           `github-notifications: assignment response reconciliation failed agent=${agentId} code=${diagnostic.code}${causeCode ? ` causeCode=${causeCode}` : ''}`,
         );
-        return diagnostic;
+        return { code: diagnostic.code, status: 'failed' };
       }
     }
+    return { status: 'completed' };
   }
 
   async reconcileCommentsSafely(

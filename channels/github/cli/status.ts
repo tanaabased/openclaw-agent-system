@@ -66,6 +66,11 @@ export default async function statusNotificationsAgentSystem(
         },
         { label: 'code', style: 'field', value: result.code },
         { label: 'baseline', style: 'field', value: result.baseline.status },
+        {
+          label: 'capacity',
+          style: 'field',
+          value: `active=${result.capacity.active} queued=${result.capacity.queued} limit=${result.capacity.limit}`,
+        },
         ...result.items.map((item) => ({
           component: `${item.repository}#${item.number}`,
           label: 'item',
@@ -75,6 +80,8 @@ export default async function statusNotificationsAgentSystem(
             item.disposition,
             `stage=${item.stage ?? 'none'}`,
             `worktree=${item.worktree}`,
+            ...(item.scheduling === undefined ? [] : [`scheduling=${item.scheduling}`]),
+            ...(item.waitingReason === undefined ? [] : [`waiting-reason=${item.waitingReason}`]),
             ...(item.cleanup === undefined
               ? []
               : [

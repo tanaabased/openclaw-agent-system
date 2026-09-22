@@ -21,14 +21,16 @@ import GitHubWorkEventClient from '../../provider/work-event-client.ts';
 import { resolveMaximumCommentCharacters } from '../../provider/comment-limit.ts';
 import { githubNotificationDiagnostic } from './diagnostic.ts';
 import createGitHubNotificationFailureState from './failure-state.ts';
-import {
-  pendingGitHubNotificationItemKeys,
-  preparedGitHubNotificationIssueItemKeys,
-} from './item-queries.ts';
+import { pendingGitHubNotificationItemKeys } from './item-queries.ts';
 import GitHubNotificationMonitorReconciler, {
   type GitHubNotificationAssignmentReconciler,
   type GitHubNotificationCommentReconciler,
 } from './reconciler.ts';
+import {
+  claimGitHubNotificationIssueWork,
+  queueGitHubNotificationIssueWork,
+  waitGitHubNotificationIssueWork,
+} from './scheduler.ts';
 
 const schedulerIntervalMs = 30_000;
 
@@ -233,12 +235,29 @@ export default class GitHubNotificationMonitorService {
     if (result.code === 'github-notification-disabled' || isPrerequisiteDiagnostic(result.code)) {
       return githubNotificationRetirementItemKeys(state);
     }
-    return [
-      ...new Set([
-        ...pendingGitHubNotificationItemKeys(state, options.selector),
-        ...preparedGitHubNotificationIssueItemKeys(state, options.selector),
-      ]),
-    ].sort();
+    const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
+    const notifications =
+      loaded.status === 'loaded' ? loaded.manifest.github?.notifications : undefined;
+    if (!notifications) {
+      return githubNotificationRetirementItemKeys(state);
+    }
+    let claimedIssueKeys: string[] = [];
+    const claimed = await this.#dependencies.stateStore.update(agentId, (current) => {
+      const selection = claimGitHubNotificationIssueWork(
+        current,
+        notifications.maxConcurrentIssues,
+        options.selector,
+      );
+      claimedIssueKeys = selection.itemKeys;
+      return selection.state;
+    });
+    const pendingNonIssueKeys = pendingGitHubNotificationItemKeys(claimed, options.selector).filter(
+      (itemKey) => claimed.items[itemKey]?.lifecycleId !== 'issue',
+    );
+    const retiredItemKeys = githubNotificationRetirementItemKeys(claimed).filter(
+      (itemKey) => claimed.items[itemKey]?.disposition === 'retired',
+    );
+    return [...new Set([...retiredItemKeys, ...pendingNonIssueKeys, ...claimedIssueKeys])];
   }
 
   #runExecution(
@@ -542,23 +561,33 @@ export default class GitHubNotificationMonitorService {
     const { executionSurface = 'gateway', signal } = options;
     try {
       if (signal?.aborted)
-        return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
+        return this.#deferExecution(
+          agentId,
+          itemKey,
+          result,
+          'github-notification-cycle-aborted',
+          'skipped',
+        );
       // re-read authority and durable work after acquiring this lifecycle's ownership.
       const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
       if (loaded.status !== 'loaded') {
-        return {
-          ...result,
-          code: `github-notification-manifest-${loaded.status}`,
-          status: 'skipped',
-        };
+        return this.#deferExecution(
+          agentId,
+          itemKey,
+          result,
+          `github-notification-manifest-${loaded.status}`,
+          'skipped',
+        );
       }
       const current = await this.#dependencies.stateStore.read(agentId);
       if (current && current.workspaceDir !== loaded.scope.workspaceDir) {
-        return {
-          ...result,
-          code: 'github-notification-execution-context-changed',
-          status: 'skipped',
-        };
+        return this.#deferExecution(
+          agentId,
+          itemKey,
+          result,
+          'github-notification-execution-context-changed',
+          'skipped',
+        );
       }
       if (!loaded.manifest.github?.notifications) {
         await this.#reconciler.retireDisabledAssignments(
@@ -578,7 +607,7 @@ export default class GitHubNotificationMonitorService {
             githubNotificationRetirementItemKeys(current).filter((key) => key === itemKey),
             signal,
           );
-          return { ...result, code: readiness.code, status: 'failed' };
+          return this.#deferExecution(agentId, itemKey, result, readiness.code, 'failed');
         }
       }
       const route = await this.#dependencies.routingService.inspect({
@@ -592,7 +621,7 @@ export default class GitHubNotificationMonitorService {
           githubNotificationRetirementItemKeys(current).filter((key) => key === itemKey),
           signal,
         );
-        return { ...result, code: route.code, status: 'failed' };
+        return this.#deferExecution(agentId, itemKey, result, route.code, 'failed');
       }
       await this.#reconciler.reconcileAssignments(
         agentId,
@@ -614,20 +643,65 @@ export default class GitHubNotificationMonitorService {
         signal,
       );
       if (signal?.aborted)
-        return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
-      if (commentFailure) return { ...result, code: commentFailure.code, status: 'failed' };
-      if (assignmentFailure) return { ...result, code: assignmentFailure.code, status: 'failed' };
+        return this.#deferExecution(
+          agentId,
+          itemKey,
+          result,
+          'github-notification-cycle-aborted',
+          'skipped',
+        );
+      if (commentFailure)
+        return this.#deferExecution(agentId, itemKey, result, commentFailure.code, 'failed');
+      if (assignmentFailure.status === 'failed') {
+        return this.#deferExecution(agentId, itemKey, result, assignmentFailure.code, 'failed');
+      }
+      if (assignmentFailure.outcome?.status === 'waiting') {
+        await this.#waitForFollowUp(agentId, itemKey, assignmentFailure.outcome.reasonCode);
+      } else if (!assignmentFailure.outcome) {
+        await this.#waitForFollowUp(agentId, itemKey, 'github-notification-waiting-for-follow-up');
+      }
       return completedExecutionResult(result);
     } catch (error) {
       if (signal?.aborted)
-        return { ...result, code: 'github-notification-cycle-aborted', status: 'skipped' };
+        return this.#deferExecution(
+          agentId,
+          itemKey,
+          result,
+          'github-notification-cycle-aborted',
+          'skipped',
+        );
       const diagnostic = githubNotificationDiagnostic(error);
       this.#dependencies.logger.warn(
         `github-notifications: execution failed agent=${agentId} code=${diagnostic.code}`,
       );
       // execution failures belong to lifecycle checkpoints, not provider polling backoff.
-      return { ...result, code: diagnostic.code, status: 'failed' };
+      return this.#deferExecution(agentId, itemKey, result, diagnostic.code, 'failed');
     }
+  }
+
+  async #deferExecution(
+    agentId: string,
+    itemKey: string,
+    result: GitHubNotificationMonitorRunResult,
+    code: string,
+    status: 'failed' | 'skipped',
+  ): Promise<GitHubNotificationMonitorRunResult> {
+    await this.#dependencies.stateStore.update(agentId, (current) => {
+      if (!current) throw new Error('The GitHub notification monitor state is missing.');
+      const next = structuredClone(current);
+      queueGitHubNotificationIssueWork(next, itemKey, code);
+      return next;
+    });
+    return { ...result, code, status };
+  }
+
+  async #waitForFollowUp(agentId: string, itemKey: string, reasonCode: string): Promise<void> {
+    await this.#dependencies.stateStore.update(agentId, (current) => {
+      if (!current) throw new Error('The GitHub notification monitor state is missing.');
+      const next = structuredClone(current);
+      waitGitHubNotificationIssueWork(next, itemKey, reasonCode);
+      return next;
+    });
   }
 
   async #saveFailure(

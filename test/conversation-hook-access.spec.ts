@@ -125,7 +125,12 @@ describe('core/conversation-hook-access', () => {
         schemaVersion: 1,
         agent: { id: 'data' },
         github: {
-          notifications: { assignmentTypes: ['issue'], approvedActors: [], intervalMinutes: 5 },
+          notifications: {
+            assignmentTypes: ['issue'],
+            approvedActors: [],
+            intervalMinutes: 5,
+            maxConcurrentIssues: 2,
+          },
         },
       },
       workspaceDir: '/workspace',

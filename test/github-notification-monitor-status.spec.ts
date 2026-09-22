@@ -33,6 +33,7 @@ describe('channels/github/intake/monitor/status', () => {
       number: 12,
       reasonCode: 'assignment-approved',
       repository: 'tanaabased/example',
+      scheduling: 'queued',
       stage: 'prepared',
       worktree: 'ready',
     });

@@ -5,6 +5,14 @@ export type GitHubNotificationItemDisposition = 'approved' | 'baseline' | 'rejec
 
 export type GitHubNotificationIntakeStage = 'admitted' | 'prepared' | 'retired';
 
+export type GitHubNotificationSchedulingStatus = 'active' | 'queued' | 'waiting';
+
+export interface GitHubNotificationSchedulingState {
+  reasonCode?: string;
+  sequence: number;
+  status: GitHubNotificationSchedulingStatus;
+}
+
 export type GitHubNotificationCleanupStatus = 'completed' | 'failed' | 'skipped';
 
 export interface GitHubNotificationCleanupState {
@@ -29,6 +37,7 @@ export interface GitHubNotificationIntakeState {
   cleanup?: GitHubNotificationCleanupState;
   failureCode?: string;
   providerRetirementVerifiedAt?: number;
+  scheduling?: GitHubNotificationSchedulingState;
   stage: GitHubNotificationIntakeStage;
   worktreeBranch?: string;
   worktreePath?: string;
@@ -69,8 +78,9 @@ export interface GitHubNotificationMonitorState {
   lastPollAt?: number;
   lastSuccessfulPollAt?: number;
   nextPollAt?: number;
+  nextSchedulingSequence: number;
   processedEventNodeIds: string[];
-  schemaVersion: 5;
+  schemaVersion: 6;
   searchBoundary?: string;
   workspaceDir: string;
 }
@@ -83,8 +93,9 @@ export function createGitHubNotificationMonitorState(
     agentId,
     failureCount: 0,
     items: {},
+    nextSchedulingSequence: 1,
     processedEventNodeIds: [],
-    schemaVersion: 5,
+    schemaVersion: 6,
     workspaceDir,
   };
 }

@@ -1,6 +1,7 @@
 import KeyedAsyncQueue from '../../../utils/keyed-async-queue.ts';
 import type GitHubNotificationLifecycleRegistry from '../lifecycles/registry.ts';
 import type GitHubNotificationAssignmentSessionService from '../conversation/assignment-session-service.ts';
+import type { GitHubNotificationAssignmentSessionOutcome } from '../conversation/assignment-session-service.ts';
 import type GitHubNotificationAssignmentCleanupService from './assignment-cleanup-service.ts';
 import type { GitHubNotificationExecutionSurface } from '../conversation/execution.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
@@ -44,7 +45,11 @@ export interface GitHubNotificationAssignmentOrchestratorDependencies {
       }) =>
         Pick<GitHubNotificationMode, 'policy'> | Promise<Pick<GitHubNotificationMode, 'policy'>>);
   lifecycles: GitHubNotificationLifecycleRegistry;
-  sessions: Pick<GitHubNotificationAssignmentSessionService, 'prepare'>;
+  sessions: {
+    prepare(
+      ...input: Parameters<GitHubNotificationAssignmentSessionService['prepare']>
+    ): Promise<GitHubNotificationAssignmentSessionOutcome | void>;
+  };
   stateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'update'>;
 }
 
@@ -92,7 +97,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     itemKey: string,
     signal?: AbortSignal,
     executionSurface: GitHubNotificationExecutionSurface = 'gateway',
-  ): Promise<void> {
+  ): Promise<GitHubNotificationAssignmentSessionOutcome | undefined> {
     return this.#queue.enqueue(JSON.stringify([agentId, itemKey]), () =>
       this.#respond(agentId, itemKey, signal, executionSurface),
     );
@@ -233,7 +238,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
     itemKey: string,
     signal: AbortSignal | undefined,
     executionSurface: GitHubNotificationExecutionSurface,
-  ): Promise<void> {
+  ): Promise<GitHubNotificationAssignmentSessionOutcome | undefined> {
     const loaded = await this.#loadItem(agentId, itemKey);
     if (!loaded) return;
     const { intake, item, state } = loaded;
@@ -258,7 +263,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
       typeof this.#dependencies.initialMode === 'function'
         ? await this.#dependencies.initialMode({ agentId, workspaceDir: state.workspaceDir })
         : this.#dependencies.initialMode;
-    await this.#diagnosticBoundary(
+    const outcome = await this.#diagnosticBoundary(
       'github-notification-assignment-session-recording-failed',
       'The GitHub assignment session could not be prepared.',
       () =>
@@ -273,6 +278,7 @@ export default class GitHubNotificationAssignmentOrchestrator {
           ...(preparedWorktree === undefined ? {} : { worktree: preparedWorktree }),
         }),
     );
+    return outcome ?? undefined;
   }
 
   async #observe(
