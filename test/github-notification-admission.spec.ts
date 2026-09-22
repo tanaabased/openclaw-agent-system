@@ -24,6 +24,7 @@ const base = {
     approvedActors: [{ login: actor.login, nodeId: actor.nodeId }],
     allowedRepositoryOwners: [{ login: owner.login, nodeId: owner.nodeId }],
     intervalMinutes: 5,
+    maxConcurrentIssues: 2,
   },
   events: [event],
   item: {

@@ -49,6 +49,7 @@ const configuration = {
   assignmentTypes: ['issue', 'pull-request'] as Array<'issue' | 'pull-request'>,
   approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
   intervalMinutes: 5,
+  maxConcurrentIssues: 2,
 };
 const turnCatalog = new GitHubNotificationTurnCatalog(
   githubNotificationSupportedTurnIdentities,

@@ -75,6 +75,9 @@ export interface GitHubNotificationAssignmentSessionInput {
   worktree?: GitHubNotificationLifecycleWorktree;
 }
 
+export type GitHubNotificationAssignmentSessionOutcome =
+  { status: 'active' } | { reasonCode: string; status: 'waiting' };
+
 interface AssignmentConversationCheckpoint {
   conversation: GitHubNotificationConversation;
   state: GitHubNotificationConversationSnapshot;
@@ -117,6 +120,20 @@ function handoffPending(conversation: GitHubNotificationConversation): boolean {
       !source.eventRecorded ||
       source.handoff?.status !== 'published'),
   );
+}
+
+function sessionOutcome(
+  conversation: GitHubNotificationConversation,
+): GitHubNotificationAssignmentSessionOutcome {
+  if (conversation.implementation?.status === 'pending') return { status: 'active' };
+  if (conversation.implementation?.status === 'delivery-pending') return { status: 'active' };
+  if (conversation.implementation?.status === 'completed') {
+    return { reasonCode: 'github-notification-pull-request-delivered', status: 'waiting' };
+  }
+  if (conversation.assignmentResponse?.status === 'withheld') {
+    return { reasonCode: conversation.assignmentResponse.reasonCode, status: 'waiting' };
+  }
+  return { reasonCode: 'github-notification-waiting-for-follow-up', status: 'waiting' };
 }
 
 function modelTurnContext(input: ModelTurnContextInput) {
@@ -184,7 +201,9 @@ export default class GitHubNotificationAssignmentSessionService {
     this.#dependencies = dependencies;
   }
 
-  async prepare(input: GitHubNotificationAssignmentSessionInput): Promise<void> {
+  async prepare(
+    input: GitHubNotificationAssignmentSessionInput,
+  ): Promise<GitHubNotificationAssignmentSessionOutcome> {
     const assignmentSupport = resolveGitHubNotificationLifecycleEventSupport(
       input.lifecycle,
       'assignment',
@@ -237,7 +256,7 @@ export default class GitHubNotificationAssignmentSessionService {
       } else if (handoffPending(reconciled.conversation)) {
         await this.#reconcileHandoff(input);
       }
-      return;
+      return sessionOutcome((await this.#conversation(input, conversationId)).conversation);
     }
     const pendingRouting = Boolean(
       current.conversation.modelRouting && !current.conversation.modelRouting.decision,
@@ -307,6 +326,7 @@ export default class GitHubNotificationAssignmentSessionService {
     this.#dependencies.logger.info(
       `github-notifications: assignment response prepared agent=${route.agentId} item=${repository}#${input.item.number} publication=${turn.publication.status}`,
     );
+    return sessionOutcome((await this.#conversation(input, conversationId)).conversation);
   }
 
   async #context(

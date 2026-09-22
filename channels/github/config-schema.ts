@@ -44,6 +44,7 @@ export const externalGitHubNotificationsSchema = Type.Object(
     ),
     'initial-mode': Type.Optional(Type.Union([Type.Literal('guided'), Type.Literal('work')])),
     'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
+    'max-concurrent-issues': Type.Optional(Type.Integer({ minimum: 1 })),
   },
   { additionalProperties: false },
 );
@@ -65,6 +66,7 @@ export interface GitHubNotificationsConfiguration {
   allowedRepositoryOwners?: GitHubIdentityPin[];
   initialMode?: 'guided' | 'work';
   intervalMinutes: number;
+  maxConcurrentIssues: number;
 }
 
 /** Decode the channel-owned github.notifications manifest fragment. */
@@ -91,5 +93,6 @@ export function decodeGitHubNotifications(
         }),
     initialMode: value['initial-mode'] ?? 'work',
     intervalMinutes: value['interval-minutes'] ?? 5,
+    maxConcurrentIssues: value['max-concurrent-issues'] ?? 2,
   };
 }

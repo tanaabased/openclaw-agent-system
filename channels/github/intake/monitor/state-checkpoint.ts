@@ -126,5 +126,36 @@ export function checkpointGitHubNotificationPoll(
       },
     };
   }
-  return { ...polled, items };
+  let nextSchedulingSequence = Math.max(
+    current.nextSchedulingSequence,
+    polled.nextSchedulingSequence,
+  );
+  const concurrentAdmissions = Object.entries(items)
+    .filter(
+      ([key, item]) =>
+        previous?.items[key] === undefined &&
+        current.items[key] === undefined &&
+        item.intake?.scheduling !== undefined &&
+        item.intake.scheduling.sequence < current.nextSchedulingSequence,
+    )
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        left.intake!.scheduling!.sequence - right.intake!.scheduling!.sequence ||
+        leftKey.localeCompare(rightKey),
+    );
+  for (const [key, item] of concurrentAdmissions) {
+    items[key] = {
+      ...item,
+      intake: {
+        ...item.intake!,
+        scheduling: { ...item.intake!.scheduling!, sequence: nextSchedulingSequence },
+      },
+    };
+    nextSchedulingSequence += 1;
+  }
+  return {
+    ...polled,
+    items,
+    nextSchedulingSequence,
+  };
 }

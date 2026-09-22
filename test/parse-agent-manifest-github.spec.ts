@@ -129,6 +129,7 @@ github:
       allowedRepositoryOwners: [{ login: 'tanaabased', nodeId: 'O_kgDOB7x6Qw' }],
       initialMode: 'work',
       intervalMinutes: 5,
+      maxConcurrentIssues: 2,
     });
   });
 
@@ -148,6 +149,41 @@ github:
     assert.equal(result.status, 'valid');
     if (result.status !== 'valid') return;
     assert.equal(result.manifest.github?.notifications?.initialMode, 'guided');
+  });
+
+  it('should parse and validate github notification issue concurrency', () => {
+    const result = parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    max-concurrent-issues: 4
+    approved-actors:
+      - login: pirog
+        node-id: U_1
+`);
+
+    assert.equal(result.status, 'valid');
+    if (result.status === 'valid') {
+      assert.equal(result.manifest.github?.notifications?.maxConcurrentIssues, 4);
+    }
+    for (const value of ['0', '-1', '1.5', 'many']) {
+      assert.equal(
+        parseAgentManifest(`
+schema-version: 1
+agent:
+  id: tanaabot
+github:
+  notifications:
+    max-concurrent-issues: ${value}
+    approved-actors:
+      - login: pirog
+        node-id: U_1
+`).status,
+        'invalid',
+      );
+    }
   });
 
   it('should reject unsafe github notification configuration', () => {

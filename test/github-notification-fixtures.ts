@@ -31,6 +31,7 @@ export function approvedNotificationItem(): GitHubNotificationItemState {
     assignmentEventNodeId: 'EV_assignment',
     intake: {
       assignmentEventId: 'EV_assignment',
+      scheduling: { sequence: 1, status: 'queued' },
       stage: 'admitted',
     },
     disposition: 'approved',
@@ -97,8 +98,9 @@ export function notificationMonitorState(): GitHubNotificationMonitorState {
     baselineAt: 1,
     failureCount: 0,
     items: { [notificationItemKey]: approvedNotificationItem() },
+    nextSchedulingSequence: 2,
     processedEventNodeIds: ['EV_assignment'],
-    schemaVersion: 5,
+    schemaVersion: 6,
     workspaceDir: '/workspace',
   };
 }

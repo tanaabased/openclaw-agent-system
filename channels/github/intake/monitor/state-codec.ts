@@ -22,6 +22,7 @@ const stateKeys = new Set([
   'lastPollAt',
   'lastSuccessfulPollAt',
   'nextPollAt',
+  'nextSchedulingSequence',
   'processedEventNodeIds',
   'schemaVersion',
   'searchBoundary',
@@ -56,10 +57,15 @@ const intakeKeys = new Set([
   'cleanup',
   'failureCode',
   'providerRetirementVerifiedAt',
+  'scheduling',
   'stage',
   'worktreeBranch',
   'worktreePath',
 ]);
+const schedulingKeys = new Set(['reasonCode', 'sequence', 'status']);
+const schemaFiveStateKeys = new Set(
+  [...stateKeys].filter((key) => key !== 'nextSchedulingSequence'),
+);
 const pullRequestKeys = new Set([
   'authorNodeId',
   'baseRef',
@@ -161,6 +167,19 @@ function validCleanup(value: unknown): boolean {
   );
 }
 
+function validScheduling(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (record(value) &&
+      hasOnlyKeys(value, schedulingKeys) &&
+      validDiagnosticCode(value.reasonCode) &&
+      Number.isSafeInteger(value.sequence) &&
+      Number(value.sequence) > 0 &&
+      ['active', 'queued', 'waiting'].includes(String(value.status)) &&
+      (value.status === 'waiting' ? value.reasonCode !== undefined : true))
+  );
+}
+
 function validPullRequest(value: unknown): boolean {
   if (!record(value) || !hasOnlyKeys(value, pullRequestKeys)) return false;
   const hasHeadRepositoryDatabaseId = value.headRepositoryDatabaseId !== undefined;
@@ -247,6 +266,7 @@ function validIntake(
     !validCleanup(value.cleanup) ||
     !validDiagnosticCode(value.failureCode) ||
     !optionalFiniteNumber(value.providerRetirementVerifiedAt) ||
+    !validScheduling(value.scheduling) ||
     !['admitted', 'prepared', 'retired'].includes(String(value.stage)) ||
     !validWorktree(value)
   ) {
@@ -280,6 +300,7 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
   if (!intakeValid) return false;
   if (value.disposition === 'approved') {
     if (!record(value.intake) || value.intake.stage === 'retired') return false;
+    if (value.lifecycleId === 'issue' && !record(value.intake.scheduling)) return false;
   } else if (value.disposition !== 'retired' && value.intake !== undefined) {
     return false;
   }
@@ -289,7 +310,10 @@ function validItem(value: unknown): value is GitHubNotificationItemState {
   );
 }
 
-function validStateFields(value: Record<string, unknown>): boolean {
+function validStateFields(
+  value: Record<string, unknown>,
+  requireSchedulingSequence = true,
+): boolean {
   return (
     ((value.accountLogin === undefined && value.accountNodeId === undefined) ||
       (typeof value.accountLogin === 'string' &&
@@ -301,6 +325,9 @@ function validStateFields(value: Record<string, unknown>): boolean {
     value.workspaceDir.length > 0 &&
     Number.isSafeInteger(value.failureCount) &&
     Number(value.failureCount) >= 0 &&
+    (!requireSchedulingSequence ||
+      (Number.isSafeInteger(value.nextSchedulingSequence) &&
+        Number(value.nextSchedulingSequence) > 0)) &&
     optionalFiniteNumber(value.baselineAt) &&
     optionalFiniteNumber(value.lastPollAt) &&
     optionalFiniteNumber(value.lastSuccessfulPollAt) &&
@@ -318,12 +345,19 @@ function validStateFields(value: Record<string, unknown>): boolean {
 }
 
 function validCurrentState(value: unknown): value is GitHubNotificationMonitorState {
-  if (!record(value) || !hasOnlyKeys(value, stateKeys) || value.schemaVersion !== 5) return false;
+  if (!record(value) || !hasOnlyKeys(value, stateKeys) || value.schemaVersion !== 6) return false;
   return (
     validStateFields(value) &&
     record(value.items) &&
     Object.entries(value.items).every(
       ([key, item]) => validItem(item) && key === `github:${item.repositoryNodeId}:${item.number}`,
+    ) &&
+    Object.values(value.items).every(
+      (item) =>
+        !record(item) ||
+        !record(item.intake) ||
+        !record(item.intake.scheduling) ||
+        Number(item.intake.scheduling.sequence) < Number(value.nextSchedulingSequence),
     )
   );
 }
@@ -387,6 +421,9 @@ function migrateLegacyItem(value: unknown): GitHubNotificationItemState | undefi
   ) as unknown as GitHubNotificationItemState;
   item.lifecycleId = item.itemType;
   if (record(delivery)) item.intake = legacyIntake(value, delivery);
+  if (item.disposition === 'approved' && item.lifecycleId === 'issue' && item.intake) {
+    item.intake.scheduling = { sequence: 1, status: 'queued' };
+  }
   return validItem(item) ? item : undefined;
 }
 
@@ -395,7 +432,7 @@ function migrateSchemaThree(value: unknown): GitHubNotificationMonitorState | un
     !record(value) ||
     !hasOnlyKeys(value, stateKeys) ||
     value.schemaVersion !== 3 ||
-    !validStateFields(value) ||
+    !validStateFields(value, false) ||
     !record(value.items)
   ) {
     return undefined;
@@ -416,22 +453,55 @@ function migrateSchemaThree(value: unknown): GitHubNotificationMonitorState | un
     items,
     schemaVersion: 5,
   };
-  return validCurrentState(state) ? state : undefined;
+  return migrateSchemaFive(state);
 }
 
 function migrateSchemaFour(value: unknown): GitHubNotificationMonitorState | undefined {
   if (!record(value) || value.schemaVersion !== 4) return undefined;
   const migrated = { ...value, schemaVersion: 5 };
+  return migrateSchemaFive(migrated);
+}
+
+function migrateSchemaFive(value: unknown): GitHubNotificationMonitorState | undefined {
+  if (
+    !record(value) ||
+    !hasOnlyKeys(value, schemaFiveStateKeys) ||
+    value.schemaVersion !== 5 ||
+    !record(value.items)
+  ) {
+    return undefined;
+  }
+  const items = structuredClone(value.items) as Record<string, GitHubNotificationItemState>;
+  let sequence = 1;
+  for (const [, item] of Object.entries(items).sort(
+    ([leftKey, left], [rightKey, right]) =>
+      left.lastObservedAt - right.lastObservedAt || leftKey.localeCompare(rightKey),
+  )) {
+    if (
+      item.disposition === 'approved' &&
+      item.lifecycleId === 'issue' &&
+      item.intake?.stage !== 'retired'
+    ) {
+      item.intake!.scheduling = { sequence, status: 'queued' };
+      sequence += 1;
+    }
+  }
+  const migrated = {
+    ...value,
+    items,
+    nextSchedulingSequence: sequence,
+    schemaVersion: 6,
+  };
   return validCurrentState(migrated) ? migrated : undefined;
 }
 
-/** Validate current state or project supported legacy intake facts into schema five. */
+/** Validate current state or project supported legacy intake facts into schema six. */
 export default function decodeGitHubNotificationMonitorState(
   value: unknown,
   agentId: string,
 ): GitHubNotificationMonitorStateDecodeResult | undefined {
   const state = validCurrentState(value)
     ? value
-    : (migrateSchemaFour(value) ?? migrateSchemaThree(value));
+    : (migrateSchemaFive(value) ?? migrateSchemaFour(value) ?? migrateSchemaThree(value));
   return state?.agentId === agentId ? { state, status: 'ready' } : undefined;
 }

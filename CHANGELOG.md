@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added durable per-agent GitHub issue-work concurrency with a configurable limit, stable queueing, and operator-visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117)
 - Named new GitHub issue branches from public issue numbers and bounded titles while preserving stable worktree recovery. [#110](https://github.com/tanaabased/openclaw-agent-system/issues/110)
 - Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
 

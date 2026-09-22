@@ -19,6 +19,7 @@ import {
   type GitHubNotificationIntakeClient,
   GitHubWorkEventClientError,
 } from '../../provider/work-event-client.ts';
+import { queueGitHubNotificationIssueWork } from './scheduler.ts';
 
 const discoveryOverlapMs = 5 * 60 * 1000;
 
@@ -132,6 +133,7 @@ function itemState(
   item: Awaited<ReturnType<GitHubNotificationIntakeClient['getItem']>>,
   permission: Awaited<ReturnType<GitHubNotificationIntakeClient['getPermission']>>,
   assignment?: { actor: { login: string; nodeId: string }; nodeId: string },
+  schedulingSequence?: number,
 ): GitHubNotificationItemState {
   return {
     ...(assignment
@@ -146,6 +148,14 @@ function itemState(
       ? {
           intake: {
             assignmentEventId: assignment.nodeId,
+            ...(item.itemType === 'issue' && schedulingSequence !== undefined
+              ? {
+                  scheduling: {
+                    sequence: schedulingSequence,
+                    status: 'queued' as const,
+                  },
+                }
+              : {}),
             stage: 'admitted' as const,
           },
         }
@@ -269,7 +279,11 @@ async function observeCandidate(input: {
     item,
     permission,
     assignment,
+    admission.disposition === 'approved' && item.itemType === 'issue'
+      ? input.state.nextSchedulingSequence
+      : undefined,
   );
+  if (nextItem.intake?.scheduling) input.state.nextSchedulingSequence += 1;
   input.state.items[key] = nextItem;
   input.counts[admission.disposition] += 1;
 }
@@ -397,6 +411,9 @@ export async function pollGitHubNotifications(
               : {}),
           };
           state.items[key] = next;
+          if (next.intake?.scheduling?.status === 'waiting') {
+            queueGitHubNotificationIssueWork(state, key, 'github-notification-follow-up-poll');
+          }
         }
       } catch (error) {
         if (

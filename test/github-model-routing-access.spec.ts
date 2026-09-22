@@ -13,7 +13,12 @@ const context: AgentSystemLifecycleContext = {
     schemaVersion: 1,
     agent: { id: 'emori' },
     github: {
-      notifications: { assignmentTypes: ['issue'], approvedActors: [], intervalMinutes: 5 },
+      notifications: {
+        assignmentTypes: ['issue'],
+        approvedActors: [],
+        intervalMinutes: 5,
+        maxConcurrentIssues: 2,
+      },
     },
     models: {
       default: { model, effort: 'high' },
@@ -93,6 +98,7 @@ describe('channels/github/model-routing-access', () => {
               assignmentTypes: ['pull-request'],
               approvedActors: [],
               intervalMinutes: 5,
+              maxConcurrentIssues: 2,
             },
           },
         },

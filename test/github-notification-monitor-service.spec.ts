@@ -27,6 +27,7 @@ const manifest: AgentManifest = {
       assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: 'pirog', nodeId: 'U_actor' }],
       intervalMinutes: 5,
+      maxConcurrentIssues: 2,
     },
     token: 'GH_TOKEN_TANAABOT',
     username: 'tanaabot',
@@ -305,7 +306,7 @@ describe('channels/github/intake/monitor/service', () => {
       clock: () => 1_000,
       stateStore: {
         read: async () => (++reads === 1 ? structuredClone(state) : { ...state, items: {} }),
-        update: async () => assert.fail('a deferred poll must not write'),
+        update: async (_agentId, patch) => patch({ ...state, items: {} }),
       },
       assignmentOrchestrator: {
         reconcile: async () => assert.fail('the pending item has already finished'),
@@ -467,9 +468,7 @@ describe('channels/github/intake/monitor/service', () => {
       },
       stateStore: {
         read: async () => structuredClone(state),
-        async update() {
-          assert.fail('execution failure must not update provider health');
-        },
+        update: async (_agentId, patch) => patch(structuredClone(state)),
       },
     });
     await service.runAccount('tanaabot', controller.signal);

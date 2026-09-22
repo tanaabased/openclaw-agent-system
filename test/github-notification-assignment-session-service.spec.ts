@@ -256,6 +256,7 @@ function harness(options: HarnessOptions = {}) {
             approvedActors: [],
             assignmentTypes: ['issue', 'pull-request'],
             intervalMinutes: 5,
+            maxConcurrentIssues: 2,
           },
         };
       },
@@ -410,7 +411,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       models: { default: profile, low: profile, medium: profile, high: profile },
     });
     await assert.rejects(scenario.prepare(), /acknowledgment interrupted/);
-    await scenario.prepare();
+    assert.deepEqual(await scenario.prepare(), { status: 'active' });
     assert.equal(scenario.classifications(), 1);
     assert.equal(scenario.metadataReads(), 1);
     assert.ok(scenario.state().conversations[conversationId]?.modelRouting?.decision);
@@ -548,7 +549,7 @@ describe('channels/github/conversation/assignment-session-service', () => {
       },
     });
 
-    await scenario.prepare();
+    assert.deepEqual(await scenario.prepare(), { status: 'active' });
     assert.deepEqual(scenario.counts, {
       acknowledgments: 1,
       assignmentTurns: 1,
@@ -572,8 +573,14 @@ describe('channels/github/conversation/assignment-session-service', () => {
     assert.match(response.publicTextDigest, /^[a-f0-9]{64}$/u);
     assert.match(response.target, /:publication:assignment-response:[a-f0-9]{32}$/u);
 
-    await scenario.prepare();
-    await scenario.prepare();
+    assert.deepEqual(await scenario.prepare(), {
+      reasonCode: 'github-notification-pull-request-delivered',
+      status: 'waiting',
+    });
+    assert.deepEqual(await scenario.prepare(), {
+      reasonCode: 'github-notification-pull-request-delivered',
+      status: 'waiting',
+    });
 
     assert.deepEqual(scenario.counts, {
       acknowledgments: 1,
@@ -604,8 +611,14 @@ describe('channels/github/conversation/assignment-session-service', () => {
       },
     });
 
-    await scenario.prepare();
-    await scenario.prepare();
+    assert.deepEqual(await scenario.prepare(), {
+      reasonCode: 'github-notification-guided-waiting',
+      status: 'waiting',
+    });
+    assert.deepEqual(await scenario.prepare(), {
+      reasonCode: 'github-notification-guided-waiting',
+      status: 'waiting',
+    });
 
     assert.deepEqual(scenario.counts, {
       acknowledgments: 1,

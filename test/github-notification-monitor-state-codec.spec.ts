@@ -9,7 +9,7 @@ import {
 } from './github-notification-fixtures.ts';
 
 describe('channels/github/intake/monitor/state-codec', () => {
-  it('should accept strict schema-five intake state', () => {
+  it('should accept strict schema-six intake state', () => {
     const state = notificationMonitorState();
 
     assert.deepEqual(decodeGitHubNotificationMonitorState(state, state.agentId), {
@@ -69,8 +69,12 @@ describe('channels/github/intake/monitor/state-codec', () => {
       unknown
     >;
     legacy.schemaVersion = 4;
+    delete legacy.nextSchedulingSequence;
+    delete (legacy.items as Record<string, { intake?: Record<string, unknown> }>)[
+      notificationItemKey
+    ]?.intake?.scheduling;
     const decoded = decodeGitHubNotificationMonitorState(legacy, 'tanaabot')?.state;
-    assert.equal(decoded?.schemaVersion, 5);
+    assert.equal(decoded?.schemaVersion, 6);
     assert.equal(
       decoded?.items[notificationItemKey]?.intake?.providerRetirementVerifiedAt,
       undefined,
@@ -99,6 +103,7 @@ describe('channels/github/intake/monitor/state-codec', () => {
     const current = notificationMonitorState();
     const legacy = structuredClone(current) as unknown as Record<string, unknown>;
     legacy.schemaVersion = 3;
+    delete legacy.nextSchedulingSequence;
     const items = legacy.items as Record<string, Record<string, unknown>>;
     const item = items[notificationItemKey]!;
     delete item.lifecycleId;
@@ -121,15 +126,37 @@ describe('channels/github/intake/monitor/state-codec', () => {
 
     const decoded = decodeGitHubNotificationMonitorState(legacy, current.agentId)?.state;
 
-    assert.equal(decoded?.schemaVersion, 5);
+    assert.equal(decoded?.schemaVersion, 6);
     assert.deepEqual(decoded?.items[notificationItemKey]?.intake, {
       assignmentEventId: 'EV_assignment',
+      scheduling: { sequence: 1, status: 'queued' },
       stage: 'prepared',
       worktreeBranch: 'agent/tanaabot/issue-7',
       worktreePath: '/workspace/worktrees/issue-7',
     });
     assert.equal(decoded?.items[notificationItemKey]?.lifecycleId, 'issue');
     assert.equal('commentTracking' in (decoded?.items[notificationItemKey] ?? {}), false);
+  });
+
+  it('should migrate schema-five intake into a stable issue queue', () => {
+    const legacy = structuredClone(notificationMonitorState()) as unknown as Record<
+      string,
+      unknown
+    >;
+    legacy.schemaVersion = 5;
+    delete legacy.nextSchedulingSequence;
+    delete (legacy.items as Record<string, { intake?: Record<string, unknown> }>)[
+      notificationItemKey
+    ]?.intake?.scheduling;
+
+    const decoded = decodeGitHubNotificationMonitorState(legacy, 'tanaabot')?.state;
+
+    assert.equal(decoded?.schemaVersion, 6);
+    assert.deepEqual(decoded?.items[notificationItemKey]?.intake?.scheduling, {
+      sequence: 1,
+      status: 'queued',
+    });
+    assert.equal(decoded?.nextSchedulingSequence, 2);
   });
 
   it('should reject unsupported and malformed persisted state', () => {

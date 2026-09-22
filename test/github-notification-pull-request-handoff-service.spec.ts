@@ -148,6 +148,7 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
               approvedActors: [],
               assignmentTypes: ['issue' as const],
               intervalMinutes: 5,
+              maxConcurrentIssues: 2,
             },
           };
         },

@@ -36,6 +36,7 @@ const manifest: AgentManifest = {
       assignmentTypes: ['issue', 'pull-request'],
       approvedActors: [{ login: notificationActor.login, nodeId: notificationActor.nodeId }],
       intervalMinutes: 5,
+      maxConcurrentIssues: 2,
     },
     token: 'GH_TOKEN_TANAABOT',
     username: notificationAccount.login,

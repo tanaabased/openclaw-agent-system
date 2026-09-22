@@ -23,6 +23,7 @@ function context(agentId = 'data', enabled = true): AgentSystemLifecycleContext 
         notifications: {
           assignmentTypes: ['issue'],
           intervalMinutes: 5,
+          maxConcurrentIssues: 2,
           approvedActors: [{ ...actor, operatorOwner: enabled }],
         },
       },

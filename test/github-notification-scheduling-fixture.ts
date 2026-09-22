@@ -75,6 +75,7 @@ export default async function createGitHubNotificationSchedulingFixture(
         assignmentTypes: ['issue'],
         approvedActors: [notificationActor],
         intervalMinutes: 5,
+        maxConcurrentIssues: 2,
       },
       token: 'GH_TOKEN_TANAABOT',
       username: notificationAccount.login,
