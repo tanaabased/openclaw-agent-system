@@ -13,6 +13,7 @@ export interface AgentPathEntry {
 }
 
 export interface AgentPathProjection {
+  baseline: string[];
   entries: AgentPathEntry[];
   path: string;
 }
@@ -95,7 +96,6 @@ export default async function resolveAgentPaths(
   ];
   const entries: AgentPathEntry[] = [];
   const seen = new Set<string>();
-  const ownedPathAliases = new Set(candidates.map((candidate) => resolve(candidate.path)));
   for (const candidate of candidates) {
     if (candidate.path.includes(delimiter)) {
       diagnostics.push({
@@ -124,7 +124,6 @@ export default async function resolveAgentPaths(
     }
     if (!seen.has(canonicalPath)) {
       seen.add(canonicalPath);
-      ownedPathAliases.add(canonicalPath);
       entries.push({ path: canonicalPath, source: candidate.source });
     }
   }
@@ -143,17 +142,20 @@ export default async function resolveAgentPaths(
   }
   if (diagnostics.length > 0) return { status: 'invalid', diagnostics };
 
-  const baseEntries: string[] = [];
+  const baseline: string[] = [];
+  const baselineSeen = new Set(entries.map(({ path }) => path));
   for (const path of basePath.split(delimiter)) {
     if (!path) continue;
-    const comparablePath = await realpath(resolve(path)).catch(() => resolve(path));
-    if (!ownedPathAliases.has(comparablePath)) baseEntries.push(path);
+    if (baselineSeen.has(path)) continue;
+    baselineSeen.add(path);
+    baseline.push(path);
   }
   return {
     status: 'resolved',
     projection: {
+      baseline,
       entries,
-      path: [...entries.map(({ path }) => path), ...baseEntries].join(delimiter),
+      path: [...entries.map(({ path }) => path), ...baseline].join(delimiter),
     },
   };
 }

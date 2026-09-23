@@ -22,6 +22,7 @@ function createHarness(
     install?: AgentInstallResult | Error;
     json?: boolean;
     manifest?: AgentManifestLoadResult;
+    rebuildCodexPath?: boolean;
     styles?: CliStyles;
     terminalColumns?: number;
   } = {},
@@ -29,7 +30,11 @@ function createHarness(
   const diagnostics: string[] = [];
   const output: string[] = [];
   const calls = {
-    install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
+    install: [] as Array<{
+      manifest: unknown;
+      rebuildCodexPath?: boolean;
+      workspaceDir: string;
+    }>,
     workspace: [] as string[],
   };
   const exitCodes: number[] = [];
@@ -80,6 +85,7 @@ function createHarness(
           writeStdout: (message) => output.push(message),
         },
         setExitCode: (code) => exitCodes.push(code),
+        ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
         styles: options.styles ?? createCliStyles({ NO_COLOR: '1' }),
         terminalColumns: options.terminalColumns,
         workspaceDir: '/current',
@@ -88,6 +94,14 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should forward an explicit Codex PATH rebuild', async () => {
+    const { calls, run } = createHarness({ rebuildCodexPath: true });
+
+    await run();
+
+    assert.equal(calls.install[0]?.rebuildCodexPath, true);
+  });
+
   it('should install a loaded workspace manifest and report completed outcomes', async () => {
     const { calls, output, run } = createHarness({
       install: {

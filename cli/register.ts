@@ -309,6 +309,10 @@ export default function registerAgentSystemCli(
     .option('--yes', 'Confirm setup without prompting.')
     .option('--non-interactive', 'Run without interactive prompts.')
     .option('--skip-setup', 'Skip all setup checks and applies with a warning.')
+    .option(
+      '--rebuild-codex-path',
+      'Replace the saved Codex PATH baseline with this process environment.',
+    )
     .option('--json', 'Write structured JSON output.')
     .action(async () => {
       if (!(await allowOperatorCommand())) return;
@@ -318,6 +322,7 @@ export default function registerAgentSystemCli(
         yes: install.opts().yes === true,
         nonInteractive: install.opts().nonInteractive === true,
         skipSetup: install.opts().skipSetup === true,
+        rebuildCodexPath: install.opts().rebuildCodexPath === true,
         environment,
         ...(options.input ? { input: options.input } : {}),
         ...(options.setupPrompt ? { prompt: options.setupPrompt } : {}),

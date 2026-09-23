@@ -58,7 +58,7 @@ export default function createLifecycleTools(
             label: name === 'agent_system_install' ? 'Agent System Install' : 'Agent System Doctor',
             description:
               name === 'agent_system_install'
-                ? 'Request chat approval, then reconcile the active agent workspace from its manifest, including setup. No agent or workspace override.'
+                ? 'Request chat approval, then reconcile the active agent workspace from its manifest, including setup. Set rebuildCodexPath only to replace the saved Codex PATH baseline with this process environment. No agent or workspace override.'
                 : 'Request chat approval, then inspect the active agent workspace and run manifest-defined checks. Does not apply repairs.',
             parameters: lifecycleParameters(name),
             async execute(toolCallId, params, signal) {

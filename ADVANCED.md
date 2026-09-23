@@ -800,21 +800,28 @@ MCP, or third-party tools. PATH projection is the separate contract below.
 
 ## Path
 
-Installation builds one deterministic prefix:
+Installation builds one deterministic managed prefix followed by a saved Codex
+baseline:
 
 ```text
 <workspace>/bin
 <workspace>/<environment.path-prepend[0]>
 <workspace>/<later declared entries>
 <agent-system-package>/bin
-<host PATH>
+<saved Codex baseline>
 ```
 
 Declared entries are literal workspace-relative directories. They must exist,
 remain inside the canonical workspace without traversing symlinks, and need not
 repeat the automatically managed workspace or package `bin` directories.
 
-Agent System projects the prefix into the selected agent's OpenClaw
+Initial installation seeds the baseline from the invoking process PATH. Later
+installs preserve its exact order and append caller directories not already
+saved. Exact duplicates are removed; distinct path aliases are retained.
+Managed workspace, declared, and package entries remain authoritative at the
+front and obsolete known managed entries are reconciled.
+
+Agent System projects the managed prefix into the selected agent's OpenClaw
 `tools.exec.pathPrepend`. For local Codex native shell commands, it writes an
 equivalent machine-specific `<workspace>/.codex/config.toml` and adds that path to
 the root `.gitignore`.
@@ -837,7 +844,19 @@ PATH = "/absolute/workspace/bin:/absolute/agent-system/bin:/base/path"
 ```
 
 Rerun `install` when the workspace, package location, declared paths, or host PATH
-changes, then start a new Codex session. Agent System disables login-shell
+changes. Use `openclaw agent-system install --rebuild-codex-path` only when the
+saved baseline should be replaced by that CLI environment. Native chat Install
+offers the equivalent approved `rebuildCodexPath` option. Both report baseline
+changes; neither modifies user-managed Codex configuration.
+
+The union preserves directory availability, not every caller's command
+precedence. Existing baseline order wins, stale entries can accumulate, and PATH
+health does not inventory or prove the availability of executables. Doctor names
+caller directories that Install would append, but extra, reordered, or
+nonexistent saved baseline entries do not alone indicate drift.
+
+Start a new Codex session after PATH changes; existing sessions do not hot-reload
+the workspace configuration. Agent System disables login-shell
 execution and sets the deterministic PATH without otherwise changing Codex's
 inherited-environment policy. Remote, sandboxed, ACP, MCP, and third-party
 surfaces retain their own path and mount contracts.

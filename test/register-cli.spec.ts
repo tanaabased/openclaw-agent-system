@@ -67,7 +67,11 @@ function createProgram(
     doctor: [] as Array<{ agentId: string; workspaceDir: string }>,
     environmentAgent: [] as string[],
     environmentWorkspace: [] as string[],
-    install: [] as Array<{ manifest: unknown; workspaceDir: string }>,
+    install: [] as Array<{
+      manifest: unknown;
+      rebuildCodexPath?: boolean;
+      workspaceDir: string;
+    }>,
     notificationRefresh: [] as Array<{
       agentId?: string;
       bypassInterval?: boolean;
@@ -749,7 +753,7 @@ describe('cli/register', () => {
 
   it('should expose value-less setup switches and reject attached boolean values', async () => {
     for (const alias of ['agent-system', 'as']) {
-      for (const flag of ['--yes', '--non-interactive', '--skip-setup']) {
+      for (const flag of ['--yes', '--non-interactive', '--skip-setup', '--rebuild-codex-path']) {
         const { program, calls } = createProgram();
         await program.parseAsync(['node', 'openclaw', alias, 'install', flag]);
         assert.equal(calls.install.length, 1);
@@ -772,6 +776,7 @@ describe('cli/register', () => {
         ['install', '--yes'],
         ['install', '--non-interactive'],
         ['install', '--skip-setup'],
+        ['install', '--rebuild-codex-path'],
         ['doctor'],
         ['status', '--agent', 'tanaabot'],
       ]) {
@@ -829,6 +834,20 @@ describe('cli/register', () => {
     assert.deepEqual(calls.install, [
       { manifest: validResult.manifest, workspaceDir: '/workspace', runtime: 'openclaw' },
     ]);
+  });
+
+  it('should pass an explicit Codex PATH rebuild through install', async () => {
+    const { calls, program } = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'install',
+      '--rebuild-codex-path',
+    ]);
+
+    assert.equal(calls.install[0]?.rebuildCodexPath, true);
   });
 
   it('should pass terminal width to doctor and install human output', async () => {
