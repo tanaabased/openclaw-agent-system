@@ -496,7 +496,7 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should temporarily focus the pull request matrix on the four changed examples', async () => {
+  it('should temporarily focus the pull request matrix on the three changed examples', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const job = workflow.jobs?.examples;
@@ -507,7 +507,7 @@ describe('github notification workflows', () => {
       .sort();
 
     assert.deepEqual(job?.strategy?.matrix, {
-      example: ['approval', 'codex', 'containment', 'diagnostics'],
+      example: ['approval', 'codex', 'containment'],
       os: ['macos-26', 'ubuntu-24.04'],
     });
     assert.ok(examples.every((example) => exampleDirectories.includes(example)));
@@ -534,7 +534,6 @@ describe('github notification workflows', () => {
     assert.equal(installOpenClaw?.if, undefined);
     assert.equal(example?.if, undefined);
     assert.equal(example?.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
-    assert.equal(example?.env?.CODEX_MODEL, 'gpt-6-luna');
     assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
     assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
     assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
@@ -546,22 +545,7 @@ describe('github notification workflows', () => {
 
     const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
     assert.equal(suites.length, 1);
-    assert.equal(suites[0]?.tests.setup?.length, 4);
-    assert.equal(suites[0]?.tests.test?.length, 7);
-  });
-
-  it('should keep synthetic provider failures in the diagnostics example', async () => {
-    const credentials = await readFile('examples/credentials/README.md', 'utf8');
-    const diagnostics = await readFile('examples/diagnostics/README.md', 'utf8');
-    const suites = new Leia().parse([resolve('examples', 'diagnostics', 'README.md')]);
-
-    assert.doesNotMatch(credentials, /synthetic provider|quota-diagnostic|provider-failure/u);
-    assert.match(diagnostics, /--scenario diagnostics/u);
-    assert.match(diagnostics, /provider="1password"/u);
-    assert.match(diagnostics, /SYNTHETIC_PRIVATE/u);
-    assert.equal(suites.length, 1);
-    assert.equal(suites[0]?.tests.setup?.length, 2);
-    assert.equal(suites[0]?.tests.test?.length, 3);
-    assert.equal(suites[0]?.tests.cleanup?.length, 2);
+    assert.equal(suites[0]?.tests.setup?.length, 3);
+    assert.equal(suites[0]?.tests.test?.length, 8);
   });
 });

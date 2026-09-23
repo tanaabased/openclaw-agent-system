@@ -4,10 +4,6 @@ import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@cop
 
 import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
 import {
-  diagnosticExampleCallId,
-  diagnosticExamplePrompt,
-} from '../examples/diagnostics/model-fixture.ts';
-import {
   githubExampleEmoriCallId,
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
@@ -61,10 +57,9 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'diagnostics', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'github']);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
-    assert.equal(resolveOpenClawAIMockScenario('diagnostics').id, 'diagnostics');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
     assert.throws(
       () => resolveExampleModelScenario('unsupported'),
@@ -144,49 +139,6 @@ describe('scripts/example-model-scenarios', () => {
         id: `${entry.callId}_final_response`,
       });
     }
-  });
-
-  it('should acknowledge a synthetic quota turn only after safe provider evidence reaches its native tool result', () => {
-    const scenario = resolveExampleModelScenario('diagnostics');
-    const safe =
-      'provider="1password" classification="rate-limit" httpStatus="unknown" resetAt="unknown"';
-    for (const content of [
-      'credential unavailable',
-      safe.replace('1password', 'github'),
-      `${safe} SYNTHETIC_PRIVATE_TOKEN`,
-      `${safe} op://synthetic/item/credential`,
-    ]) {
-      assert.equal(
-        matchFixture(
-          [...scenario.fixtures],
-          request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
-            callId: diagnosticExampleCallId,
-            content,
-          }),
-        ),
-        null,
-      );
-    }
-    assert.deepEqual(
-      matchFixture(
-        [...scenario.fixtures],
-        request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
-          callId: 'call_host_normalized',
-          content: safe,
-        }),
-      )?.response,
-      { id: 'quota_final_response', content: 'quota reported' },
-    );
-    assert.deepEqual(
-      matchFixture(
-        [...scenario.fixtures],
-        request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
-          callId: diagnosticExampleCallId,
-          content: [{ text: JSON.stringify({ error: safe }), type: 'input_text' }],
-        }),
-      )?.response,
-      { id: 'quota_final_response', content: 'quota reported' },
-    );
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {

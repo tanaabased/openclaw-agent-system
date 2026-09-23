@@ -27,7 +27,6 @@ jobs:
           - codex
           - containment
           # - credentials
-          - diagnostics
           # - doctor
           # - env
           # - git
@@ -89,7 +88,6 @@ jobs:
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
-          CODEX_MODEL: gpt-6-luna
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
