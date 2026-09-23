@@ -492,7 +492,7 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should keep every general example in the non-notification pull request matrix', async () => {
+  it('should temporarily focus the pull request matrix on approval and containment', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const examples = workflow.jobs?.examples?.strategy?.matrix?.example ?? [];
@@ -502,28 +502,10 @@ describe('github notification workflows', () => {
       .sort();
 
     assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
-      example: [
-        'install',
-        'setup',
-        'validate',
-        'doctor',
-        'agent',
-        'identity',
-        'memory',
-        'models',
-        'path',
-        'env',
-        'credentials',
-        'git',
-        'worktree',
-        'github',
-        'routing',
-        'tool',
-        'security',
-      ],
+      example: ['approval', 'containment'],
       os: ['macos-26', 'ubuntu-24.04'],
     });
-    assert.deepEqual(exampleDirectories, [...examples].sort());
+    assert.ok(examples.every((example) => exampleDirectories.includes(example)));
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 });

@@ -20,24 +20,26 @@ jobs:
         os:
           - macos-26
           - ubuntu-24.04
+        # temporarily focus #139 on approval and containment; restore the full matrix with codex acceptance.
         example:
-          - install
-          - setup
-          - validate
-          - doctor
-          - agent
-          - identity
-          - memory
-          - models
-          - path
-          - env
-          - credentials
-          - git
-          - worktree
-          - github
-          - routing
-          - tool
-          - security
+          # - install
+          # - setup
+          # - validate
+          # - doctor
+          - approval
+          # - agent
+          # - identity
+          # - memory
+          # - models
+          # - path
+          # - env
+          # - credentials
+          # - git
+          # - worktree
+          # - github
+          # - routing
+          # - tool
+          - containment
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

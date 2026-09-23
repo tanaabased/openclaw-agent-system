@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: approval-openclaw
+  name: Approval OpenClaw
+
+setup:
+  check: |
+    printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
+    test -f "$TMPDIR/agent-system-approval-apply"
+  apply: touch "$TMPDIR/agent-system-approval-apply"

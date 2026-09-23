@@ -1,9 +1,9 @@
 schema-version: 1
 
 agent:
-  id: tanaabot
-  name: Tanaabot Security Source
-  email: tanaabot-security@example.invalid
+  id: emori
+  name: Emori Containment Target
+  email: emori-containment@example.invalid
 
 git: {}
 
