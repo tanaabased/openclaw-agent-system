@@ -18,6 +18,13 @@ openclaw agent-system install
 ## Testing
 
 ```bash
+# should keep internal launcher controls out of public help
+for namespace in agent-system as; do
+  output="$(openclaw "$namespace" tool --help)"
+  printf '%s\n' "$output" | grep -F -- '--agent'
+  if printf '%s\n' "$output" | grep -F -- '--shim'; then exit 1; fi
+done
+
 # should identify the agent system gh command
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --agent-system | grep -Fx 'agent-system'
 

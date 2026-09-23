@@ -44,7 +44,7 @@ export default async function runAgentSystemTool(
       if (options.agentId || !options.resolveCommandContext) {
         throw new AgentSystemToolError(
           'agent_not_resolved',
-          'The command shim context is invalid.',
+          'The command launcher context is invalid.',
         );
       }
       const context = await options.resolveCommandContext(process.env, options.workspaceDir);

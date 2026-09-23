@@ -392,8 +392,31 @@ describe('cli/register', () => {
     );
   });
 
-  it('should reject unsupported shim modes before invoking a tool', async () => {
-    for (const mode of ['operator', 'unknown', '']) {
+  it('should hide launcher options from help and typo suggestions through both aliases', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      const { program } = createProgram();
+      const tool = program.commands[0]!.commands.find((command) => command.name() === 'tool')!;
+      const visible: string[] = [];
+      tool.configureOutput({
+        writeOut: (value) => visible.push(value),
+        writeErr: (value) => visible.push(value),
+      });
+      await assert.rejects(program.parseAsync(['node', 'openclaw', alias, 'tool', '--help']), {
+        code: 'commander.helpDisplayed',
+      });
+      assert.match(visible.join(''), /--agent/);
+      assert.doesNotMatch(visible.join(''), /shim|contextual/iu);
+      visible.length = 0;
+      await assert.rejects(
+        program.parseAsync(['node', 'openclaw', alias, 'tool', 'git', '--shi']),
+        { code: 'commander.unknownOption' },
+      );
+      assert.doesNotMatch(visible.join(''), /--shim/);
+    }
+  });
+
+  it('should reject missing or unsupported shim modes without advertising the option', async () => {
+    for (const mode of [undefined, 'operator', 'unknown', '']) {
       const { calls, program, diagnostics } = createProgram();
       await program.parseAsync([
         'node',
@@ -402,12 +425,13 @@ describe('cli/register', () => {
         'tool',
         'git',
         '--shim',
-        mode,
+        ...(mode === undefined ? [] : [mode]),
         '--',
         '--version',
       ]);
       assert.deepEqual(calls.tool, []);
-      assert.match(diagnostics.join(''), /shim mode must be managed or contextual/u);
+      assert.match(diagnostics.join(''), /invalid internal launcher invocation/iu);
+      assert.doesNotMatch(diagnostics.join(''), /shim|contextual/iu);
     }
   });
 

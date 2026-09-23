@@ -1,4 +1,5 @@
 import type { Readable } from 'node:stream';
+import type { Option } from 'commander';
 
 import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
@@ -32,8 +33,10 @@ type Action = (...args: unknown[]) => unknown;
 
 export interface CommandLike {
   action(handler: Action): CommandLike;
+  addOption(option: Option): CommandLike;
   alias(name: string): CommandLike;
   command(specification: string): CommandLike;
+  createOption(flags: string, description?: string): Option;
   description(text: string): CommandLike;
   helpInformation(): string;
   option(flags: string, description: string): CommandLike;
@@ -177,12 +180,12 @@ export default function registerAgentSystemCli(
     .command('tool <command> [args...]')
     .description('Run one registered command through its Agent System tool.')
     .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
-    .option('--shim <mode>', 'Select managed or contextual command-shim execution.')
+    .addOption(agentSystem.createOption('--shim [mode]').hideHelp())
     .action(async (command, args) => {
       const agentId = tool.opts().agent;
       const shim = tool.opts().shim;
       if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
-        output.writeStderr('Command shim mode must be managed or contextual.\n');
+        output.writeStderr('Invalid internal launcher invocation.\n');
         setExitCode(1);
         return;
       }
