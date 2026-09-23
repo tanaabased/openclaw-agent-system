@@ -12,6 +12,9 @@ export interface AgentSystemLifecycleContext {
 export interface AgentSystemLifecycleExecutionContext extends AgentSystemLifecycleContext {
   /** Selected by the invoking integration, never by manifest or environment values. */
   runtime: AgentSetupRuntime;
+  signal?: AbortSignal;
+  /** Recheck one chat-approved plan before each lifecycle boundary. */
+  assertCurrent?(): Promise<void>;
 }
 
 export type AgentSystemLifecycleOutcomeStatus =
@@ -167,10 +170,14 @@ export default class AgentSystemLifecycleRegistry {
   ): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
     for (const contribution of this.#ordered(context)) {
+      context.signal?.throwIfAborted();
+      await context.assertCurrent?.();
       let result;
       try {
         result = await contribution.inspect?.(context);
       } catch {
+        context.signal?.throwIfAborted();
+        await context.assertCurrent?.();
         findings.push({
           code: `${contribution.id}-inspection-failed`,
           component: contribution.id,
@@ -192,6 +199,8 @@ export default class AgentSystemLifecycleRegistry {
     const outcomes: AgentSystemLifecycleOutcome[] = [];
     const warnings: AgentSystemLifecycleWarning[] = [];
     for (const contribution of this.#ordered(context, options.skipSetup)) {
+      context.signal?.throwIfAborted();
+      await context.assertCurrent?.();
       let result;
       try {
         result = await contribution.reconcile?.(context);

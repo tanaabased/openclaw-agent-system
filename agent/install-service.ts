@@ -45,6 +45,8 @@ export default class AgentInstallService {
   }
 
   async install(input: AgentInstallInput): Promise<AgentInstallResult> {
+    input.signal?.throwIfAborted();
+    await input.assertCurrent?.();
     if (hasOpEnvironmentRequirements(collectOpEnvironmentRequirements(input.manifest))) {
       const credentialManager = this.#dependencies.credentialManager;
       if (!credentialManager) {

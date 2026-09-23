@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import discoverManifest, { discoverManifestFromDirectory } from './discover.ts';
@@ -61,6 +62,19 @@ function diagnosticCodes(diagnostics: ManifestDiagnostic[]): string {
 
 /** Own manifest resolution, parsing, cache invalidation, and redacted runtime diagnostics. */
 export default class AgentManifestService {
+  readonly #snapshot = new AsyncLocalStorage<{
+    loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }>;
+    signal: AbortSignal;
+  }>();
+
+  /** Constrain nested lifecycle consumers to the approved declaration, including credential reads. */
+  withSnapshot<T>(
+    loaded: Extract<AgentManifestLoadResult, { status: 'loaded' }>,
+    signal: AbortSignal,
+    execute: () => Promise<T>,
+  ): Promise<T> {
+    return this.#snapshot.run({ loaded, signal }, execute);
+  }
   readonly #dependencies: AgentManifestServiceDependencies;
   readonly #cache = new Map<string, CacheEntry>();
   readonly #inFlight = new Map<string, Promise<AgentManifestLoadResult>>();
@@ -140,6 +154,37 @@ export default class AgentManifestService {
     workspaceDir: string,
     expectedAgentId?: string,
     trigger: ManifestLoadTrigger = 'cli',
+  ): Promise<AgentManifestLoadResult> {
+    const snapshot = this.#snapshot.getStore();
+    snapshot?.signal.throwIfAborted();
+    const result = await this.#loadForWorkspace(workspaceDir, expectedAgentId, trigger);
+    if (snapshot) {
+      snapshot.signal.throwIfAborted();
+      const approved = snapshot.loaded;
+      if (
+        result.status !== 'loaded' ||
+        result.digest !== approved.digest ||
+        result.path !== approved.path ||
+        result.scope.workspaceDir !== approved.scope.workspaceDir ||
+        result.manifest.agent.id !== approved.manifest.agent.id
+      ) {
+        return invalidManifestResult({ workspaceDir, agentId: expectedAgentId }, [
+          {
+            code: 'manifest-approval-changed',
+            message: 'The manifest no longer matches the approved lifecycle operation.',
+            severity: 'error',
+          },
+        ]);
+      }
+      return { ...result, manifest: structuredClone(approved.manifest) };
+    }
+    return result;
+  }
+
+  async #loadForWorkspace(
+    workspaceDir: string,
+    expectedAgentId: string | undefined,
+    trigger: ManifestLoadTrigger,
   ): Promise<AgentManifestLoadResult> {
     const discovery = await discoverManifest(workspaceDir);
     const cacheKey = `${discovery.workspaceDir}\u0000${expectedAgentId ?? ''}`;

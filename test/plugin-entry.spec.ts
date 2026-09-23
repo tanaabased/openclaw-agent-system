@@ -130,6 +130,7 @@ describe('index', () => {
     assert.equal(typeof registrar, 'function');
     assert.deepEqual(hookNames, [
       'after_tool_call',
+      'before_tool_call',
       'resolve_exec_env',
       'before_tool_call',
       'before_agent_run',
@@ -144,6 +145,8 @@ describe('index', () => {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_github_reply',
+      'agent_system_install',
+      'agent_system_doctor',
     ]);
     assert.deepEqual(policyIds, [
       'agent-system.git',
