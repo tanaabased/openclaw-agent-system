@@ -35,6 +35,39 @@ const clientBuildId = (await controlUi.text()).match(
 assert.ok(clientBuildId, 'Control UI document must identify its Gateway build');
 type Event = { event: string; payload?: unknown };
 const events: Event[] = [];
+let activeSessionKey: string | undefined;
+let activeRunId: string | undefined;
+const approvalIds = new Set<string>();
+
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function traceEvent({ event, payload }: Event) {
+  if (!activeSessionKey) return;
+  const row = record(payload);
+  const request = record(row.request);
+  if (event.startsWith('plugin.approval.')) {
+    if (request.sessionKey === activeSessionKey && typeof row.id === 'string')
+      approvalIds.add(row.id);
+    if (typeof row.id !== 'string' || !approvalIds.has(row.id)) return;
+    process.stdout.write(
+      `${JSON.stringify({ event, id: row.id, toolCallId: request.toolCallId, tool: request.toolName, runId: request.runId, decision: row.decision, reason: row.reason, createdAtMs: row.createdAtMs, expiresAtMs: row.expiresAtMs })}\n`,
+    );
+  } else if (
+    (row.sessionKey === activeSessionKey || (activeRunId && row.runId === activeRunId)) &&
+    (event === 'agent' || event === 'chat')
+  ) {
+    const data = record(row.data);
+    if (event === 'agent' && row.stream !== 'tool') return;
+    if (event === 'chat' && !['final', 'aborted', 'error'].includes(String(row.state))) return;
+    const result = JSON.stringify(data.result ?? data.error ?? row.errorMessage ?? '');
+    process.stdout.write(
+      `${JSON.stringify({ event, runId: row.runId, state: row.state, phase: data.phase, tool: data.name, toolCallId: data.toolCallId, isError: data.isError, lifecycleApprovalDenied: result.includes('Lifecycle approval is missing'), approvalUnavailable: result.includes('Plugin approval unavailable') })}\n`,
+    );
+  }
+}
+
 let client: GatewayClient;
 const connected = new Promise<void>((resolve, reject) => {
   client = new GatewayClient({
@@ -49,7 +82,10 @@ const connected = new Promise<void>((resolve, reject) => {
     caps: ['tool-events'],
     onHelloOk: () => resolve(),
     onConnectError: reject,
-    onEvent: (event) => events.push(event),
+    onEvent: (event) => {
+      events.push(event);
+      traceEvent(event);
+    },
   });
   client.start();
 });
@@ -105,6 +141,10 @@ try {
       await Promise.all([rm(checkFile, { force: true }), rm(applyFile, { force: true })]);
       events.length = 0;
       const sessionKey: string = `agent:${agentId}:lifecycle-${randomUUID()}`;
+      activeSessionKey = sessionKey;
+      activeRunId = undefined;
+      approvalIds.clear();
+      process.stdout.write(`${JSON.stringify({ agentId, toolName, decision, sessionKey })}\n`);
       const message = `Call ${toolName} exactly once with {} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
       if (decision === 'unavailable') {
         // CLI turns have no originating chat approval surface, even with an operator client connected.
@@ -170,6 +210,7 @@ try {
           message,
           idempotencyKey: randomUUID(),
         });
+        activeRunId = accepted.runId;
         const approval = await waitFor(
           () => approvalFor(sessionKey)[0],
           'originating chat approval',
@@ -196,6 +237,21 @@ try {
               );
             }),
           'chat completion',
+        );
+        process.stdout.write(
+          `${JSON.stringify({
+            sessionKey,
+            approvalEvents: approvalFor(sessionKey).length,
+            uniqueApprovals: approvalIds.size,
+            checkRan: (await contents(checkFile)).includes('checked'),
+            applyRan: await stat(applyFile).then(
+              () => true,
+              (error: NodeJS.ErrnoException) => {
+                if (error.code === 'ENOENT') return false;
+                throw error;
+              },
+            ),
+          })}\n`,
         );
         assert.equal(approvalFor(sessionKey).length, 1, 'unexpected lifecycle retry');
         if (decision === 'allow-once') {
