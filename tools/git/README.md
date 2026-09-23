@@ -326,10 +326,12 @@ git --agent-system
 git status --short
 ```
 
-Inside admitted agent roots, the shim uses managed Git. Outside those roots,
-or without a binding, it uses sanitized host Git, including ordinary host
-`git worktree` commands. Agent System's separate `worktree` route remains
-managed-only. Invalid authority always fails; see the
+The shim discovers and validates the agent from the working directory, preserving
+managed Git identity and policy without requiring an active session. It uses
+sanitized host Git when no agent manifest is found, or when valid active-agent
+authority places the command outside its admitted roots. That includes ordinary
+host `git worktree` commands. Agent System's separate `worktree` route remains
+managed-only. Invalid authority or agent configuration always fails; see the
 [command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading

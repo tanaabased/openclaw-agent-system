@@ -231,11 +231,13 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-Inside admitted agent roots, the shim uses managed GitHub identity and policy.
-Outside those roots, or without a binding, it uses host `gh` after removing agent
-tokens and configuration overrides. Host authentication uses ordinary host
-configuration files; inherited tokens are not retained. Invalid authority always
-fails; see the [command-routing contract](../../ADVANCED.md#trust-boundary).
+The shim discovers and validates the agent from the working directory, preserving
+managed GitHub identity and policy without requiring an active session. It uses
+host `gh` when no agent manifest is found, or when valid active-agent authority
+places the command outside its admitted roots. Host fallback removes agent tokens
+and configuration overrides; authentication uses ordinary host configuration
+files rather than inherited tokens. Invalid authority or agent configuration
+always fails; see the [command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

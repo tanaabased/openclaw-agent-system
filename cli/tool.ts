@@ -3,6 +3,7 @@ import type { Readable } from 'node:stream';
 import type AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolError from '../api/error.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
+import type AgentManifestService from '../manifest/service.ts';
 import type { AgentCommandBinding, AgentCommandContext } from '../agent/command-authority.ts';
 import runHostCommand from '../api/host-command.ts';
 import { type CliOutput, writeCliError } from './output.ts';
@@ -11,6 +12,7 @@ import readToolCommandStdin from '../api/read-command-stdin.ts';
 
 export interface RunAgentSystemToolOptions {
   invocationMode: 'operator' | 'managed' | 'contextual';
+  manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   resolveCommandContext?(
     environment: Readonly<NodeJS.ProcessEnv>,
     cwd: string,
@@ -48,7 +50,11 @@ export default async function runAgentSystemTool(
       const context = await options.resolveCommandContext(process.env, options.workspaceDir);
       if (context.status === 'managed') {
         binding = context.binding;
-      } else {
+      } else if (
+        context.status === 'outside-agent-scope' ||
+        (await options.manifestService.loadForCommandDirectory(options.workspaceDir, 'cli'))
+          .status === 'unmanaged'
+      ) {
         const executable = options.toolRegistry.hostFallback(options.command);
         if (!executable) {
           throw new AgentSystemToolError(
@@ -64,6 +70,7 @@ export default async function runAgentSystemTool(
         );
         return;
       }
+      // Without session authority, preserve workspace discovery and validation in the runtime.
     } else {
       binding = await options.resolveCommandBinding?.(process.env, options.workspaceDir);
       if (options.invocationMode === 'managed' && (!binding || options.agentId)) {

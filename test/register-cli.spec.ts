@@ -786,6 +786,41 @@ describe('cli/register', () => {
     }
   });
 
+  it('should preserve operator workspace discovery through contextual shims without session authority', async () => {
+    for (const command of ['git', 'gh']) {
+      const test = createProgram(undefined, {
+        commandAuthority: {
+          async classify() {
+            return { status: 'unbound' };
+          },
+          async resolve() {
+            throw new Error('unexpected strict resolution');
+          },
+        },
+      });
+      await test.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'tool',
+        command,
+        '--shim',
+        'contextual',
+        '--',
+        '--version',
+      ]);
+      assert.deepEqual(test.calls.workspace, ['/current']);
+      assert.deepEqual(test.calls.tool, [
+        {
+          command,
+          argv: ['--version'],
+          scope: { source: 'command', workspaceDir: '/current' },
+        },
+      ]);
+      assert.deepEqual(test.diagnostics, []);
+    }
+  });
+
   it('should deny setup operator routes for native and codex descendants before manifest loading', async () => {
     for (const alias of ['agent-system', 'as']) {
       for (const args of [

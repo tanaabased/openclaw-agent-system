@@ -8,6 +8,11 @@ describe('cli/tool', () => {
 
     await runAgentSystemTool({
       invocationMode: 'operator',
+      manifestService: {
+        async loadForCommandDirectory() {
+          throw new Error('unexpected discovery');
+        },
+      },
       argv: ['api', 'user'],
       command: 'gh',
       output: { writeStderr() {}, writeStdout() {} },
@@ -58,6 +63,11 @@ describe('cli/tool', () => {
 
     await runAgentSystemTool({
       invocationMode: 'operator',
+      manifestService: {
+        async loadForCommandDirectory() {
+          throw new Error('unexpected discovery');
+        },
+      },
       agentId: 'emori',
       argv: ['status'],
       command: 'git',
@@ -94,6 +104,11 @@ describe('cli/tool', () => {
 
     await runAgentSystemTool({
       invocationMode: 'operator',
+      manifestService: {
+        async loadForCommandDirectory() {
+          throw new Error('unexpected discovery');
+        },
+      },
       argv: ['repo', 'view', 'missing/repo'],
       command: 'gh',
       output: {
@@ -137,6 +152,11 @@ describe('cli/tool', () => {
 
     await runAgentSystemTool({
       invocationMode: 'operator',
+      manifestService: {
+        async loadForCommandDirectory() {
+          throw new Error('unexpected discovery');
+        },
+      },
       argv: ['list'],
       command: 'worktree',
       output: { writeStderr() {}, writeStdout: (value) => stdout.push(value) },

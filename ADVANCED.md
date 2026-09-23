@@ -583,11 +583,17 @@ Model-facing `agent_system_*` tools bind the manifest and credentials to trusted
 OpenClaw agent context. They remain the preferred direct execution path for
 agents.
 
-Bare packaged `git` and `gh` shims use managed execution inside the active
-agent's workspace, declared repositories, and managed worktrees. Outside those
-roots, or without an agent binding, they use their registered host executables.
-Changing directories never selects another agent; a known different agent's
-workspace remains denied.
+Bare packaged `git` and `gh` shims preserve managed execution wherever an agent
+manifest can be discovered from the working directory and validated against its
+installed agent. An active session is not required. When no manifest is found,
+they use their registered host executables. Invalid manifests and mismatched
+installed workspaces remain errors.
+
+When an active agent supplies command authority, that identity takes precedence
+over workspace discovery. Commands inside its workspace, declared repositories,
+and managed worktrees remain managed; commands outside those roots may use host
+fallback. Changing directories never switches that active agent to another; a
+known different agent's workspace remains denied.
 
 Host fallback is an explicit, static command-route declaration (`hostFallback`),
 currently enabled only for `git` and `gh`. Agent System's `worktree` route has no

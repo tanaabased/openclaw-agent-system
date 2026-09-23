@@ -40,4 +40,9 @@ openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-ope
 # should delegate the packaged gh command through the same agent-bound tool runtime
 cd "$GITHUB_WORKSPACE/examples/tool/tanaabot"
 OPENCLAW_LOG_LEVEL=debug PATH="$GITHUB_WORKSPACE/bin:$PATH" gh api user --jq .login | grep -Fx 'tanaabot'
+
+# should use host tools outside any agent workspace without session authority
+cd "$TMPDIR"
+PATH="$GITHUB_WORKSPACE/bin:$PATH" git -c user.name=host-fixture -c user.email=host@example.invalid var GIT_AUTHOR_IDENT | grep -F 'host-fixture <host@example.invalid>'
+PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --version | grep -F 'gh version'
 ```

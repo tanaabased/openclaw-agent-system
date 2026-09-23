@@ -188,6 +188,7 @@ export default function registerAgentSystemCli(
       }
       await runAgentSystemTool({
         invocationMode: shim ?? 'operator',
+        manifestService: options.manifestService,
         ...(commandAuthority
           ? {
               resolveCommandContext: (environment, workspaceDir) =>

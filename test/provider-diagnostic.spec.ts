@@ -170,6 +170,11 @@ describe('safe provider diagnostics', () => {
         let code = 0;
         await runAgentSystemTool({
           invocationMode: 'operator',
+          manifestService: {
+            async loadForCommandDirectory() {
+              return manifest;
+            },
+          },
           command: 'test-tool',
           argv: ['status'],
           workspaceDir: toolTestWorkspaceDir,

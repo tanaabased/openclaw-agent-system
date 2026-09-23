@@ -2,13 +2,28 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
 import type { AgentCommandContext } from '../agent/command-authority.ts';
+import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import loadBoundToolManifest from '../api/manifest-binding.ts';
 import runAgentSystemTool, { type RunAgentSystemToolOptions } from '../cli/tool.ts';
+import { loadedToolTestManifest } from './tool-test-fixture.ts';
 
 describe('cli/tool contextual routing', () => {
-  function fixture(context: AgentCommandContext) {
+  function fixture(
+    context: AgentCommandContext,
+    manifest: AgentManifestLoadResult = {
+      status: 'unmanaged',
+      scope: { workspaceDir: '/host' },
+      diagnostics: [],
+    },
+  ) {
     const calls: string[] = [];
     const options: RunAgentSystemToolOptions = {
       invocationMode: 'contextual',
+      manifestService: {
+        async loadForCommandDirectory() {
+          return manifest;
+        },
+      },
       argv: ['--version'],
       command: 'git',
       workspaceDir: '/host',
@@ -39,6 +54,54 @@ describe('cli/tool contextual routing', () => {
       toolRuntime: {} as never,
     };
     return { calls, options };
+  }
+
+  for (const command of ['git', 'gh']) {
+    it(`should preserve workspace discovery for ${command} without session authority`, async () => {
+      const manifest = loadedToolTestManifest();
+      const { calls, options } = fixture({ status: 'unbound' }, manifest);
+      const workspaceDir = `${manifest.scope.workspaceDir}/nested/repository`;
+      await runAgentSystemTool({
+        ...options,
+        command,
+        workspaceDir,
+        input: Readable.from([]),
+        toolRegistry: {
+          ...options.toolRegistry,
+          async invoke(_command, _runtime, _argv, scope) {
+            assert.deepEqual(scope, { source: 'command', workspaceDir });
+            const bound = await loadBoundToolManifest(
+              { ...options.manifestService, loadForAgentId: async () => manifest },
+              scope,
+            );
+            calls.push(`managed:${bound.manifest.agent.id}`);
+            return {
+              kind: 'semantic',
+              output: {},
+              auditId: 'audit',
+              operation: { action: 'inspect', risk: 'read', summary: 'Inspect.' },
+            };
+          },
+        },
+      });
+      assert.deepEqual(calls, ['managed:data']);
+    });
+  }
+
+  for (const manifest of [
+    loadedToolTestManifest(),
+    {
+      status: 'invalid',
+      scope: { workspaceDir: '/agent' },
+      diagnostics: [],
+    } satisfies AgentManifestLoadResult,
+    { status: 'unresolved', diagnostics: [] } satisfies AgentManifestLoadResult,
+  ]) {
+    it(`should never fall back after workspace discovery returns ${manifest.status}`, async () => {
+      const { calls, options } = fixture({ status: 'unbound' }, manifest);
+      await runAgentSystemTool({ ...options, input: Readable.from([]) });
+      assert.deepEqual(calls, ['managed', 'exit:1']);
+    });
   }
 
   for (const status of ['unbound', 'outside-agent-scope'] as const) {
