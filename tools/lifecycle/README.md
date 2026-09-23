@@ -5,10 +5,12 @@ operations for the active OpenClaw agent after explicit chat approval. Both the
 default OpenClaw harness and OpenClaw-hosted Codex use these native tools;
 standalone Codex does not acquire an OpenClaw approval route by installing skills.
 
-Call Doctor with `{}`. Call install with `{}`, or `{"skipSetup": true}` to omit
-setup checks and applies. The tools accept no agent, workspace, manifest, or
-approval overrides. Existing OpenClaw tool restrictions still apply. Run the
-operator CLI install once when an existing agent needs the new tool grants.
+Call Doctor with `{}`. Call install with `{}`, `{"skipSetup": true}` to omit
+setup checks and applies, or `{"rebuildCodexPath": true}` to replace the saved
+Codex PATH baseline with the invoking environment. The tools accept no agent,
+workspace, manifest, or approval overrides. Existing OpenClaw tool restrictions
+still apply. Run the operator CLI install once when an existing agent needs the
+new tool grants.
 
 OpenClaw displays the operation, agent, workspace, manifest digest, and setup
 scope before any lifecycle inspection, commands, or credential resolution. Select
@@ -17,6 +19,7 @@ authorization; Agent System adds no operator identity or persistent trust store.
 
 Consent is valid for one matching tool call and expires after two minutes. A
 changed manifest, workspace binding, operation, or option requires new approval.
+The approval description names a requested Codex PATH rebuild before it can run.
 Denial, timeout, cancellation while waiting, and an unavailable approval route
 execute nothing. Missing hooks also prevent execution. Nested lifecycle consumers
 cannot reload a different manifest under the approved operation.

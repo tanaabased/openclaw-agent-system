@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
@@ -129,5 +129,94 @@ describe('paths/service', () => {
       ...result.projection.entries.map(({ path }) => path),
       '/user/bin',
     ]);
+  });
+
+  it('should converge an append-only baseline across distinct invoking environments', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-service-'));
+    const workspaceDir = join(root, 'workspace');
+    const packageDir = join(root, 'package');
+    await Promise.all([mkdir(workspaceDir), mkdir(join(packageDir, 'bin'), { recursive: true })]);
+    const config: OpenClawConfig = {
+      agents: { list: [{ id: 'data', workspace: workspaceDir }] },
+    };
+    let stored: StoredPathProjection | undefined;
+    const codexConfigService = new CodexPathConfigService();
+    const createService = (basePath: string) =>
+      new AgentPathService({
+        basePath,
+        codexConfigService,
+        async mutateConfigFile({ mutate }) {
+          return { result: mutate(config) as boolean | undefined };
+        },
+        packageDir,
+        projectionStore: {
+          async read() {
+            return stored;
+          },
+          async write(state) {
+            stored = state;
+          },
+        },
+        readConfig: () => config,
+      });
+    const first = createService(['/a', '/b', '/c'].join(delimiter));
+    const second = createService(['/c', '/a', '/d'].join(delimiter));
+    const input = {
+      manifest: { schemaVersion: 1 as const, agent: { id: 'data' } },
+      workspaceDir,
+    };
+
+    await first.reconcile(input);
+    await second.reconcile(input);
+
+    const source = await readFile(join(workspaceDir, '.codex', 'config.toml'), 'utf8');
+    assert.equal(source.includes(['/a', '/b', '/c', '/d'].join(delimiter)), true);
+    assert.equal((await first.inspect(input)).codex.pathMatches, true);
+    assert.equal((await second.inspect(input)).codex.pathMatches, true);
+    assert.deepEqual((await first.reconcile(input)).actions, []);
+    assert.deepEqual((await second.reconcile(input)).actions, []);
+  });
+
+  it('should rebuild the Codex baseline only when explicitly requested', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-path-service-'));
+    const workspaceDir = join(root, 'workspace');
+    const packageDir = join(root, 'package');
+    await Promise.all([mkdir(workspaceDir), mkdir(join(packageDir, 'bin'), { recursive: true })]);
+    const config: OpenClawConfig = {
+      agents: { list: [{ id: 'data', workspace: workspaceDir }] },
+    };
+    let stored: StoredPathProjection | undefined;
+    const dependencies = {
+      codexConfigService: new CodexPathConfigService(),
+      async mutateConfigFile({ mutate }: { mutate(config: OpenClawConfig): boolean | void }) {
+        return { result: mutate(config) as boolean | undefined };
+      },
+      packageDir,
+      projectionStore: {
+        async read() {
+          return stored;
+        },
+        async write(state: StoredPathProjection) {
+          stored = state;
+        },
+      },
+      readConfig: () => config,
+    };
+    const input = {
+      manifest: { schemaVersion: 1 as const, agent: { id: 'data' } },
+      workspaceDir,
+    };
+    await new AgentPathService({ ...dependencies, basePath: '/a:/b' }).reconcile(input);
+
+    const rebuilt = await new AgentPathService({
+      ...dependencies,
+      basePath: '/b:/c',
+    }).reconcile({ ...input, rebuildCodexPath: true });
+
+    assert.deepEqual(rebuilt.codexBaseline, {
+      added: ['/c'],
+      operation: 'rebuild',
+      removed: ['/a'],
+    });
   });
 });

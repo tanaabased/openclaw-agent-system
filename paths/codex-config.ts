@@ -1,9 +1,22 @@
+import { delimiter } from 'node:path';
+
 import type { AgentPathProjection } from './resolve.ts';
 
 export const managedCodexPathMarker = '# agent-system: managed-path-v1';
 export const manualCodexPathMarker = '# agent-system: manual-path-v1';
 
 export type CodexPathConfigOwnership = 'managed' | 'manual' | 'user';
+export type CodexPathValueStatus = 'valid' | 'missing' | 'malformed';
+
+export interface CodexPathInspection {
+  baseline: string[];
+  loginShellDisabled: boolean;
+  managedPrefixesMatch: boolean;
+  missingBaselineEntries: string[];
+  ownership: CodexPathConfigOwnership;
+  pathMatches: boolean;
+  pathStatus: CodexPathValueStatus;
+}
 
 export function classifyCodexPathConfig(source: string): CodexPathConfigOwnership {
   if (source.split(/\r?\n/u).includes(managedCodexPathMarker)) return 'managed';
@@ -28,26 +41,46 @@ PATH = ${JSON.stringify(path)}
 export function inspectCodexPathConfig(
   source: string,
   projection: AgentPathProjection,
-): {
-  loginShellDisabled: boolean;
-  ownership: CodexPathConfigOwnership;
-  pathMatches: boolean;
-} {
+  previousManagedPaths: readonly string[] = [],
+): CodexPathInspection {
   const ownership = classifyCodexPathConfig(source);
   const firstTableIndex = source.search(/^\s*\[/mu);
   const rootSource = firstTableIndex < 0 ? source : source.slice(0, firstTableIndex);
   const loginShellDisabled = /^\s*allow_login_shell\s*=\s*false\s*(?:#.*)?$/mu.test(rootSource);
   const match = /^PATH = ("(?:[^"\\]|\\.)*")$/mu.exec(source);
-  if (!match?.[1]) return { loginShellDisabled, ownership, pathMatches: false };
+  const empty = (pathStatus: CodexPathValueStatus): CodexPathInspection => ({
+    baseline: [],
+    loginShellDisabled,
+    managedPrefixesMatch: false,
+    missingBaselineEntries: [...projection.baseline],
+    ownership,
+    pathMatches: false,
+    pathStatus,
+  });
+  if (!match?.[1]) return empty(/^\s*PATH\s*=/mu.test(source) ? 'malformed' : 'missing');
   try {
     const path = JSON.parse(match[1]) as unknown;
-    if (typeof path !== 'string') return { loginShellDisabled, ownership, pathMatches: false };
+    if (typeof path !== 'string') return empty('malformed');
+    const savedEntries = path.split(delimiter);
+    if (savedEntries.some((entry) => !entry)) return empty('malformed');
+    const managed = projection.entries.map(({ path: entry }) => entry);
+    const owned = new Set([...managed, ...previousManagedPaths]);
+    const managedPrefixesMatch =
+      managed.every((entry, index) => savedEntries[index] === entry) &&
+      !savedEntries.slice(managed.length).some((entry) => owned.has(entry));
+    const baseline = savedEntries.filter((entry) => !owned.has(entry));
+    const baselineSet = new Set(baseline);
+    const missingBaselineEntries = projection.baseline.filter((entry) => !baselineSet.has(entry));
     return {
+      baseline,
       loginShellDisabled,
+      managedPrefixesMatch,
+      missingBaselineEntries,
       ownership,
-      pathMatches: path === projection.path,
+      pathMatches: managedPrefixesMatch && missingBaselineEntries.length === 0,
+      pathStatus: 'valid',
     };
   } catch {
-    return { loginShellDisabled, ownership, pathMatches: false };
+    return empty('malformed');
   }
 }

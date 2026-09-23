@@ -23,6 +23,11 @@ export interface AgentPathWarning {
 
 export interface AgentPathInstallResult {
   actions: AgentPathInstallAction[];
+  codexBaseline: {
+    added: string[];
+    operation: 'append' | 'rebuild';
+    removed: string[];
+  };
   codexStatus: 'managed' | 'manual';
   projection: AgentPathProjection;
   warnings: AgentPathWarning[];
@@ -43,6 +48,7 @@ export interface AgentPathServiceDependencies {
 
 export interface AgentPathInput {
   manifest: AgentManifest;
+  rebuildCodexPath?: boolean;
   workspaceDir: string;
 }
 
@@ -113,7 +119,10 @@ export default class AgentPathService {
         return true;
       },
     });
-    const codex = await this.#dependencies.codexConfigService.reconcile(workspaceDir, projection);
+    const codex = await this.#dependencies.codexConfigService.reconcile(workspaceDir, projection, {
+      previousManagedPaths: previousOwned,
+      rebuildBaseline: input.rebuildCodexPath === true,
+    });
     await this.#dependencies.projectionStore.write({
       schemaVersion: 1,
       agentId,
@@ -129,6 +138,11 @@ export default class AgentPathService {
     if (codex.gitignoreUpdated) actions.push('update-gitignore');
     return {
       actions,
+      codexBaseline: {
+        added: codex.baselineAdded,
+        operation: codex.operation,
+        removed: codex.baselineRemoved,
+      },
       codexStatus: codex.status === 'manual' ? 'manual' : 'managed',
       projection,
       warnings:
@@ -158,11 +172,18 @@ export default class AgentPathService {
       throw new Error(resolution.diagnostics.map(({ message }) => message).join(' '));
     }
     const { projection } = resolution;
+    const previous = await this.#dependencies.projectionStore.read(input.manifest.agent.id);
+    const previousManagedPaths =
+      previous && resolve(previous.workspaceDir) === resolve(input.workspaceDir)
+        ? previous.openClawPaths
+        : [];
     const config = await this.#dependencies.readConfig();
     const currentPaths = configuredPaths(config, input.manifest.agent.id);
     const expectedPaths = projection.entries.map(({ path }) => path);
     return {
-      codex: await this.#dependencies.codexConfigService.inspect(input.workspaceDir, projection),
+      codex: await this.#dependencies.codexConfigService.inspect(input.workspaceDir, projection, {
+        previousManagedPaths,
+      }),
       openClawMatches: expectedPaths.every((path, index) => currentPaths[index] === path),
       projection,
     };

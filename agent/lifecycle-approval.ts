@@ -21,6 +21,7 @@ interface ApprovalContext {
 }
 interface PendingOperation {
   loaded: LoadedManifest;
+  rebuildCodexPath: boolean;
   workspaceDir: string;
   skipSetup: boolean;
   allowed: boolean;
@@ -80,6 +81,7 @@ export default class AgentLifecycleApproval {
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
+    const rebuildCodexPath = params.rebuildCodexPath === true;
     const skipSetup = params.skipSetup === true;
     // Codex can revisit the hook between native approval and dynamic tool execution.
     if (
@@ -90,6 +92,7 @@ export default class AgentLifecycleApproval {
       loaded.digest === previous.loaded.digest &&
       loaded.path === previous.loaded.path &&
       workspaceDir === previous.workspaceDir &&
+      rebuildCodexPath === previous.rebuildCodexPath &&
       skipSetup === previous.skipSetup
     ) {
       if (context.abortSignal) {
@@ -102,12 +105,13 @@ export default class AgentLifecycleApproval {
     const steps = skipSetup
       ? []
       : (loaded.manifest.setup?.steps ?? []).filter((step) => setupStepApplies(step, 'openclaw'));
-    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : skipSetup ? 'Reconcile configured state; skip setup.' : 'Reconcile configured state and run declared setup checks and applies.'} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
+    const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : skipSetup ? 'Reconcile configured state; skip setup.' : 'Reconcile configured state and run declared setup checks and applies.'}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
     // Do not let the host's display bound silently omit the target or selected operation.
     if (description.length > 512) denied();
     const timeoutMs = 120_000;
     const pending: PendingOperation = {
       loaded: structuredClone(loaded),
+      rebuildCodexPath,
       workspaceDir,
       skipSetup: params.skipSetup === true,
       allowed: false,
@@ -159,6 +163,8 @@ export default class AgentLifecycleApproval {
       !pending.allowed ||
       Date.now() >= pending.expiresAt ||
       !Value.Check(lifecycleParameters(name), params) ||
+      ((params as { rebuildCodexPath?: boolean }).rebuildCodexPath === true) !==
+        pending.rebuildCodexPath ||
       ((params as { skipSetup?: boolean }).skipSetup === true) !== pending.skipSetup
     )
       denied();
@@ -191,6 +197,7 @@ export default class AgentLifecycleApproval {
           runtime: 'openclaw' as const,
           manifest: pending.loaded.manifest,
           workspaceDir: pending.workspaceDir,
+          ...(pending.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
           signal: combinedSignal,
           assertCurrent,
         };

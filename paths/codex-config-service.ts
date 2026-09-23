@@ -1,5 +1,5 @@
 import { lstat, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import readRegularFile from './read-regular-file.ts';
 import writeAtomic from './write-atomic.ts';
@@ -20,15 +20,27 @@ const gitignoreBlock = {
 export type CodexPathConfigStatus = 'created' | 'updated' | 'unchanged' | 'manual';
 
 export interface CodexPathConfigInspection {
+  baseline: string[];
   gitignored: boolean;
   loginShellDisabled: boolean;
+  managedPrefixesMatch: boolean;
+  missingBaselineEntries: string[];
   ownership: 'absent' | 'managed' | 'manual' | 'user';
   pathMatches: boolean;
+  pathStatus: 'valid' | 'missing' | 'malformed';
 }
 
 export interface CodexPathConfigReconcileResult extends CodexPathConfigInspection {
+  baselineAdded: string[];
+  baselineRemoved: string[];
   gitignoreUpdated: boolean;
+  operation: 'append' | 'rebuild';
   status: CodexPathConfigStatus;
+}
+
+export interface CodexPathConfigOptions {
+  previousManagedPaths?: readonly string[];
+  rebuildBaseline?: boolean;
 }
 
 export interface CodexPathConfigServiceDependencies {
@@ -46,37 +58,48 @@ export default class CodexPathConfigService {
   async inspect(
     workspaceDir: string,
     projection: AgentPathProjection,
+    options: CodexPathConfigOptions = {},
   ): Promise<CodexPathConfigInspection> {
     const configPath = join(workspaceDir, '.codex', 'config.toml');
     const source = await readRegularFile(configPath);
     const gitignored = await this.#gitignoreService.includes(workspaceDir, [gitignoreEntry]);
     if (source === undefined) {
       return {
+        baseline: [],
         gitignored,
         loginShellDisabled: false,
+        managedPrefixesMatch: false,
+        missingBaselineEntries: [...projection.baseline],
         ownership: 'absent',
         pathMatches: false,
+        pathStatus: 'missing',
       };
     }
-    const inspection = inspectCodexPathConfig(source, projection);
+    const inspection = inspectCodexPathConfig(source, projection, options.previousManagedPaths);
     return {
+      ...inspection,
       gitignored,
-      loginShellDisabled: inspection.loginShellDisabled,
-      ownership: inspection.ownership,
-      pathMatches: inspection.pathMatches,
     };
   }
 
   async reconcile(
     workspaceDir: string,
     projection: AgentPathProjection,
+    options: CodexPathConfigOptions = {},
   ): Promise<CodexPathConfigReconcileResult> {
     const codexDir = join(workspaceDir, '.codex');
     const configPath = join(codexDir, 'config.toml');
     const existingSource = await readRegularFile(configPath);
     if (existingSource !== undefined && classifyCodexPathConfig(existingSource) !== 'managed') {
-      const inspection = await this.inspect(workspaceDir, projection);
-      return { ...inspection, gitignoreUpdated: false, status: 'manual' };
+      const inspection = await this.inspect(workspaceDir, projection, options);
+      return {
+        ...inspection,
+        baselineAdded: [],
+        baselineRemoved: [],
+        gitignoreUpdated: false,
+        operation: options.rebuildBaseline ? 'rebuild' : 'append',
+        status: 'manual',
+      };
     }
 
     await mkdir(codexDir, { recursive: true });
@@ -84,7 +107,20 @@ export default class CodexPathConfigService {
     if (!codexStats.isDirectory()) {
       throw new Error('The workspace .codex path must be a real directory.');
     }
-    const desiredSource = renderCodexPathConfig(projection.path);
+    const existingInspection =
+      existingSource === undefined
+        ? undefined
+        : inspectCodexPathConfig(existingSource, projection, options.previousManagedPaths);
+    const existingBaseline =
+      existingInspection?.pathStatus === 'valid' ? [...new Set(existingInspection.baseline)] : [];
+    const baseline = options.rebuildBaseline
+      ? [...projection.baseline]
+      : [
+          ...existingBaseline,
+          ...projection.baseline.filter((entry) => !existingBaseline.includes(entry)),
+        ];
+    const managedPaths = projection.entries.map(({ path }) => path);
+    const desiredSource = renderCodexPathConfig([...managedPaths, ...baseline].join(delimiter));
     const status: CodexPathConfigStatus =
       existingSource === undefined
         ? 'created'
@@ -94,12 +130,21 @@ export default class CodexPathConfigService {
     if (status !== 'unchanged') await writeAtomic(configPath, desiredSource, 0o600);
 
     const gitignoreUpdated = await this.#gitignoreService.reconcile(workspaceDir, gitignoreBlock);
+    const baselineSet = new Set(baseline);
+    const existingBaselineSet = new Set(existingBaseline);
     return {
+      baseline,
+      baselineAdded: baseline.filter((entry) => !existingBaselineSet.has(entry)),
+      baselineRemoved: existingBaseline.filter((entry) => !baselineSet.has(entry)),
       gitignored: true,
       gitignoreUpdated,
       loginShellDisabled: true,
+      managedPrefixesMatch: true,
+      missingBaselineEntries: [],
+      operation: options.rebuildBaseline ? 'rebuild' : 'append',
       ownership: 'managed',
       pathMatches: true,
+      pathStatus: 'valid',
       status,
     };
   }
