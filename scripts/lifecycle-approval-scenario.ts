@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -108,6 +108,11 @@ try {
       const message = `Call ${toolName} exactly once with {} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
       if (decision === 'unavailable') {
         // CLI turns have no originating chat approval surface, even with an operator client connected.
+        const codexLog: string | undefined =
+          agentId === 'tanaabot'
+            ? (await exec('openclaw-gateway', ['log-path'])).stdout.trim()
+            : undefined;
+        const logOffset: number = codexLog ? (await stat(codexLog)).size : 0;
         await exec(
           'openclaw',
           [
@@ -124,19 +129,39 @@ try {
           ],
           { timeout: 210_000, maxBuffer: 2_000_000 },
         );
-        const history = await client!.request<{ messages: unknown[] }>('chat.history', {
-          sessionKey,
-          limit: 50,
-        });
-        const toolResults = history.messages.filter((entry) => {
-          const row = entry as { role?: string; toolName?: string };
-          return row.role === 'toolResult' && row.toolName === toolName;
-        });
-        assert.ok(
-          toolResults.length > 0,
-          'unavailable case must exercise the actual lifecycle tool',
-        );
-        assert.match(JSON.stringify(toolResults), /approval/i);
+        if (codexLog) {
+          // Codex vetoes this call in PreToolUse without an OpenClaw toolResult entry.
+          const turnLog: string = (await readFile(codexLog)).subarray(logOffset).toString('utf8');
+          assert.ok(
+            turnLog
+              .split('\n')
+              .some(
+                (line) =>
+                  line.includes(
+                    'codex_core::tools::router: error=Tool call blocked by PreToolUse hook: Plugin approval unavailable:',
+                  ) &&
+                  line.includes(
+                    'non-interactive CLI runs have no approval-capable initiating surface',
+                  ) &&
+                  line.trimEnd().endsWith(`Tool: ${toolName}`),
+              ),
+            'unavailable case must record a native Codex approval veto for this lifecycle tool',
+          );
+        } else {
+          const history = await client!.request<{ messages: unknown[] }>('chat.history', {
+            sessionKey,
+            limit: 50,
+          });
+          const toolResults = history.messages.filter((entry) => {
+            const row = entry as { role?: string; toolName?: string };
+            return row.role === 'toolResult' && row.toolName === toolName;
+          });
+          assert.ok(
+            toolResults.length > 0,
+            'unavailable case must exercise the actual lifecycle tool',
+          );
+          assert.match(JSON.stringify(toolResults), /approval/i);
+        }
         assert.equal(approvalFor(sessionKey).length, 0);
         await assertUntouched();
       } else {
