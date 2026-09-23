@@ -28,6 +28,7 @@ const packageMetadata: PackageMetadata = {
     'core/',
     'credentials/',
     'environment/',
+    'hooks/',
     'manifest/',
     'paths/',
     'skills/',

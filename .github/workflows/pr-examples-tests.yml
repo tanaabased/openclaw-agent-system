@@ -2,6 +2,8 @@ name: Example tests
 
 on:
   pull_request:
+    paths:
+      - 'examples/**'
 
 permissions:
   contents: read

@@ -45,6 +45,7 @@ interface PluginManifest {
 
 interface RunOptions {
   env?: NodeJS.ProcessEnv;
+  input?: string;
 }
 
 interface RunResult {
@@ -70,11 +71,12 @@ async function check<T>(label: string, action: () => T | Promise<T>): Promise<T>
 async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   const child = spawn(command, args, {
     env: options.env ?? process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   });
   let output = '';
-  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stdout!.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr!.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  if (options.input !== undefined) child.stdin!.end(options.input);
   const code = await new Promise<number>((resolveExit, reject) => {
     child.once('error', reject);
     child.once('exit', (exitCode) => resolveExit(exitCode ?? 1));
@@ -142,6 +144,7 @@ try {
       'core',
       'credentials',
       'environment',
+      'hooks',
       'manifest',
       'paths',
       'skills',
@@ -173,6 +176,9 @@ try {
     'dist/index.js.map',
     'dist/memory-secret-provider-entry.js',
     'dist/memory-secret-provider-entry.js.map',
+    'dist/codex/codex-runtime.js',
+    'dist/codex/codex-runtime.js.map',
+    'hooks/hooks.json',
     'index.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
@@ -327,6 +333,26 @@ try {
       readFile(join(packageRoot, 'dist', 'memory-secret-provider-entry.js')),
     ]);
     assert.deepEqual(packedEntry, localEntry);
+  });
+
+  await check('ship an executable Codex session hook', async () => {
+    const result = await run(
+      process.execPath,
+      [join(packageRoot, 'dist', 'codex', 'codex-runtime.js'), 'session-start'],
+      {
+        env: {
+          ...environment,
+          PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
+          PLUGIN_ROOT: packageRoot,
+        },
+        input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+      },
+    );
+    const response = JSON.parse(result.output) as {
+      hookSpecificOutput?: { additionalContext?: string; hookEventName?: string };
+    };
+    assert.equal(response.hookSpecificOutput?.hookEventName, 'SessionStart');
+    assert.match(response.hookSpecificOutput?.additionalContext ?? '', /"status": "unbound"/u);
   });
 
   await check('ship an executable Agent System gh command', async () => {
