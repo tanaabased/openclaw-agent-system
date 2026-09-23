@@ -21,13 +21,21 @@ export default class AgentSystemToolRegistry {
         throw new Error(`Duplicate Agent System tool id: ${tool.id}.`);
       }
       this.#tools.set(tool.id, tool);
-      for (const { command } of tool.commands) {
+      for (const { command, hostFallback } of tool.commands) {
+        if (hostFallback !== undefined && !/^[a-z][a-z0-9-]{0,63}$/u.test(hostFallback)) {
+          throw new Error(`Invalid Agent System host executable for command: ${command}.`);
+        }
         if (this.#commands.has(command)) {
           throw new Error(`Duplicate Agent System tool command: ${command}.`);
         }
         this.#commands.set(command, tool);
       }
     }
+  }
+
+  hostFallback(command: string): string | undefined {
+    return this.#commands.get(command)?.commands.find((route) => route.command === command)
+      ?.hostFallback;
   }
 
   /** Return the native model-facing tool names owned by every registered definition. */

@@ -231,9 +231,11 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-The shim routes commands through `openclaw agent-system tool gh` under the
-[same identity binding](../../ADVANCED.md#trust-boundary). The shim itself never
-receives a credential.
+Inside admitted agent roots, the shim uses managed GitHub identity and policy.
+Outside those roots, or without a binding, it uses host `gh` after removing agent
+tokens and configuration overrides. Host authentication uses ordinary host
+configuration files; inherited tokens are not retained. Invalid authority always
+fails; see the [command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

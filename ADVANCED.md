@@ -370,7 +370,9 @@ the declared commands, so keep secrets out of declarations.
 
 The child receives a minimal host environment for home, locale, temporary paths,
 and OpenClaw profile selection, plus managed command bindings. Its `PATH` places
-managed launchers before trusted host executable directories. The completed
+managed launchers before trusted host executable directories. Bare `git` and `gh`
+use host executables when a descendant leaves agent scope; see the
+[command-routing contract](#trust-boundary). The completed
 Agent System environment and operator provider tokens are not copied into the
 setup shell. Managed tools resolve their own declared environment and credentials
 after binding the target agent and applying policy.
@@ -581,11 +583,33 @@ Model-facing `agent_system_*` tools bind the manifest and credentials to trusted
 OpenClaw agent context. They remain the preferred direct execution path for
 agents.
 
-Packaged shims invoked from supported OpenClaw native or Codex agent commands
-remain bound to the active agent and its admitted workspace, repositories, and
-managed worktrees. They cannot select another agent after that binding. Direct
-`tool` and `credentials` commands remain trusted operator interfaces and may
-select an installed agent explicitly.
+Bare packaged `git` and `gh` shims use managed execution inside the active
+agent's workspace, declared repositories, and managed worktrees. Outside those
+roots, or without an agent binding, they use their registered host executables.
+Changing directories never selects another agent; a known different agent's
+workspace remains denied.
+
+Host fallback is an explicit, static command-route declaration (`hostFallback`),
+currently enabled only for `git` and `gh`. Agent System's `worktree` route has no
+host fallback. Ordinary `git worktree` outside agent scope is a host Git command.
+Malformed, expired, forged, partial, or inconsistent authority fails closed.
+Managed policy, configuration, credential, and execution failures never retry
+with host authentication.
+
+Host execution excludes managed launcher paths and directories containing aliases
+to them from the child PATH. It preserves arguments,
+streams, exit status, and signals, and inherits only home/user, locale, terminal,
+temporary-path, certificate, and filtered executable-path settings. Agent System
+bindings, provider tokens, Git identity/configuration and SSH overrides, and
+GitHub configuration-directory overrides are removed. Host tools may use their
+normal configuration files under the host home; inherited token authentication,
+custom configuration directories, and SSH-agent sockets are not retained.
+
+The packaged `agent-system-tool <command>` launcher is strict: it requires an
+active binding and never falls back. The common CLI dispatcher distinguishes
+`--shim managed` from `--shim contextual`; both reject explicit agent selection.
+Direct `tool` commands without either shim option and `credentials` commands
+remain trusted operator interfaces and may select an installed agent explicitly.
 
 The `install` and Doctor (`status`) CLI routes remain operator-only through both
 aliases, including setup descendants. In OpenClaw chat, use

@@ -41,7 +41,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
-  commandAuthority?: Pick<AgentCommandAuthority, 'resolve'>;
+  commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
   cacheGatewayRequest?: OpCacheGatewayRequest;
   completeOneShot?: (code: number) => Promise<void>;
   cwd?: () => string;
@@ -57,7 +57,7 @@ export interface RegisterAgentSystemCliOptions {
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   output?: CliOutput;
-  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'hostFallback'>;
   toolRuntime: AgentSystemToolRuntime;
   setExitCode?: (code: number) => void;
   styles?: CliStyles;
@@ -177,9 +177,23 @@ export default function registerAgentSystemCli(
     .command('tool <command> [args...]')
     .description('Run one registered command through its Agent System tool.')
     .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .option('--shim <mode>', 'Select managed or contextual command-shim execution.')
     .action(async (command, args) => {
       const agentId = tool.opts().agent;
+      const shim = tool.opts().shim;
+      if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
+        output.writeStderr('Command shim mode must be managed or contextual.\n');
+        setExitCode(1);
+        return;
+      }
       await runAgentSystemTool({
+        invocationMode: shim ?? 'operator',
+        ...(commandAuthority
+          ? {
+              resolveCommandContext: (environment, workspaceDir) =>
+                commandAuthority.classify(environment, workspaceDir),
+            }
+          : {}),
         ...(typeof agentId === 'string' ? { agentId } : {}),
         argv: Array.isArray(args) ? args.map(String) : [],
         command: String(command),

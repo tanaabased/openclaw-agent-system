@@ -92,6 +92,30 @@ describe('api/registry', () => {
     );
   });
 
+  it('should expose only explicit static host fallbacks and reject executable injection', () => {
+    const tool = registeredTestTool();
+    const registry = new AgentSystemToolRegistry([
+      {
+        ...tool,
+        commands: [
+          { command: 'git', hostFallback: 'git' },
+          { command: 'gh', hostFallback: 'gh' },
+          { command: 'worktree' },
+        ],
+      },
+    ]);
+    assert.equal(registry.hostFallback('git'), 'git');
+    assert.equal(registry.hostFallback('gh'), 'gh');
+    assert.equal(registry.hostFallback('worktree'), undefined);
+    assert.equal(registry.hostFallback('unknown'), undefined);
+    for (const hostFallback of ['/tmp/git', '../git', 'git; true', '']) {
+      assert.throws(
+        () =>
+          new AgentSystemToolRegistry([{ ...tool, commands: [{ command: 'git', hostFallback }] }]),
+      );
+    }
+  });
+
   it('should reject duplicate tool and command ownership', () => {
     const tool = registeredTestTool();
 

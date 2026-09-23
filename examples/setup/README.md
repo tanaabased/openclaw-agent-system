@@ -21,6 +21,7 @@ chmod 700 "$HOME/.ssh"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$TMPDIR/setup-tanaabot/setup-key.pub"
+cp "$GITHUB_WORKSPACE/examples/setup/tanaabot/host-descendant.sh" "$TMPDIR/setup-tanaabot/host-descendant.sh"
 runner_os="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
 sed \
   -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" \
@@ -50,6 +51,7 @@ test -f shared-ready
 test -d repository/.git
 grep -Fx 'tanaabot' github-login
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' git-identity
+grep -Fx verified "$TMPDIR/setup-host-descendant/verified"
 test "$(wc -l < checked-runs | tr -d ' ')" = 1
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 1
 

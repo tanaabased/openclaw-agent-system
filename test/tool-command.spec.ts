@@ -53,7 +53,16 @@ describe('bin/gh', () => {
       argv: string[];
       launcherDirectory: string;
     };
-    assert.deepEqual(output.argv, ['agent-system', 'tool', 'gh', '--', 'api', 'user']);
+    assert.deepEqual(output.argv, [
+      'agent-system',
+      'tool',
+      'gh',
+      '--shim',
+      'contextual',
+      '--',
+      'api',
+      'user',
+    ]);
     assert.equal(output.launcherDirectory, packageBin);
   });
 

@@ -326,8 +326,11 @@ git --agent-system
 git status --short
 ```
 
-The shim routes commands through `openclaw agent-system tool git` under the
-[same identity binding](../../ADVANCED.md#trust-boundary).
+Inside admitted agent roots, the shim uses managed Git. Outside those roots,
+or without a binding, it uses sanitized host Git, including ordinary host
+`git worktree` commands. Agent System's separate `worktree` route remains
+managed-only. Invalid authority always fails; see the
+[command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

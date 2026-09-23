@@ -3,12 +3,19 @@ import type { Readable } from 'node:stream';
 import type AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolError from '../api/error.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
-import type { AgentCommandBinding } from '../agent/command-authority.ts';
+import type { AgentCommandBinding, AgentCommandContext } from '../agent/command-authority.ts';
+import runHostCommand from '../api/host-command.ts';
 import { type CliOutput, writeCliError } from './output.ts';
 import { formatErrorDiagnostic } from '../core/logger.ts';
 import readToolCommandStdin from '../api/read-command-stdin.ts';
 
 export interface RunAgentSystemToolOptions {
+  invocationMode: 'operator' | 'managed' | 'contextual';
+  resolveCommandContext?(
+    environment: Readonly<NodeJS.ProcessEnv>,
+    cwd: string,
+  ): Promise<AgentCommandContext>;
+  runHostCommand?: typeof runHostCommand;
   agentId?: string;
   argv: string[];
   command: string;
@@ -20,7 +27,7 @@ export interface RunAgentSystemToolOptions {
     environment: Readonly<NodeJS.ProcessEnv>,
     cwd: string,
   ): Promise<AgentCommandBinding | undefined>;
-  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'hostFallback'>;
   toolRuntime: AgentSystemToolRuntime;
   workspaceDir: string;
 }
@@ -30,6 +37,48 @@ export default async function runAgentSystemTool(
   options: RunAgentSystemToolOptions,
 ): Promise<void> {
   try {
+    let binding: AgentCommandBinding | undefined;
+    if (options.invocationMode === 'contextual') {
+      if (options.agentId || !options.resolveCommandContext) {
+        throw new AgentSystemToolError(
+          'agent_not_resolved',
+          'The command shim context is invalid.',
+        );
+      }
+      const context = await options.resolveCommandContext(process.env, options.workspaceDir);
+      if (context.status === 'managed') {
+        binding = context.binding;
+      } else {
+        const executable = options.toolRegistry.hostFallback(options.command);
+        if (!executable) {
+          throw new AgentSystemToolError(
+            'agent_not_resolved',
+            'This command requires a managed agent context.',
+          );
+        }
+        await (options.runHostCommand ?? runHostCommand)(
+          executable,
+          options.argv,
+          process.env,
+          context.status === 'outside-agent-scope' ? context.admittedWorkingDirectories : [],
+        );
+        return;
+      }
+    } else {
+      binding = await options.resolveCommandBinding?.(process.env, options.workspaceDir);
+      if (options.invocationMode === 'managed' && (!binding || options.agentId)) {
+        throw new AgentSystemToolError(
+          'agent_not_resolved',
+          'A strict managed launcher requires an active agent binding.',
+        );
+      }
+    }
+    if (binding && options.agentId) {
+      throw new AgentSystemToolError(
+        'invalid_arguments',
+        'An active agent command binding may not select another agent.',
+      );
+    }
     let stdin: string | undefined;
     try {
       stdin = await readToolCommandStdin(options.input);
@@ -39,13 +88,6 @@ export default async function runAgentSystemTool(
         error instanceof RangeError
           ? error.message
           : 'Tool command standard input could not be read.',
-      );
-    }
-    const binding = await options.resolveCommandBinding?.(process.env, options.workspaceDir);
-    if (binding && options.agentId) {
-      throw new AgentSystemToolError(
-        'invalid_arguments',
-        'An active agent command binding may not select another agent.',
       );
     }
     if (binding?.executeCommand) {

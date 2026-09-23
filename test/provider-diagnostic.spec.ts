@@ -169,6 +169,7 @@ describe('safe provider diagnostics', () => {
         const stderr: string[] = [];
         let code = 0;
         await runAgentSystemTool({
+          invocationMode: 'operator',
           command: 'test-tool',
           argv: ['status'],
           workspaceDir: toolTestWorkspaceDir,

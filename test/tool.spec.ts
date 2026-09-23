@@ -7,6 +7,7 @@ describe('cli/tool', () => {
     const scopes: unknown[] = [];
 
     await runAgentSystemTool({
+      invocationMode: 'operator',
       argv: ['api', 'user'],
       command: 'gh',
       output: { writeStderr() {}, writeStdout() {} },
@@ -19,6 +20,7 @@ describe('cli/tool', () => {
       },
       setExitCode() {},
       toolRegistry: {
+        hostFallback: () => undefined,
         async invoke(_command, _runtime, _argv, scope) {
           scopes.push(scope);
           return {
@@ -55,6 +57,7 @@ describe('cli/tool', () => {
     const errors: string[] = [];
 
     await runAgentSystemTool({
+      invocationMode: 'operator',
       agentId: 'emori',
       argv: ['status'],
       command: 'git',
@@ -68,6 +71,7 @@ describe('cli/tool', () => {
       },
       setExitCode: (code) => exitCodes.push(code),
       toolRegistry: {
+        hostFallback: () => undefined,
         async invoke() {
           throw new Error('the tool must not be invoked');
         },
@@ -89,6 +93,7 @@ describe('cli/tool', () => {
     const exitCodes: number[] = [];
 
     await runAgentSystemTool({
+      invocationMode: 'operator',
       argv: ['repo', 'view', 'missing/repo'],
       command: 'gh',
       output: {
@@ -97,6 +102,7 @@ describe('cli/tool', () => {
       },
       setExitCode: (code) => exitCodes.push(code),
       toolRegistry: {
+        hostFallback: () => undefined,
         async invoke() {
           return {
             auditId: 'audit-id',
@@ -130,11 +136,13 @@ describe('cli/tool', () => {
     const stdout: string[] = [];
 
     await runAgentSystemTool({
+      invocationMode: 'operator',
       argv: ['list'],
       command: 'worktree',
       output: { writeStderr() {}, writeStdout: (value) => stdout.push(value) },
       setExitCode() {},
       toolRegistry: {
+        hostFallback: () => undefined,
         async invoke() {
           return {
             auditId: 'audit-id',

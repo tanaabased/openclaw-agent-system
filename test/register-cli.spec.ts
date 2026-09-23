@@ -249,6 +249,7 @@ function createProgram(
       writeStdout: (message) => output.push(message),
     },
     toolRegistry: {
+      hostFallback: () => undefined,
       async invoke(command, _runtime, argv, scope, stdin) {
         calls.tool.push({
           argv,
@@ -389,6 +390,25 @@ describe('cli/register', () => {
         ?.commands.map((subcommand) => subcommand.name()),
       ['refresh', 'status', 'wait'],
     );
+  });
+
+  it('should reject unsupported shim modes before invoking a tool', async () => {
+    for (const mode of ['operator', 'unknown', '']) {
+      const { calls, program, diagnostics } = createProgram();
+      await program.parseAsync([
+        'node',
+        'openclaw',
+        'agent-system',
+        'tool',
+        'git',
+        '--shim',
+        mode,
+        '--',
+        '--version',
+      ]);
+      assert.deepEqual(calls.tool, []);
+      assert.match(diagnostics.join(''), /shim mode must be managed or contextual/u);
+    }
   });
 
   it('should delegate tool arguments from the current workspace', async () => {
@@ -790,6 +810,9 @@ describe('cli/register', () => {
           const test = createProgram(undefined, {
             environment,
             commandAuthority: {
+              async classify() {
+                throw new Error('unexpected contextual lookup');
+              },
               async resolve() {
                 return {
                   agentId: 'tanaabot',
@@ -810,6 +833,9 @@ describe('cli/register', () => {
     const invalid = createProgram(undefined, {
       environment: { AGENT_SYSTEM_EXEC_CAPABILITY: 'invalid' },
       commandAuthority: {
+        async classify() {
+          throw new Error('unexpected contextual lookup');
+        },
         async resolve() {
           throw new Error('private authority failure');
         },
