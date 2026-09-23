@@ -20,27 +20,26 @@ jobs:
         os:
           - macos-26
           - ubuntu-24.04
-        # temporarily focus #139 on the changed examples before restoring the full matrix.
         example:
-          # - agent
+          - agent
           - approval
           - codex
           - containment
-          # - credentials
-          # - doctor
-          # - env
-          # - git
-          # - github
-          # - identity
-          # - install
-          # - memory
-          # - models
-          # - path
-          # - routing
-          # - setup
-          # - tool
-          # - validate
-          # - worktree
+          - credentials
+          - doctor
+          - env
+          - git
+          - github
+          - identity
+          - install
+          - memory
+          - models
+          - path
+          - routing
+          - setup
+          - tool
+          - validate
+          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

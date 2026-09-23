@@ -240,6 +240,7 @@ describe('github notification workflows', () => {
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.equal(Object.hasOwn(workflow.on ?? {}, 'pull_request'), true);
+    assert.equal(workflow.on?.pull_request, null);
     assert.deepEqual(workflow.concurrency, {
       group: 'notification-test-account',
       'cancel-in-progress': false,
@@ -496,21 +497,19 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should temporarily focus the pull request matrix on the three changed examples', async () => {
+  it('should run every example in alphabetical order on both supported runners', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
     const job = workflow.jobs?.examples;
-    const examples = job?.strategy?.matrix?.example ?? [];
-    const exampleDirectories = (await readdir('examples', { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
+    const exampleDirectories = (await readdir('examples', { recursive: true }))
+      .filter((entry) => /^[^/]+\/README\.md$/u.test(entry))
+      .map((entry) => entry.split('/')[0])
       .sort();
 
     assert.deepEqual(job?.strategy?.matrix, {
-      example: ['approval', 'codex', 'containment'],
+      example: exampleDirectories,
       os: ['macos-26', 'ubuntu-24.04'],
     });
-    assert.ok(examples.every((example) => exampleDirectories.includes(example)));
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 

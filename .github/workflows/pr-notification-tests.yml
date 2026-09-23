@@ -2,8 +2,6 @@ name: Notification Tests
 
 on:
   pull_request:
-    paths:
-      - 'scenarios/**'
 
 permissions:
   contents: read
