@@ -7,12 +7,14 @@
 - Treat `tools/` and `channels/` as registry scopes: they contain only their named capability or provider folders, with shared code promoted to the nearest appropriate root owner rather than placed beside implementations.
 - Keep every tool's model-input schema and optional manifest configuration schema as statically imported TypeScript in its owning tool folder. Keep every channel's static schema and runtime entry in its owning channel folder. Never load schema files, tools, or channels from manifest values, and do not create empty capability folders before their implementation exists.
 - Keep `examples/` as general matrix-backed GitHub Actions-only Leia material and `scenarios/` as GitHub notification acceptance material. Exclude both from published packages. Put shared Leia command helpers flat in `scripts/`, agent-facing guidance in `skills/`, and user-facing capability documentation beside its owning `tools/<capability>/` or `channels/<provider>/` implementation.
+- Keep the Codex plugin thin: package the shared skills and their presentation assets, reuse the existing manifest and lifecycle owners, and do not create a parallel Codex runtime tree.
 
 ## Product boundary
 
 - Treat `agent.yaml` as workspace-owned desired state, not global OpenClaw configuration, an agent biography, or a secret store.
 - Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
+- Keep ordinary Git and GitHub execution native in Codex. Do not add Codex MCP wrappers, automations, duplicate operator identity, or another lifecycle implementation merely to mirror OpenClaw.
 - Treat trusted agent and workspace binding, working-directory containment, fixed executables and managed configuration, credential and signing control, managed-resource lifecycle, and authorization-before-credentials as non-configurable product invariants rather than manifest policy.
 - Apply configurable tool policy before resolving credentials. Provider credentials, permissions, roles, and server-side protections are authoritative wherever they exist; Agent System policy fills specific, high-consequence capability gaps that relevant provider authorization surfaces do not consistently express.
 - Treat model-facing `agent_system_*` tools as the direct agent-bound execution surface. Packaged managed launchers may also run registered Agent System command routes as Gateway-hosted descendants only when they redeem an opaque active-agent capability; reject agent selection on bound routes, and keep unbound explicit `tool` and all `credentials` routes operator-only.
@@ -48,6 +50,7 @@
 - Use `agent-system` as the public namespace for Canon-shaped skills in this repository and `openclaw-plugin` as their container. Pass `--namespace agent-system --container openclaw-plugin` explicitly to Canon Skill Author scripts; keep skill folders unprefixed under `skills/` while frontmatter names and prompts retain the namespace.
 - Give every skill a surface-specific `metadata.openclaw.emoji` and HTTPS homepage in `SKILL.md`; keep OpenClaw metadata there instead of duplicating it in `agents/openai.yaml`.
 - Give every skill complete OpenAI interface metadata in `agents/openai.yaml`, including a display name, short description, default prompt, brand color, and valid local small and large icon assets that reflect the owned surface.
+- Keep `package.json#codexTools.managedPaths` limited to the installed Codex payload. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
 - Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
 - Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.
 

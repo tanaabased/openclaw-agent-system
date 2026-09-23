@@ -113,7 +113,7 @@ Work state, start implementation, or otherwise advance the task lifecycle.
 ## Bundled Resources
 
 - `agents/openai.yaml`: Codex-facing display metadata and default prompt.
-- [Small GitHub icon](../../assets/github-icon-small.svg) and [large GitHub icon](../../assets/github-icon-large.svg): shared GitHub marks.
+- [Small GitHub icon](./assets/icon-small.svg) and [large GitHub icon](./assets/icon-large.svg): Codex interface marks.
 
 ## Validation
 

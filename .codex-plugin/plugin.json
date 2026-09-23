@@ -1,0 +1,32 @@
+{
+  "name": "agent-system",
+  "version": "0.6.0",
+  "description": "Better per-agent management for OpenClaw.",
+  "author": {
+    "name": "Tanaab Maneuvering Systems LLC",
+    "email": "emori@tanaab.dev",
+    "url": "https://www.tanaab.dev"
+  },
+  "homepage": "https://github.com/tanaabased/openclaw-agent-system",
+  "repository": "https://github.com/tanaabased/openclaw-agent-system",
+  "license": "MIT",
+  "keywords": ["agent", "codex", "openclaw", "tanaab"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent System",
+    "shortDescription": "Agent-scoped OpenClaw and Codex workflows",
+    "longDescription": "Use Agent System skills for agent-scoped setup, diagnostics, Git, and GitHub workflows across supported OpenClaw and Codex runtimes.",
+    "developerName": "Tanaab Maneuvering Systems",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/tanaabased/openclaw-agent-system",
+    "defaultPrompt": [
+      "Use Agent System to manage this agent's declared workspace safely.",
+      "Use $agent-system-git-cli for agent-scoped Git work.",
+      "Use $agent-system-github-cli for agent-scoped GitHub work."
+    ],
+    "brandColor": "#00c88a",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png"
+  }
+}

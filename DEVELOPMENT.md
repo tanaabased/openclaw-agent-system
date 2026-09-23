@@ -14,6 +14,8 @@ OpenClaw does not support running the Gateway under Bun. Agent System builds as 
 
 ## Install From Source
 
+### OpenClaw
+
 Install a linked development checkout in the normal OpenClaw profile:
 
 ```sh
@@ -41,6 +43,27 @@ verify the built provider with a deliberately nonexistent binding. Then run
 Gateway. Reconciliation uses the built standalone provider for a linked checkout;
 the declared credential remains a SecretRef and never belongs in
 `openclaw.json` as plaintext.
+
+### Codex
+
+Install the checkout once through the pinned development dependency:
+
+```sh
+./node_modules/.bin/codex-tools install . --dry-run --json
+./node_modules/.bin/codex-tools install .
+```
+
+After changing `.codex-plugin/`, `assets/`, `package.json`, or `skills/`, update
+the installed cache and verify that it converged:
+
+```sh
+bun run codex:sync
+bun run codex:check
+```
+
+Start a fresh Codex task when verifying skill discovery. The managed path list
+in `package.json#codexTools` deliberately excludes OpenClaw runtime source,
+tests, examples, and scenarios.
 
 ## Usage
 
@@ -109,6 +132,9 @@ bun run plugin:check
 ```
 
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
+Run `bun run test:codex-plugin` with `AGENT_SYSTEM_PACKAGE` set to a prepared npm
+tarball when Codex installation or fresh-task skill discovery changes. The
+release-test workflow supplies an isolated Codex home and runs this check.
 
 ### Leia Scenarios
 

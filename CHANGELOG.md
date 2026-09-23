@@ -3,6 +3,7 @@
 ### New Features
 
 - Added agent-bound `setup` steps with runtime filters, install confirmation, and check-only Doctor findings. [#64](https://github.com/tanaabased/openclaw-agent-system/issues/64) [#137](https://github.com/tanaabased/openclaw-agent-system/pull/137)
+- Added an npm-backed Codex plugin with shared skill discovery and source-cache synchronization. [#138](https://github.com/tanaabased/openclaw-agent-system/issues/138)
 - Added durable per-agent GitHub issue-work concurrency with a configurable limit, stable queueing, and operator-visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117)
 - Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
 - Named new GitHub issue branches from public issue numbers and bounded titles while preserving stable worktree recovery. [#110](https://github.com/tanaabased/openclaw-agent-system/issues/110)

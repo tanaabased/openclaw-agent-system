@@ -67,6 +67,7 @@ jobs:
           version: dev
           sync: false
           commands: |
+            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
             bun run build
