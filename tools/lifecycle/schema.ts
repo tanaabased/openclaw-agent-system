@@ -4,7 +4,10 @@ export const lifecycleToolNames = ['agent_system_install', 'agent_system_doctor'
 export type LifecycleToolName = (typeof lifecycleToolNames)[number];
 
 export const installParameters = Type.Object(
-  { skipSetup: Type.Optional(Type.Boolean()) },
+  {
+    rebuildCodexPath: Type.Optional(Type.Boolean()),
+    skipSetup: Type.Optional(Type.Boolean()),
+  },
   { additionalProperties: false },
 );
 export const doctorParameters = Type.Object({}, { additionalProperties: false });

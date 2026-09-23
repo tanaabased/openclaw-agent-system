@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -7,7 +7,7 @@ import resolveAgentPaths from '../paths/resolve.ts';
 
 describe('paths/resolve', () => {
   it('should order workspace, manifest, and agent system bins before the base path', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agent-system-paths-'));
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'agent-system-paths-')));
     const workspaceDir = join(root, 'workspace');
     const packageDir = join(root, 'package');
     await Promise.all([
@@ -39,6 +39,36 @@ describe('paths/resolve', () => {
       ...result.projection.entries.map(({ path }) => path),
       '/usr/bin',
     ]);
+    assert.deepEqual(result.projection.baseline, ['/usr/bin']);
+  });
+
+  it('should remove exact duplicates without collapsing caller aliases', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-system-paths-'));
+    const workspaceDir = join(root, 'workspace');
+    const packageDir = join(root, 'package');
+    const versionedNode = join(root, 'Cellar', 'node', 'bin');
+    const nodeAliasRoot = join(root, 'opt', 'node');
+    const nodeAlias = join(nodeAliasRoot, 'bin');
+    await Promise.all([
+      mkdir(join(workspaceDir, 'bin'), { recursive: true }),
+      mkdir(join(packageDir, 'bin'), { recursive: true }),
+      mkdir(versionedNode, { recursive: true }),
+      mkdir(join(root, 'opt'), { recursive: true }),
+    ]);
+    await symlink(join(root, 'Cellar', 'node'), nodeAliasRoot);
+
+    const result = await resolveAgentPaths(
+      { schemaVersion: 1, agent: { id: 'data' } },
+      {
+        basePath: [nodeAlias, versionedNode, nodeAlias].join(delimiter),
+        packageDir,
+        workspaceDir,
+      },
+    );
+
+    assert.equal(result.status, 'resolved');
+    if (result.status !== 'resolved') return;
+    assert.deepEqual(result.projection.baseline, [nodeAlias, versionedNode]);
   });
 
   it('should reject missing and workspace escaping directories', async () => {

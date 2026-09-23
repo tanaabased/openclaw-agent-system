@@ -7,7 +7,22 @@ const context = {
   manifest: { schemaVersion: 1 as const, agent: { id: 'data', name: 'Data' } },
   workspaceDir: '/workspace',
 };
-const projection = { entries: [], path: '/usr/bin' };
+const projection = { baseline: ['/usr/bin'], entries: [], path: '/usr/bin' };
+const healthyCodex = {
+  baseline: ['/usr/bin'],
+  gitignored: true,
+  loginShellDisabled: true,
+  managedPrefixesMatch: true,
+  missingBaselineEntries: [],
+  ownership: 'managed' as const,
+  pathMatches: true,
+  pathStatus: 'valid' as const,
+};
+const unchangedBaseline = {
+  added: [],
+  operation: 'append' as const,
+  removed: [],
+};
 
 describe('paths/lifecycle', () => {
   it('should validate the foundational path declaration', () => {
@@ -33,12 +48,7 @@ describe('paths/lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: {
-              gitignored: true,
-              loginShellDisabled: true,
-              ownership: 'managed',
-              pathMatches: true,
-            },
+            codex: healthyCodex,
             openClawMatches: true,
             projection,
           };
@@ -66,10 +76,14 @@ describe('paths/lifecycle', () => {
         async inspect() {
           return {
             codex: {
+              baseline: [],
               gitignored: false,
               loginShellDisabled: false,
+              managedPrefixesMatch: false,
+              missingBaselineEntries: ['/usr/bin'],
               ownership: 'manual',
               pathMatches: false,
+              pathStatus: 'missing',
             },
             openClawMatches: true,
             projection,
@@ -98,10 +112,9 @@ describe('paths/lifecycle', () => {
         async inspect() {
           return {
             codex: {
+              ...healthyCodex,
               gitignored: true,
               loginShellDisabled: false,
-              ownership: 'managed',
-              pathMatches: true,
             },
             openClawMatches: true,
             projection,
@@ -119,6 +132,34 @@ describe('paths/lifecycle', () => {
 
     assert.equal(finding?.status, 'drift');
     assert.match(finding?.remediation ?? '', /agent-system install/u);
+  });
+
+  it('should name caller directories that Install will append', async () => {
+    const contribution = createPathLifecycleContribution({
+      pathService: {
+        async inspect() {
+          return {
+            codex: {
+              ...healthyCodex,
+              missingBaselineEntries: ['/new/bin', '/other/bin'],
+              pathMatches: false,
+            },
+            openClawMatches: true,
+            projection,
+          };
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+    });
+
+    const finding = (await contribution.inspect?.(context))?.find(
+      ({ code }) => code === 'codex-path-drift',
+    );
+
+    assert.match(finding?.message ?? '', /\/new\/bin, \/other\/bin/u);
+    assert.match(finding?.message ?? '', /Install appends them/u);
   });
 
   it('should convert an invalid path projection into drift', async () => {
@@ -146,12 +187,7 @@ describe('paths/lifecycle', () => {
         async inspect() {
           inspections += 1;
           return {
-            codex: {
-              gitignored: true,
-              loginShellDisabled: true,
-              ownership: 'managed',
-              pathMatches: true,
-            },
+            codex: healthyCodex,
             openClawMatches: true,
             projection,
           };
@@ -159,6 +195,7 @@ describe('paths/lifecycle', () => {
         async reconcile() {
           return {
             actions: ['create-workspace-bin', 'set-exec-path', 'create-codex-config'],
+            codexBaseline: unchangedBaseline,
             codexStatus: 'managed',
             projection,
             warnings: [],
@@ -185,18 +222,19 @@ describe('paths/lifecycle', () => {
       pathService: {
         async inspect() {
           return {
-            codex: {
-              gitignored: true,
-              loginShellDisabled: true,
-              ownership: 'managed',
-              pathMatches: true,
-            },
+            codex: healthyCodex,
             openClawMatches: true,
             projection,
           };
         },
         async reconcile() {
-          return { actions: [], codexStatus: 'managed', projection, warnings: [] };
+          return {
+            actions: [],
+            codexBaseline: unchangedBaseline,
+            codexStatus: 'managed',
+            projection,
+            warnings: [],
+          };
         },
       },
     });
@@ -204,23 +242,62 @@ describe('paths/lifecycle', () => {
     assert.equal((await contribution.reconcile?.(context))?.outcomes[0]?.status, 'unchanged');
   });
 
+  it('should report an explicit baseline rebuild and its changes', async () => {
+    const contribution = createPathLifecycleContribution({
+      pathService: {
+        async inspect() {
+          return { codex: healthyCodex, openClawMatches: true, projection };
+        },
+        async reconcile() {
+          return {
+            actions: ['update-codex-config'],
+            codexBaseline: {
+              added: ['/new/bin'],
+              operation: 'rebuild',
+              removed: ['/old/bin'],
+            },
+            codexStatus: 'managed',
+            projection,
+            warnings: [],
+          };
+        },
+      },
+    });
+
+    const result = await contribution.reconcile?.({ ...context, rebuildCodexPath: true });
+
+    assert.deepEqual(result?.outcomes, [
+      {
+        code: 'update-codex-config',
+        message: 'Codex workspace path configuration',
+        status: 'updated',
+      },
+      {
+        code: 'rebuild-codex-path',
+        message: 'Codex PATH baseline rebuilt; added: /new/bin; removed: /old/bin',
+        status: 'updated',
+      },
+    ]);
+  });
+
   it('should fail when managed path state does not converge', async () => {
     const contribution = createPathLifecycleContribution({
       pathService: {
         async inspect() {
           return {
-            codex: {
-              gitignored: true,
-              loginShellDisabled: true,
-              ownership: 'managed',
-              pathMatches: true,
-            },
+            codex: healthyCodex,
             openClawMatches: false,
             projection,
           };
         },
         async reconcile() {
-          return { actions: [], codexStatus: 'managed', projection, warnings: [] };
+          return {
+            actions: [],
+            codexBaseline: unchangedBaseline,
+            codexStatus: 'managed',
+            projection,
+            warnings: [],
+          };
         },
       },
     });

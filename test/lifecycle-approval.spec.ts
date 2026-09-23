@@ -32,6 +32,7 @@ async function fixture() {
   await writeFile(join(root, 'agent.yaml'), manifest);
   const workspaces: Record<string, string> = { data: root };
   const calls: string[] = [];
+  const rebuilds: boolean[] = [];
   const controller = new AbortController();
   const context = {
     agentId: 'data',
@@ -57,8 +58,9 @@ async function fixture() {
           await afterInspect?.();
           return [];
         },
-        async reconcile() {
+        async reconcile(input) {
           calls.push('reconcile');
+          rebuilds.push(input.rebuildCodexPath === true);
           return { outcomes: [] };
         },
       },
@@ -88,6 +90,7 @@ async function fixture() {
     root,
     service,
     calls,
+    rebuilds,
     context,
     controller,
     approval,
@@ -289,6 +292,31 @@ describe('agent/lifecycle-approval', () => {
     request.requireApproval.onResolution('allow-once');
     await f.approval.execute('agent_system_install', { skipSetup: true }, 'call', f.toolContext);
     assert.deepEqual(f.calls, ['credentials', 'reconcile']);
+  });
+
+  it('should bind a Codex PATH rebuild to the approved install', async () => {
+    const f = await fixture();
+    const params = { rebuildCodexPath: true };
+    const request = await f.request('agent_system_install', params, f.context);
+    assert.match(request.requireApproval.description, /replace the saved Codex PATH baseline/iu);
+    request.requireApproval.onResolution('allow-once');
+
+    await f.approval.execute('agent_system_install', params, 'call', f.toolContext);
+
+    assert.deepEqual(f.calls, ['credentials', 'reconcile', 'inspect', 'check-approved']);
+    assert.deepEqual(f.rebuilds, [true]);
+  });
+
+  it('should reject a Codex PATH rebuild that was not approved', async () => {
+    const f = await fixture();
+    const request = await f.request('agent_system_install', {}, f.context);
+    request.requireApproval.onResolution('allow-once');
+
+    await assert.rejects(
+      f.approval.execute('agent_system_install', { rebuildCodexPath: true }, 'call', f.toolContext),
+      { code: 'approval_denied' },
+    );
+    assert.deepEqual(f.calls, []);
   });
 
   it('should reject consent after its deadline without waiting for timer cleanup', async () => {

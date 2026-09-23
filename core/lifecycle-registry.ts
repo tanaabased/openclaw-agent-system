@@ -6,6 +6,8 @@ import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
 
 export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
+  /** Replace the accumulated Codex baseline with the invoking environment during install. */
+  rebuildCodexPath?: boolean;
   workspaceDir: string;
 }
 

@@ -12,6 +12,10 @@ export interface PathLifecycleDependencies {
 
 type PathOutcome = Omit<AgentSystemLifecycleOutcome, 'component'>;
 
+function formatEntries(entries: readonly string[]): string {
+  return entries.length === 0 ? 'none' : entries.join(', ');
+}
+
 function pathOutcome(action: AgentPathInstallAction, agentId: string): PathOutcome {
   if (action === 'create-workspace-bin') {
     return {
@@ -75,13 +79,18 @@ export default function createPathLifecycleContribution(
             ? path.codex.pathMatches
               ? {
                   code: 'codex-path-ready',
-                  message: 'Managed Codex workspace path matches the Agent System projection.',
+                  message:
+                    'Managed Codex workspace PATH has the current prefixes and caller directories.',
                   status: 'healthy' as const,
                 }
               : {
                   code: 'codex-path-drift',
                   message:
-                    'Managed Codex workspace path does not match the Agent System projection.',
+                    path.codex.pathStatus !== 'valid'
+                      ? `Managed Codex workspace PATH is ${path.codex.pathStatus}.`
+                      : !path.codex.managedPrefixesMatch
+                        ? 'Managed Codex workspace PATH does not start with the current Agent System prefixes.'
+                        : `Managed Codex workspace PATH is missing caller directories: ${path.codex.missingBaselineEntries.join(', ')}. Install appends them without replacing saved baseline entries.`,
                   remediation: 'Run openclaw agent-system install from this workspace.',
                   status: 'drift' as const,
                 }
@@ -185,8 +194,28 @@ export default function createPathLifecycleContribution(
       }
 
       return {
-        outcomes:
-          result.actions.length === 0
+        outcomes: [
+          ...result.actions.map((action) => pathOutcome(action, context.manifest.agent.id)),
+          ...(context.rebuildCodexPath
+            ? [
+                result.codexStatus === 'manual'
+                  ? {
+                      code: 'rebuild-codex-path',
+                      message: 'Codex PATH baseline rebuild skipped for user-managed configuration',
+                      status: 'skipped' as const,
+                    }
+                  : {
+                      code: 'rebuild-codex-path',
+                      message: `Codex PATH baseline rebuilt; added: ${formatEntries(result.codexBaseline.added)}; removed: ${formatEntries(result.codexBaseline.removed)}`,
+                      status:
+                        result.codexBaseline.added.length > 0 ||
+                        result.codexBaseline.removed.length > 0
+                          ? ('updated' as const)
+                          : ('unchanged' as const),
+                    },
+              ]
+            : []),
+          ...(result.actions.length === 0 && !context.rebuildCodexPath
             ? [
                 {
                   code: 'path-unchanged',
@@ -194,7 +223,8 @@ export default function createPathLifecycleContribution(
                   status: 'unchanged' as const,
                 },
               ]
-            : result.actions.map((action) => pathOutcome(action, context.manifest.agent.id)),
+            : []),
+        ],
         warnings: result.warnings,
       };
     },

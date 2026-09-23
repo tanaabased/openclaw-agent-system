@@ -31,6 +31,7 @@ export interface InstallAgentSystemOptions extends Pick<
   json: boolean;
   manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   output: CliOutput;
+  rebuildCodexPath?: boolean;
   setExitCode(code: number): void;
   styles?: CliStyles;
   terminalColumns?: number;
@@ -92,6 +93,7 @@ export default async function installAgentSystem(
       manifest: result.manifest,
       workspaceDir: result.scope.workspaceDir,
       ...(options.skipSetup ? { skipSetup: true } : {}),
+      ...(options.rebuildCodexPath ? { rebuildCodexPath: true } : {}),
     });
     if (options.json) {
       writeCliDiagnostics(
