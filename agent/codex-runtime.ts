@@ -1,5 +1,12 @@
 import process from 'node:process';
 
+import {
+  bindCodexWorkspace,
+  inspectCodexWorkspaceBinding,
+  previewCodexWorkspace,
+  unbindCodexWorkspace,
+  type CodexWorkspacePreview,
+} from './codex-workspace-binding.ts';
 import { createCodexSessionContext } from './codex-context.ts';
 
 interface SessionStartInput {
@@ -8,6 +15,78 @@ interface SessionStartInput {
 }
 
 const sessionStartSources = new Set(['startup', 'resume', 'clear', 'compact']);
+
+interface BindingOptions {
+  allowInactive: boolean;
+  confirm: boolean;
+  pluginData?: string;
+  workspace?: string;
+}
+
+function parseBindingOptions(args: string[]): BindingOptions {
+  const options: BindingOptions = { allowInactive: false, confirm: false };
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    if (option === '--confirm') {
+      if (options.confirm) throw new Error('--confirm may be supplied only once');
+      options.confirm = true;
+      continue;
+    }
+    if (option === '--allow-inactive') {
+      if (options.allowInactive) throw new Error('--allow-inactive may be supplied only once');
+      options.allowInactive = true;
+      continue;
+    }
+    if (option !== '--plugin-data' && option !== '--workspace') {
+      throw new Error(`unsupported binding option: ${option ?? ''}`);
+    }
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) throw new Error(`${option} requires a value`);
+    const key = option === '--plugin-data' ? 'pluginData' : 'workspace';
+    if (options[key] !== undefined) throw new Error(`${option} may be supplied only once`);
+    options[key] = value;
+    index += 1;
+  }
+  return options;
+}
+
+function summarizePreview(preview: CodexWorkspacePreview): Record<string, unknown> {
+  if (preview.status === 'invalid-workspace') return preview;
+  const manifest = preview.manifest;
+  if (manifest.status === 'unmanaged') {
+    return {
+      status: 'ready',
+      workspaceDir: preview.workspaceDir,
+      manifest: { status: 'missing' },
+    };
+  }
+  if (manifest.status === 'invalid') {
+    return {
+      status: 'ready',
+      workspaceDir: preview.workspaceDir,
+      manifest: {
+        status: 'invalid',
+        path: manifest.path,
+        diagnostics: manifest.diagnostics.map(({ code, message }) => ({ code, message })),
+      },
+    };
+  }
+  return {
+    status: 'ready',
+    workspaceDir: preview.workspaceDir,
+    manifest: {
+      status: 'valid',
+      path: manifest.path,
+      digest: manifest.digest,
+      agentId: manifest.manifest.agent.id,
+      diagnostics: manifest.diagnostics.map(({ code, message }) => ({ code, message })),
+    },
+  };
+}
+
+function writeJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
+}
 
 async function readStandardInput(): Promise<string> {
   let contents = '';
@@ -24,10 +103,13 @@ async function runSessionStart(): Promise<void> {
     throw new Error('expected a SessionStart hook payload');
   }
   if (!sessionStartSources.has(input.source)) throw new Error('unsupported SessionStart source');
+  const pluginRoot = process.env.PLUGIN_ROOT;
   const pluginData = process.env.PLUGIN_DATA;
-  if (!pluginData) throw new Error('Codex did not provide the plugin data path');
+  if (!pluginRoot || !pluginData) throw new Error('Codex did not provide plugin runtime paths');
   const additionalContext = await createCodexSessionContext({
+    nodeExecutable: process.execPath,
     pluginData,
+    pluginRoot,
     source: input.source as 'startup' | 'resume' | 'clear' | 'compact',
   });
   process.stdout.write(
@@ -37,10 +119,64 @@ async function runSessionStart(): Promise<void> {
   );
 }
 
+async function runBinding(args: string[]): Promise<void> {
+  const action = args[0];
+  if (!action) throw new Error('binding action is required');
+  const options = parseBindingOptions(args.slice(1));
+
+  if (action === 'preview') {
+    if (!options.workspace) throw new Error('--workspace is required');
+    if (options.pluginData || options.confirm || options.allowInactive) {
+      throw new Error('preview accepts only --workspace');
+    }
+    writeJson(summarizePreview(await previewCodexWorkspace(options.workspace)));
+    return;
+  }
+
+  if (!options.pluginData) throw new Error('--plugin-data is required');
+  if (action === 'inspect') {
+    if (options.workspace || options.confirm || options.allowInactive) {
+      throw new Error('inspect accepts only --plugin-data');
+    }
+    const inspection = await inspectCodexWorkspaceBinding(options.pluginData);
+    writeJson(
+      inspection.status === 'bound'
+        ? {
+            status: 'bound',
+            path: inspection.path,
+            binding: inspection.binding,
+            preview: summarizePreview(inspection.preview),
+          }
+        : inspection,
+    );
+    return;
+  }
+  if (action === 'bind') {
+    if (!options.workspace) throw new Error('--workspace is required');
+    if (!options.confirm) throw new Error('binding changes require --confirm');
+    const result = await bindCodexWorkspace(options.pluginData, options.workspace, {
+      allowInactive: options.allowInactive,
+    });
+    writeJson({ ...result, preview: summarizePreview(result.preview) });
+    return;
+  }
+  if (action === 'unbind') {
+    if (options.workspace || options.allowInactive) {
+      throw new Error('unbind accepts only --plugin-data and --confirm');
+    }
+    if (!options.confirm) throw new Error('binding changes require --confirm');
+    writeJson(await unbindCodexWorkspace(options.pluginData));
+    return;
+  }
+
+  throw new Error(`unsupported binding action: ${action}`);
+}
+
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
-  throw new Error('expected session-start command');
+  if (command === 'binding') return runBinding(args.slice(1));
+  throw new Error('expected session-start or binding command');
 }
 
 runCodexRuntime().catch((error: unknown) => {

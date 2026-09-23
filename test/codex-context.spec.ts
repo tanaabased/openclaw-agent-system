@@ -30,10 +30,14 @@ function envelope(context: string): Record<string, unknown> {
 describe('agent/codex-context', () => {
   it('should report an unbound installation without inventing a workspace', async () => {
     const root = await temporaryRoot();
+    const nodeExecutable = join(root, 'node');
     const pluginData = join(root, 'data');
+    const pluginRoot = join(root, 'plugin');
 
     const context = await createCodexSessionContext({
+      nodeExecutable,
       pluginData,
+      pluginRoot,
       source: 'startup',
     });
 
@@ -41,6 +45,10 @@ describe('agent/codex-context', () => {
     assert.deepEqual(envelope(context), {
       version: 1,
       source: 'startup',
+      bindingRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'binding'],
+        pluginData,
+      },
       binding: { status: 'unbound' },
     });
   });
@@ -109,7 +117,9 @@ describe('agent/codex-context', () => {
 
   it('should refresh valid, invalid, and revoked context on every session source', async () => {
     const root = await temporaryRoot();
+    const nodeExecutable = join(root, 'node');
     const pluginData = join(root, 'data');
+    const pluginRoot = join(root, 'plugin');
     const workspace = join(root, 'workspace');
     const manifestPath = join(workspace, 'agent.yaml');
     await mkdir(workspace);
@@ -121,7 +131,9 @@ describe('agent/codex-context', () => {
 
     for (const source of ['startup', 'resume', 'clear', 'compact'] as const) {
       const current = JSON.stringify(
-        envelope(await createCodexSessionContext({ pluginData, source })),
+        envelope(
+          await createCodexSessionContext({ nodeExecutable, pluginData, pluginRoot, source }),
+        ),
       );
       assert.match(current, /"status":"active"/u);
       assert.match(current, /"id":"emori"/u);
@@ -130,7 +142,14 @@ describe('agent/codex-context', () => {
 
     await writeFile(manifestPath, 'agent: [broken\n');
     const invalid = JSON.stringify(
-      envelope(await createCodexSessionContext({ pluginData, source: 'resume' })),
+      envelope(
+        await createCodexSessionContext({
+          nodeExecutable,
+          pluginData,
+          pluginRoot,
+          source: 'resume',
+        }),
+      ),
     );
     assert.match(invalid, /"status":"inactive"/u);
     assert.match(invalid, /yaml-parse-error/u);
@@ -138,7 +157,14 @@ describe('agent/codex-context', () => {
 
     await unbindCodexWorkspace(pluginData);
     const revoked = JSON.stringify(
-      envelope(await createCodexSessionContext({ pluginData, source: 'clear' })),
+      envelope(
+        await createCodexSessionContext({
+          nodeExecutable,
+          pluginData,
+          pluginRoot,
+          source: 'clear',
+        }),
+      ),
     );
     assert.match(revoked, /"status":"unbound"/u);
     assert.doesNotMatch(revoked, /"id":"emori"/u);

@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
@@ -6,9 +8,12 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type { ResolvableString } from '../manifest/value-types.ts';
 
 export const codexContextVersion = 1;
+export const codexRuntimeRelativePath = 'dist/codex/codex-runtime.js';
 
 export interface CodexSessionContextOptions {
+  nodeExecutable: string;
   pluginData: string;
+  pluginRoot: string;
   source: 'startup' | 'resume' | 'clear' | 'compact';
 }
 
@@ -110,6 +115,14 @@ export async function createCodexSessionContext(
   const envelope = {
     version: codexContextVersion,
     source: options.source,
+    bindingRuntime: {
+      argvPrefix: [
+        options.nodeExecutable,
+        join(options.pluginRoot, codexRuntimeRelativePath),
+        'binding',
+      ],
+      pluginData: options.pluginData,
+    },
     binding: diagnosticSummary(inspection),
   };
 

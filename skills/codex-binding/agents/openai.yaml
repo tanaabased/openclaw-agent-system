@@ -1,0 +1,9 @@
+interface:
+  display_name: 'Agent System Codex Binding'
+  short_description: 'Bind Codex to one Agent System workspace'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-codex-binding to inspect or change this Codex plugin installation workspace binding.'
+policy:
+  allow_implicit_invocation: true
