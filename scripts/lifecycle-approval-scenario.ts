@@ -23,15 +23,26 @@ const config = getRuntimeConfig({ pin: false });
 assert.equal(typeof config.gateway?.auth?.token, 'string', 'fixture must use token auth');
 const token = config.gateway!.auth!.token as string;
 const port = config.gateway?.port ?? 18789;
+const origin = `http://127.0.0.1:${port}`;
+const controlUi = await fetch(`${origin}/__openclaw__/`, {
+  signal: AbortSignal.timeout(30_000),
+});
+assert.ok(controlUi.ok, `Control UI document request failed: ${controlUi.status}`);
+// The document identity appends an asset hash to the Gateway build ID.
+const clientBuildId = (await controlUi.text()).match(
+  /<html\b[^>]*\sdata-openclaw-control-ui-build-id="([a-zA-Z0-9._-]{1,96})-[a-f0-9]{64}"/i,
+)?.[1];
+assert.ok(clientBuildId, 'Control UI document must identify its Gateway build');
 type Event = { event: string; payload?: unknown };
 const events: Event[] = [];
 let client: GatewayClient;
 const connected = new Promise<void>((resolve, reject) => {
   client = new GatewayClient({
     url: `ws://127.0.0.1:${port}`,
-    origin: `http://127.0.0.1:${port}`,
+    origin,
     token,
     clientName: 'openclaw-control-ui',
+    clientBuildId,
     mode: 'webchat',
     clientDisplayName: 'Agent System Leia approval fixture',
     scopes: ['operator.admin', 'operator.approvals', 'operator.read', 'operator.write'],
