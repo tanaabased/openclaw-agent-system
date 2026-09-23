@@ -57,6 +57,7 @@ Today, Agent System:
 
 ### Skills
 
+- [Codex binding](./skills/codex-binding/SKILL.md) — Binds one Codex plugin installation to one Agent System workspace.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guides agents through ordinary Git operations with `agent_system_git`.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Guides agents through preparing, reusing, and removing managed worktrees.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guides agents through GitHub operations with `agent_system_github`.
@@ -97,10 +98,28 @@ codex-tools install npm:@tanaab/openclaw-agent-system --dry-run --json
 codex-tools install npm:@tanaab/openclaw-agent-system
 ```
 
-Codex Tools registers the personal marketplace and installs the plugin. Start a
-fresh Codex task, then select one of the packaged Agent System skills or name it
-explicitly. The Codex plugin supplies skills; OpenClaw remains the owner of the
-Agent System runtime, channels, and model-facing tools.
+Codex Tools registers the personal marketplace and installs the plugin. On the
+first fresh task, Codex warns that the bundled SessionStart hook needs review.
+Open `/hooks`, inspect and trust the Agent System hook, then start another fresh
+task. Installation does not trust the hook automatically; Codex binds trust to
+its exact definition and asks again after that definition changes.
+
+Ask Codex to bind this plugin installation to one workspace:
+
+```text
+Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/agent-workspace.
+```
+
+The skill previews the canonical directory and its current manifest state before
+asking for confirmation. A missing or malformed manifest does not block the
+binding: choose the explicit bind-anyway path and Agent System context remains
+inactive until the workspace has a valid manifest. Start a fresh task after any
+binding change. See [Codex workspace binding](./ADVANCED.md#codex-workspace-binding)
+for state, refresh, and projection details.
+
+The Codex plugin supplies skills and this non-secret workspace context. OpenClaw
+remains the owner of Agent System installation, channels, model-facing tools,
+credentials, and declared environment resolution.
 
 ## Usage
 
