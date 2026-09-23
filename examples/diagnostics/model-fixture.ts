@@ -9,6 +9,23 @@ export const diagnosticExampleCallId = 'call_example_quota_diagnostic';
 export const diagnosticExamplePrompt =
   'Use the configured Git tool to report its version for the synthetic provider diagnostic check.';
 
+function resultText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(resultText).join(' ');
+  if (typeof value === 'object' && value !== null) {
+    return Object.values(value).map(resultText).join(' ');
+  }
+  return '';
+}
+
+function diagnosticResultText(value: string): string {
+  try {
+    return resultText(JSON.parse(value) as unknown);
+  } catch {
+    return value;
+  }
+}
+
 const fixtures: Fixture[] = [
   {
     match: {
@@ -38,8 +55,9 @@ const fixtures: Fixture[] = [
       hasToolResult: true,
       model,
       predicate: (request) => {
-        const result =
-          openClawAIMockToolResultText(request.messages, diagnosticExampleCallId) ?? '';
+        const result = diagnosticResultText(
+          openClawAIMockToolResultText(request.messages, diagnosticExampleCallId) ?? '',
+        );
         return (
           result.includes('provider="1password"') &&
           result.includes('classification="rate-limit"') &&

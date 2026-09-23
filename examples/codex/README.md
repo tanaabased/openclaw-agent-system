@@ -13,8 +13,12 @@ git -C "$root/task" init --quiet
 codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
 codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
 
+# should authenticate the isolated codex home from the shared api key
+printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+codex login status
+
 # should expose every packaged agent system skill to a fresh codex task
-bun run test:codex-plugin
+bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
 
 # should prepare one minimal valid agent system workspace
 root="$TMPDIR/agent-system-codex-example"

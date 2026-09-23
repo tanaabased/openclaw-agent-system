@@ -177,6 +177,16 @@ describe('scripts/example-model-scenarios', () => {
       )?.response,
       { id: 'quota_final_response', content: 'quota reported' },
     );
+    assert.deepEqual(
+      matchFixture(
+        [...scenario.fixtures],
+        request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
+          callId: diagnosticExampleCallId,
+          content: JSON.stringify({ error: safe }),
+        }),
+      )?.response,
+      { id: 'quota_final_response', content: 'quota reported' },
+    );
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {

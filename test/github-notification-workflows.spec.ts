@@ -545,7 +545,7 @@ describe('github notification workflows', () => {
 
     const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
     assert.equal(suites.length, 1);
-    assert.equal(suites[0]?.tests.setup?.length, 3);
+    assert.equal(suites[0]?.tests.setup?.length, 4);
     assert.equal(suites[0]?.tests.test?.length, 7);
   });
 
