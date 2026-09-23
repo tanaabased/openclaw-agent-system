@@ -4,6 +4,10 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
 import {
+  diagnosticExampleCallId,
+  diagnosticExamplePrompt,
+} from '../examples/diagnostics/model-fixture.ts';
+import {
   githubExampleEmoriCallId,
   githubExampleEmoriPrompt,
   githubExampleTanaabotCallId,
@@ -57,9 +61,10 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'github']);
+    assert.deepEqual(exampleModelScenarioIds, ['agent', 'credentials', 'diagnostics', 'github']);
     assert.equal(resolveOpenClawAIMockScenario('agent').id, 'agent');
     assert.equal(resolveOpenClawAIMockScenario('credentials').id, 'credentials');
+    assert.equal(resolveOpenClawAIMockScenario('diagnostics').id, 'diagnostics');
     assert.equal(resolveOpenClawAIMockScenario('github').id, 'github');
     assert.throws(
       () => resolveExampleModelScenario('unsupported'),
@@ -142,10 +147,7 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should acknowledge a synthetic quota turn only after safe provider evidence reaches its native tool result', () => {
-    const scenario = resolveExampleModelScenario('credentials');
-    const prompt =
-      'Use the configured Git tool to report its version for the synthetic provider diagnostic check.';
-    const callId = 'call_example_quota_diagnostic';
+    const scenario = resolveExampleModelScenario('diagnostics');
     const safe =
       'provider="1password" classification="rate-limit" httpStatus="unknown" resetAt="unknown"';
     for (const content of [
@@ -157,7 +159,10 @@ describe('scripts/example-model-scenarios', () => {
       assert.equal(
         matchFixture(
           [...scenario.fixtures],
-          request('quota-diagnostic', prompt, ['agent_system_git'], { callId, content }),
+          request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
+            callId: diagnosticExampleCallId,
+            content,
+          }),
         ),
         null,
       );
@@ -165,7 +170,10 @@ describe('scripts/example-model-scenarios', () => {
     assert.deepEqual(
       matchFixture(
         [...scenario.fixtures],
-        request('quota-diagnostic', prompt, ['agent_system_git'], { callId, content: safe }),
+        request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
+          callId: diagnosticExampleCallId,
+          content: safe,
+        }),
       )?.response,
       { id: 'quota_final_response', content: 'quota reported' },
     );

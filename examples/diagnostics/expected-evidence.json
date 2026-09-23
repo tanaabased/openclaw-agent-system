@@ -5,7 +5,7 @@
   "provider": "aimock",
   "requestCount": 2,
   "responsesApiRequestCount": 2,
-  "scenario": "credentials",
+  "scenario": "diagnostics",
   "schemaVersion": 2,
   "strictMissCount": 0,
   "successfulFixtureResponseCount": 2,

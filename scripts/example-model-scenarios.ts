@@ -1,11 +1,13 @@
 import { agentExampleScenario } from '../examples/agent/model-fixture.ts';
 import { credentialExampleScenario } from '../examples/credentials/model-fixture.ts';
+import { diagnosticExampleScenario } from '../examples/diagnostics/model-fixture.ts';
 import { githubExampleScenario } from '../examples/github/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
   [agentExampleScenario.id, agentExampleScenario],
   [credentialExampleScenario.id, credentialExampleScenario],
+  [diagnosticExampleScenario.id, diagnosticExampleScenario],
   [githubExampleScenario.id, githubExampleScenario],
 ]);
 

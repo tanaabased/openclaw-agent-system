@@ -80,7 +80,11 @@ interface ReusableWorkflow {
 interface ExampleWorkflow {
   jobs?: {
     examples?: {
+      name?: string;
+      'runs-on'?: string;
+      steps?: WorkflowStep[];
       strategy?: {
+        'fail-fast'?: boolean;
         matrix?: {
           example?: string[];
           os?: string[];
@@ -492,20 +496,71 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should temporarily focus the pull request matrix on approval and containment', async () => {
+  it('should temporarily focus the pull request matrix on the four changed examples', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
-    const examples = workflow.jobs?.examples?.strategy?.matrix?.example ?? [];
+    const job = workflow.jobs?.examples;
+    const examples = job?.strategy?.matrix?.example ?? [];
     const exampleDirectories = (await readdir('examples', { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
 
-    assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
-      example: ['approval', 'containment'],
+    assert.deepEqual(job?.strategy?.matrix, {
+      example: ['approval', 'codex', 'containment', 'diagnostics'],
       os: ['macos-26', 'ubuntu-24.04'],
     });
     assert.ok(examples.every((example) => exampleDirectories.includes(example)));
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
+  });
+
+  it('should run native codex acceptance through the shared leia matrix step', async () => {
+    const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
+    const workflow = parse(source) as ExampleWorkflow;
+    const steps = workflow.jobs?.examples?.steps ?? [];
+    const installOpenClaw = steps.find(({ name }) => name === 'Install OpenClaw');
+    const example = steps.find(({ name }) => name === 'Run Leia-backed example');
+    const diagnostics = steps.find(({ name }) => name === 'RUNNING A LEVEL THREE DIAGNOSTICS');
+
+    assert.equal('codex' in (workflow.jobs ?? {}), false);
+    assert.equal(
+      steps.some(({ name }) => name === 'Authenticate isolated Codex'),
+      false,
+    );
+    assert.equal(
+      steps.some(({ name }) => name === 'Run Leia-backed Codex example'),
+      false,
+    );
+    assert.equal(installOpenClaw?.if, undefined);
+    assert.equal(example?.if, undefined);
+    assert.equal(example?.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
+    assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
+    assert.equal(
+      example?.run,
+      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
+    );
+    assert.equal(diagnostics?.if, 'failure()');
+
+    const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
+    assert.equal(suites.length, 1);
+    assert.equal(suites[0]?.tests.setup?.length, 3);
+    assert.equal(suites[0]?.tests.test?.length, 7);
+  });
+
+  it('should keep synthetic provider failures in the diagnostics example', async () => {
+    const credentials = await readFile('examples/credentials/README.md', 'utf8');
+    const diagnostics = await readFile('examples/diagnostics/README.md', 'utf8');
+    const suites = new Leia().parse([resolve('examples', 'diagnostics', 'README.md')]);
+
+    assert.doesNotMatch(credentials, /synthetic provider|quota-diagnostic|provider-failure/u);
+    assert.match(diagnostics, /--scenario diagnostics/u);
+    assert.match(diagnostics, /provider="1password"/u);
+    assert.match(diagnostics, /SYNTHETIC_PRIVATE/u);
+    assert.equal(suites.length, 1);
+    assert.equal(suites[0]?.tests.setup?.length, 2);
+    assert.equal(suites[0]?.tests.test?.length, 3);
+    assert.equal(suites[0]?.tests.cleanup?.length, 2);
   });
 });

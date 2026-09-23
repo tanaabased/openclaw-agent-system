@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "workspaceDir": {
+      "type": "string"
+    }
+  },
+  "required": ["agentId", "workspaceDir"]
+}

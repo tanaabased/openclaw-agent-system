@@ -20,26 +20,28 @@ jobs:
         os:
           - macos-26
           - ubuntu-24.04
-        # temporarily focus #139 on approval and containment; restore the full matrix with codex acceptance.
+        # temporarily focus #139 on the changed examples before restoring the full matrix.
         example:
-          # - install
-          # - setup
-          # - validate
-          # - doctor
-          - approval
           # - agent
+          - approval
+          - codex
+          - containment
+          # - credentials
+          - diagnostics
+          # - doctor
+          # - env
+          # - git
+          # - github
           # - identity
+          # - install
           # - memory
           # - models
           # - path
-          # - env
-          # - credentials
-          # - git
-          # - worktree
-          # - github
           # - routing
+          # - setup
           # - tool
-          - containment
+          # - validate
+          # - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -86,6 +88,8 @@ jobs:
         shell: bash
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
           DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
