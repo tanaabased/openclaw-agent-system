@@ -34,7 +34,7 @@ grep -F 'id: codex-example' "$root/workspace/agent.yaml"
 root="$TMPDIR/agent-system-codex-example"
 codex exec --json \
   -c 'approval_policy="never"' \
-  --model "$OPENAI_MODEL" \
+  --model "$CODEX_MODEL" \
   --sandbox workspace-write \
   --add-dir "$CODEX_HOME" \
   --dangerously-bypass-hook-trust \
@@ -56,7 +56,7 @@ thread_id=$(jq -r .threadId "$root/state.json")
 codex exec resume \
   --json \
   -c 'approval_policy="never"' \
-  --model "$OPENAI_MODEL" \
+  --model "$CODEX_MODEL" \
   --dangerously-bypass-hook-trust \
   "$thread_id" \
   'I confirm binding the exact workspace you previewed. Use $agent-system-codex-binding to bind it now, then verify the binding. Do not change workspace files.' \
@@ -71,7 +71,7 @@ root="$TMPDIR/agent-system-codex-example"
 codex exec --json \
   --ephemeral \
   -c 'approval_policy="never"' \
-  --model "$OPENAI_MODEL" \
+  --model "$CODEX_MODEL" \
   --sandbox read-only \
   --dangerously-bypass-hook-trust \
   --output-schema "$GITHUB_WORKSPACE/examples/codex/context.schema.json" \

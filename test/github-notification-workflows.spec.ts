@@ -534,6 +534,7 @@ describe('github notification workflows', () => {
     assert.equal(installOpenClaw?.if, undefined);
     assert.equal(example?.if, undefined);
     assert.equal(example?.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example?.env?.CODEX_MODEL, 'gpt-6-luna');
     assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
     assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
     assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');

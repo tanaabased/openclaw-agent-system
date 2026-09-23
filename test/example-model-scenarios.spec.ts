@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
 import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
 import {
@@ -22,7 +22,7 @@ function request(
   agentId: string,
   message: string,
   tools: string[],
-  toolResult?: { callId: string; content: string },
+  toolResult?: { callId: string; content: string | ContentPart[] },
 ): ChatCompletionRequest {
   return {
     messages: [
@@ -182,7 +182,7 @@ describe('scripts/example-model-scenarios', () => {
         [...scenario.fixtures],
         request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
           callId: diagnosticExampleCallId,
-          content: JSON.stringify({ error: safe }),
+          content: [{ text: JSON.stringify({ error: safe }), type: 'input_text' }],
         }),
       )?.response,
       { id: 'quota_final_response', content: 'quota reported' },
