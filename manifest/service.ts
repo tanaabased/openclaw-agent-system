@@ -1,17 +1,21 @@
-import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFile } from 'node:fs/promises';
-
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
-import discoverManifest, {
-  discoverManifestFromDirectory,
-  maximumManifestBytes,
-  type ManifestDiscovery,
-} from './discover.ts';
+import discoverManifest, { discoverManifestFromDirectory } from './discover.ts';
+import {
+  invalidManifestResult,
+  loadDiscoveredManifest,
+  type AgentManifestLoadResult,
+  type AgentManifestValidationCheck,
+} from './load.ts';
 import type { AgentManifest, ManifestDiagnostic } from './types.ts';
-import parseAgentManifest from './parse.ts';
 import resolveAgentId, { type AgentRuntimeContext } from '../agent/resolve-id.ts';
+
+export type {
+  AgentManifestLoadResult,
+  AgentManifestScope,
+  AgentManifestValidationCheck,
+} from './load.ts';
 
 export type ManifestLoadTrigger =
   | 'before_prompt_build'
@@ -20,44 +24,6 @@ export type ManifestLoadTrigger =
   | 'resolve_exec_env'
   | 'service'
   | 'session_start';
-
-export interface AgentManifestValidationCheck {
-  code: string;
-  component: string;
-  message: string;
-  status: 'valid';
-}
-
-export interface AgentManifestScope {
-  agentId?: string;
-  workspaceDir: string;
-}
-
-export type AgentManifestLoadResult =
-  | {
-      status: 'unresolved';
-      diagnostics: ManifestDiagnostic[];
-    }
-  | {
-      status: 'unmanaged';
-      scope: AgentManifestScope;
-      diagnostics: ManifestDiagnostic[];
-    }
-  | {
-      status: 'invalid';
-      scope: AgentManifestScope;
-      path?: string;
-      diagnostics: ManifestDiagnostic[];
-    }
-  | {
-      status: 'loaded';
-      scope: AgentManifestScope;
-      path: string;
-      digest: string;
-      manifest: AgentManifest;
-      diagnostics: ManifestDiagnostic[];
-      validationChecks: AgentManifestValidationCheck[];
-    };
 
 export interface AgentManifestServiceDependencies {
   getConfig(): ReturnType<OpenClawPluginApi['runtime']['config']['current']>;
@@ -92,19 +58,6 @@ function quote(value: string): string {
 
 function diagnosticCodes(diagnostics: ManifestDiagnostic[]): string {
   return diagnostics.map(({ code }) => code).join(',');
-}
-
-function invalidResult(
-  scope: AgentManifestScope,
-  diagnostics: ManifestDiagnostic[],
-  path?: string,
-): AgentManifestLoadResult {
-  return {
-    status: 'invalid',
-    scope,
-    ...(path === undefined ? {} : { path }),
-    diagnostics,
-  };
 }
 
 /** Own manifest resolution, parsing, cache invalidation, and redacted runtime diagnostics. */
@@ -215,7 +168,7 @@ export default class AgentManifestService {
         result.scope.workspaceDir !== approved.scope.workspaceDir ||
         result.manifest.agent.id !== approved.manifest.agent.id
       ) {
-        return invalidResult({ workspaceDir, agentId: expectedAgentId }, [
+        return invalidManifestResult({ workspaceDir, agentId: expectedAgentId }, [
           {
             code: 'manifest-approval-changed',
             message: 'The manifest no longer matches the approved lifecycle operation.',
@@ -242,14 +195,19 @@ export default class AgentManifestService {
     const existingLoad = this.#inFlight.get(inFlightKey);
     if (existingLoad) return existingLoad;
 
-    const load = this.#loadDiscovered(discovery, expectedAgentId)
+    const load = loadDiscoveredManifest(discovery, {
+      ...(expectedAgentId === undefined ? {} : { expectedAgentId }),
+      ...(this.#dependencies.validateManifest === undefined
+        ? {}
+        : { validateManifest: this.#dependencies.validateManifest }),
+    })
       .then((result) => {
         this.#cache.set(cacheKey, { fingerprint: discovery.fingerprint, result });
         this.#logResult(result, cached?.result, trigger, discovery.ignoredPath);
         return result;
       })
       .catch(() => {
-        const result = invalidResult(
+        const result = invalidManifestResult(
           { agentId: expectedAgentId, workspaceDir: discovery.workspaceDir },
           [
             {
@@ -278,101 +236,6 @@ export default class AgentManifestService {
   ): Promise<AgentManifestLoadResult> {
     const discovery = await discoverManifestFromDirectory(commandDirectory);
     return this.loadForWorkspace(discovery.workspaceDir, undefined, trigger);
-  }
-
-  async #loadDiscovered(
-    discovery: ManifestDiscovery,
-    expectedAgentId?: string,
-  ): Promise<AgentManifestLoadResult> {
-    const scope: AgentManifestScope = {
-      ...(expectedAgentId === undefined ? {} : { agentId: expectedAgentId }),
-      workspaceDir: discovery.workspaceDir,
-    };
-    const selected = discovery.selected;
-
-    if (!selected) return { status: 'unmanaged', scope, diagnostics: [] };
-    if (selected.status === 'invalid') {
-      return invalidResult(scope, discovery.diagnostics, selected.path);
-    }
-
-    const contents = await readFile(selected.path);
-    if (contents.byteLength > maximumManifestBytes) {
-      return invalidResult(
-        scope,
-        [
-          ...discovery.diagnostics,
-          {
-            code: 'manifest-too-large',
-            message: `The manifest exceeds the ${maximumManifestBytes}-byte size limit.`,
-            severity: 'error',
-          },
-        ],
-        selected.path,
-      );
-    }
-
-    let source: string;
-    try {
-      source = new TextDecoder('utf-8', { fatal: true }).decode(contents);
-    } catch {
-      return invalidResult(
-        scope,
-        [
-          ...discovery.diagnostics,
-          {
-            code: 'manifest-encoding',
-            message: 'The manifest must be valid UTF-8.',
-            severity: 'error',
-          },
-        ],
-        selected.path,
-      );
-    }
-
-    const digest = createHash('sha256').update(contents).digest('hex').slice(0, 12);
-    const parsed = parseAgentManifest(source);
-    if (parsed.status === 'invalid') {
-      return invalidResult(scope, [...discovery.diagnostics, ...parsed.diagnostics], selected.path);
-    }
-
-    if (expectedAgentId && parsed.manifest.agent.id !== expectedAgentId) {
-      return invalidResult(
-        scope,
-        [
-          ...discovery.diagnostics,
-          {
-            code: 'agent-id-mismatch',
-            fieldPath: '/agent/id',
-            message: `Manifest agent id ${parsed.manifest.agent.id} does not match OpenClaw agent ${expectedAgentId}.`,
-            severity: 'error',
-          },
-        ],
-        selected.path,
-      );
-    }
-
-    const lifecycleValidation = this.#dependencies.validateManifest?.(
-      parsed.manifest,
-      discovery.workspaceDir,
-    ) ?? { checks: [], diagnostics: [] };
-    const lifecycleDiagnostics = lifecycleValidation.diagnostics;
-    if (lifecycleDiagnostics.some(({ severity }) => severity === 'error')) {
-      return invalidResult(
-        scope,
-        [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
-        selected.path,
-      );
-    }
-
-    return {
-      status: 'loaded',
-      scope,
-      path: selected.path,
-      digest,
-      manifest: parsed.manifest,
-      diagnostics: [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
-      validationChecks: lifecycleValidation.checks,
-    };
   }
 
   #logUnresolved(trigger: ManifestLoadTrigger): void {

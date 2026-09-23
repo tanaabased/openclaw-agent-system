@@ -161,6 +161,7 @@ const requiredPackageFiles = [
   'core/',
   'credentials/',
   'environment/',
+  'hooks/',
   'manifest/',
   'paths/',
   'skills/',

@@ -1,0 +1,18 @@
+{
+  "description": "Load the explicitly bound Agent System workspace context.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${PLUGIN_ROOT}/dist/codex/codex-runtime.js session-start",
+            "statusMessage": "Loading Agent System context",
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

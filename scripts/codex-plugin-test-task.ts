@@ -230,6 +230,12 @@ try {
       await readFile(join(skillsRoot, directory, 'SKILL.md'), 'utf8'),
     );
   }
+  for (const path of ['dist/codex/codex-runtime.js', 'hooks/hooks.json']) {
+    assert.equal(
+      await readFile(join(cacheRoot, path), 'utf8'),
+      await readFile(join(packageRoot, path), 'utf8'),
+    );
+  }
 
   const discovered = await freshSkills(codex, environment, home);
   const missing = [...expectedSkillNames.values()]

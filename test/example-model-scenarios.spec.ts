@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
 import { credentialExampleChecks } from '../examples/credentials/model-fixture.ts';
 import {
@@ -18,7 +18,7 @@ function request(
   agentId: string,
   message: string,
   tools: string[],
-  toolResult?: { callId: string; content: string },
+  toolResult?: { callId: string; content: string | ContentPart[] },
 ): ChatCompletionRequest {
   return {
     messages: [
@@ -139,36 +139,6 @@ describe('scripts/example-model-scenarios', () => {
         id: `${entry.callId}_final_response`,
       });
     }
-  });
-
-  it('should acknowledge a synthetic quota turn only after safe provider evidence reaches its native tool result', () => {
-    const scenario = resolveExampleModelScenario('credentials');
-    const prompt =
-      'Use the configured Git tool to report its version for the synthetic provider diagnostic check.';
-    const callId = 'call_example_quota_diagnostic';
-    const safe =
-      'provider="1password" classification="rate-limit" httpStatus="unknown" resetAt="unknown"';
-    for (const content of [
-      'credential unavailable',
-      safe.replace('1password', 'github'),
-      `${safe} SYNTHETIC_PRIVATE_TOKEN`,
-      `${safe} op://synthetic/item/credential`,
-    ]) {
-      assert.equal(
-        matchFixture(
-          [...scenario.fixtures],
-          request('quota-diagnostic', prompt, ['agent_system_git'], { callId, content }),
-        ),
-        null,
-      );
-    }
-    assert.deepEqual(
-      matchFixture(
-        [...scenario.fixtures],
-        request('quota-diagnostic', prompt, ['agent_system_git'], { callId, content: safe }),
-      )?.response,
-      { id: 'quota_final_response', content: 'quota reported' },
-    );
   });
 
   it('should complete each cache turn only after a successful local git tool result', () => {

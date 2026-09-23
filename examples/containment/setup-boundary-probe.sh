@@ -2,6 +2,8 @@
 
 set -eu
 
+export OPENCLAW_LOG_LEVEL=error
+
 probe="$TMPDIR/agent-system-setup-boundary-$1"
 
 denied() {

@@ -145,7 +145,8 @@ state proves the contract, use strict AIMock when the real OpenClaw agent/tool
 loop matters without model judgment, and use a live model only when provider
 transport, model interpretation, or Codex-native behavior is under test. The
 `agent` and `github` examples and `credentials` cache checks use AIMock;
-`models`, `path`, and `security` remain live.
+`approval`, `containment`, `models`, and `path` remain live. The `codex` example
+uses direct installed-runtime and fresh app-server assertions without a model.
 
 Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#opcache);
 unit tests set their own policy. The [credentials example](examples/credentials/README.md)

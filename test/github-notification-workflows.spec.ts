@@ -80,7 +80,11 @@ interface ReusableWorkflow {
 interface ExampleWorkflow {
   jobs?: {
     examples?: {
+      name?: string;
+      'runs-on'?: string;
+      steps?: WorkflowStep[];
       strategy?: {
+        'fail-fast'?: boolean;
         matrix?: {
           example?: string[];
           os?: string[];
@@ -236,6 +240,7 @@ describe('github notification workflows', () => {
     assert.equal(workflow.name, 'Notification Tests');
     assert.equal(workflow.runName, undefined);
     assert.equal(Object.hasOwn(workflow.on ?? {}, 'pull_request'), true);
+    assert.equal(workflow.on?.pull_request, null);
     assert.deepEqual(workflow.concurrency, {
       group: 'notification-test-account',
       'cancel-in-progress': false,
@@ -492,38 +497,54 @@ describe('github notification workflows', () => {
     assert.equal(expectedEvidence.scenario, 'comment');
   });
 
-  it('should keep every general example in the non-notification pull request matrix', async () => {
+  it('should run every example in alphabetical order on both supported runners', async () => {
     const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
     const workflow = parse(source) as ExampleWorkflow;
-    const examples = workflow.jobs?.examples?.strategy?.matrix?.example ?? [];
-    const exampleDirectories = (await readdir('examples', { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
+    const job = workflow.jobs?.examples;
+    const exampleDirectories = (await readdir('examples', { recursive: true }))
+      .filter((entry) => /^[^/]+\/README\.md$/u.test(entry))
+      .map((entry) => entry.split('/')[0])
       .sort();
 
-    assert.deepEqual(workflow.jobs?.examples?.strategy?.matrix, {
-      example: [
-        'install',
-        'setup',
-        'validate',
-        'doctor',
-        'agent',
-        'identity',
-        'memory',
-        'models',
-        'path',
-        'env',
-        'credentials',
-        'git',
-        'worktree',
-        'github',
-        'routing',
-        'tool',
-        'security',
-      ],
+    assert.deepEqual(job?.strategy?.matrix, {
+      example: exampleDirectories,
       os: ['macos-26', 'ubuntu-24.04'],
     });
-    assert.deepEqual(exampleDirectories, [...examples].sort());
     assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
+  });
+
+  it('should run native codex acceptance through the shared leia matrix step', async () => {
+    const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
+    const workflow = parse(source) as ExampleWorkflow;
+    const steps = workflow.jobs?.examples?.steps ?? [];
+    const installOpenClaw = steps.find(({ name }) => name === 'Install OpenClaw');
+    const example = steps.find(({ name }) => name === 'Run Leia-backed example');
+    const diagnostics = steps.find(({ name }) => name === 'RUNNING A LEVEL THREE DIAGNOSTICS');
+
+    assert.equal('codex' in (workflow.jobs ?? {}), false);
+    assert.equal(
+      steps.some(({ name }) => name === 'Authenticate isolated Codex'),
+      false,
+    );
+    assert.equal(
+      steps.some(({ name }) => name === 'Run Leia-backed Codex example'),
+      false,
+    );
+    assert.equal(installOpenClaw?.if, undefined);
+    assert.equal(example?.if, undefined);
+    assert.equal(example?.env?.CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example?.env?.CODEX_TOOLS_CODEX_HOME, '${{ runner.temp }}/codex-home');
+    assert.equal(example?.env?.OPENAI_API_KEY, '${{ secrets.TANAAB_ALTERNATE_MALE_KEY }}');
+    assert.equal(example?.env?.OPENAI_MODEL, 'gpt-5.4-nano');
+    assert.equal(
+      example?.run,
+      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
+    );
+    assert.equal(diagnostics?.if, 'failure()');
+
+    const suites = new Leia().parse([resolve('examples', 'codex', 'README.md')]);
+    assert.equal(suites.length, 1);
+    assert.equal(suites[0]?.tests.setup?.length, 3);
+    assert.equal(suites[0]?.tests.test?.length, 8);
   });
 });

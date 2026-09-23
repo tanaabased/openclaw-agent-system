@@ -62,6 +62,51 @@ environment:
 See [Configuration](#configuration) for the complete core manifest and
 component-provided sections.
 
+## Codex Workspace Binding
+
+Each Codex plugin installation or profile can bind explicitly to one Agent
+System workspace. The binding is independent of `CODEX_HOME`, the current task
+directory, and OpenClaw agent configuration. Agent System stores only the
+canonical workspace directory in `PLUGIN_DATA/workspace-binding.json`; binding,
+rebinding, and unbinding do not change the workspace or its manifest.
+
+After installing the plugin, start a fresh Codex task. Codex reports that the
+bundled SessionStart hook needs review because plugin installation does not grant
+hook trust. Open `/hooks`, inspect the Agent System hook, and trust its current
+definition. Codex records trust against that definition's hash, so a plugin
+upgrade that changes the hook is skipped until it is reviewed again. Start a
+fresh task after trusting or re-trusting it. See the official
+[Codex hooks documentation](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
+for the host trust contract.
+
+The trusted hook supplies the packaged binding skill with the installed runtime
+and writable plugin-data paths. Invoke `$agent-system-codex-binding` to:
+
+- inspect the current binding and live manifest state
+- preview and confirm a canonical workspace before binding or rebinding
+- bind anyway when the manifest is missing or invalid
+- unbind the stored pointer without modifying workspace files
+
+An inaccessible path or non-directory is rejected. A missing or invalid manifest
+is an inactive binding rather than an installation failure: ordinary Codex use
+continues, and the binding workflow reports the state plainly. The hook checks
+the pointer and manifest again on `startup`, `resume`, `clear`, and `compact`.
+Each result explicitly supersedes earlier Agent System context, so unbinding,
+rebinding, removing a manifest, or making it invalid revokes the previous active
+projection on the next trusted hook run.
+
+For a valid manifest, Codex receives only supported non-secret values:
+
+- literal agent identity fields
+- supported Git identity, extension, policy, and worktree metadata
+- supported GitHub host, username, configuration, and policy metadata
+- the Agent System capabilities applicable to those declarations
+
+The hook never resolves dotenv files, 1Password references, credentials, signing
+keys, or other declared environment values. It also does not run Agent System
+installation, setup, Doctor, model routing, channels, or OpenClaw model-facing
+tools. Those remain explicit OpenClaw-owned workflows.
+
 ## Configuration
 
 The workspace manifest declares the agent's desired state. `install` reconciles

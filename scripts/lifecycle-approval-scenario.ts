@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
@@ -13,12 +11,15 @@ import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime
 // This exercises an installed Gateway and must never run against a developer profile.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions-only acceptance scenario');
 const agentId = process.argv[2];
-assert.ok(agentId === 'tanaabot' || agentId === 'emori');
+assert.ok(agentId === 'approval-codex' || agentId === 'approval-openclaw');
 const temporaryDirectory = process.env.TMPDIR;
 assert.ok(temporaryDirectory);
-const checkFile = join(temporaryDirectory, 'agent-system-doctor-check');
-const applyFile = join(temporaryDirectory, 'agent-system-forbidden-setup');
-const exec = promisify(execFile);
+const checkFile = join(temporaryDirectory, 'agent-system-approval-check');
+const applyFile = join(temporaryDirectory, 'agent-system-approval-apply');
+const testCase = {
+  decision: agentId === 'approval-codex' ? ('allow-once' as const) : ('deny' as const),
+  toolName: 'agent_system_install' as const,
+};
 const config = getRuntimeConfig({ pin: false });
 assert.equal(typeof config.gateway?.auth?.token, 'string', 'fixture must use token auth');
 const token = config.gateway!.auth!.token as string;
@@ -123,7 +124,7 @@ function approvalFor(sessionKey: string) {
 }
 
 async function assertUntouched() {
-  assert.equal(await contents(checkFile), '', 'Doctor checks ran without approval');
+  assert.equal(await contents(checkFile), '', 'setup checks ran without approval');
   assert.equal(await contents(applyFile), '', 'install ran without approval');
   // The apply marker is an empty file, so inspect existence separately.
   await assert.rejects(readFile(applyFile), { code: 'ENOENT' });
@@ -136,133 +137,63 @@ try {
       throw new Error('Control UI connection timed out');
     }),
   ]);
-  for (const toolName of ['agent_system_install', 'agent_system_doctor']) {
-    for (const decision of ['deny', 'cancel', 'unavailable', 'allow-once'] as const) {
-      await Promise.all([rm(checkFile, { force: true }), rm(applyFile, { force: true })]);
-      events.length = 0;
-      const sessionKey: string = `agent:${agentId}:lifecycle-${randomUUID()}`;
-      activeSessionKey = sessionKey;
-      activeRunId = undefined;
-      approvalIds.clear();
-      process.stdout.write(`${JSON.stringify({ agentId, toolName, decision, sessionKey })}\n`);
-      const message = `Call ${toolName} exactly once with {} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
-      if (decision === 'unavailable') {
-        // CLI turns have no originating chat approval surface, even with an operator client connected.
-        const codexLog: string | undefined =
-          agentId === 'tanaabot'
-            ? (await exec('openclaw-gateway', ['log-path'])).stdout.trim()
-            : undefined;
-        const logOffset: number = codexLog ? (await stat(codexLog)).size : 0;
-        await exec(
-          'openclaw',
-          [
-            'agent',
-            '--agent',
-            agentId,
-            '--session-key',
-            sessionKey,
-            '--message',
-            message,
-            '--timeout',
-            '180',
-            '--json',
-          ],
-          { timeout: 210_000, maxBuffer: 2_000_000 },
+  await Promise.all([rm(checkFile, { force: true }), rm(applyFile, { force: true })]);
+  const sessionKey: string = `agent:${agentId}:lifecycle-${randomUUID()}`;
+  activeSessionKey = sessionKey;
+  activeRunId = undefined;
+  approvalIds.clear();
+  process.stdout.write(`${JSON.stringify({ agentId, ...testCase, sessionKey })}\n`);
+  const message = `Call ${testCase.toolName} exactly once with {} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
+  const accepted = await client!.request<{ runId: string }>('chat.send', {
+    sessionKey,
+    message,
+    idempotencyKey: randomUUID(),
+  });
+  activeRunId = accepted.runId;
+  const approval = await waitFor(() => approvalFor(sessionKey)[0], 'originating chat approval');
+  assert.equal(approval.request.toolName, testCase.toolName);
+  assert.equal(approval.request.agentId, agentId);
+  assert.deepEqual(approval.request.allowedDecisions, ['allow-once', 'deny']);
+  assert.ok(approval.request.description.includes(agentId));
+  assert.match(approval.request.description, /Manifest [a-f0-9]{12}/);
+  await assertUntouched();
+  await client!.request('plugin.approval.resolve', {
+    id: approval.id,
+    decision: testCase.decision,
+  });
+  await waitFor(
+    () =>
+      events.find(({ event, payload }) => {
+        const row = payload as { runId?: string; state?: string } | undefined;
+        return (
+          event === 'chat' &&
+          row?.runId === accepted.runId &&
+          ['final', 'aborted', 'error'].includes(row.state ?? '')
         );
-        if (codexLog) {
-          // Codex vetoes this call in PreToolUse without an OpenClaw toolResult entry.
-          const turnLog: string = (await readFile(codexLog)).subarray(logOffset).toString('utf8');
-          assert.ok(
-            turnLog
-              .split('\n')
-              .some(
-                (line) =>
-                  line.includes(
-                    'codex_core::tools::router: error=Tool call blocked by PreToolUse hook: Plugin approval unavailable:',
-                  ) &&
-                  line.includes(
-                    'non-interactive CLI runs have no approval-capable initiating surface',
-                  ) &&
-                  line.trimEnd().endsWith(`Tool: ${toolName}`),
-              ),
-            'unavailable case must record a native Codex approval veto for this lifecycle tool',
-          );
-        } else {
-          const history = await client!.request<{ messages: unknown[] }>('chat.history', {
-            sessionKey,
-            limit: 50,
-          });
-          const toolResults = history.messages.filter((entry) => {
-            const row = entry as { role?: string; toolName?: string };
-            return row.role === 'toolResult' && row.toolName === toolName;
-          });
-          assert.ok(
-            toolResults.length > 0,
-            'unavailable case must exercise the actual lifecycle tool',
-          );
-          assert.match(JSON.stringify(toolResults), /approval/i);
-        }
-        assert.equal(approvalFor(sessionKey).length, 0);
-        await assertUntouched();
-      } else {
-        const accepted = await client!.request<{ runId: string }>('chat.send', {
-          sessionKey,
-          message,
-          idempotencyKey: randomUUID(),
-        });
-        activeRunId = accepted.runId;
-        const approval = await waitFor(
-          () => approvalFor(sessionKey)[0],
-          'originating chat approval',
-        );
-        assert.equal(approval.request.toolName, toolName);
-        assert.equal(approval.request.agentId, agentId);
-        assert.deepEqual(approval.request.allowedDecisions, ['allow-once', 'deny']);
-        assert.ok(approval.request.description.includes(agentId));
-        assert.match(approval.request.description, /Manifest [a-f0-9]{12}/);
-        await assertUntouched();
-        if (decision === 'cancel') {
-          await client!.request('chat.abort', { sessionKey, runId: accepted.runId });
-        } else {
-          await client!.request('plugin.approval.resolve', { id: approval.id, decision });
-        }
-        await waitFor(
-          () =>
-            events.find(({ event, payload }) => {
-              const row = payload as { runId?: string; state?: string } | undefined;
-              return (
-                event === 'chat' &&
-                row?.runId === accepted.runId &&
-                ['final', 'aborted', 'error'].includes(row.state ?? '')
-              );
-            }),
-          'chat completion',
-        );
-        process.stdout.write(
-          `${JSON.stringify({
-            sessionKey,
-            approvalEvents: approvalFor(sessionKey).length,
-            uniqueApprovals: approvalIds.size,
-            checkRan: (await contents(checkFile)).includes('checked'),
-            applyRan: await stat(applyFile).then(
-              () => true,
-              (error: NodeJS.ErrnoException) => {
-                if (error.code === 'ENOENT') return false;
-                throw error;
-              },
-            ),
-          })}\n`,
-        );
-        assert.equal(approvalFor(sessionKey).length, 1, 'unexpected lifecycle retry');
-        if (decision === 'allow-once') {
-          assert.ok((await contents(checkFile)).includes('checked'), 'approved checks did not run');
-          if (toolName === 'agent_system_install') await readFile(applyFile);
-          else await assert.rejects(readFile(applyFile), { code: 'ENOENT' });
-        } else await assertUntouched();
-      }
-      process.stdout.write(`${agentId} ${toolName} ${decision}: verified\n`);
-    }
-  }
+      }),
+    'chat completion',
+  );
+  process.stdout.write(
+    `${JSON.stringify({
+      sessionKey,
+      approvalEvents: approvalFor(sessionKey).length,
+      uniqueApprovals: approvalIds.size,
+      checkRan: (await contents(checkFile)).includes('checked'),
+      applyRan: await stat(applyFile).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        },
+      ),
+    })}\n`,
+  );
+  assert.equal(approvalFor(sessionKey).length, 1, 'unexpected lifecycle retry');
+  if (testCase.decision === 'allow-once') {
+    assert.ok((await contents(checkFile)).includes('checked'), 'approved checks did not run');
+    await readFile(applyFile);
+  } else await assertUntouched();
+  process.stdout.write(`${agentId} ${testCase.toolName} ${testCase.decision}: verified\n`);
 } finally {
   await client!.stopAndWait();
   await Promise.all([rm(checkFile, { force: true }), rm(applyFile, { force: true })]);

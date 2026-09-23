@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -45,6 +54,7 @@ interface PluginManifest {
 
 interface RunOptions {
   env?: NodeJS.ProcessEnv;
+  input?: string;
 }
 
 interface RunResult {
@@ -70,11 +80,12 @@ async function check<T>(label: string, action: () => T | Promise<T>): Promise<T>
 async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   const child = spawn(command, args, {
     env: options.env ?? process.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   });
   let output = '';
-  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stdout!.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr!.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  if (options.input !== undefined) child.stdin!.end(options.input);
   const code = await new Promise<number>((resolveExit, reject) => {
     child.once('error', reject);
     child.once('exit', (exitCode) => resolveExit(exitCode ?? 1));
@@ -142,6 +153,7 @@ try {
       'core',
       'credentials',
       'environment',
+      'hooks',
       'manifest',
       'paths',
       'skills',
@@ -173,6 +185,9 @@ try {
     'dist/index.js.map',
     'dist/memory-secret-provider-entry.js',
     'dist/memory-secret-provider-entry.js.map',
+    'dist/codex/codex-runtime.js',
+    'dist/codex/codex-runtime.js.map',
+    'hooks/hooks.json',
     'index.ts',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
@@ -327,6 +342,96 @@ try {
       readFile(join(packageRoot, 'dist', 'memory-secret-provider-entry.js')),
     ]);
     assert.deepEqual(packedEntry, localEntry);
+  });
+
+  await check('ship an executable Codex session hook', async () => {
+    const result = await run(
+      process.execPath,
+      [join(packageRoot, 'dist', 'codex', 'codex-runtime.js'), 'session-start'],
+      {
+        env: {
+          ...environment,
+          PLUGIN_DATA: join(temporaryRoot, 'codex-plugin-data'),
+          PLUGIN_ROOT: packageRoot,
+        },
+        input: `${JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup' })}\n`,
+      },
+    );
+    const response = JSON.parse(result.output) as {
+      hookSpecificOutput?: { additionalContext?: string; hookEventName?: string };
+    };
+    assert.equal(response.hookSpecificOutput?.hookEventName, 'SessionStart');
+    assert.match(response.hookSpecificOutput?.additionalContext ?? '', /"status": "unbound"/u);
+  });
+
+  await check('ship a confirmed Codex workspace binding interface', async () => {
+    const runtime = join(packageRoot, 'dist', 'codex', 'codex-runtime.js');
+    const pluginData = join(temporaryRoot, 'codex-binding-data');
+    const workspace = join(temporaryRoot, 'codex-binding-workspace');
+    await mkdir(workspace);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      'schema-version: 1\nagent:\n  id: package-test\n',
+    );
+    const binding = (...args: string[]) => run(process.execPath, [runtime, 'binding', ...args]);
+
+    const preview = JSON.parse((await binding('preview', '--workspace', workspace)).output) as {
+      manifest?: { agentId?: string };
+      status?: string;
+    };
+    assert.equal(preview.status, 'ready');
+    assert.equal(preview.manifest?.agentId, 'package-test');
+    await assert.rejects(
+      binding('bind', '--plugin-data', pluginData, '--workspace', workspace),
+      /binding changes require --confirm/u,
+    );
+
+    const bound = JSON.parse(
+      (await binding('bind', '--plugin-data', pluginData, '--workspace', workspace, '--confirm'))
+        .output,
+    ) as { status?: string };
+    assert.equal(bound.status, 'bound');
+    const inspected = JSON.parse(
+      (await binding('inspect', '--plugin-data', pluginData)).output,
+    ) as { binding?: { workspaceDir?: string }; status?: string };
+    assert.equal(inspected.status, 'bound');
+    assert.equal(inspected.binding?.workspaceDir, await realpath(workspace));
+
+    const unbound = JSON.parse(
+      (await binding('unbind', '--plugin-data', pluginData, '--confirm')).output,
+    ) as { status?: string };
+    assert.equal(unbound.status, 'unbound');
+
+    const inactiveWorkspace = join(temporaryRoot, 'codex-binding-inactive-workspace');
+    await mkdir(inactiveWorkspace);
+    await binding('preview', '--workspace', inactiveWorkspace);
+    const confirmationRequired = JSON.parse(
+      (
+        await binding(
+          'bind',
+          '--plugin-data',
+          pluginData,
+          '--workspace',
+          inactiveWorkspace,
+          '--confirm',
+        )
+      ).output,
+    ) as { status?: string };
+    assert.equal(confirmationRequired.status, 'confirmation-required');
+    const inactiveBound = JSON.parse(
+      (
+        await binding(
+          'bind',
+          '--plugin-data',
+          pluginData,
+          '--workspace',
+          inactiveWorkspace,
+          '--confirm',
+          '--allow-inactive',
+        )
+      ).output,
+    ) as { status?: string };
+    assert.equal(inactiveBound.status, 'bound');
   });
 
   await check('ship an executable Agent System gh command', async () => {
