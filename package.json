@@ -80,8 +80,8 @@
       "forceAccountBinding": true
     },
     "compat": {
-      "pluginApi": ">=2026.9.2",
-      "minGatewayVersion": "2026.9.2"
+      "pluginApi": ">=2026.9.5",
+      "minGatewayVersion": "2026.9.5"
     },
     "build": {
       "openclawVersion": "2026.9.5",
@@ -115,7 +115,7 @@
     ]
   },
   "peerDependencies": {
-    "openclaw": ">=2026.9.2"
+    "openclaw": ">=2026.9.5"
   },
   "dependencies": {
     "@1password/sdk": "0.5.0",

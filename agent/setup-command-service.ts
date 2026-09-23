@@ -32,8 +32,15 @@ export interface SetupCommandServiceDependencies {
 export default class SetupCommandService {
   constructor(private readonly dependencies: SetupCommandServiceDependencies) {}
 
-  async prepare(context: { manifest: AgentManifest; workspaceDir: string }): Promise<void> {
+  async prepare(context: {
+    manifest: AgentManifest;
+    workspaceDir: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
     const controller = new AbortController();
+    const signal = context.signal
+      ? AbortSignal.any([context.signal, controller.signal])
+      : controller.signal;
     const probes = [
       ...(context.manifest.git ? [{ command: 'git', argv: ['--version'] }] : []),
       ...(context.manifest.github
@@ -42,6 +49,7 @@ export default class SetupCommandService {
     ];
     try {
       for (const probe of probes) {
+        signal.throwIfAborted();
         const result = await this.dependencies.toolRegistry.invoke(
           probe.command,
           this.dependencies.toolRuntime,
@@ -53,7 +61,7 @@ export default class SetupCommandService {
             configurationMode: 'inspect',
           },
           undefined,
-          controller.signal,
+          signal,
         );
         if (
           result.kind !== 'cli' ||

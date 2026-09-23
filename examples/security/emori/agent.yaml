@@ -7,4 +7,8 @@ agent:
 
 git: {}
 
-setup: touch "$TMPDIR/agent-system-forbidden-setup"
+setup:
+  check: |
+    printf 'checked\n' >> "$TMPDIR/agent-system-doctor-check"
+    test -f "$TMPDIR/agent-system-forbidden-setup"
+  apply: touch "$TMPDIR/agent-system-forbidden-setup"

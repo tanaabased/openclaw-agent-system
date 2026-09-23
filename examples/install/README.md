@@ -81,5 +81,5 @@ cd "$TMPDIR/install-data"
 if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
 openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.install-data.tools' --json | jq -e '.allow == ["read"] and (has("alsoAllow") | not)'
+openclaw config get 'agents.entries.install-data.tools' --json | jq -e '(.allow | sort) == (["read", "agent_system_install", "agent_system_doctor"] | sort) and (has("alsoAllow") | not)'
 ```

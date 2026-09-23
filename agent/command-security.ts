@@ -19,7 +19,7 @@ export interface AgentCommandSecurityDependencies {
 }
 
 export const agentCommandSecurityGuidance =
-  'Use native agent_system_* tools for direct Agent System-managed operations. Repository helpers may invoke packaged Agent System launchers for registered command routes; OpenClaw binds those descendants to the active agent and admits only its workspace, declared local repositories, and managed worktree root. Never select another agent or directly invoke unbound openclaw agent-system tool or credentials routes through command tools. Install and Doctor/status are operator-only; ask the operator to run them. Do not access another agent workspace, manifest, environment, credentials, or identity. If neither a native capability nor a managed helper route is available, stop and ask the operator.';
+  'Use native agent_system_* tools for direct Agent System-managed operations. Repository helpers may invoke packaged Agent System launchers for registered command routes; OpenClaw binds those descendants to the active agent and admits only its workspace, declared local repositories, and managed worktree root. Never select another agent or directly invoke unbound openclaw agent-system tool or credentials routes through command tools. Request install or Doctor/status with agent_system_install or agent_system_doctor and obtain OpenClaw chat approval; never run them through command tools. Do not access another agent workspace, manifest, environment, credentials, or identity. If neither a native capability nor a managed helper route is available, stop and ask the operator.';
 
 interface BlockDecision {
   blockReason: string;
@@ -59,7 +59,7 @@ function operatorDecision(
   if (invocations.some(({ surface }) => surface === 'setup')) {
     return {
       blockReason:
-        'Agent System install and Doctor/status are operator-only. Ask the operator to run setup.',
+        'Agent System install and Doctor/status cannot run through command tools. Retry with agent_system_install or agent_system_doctor to request OpenClaw chat approval.',
       code: 'agent-setup-command-blocked',
       severity: 'error',
     };
