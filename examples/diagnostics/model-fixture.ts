@@ -1,7 +1,6 @@
 import { getTextContent, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
-import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
@@ -56,7 +55,10 @@ const fixtures: Fixture[] = [
       model,
       predicate: (request) => {
         const result = diagnosticResultText(
-          openClawAIMockToolResultText(request.messages, diagnosticExampleCallId) ?? '',
+          request.messages
+            .filter((message) => message.role === 'tool')
+            .map((message) => getTextContent(message.content) ?? '')
+            .join(' '),
         );
         return (
           result.includes('provider="1password"') &&

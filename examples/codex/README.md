@@ -40,7 +40,10 @@ codex exec --json \
   --dangerously-bypass-hook-trust \
   --cd "$root/task" \
   "Use \$agent-system-codex-binding to preview binding the workspace at $root/workspace. Do not bind, rebind, or change any files. Report the preview only." \
-  > "$root/preview.jsonl"
+  > "$root/preview.jsonl" || {
+  tail -n 20 "$root/preview.jsonl" >&2
+  false
+}
 node --import tsx "$GITHUB_WORKSPACE/examples/codex/scenario.ts" preview \
   --trace "$root/preview.jsonl" \
   --workspace "$root/workspace" \
@@ -75,7 +78,10 @@ codex exec --json \
   --output-last-message "$root/context.json" \
   --cd "$root/task" \
   'Using only the newest trusted Agent System context supplied at session start, return the active agentId and workspaceDir. Do not use tools or commands.' \
-  > "$root/context.jsonl"
+  > "$root/context.jsonl" || {
+  tail -n 20 "$root/context.jsonl" >&2
+  false
+}
 node --import tsx "$GITHUB_WORKSPACE/examples/codex/scenario.ts" context \
   --trace "$root/context.jsonl" \
   --response "$root/context.json" \

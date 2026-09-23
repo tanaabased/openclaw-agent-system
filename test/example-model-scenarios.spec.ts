@@ -171,7 +171,7 @@ describe('scripts/example-model-scenarios', () => {
       matchFixture(
         [...scenario.fixtures],
         request('quota-diagnostic', diagnosticExamplePrompt, ['agent_system_git'], {
-          callId: diagnosticExampleCallId,
+          callId: 'call_host_normalized',
           content: safe,
         }),
       )?.response,
