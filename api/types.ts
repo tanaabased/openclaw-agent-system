@@ -25,6 +25,8 @@ export interface AgentSystemToolGuidance {
 
 export interface AgentSystemToolCommand {
   command: string;
+  /** Static host executable for contextual shims only; managed failures never fall back. */
+  hostFallback?: string;
 }
 
 export interface AgentSystemManifestValueResolver {

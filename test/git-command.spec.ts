@@ -44,7 +44,7 @@ describe('bin/git', () => {
     });
     assert.equal(delegated.status, 0);
     assert.deepEqual(JSON.parse(delegated.stdout), {
-      argv: ['agent-system', 'tool', 'git', '--', 'status', '--short'],
+      argv: ['agent-system', 'tool', 'git', '--shim', 'contextual', '--', 'status', '--short'],
       launcherDirectory: packageBin,
     });
   });

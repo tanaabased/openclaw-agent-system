@@ -253,6 +253,7 @@ function createProgram(
       writeStdout: (message) => output.push(message),
     },
     toolRegistry: {
+      hostFallback: () => undefined,
       async invoke(command, _runtime, argv, scope, stdin) {
         calls.tool.push({
           argv,
@@ -393,6 +394,49 @@ describe('cli/register', () => {
         ?.commands.map((subcommand) => subcommand.name()),
       ['refresh', 'status', 'wait'],
     );
+  });
+
+  it('should hide launcher options from help and typo suggestions through both aliases', async () => {
+    for (const alias of ['agent-system', 'as']) {
+      const { program } = createProgram();
+      const tool = program.commands[0]!.commands.find((command) => command.name() === 'tool')!;
+      const visible: string[] = [];
+      tool.configureOutput({
+        writeOut: (value) => visible.push(value),
+        writeErr: (value) => visible.push(value),
+      });
+      await assert.rejects(program.parseAsync(['node', 'openclaw', alias, 'tool', '--help']), {
+        code: 'commander.helpDisplayed',
+      });
+      assert.match(visible.join(''), /--agent/);
+      assert.doesNotMatch(visible.join(''), /shim|contextual/iu);
+      visible.length = 0;
+      await assert.rejects(
+        program.parseAsync(['node', 'openclaw', alias, 'tool', 'git', '--shi']),
+        { code: 'commander.unknownOption' },
+      );
+      assert.doesNotMatch(visible.join(''), /--shim/);
+    }
+  });
+
+  it('should reject missing or unsupported shim modes without advertising the option', async () => {
+    for (const mode of [undefined, 'operator', 'unknown', '']) {
+      const { calls, program, diagnostics } = createProgram();
+      await program.parseAsync([
+        'node',
+        'openclaw',
+        'agent-system',
+        'tool',
+        'git',
+        '--shim',
+        ...(mode === undefined ? [] : [mode]),
+        '--',
+        '--version',
+      ]);
+      assert.deepEqual(calls.tool, []);
+      assert.match(diagnostics.join(''), /invalid internal launcher invocation/iu);
+      assert.doesNotMatch(diagnostics.join(''), /shim|contextual/iu);
+    }
   });
 
   it('should delegate tool arguments from the current workspace', async () => {
@@ -770,6 +814,41 @@ describe('cli/register', () => {
     }
   });
 
+  it('should preserve operator workspace discovery through contextual shims without session authority', async () => {
+    for (const command of ['git', 'gh']) {
+      const test = createProgram(undefined, {
+        commandAuthority: {
+          async classify() {
+            return { status: 'unbound' };
+          },
+          async resolve() {
+            throw new Error('unexpected strict resolution');
+          },
+        },
+      });
+      await test.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'tool',
+        command,
+        '--shim',
+        'contextual',
+        '--',
+        '--version',
+      ]);
+      assert.deepEqual(test.calls.workspace, ['/current']);
+      assert.deepEqual(test.calls.tool, [
+        {
+          command,
+          argv: ['--version'],
+          scope: { source: 'command', workspaceDir: '/current' },
+        },
+      ]);
+      assert.deepEqual(test.diagnostics, []);
+    }
+  });
+
   it('should deny setup operator routes for native and codex descendants before manifest loading', async () => {
     for (const alias of ['agent-system', 'as']) {
       for (const args of [
@@ -795,6 +874,9 @@ describe('cli/register', () => {
           const test = createProgram(undefined, {
             environment,
             commandAuthority: {
+              async classify() {
+                throw new Error('unexpected contextual lookup');
+              },
               async resolve() {
                 return {
                   agentId: 'tanaabot',
@@ -815,6 +897,9 @@ describe('cli/register', () => {
     const invalid = createProgram(undefined, {
       environment: { AGENT_SYSTEM_EXEC_CAPABILITY: 'invalid' },
       commandAuthority: {
+        async classify() {
+          throw new Error('unexpected contextual lookup');
+        },
         async resolve() {
           throw new Error('private authority failure');
         },

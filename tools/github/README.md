@@ -231,9 +231,9 @@ gh --agent-system
 gh repo view owner/repo --json name,url
 ```
 
-The shim routes commands through `openclaw agent-system tool gh` under the
-[same identity binding](../../ADVANCED.md#trust-boundary). The shim itself never
-receives a credential.
+The packaged command automatically uses managed GitHub in agent context and
+sanitized host execution outside it. See the
+[command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

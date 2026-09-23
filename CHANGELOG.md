@@ -12,6 +12,7 @@
 
 ### Bug Fixes
 
+- Allowed bare `git` and `gh` shims to use sanitized host executables outside agent scope while keeping strict launchers bound. [#148](https://github.com/tanaabased/openclaw-agent-system/issues/148)
 - Allowed action references, scoped packages, and GitHub mentions in notification publications while surfacing genuine assignment-publication failures privately. [#126](https://github.com/tanaabased/openclaw-agent-system/issues/126)
 - Made pull-request handoff card references clickable and added repository-explicit GitHub lifecycle guidance for item links. [#123](https://github.com/tanaabased/openclaw-agent-system/issues/123)
 - Fixed Doctor rejecting available models when OpenClaw 2026.9.4 omits the `missing` flag. [#120](https://github.com/tanaabased/openclaw-agent-system/issues/120)

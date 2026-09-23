@@ -88,8 +88,10 @@ describe('agent/setup-command-service', function () {
       async loadForAgentId(id: string): Promise<AgentManifestLoadResult> {
         return id === 'emori' ? loaded : { status: 'unresolved', diagnostics: [] };
       },
-      async loadForCommandDirectory(): Promise<never> {
-        throw new Error('operator fallback');
+      async loadForCommandDirectory(cwd: string): Promise<AgentManifestLoadResult> {
+        return cwd === otherWorkspace
+          ? { ...loaded, manifest: { ...loaded.manifest, agent: { id: 'other' } } }
+          : { status: 'unmanaged', scope: { workspaceDir: cwd }, diagnostics: [] };
       },
     };
     const toolRegistry = new AgentSystemToolRegistry([
@@ -258,6 +260,37 @@ describe('agent/setup-command-service', function () {
       assert.equal(environment.OPENCLAW_CONFIG_PATH, join(root, 'profile', 'openclaw.json'));
     }
     assert.deepEqual(await readdir(authorityRoot), []);
+  });
+
+  it('should route host descendants outside scope while direct commands remain managed', async () => {
+    const outside = join(root, 'host-work');
+    await mkdir(outside);
+    for (const executable of ['git', 'gh']) {
+      await writeFile(
+        join(hostBin, executable),
+        `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({ argv: process.argv.slice(2), env: process.env }));\n`,
+        { mode: 0o700 },
+      );
+    }
+    assert.equal(
+      (
+        await run(
+          `git --version > managed-result\n(cd ${quote(outside)} && git --version > git-result && gh --version > gh-result)`,
+        )
+      ).exitCode,
+      0,
+    );
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]?.environment.GIT_AUTHOR_NAME, 'Emori');
+    for (const executable of ['git', 'gh']) {
+      const result = JSON.parse(await readFile(join(outside, `${executable}-result`), 'utf8'));
+      assert.deepEqual(result.argv, ['--version']);
+      assert.equal(result.env.AGENT_SYSTEM_EXEC_CAPABILITY, undefined);
+      assert.equal(result.env.AGENT_SYSTEM_TOOL_LAUNCHER_DIR, undefined);
+      assert.equal(result.env.GH_TOKEN, undefined);
+      assert.equal(result.env.GIT_AUTHOR_NAME, undefined);
+      assert.equal(result.env.PATH.includes(join(projectDir, 'bin')), false);
+    }
   });
 
   it('should route git cloning through agent identity and invocation-scoped ssh resources', async () => {

@@ -308,7 +308,7 @@ export function createGitToolDefinition(
         return scope.source === 'tool' ? (input.cwd ?? '.') : scope.commandWorkingDirectory;
       },
     },
-    commands: [{ command: 'git' }],
+    commands: [{ command: 'git', hostFallback: 'git' }],
     tool: {
       classify: classifyGitOperation,
       description:

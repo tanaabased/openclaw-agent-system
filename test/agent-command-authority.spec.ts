@@ -63,6 +63,11 @@ describe('agent/command-authority', () => {
       currentUid: process.getuid?.(),
       leaseLifetimeMs: 1_000,
       manifestService: {
+        async loadForCommandDirectory(cwd) {
+          return cwd === otherAgentWorkspace
+            ? { ...loaded, manifest: { ...loaded.manifest, agent: { id: 'emori' } } }
+            : { status: 'unmanaged', scope: { workspaceDir: cwd }, diagnostics: [] };
+        },
         async loadForAgentId(agentId) {
           return agentId === 'data' ? loaded : { status: 'unresolved', diagnostics: [] };
         },
@@ -198,6 +203,38 @@ describe('agent/command-authority', () => {
       (error: unknown) =>
         error instanceof AgentSystemToolError && error.code === 'agent_not_resolved',
     );
+  });
+
+  it('should classify valid outside contexts without making strict resolution permissive', async () => {
+    const outside = join(root, 'host');
+    await mkdir(outside);
+    for (const environment of [
+      authority.issue('data'),
+      { CODEX_HOME: codexHome, CODEX_THREAD_ID: 'thread' },
+    ]) {
+      const context = await authority.classify(environment, outside);
+      assert.equal(context.status, 'outside-agent-scope');
+      await assert.rejects(authority.resolve(environment, outside));
+      await assert.rejects(authority.classify(environment, otherAgentWorkspace));
+    }
+    assert.deepEqual(await authority.classify({}, outside), { status: 'unbound' });
+  });
+
+  it('should never classify invalid authority as host context', async () => {
+    const outside = join(root, 'host');
+    await mkdir(outside);
+    const valid = authority.issue('data');
+    for (const environment of [
+      { AGENT_SYSTEM_EXEC_AUTHORITY: '' },
+      { ...valid, AGENT_SYSTEM_EXEC_CAPABILITY: 'x'.repeat(43) },
+      { AGENT_SYSTEM_EXEC_CAPABILITY: valid.AGENT_SYSTEM_EXEC_CAPABILITY },
+      deniedAgentCommandEnvironment(),
+      { CODEX_THREAD_ID: '' },
+      { CODEX_HOME: codexHome, CODEX_THREAD_ID: 'thread', OPENCLAW_STATE_DIR: '/wrong' },
+    ])
+      await assert.rejects(authority.classify(environment, outside));
+    now += 2_000;
+    await assert.rejects(authority.classify(valid, outside));
   });
 
   it('should leave ordinary operator commands unbound', async () => {

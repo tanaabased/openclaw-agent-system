@@ -326,8 +326,9 @@ git --agent-system
 git status --short
 ```
 
-The shim routes commands through `openclaw agent-system tool git` under the
-[same identity binding](../../ADVANCED.md#trust-boundary).
+The packaged command automatically uses managed Git in agent context and
+sanitized host execution outside it. See the
+[command-routing contract](../../ADVANCED.md#trust-boundary).
 
 ## Further Reading
 

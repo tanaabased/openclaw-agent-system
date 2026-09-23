@@ -27,7 +27,10 @@ registerAgentSystemCli(program, {
     writeStderr: (value) => process.stderr.write(value),
     writeStdout: (value) => process.stdout.write(value),
   },
-  toolRegistry: { invoke: unavailable },
+  toolRegistry: {
+    invoke: unavailable,
+    hostFallback: (command) => (['git', 'gh'].includes(command) ? command : undefined),
+  },
   toolRuntime: {} as never,
 });
 await program.parseAsync(process.argv.slice(3), { from: 'user' });
