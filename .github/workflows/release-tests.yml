@@ -32,6 +32,7 @@ jobs:
           release-date: ${{ env.STAMPED_DATE }}
           release-url: ${{ env.STAMPED_URL }}
           commands: |
+            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
             bun run format:write
       - name: Validate prepared package
@@ -46,6 +47,20 @@ jobs:
         env:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
         run: bun run test:release
+      - name: Stage packaged Codex plugin
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+        run: |
+          mkdir -p .temp/codex-plugin
+          tar -xzf "$AGENT_SYSTEM_PACKAGE" -C .temp/codex-plugin --strip-components=1
+      - name: Validate packaged Codex plugin
+        uses: tanaabased/actions/validate-codex-plugin@v1
+        with:
+          plugin-directory: .temp/codex-plugin
+      - name: Verify installed Codex skills
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+        run: bun run test:codex-plugin
       - name: Validate npm publisher
         uses: tanaabased/actions/publish-npm@v1
         with:

@@ -64,6 +64,8 @@ Today, Agent System:
 
 ## Installation
 
+### OpenClaw
+
 Install the current release from ClawHub:
 
 ```sh
@@ -84,6 +86,21 @@ grant lets Agent System add manifest and GitHub lifecycle guidance through
 OpenClaw's `before_prompt_build` hook.
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+
+### Codex
+
+Install the same npm release with [Codex Tools](https://github.com/tanaabased/codex-tools):
+
+```sh
+npm install --global @tanaab/codex-tools
+codex-tools install npm:@tanaab/openclaw-agent-system --dry-run --json
+codex-tools install npm:@tanaab/openclaw-agent-system
+```
+
+Codex Tools registers the personal marketplace and installs the plugin. Start a
+fresh Codex task, then select one of the packaged Agent System skills or name it
+explicitly. The Codex plugin supplies skills; OpenClaw remains the owner of the
+Agent System runtime, channels, and model-facing tools.
 
 ## Usage
 

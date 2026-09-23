@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,8 +13,16 @@ interface ClawHubValidation {
   };
 }
 
+interface CodexPluginManifest {
+  description?: string;
+  name?: string;
+  skills?: string;
+  version?: string;
+}
+
 interface PackageMetadata {
   dependencies?: Record<string, string>;
+  description?: string;
   name?: string;
   optionalDependencies?: Record<string, string>;
   version?: string;
@@ -158,6 +166,7 @@ try {
     return paths;
   });
   const requiredArtifactPaths = [
+    '.codex-plugin/plugin.json',
     'package.json',
     'openclaw.plugin.json',
     'dist/index.js',
@@ -230,19 +239,25 @@ try {
   });
 
   await check('match package and plugin metadata', async () => {
-    const [packageContents, manifestContents] = await Promise.all([
+    const [packageContents, manifestContents, codexManifestContents] = await Promise.all([
       readFile(join(packageRoot, 'package.json'), 'utf8'),
       readFile(join(packageRoot, 'openclaw.plugin.json'), 'utf8'),
+      readFile(join(packageRoot, '.codex-plugin', 'plugin.json'), 'utf8'),
     ]);
     const packageMetadata = JSON.parse(packageContents) as PackageMetadata;
     const manifest = JSON.parse(manifestContents) as PluginManifest;
+    const codexManifest = JSON.parse(codexManifestContents) as CodexPluginManifest;
     assert.equal(packageMetadata.name, '@tanaab/openclaw-agent-system');
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
     assert.equal(packageMetadata.version, manifest.version);
+    assert.equal(packageMetadata.version, codexManifest.version);
     assert.equal(manifest.id, 'agent-system');
     assert.deepEqual(manifest.skills, ['./skills']);
+    assert.equal(codexManifest.name, 'agent-system');
+    assert.equal(codexManifest.description, packageMetadata.description);
+    assert.equal(codexManifest.skills, './skills/');
     assert.deepEqual(manifest.secretProviderIntegrations?.environment, {
       providerAlias: 'agent-system-environment',
       displayName: 'Agent System environment',
@@ -266,6 +281,18 @@ try {
       ],
     });
     assert.deepEqual(packageMetadata.openclaw?.runtimeExtensions, ['./dist/index.js']);
+  });
+
+  await check('ship discoverable Codex skills', async () => {
+    const skillsRoot = join(packageRoot, 'skills');
+    const skillDirectories = (await readdir(skillsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(({ name }) => name);
+    assert.notEqual(skillDirectories.length, 0, 'Codex plugin must ship at least one skill');
+    for (const name of skillDirectories) {
+      await access(join(skillsRoot, name, 'SKILL.md'));
+      await access(join(skillsRoot, name, 'agents', 'openai.yaml'));
+    }
   });
 
   await check('ship a valid canonical OpenClaw plugin icon', async () => {

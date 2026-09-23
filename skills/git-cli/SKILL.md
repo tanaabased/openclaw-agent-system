@@ -89,7 +89,7 @@ The native tool returns structured `exitCode`, `stdout`, `stderr`, and `truncate
 ## Bundled Resources
 
 - `agents/openai.yaml`: Codex-facing display metadata and default prompt.
-- [Small Git icon](../../assets/git-icon-small.svg) and [large Git icon](../../assets/git-icon-large.svg): shared Codex and tool-guide marks.
+- [Small Git icon](./assets/icon-small.svg) and [large Git icon](./assets/icon-large.svg): Codex interface marks.
 
 ## Validation
 

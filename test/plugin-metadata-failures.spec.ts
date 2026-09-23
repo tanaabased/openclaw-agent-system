@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { githubNotificationChannelMetadata } from '../channels/github/metadata.ts';
 import pluginMetadataFailures, {
+  type CodexPluginManifest,
   type PackageMetadata,
   type PluginManifest,
   type PluginMetadataFailureCode,
@@ -16,6 +17,7 @@ const packageMetadata: PackageMetadata = {
   os: ['darwin', 'linux'],
   version: 'test-version',
   files: [
+    '.codex-plugin/',
     'dist/',
     'index.ts',
     'agent/',
@@ -128,26 +130,38 @@ const manifest: PluginManifest = {
   },
 };
 
+const codexManifest: CodexPluginManifest = {
+  description: 'Better per-agent management for OpenClaw.',
+  name: 'agent-system',
+  skills: './skills/',
+  version: 'test-version',
+};
+
 function failureCodes(
   actualPackageMetadata: PackageMetadata,
   actualManifest: PluginManifest,
+  actualCodexManifest: CodexPluginManifest = codexManifest,
 ): Set<PluginMetadataFailureCode> {
   return new Set(
-    pluginMetadataFailures(actualPackageMetadata, actualManifest).map(({ code }) => code),
+    pluginMetadataFailures(actualPackageMetadata, actualManifest, actualCodexManifest).map(
+      ({ code }) => code,
+    ),
   );
 }
 
 describe('core/plugin-metadata-failures', () => {
   it('should accept aligned package and plugin metadata', () => {
-    assert.deepEqual(pluginMetadataFailures(packageMetadata, manifest), []);
+    assert.deepEqual(pluginMetadataFailures(packageMetadata, manifest, codexManifest), []);
   });
 
   it('should report every scaffold contract mismatch', () => {
     assert.deepEqual(
-      failureCodes({}, {}),
+      failureCodes({}, {}, {}),
       new Set([
         'package-name',
         'supported-os',
+        'codex-plugin-name',
+        'codex-skill-contract',
         'plugin-id',
         'plugin-name',
         'plugin-description',
@@ -184,11 +198,12 @@ describe('core/plugin-metadata-failures', () => {
       pluginMetadataFailures(
         { ...packageMetadata, description: 'Package description.' },
         { ...manifest, description: 'Manifest description.' },
+        { ...codexManifest, description: 'Codex manifest description.' },
       ),
       [
         {
           code: 'plugin-description',
-          message: 'package, manifest, and runtime descriptions must match',
+          message: 'package and plugin descriptions must match',
         },
       ],
     );
@@ -196,7 +211,11 @@ describe('core/plugin-metadata-failures', () => {
 
   it('should reject a package that advertises an unsupported host', () => {
     assert.deepEqual(
-      pluginMetadataFailures({ ...packageMetadata, os: ['darwin', 'linux', 'win32'] }, manifest),
+      pluginMetadataFailures(
+        { ...packageMetadata, os: ['darwin', 'linux', 'win32'] },
+        manifest,
+        codexManifest,
+      ),
       [
         {
           code: 'supported-os',
@@ -237,6 +256,7 @@ describe('core/plugin-metadata-failures', () => {
           },
         },
         manifest,
+        codexManifest,
       ),
       [
         {
@@ -249,18 +269,22 @@ describe('core/plugin-metadata-failures', () => {
 
   it('should report channel declaration and configuration drift', () => {
     assert.deepEqual(
-      pluginMetadataFailures(packageMetadata, {
-        ...manifest,
-        channels: ['other-channel'],
-        channelConfigs: {
-          'agent-system-github': {
-            schema: {
-              type: 'object',
-              additionalProperties: true,
+      pluginMetadataFailures(
+        packageMetadata,
+        {
+          ...manifest,
+          channels: ['other-channel'],
+          channelConfigs: {
+            'agent-system-github': {
+              schema: {
+                type: 'object',
+                additionalProperties: true,
+              },
             },
           },
         },
-      }),
+        codexManifest,
+      ),
       [
         {
           code: 'channel-contract',
@@ -281,18 +305,39 @@ describe('core/plugin-metadata-failures', () => {
           ...packageMetadata,
           files: packageMetadata.files?.filter(
             (path) =>
-              !['cli/', 'skills/', 'API.md', 'ADVANCED.md', 'DEVELOPMENT.md'].includes(path),
+              ![
+                '.codex-plugin/',
+                'cli/',
+                'skills/',
+                'API.md',
+                'ADVANCED.md',
+                'DEVELOPMENT.md',
+              ].includes(path),
           ),
         },
         manifest,
+        codexManifest,
       ),
       [
+        { code: 'package-file', message: 'package files must include .codex-plugin/' },
         { code: 'package-file', message: 'package files must include cli/' },
         { code: 'package-file', message: 'package files must include skills/' },
         { code: 'package-file', message: 'package files must include API.md' },
         { code: 'package-file', message: 'package files must include ADVANCED.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
       ],
+    );
+  });
+
+  it('should report Codex identity, skill, and version drift', () => {
+    assert.deepEqual(
+      failureCodes(packageMetadata, manifest, {
+        ...codexManifest,
+        name: 'other-plugin',
+        skills: './other-skills',
+        version: 'other-version',
+      }),
+      new Set(['codex-plugin-name', 'codex-skill-contract', 'version-mismatch']),
     );
   });
 

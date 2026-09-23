@@ -34,6 +34,13 @@ export interface PackageMetadata {
   version?: string;
 }
 
+export interface CodexPluginManifest {
+  description?: string;
+  name?: string;
+  skills?: string;
+  version?: string;
+}
+
 export interface PluginManifest {
   activation?: {
     onCommands?: string[];
@@ -69,6 +76,8 @@ export interface PluginManifest {
 export type PluginMetadataFailureCode =
   | 'package-name'
   | 'supported-os'
+  | 'codex-plugin-name'
+  | 'codex-skill-contract'
   | 'plugin-id'
   | 'plugin-name'
   | 'plugin-description'
@@ -141,6 +150,7 @@ const githubNotificationChannelConfigs = {
   },
 };
 const requiredPackageFiles = [
+  '.codex-plugin/',
   'dist/',
   'index.ts',
   'agent/',
@@ -182,6 +192,7 @@ function declaresCommandAlias(
 export default function pluginMetadataFailures(
   packageMetadata: PackageMetadata,
   manifest: PluginManifest,
+  codexManifest: CodexPluginManifest,
 ): PluginMetadataFailure[] {
   const failures: PluginMetadataFailure[] = [];
   const check = (condition: boolean, code: PluginMetadataFailureCode, message: string): void => {
@@ -221,16 +232,28 @@ export default function pluginMetadataFailures(
   );
   check(
     packageMetadata.description === agentSystemPluginIdentity.description &&
-      manifest.description === agentSystemPluginIdentity.description,
+      manifest.description === agentSystemPluginIdentity.description &&
+      codexManifest.description === agentSystemPluginIdentity.description,
     'plugin-description',
-    'package, manifest, and runtime descriptions must match',
+    'package and plugin descriptions must match',
   );
   check(
     typeof packageMetadata.version === 'string' &&
       packageMetadata.version.length > 0 &&
-      packageMetadata.version === manifest.version,
+      packageMetadata.version === manifest.version &&
+      packageMetadata.version === codexManifest.version,
     'version-mismatch',
-    'package and manifest versions differ',
+    'package and plugin versions differ',
+  );
+  check(
+    codexManifest.name === agentSystemPluginIdentity.id,
+    'codex-plugin-name',
+    'unexpected Codex plugin name',
+  );
+  check(
+    codexManifest.skills?.replace(/\/$/, '') === './skills',
+    'codex-skill-contract',
+    'Codex plugin must load its packaged skill directory',
   );
   check(
     packageMetadata.openclaw?.extensions?.includes('./index.ts') === true,
