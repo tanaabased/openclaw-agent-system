@@ -39,7 +39,7 @@ describe('bin/agent-system-tool', () => {
 
     assert.equal(result.status, 0);
     assert.deepEqual(JSON.parse(result.stdout), {
-      argv: ['agent-system', 'tool', 'future-tool', '--', 'example'],
+      argv: ['agent-system', 'tool', 'future-tool', '--shim', 'managed', '--', 'example'],
       launcherDirectory: packageBin,
     });
   });

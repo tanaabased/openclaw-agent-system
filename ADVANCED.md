@@ -370,7 +370,9 @@ the declared commands, so keep secrets out of declarations.
 
 The child receives a minimal host environment for home, locale, temporary paths,
 and OpenClaw profile selection, plus managed command bindings. Its `PATH` places
-managed launchers before trusted host executable directories. The completed
+managed launchers before trusted host executable directories. Bare `git` and `gh`
+use host executables when a descendant leaves agent scope; see the
+[command-routing contract](#trust-boundary). The completed
 Agent System environment and operator provider tokens are not copied into the
 setup shell. Managed tools resolve their own declared environment and credentials
 after binding the target agent and applying policy.
@@ -581,11 +583,19 @@ Model-facing `agent_system_*` tools bind the manifest and credentials to trusted
 OpenClaw agent context. They remain the preferred direct execution path for
 agents.
 
-Packaged shims invoked from supported OpenClaw native or Codex agent commands
-remain bound to the active agent and its admitted workspace, repositories, and
-managed worktrees. They cannot select another agent after that binding. Direct
-`tool` and `credentials` commands remain trusted operator interfaces and may
-select an installed agent explicitly.
+Packaged `git` and `gh` automatically use managed execution when the working
+directory resolves to a valid installed agent; an active session is not required.
+When an active agent supplies command authority, its identity takes precedence
+and cannot change through directory changes. Host fallback applies when no agent
+manifest is found or a valid active-agent command leaves its admitted directories.
+Another known agent's workspace remains denied for that active agent.
+
+Host fallback removes agent credentials, authority, and configuration overrides;
+host tools may use their normal configuration files. Invalid authority, invalid
+agent configuration, and managed command failures remain errors. Explicit managed
+launchers and Agent System's `worktree` route never fall back. Direct `tool` and
+`credentials` commands remain trusted operator interfaces and may select an
+installed agent explicitly.
 
 The `install` and Doctor (`status`) CLI routes remain operator-only through both
 aliases, including setup descendants. In OpenClaw chat, use

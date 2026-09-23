@@ -47,6 +47,7 @@ setup:
           git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git repository
         fi
         (cd repository && git var GIT_AUTHOR_IDENT) > git-identity
+        sh host-descendant.sh
         printf 'checked\n' >> checked-runs
     - id: repeatable
       apply: printf 'unchecked\n' >> unchecked-runs

@@ -23,7 +23,8 @@ const maximumLeases = 1_024;
 const defaultLeaseLifetimeMs = 30 * 60 * 1_000;
 const defaultSocketTimeoutMs = 2_000;
 
-type AuthorityManifestService = Pick<AgentManifestService, 'loadForAgentId'>;
+type AuthorityManifestService = Pick<AgentManifestService, 'loadForAgentId'> &
+  Partial<Pick<AgentManifestService, 'loadForCommandDirectory'>>;
 
 interface CapabilityLease {
   agentId: string;
@@ -58,7 +59,7 @@ type AuthorityResponse =
   | {
       admittedWorkingDirectories: string[];
       agentId: string;
-      status: 'allowed';
+      status: 'allowed' | 'outside-agent-scope';
       workingDirectory: string;
       executesCommands?: true;
     }
@@ -70,6 +71,11 @@ export interface AgentCommandBinding {
   workingDirectory: string;
   executeCommand?(command: AgentBoundCommand): Promise<AgentBoundCommandResult>;
 }
+
+export type AgentCommandContext =
+  | { status: 'managed'; binding: AgentCommandBinding }
+  | { status: 'outside-agent-scope'; admittedWorkingDirectories: readonly string[] }
+  | { status: 'unbound' };
 
 export interface AgentCommandAuthorityDependencies {
   currentUid?: number;
@@ -141,21 +147,29 @@ function isCommandResult(value: unknown): value is AgentBoundCommandResult {
   );
 }
 
-function isAllowedResponse(
+function isContextResponse(
   value: unknown,
-): value is Extract<AuthorityResponse, { status: 'allowed' }> {
+): value is Exclude<AuthorityResponse, { status: 'denied' }> {
   if (!value || typeof value !== 'object') return false;
-  const response = value as Partial<Extract<AuthorityResponse, { status: 'allowed' }>>;
+  const response = value as Partial<Exclude<AuthorityResponse, { status: 'denied' }>>;
   return (
-    response.status === 'allowed' &&
+    (response.status === 'allowed' || response.status === 'outside-agent-scope') &&
     typeof response.agentId === 'string' &&
     agentIdPattern.test(response.agentId) &&
     typeof response.workingDirectory === 'string' &&
     isAbsolute(response.workingDirectory) &&
+    !response.workingDirectory.includes('\0') &&
     Array.isArray(response.admittedWorkingDirectories) &&
+    response.admittedWorkingDirectories.length > 0 &&
     response.admittedWorkingDirectories.every(
-      (path) => typeof path === 'string' && isAbsolute(path),
-    )
+      (path) => typeof path === 'string' && isAbsolute(path) && !path.includes('\0'),
+    ) &&
+    (response.executesCommands === undefined ||
+      (response.status === 'allowed' && response.executesCommands === true)) &&
+    response.admittedWorkingDirectories.some((root) =>
+      isPathContained(root, response.workingDirectory!),
+    ) ===
+      (response.status === 'allowed')
   );
 }
 
@@ -313,9 +327,23 @@ export default class AgentCommandAuthority {
     environment: Readonly<NodeJS.ProcessEnv>,
     cwd: string,
   ): Promise<AgentCommandBinding | undefined> {
+    const context = await this.classify(environment, cwd);
+    if (context.status === 'outside-agent-scope') throw this.#unresolved();
+    return context.status === 'managed' ? context.binding : undefined;
+  }
+
+  /** Invalid authority throws; only authenticated contexts may be outside agent scope. */
+  async classify(
+    environment: Readonly<NodeJS.ProcessEnv>,
+    cwd: string,
+  ): Promise<AgentCommandContext> {
     const authorityId = environment[agentCommandAuthorityEnvironmentName]?.trim();
     const capability = environment[agentCommandCapabilityEnvironmentName]?.trim();
-    if (!authorityId && !capability) return this.#resolveCodex(environment, cwd);
+    if (
+      environment[agentCommandAuthorityEnvironmentName] === undefined &&
+      environment[agentCommandCapabilityEnvironmentName] === undefined
+    )
+      return this.#resolveCodex(environment, cwd);
     if (
       !authorityId ||
       !capability ||
@@ -333,17 +361,26 @@ export default class AgentCommandAuthority {
       await once(socket, 'connect');
       socket.write(`${JSON.stringify({ capability, cwd })}\n`);
       const response = JSON.parse(await readSocketMessage(socket)) as unknown;
-      if (!isAllowedResponse(response)) throw this.#unresolved();
+      if (!isContextResponse(response)) throw this.#unresolved();
+      if (response.status === 'outside-agent-scope') {
+        return {
+          status: 'outside-agent-scope',
+          admittedWorkingDirectories: response.admittedWorkingDirectories,
+        };
+      }
       return {
-        admittedWorkingDirectories: response.admittedWorkingDirectories,
-        agentId: response.agentId,
-        workingDirectory: response.workingDirectory,
-        ...(response.executesCommands === true
-          ? {
-              executeCommand: (command: AgentBoundCommand) =>
-                this.#runCommand(socketPath, capability, cwd, command),
-            }
-          : {}),
+        status: 'managed',
+        binding: {
+          admittedWorkingDirectories: response.admittedWorkingDirectories,
+          agentId: response.agentId,
+          workingDirectory: response.workingDirectory,
+          ...(response.executesCommands === true
+            ? {
+                executeCommand: (command: AgentBoundCommand) =>
+                  this.#runCommand(socketPath, capability, cwd, command),
+              }
+            : {}),
+        },
       };
     } catch (error) {
       if (error instanceof AgentSystemToolError) throw error;
@@ -473,18 +510,20 @@ export default class AgentCommandAuthority {
         return { status: 'denied' };
       }
     }
-    const admittedWorkingDirectories = (
-      await Promise.all(
-        roots.map(async (path) => {
-          try {
-            return await realpath(path);
-          } catch (error) {
-            if (nodeErrorCode(error) === 'ENOENT') return undefined;
-            throw error;
-          }
-        }),
-      )
-    ).filter((path): path is string => path !== undefined);
+    const canonicalRoots = await Promise.all(
+      roots.map(async (path) => {
+        try {
+          return await realpath(path);
+        } catch (error) {
+          if (nodeErrorCode(error) === 'ENOENT') return undefined;
+          throw error;
+        }
+      }),
+    );
+    if (!canonicalRoots[0]) return { status: 'denied' };
+    const admittedWorkingDirectories = canonicalRoots.filter(
+      (path): path is string => path !== undefined,
+    );
     let workingDirectory: string;
     try {
       workingDirectory = await realpath(cwd);
@@ -492,7 +531,23 @@ export default class AgentCommandAuthority {
       return { status: 'denied' };
     }
     if (!admittedWorkingDirectories.some((root) => isPathContained(root, workingDirectory))) {
-      return { status: 'denied' };
+      const target = await this.#manifestService.loadForCommandDirectory?.(
+        workingDirectory,
+        'service',
+      );
+      if (
+        !target ||
+        (target.status !== 'unmanaged' &&
+          (target.status !== 'loaded' || target.manifest.agent.id !== agentId))
+      ) {
+        return { status: 'denied' };
+      }
+      return {
+        status: 'outside-agent-scope',
+        admittedWorkingDirectories,
+        agentId,
+        workingDirectory,
+      };
     }
     return {
       admittedWorkingDirectories,
@@ -505,9 +560,12 @@ export default class AgentCommandAuthority {
   async #resolveCodex(
     environment: Readonly<NodeJS.ProcessEnv>,
     cwd: string,
-  ): Promise<AgentCommandBinding | undefined> {
+  ): Promise<AgentCommandContext> {
     const threadId = environment.CODEX_THREAD_ID?.trim();
-    if (!threadId) return undefined;
+    if (!threadId) {
+      if (environment.CODEX_THREAD_ID !== undefined) throw this.#unresolved();
+      return { status: 'unbound' };
+    }
     const codexHome = environment.CODEX_HOME?.trim();
     const openClawStateDir = environment.OPENCLAW_STATE_DIR?.trim();
     if (
@@ -534,7 +592,7 @@ export default class AgentCommandAuthority {
     }
     if (!agentId) {
       if (openClawStateDir !== undefined) throw this.#unresolved();
-      return undefined;
+      return { status: 'unbound' };
     }
     if (!agentIdPattern.test(agentId)) throw this.#unresolved();
     let response: AuthorityResponse;
@@ -543,11 +601,20 @@ export default class AgentCommandAuthority {
     } catch {
       throw this.#unresolved();
     }
-    if (!isAllowedResponse(response)) throw this.#unresolved();
+    if (!isContextResponse(response)) throw this.#unresolved();
+    if (response.status === 'outside-agent-scope') {
+      return {
+        status: 'outside-agent-scope',
+        admittedWorkingDirectories: response.admittedWorkingDirectories,
+      };
+    }
     return {
-      admittedWorkingDirectories: response.admittedWorkingDirectories,
-      agentId: response.agentId,
-      workingDirectory: response.workingDirectory,
+      status: 'managed',
+      binding: {
+        admittedWorkingDirectories: response.admittedWorkingDirectories,
+        agentId: response.agentId,
+        workingDirectory: response.workingDirectory,
+      },
     };
   }
 

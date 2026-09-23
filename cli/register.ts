@@ -1,4 +1,5 @@
 import type { Readable } from 'node:stream';
+import type { Option } from 'commander';
 
 import envAgentSystem from './env.ts';
 import credentialsCache, { type OpCacheGatewayRequest } from './credentials-cache.ts';
@@ -32,8 +33,10 @@ type Action = (...args: unknown[]) => unknown;
 
 export interface CommandLike {
   action(handler: Action): CommandLike;
+  addOption(option: Option): CommandLike;
   alias(name: string): CommandLike;
   command(specification: string): CommandLike;
+  createOption(flags: string, description?: string): Option;
   description(text: string): CommandLike;
   helpInformation(): string;
   option(flags: string, description: string): CommandLike;
@@ -41,7 +44,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
-  commandAuthority?: Pick<AgentCommandAuthority, 'resolve'>;
+  commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
   cacheGatewayRequest?: OpCacheGatewayRequest;
   completeOneShot?: (code: number) => Promise<void>;
   cwd?: () => string;
@@ -57,7 +60,7 @@ export interface RegisterAgentSystemCliOptions {
   notificationMonitorService: Pick<GitHubNotificationMonitorService, 'runOnce'>;
   notificationStatusService: Pick<GitHubNotificationStatusService, 'inspect' | 'wait'>;
   output?: CliOutput;
-  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'hostFallback'>;
   toolRuntime: AgentSystemToolRuntime;
   setExitCode?: (code: number) => void;
   styles?: CliStyles;
@@ -177,9 +180,24 @@ export default function registerAgentSystemCli(
     .command('tool <command> [args...]')
     .description('Run one registered command through its Agent System tool.')
     .option('--agent <id>', 'Use the configured workspace for an OpenClaw agent.')
+    .addOption(agentSystem.createOption('--shim [mode]').hideHelp())
     .action(async (command, args) => {
       const agentId = tool.opts().agent;
+      const shim = tool.opts().shim;
+      if (shim !== undefined && shim !== 'managed' && shim !== 'contextual') {
+        output.writeStderr('Invalid internal launcher invocation.\n');
+        setExitCode(1);
+        return;
+      }
       await runAgentSystemTool({
+        invocationMode: shim ?? 'operator',
+        manifestService: options.manifestService,
+        ...(commandAuthority
+          ? {
+              resolveCommandContext: (environment, workspaceDir) =>
+                commandAuthority.classify(environment, workspaceDir),
+            }
+          : {}),
         ...(typeof agentId === 'string' ? { agentId } : {}),
         argv: Array.isArray(args) ? args.map(String) : [],
         command: String(command),
