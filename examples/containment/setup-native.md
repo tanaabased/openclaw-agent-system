@@ -4,4 +4,4 @@ Use `exec` exactly once to run the following literal command from the current wo
 sh ../setup-boundary-probe.sh native
 ```
 
-Wait until the command exits before replying. If the tool returns a running session, poll that existing session until it finishes; do not launch the command again. The helper succeeds only when every operator invocation is rejected. Report the tool output, including any error.
+Use `yieldMs: 120000` on `exec`. If it returns a running session, poll that exact session with `process` using `action: "poll"` and `timeout: 30000`. Poll only while the tool explicitly reports a running session. Once it reports an exit code, stop polling; do not launch the command again or repair any reported error. The helper succeeds only when every operator invocation is rejected. Reply with only the exit code and any failure diagnostic.

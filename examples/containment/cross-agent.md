@@ -4,6 +4,6 @@ Use `exec_command` exactly once to run the following literal command from the cu
 sh ./shim-boundary-probe.sh
 ```
 
-Wait until the command exits before replying. If the tool returns a running session, poll that existing session until it finishes; do not launch the command again. A nonzero exit from the rejected cross-agent Git invocation is expected.
+Set `yield_time_ms` to `30000` and `max_output_tokens` to `1000` on `exec_command`. If it returns a running session, call `write_stdin` with that exact session ID, empty input, and `yield_time_ms: 300000`. Poll only while the tool explicitly reports a running session. Once it reports an exit code, stop polling; do not launch the command again or repair any reported error.
 
-Reply with the tool output, including any error. If you cannot invoke the tool, explain why. Do not replace diagnostic output with a completion acknowledgment.
+The helper checks the expected rejections itself and exits zero when they pass. Reply with only the exit code and any failure diagnostic; do not repeat successful output. If you cannot invoke the tool, explain why.

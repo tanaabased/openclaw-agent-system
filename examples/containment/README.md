@@ -23,6 +23,7 @@ openclaw agent-system install --skip-setup
 # should route tanaabot through codex and emori through native openclaw
 # temporary openclaw 9.5 cleanup workaround: https://github.com/tanaabased/openclaw-agent-system/issues/135
 openclaw plugins disable codex
+openclaw config set skills.workshop.autonomous.mode off
 openclaw config set 'agents.entries.tanaabot.model' "openai/$OPENAI_MODEL"
 openclaw config set 'agents.entries.tanaabot.models' "{\"openai/$OPENAI_MODEL\":{\"agentRuntime\":{\"id\":\"codex\"}}}" --strict-json
 openclaw config set 'agents.entries.emori.model' "openai/$OPENAI_MODEL"
@@ -37,18 +38,19 @@ OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 
 ```bash
 # should bind helper shims to tanaabot and prevent a cwd switch to emori
-openclaw agent \
+if ! openclaw agent \
   --agent tanaabot \
   --session-key agent:tanaabot:agent-system-containment-leia \
   --message-file "$GITHUB_WORKSPACE/examples/containment/cross-agent.md" \
-  --timeout 180
-if ! grep -F 'tanaabot-containment@example.invalid' "$TMPDIR/agent-system-active-agent-result.txt"; then
+  --timeout 180; then
   openclaw gateway call chat.history \
     --params '{"sessionKey":"agent:tanaabot:agent-system-containment-leia","limit":10,"maxBytes":32768}' \
     --json | jq '{messages: [.messages[] | select(.role == "assistant" or .role == "toolResult")]}'
   exit 1
 fi
+grep -F 'tanaabot-containment@example.invalid' "$TMPDIR/agent-system-active-agent-result.txt"
 test ! -e "$TMPDIR/agent-system-cross-agent-result.txt"
+grep -Fx verified "$TMPDIR/agent-system-cross-agent-denied.txt"
 grep -Fx verified "$TMPDIR/agent-system-setup-boundary-codex.txt"
 test ! -e "$TMPDIR/agent-system-forbidden-setup"
 test ! -e "$TMPDIR/agent-system-doctor-check"
@@ -67,5 +69,8 @@ test ! -e "$TMPDIR/agent-system-forbidden-setup"
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop
+if ! openclaw-gateway stop; then
+  grep -E '\[gateway\].*(signal SIG|received SIG|drain|shutdown|server close)' "$(openclaw-gateway log-path)" | tail -n 30
+  exit 1
+fi
 ```
