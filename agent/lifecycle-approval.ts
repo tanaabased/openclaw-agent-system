@@ -24,7 +24,7 @@ interface PendingOperation {
   workspaceDir: string;
   skipSetup: boolean;
   allowed: boolean;
-  signal?: AbortSignal;
+  signals: Set<AbortSignal>;
   expiresAt: number;
   dispose(): void;
 }
@@ -67,16 +67,38 @@ export default class AgentLifecycleApproval {
     if (!Value.Check(lifecycleParameters(name), params)) denied();
     context.abortSignal?.throwIfAborted();
     const id = key(name, context);
-    this.#pending.get(id)?.dispose();
+    const previous = this.#pending.get(id);
+    if (!previous?.allowed) previous?.dispose();
     const loaded = await this.dependencies.manifestService.loadForAgentId(
       context.agentId!,
       'before_tool_call',
     );
-    if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== context.agentId) denied();
+    if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== context.agentId) {
+      previous?.dispose();
+      denied();
+    }
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
     const skipSetup = params.skipSetup === true;
+    // Codex can revisit the hook between native approval and dynamic tool execution.
+    if (
+      previous?.allowed &&
+      this.#pending.get(id) === previous &&
+      Date.now() < previous.expiresAt &&
+      ![...previous.signals].some((signal) => signal.aborted) &&
+      loaded.digest === previous.loaded.digest &&
+      loaded.path === previous.loaded.path &&
+      workspaceDir === previous.workspaceDir &&
+      skipSetup === previous.skipSetup
+    ) {
+      if (context.abortSignal) {
+        previous.signals.add(context.abortSignal);
+        context.abortSignal.addEventListener('abort', previous.dispose, { once: true });
+      }
+      return {};
+    }
+    previous?.dispose();
     const steps = skipSetup
       ? []
       : (loaded.manifest.setup?.steps ?? []).filter((step) => setupStepApplies(step, 'openclaw'));
@@ -89,12 +111,12 @@ export default class AgentLifecycleApproval {
       workspaceDir,
       skipSetup: params.skipSetup === true,
       allowed: false,
-      signal: context.abortSignal,
+      signals: new Set(context.abortSignal ? [context.abortSignal] : []),
       expiresAt: Date.now() + timeoutMs,
       dispose: () => {
         if (this.#pending.get(id) === pending) this.#pending.delete(id);
         clearTimeout(timer);
-        context.abortSignal?.removeEventListener('abort', pending.dispose);
+        for (const signal of pending.signals) signal.removeEventListener('abort', pending.dispose);
       },
     };
     const timer = setTimeout(() => pending.dispose(), timeoutMs);
@@ -111,7 +133,7 @@ export default class AgentLifecycleApproval {
           // The host does not await this callback. Never execute or perform async validation here.
           if (
             decision === 'allow-once' &&
-            !pending.signal?.aborted &&
+            ![...pending.signals].some((signal) => signal.aborted) &&
             Date.now() < pending.expiresAt &&
             this.#pending.get(id) === pending
           ) {
@@ -140,9 +162,7 @@ export default class AgentLifecycleApproval {
       ((params as { skipSetup?: boolean }).skipSetup === true) !== pending.skipSetup
     )
       denied();
-    const signals = [pending.signal, signal].filter(
-      (value): value is AbortSignal => value !== undefined,
-    );
+    const signals = [...pending.signals, ...(signal ? [signal] : [])];
     const combinedSignal = AbortSignal.any(signals);
     const assertCurrent = async () => {
       combinedSignal.throwIfAborted();

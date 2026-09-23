@@ -9,7 +9,7 @@ import AgentDoctorService from '../agent/doctor-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import AgentManifestService from '../manifest/service.ts';
-import { lifecycleToolNames } from '../tools/lifecycle/schema.ts';
+import { lifecycleToolNames, type LifecycleToolName } from '../tools/lifecycle/schema.ts';
 
 const roots: string[] = [];
 const manifest = `schema-version: 1
@@ -91,6 +91,11 @@ async function fixture() {
     context,
     controller,
     approval,
+    async request(name: LifecycleToolName, params: Record<string, unknown>, target = context) {
+      const result = await approval.request(name, params, target);
+      assert.ok(result.requireApproval, 'a new operation must require consent');
+      return { requireApproval: result.requireApproval };
+    },
     workspaces,
     toolContext: { ...context, workspaceDir: root },
     afterInspect(callback: () => Promise<void>) {
@@ -105,9 +110,34 @@ afterEach(async () => {
 
 describe('agent/lifecycle-approval', () => {
   for (const name of lifecycleToolNames) {
+    it(`should revalidate an approved ${name} across both hooks and execute only once`, async () => {
+      const f = await fixture();
+      const request = await f.request(name, {}, f.context);
+      request.requireApproval.onResolution('allow-once');
+      const executionHook = new AbortController();
+      assert.deepEqual(
+        await f.approval.request(name, {}, { ...f.context, abortSignal: executionHook.signal }),
+        {},
+      );
+      assert.equal(f.calls.length, 0);
+      await f.approval.execute(name, {}, 'call', f.toolContext);
+      const completed = [...f.calls];
+      assert.ok(completed.includes('check-approved'));
+      await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
+        code: 'approval_denied',
+      });
+      assert.deepEqual(f.calls, completed);
+      await f.request(name, {}, f.context);
+      request.requireApproval.onResolution('allow-once');
+      await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
+        code: 'approval_denied',
+      });
+      assert.deepEqual(f.calls, completed);
+    });
+
     it(`should execute ${name} once only after approval`, async () => {
       const f = await fixture();
-      const request = await f.approval.request(name, {}, f.context);
+      const request = await f.request(name, {}, f.context);
       assert.deepEqual(request.requireApproval.allowedDecisions, ['allow-once', 'deny']);
       assert.ok(request.requireApproval.description.includes(f.root));
       assert.ok(request.requireApproval.description.includes('data'));
@@ -128,7 +158,7 @@ describe('agent/lifecycle-approval', () => {
     for (const decision of ['deny', 'timeout', 'cancelled', 'allow-always', 'unknown', undefined]) {
       it(`should execute nothing for ${name} with ${decision ?? 'unavailable approval'}`, async () => {
         const f = await fixture();
-        const request = await f.approval.request(name, {}, f.context);
+        const request = await f.request(name, {}, f.context);
         if (decision) request.requireApproval.onResolution(decision);
         await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
           code: 'approval_denied',
@@ -146,13 +176,115 @@ describe('agent/lifecycle-approval', () => {
     assert.deepEqual(f.calls, []);
   });
 
+  it('should require new consent when a repeated hook changes the operation binding', async () => {
+    for (const change of [
+      'options',
+      'manifest',
+      'workspace',
+      'session',
+      'session-key',
+      'call',
+      'operation',
+    ]) {
+      const f = await fixture();
+      const original = await f.request('agent_system_install', {}, f.context);
+      original.requireApproval.onResolution('allow-once');
+      if (change === 'manifest')
+        await writeFile(
+          join(f.root, 'agent.yaml'),
+          manifest.replace('check-approved', 'changed-check'),
+        );
+      if (change === 'workspace') {
+        const other = await fixture();
+        f.workspaces.data = other.root;
+      }
+      const context = {
+        ...f.context,
+        ...(change === 'session' ? { sessionId: 'other' } : {}),
+        ...(change === 'session-key' ? { sessionKey: 'agent:data:other' } : {}),
+        ...(change === 'call' ? { toolCallId: 'other' } : {}),
+      };
+      const name = change === 'operation' ? 'agent_system_doctor' : 'agent_system_install';
+      const params = change === 'options' ? { skipSetup: true } : {};
+      await f.request(name, params, context);
+      original.requireApproval.onResolution('allow-once');
+      await assert.rejects(
+        f.approval.execute(name, params, context.toolCallId, {
+          ...context,
+          workspaceDir: f.workspaces.data,
+        }),
+        { code: 'approval_denied' },
+      );
+      assert.deepEqual(f.calls, []);
+      f.controller.abort();
+    }
+  });
+
+  it('should preserve cancellation from either hook before and during execution', async () => {
+    for (const hook of ['approval', 'execution']) {
+      for (const duringExecution of [false, true]) {
+        const f = await fixture();
+        const executionHook = new AbortController();
+        const request = await f.request('agent_system_doctor', {}, f.context);
+        request.requireApproval.onResolution('allow-once');
+        assert.deepEqual(
+          await f.approval.request(
+            'agent_system_doctor',
+            {},
+            { ...f.context, abortSignal: executionHook.signal },
+          ),
+          {},
+        );
+        const controller = hook === 'approval' ? f.controller : executionHook;
+        if (duringExecution)
+          f.afterInspect(async () => {
+            controller.abort();
+          });
+        else controller.abort();
+        await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext));
+        assert.deepEqual(f.calls, duringExecution ? ['inspect'] : []);
+      }
+    }
+  });
+
+  it('should discard consent when a repeated hook finds an invalid manifest', async () => {
+    const f = await fixture();
+    const request = await f.request('agent_system_doctor', {}, f.context);
+    request.requireApproval.onResolution('allow-once');
+    await writeFile(join(f.root, 'agent.yaml'), 'invalid: [');
+    await assert.rejects(f.approval.request('agent_system_doctor', {}, f.context));
+    await writeFile(join(f.root, 'agent.yaml'), manifest);
+    await f.request('agent_system_doctor', {}, f.context);
+    await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext), {
+      code: 'approval_denied',
+    });
+    assert.deepEqual(f.calls, []);
+  });
+
+  it('should not extend consent expiry when a second hook revalidates it', async () => {
+    const f = await fixture();
+    const request = await f.request('agent_system_doctor', {}, f.context);
+    request.requireApproval.onResolution('allow-once');
+    const now = Date.now;
+    const deadline = now() + request.requireApproval.timeoutMs;
+    try {
+      Date.now = () => deadline - 1000;
+      assert.deepEqual(await f.approval.request('agent_system_doctor', {}, f.context), {});
+      Date.now = () => deadline + 1;
+      await f.request('agent_system_doctor', {}, f.context);
+      await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext), {
+        code: 'approval_denied',
+      });
+      assert.deepEqual(f.calls, []);
+    } finally {
+      Date.now = now;
+      f.controller.abort();
+    }
+  });
+
   it('should bind skip setup to the approved install without running checks', async () => {
     const f = await fixture();
-    const request = await f.approval.request(
-      'agent_system_install',
-      { skipSetup: true },
-      f.context,
-    );
+    const request = await f.request('agent_system_install', { skipSetup: true }, f.context);
     assert.match(request.requireApproval.description, /skip setup/i);
     request.requireApproval.onResolution('allow-once');
     await f.approval.execute('agent_system_install', { skipSetup: true }, 'call', f.toolContext);
@@ -161,7 +293,7 @@ describe('agent/lifecycle-approval', () => {
 
   it('should reject consent after its deadline without waiting for timer cleanup', async () => {
     const f = await fixture();
-    const request = await f.approval.request('agent_system_install', {}, f.context);
+    const request = await f.request('agent_system_install', {}, f.context);
     request.requireApproval.onResolution('allow-once');
     const now = Date.now;
     const future = now() + request.requireApproval.timeoutMs + 1;
@@ -181,7 +313,7 @@ describe('agent/lifecycle-approval', () => {
     f.afterInspect(async () => {
       f.controller.abort();
     });
-    const request = await f.approval.request('agent_system_doctor', {}, f.context);
+    const request = await f.request('agent_system_doctor', {}, f.context);
     request.requireApproval.onResolution('allow-once');
     await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext));
     assert.deepEqual(f.calls, ['inspect']);
@@ -198,7 +330,7 @@ describe('agent/lifecycle-approval', () => {
       'operation',
     ]) {
       const f = await fixture();
-      const request = await f.approval.request('agent_system_install', {}, f.context);
+      const request = await f.request('agent_system_install', {}, f.context);
       request.requireApproval.onResolution('allow-once');
       if (change === 'manifest')
         await writeFile(
@@ -227,7 +359,7 @@ describe('agent/lifecycle-approval', () => {
   it('should stop pending and resolved approvals when the turn is cancelled', async () => {
     for (const resolved of [false, true]) {
       const f = await fixture();
-      const request = await f.approval.request('agent_system_install', {}, f.context);
+      const request = await f.request('agent_system_install', {}, f.context);
       if (resolved) request.requireApproval.onResolution('allow-once');
       f.controller.abort();
       request.requireApproval.onResolution('allow-once');
@@ -238,8 +370,8 @@ describe('agent/lifecycle-approval', () => {
 
   it('should prevent a concurrent retry from consuming an older approval', async () => {
     const f = await fixture();
-    const old = await f.approval.request('agent_system_doctor', {}, f.context);
-    const current = await f.approval.request('agent_system_doctor', {}, f.context);
+    const old = await f.request('agent_system_doctor', {}, f.context);
+    const current = await f.request('agent_system_doctor', {}, f.context);
     old.requireApproval.onResolution('allow-once');
     await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext));
     current.requireApproval.onResolution('allow-once');
@@ -251,7 +383,7 @@ describe('agent/lifecycle-approval', () => {
     f.afterInspect(() =>
       writeFile(join(f.root, 'agent.yaml'), manifest.replace('check-approved', 'unapproved')),
     );
-    const request = await f.approval.request('agent_system_doctor', {}, f.context);
+    const request = await f.request('agent_system_doctor', {}, f.context);
     request.requireApproval.onResolution('allow-once');
     await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext));
     assert.deepEqual(f.calls, ['inspect']);
@@ -278,7 +410,7 @@ describe('agent/lifecycle-approval', () => {
       { yes: true },
       { nonInteractive: true },
     ]) {
-      await assert.rejects(f.approval.request('agent_system_install', params, f.context));
+      await assert.rejects(f.request('agent_system_install', params, f.context));
     }
     assert.deepEqual(f.calls, []);
   });
