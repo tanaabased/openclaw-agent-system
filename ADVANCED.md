@@ -22,7 +22,7 @@ while the channel ID uses hyphens.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Unreleased           | 2026.9.2         | 2026.9.5           |
+| Unreleased           | 2026.9.5         | 2026.9.5           |
 | 0.6.0                | 2026.9.2         | 2026.9.3           |
 | 0.5.3                | 2026.7.1         | 2026.7.2           |
 
@@ -587,10 +587,13 @@ managed worktrees. They cannot select another agent after that binding. Direct
 `tool` and `credentials` commands remain trusted operator interfaces and may
 select an installed agent explicitly.
 
-`install` and Doctor (including `status`) are also operator-only through both
-CLI aliases. Model-facing tools, supported native/Codex agent commands, and
-setup descendants cannot invoke them. Unattended install options bypass consent
-prompts, not this authority boundary.
+The `install` and Doctor (`status`) CLI routes remain operator-only through both
+aliases, including setup descendants. In OpenClaw chat, use
+`agent_system_install` or `agent_system_doctor` to request **Allow once** for the
+active agent and manifest. This includes Doctor's declared check commands.
+Unattended CLI options do not grant chat approval. See the
+[lifecycle tool guide](tools/lifecycle/README.md) for the approval boundary and
+supported harnesses.
 
 These are practical same-user guardrails, not process isolation. Absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host

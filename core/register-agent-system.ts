@@ -17,6 +17,8 @@ import AgentCommandAuthority from '../agent/command-authority.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
+import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
+import createLifecycleTools, { registerLifecycleApprovalHook } from '../tools/lifecycle/tools.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
@@ -251,6 +253,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...gitCapability.tools,
     ...githubCapability.tools,
     notificationRuntime.replyTool,
+    createLifecycleTools((): AgentLifecycleApproval => lifecycleApproval),
   ]);
   const setupLifecycle = new SetupLifecycleService({
     run: (command, target, signal) => setupCommands.run(command, target, signal),
@@ -442,6 +445,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     credentialManager,
     lifecycleRegistry,
   });
+  const lifecycleApproval = new AgentLifecycleApproval({
+    manifestService,
+    doctorService,
+    installService,
+  });
+  registerLifecycleApprovalHook(api, lifecycleApproval);
   const {
     channel: notificationChannel,
     monitorService: notificationMonitorService,

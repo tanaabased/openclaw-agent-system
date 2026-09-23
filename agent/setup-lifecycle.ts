@@ -106,14 +106,22 @@ export default class SetupLifecycleService {
     context: AgentSystemLifecycleExecutionContext,
     mode: 'check' | 'apply',
   ): Promise<number | null> {
+    context.signal?.throwIfAborted();
+    await context.assertCurrent?.();
     try {
-      const result = await this.commands.run(command, {
-        agentId: context.manifest.agent.id,
-        workspaceDir: context.workspaceDir,
-        mode,
-      });
+      const result = await this.commands.run(
+        command,
+        {
+          agentId: context.manifest.agent.id,
+          workspaceDir: context.workspaceDir,
+          mode,
+        },
+        context.signal,
+      );
       return result.timedOut ? null : result.exitCode;
     } catch {
+      context.signal?.throwIfAborted();
+      await context.assertCurrent?.();
       return null;
     }
   }

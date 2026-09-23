@@ -10,9 +10,8 @@ const documentationPaths = globSync('**/*.md', {
 }).sort();
 
 describe('documentation/policy-vocabulary', () => {
-  it('should keep interactive approval vocabulary out of current documentation', () => {
-    assert.notEqual(documentationPaths.length, 0);
-    for (const path of documentationPaths) {
+  it('should keep lifecycle approval separate from git and github policy', () => {
+    for (const path of ['tools/git/README.md', 'tools/github/README.md']) {
       assert.doesNotMatch(
         readFileSync(join(projectDir, path), 'utf8'),
         /\bapprovals?\b/iu,
