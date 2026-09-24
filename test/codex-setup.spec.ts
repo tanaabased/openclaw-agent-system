@@ -81,6 +81,53 @@ describe('agent/codex-setup', () => {
     assert.equal(repeated.outcomes[1]?.code, 'setup-applied');
   });
 
+  it('should report secret-safe doctor findings without applying setup', async () => {
+    await manifest(`setup:
+  steps:
+    - id: healthy
+      check: |
+        printf 'private healthy output\\n'
+        exit 0
+      apply: touch .healthy-applied
+    - id: drift
+      check: |
+        printf 'private drift output\\n'
+        exit 1
+      apply: touch .drift-applied
+    - id: blocked
+      check: |
+        printf 'private blocked output\\n' >&2
+        exit 2
+      apply: touch .blocked-applied
+    - id: skipped
+      runtimes: [openclaw]
+      check: touch .skipped-checked
+      apply: touch .skipped-applied
+`);
+
+    const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
+
+    assert.deepEqual(
+      inspected.findings.map(({ code, status, stepId }) => ({ code, status, stepId })),
+      [
+        { code: 'setup-healthy', status: 'healthy', stepId: 'healthy' },
+        { code: 'setup-drift', status: 'drift', stepId: 'drift' },
+        { code: 'setup-blocked', status: 'blocked', stepId: 'blocked' },
+        { code: 'setup-not-applicable', status: 'skipped', stepId: 'skipped' },
+      ],
+    );
+    assert.doesNotMatch(JSON.stringify(inspected), /private (?:healthy|drift|blocked) output/u);
+    await Promise.all(
+      [
+        '.healthy-applied',
+        '.drift-applied',
+        '.blocked-applied',
+        '.skipped-checked',
+        '.skipped-applied',
+      ].map((path) => assert.rejects(access(join(workspace, path)))),
+    );
+  });
+
   it('should stop on the first failure while preserving earlier effects', async () => {
     await manifest(`setup:
   steps:

@@ -91,7 +91,7 @@ printf '%s\n' "$context" | grep -F '"status": "active"'
 printf '%s\n' "$context" | grep -F '"id": "codex-example"'
 printf '%s\n' "$context" | grep -F "\"workspaceDir\": \"$workspace\""
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
-  | jq -e '.binding.context.capabilities == ["agent-system-install", "agent-system-git-cli", "agent-system-github-cli"]'
+  | jq -e '.binding.context.capabilities == ["agent-system-doctor", "agent-system-install", "agent-system-git-cli", "agent-system-github-cli"]'
 
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-example"

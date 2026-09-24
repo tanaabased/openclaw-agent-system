@@ -1,6 +1,6 @@
 # Lifecycle Approval Example
 
-This scenario runs the prepared Agent System package in the default Gateway with one native OpenClaw agent and one Codex agent. It exercises the authenticated Control UI protocol and installed approval router, proving that denial prevents lifecycle effects and Allow once permits exactly one installation. Unit tests own the exhaustive lifecycle tool and decision matrix; the live model is used only for installed native tool discovery, including Codex dynamic tools. OpenClaw 2026.9.5 is the compatibility target.
+This scenario runs the prepared Agent System package in the default Gateway with one native OpenClaw agent and one Codex agent. It exercises the authenticated Control UI protocol and installed approval router, proving that denial prevents lifecycle effects, approved Doctor runs checks without applying setup, and Allow once permits exactly one installation. Unit tests own the exhaustive lifecycle tool and decision matrix; the live model is used only for installed native tool discovery, including Codex dynamic tools. OpenClaw 2026.9.5 is the compatibility target.
 
 ## Setup
 
@@ -39,6 +39,9 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" app
 
 # should allow one installed lifecycle operation in the openclaw-hosted codex harness
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" approval-codex
+
+# should allow doctor checks without setup apply in the native openclaw harness
+node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" approval-openclaw doctor
 ```
 
 ## Cleanup

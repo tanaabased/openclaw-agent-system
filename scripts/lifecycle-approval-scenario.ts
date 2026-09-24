@@ -12,14 +12,20 @@ import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions-only acceptance scenario');
 const agentId = process.argv[2];
 assert.ok(agentId === 'approval-codex' || agentId === 'approval-openclaw');
+const operation = process.argv[3] ?? 'install';
+assert.ok(operation === 'doctor' || operation === 'install');
+if (operation === 'doctor') assert.equal(agentId, 'approval-openclaw');
 const temporaryDirectory = process.env.TMPDIR;
 assert.ok(temporaryDirectory);
 const checkFile = join(temporaryDirectory, 'agent-system-approval-check');
 const applyFile = join(temporaryDirectory, 'agent-system-approval-apply');
-const testCase = {
-  decision: agentId === 'approval-codex' ? ('allow-once' as const) : ('deny' as const),
-  toolName: 'agent_system_install' as const,
-};
+const testCase =
+  operation === 'doctor'
+    ? { decision: 'allow-once' as const, toolName: 'agent_system_doctor' as const }
+    : {
+        decision: agentId === 'approval-codex' ? ('allow-once' as const) : ('deny' as const),
+        toolName: 'agent_system_install' as const,
+      };
 const config = getRuntimeConfig({ pin: false });
 assert.equal(typeof config.gateway?.auth?.token, 'string', 'fixture must use token auth');
 const token = config.gateway!.auth!.token as string;
@@ -173,25 +179,29 @@ try {
       }),
     'chat completion',
   );
+  const checkRan = (await contents(checkFile)).includes('checked');
+  const applyRan = await stat(applyFile).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    },
+  );
   process.stdout.write(
     `${JSON.stringify({
       sessionKey,
       approvalEvents: approvalFor(sessionKey).length,
       uniqueApprovals: approvalIds.size,
-      checkRan: (await contents(checkFile)).includes('checked'),
-      applyRan: await stat(applyFile).then(
-        () => true,
-        (error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return false;
-          throw error;
-        },
-      ),
+      checkRan,
+      applyRan,
     })}\n`,
   );
   assert.equal(approvalFor(sessionKey).length, 1, 'unexpected lifecycle retry');
   if (testCase.decision === 'allow-once') {
-    assert.ok((await contents(checkFile)).includes('checked'), 'approved checks did not run');
-    await readFile(applyFile);
+    assert.ok(checkRan, 'approved checks did not run');
+    if (testCase.toolName === 'agent_system_doctor') {
+      assert.equal(applyRan, false, 'Doctor applied setup state');
+    } else await readFile(applyFile);
   } else await assertUntouched();
   process.stdout.write(`${agentId} ${testCase.toolName} ${testCase.decision}: verified\n`);
 } finally {

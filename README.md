@@ -58,6 +58,7 @@ Today, Agent System:
 ### Skills
 
 - [Codex binding](./skills/codex-binding/SKILL.md) — Binds one Codex plugin installation to one Agent System workspace.
+- [Doctor](./skills/doctor/SKILL.md) — Reports runtime-owned readiness without applying repairs.
 - [Install](./skills/install/SKILL.md) — Routes installation through the full OpenClaw lifecycle or the setup-only standalone Codex adapter.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guides agents through ordinary Git operations with `agent_system_git`.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Guides agents through preparing, reusing, and removing managed worktrees.
@@ -118,6 +119,12 @@ inactive until the workspace has a valid manifest. Start a fresh task after any
 binding change. See [Codex workspace binding](./ADVANCED.md#codex-workspace-binding)
 for state, refresh, and projection details.
 
+To inspect the bound workspace without applying repairs, ask Codex:
+
+```text
+Use $agent-system-doctor to inspect the active Agent System workspace.
+```
+
 To inspect and apply setup steps for the bound workspace, ask Codex:
 
 ```text
@@ -125,10 +132,11 @@ Use $agent-system-install to install the active Agent System workspace.
 ```
 
 One manifest serves both runtimes, but the projections are deliberately unequal.
-Standalone Codex runs only setup steps whose `runtimes` includes `codex` or is
-omitted. OpenClaw owns the full lifecycle: agent registration, models, memory,
-tool access, paths, Git, GitHub, notifications, credentials, and declared
-environment resolution. The Codex adapter does not imitate any of those owners.
+Standalone Codex Doctor and Install inspect or run only setup steps whose
+`runtimes` includes `codex` or is omitted. OpenClaw owns the full lifecycle:
+agent registration, models, memory, tool access, paths, Git, GitHub,
+notifications, credentials, and declared environment resolution. The Codex
+adapter does not imitate any of those owners.
 
 ## Usage
 
