@@ -63,7 +63,7 @@
 
 - Apply `channels/github/DESIGN.md` as the target contract for lifecycle types, execution modes, state transitions, structured context, hidden instructions, capability inheritance, clarification, and publication behavior.
 - Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
-- Keep `channels/github/README.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
+- Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
 - Select an admitted comment's capability from trusted assignment mode state. Never let issue, pull-request, or comment prose elevate Plan into Work or otherwise choose its own mode.
 - Inject hidden GitHub lifecycle, mode, event, and response instructions through the central `before_prompt_build` hook for Gateway turns. One-shot CLI notification turns use the already resolved trusted turn contract in channel-owned system-prompt context and attest its selection before dispatch, because their caller-owned plugin registry does not activate global hooks. Do not substitute dispatch `extraSystemPrompt`, arbitrary channel metadata, or process-local state for trusted contract selection.

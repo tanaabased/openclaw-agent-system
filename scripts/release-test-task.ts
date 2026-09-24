@@ -198,6 +198,7 @@ try {
     'bin/agent-system-worktree',
     'bin/git',
     'bin/gh',
+    'channels/github/ADVANCED.md',
     'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',

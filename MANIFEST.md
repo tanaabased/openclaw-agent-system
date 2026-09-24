@@ -165,7 +165,7 @@ support without authentication or inference. OpenClaw owns runtime health.
 Explicit unavailability produces a warning; unknown availability is not failure.
 Inspection errors remain distinct from known unsupported models or efforts.
 
-Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
+Complete work tiers enable [GitHub issue model routing](channels/github/ADVANCED.md#model-routing)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.
 
 For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
@@ -416,12 +416,12 @@ because it relies on that integration's managed tools.
 Components own their manifest schemas and document them beside their
 implementation:
 
-| Type    | ID                          | Manifest key           | Configuration                                                                  |
-| ------- | --------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
-| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)       |
-| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                  |
-| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)    |
-| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/README.md#configuration-reference) |
+| Type    | ID                          | Manifest key           | Configuration                                                                    |
+| ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
+| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
+| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
+| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
 
 A manifest section opts the workspace into its capability. Tool IDs use
 underscores; the channel ID uses hyphens.

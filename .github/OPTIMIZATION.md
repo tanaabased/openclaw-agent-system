@@ -7,7 +7,7 @@ or current repository evidence contradicts it; name that evidence in the finding
 
 ## Audit Requirements
 
-- Audit every session-facing inbound and outbound path against `channels/github/DESIGN.md` for target lifecycle and message boundaries and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` aligned with the implementation.
+- Audit every session-facing inbound and outbound path against `channels/github/DESIGN.md` for target lifecycle and message boundaries and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` and `channels/github/ADVANCED.md` aligned with the implementation.
 - Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
 - Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
 - Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.

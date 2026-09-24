@@ -49,7 +49,7 @@ or memory secret-provider source:
 
 Agent installation grants conversation-hook access when notifications are
 configured; no separate config command is needed. See
-[hook setup](./channels/github/README.md#required-conversation-hook).
+[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
 Memory credentials remain SecretRefs; linked installs resolve them through the
 built standalone provider.
 

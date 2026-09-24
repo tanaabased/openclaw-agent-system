@@ -117,7 +117,7 @@ Installation:
 - Rejects an agent id already bound to another workspace.
 - Reconciles manifest-selected Git, worktree, and GitHub tool grants while preserving unrelated grants.
 - Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
-- Grants and verifies [conversation-hook access](./channels/github/README.md#required-conversation-hook) when notifications are configured.
+- Grants and verifies [conversation-hook access](./channels/github/ADVANCED.md#required-conversation-hook) when notifications are configured.
 
 Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 
@@ -306,9 +306,9 @@ openclaw agent-system notifications
 
 The channel guide owns the complete command references:
 
-- [`openclaw agent-system notifications refresh`](./channels/github/README.md#openclaw-agent-system-notifications-refresh)
-- [`openclaw agent-system notifications status`](./channels/github/README.md#openclaw-agent-system-notifications-status)
-- [`openclaw agent-system notifications wait`](./channels/github/README.md#openclaw-agent-system-notifications-wait)
+- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh)
+- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status)
+- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait)
 
 ## `openclaw agent-system tool`
 

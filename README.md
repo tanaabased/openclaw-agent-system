@@ -100,7 +100,7 @@ openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 Both commands accept the declared capabilities, register the plugin, and enable
 it. When GitHub notifications are configured, `openclaw agent-system install`
 also grants and verifies the required conversation-hook access; see
-[hook setup](./channels/github/README.md#required-conversation-hook).
+[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
