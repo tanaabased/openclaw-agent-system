@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { bindCodexWorkspace, unbindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { createCodexSessionContext, projectCodexManifest } from '../agent/codex-context.ts';
+import {
+  createCodexSessionContext,
+  projectCodexManifest,
+  projectCodexModelRouting,
+} from '../agent/codex-context.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const temporaryRoots: string[] = [];
@@ -42,6 +46,7 @@ describe('agent/codex-context', () => {
     });
 
     assert.match(context, /supersedes every earlier Agent System context/u);
+    assert.doesNotMatch(context, /When creating a new Codex task with model routing/u);
     assert.deepEqual(envelope(context), {
       version: 1,
       source: 'startup',
@@ -114,11 +119,53 @@ describe('agent/codex-context', () => {
     }
   });
 
-  it('should advertise only standalone skills for configured integrations', () => {
+  it('should map openai model profiles and preserve unsupported providers', () => {
+    assert.deepEqual(
+      projectCodexModelRouting({
+        default: { model: 'openai/gpt-6-astra', effort: 'high' },
+        low: { model: 'openai/gpt-5.6-terra', effort: 'medium' },
+        medium: { model: 'openai/gpt-5.6-sol', effort: 'high' },
+        high: { model: 'anthropic/claude-opus', effort: 'xhigh' },
+      }),
+      {
+        default: {
+          status: 'mapped',
+          sourceModel: 'openai/gpt-6-astra',
+          model: 'gpt-6-astra',
+          thinking: 'high',
+        },
+        low: {
+          status: 'mapped',
+          sourceModel: 'openai/gpt-5.6-terra',
+          model: 'gpt-5.6-terra',
+          thinking: 'medium',
+        },
+        medium: {
+          status: 'mapped',
+          sourceModel: 'openai/gpt-5.6-sol',
+          model: 'gpt-5.6-sol',
+          thinking: 'high',
+        },
+        high: {
+          status: 'unsupported',
+          code: 'codex-model-provider-unsupported',
+          sourceModel: 'anthropic/claude-opus',
+          thinking: 'xhigh',
+          message: 'Standalone Codex model routing supports only openai provider references.',
+        },
+      },
+    );
+  });
+
+  it('should advertise only standalone capabilities for configured integrations', () => {
     const base: AgentManifest = { schemaVersion: 1, agent: { id: 'emori' } };
     const cases: Array<[Partial<AgentManifest>, string[]]> = [
       [{}, ['agent-system-doctor']],
       [{ setup: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
+      [
+        { models: { default: { model: 'openai/gpt-6-astra', effort: 'high' } } },
+        ['agent-system-doctor', 'agent-system-model-routing'],
+      ],
       [{ git: {} }, ['agent-system-doctor', 'agent-system-git-cli']],
       [{ github: {} }, ['agent-system-doctor', 'agent-system-github-cli']],
       [
@@ -156,6 +203,47 @@ describe('agent/codex-context', () => {
         capabilities,
       );
     }
+  });
+
+  it('should put model selection guidance after an active routing projection', async () => {
+    const root = await temporaryRoot();
+    const nodeExecutable = join(root, 'node');
+    const pluginData = join(root, 'data');
+    const pluginRoot = join(root, 'plugin');
+    const workspace = join(root, 'workspace');
+    await mkdir(workspace);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      [
+        'schema-version: 1',
+        'agent:',
+        '  id: emori',
+        'models:',
+        '  default: { model: openai/gpt-6-astra, effort: high }',
+        '  low: { model: openai/gpt-5.6-terra, effort: medium }',
+        '  medium: { model: openai/gpt-5.6-sol, effort: high }',
+        '  high: { model: openai/gpt-6-astra, effort: xhigh }',
+        '',
+      ].join('\n'),
+    );
+    await bindCodexWorkspace(pluginData, workspace);
+
+    const context = await createCodexSessionContext({
+      nodeExecutable,
+      pluginData,
+      pluginRoot,
+      source: 'startup',
+    });
+    const projection = JSON.stringify(envelope(context));
+    const guidance = 'When creating a new Codex task with model routing';
+
+    assert.match(projection, /"agent-system-model-routing"/u);
+    assert.match(projection, /"model":"gpt-5\.6-sol","thinking":"high"/u);
+    assert.equal(context.indexOf(guidance) > context.lastIndexOf('}'), true);
+    assert.match(context, /Honor explicit user model and effort overrides independently\./u);
+    assert.match(context, /controls reject or do not expose the model, effort, or combination/u);
+    assert.match(context, /report that result without substitution/u);
+    assert.match(context, /do not claim prompt text changed the runtime/u);
   });
 
   it('should refresh valid, invalid, and revoked context on every session source', async () => {
