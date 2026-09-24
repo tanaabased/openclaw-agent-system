@@ -19,6 +19,34 @@ function options(overrides: Partial<Parameters<typeof runCodexSetupProcess>[1]> 
 }
 
 describe('agent/codex-process-runner', () => {
+  for (const reason of ['timeout', 'signal'] as const) {
+    it(`should honor ${reason} after the parent exits with inherited pipes still open`, async function () {
+      this.timeout(5_000);
+      const controller = new AbortController();
+      const descendant =
+        'process.on("SIGTERM", () => {}); setTimeout(() => process.stdout.write("survived"), 1500)';
+      const abort = reason === 'signal' ? setTimeout(() => controller.abort(), 500) : undefined;
+      try {
+        const result = await runCodexSetupProcess(
+          [
+            process.execPath,
+            '-e',
+            `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], { stdio: ["ignore", 1, 2] }).unref(); process.exit(0)`,
+          ],
+          options({ signal: controller.signal, timeoutMs: reason === 'timeout' ? 500 : 3_000 }),
+        );
+
+        assert.equal(result.code, null);
+        assert.equal(result.signal, null, 'the direct parent must have exited before termination');
+        assert.equal(result.killed, true);
+        assert.equal(result.termination, reason);
+        assert.equal(result.stdout, '', 'the descendant must be killed before its final output');
+      } finally {
+        clearTimeout(abort);
+      }
+    });
+  }
+
   it('should preserve exit status while bounding captured output', async () => {
     const result = await runCodexSetupProcess(
       [process.execPath, '-e', 'process.stdout.write("abcdefghijkl"); process.stderr.write("xyz")'],
