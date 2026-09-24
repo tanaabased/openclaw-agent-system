@@ -349,7 +349,7 @@ setup:
 Lists must be nonempty and contain unique supported values. The invoking
 integration selects the runtime from trusted context. OpenClaw always selects
 `openclaw`, including for OpenClaw-hosted Codex; the
-[standalone Codex adapter](./CODEX.md#supported-context-and-operations) selects
+[standalone Codex adapter](./CODEX.md#skills) selects
 `codex`. Model selection, installed binaries, and manifest prose cannot override
 that choice.
 

@@ -400,6 +400,6 @@ approval route execute nothing. Nested lifecycle consumers cannot reload a
 different manifest under the approved operation.
 
 The native OpenClaw harness and OpenClaw-hosted Codex use this route; standalone
-Codex uses its [setup-only adapter](./CODEX.md#supported-context-and-operations).
+Codex uses its [setup-only adapter](./CODEX.md#skills).
 Control UI chat is the tested approval surface; other chat channels depend on
 their OpenClaw plugin approval support. See [approval validation](./DEVELOPMENT.md#lifecycle-approval).

@@ -23,7 +23,7 @@ OpenClaw grants one native chat approval.
 - A chat surface supporting OpenClaw plugin approval
 
 The native OpenClaw harness and OpenClaw-hosted Codex use this tool. Standalone
-Codex uses the [setup-only adapter](../../CODEX.md#supported-context-and-operations).
+Codex uses the [setup-only adapter](../../CODEX.md#skills).
 If an existing agent lacks the tool grant, run the operator CLI Install once.
 
 ## Configuration
