@@ -12,6 +12,9 @@ prompted them.
 
 ## Overview
 
+- **[Configuration reference](./ADVANCED.md#configuration-reference)** — All channel fields and defaults.
+- **[CLI reference](./ADVANCED.md#cli)** — Refresh intake, inspect state, and wait for lifecycle checkpoints.
+
 Choose the initial mode through `github.notifications.initial-mode`:
 
 | Mode     | Initial assignment behavior                                                              |
@@ -118,6 +121,25 @@ A failed baseline leaves intake inactive. Install also grants the required
 conversation hook; if the Gateway has not reloaded that permission, restart it.
 See [hook access](./ADVANCED.md#required-conversation-hook) for diagnostics and
 [the command reference](./ADVANCED.md#cli) to refresh intake or wait for a checkpoint.
+
+## CLI
+
+From the agent workspace:
+
+```sh
+# process eligible assignments and pending issue work now.
+openclaw agent-system notifications refresh
+
+# inspect saved state without advancing intake.
+openclaw agent-system notifications status --json
+
+# advance intake until this issue's worktree is ready.
+openclaw agent-system notifications wait \
+  --repository tanaabased/example --kind issue --number 12 \
+  --for worktree-ready --refresh --json
+```
+
+See the [CLI reference](./ADVANCED.md#cli) for item selectors, timeouts, and supported checkpoints.
 
 ## Model Routing
 

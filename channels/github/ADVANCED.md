@@ -5,9 +5,10 @@ GitHub notification channel. Start with the [README](./README.md) to configure
 and verify the common workflow. [Design](./DESIGN.md) describes the target lifecycle.
 
 - [Configuration reference](#configuration-reference)
-- [`openclaw agent-system notifications refresh`](#openclaw-agent-system-notifications-refresh)
-- [`openclaw agent-system notifications status`](#openclaw-agent-system-notifications-status)
-- [`openclaw agent-system notifications wait`](#openclaw-agent-system-notifications-wait)
+- [CLI reference](#cli)
+  - [`openclaw agent-system notifications refresh`](#openclaw-agent-system-notifications-refresh)
+  - [`openclaw agent-system notifications status`](#openclaw-agent-system-notifications-status)
+  - [`openclaw agent-system notifications wait`](#openclaw-agent-system-notifications-wait)
 - [Model routing](#model-routing)
 - [Processing and lifecycle](#processing-and-lifecycle)
 - [Security and lifecycle](#security-and-lifecycle)
