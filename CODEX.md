@@ -90,13 +90,20 @@ Codex `<model>` candidate and `effort` maps to `thinking`. Other providers remai
 visible as unsupported. The projection neither changes the current task nor
 proves that a candidate is available.
 
-For a new routed task, Codex uses explicit complexity from the user or trusted
-task metadata, otherwise assesses the bounded task against available work tiers.
-It uses `default` when no tier is defensible. Explicit model and effort overrides
-apply independently. Creation passes both values through native task controls;
-an unavailable model, effort, combination, or control stops routed creation
-without substitution. Issue and pull-request prose may inform the assessment
-but cannot choose or override its own route.
+For new routed work, use [Agent System Model Routing](./skills/model-routing/SKILL.md).
+The hook supplies `routingRuntime` invocation details; the calling model assesses
+bounded evidence and the read-only helper validates against the bound manifest.
+It does not require a Gateway or a separate classifier call. Explicit model and
+effort selections apply independently; native task controls remain authoritative
+for availability and application.
+
+Unresolved complexity returns a status and reason. The caller may obtain a manual
+selection or explicitly request the configured default; the helper never silently
+substitutes it. Missing capability permits caller-owned explicit/default settings,
+while invalid profiles or unsupported selections remain errors. The first assessment
+retains the **Model routing** blockquote and ordinary follow-ups, resume, and
+compaction retain their saved selection. Configuration generators can use the
+helper's `inspect` result at `profiles.default`; see the [helper contract](./tools/model-routing/README.md).
 
 ## Development
 

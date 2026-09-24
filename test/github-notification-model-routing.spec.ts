@@ -108,13 +108,9 @@ describe('channels/github/conversation/model-routing', () => {
     assert.match(modelRoutingGuidance(routing), /not proof of effective runtime/);
   });
 
-  it('should reject invented profiles, malformed output, unset tiers and contradictions of native complexity', () => {
+  it('should reject invented profiles, malformed output and contradictions of native complexity', () => {
     const routing = initializeModelRouting(routingProfiles)!;
-    for (const text of [
-      'not json',
-      '{"complexity":"unset","reason":"Unclear."}',
-      '{"complexity":"low","reason":"fine","model":"other"}',
-    ]) {
+    for (const text of ['not json', '{"complexity":"low","reason":"fine","model":"other"}']) {
       assert.throws(() => modelRoutingDecision(text, routing, context));
     }
     assert.throws(
@@ -123,7 +119,7 @@ describe('channels/github/conversation/model-routing', () => {
           ...context,
           routingMetadata: nativeRoutingMetadata([{ name: 'Complexity', value: 'High' }]),
         }),
-      /contradicted verified Complexity/,
+      /contradicts explicit or verified Complexity/,
     );
   });
 

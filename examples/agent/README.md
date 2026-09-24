@@ -1,6 +1,6 @@
 # Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, and value-free lifecycle logging without depending on live model behavior.
+This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
 
 ## Setup
 
@@ -50,6 +50,14 @@ done
 # should keep manifest values out of lifecycle and gateway logs
 if grep -Fq 'leia-initial-manifest-value' "$TMPDIR/agent-lifecycle.log"; then exit 1; fi
 if grep -Fq 'leia-initial-manifest-value' "$gateway_log_path"; then exit 1; fi
+
+# should inspect and resolve routing through the active agent without changing its session selection
+openclaw agent \
+  --agent data \
+  --session-key agent:data:agent-system-routing-leia \
+  --message-file "$GITHUB_WORKSPACE/examples/agent/routing.md" \
+  --timeout 120 \
+  | grep -F 'routing-default-ready'
 
 # should match the complete strict mock exchange
 openclaw-aimock evidence \

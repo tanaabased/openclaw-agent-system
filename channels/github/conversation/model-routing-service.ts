@@ -5,6 +5,7 @@ import {
   resolveSessionModelRef,
 } from 'openclaw/plugin-sdk/model-session-runtime';
 
+import { selectRoutingOverrides } from '../../../agent/model-routing.ts';
 import { configuredAgentValue } from '../../../core/configured-agents.ts';
 import type { GitHubNotificationItemContext } from '../provider/work-event-types.ts';
 import type { ResolvedNotificationRoute } from '../routing/routing.ts';
@@ -210,12 +211,16 @@ export default class ModelRoutingService {
           current.thinkingLevel && current.thinkingLevel !== routing.applied?.effort,
         );
         strict = humanModel || humanEffort || current.modelSelectionLocked === true;
-        selected = {
-          model: humanModel ? currentRef : routing.decision!.model,
-          effort: humanEffort
-            ? current.thinkingLevel!
-            : (routing.applied?.effort ?? routing.decision!.effort),
-        };
+        selected = selectRoutingOverrides(
+          {
+            model: routing.decision!.model,
+            effort: routing.applied?.effort ?? routing.decision!.effort,
+          },
+          {
+            ...(humanModel ? { model: currentRef } : {}),
+            ...(humanEffort ? { effort: current.thinkingLevel! } : {}),
+          },
+        );
         const runtime = this.#validate(config, route.agentId, selected);
         if (
           !humanModel &&

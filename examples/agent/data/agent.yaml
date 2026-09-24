@@ -5,3 +5,8 @@ agent:
   name: Data
   description: leia-initial-manifest-value
   avatar: avatar.png
+
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium

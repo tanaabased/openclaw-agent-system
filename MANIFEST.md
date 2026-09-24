@@ -141,6 +141,11 @@ Each profile requires both fields:
 | `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
 | `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
 
+Model and effort values come from these profiles; the router has no built-in tier
+mapping or parser-supplied effort default. The shared [routing helper](./tools/model-routing/README.md)
+validates assessments and independent explicit selections. Its `inspect` result
+exposes `profiles.default` for configuration generators.
+
 Model refs cannot select an authentication profile. Runtime and credential
 configuration remain outside the manifest.
 

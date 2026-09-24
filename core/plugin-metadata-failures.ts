@@ -314,6 +314,7 @@ export default function pluginMetadataFailures(
     containsExactly(manifest.contracts?.tools, [
       'agent_system_install',
       'agent_system_doctor',
+      'agent_system_model_routing',
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',

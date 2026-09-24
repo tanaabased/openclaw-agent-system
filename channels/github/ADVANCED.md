@@ -270,9 +270,12 @@ missing or unavailable, the visible fenced YAML capsule with
 `schema: tanaab/task-metadata/v2`, `mode: fallback`, and `fallback.complexity`
 can supply it. Missing, invalid, conflicting, and unavailable values remain
 distinct evidence for the model's labeled content assessment. **Work size**
-informs scope and decomposition, never the model tier. An unresolvable assessment,
-unsupported profile, or failed classifier blocks that issue for retry; it does
-not select an expensive default or a fallback chain. Automatic efforts are
+informs scope and decomposition, never the model tier. An unresolved complexity assessment retains its status and reason and continues
+using the conversation's frozen default profile. The private routing note explains
+this choice; the operator can select a model and effort manually. Unsupported
+profiles, malformed assessments, and failed classifiers still block that issue for
+retry without substitution. Intake uses the [shared resolver](../../tools/model-routing/README.md)
+while retaining its own bounded classifier and conversation lifecycle. Automatic efforts are
 `medium`, `high`, or justified `xhigh`.
 
 For complete issue routing, `install` additively grants Agent System permission

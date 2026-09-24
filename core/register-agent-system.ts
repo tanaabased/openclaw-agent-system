@@ -20,6 +20,7 @@ import AgentInstallService from '../agent/install-service.ts';
 import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
 import createInstallTool from '../tools/install/tool.ts';
 import createDoctorTool from '../tools/doctor/tool.ts';
+import createModelRoutingTool from '../tools/model-routing/tool.ts';
 import { registerLifecycleApprovalHook } from './lifecycle-approval-hook.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
@@ -257,6 +258,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     notificationRuntime.replyTool,
     createInstallTool((): AgentLifecycleApproval => lifecycleApproval),
     createDoctorTool((): AgentLifecycleApproval => lifecycleApproval),
+    createModelRoutingTool({
+      ...lifecycleManifestService,
+      loadForCommandDirectory(...args) {
+        if (!manifestServiceRef.current)
+          throw new Error('Agent System manifest service is unavailable.');
+        return manifestServiceRef.current.loadForCommandDirectory(...args);
+      },
+    }),
   ]);
   const setupLifecycle = new SetupLifecycleService({
     run: (command, target, signal) => setupCommands.run(command, target, signal),

@@ -103,6 +103,14 @@ describe('channels/github/conversation/conversation-state-store', () => {
       currentUid: process.getuid?.(),
     });
     assert.deepEqual(await restarted.read(routed.agentId, routed.conversationId), routed);
+    routed.conversation!.modelRouting!.decision = {
+      ...profile,
+      complexity: 'unset',
+      source: 'unset',
+      reason: 'No defensible tier; caller selected default.',
+    };
+    await store.write(routed);
+    assert.deepEqual(await restarted.read(routed.agentId, routed.conversationId), routed);
     const corrupt = JSON.parse(await readFile(recordPath(routed), 'utf8'));
     corrupt.conversation.modelRouting.decision.model = 'openai/unconfigured';
     await writeFile(recordPath(routed), JSON.stringify(corrupt));
