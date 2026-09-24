@@ -46,17 +46,22 @@ the declared credential remains a SecretRef and never belongs in
 
 ### Codex
 
-Install the checkout once through the pinned development dependency:
+From a checkout with locked dependencies installed, build and install through
+the pinned development dependency:
 
 ```sh
+bun run build
 ./node_modules/.bin/codex-tools install . --dry-run --json
 ./node_modules/.bin/codex-tools install .
 ```
 
-After changing `.codex-plugin/`, `assets/`, `package.json`, or `skills/`, update
-the installed cache and verify that it converged:
+After changing the Codex runtime or its imports, rebuild before syncing. Changes
+to `.codex-plugin/`, `assets/`, `hooks/`, `package.json`, or `skills/` need only
+the cache sync and check:
 
 ```sh
+# rebuild when codex runtime source changes.
+bun run build
 bun run codex:sync
 bun run codex:check
 ```
