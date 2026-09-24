@@ -121,8 +121,8 @@ export default class GitWorktreeLayoutService {
     const localRepositories = await Promise.all(
       Object.values(layout.localRepositories).map((path) => this.#localRepositoryStatus(path)),
     );
-    if (localRepositories.some((status) => status !== 'ready')) {
-      throw new Error('Git worktree local repository overrides are unavailable or unsafe.');
+    if (localRepositories.some((status) => status === 'unsafe')) {
+      throw new Error('Git worktree local repository overrides are unsafe.');
     }
     if (
       layout.ignoreEntries.length > 0 &&
@@ -151,7 +151,7 @@ export default class GitWorktreeLayoutService {
       inspection.worktreeRoot !== 'ready' ||
       !inspection.gitignored ||
       inspection.tracked ||
-      Object.values(inspection.localRepositories).some((status) => status !== 'ready')
+      Object.values(inspection.localRepositories).some((status) => status === 'unsafe')
     ) {
       throw new Error('Git worktree layout did not match the manifest after installation.');
     }

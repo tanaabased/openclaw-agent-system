@@ -109,7 +109,12 @@ function observeContention(notify: () => void): typeof acquirePrivateStateFileLo
   };
 }
 
-async function fixture(localRepositories: Record<string, string> = {}) {
+async function fixture(
+  localRepositories: Record<string, string> = {},
+  localRepositoryStatuses: Record<string, 'missing' | 'ready' | 'unsafe'> = Object.fromEntries(
+    Object.keys(localRepositories).map((id) => [id, 'ready' as const]),
+  ),
+) {
   const workspaceDir = await realpath(
     await mkdtemp(join(tmpdir(), 'agent-system-worktree-service-')),
   );
@@ -134,9 +139,7 @@ async function fixture(localRepositories: Record<string, string> = {}) {
               workspaceDir,
               worktreeRoot,
             },
-            localRepositories: Object.fromEntries(
-              Object.keys(localRepositories).map((id) => [id, 'ready' as const]),
-            ),
+            localRepositories: localRepositoryStatuses,
             repositoryRoot: 'ready' as const,
             tracked: false,
             worktreeRoot: 'ready' as const,
@@ -155,6 +158,25 @@ async function fixture(localRepositories: Record<string, string> = {}) {
 }
 
 describe('tools/git/worktree-service', () => {
+  it('should reject preparation for a missing local override', async () => {
+    const { context, service, workspaceDir } = await fixture(
+      { missing: '/missing/local/repository' },
+      { missing: 'missing' },
+    );
+    try {
+      await assert.rejects(
+        service.prepare(context, {
+          baseRef: 'origin/main',
+          repositoryId: 'missing',
+          workId: 'first',
+        }),
+        /worktree roots are not installed/u,
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
   it('should serialize first clone and reuse across services while another repository proceeds', async () => {
     const { context, createService, git, service, workspaceDir } = await fixture();
     const entered = Promise.withResolvers<void>();

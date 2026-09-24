@@ -1,7 +1,8 @@
 # Setup Example
 
-Tests public setup installation, agent-bound GitHub identity and SSH cloning,
-check/apply/recheck, unchanged reruns, unchecked steps, Doctor, and skipping setup.
+Tests public setup installation, agent-bound GitHub identity and SSH cloning into
+a declared external checkout, check/apply/recheck, unchanged reruns, unchecked
+steps, Doctor, and skipping setup.
 It also covers runtime filtering, partial failures, retries, nonconvergence, timeouts, and granular
 Doctor findings. It uses direct assertions against the packed plugin, with no
 Gateway or model.
@@ -36,8 +37,14 @@ sed \
 # should validate setup without executing its commands
 cd "$TMPDIR/setup-tanaabot"
 openclaw agent-system validate --json | jq -e '.checks | any(.component == "setup" and .status == "valid")'
-test ! -e repository
+test ! -e "$HOME/tanaab/setup-big-test-bucket"
 test ! -e unchecked-runs
+
+# should report the missing declared checkout as drift without running setup
+cd "$TMPDIR/setup-tanaabot"
+if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
+printf '%s\n' "$output" | jq -e '.findings | any(.component == "git" and .code == "git-worktree-local-repository-missing" and .status == "drift")'
+test ! -e "$HOME/tanaab/setup-big-test-bucket"
 
 # should install prerequisites before cloning with the declared agent identity
 cd "$TMPDIR/setup-tanaabot"
@@ -48,9 +55,12 @@ printf '%s\n' "$output" | jq -e '.outcomes | any(.stepId == "codex-only" and .co
 test ! -e forbidden-codex-check
 test ! -e forbidden-codex-apply
 test -f shared-ready
-test -d repository/.git
+test -d "$HOME/tanaab/setup-big-test-bucket/.git"
 grep -Fx 'tanaabot' github-login
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' git-identity
+cd "$HOME/tanaab/setup-big-test-bucket"
+openclaw agent-system tool git --agent setup-tanaabot -- var GIT_AUTHOR_IDENT | grep -F 'Tanaabot <tanaabot@tanaab.dev>'
+cd "$TMPDIR/setup-tanaabot"
 grep -Fx verified "$TMPDIR/setup-host-descendant/verified"
 test "$(wc -l < checked-runs | tr -d ' ')" = 1
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 1
@@ -63,7 +73,7 @@ test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
 
 # should inspect setup without running unchecked applies or requiring consent
 cd "$TMPDIR/setup-tanaabot"
-openclaw as doctor --json | jq -e '.findings | any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual") and any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "healthy")'
+openclaw as doctor --json | jq -e '.status == "healthy" and (.findings | any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual") and any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "healthy"))'
 test ! -e forbidden-codex-check
 test ! -e forbidden-codex-apply
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2

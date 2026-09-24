@@ -12,6 +12,10 @@ environment:
     - GH_TOKEN_TANAABOT
 
 git:
+  worktrees:
+    repositories:
+      local:
+        big-test-bucket: ~/tanaab/setup-big-test-bucket
   ssh:
     private-keys:
       path: ~/.ssh/big-test-bucket-ssh
@@ -36,17 +40,20 @@ setup:
     - id: checkout
       runtimes: [openclaw]
       check: |
-        test -d repository/.git
+        test -d "$HOME/tanaab/setup-big-test-bucket/.git"
         test -f checked-runs
         gh api user --jq .login
       apply: |
         test -z "$GH_TOKEN_TANAABOT"
         test -z "$GH_TOKEN"
+        test -z "$GIT_SSH_COMMAND"
+        test -z "$SSH_AUTH_SOCK"
         gh api user --jq .login > github-login
-        if ! test -d repository/.git; then
-          git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git repository
+        if ! test -d "$HOME/tanaab/setup-big-test-bucket/.git"; then
+          mkdir -p "$HOME/tanaab"
+          git clone --depth 1 git@github.com:tanaabased/big-test-bucket.git "$HOME/tanaab/setup-big-test-bucket"
         fi
-        (cd repository && git var GIT_AUTHOR_IDENT) > git-identity
+        (cd "$HOME/tanaab/setup-big-test-bucket" && git var GIT_AUTHOR_IDENT) > git-identity
         sh host-descendant.sh
         printf 'checked\n' >> checked-runs
     - id: repeatable

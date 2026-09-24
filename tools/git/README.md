@@ -163,14 +163,14 @@ operation.
 
 ### `git.worktrees`
 
-| Field                | Type                                   | Required | Default                      |
-| -------------------- | -------------------------------------- | -------- | ---------------------------- |
-| `root`               | path                                   | no       | `.agent-system/worktrees`    |
-| `repositories.root`  | path                                   | no       | `.agent-system/repositories` |
-| `repositories.local` | repository-id-to-existing-path mapping | no       | none                         |
+| Field                | Type                                        | Required | Default                      |
+| -------------------- | ------------------------------------------- | -------- | ---------------------------- |
+| `root`               | path                                        | no       | `.agent-system/worktrees`    |
+| `repositories.root`  | path                                        | no       | `.agent-system/repositories` |
+| `repositories.local` | repository-id-to-authoritative-path mapping | no       | none                         |
 
 An empty object enables workspace-local managed repositories and worktrees.
-Custom roots and existing local repository overrides are optional:
+Custom roots and local repository overrides are optional:
 
 ```yaml
 git:
@@ -185,9 +185,11 @@ git:
 Managed repositories are bare clones selected by a stable repository id. Agent
 System accepts supported network remotes but rejects local or credential-bearing
 clone URLs. Ordinary worktree preparation pins a repository id to its first
-source; a declared local override is authoritative and fails closed when
-unavailable or unsafe. Use a remote base such as `origin/main` to start from the
-latest fetched branch.
+source. A declared local override is authoritative: `install` preserves a
+missing path as drift so ordered setup can create it, while non-repositories,
+symlinks, and other unsafe paths fail closed. Managed worktree preparation
+still requires every declared local override to be a ready repository. Use a
+remote base such as `origin/main` to start from the latest fetched branch.
 
 Preparation holds a repository-specific cross-process lock through clone,
 origin reconciliation, fetch, and worktree creation, then releases it before
