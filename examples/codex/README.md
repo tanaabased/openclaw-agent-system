@@ -63,6 +63,10 @@ node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
 # should inspect and install only setup applicable to standalone codex
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
 inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
 printf '%s\n' "$inspection" \
   | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
