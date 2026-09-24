@@ -33,6 +33,16 @@ describe('agent/codex-process-runner', () => {
     assert.equal(result.stderrTruncatedBytes, 1);
   });
 
+  it('should tolerate a child closing stdin before input is consumed', async () => {
+    const result = await runCodexSetupProcess(
+      [process.execPath, '-e', 'process.exit(0)'],
+      options({ input: 'x'.repeat(1_048_576) }),
+    );
+
+    assert.equal(result.code, 0);
+    assert.equal(result.termination, 'exit');
+  });
+
   it('should terminate a timed out process group', async () => {
     const result = await runCodexSetupProcess(
       [process.execPath, '-e', 'setInterval(() => {}, 1000)'],

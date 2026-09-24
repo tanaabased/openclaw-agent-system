@@ -78,6 +78,7 @@ const runCodexSetupProcess: SetupProcessRunner = async (argv, options) =>
 
     child.stdout.on('data', (chunk: Buffer) => capture(stdout, chunk, options, combined));
     child.stderr.on('data', (chunk: Buffer) => capture(stderr, chunk, options, combined));
+    child.stdin.on('error', () => undefined);
     child.on('error', (error) => {
       if (settled) return;
       settled = true;

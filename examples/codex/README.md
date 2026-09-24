@@ -63,9 +63,11 @@ node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
 # should inspect and install only setup applicable to standalone codex
-node "$runtime" setup inspect --plugin-data "$plugin_data" \
+inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
+printf '%s\n' "$inspection" \
   | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
-node "$runtime" setup install --plugin-data "$plugin_data" \
+installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
+printf '%s\n' "$installed" \
   | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
 test -f "$root/workspace/.codex-shared"
 test -f "$root/workspace/.codex-only"
