@@ -1,0 +1,9 @@
+interface:
+  display_name: 'Agent System Doctor'
+  short_description: 'Inspect runtime-owned Agent System readiness'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-doctor to inspect the active Agent System workspace through its owning runtime without applying repairs.'
+policy:
+  allow_implicit_invocation: true

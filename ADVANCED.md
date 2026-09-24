@@ -100,16 +100,18 @@ For a valid manifest, Codex receives only supported non-secret values:
 - literal agent identity fields
 - supported Git identity, extension, policy, and worktree metadata
 - supported GitHub host, username, configuration, and policy metadata
+- `agent-system-doctor` for every active binding
 - `agent-system-install` when setup is configured
 - `agent-system-git-cli` and `agent-system-github-cli` when their respective sections are configured
 
 The hook never resolves dotenv files, 1Password references, credentials, signing
-keys, or other declared environment values. The packaged Install skill may run
-the bound manifest's setup steps through a trusted standalone Codex adapter, but
-it does not run Doctor or reconcile agent registration, models, memory, tool
-access, paths, Git, GitHub, notifications, OpenClaw configuration, or managed
-credentials. Those remain OpenClaw-owned workflows. Other hosts use their normal
-Git and GitHub operations; binding supplies context, not managed tool authority.
+keys, or other declared environment values. The packaged Doctor skill may inspect
+the binding, manifest, and Codex-applicable setup checks, while Install may run
+those setup steps through the same trusted standalone adapter. Neither inspects
+or reconciles agent registration, models, memory, tool access, paths, Git,
+GitHub, notifications, OpenClaw configuration, or managed credentials. Those
+remain OpenClaw-owned workflows. Other hosts use their normal Git and GitHub
+operations; binding supplies context, not managed tool authority.
 
 ## Configuration
 

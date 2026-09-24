@@ -98,7 +98,7 @@ describe('agent/codex-context', () => {
       },
       git: { name: 'Emori Git', policy: { forcePush: 'deny' } },
       github: { host: 'github.com', username: 'emoriwan', policy: { releases: 'deny' } },
-      capabilities: ['agent-system-git-cli', 'agent-system-github-cli'],
+      capabilities: ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
     });
     for (const secret of [
       'AGENT_NAME_SECRET',
@@ -117,14 +117,22 @@ describe('agent/codex-context', () => {
   it('should advertise only standalone skills for configured integrations', () => {
     const base: AgentManifest = { schemaVersion: 1, agent: { id: 'emori' } };
     const cases: Array<[Partial<AgentManifest>, string[]]> = [
-      [{}, []],
-      [{ setup: { steps: [] } }, ['agent-system-install']],
-      [{ git: {} }, ['agent-system-git-cli']],
-      [{ github: {} }, ['agent-system-github-cli']],
-      [{ git: {}, github: {} }, ['agent-system-git-cli', 'agent-system-github-cli']],
+      [{}, ['agent-system-doctor']],
+      [{ setup: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
+      [{ git: {} }, ['agent-system-doctor', 'agent-system-git-cli']],
+      [{ github: {} }, ['agent-system-doctor', 'agent-system-github-cli']],
+      [
+        { git: {}, github: {} },
+        ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
+      ],
       [
         { setup: { steps: [] }, git: {}, github: {} },
-        ['agent-system-install', 'agent-system-git-cli', 'agent-system-github-cli'],
+        [
+          'agent-system-doctor',
+          'agent-system-install',
+          'agent-system-git-cli',
+          'agent-system-github-cli',
+        ],
       ],
       [
         {
@@ -138,7 +146,7 @@ describe('agent/codex-context', () => {
             },
           },
         },
-        ['agent-system-git-cli', 'agent-system-github-cli'],
+        ['agent-system-doctor', 'agent-system-git-cli', 'agent-system-github-cli'],
       ],
     ];
 

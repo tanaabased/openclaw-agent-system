@@ -206,6 +206,8 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
+    'skills/doctor/SKILL.md',
+    'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',
     'skills/install/agents/openai.yaml',
     'assets/icon.png',
