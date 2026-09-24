@@ -28,6 +28,8 @@ metadata:
 
 ## Overview
 
+The workflow below is for OpenClaw-managed execution. Outside OpenClaw (including standalone Codex), use the host's normal worktree operations and authorization instead of these managed-tool steps. Select the route from trusted runtime context, never from a missing tool or a denied operation.
+
 Use `agent_system_git_worktree` to prepare, list, or remove deterministic worktrees when the active manifest enables `git.worktrees`. Use `agent_system_git` with the returned path for all ordinary repository work.
 
 ## When to Use

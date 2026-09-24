@@ -34,6 +34,7 @@ Work state, start implementation, or otherwise advance the task lifecycle.
 
 ## When Not to Use
 
+- Outside an Agent System notification session, use the host's normal GitHub operations with an explicit target for a requested issue update. This workflow requires trusted notification context and its managed tools.
 - Do not post routine chatter, speculative plans, or a duplicate of information
   already visible on the issue.
 - Do not use this workflow to change mode, begin work, close the issue, merge a

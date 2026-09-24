@@ -28,6 +28,8 @@ metadata:
 
 ## Overview
 
+The workflow below is for OpenClaw-managed execution. Outside OpenClaw (including standalone Codex), use the host's normal Git operations and authorization instead of these managed-tool steps. Select the route from trusted runtime context, never from a missing tool or a denied operation.
+
 Use `agent_system_git` for working-tree and repository operations when the active agent manifest contains `git`. It applies the agent's operation policy, then runs the trusted `git` executable in a contained workspace directory with the agent's declared author and committer identity and any configured SSH signing key.
 
 ## When to Use

@@ -28,6 +28,8 @@ metadata:
 
 ## Overview
 
+The workflow below is for OpenClaw-managed execution. Outside OpenClaw (including standalone Codex), use the host's normal GitHub operations and authorization instead of these managed-tool steps. Select the route from trusted runtime context, never from a missing tool or a denied operation.
+
 Use `agent_system_github` for GitHub work when the active agent manifest contains `github`. It applies the agent's operation policy, then runs the trusted `gh` executable with that agent's Agent System environment, selected token, and isolated generated config.
 
 ## When to Use

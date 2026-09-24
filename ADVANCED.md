@@ -100,12 +100,14 @@ For a valid manifest, Codex receives only supported non-secret values:
 - literal agent identity fields
 - supported Git identity, extension, policy, and worktree metadata
 - supported GitHub host, username, configuration, and policy metadata
-- the Agent System capabilities applicable to those declarations
+- `agent-system-git-cli` and `agent-system-github-cli` when their respective sections are configured
 
 The hook never resolves dotenv files, 1Password references, credentials, signing
 keys, or other declared environment values. It also does not run Agent System
 installation, setup, Doctor, model routing, channels, or OpenClaw model-facing
-tools. Those remain explicit OpenClaw-owned workflows.
+tools. Those remain explicit OpenClaw-owned workflows. Other hosts use their
+normal Git and GitHub operations; binding supplies context, not managed tool
+authority.
 
 ## Configuration
 
