@@ -40,6 +40,7 @@ const packageMetadata: PackageMetadata = {
     'API.md',
     'ADVANCED.md',
     'DEVELOPMENT.md',
+    'CODEX.md',
     'CHANGELOG.md',
     'LICENSE',
   ],
@@ -315,6 +316,7 @@ describe('core/plugin-metadata-failures', () => {
                 'API.md',
                 'ADVANCED.md',
                 'DEVELOPMENT.md',
+                'CODEX.md',
               ].includes(path),
           ),
         },
@@ -328,6 +330,7 @@ describe('core/plugin-metadata-failures', () => {
         { code: 'package-file', message: 'package files must include API.md' },
         { code: 'package-file', message: 'package files must include ADVANCED.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
+        { code: 'package-file', message: 'package files must include CODEX.md' },
       ],
     );
   });

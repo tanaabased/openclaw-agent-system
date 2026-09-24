@@ -173,6 +173,7 @@ const requiredPackageFiles = [
   'API.md',
   'ADVANCED.md',
   'DEVELOPMENT.md',
+  'CODEX.md',
   'CHANGELOG.md',
   'LICENSE',
 ];

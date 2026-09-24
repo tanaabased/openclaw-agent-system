@@ -36,11 +36,12 @@
 - Treat the locations below as ownership boundaries, not a checklist of files to update. Keep aligned documents unchanged and avoid repeating explanations across them.
 - Keep `README.md` focused on installation, the common manifest workflow, and first verification.
 - Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
+- Keep standalone Codex installation, binding, context, setup, model routing, and development guidance in `CODEX.md`; use short contextual links elsewhere. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.
 - Keep the target GitHub notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior in `channels/github/DESIGN.md`.
 - Keep reusable human-visible GitHub notification components and styling in `channels/github/PRESENTATION.md`; do not put lifecycle or feature behavior there.
 - Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
 - Put each first-party channel's common configuration, routing, lifecycle, and security guide in `channels/<provider>/README.md`; keep focused companion guides beside it when a distinct channel-owned contract would overload the common path.
-- Put source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
+- Put OpenClaw source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
 - Keep explanatory comments inside documentation code blocks fully lowercase. Preserve required casing only in commands, identifiers, environment-variable names, and expected values.
 - Treat `CHANGELOG.md` as the record of implemented changes.
 
@@ -51,6 +52,7 @@
 - Use `agent-system` as the public namespace for Canon-shaped skills in this repository and `openclaw-plugin` as their container. Pass `--namespace agent-system --container openclaw-plugin` explicitly to Canon Skill Author scripts. Name each folder for its unprefixed kebab-case surface (`skills/<surface>/`), use `agent-system-<surface>` for frontmatter names and prompt invocations, and use `Agent System <Surface>` for OpenAI display names.
 - Give every skill a surface-specific `metadata.openclaw.emoji` and HTTPS homepage in `SKILL.md`; keep OpenClaw metadata there instead of duplicating it in `agents/openai.yaml`.
 - Give every skill complete OpenAI interface metadata in `agents/openai.yaml`, including a display name, short description, default prompt, brand color, and valid local small and large icon assets that reflect the owned surface.
+- Keep skill icons transparent SVGs in `#00c88a`, with consistent visual weight and padding. Use capability or provider marks rather than Tanaab wordmarks or framed tiles.
 - Keep `package.json#codexTools.managedPaths` limited to the installed Codex payload. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
 - Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
 - Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.

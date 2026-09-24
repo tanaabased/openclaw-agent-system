@@ -72,9 +72,8 @@ comment:
 > _[@pirog](https://github.com/pirog) mentioned Notification Data on [tanaabased/example#7](https://github.com/tanaabased/example/issues/7#issuecomment-123)._
 ```
 
-Use the agent's configured emoji and fall back to `🤖` when it has none. Keep
-the original GitHub comment as the raw inbound body even though the visible and
-model-facing message uses this presentation.
+Use the agent's configured emoji and fall back to `🤖` when it has none.
+[Lifecycle rules](./DESIGN.md#lifecycle-rules) govern raw comment preservation.
 
 ## Pull Request Opened Card
 
@@ -86,12 +85,9 @@ model-facing message uses this presentation.
 - **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.
 ```
 
-This card is the inbound message for the registered `pull-request-opened` model
-turn after managed delivery records its pull request. The host-owned lifecycle
-retains both the card and its brief private response in the issue-owned session.
-The deterministic GitHub handoff uses the same compact fact-list grammar on the
-issue. Later comment responses use the ordinary direct-message flow and mirror
-the final answer back to their exact source.
+Use this card for the private `pull-request-opened` turn and the deterministic
+GitHub handoff. See [lifecycle rules](./DESIGN.md#lifecycle-rules) for scheduling,
+session ownership, and publication.
 
 ## Implementation Card
 
@@ -164,10 +160,9 @@ naturally rather than imposing a fixed mention position.
 
 ## Ordinary Comment Response
 
-An admitted issue or delivery pull-request comment has one concise final answer.
-The same Markdown remains visible in the private session and is published back
-to the exact source after deterministic validation and verified attribution. Do
-not wrap it in a `To GitHub` component or create a second model-authored answer.
+Use one concise final answer for an ordinary admitted comment, without a
+`To GitHub` wrapper or a second model-authored answer. The
+[turn contract](./DESIGN.md#turn-contract) owns its private/public mirroring.
 
 ## Private and Public Composition
 

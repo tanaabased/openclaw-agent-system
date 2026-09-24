@@ -62,6 +62,18 @@ durable session recording.
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
+`github.token` names an environment variable and never accepts a literal token.
+Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
+for the authenticated branch push. The matching public key must already belong
+to the configured GitHub account, or `github.ssh-keys` can declare it for
+`install` to reconcile. SSH configuration also keeps private-repository
+worktree preparation free of credential-bearing clone URLs.
+
+Run `openclaw agent-system install` after changing the configuration. Installation
+establishes the first safe assignment baseline; only assignments observed after
+that baseline create local work. A baseline failure reports
+`github-notification-baseline-failed` and leaves intake inactive.
+
 ## Model routing
 
 Declaring all four [model profiles](../../ADVANCED.md#models) enables routing for
@@ -155,24 +167,24 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
+| Field under `github.notifications` | Required | Default                 | Values                                   |
+| ---------------------------------- | -------- | ----------------------- | ---------------------------------------- |
+| `assignment-types`                 | no       | `[issue, pull-request]` | One or both kinds, without duplicates    |
+| `approved-actors`                  | yes      | none                    | Nonempty list of pinned user identities  |
+| `allowed-repository-owners`        | no       | any owner               | Nonempty list of pinned owner identities |
+| `initial-mode`                     | no       | `work`                  | `guided` or `work`                       |
+| `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`          |
+| `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
+
 ### `github.notifications.assignment-types`
 
-| Type        | Required | Default                    |
-| ----------- | -------- | -------------------------- |
-| string list | no       | `issue` and `pull-request` |
-
-Selects the assignment kinds the channel discovers. The list must contain one
-or both supported values without duplicates.
+Selects the assignment kinds the channel discovers. Direct pull-request
+assignments have the [limitations below](#current-limitations).
 
 ### `github.notifications.approved-actors`
 
-| Type                 | Required | Default |
-| -------------------- | -------- | ------- |
-| GitHub identity list | yes      | none    |
-
-Lists the GitHub users allowed to assign work to the notification agent. This
-may include the agent's own verified identity when self-assignment is intended.
-At least one identity is required.
+Lists the GitHub users allowed to assign work, including the agent's own
+verified identity when self-assignment is intended.
 
 | Field            | Type    | Required | Behavior                                                   |
 | ---------------- | ------- | -------- | ---------------------------------------------------------- |
@@ -229,20 +241,11 @@ block work, or add GitHub comments. This optional access does not replace the
 
 ### `github.notifications.allowed-repository-owners`
 
-| Type                 | Required | Default   |
-| -------------------- | -------- | --------- |
-| GitHub identity list | no       | any owner |
-
 Filters assignments by repository owner using the same `login` and `node-id`
-identity shape as `approved-actors`. At least one identity is required when the
-field is present, and node IDs must be unique within the list. The filter does
-not grant repository access or approve the owner's members.
+identity shape as `approved-actors`, with unique node IDs. The filter does not
+grant repository access or approve the owner's members.
 
 ### `github.notifications.initial-mode`
-
-| Type   | Required | Default |
-| ------ | -------- | ------- |
-| string | no       | `work`  |
 
 Selects `guided` or `work` for newly accepted issues. Guided prepares the
 session and waits for direction; Work schedules the initial implementation
@@ -250,17 +253,9 @@ turn.
 
 ### `github.notifications.interval-minutes`
 
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | no       | `5`     |
-
-Sets the polling interval from `1` through `1440` minutes.
+Sets how often the Gateway polls for assignments and comments.
 
 ### `github.notifications.max-concurrent-issues`
-
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | no       | `2`     |
 
 Limits concurrent issue work for one agent. The durable queue is shared by the
 Gateway and one-shot CLI refreshes, so a second process cannot evade the limit.
@@ -268,18 +263,6 @@ An issue keeps its slot across planning and automatic implementation. Delivery,
 an explicit wait for follow-up, or a retryable failure releases the slot; failed
 work moves to the back of the queue. Pull-request assignment intake is not
 counted against this issue-work limit.
-
-`github.token` names an environment variable and never accepts a literal token.
-Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
-for the authenticated branch push. The matching public key must already belong
-to the configured GitHub account, or `github.ssh-keys` can declare it for
-`install` to reconcile. SSH configuration also keeps private-repository
-worktree preparation free of credential-bearing clone URLs.
-
-Run `openclaw agent-system install` after changing the configuration. Installation
-establishes the first safe assignment baseline; only assignments observed after
-that baseline create local work. A baseline failure reports
-`github-notification-baseline-failed` and leaves intake inactive.
 
 ### Required Conversation Hook
 

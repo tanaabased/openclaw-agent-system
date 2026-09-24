@@ -62,60 +62,6 @@ environment:
 See [Configuration](#configuration) for the complete core manifest and
 component-provided sections.
 
-## Codex Workspace Binding
-
-Each Codex plugin installation or profile can bind explicitly to one Agent
-System workspace. The binding is independent of `CODEX_HOME`, the current task
-directory, and OpenClaw agent configuration. Agent System stores only the
-canonical workspace directory in `PLUGIN_DATA/workspace-binding.json`; binding,
-rebinding, and unbinding do not change the workspace or its manifest.
-
-After installing the plugin, start a fresh Codex task. Codex reports that the
-bundled SessionStart hook needs review because plugin installation does not grant
-hook trust. Open `/hooks`, inspect the Agent System hook, and trust its current
-definition. Codex records trust against that definition's hash, so a plugin
-upgrade that changes the hook is skipped until it is reviewed again. Start a
-fresh task after trusting or re-trusting it. See the official
-[Codex hooks documentation](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
-for the host trust contract.
-
-The trusted hook supplies the packaged binding skill with the installed runtime
-and writable plugin-data paths. Invoke `$agent-system-codex-binding` to:
-
-- inspect the current binding and live manifest state
-- preview and confirm a canonical workspace before binding or rebinding
-- bind anyway when the manifest is missing or invalid
-- unbind the stored pointer without modifying workspace files
-
-An inaccessible path or non-directory is rejected. A missing or invalid manifest
-is an inactive binding rather than an installation failure: ordinary Codex use
-continues, and the binding workflow reports the state plainly. The hook checks
-the pointer and manifest again on `startup`, `resume`, `clear`, and `compact`.
-Each result explicitly supersedes earlier Agent System context, so unbinding,
-rebinding, removing a manifest, or making it invalid revokes the previous active
-projection on the next trusted hook run.
-
-For a valid manifest, Codex receives only supported non-secret values:
-
-- literal agent identity fields
-- supported Git identity, extension, policy, and worktree metadata
-- supported GitHub host, username, configuration, and policy metadata
-- Codex-native model and thinking candidates derived from declared model tiers
-- `agent-system-doctor` for every active binding
-- `agent-system-install` when setup is configured
-- `agent-system-model-routing` when models are configured
-- `agent-system-git-cli` and `agent-system-github-cli` when their respective sections are configured
-
-The hook never resolves dotenv files, 1Password references, credentials, signing
-keys, or other declared environment values. The packaged Doctor skill may inspect
-the binding, manifest, and Codex-applicable setup checks, while Install may run
-those setup steps through the same trusted standalone adapter. Neither inspects
-or reconciles agent registration, model configuration or availability, memory,
-tool access, paths, Git, GitHub, notifications, OpenClaw configuration, or
-managed credentials. Those remain OpenClaw-owned workflows. Other hosts use
-their normal Git and GitHub operations; binding supplies context, not managed
-tool authority.
-
 ## Configuration
 
 The workspace manifest declares the agent's desired state. `install` reconciles
@@ -222,47 +168,26 @@ OpenClaw's `agents.entries.<id>.models` map stores per-model metadata such as
 agent's effective `modelPolicy.allow`, which may come from the agent entry or
 `agents.defaults`.
 
-`install` sets the bound agent's primary model and default thinking effort from
-`models.default`. It binds each distinct declared model to the same established
-runtime route already used by that agent, without provisioning or resolving
-credentials and without changing global defaults, fallbacks, unrelated per-model
-settings, or existing session selections. When a restrictive effective model
-policy excludes a declared model, `install` creates or extends the bound agent's
-own `modelPolicy.allow`, preserving the currently inherited permissions and
-appending only missing declarations. It does not broaden the global policy or
-other agents. Unrestricted and matching wildcard policies need no repair. An
-explicit incompatible or ambiguous runtime binding blocks the change rather than
-selecting another route. Removing profiles or `models` later performs no cleanup
-and does not guess which policy entries or previous defaults it once added.
+`install` applies declared models to the bound agent:
 
-`doctor` checks configuration drift, effective selection policy, configured model
-presence, and effort support without changing configuration, resolving
-authentication, or running inference. OpenClaw owns authentication and runtime
-health through its model status and agent execution surfaces. A configured model
-that OpenClaw explicitly reports as unavailable produces a warning rather than
-blocking Doctor. Unknown availability does not imply failure, while list
-inspection failures remain distinct from a model or effort known to be
-unsupported.
+- Sets the primary model and thinking effort from `default`.
+- Binds declared models to the agent's established runtime route without resolving credentials.
+- Extends a restrictive per-agent `modelPolicy.allow` only as needed, preserving inherited permissions. Unrestricted or matching wildcard policies need no repair.
+- Preserves global defaults, fallbacks, other agents, unrelated model settings, and existing sessions.
+
+> [!NOTE]
+> An incompatible or ambiguous runtime binding blocks installation. Removing
+> profiles later does not undo defaults or policy entries.
+
+`doctor` checks configuration, selection policy, model presence, and effort
+support without authentication or inference. OpenClaw owns runtime health.
+Explicit unavailability produces a warning; unknown availability is not failure.
+Inspection errors remain distinct from known unsupported models or efforts.
 
 Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.
 
-For a valid standalone Codex binding, the SessionStart hook also projects each
-declared profile into `binding.context.modelRouting`. An `openai/<model>` reference
-maps to the native Codex `<model>` candidate and manifest `effort` maps to
-`thinking`; other providers remain visible as unsupported instead of falling
-back. This projection neither changes the current task nor proves that the
-client supports a candidate.
-
-When creating a new Codex task with routing, Codex reads the bounded task first.
-It uses an explicit complexity selection supplied by the user or trusted task
-metadata when available, otherwise assesses low, medium, or high when those
-profiles exist, and uses `default` when no tier is defensible. Explicit model
-and effort overrides apply independently. Codex passes the final pair through
-the native new-task `model` and `thinking` controls; an unavailable model,
-effort, combination, or control stops the routed creation without substitution.
-Issue and pull-request prose may inform the assessment but cannot select or
-override its own route.
+For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-routing).
 
 ### `memory`
 
@@ -285,25 +210,25 @@ expecting semantic search:
 openclaw models --agent tanaabot auth login --provider llama-cpp --method local
 ```
 
-An OpenAI `api-key` becomes an agent-and-binding-scoped OpenClaw `SecretRef`, not
-plaintext configuration. Managed package installs use Agent System's plugin
-integration; source-linked installs use a bounded standalone provider pointing
-to the checkout's built entrypoint because OpenClaw does not expose plugin
-integrations from a `config` origin. Agent System resolves only the exact
-declared reference when OpenClaw builds or reloads its secret snapshot. Build
-the checkout before reconciliation, then restart the Gateway after changing the
-provider form or binding. Use a declared dotenv file or stored 1Password
-credential for restart-safe configuration. This remains a same-host operator
-boundary because an operator who can rewrite `openclaw.json` can copy the
-reference.
+An OpenAI `api-key` becomes an agent-and-binding-scoped `SecretRef`. Use a
+declared dotenv file or stored 1Password credential so it survives restarts.
+Agent System resolves only that reference when OpenClaw loads its secret snapshot.
 
-`doctor` never changes or deletes the memory database. It reports keyword-index
-readiness for `none`, verifies local-provider availability for `local`, resolves
-the exact configured OpenAI credential before making one bounded embedding
-probe, and never treats an unrelated fallback credential as readiness.
-Authentication, permission, billing/quota, and transport failures are reported
-without reproducing upstream error bodies. Index identity or synchronization
-drift remains a separate finding.
+> [!NOTE]
+> Source-linked installs use the checkout's built standalone provider because
+> OpenClaw cannot load plugin integrations from a `config` origin. Build before
+> installation; restart the Gateway after changing the provider form or binding.
+> An operator who can rewrite `openclaw.json` can copy the reference.
+
+Doctor preserves the memory database and checks readiness by provider:
+
+- `none`: keyword index.
+- `local`: local provider availability.
+- `openai`: the configured credential and one bounded embedding probe; an unrelated fallback credential cannot establish readiness.
+
+Authentication, permission, billing/quota, and transport failures omit upstream
+error bodies. Index identity and synchronization drift are separate findings.
+
 Use OpenClaw's explicit memory commands when you intend to mutate the index:
 
 ```sh
@@ -337,23 +262,9 @@ first-party configuration already handles the work. Setup scripts can change
 files or external services; their authors must make checks read-only and applies
 safe to repeat.
 
-#### Syntax, from shortest to most detailed
+#### Syntax
 
-A string is shorthand for `setup.apply`, using `sh`:
-
-```yaml
-setup: mkdir -p repos
-```
-
-A YAML block embeds a script using the same shorthand:
-
-```yaml
-setup: |
-  mkdir -p repos
-  mkdir -p artifacts
-```
-
-The short mapping adds an optional check and shell selection:
+Use the short mapping for one checked operation:
 
 ```yaml
 setup:
@@ -362,29 +273,16 @@ setup:
   apply: mkdir -p repos
 ```
 
-Each `check` or `apply` also accepts a direct argument array. Arguments are passed
-literally, without shell parsing, variable expansion, pipes, or redirection:
+| Form                                                                | Meaning                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `setup: mkdir -p repos` or a YAML block scalar                      | One unchecked `apply` script using `sh`                                       |
+| `check: test -d repos` / `apply: mkdir -p repos`                    | Script using the selected shell                                               |
+| `check: [test, -d, repos]` / `apply: [mkdir, -p, repos]`            | Literal argument array, without shell parsing or expansion                    |
+| `apply: { command: mkdir, args: [-p, repos], timeout-seconds: 60 }` | Direct executable with optional arguments and timeout; also valid for `check` |
 
-```yaml
-setup:
-  check: [test, -d, repos]
-  apply: [mkdir, -p, repos]
-```
-
-A direct command object accepts optional arguments and a custom timeout:
-
-```yaml
-setup:
-  check: [test, -d, repos]
-  apply:
-    command: mkdir
-    args: [-p, repos]
-    timeout-seconds: 60
-```
-
-Use `steps` for multiple commands in declaration order. The container's shell is
-inherited by string commands unless a step overrides it; direct commands ignore
-shell selection. This example assumes the referenced scripts exist:
+Use `steps` for multiple operations in declaration order. String commands inherit
+its shell unless a step overrides it; direct commands ignore shell selection.
+This example assumes the referenced script exists:
 
 ```yaml
 setup:
@@ -395,13 +293,8 @@ setup:
       apply: |
         mkdir -p repos
         mkdir -p artifacts
-    - id: workspace-configuration
-      shell: zsh
-      check: ./scripts/workspace check
-      apply: |
-        ./scripts/workspace configure
-        ./scripts/workspace verify
     - id: dependencies
+      runtimes: [openclaw]
       check: [./scripts/dependencies, check]
       apply:
         command: ./scripts/dependencies
@@ -409,11 +302,11 @@ setup:
         timeout-seconds: 600
 ```
 
-The string, block, and short mapping normalize to one step with id `default`.
-Every named step requires a unique lowercase kebab-case `id` and an `apply`;
-`check` is optional. `steps` must be nonempty. The short mapping and `steps`
-container cannot be mixed, and a bare setup array or command object is not
-shorthand: place those commands under `check` or `apply`.
+Strings, block scalars, and the short mapping normalize to one step named
+`default`. Named steps require a unique lowercase kebab-case `id` and an `apply`;
+`check` is optional. `steps` must be nonempty and cannot mix with short-mapping
+fields. Bare arrays and command objects are not setup shorthand: place them
+under `check` or `apply`.
 
 #### Shells, executables, and limits
 
@@ -439,7 +332,7 @@ diagnostics and JSON results report step ids and diagnostic codes without
 including raw command output. The interactive confirmation deliberately shows
 the declared commands, so keep secrets out of declarations.
 
-The child receives a minimal host environment for home, locale, temporary paths,
+OpenClaw setup receives a minimal host environment for home, locale, temporary paths,
 and OpenClaw profile selection, plus managed command bindings. Its `PATH` places
 managed launchers before trusted host executable directories. Bare `git` and `gh`
 use host executables when a descendant leaves agent scope; see the
@@ -457,8 +350,8 @@ processes sharing the same OS user.
 #### Runtime applicability
 
 An optional `runtimes` list selects `openclaw`, `codex`, or both. Omission means
-both; bare strings and blocks are therefore shared. The short mapping accepts a
-runtime filter for its single step:
+both, including bare strings and blocks. Put the filter on the short mapping or
+individual named steps, never the `steps` container:
 
 ```yaml
 setup:
@@ -467,48 +360,19 @@ setup:
   apply: mkdir -p repos
 ```
 
-In the long form, put the filter on individual steps:
+Lists must be nonempty and contain unique supported values. The invoking
+integration selects the runtime from trusted context. OpenClaw always selects
+`openclaw`, including for OpenClaw-hosted Codex; the
+[standalone Codex adapter](./CODEX.md#supported-context-and-operations) selects
+`codex`. Model selection, installed binaries, and manifest prose cannot override
+that choice.
 
-```yaml
-setup:
-  steps:
-    - id: shared-directories
-      runtimes: [openclaw, codex]
-      check: test -d artifacts
-      apply: mkdir -p artifacts
-    - id: openclaw-directories
-      runtimes: [openclaw]
-      check: test -d repos
-      apply: mkdir -p repos
-    - id: codex-directories
-      runtimes: [codex]
-      check: test -d codex-artifacts
-      apply: mkdir -p codex-artifacts
-```
-
-Lists must be nonempty and contain unique supported values. There is no
-`runtimes` field or runtime inheritance on the `steps` container.
-
-The invoking integration supplies the runtime through trusted context. OpenClaw
-always selects `openclaw`, including when Codex drives an OpenClaw-hosted model
-turn. The standalone Codex Install skill always selects `codex` through its
-packaged adapter. Installed binaries, environment variables, manifest prose, and
-model selection do not select or override the runtime.
-
-The two integrations share the setup lifecycle contract, not a complete install
-engine. OpenClaw reconciles its full lifecycle and may prepare managed tools and
-credentials before applicable setup. Standalone Codex runs only applicable setup
-checks and applies with the host's sanitized executable environment. It neither
-resolves managed credentials nor reconciles any OpenClaw-owned component.
-
-Nonmatching steps run neither command and report `status: skipped`,
-`code: setup-not-applicable`, and their `stepId` in install and Doctor results.
-They do not count as drift or failure and need no repair. Filtering happens
-before setup preparation and execution; when no steps match, setup-only
-prerequisite gates stay idle. Independently configured components still run
-normally. All declarations are validated, including nonmatching steps, and
-applicable steps keep their declared order. There is no skip exit code or `when`
-expression.
+All declarations are validated. Nonmatching steps run neither command and report
+`status: skipped`, `code: setup-not-applicable`, and their `stepId`; they are not
+drift or failure. Filtering precedes preparation, so no matching steps means no
+setup-only prerequisite checks. Other configured components still run normally,
+and applicable steps retain declaration order. There is no skip exit code or
+`when` expression.
 
 #### Checks, installation, and retries
 
@@ -535,7 +399,7 @@ responsibility. `validate` only validates declarations and never executes them.
 
 #### Agent identity and repository cloning
 
-For applicable setup, installation establishes agent registration, managed
+For applicable OpenClaw setup, installation establishes agent registration, managed
 paths, and configured Git/GitHub tools, including declared GitHub SSH-key
 registration, before running setup. Remaining lifecycle components follow
 setup. Unavailable prerequisites block execution; setup cannot bootstrap a tool
@@ -674,20 +538,28 @@ launchers and Agent System's `worktree` route never fall back. Direct `tool` and
 `credentials` commands remain trusted operator interfaces and may select an
 installed agent explicitly.
 
-Agent-bound Gateway and setup child processes receive an absolute strict launcher
-binding for each configured command route. Git uses `AGENT_SYSTEM_GIT`, GitHub uses
-`AGENT_SYSTEM_GH`, and managed worktrees use `AGENT_SYSTEM_GIT_WORKTREE` when that
-route is configured. Invoke a binding as a command, for example
-`"$AGENT_SYSTEM_GIT" status --short`. These values are executable paths, not
-credentials or authority capabilities. They retain the active agent's ordinary
-classification, authorization, policy, credential, containment, and audit path;
-missing or invalid authority fails instead of selecting a host executable.
+Gateway and setup child processes expose strict executable bindings for
+configured routes:
 
-Bindings exist only in supported Agent System-owned child environments. They are
-not written to login shells, repository configuration, manifest environment
-output, or unrelated host processes. Ordinary `git` and `gh` lookup remains the
-context-sensitive compatibility path described above; use the binding when a
-script must require managed execution.
+| Route             | Binding                     |
+| ----------------- | --------------------------- |
+| Git               | `AGENT_SYSTEM_GIT`          |
+| GitHub            | `AGENT_SYSTEM_GH`           |
+| Managed worktrees | `AGENT_SYSTEM_GIT_WORKTREE` |
+
+Use a binding when a script must require managed execution:
+
+```sh
+# require the bound agent's git identity and policy; never fall back to host git.
+"$AGENT_SYSTEM_GIT" status --short
+```
+
+Bindings are absolute executable paths, not credentials. They retain the agent's
+classification, authorization, policy, credentials, containment, and audit checks;
+missing or invalid authority fails. They exist only in Agent System-owned child
+environments, never login shells, repository config, manifest environment output,
+or unrelated processes. Ordinary `git` and `gh` retain the context-sensitive
+fallback described above.
 
 The `install` and Doctor (`status`) CLI routes remain operator-only through both
 aliases, including setup descendants. In OpenClaw chat, use
@@ -771,43 +643,40 @@ Installs the current workspace agent and reconciles its public identity, model
 defaults, memory search, executable paths, setup, and configured capability state.
 
 ```text
-openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--rebuild-codex-path] [--json]
 ```
 
-| Option              | Behavior                                                                          |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `--yes`             | Consents to setup without prompting.                                              |
-| `--non-interactive` | Runs without prompting, implying setup consent.                                   |
-| `--skip-setup`      | Skips every setup check and apply with a warning; other components still install. |
+| Option                 | Behavior                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `--yes`                | Consents to setup without prompting.                                                     |
+| `--non-interactive`    | Runs without prompting, implying setup consent.                                          |
+| `--skip-setup`         | Skips every setup check and apply with a warning; other components still install.        |
+| `--rebuild-codex-path` | Replaces the saved Codex PATH baseline with this process environment; see [Path](#path). |
 
-These switches take no values: presence sets the option to true and absence
-leaves it false. `--skip-setup` takes precedence over consent. With applicable
-setup, interactive installation previews the workspace and ordered check/apply
-commands, shells, and timeouts on stderr before asking yes or no. Declining or
-cancelling stops before any install mutation. No applicable setup means no
-setup prompt.
+All switches are boolean; `--skip-setup` takes precedence over consent.
+Interactive installation previews applicable commands, shells, and timeouts on
+stderr. Declining or cancelling stops before any mutation. No applicable setup
+means no prompt.
 
-Noninteractive stdin also implies consent. The `CI` and `NONINTERACTIVE`
-environment variables each enable unattended consent for trimmed,
-case-insensitive `1`, `true`, `yes`, or `on`. Unset, empty, `0`, `false`, `no`,
-`off`, and unrecognized values do not enable that source; they do not override
-another enabling option or noninteractive stdin. `--json` alone does not imply
-consent, and prompts or warnings never become part of stdout JSON.
+Unattended consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
+or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
+prompts and warnings never enter stdout JSON. Consent is not persisted.
 
-Consent is not persisted. An unattended invocation trusts the current workspace
-declarations, including changes since the previous run.
+> [!NOTE]
+> Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.
+> Other values do not enable consent or cancel another enabling source.
+> Unattended runs trust the current declarations, including changes since the last run.
 
-Installation validates first and, when an OP Environment or direct secret is
-declared, requires a working persistent credential before applying changes. It
-verifies owned state and reports it unchanged when already reconciled. Setup
-may also change external state; its [check and retry rules](#checks-installation-and-retries)
-determine what repeats. An existing agent id bound to another workspace fails
-instead of being repointed. It also reconciles per-agent grants for the native
-Git, managed-worktree, and GitHub tools selected by the manifest while preserving
-unrelated grants. GitHub installation additionally reconciles an agent-scoped
-OpenClaw managed profile when explicit account and credential bindings are
-present. An explicit operator-owned denial or unmarked conflicting profile
-remains authoritative and blocks reconciliation.
+Installation:
+
+- Validates declarations and requires persistent credentials for declared 1Password resources before mutation.
+- Verifies owned state, reporting already reconciled components as unchanged. Setup follows its [check and retry rules](#checks-installation-and-retries).
+- Rejects an agent id already bound to another workspace.
+- Reconciles manifest-selected Git, worktree, and GitHub tool grants while preserving unrelated grants.
+- Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
+- Grants and verifies [conversation-hook access](./channels/github/README.md#required-conversation-hook) when notifications are configured.
+
+Operator-owned tool denials and unmarked conflicting profiles block reconciliation.
 
 ### `openclaw agent-system doctor` (alias: `status`)
 
@@ -819,14 +688,16 @@ openclaw agent-system doctor [--agent <id>] [--json]
 openclaw agent-system status [--agent <id>] [--json]
 ```
 
-Doctor, also available as `status`, reports all findings, returns nonzero for failing drift, and recommends
-`install` for repairable owned state. Manual state remains the operator's
-responsibility. It also reports tool-access and execution-boundary findings;
-tool-specific checks are documented in each tool guide. For [setup](#setup),
-Doctor runs applicable checks without consent or repairs, reports unchecked
-steps as manual, and marks nonmatching runtime steps as skipped. OpenAI memory inspection
-performs one bounded embedding request, which may incur a small provider charge;
-other providers remain read-only and unprobed.
+Doctor reports all findings and returns nonzero for failing drift. It recommends
+`install` for owned-state repairs; manual state remains the operator's responsibility.
+Tool-specific checks live in the respective guides.
+
+For [setup](#setup), Doctor runs applicable checks without consent or repairs,
+marks unchecked steps as manual, and skips other runtimes.
+
+> [!NOTE]
+> OpenAI memory inspection makes one bounded embedding request, which may incur
+> a small provider charge. Other providers are inspected without a live probe.
 
 ### `openclaw agent-system notifications`
 
@@ -951,11 +822,10 @@ saved baseline should be replaced by that CLI environment. Native chat Install
 offers the equivalent approved `rebuildCodexPath` option. Both report baseline
 changes; neither modifies user-managed Codex configuration.
 
-The union preserves directory availability, not every caller's command
-precedence. Existing baseline order wins, stale entries can accumulate, and PATH
-health does not inventory or prove the availability of executables. Doctor names
-caller directories that Install would append, but extra, reordered, or
-nonexistent saved baseline entries do not alone indicate drift.
+> [!NOTE]
+> Existing baseline order wins; stale paths can accumulate. Doctor reports caller
+> directories that Install would append, but extra, reordered, or nonexistent
+> baseline entries alone are not drift. PATH health does not prove executable availability.
 
 Start a new Codex session after PATH changes; existing sessions do not hot-reload
 the workspace configuration. Agent System disables login-shell

@@ -79,7 +79,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 ## Bundled Resources
 
 - `agents/openai.yaml`: Codex-facing display metadata and starter prompt.
-- `assets/icon-small.svg` and `assets/icon-large.png`: install marks for the Codex interface.
+- `assets/icon-small.svg` and `assets/icon-large.svg`: install marks for the Codex interface.
 
 ## Validation
 

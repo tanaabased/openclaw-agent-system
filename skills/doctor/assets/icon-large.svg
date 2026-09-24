@@ -1,8 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800" fill="none">
-  <rect width="800" height="800" rx="160" fill="#071B17" />
-  <rect x="48" y="48" width="704" height="704" rx="128" stroke="#00C88A" stroke-width="32" />
-  <path d="M240 196v124a160 160 0 0 0 320 0V196" stroke="#F4FFF9" stroke-width="48" stroke-linecap="round" />
-  <path d="M180 196h120M500 196h120" stroke="#00C88A" stroke-width="48" stroke-linecap="round" />
-  <path d="M400 480v48a104 104 0 0 0 208 0" stroke="#F4FFF9" stroke-width="48" stroke-linecap="round" />
-  <circle cx="608" cy="480" r="48" fill="#071B17" stroke="#00C88A" stroke-width="32" />
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 24 24" role="img" aria-labelledby="title">
+  <title id="title">Agent System Doctor</title>
+  <g fill="none" stroke="#00C88A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 3v5a6 6 0 0 0 12 0V3M4 3h2M14 3h2M10 14v2a5 5 0 0 0 10 0v-2" />
+    <circle cx="20" cy="11.5" r="2.5" />
+  </g>
 </svg>
