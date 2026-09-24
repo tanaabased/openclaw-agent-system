@@ -1,6 +1,6 @@
 # Development
 
-This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface and use [ADVANCED.md](./ADVANCED.md) for the complete manifest, configuration, CLI, environment, and path references.
+This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface and use the [manifest](./MANIFEST.md), [CLI](./CLI.md), and [global configuration](./CONFIG.md) references for product behavior.
 
 ## Requirements
 
@@ -21,11 +21,16 @@ Install a linked development checkout in the normal OpenClaw profile:
 ```sh
 git clone https://github.com/tanaabased/openclaw-agent-system.git
 cd openclaw-agent-system
+
+# install the toolchain, locked dependencies, and built runtime.
 brew bundle
 bun run sync
+
+# link this checkout into the normal openclaw profile.
 openclaw plugins install --link . --accept-capabilities
 openclaw plugins enable agent-system
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
+
+# verify the linked plugin.
 openclaw plugins inspect agent-system --runtime --json
 openclaw plugins doctor
 ```
@@ -35,47 +40,38 @@ If OpenClaw reports a conflicting installation, remove it with
 workflow below uses an isolated profile and does not require a normal-profile
 installation.
 
-Linked installs load from this checkout with a `config` origin. After updating
-the OpenClaw dependency or changing the memory secret-provider source, run
-`bun run sync` to reconcile the locked dependencies, build the checkout, and
-verify the built provider with a deliberately nonexistent binding. Then run
-`openclaw agent-system install` from the agent workspace, and restart the
-Gateway. Reconciliation uses the built standalone provider for a linked checkout;
-the declared credential remains a SecretRef and never belongs in
-`openclaw.json` as plaintext.
+Linked installs use a `config` origin. After changing the OpenClaw dependency
+or memory secret-provider source:
 
-### Codex
+1. Run `bun run sync` to install locked dependencies, rebuild, and verify the provider.
+2. Run `openclaw agent-system install` from the agent workspace.
+3. Restart the Gateway.
 
-Install the checkout once through the pinned development dependency:
+Agent installation grants conversation-hook access when notifications are
+configured; no separate config command is needed. See
+[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
+Memory credentials remain SecretRefs; linked installs resolve them through the
+built standalone provider.
 
-```sh
-./node_modules/.bin/codex-tools install . --dry-run --json
-./node_modules/.bin/codex-tools install .
-```
-
-After changing `.codex-plugin/`, `assets/`, `package.json`, or `skills/`, update
-the installed cache and verify that it converged:
-
-```sh
-bun run codex:sync
-bun run codex:check
-```
-
-Start a fresh Codex task when verifying skill discovery. The managed path list
-in `package.json#codexTools` deliberately excludes OpenClaw runtime source,
-tests, examples, and scenarios.
+For standalone Codex installation, cache refresh, and packaged skill checks,
+see [Codex development](./CODEX.md#development).
 
 ## Usage
 
 [OpenClaw DevGuard](https://github.com/tanaabased/openclaw-devguard) is the recommended way to work on Agent System. It builds, validates, watches, and source-links this checkout inside a dedicated OpenClaw profile and supervised Gateway.
 
 ```sh
+# install and verify the development supervisor.
 openclaw plugins install npm:@tanaab/openclaw-devguard --accept-capabilities
 openclaw plugins enable openclaw-devguard
 openclaw plugins inspect openclaw-devguard --runtime --json
+
+# prepare an isolated profile using the configured test agent.
 openclaw devguard init . --reset-agents --agent tanaabot --copy-oauth
 openclaw devguard exec -- plugins inspect agent-system --runtime --json
 openclaw devguard exec -- agent-system validate --agent tanaabot
+
+# watch, rebuild, and supervise the isolated gateway.
 OPENCLAW_LOG_LEVEL=debug openclaw devguard run
 ```
 
@@ -132,67 +128,44 @@ bun run plugin:check
 ```
 
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
-Run `bun run test:codex-plugin` with `AGENT_SYSTEM_PACKAGE` set to a prepared npm
-tarball when Codex installation or fresh-task skill discovery changes. The
-release-test workflow supplies an isolated Codex home and runs this check.
 
 ### Leia Scenarios
 
-The executable [Leia](https://github.com/lando/leia) material under [`examples/`](./examples/) and [`scenarios/`](./scenarios/) runs only through GitHub Actions. General examples cover macOS and Ubuntu where supported; notification acceptance scenarios use their own workflow and runner matrix. Both install plugins or mutate isolated OpenClaw and provider state, so neither suite may be run locally.
+[Leia](https://github.com/lando/leia) suites run **only in GitHub Actions**:
+they install plugins and mutate isolated OpenClaw or provider state.
 
-Choose the driver independently of the folder. Prefer direct assertions when
-state proves the contract, use strict AIMock when the real OpenClaw agent/tool
-loop matters without model judgment, and use a live model only when provider
-transport, model interpretation, or Codex-native behavior is under test. The
-`agent` and `github` examples and `credentials` cache checks use AIMock;
-`approval`, `containment`, `models`, and `path` remain live. The `codex` example
-uses direct installed-runtime and fresh app-server assertions without a model.
-
-Shared `openclaw-setup` selects [process-lifetime 1Password caching](ADVANCED.md#opcache);
-unit tests set their own policy. The [credentials example](examples/credentials/README.md)
-tests storage, cache reuse, flush, and credential-mutation invalidation. Assert multiple fields
-from one validation result instead of repeating provider calls.
+- [`examples/`](./examples/) covers general runtime behavior on supported macOS and Ubuntu runners.
+- [`scenarios/`](./scenarios/) covers notification acceptance through the installed Gateway using a release-shaped package.
+- Follow the [example](./examples/AGENTS.md) and [scenario](./scenarios/AGENTS.md) guidance for drivers, fixtures, credentials, and assertions.
 
 #### GitHub Notification Scenarios
 
-The [pull-request workflow](./.github/workflows/pr-notification-tests.yml) runs
-deterministic notification scenarios on Ubuntu. The
-[manual workflow](./.github/workflows/notification-tests.yml) selects individual
-scenarios or the complete matrix with a live provider on Ubuntu or macOS.
+- The [pull-request workflow](./.github/workflows/pr-notification-tests.yml) runs deterministic scenarios on Ubuntu with checked-in lifecycle, tool, and publication evidence.
+- The [manual workflow](./.github/workflows/notification-tests.yml) runs selected scenarios or the full matrix with a live provider on Ubuntu or macOS.
+- Mock checks do not establish model reasoning, provider authentication, capacity, latency, or provider-specific format compatibility.
 
-Each scenario exercises a release-shaped Agent System package through the
-installed OpenClaw Gateway. Mock pull-request checks compare lifecycle, tool,
-and publication behavior with checked-in evidence without requiring a live model.
-They do not evaluate model reasoning, provider authentication, capacity, latency,
-or provider-specific format drift. Keep scenario-specific setup, fixtures, and
-expected evidence in [`scenarios/`](./scenarios/) and the owning workflows rather
-than duplicating those mechanics here.
+#### Lifecycle Approval
+
+The [approval example](./examples/approval/README.md) checks native Install and
+Doctor discovery, approval, denial, cancellation, and unavailable approval through
+the Control UI protocol with native OpenClaw and OpenClaw-hosted Codex. It runs
+only in GitHub Actions against OpenClaw 2026.9.5; local unit checks do not prove
+installed chat compatibility. Other chat channels are outside this matrix.
+
+The integration uses the public
+[`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests),
+without protected Gateway APIs, generic MCP approval restoration, or changes to
+Git/GitHub authorization.
 
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.
 
-| Path                   | Responsibility                                                |
-| ---------------------- | ------------------------------------------------------------- |
-| `index.ts`             | Thin static plugin entrypoint                                 |
-| `agent/`               | Agent identity, authority, lifecycle, install, and diagnosis  |
-| `api/`                 | Model-facing tool contracts, runtime, policy, and projection  |
-| `bin/`                 | Packaged shims and shared tool or SSH launchers               |
-| `channels/<provider>/` | Channel schema, runtime, lifecycle, state, and provider guide |
-| `cli/`                 | OpenClaw subcommands, registration, and output handling       |
-| `core/`                | Cross-owner plugin composition and shared runtime boundaries  |
-| `credentials/`         | Credential input, storage, resolution, and management         |
-| `environment/`         | Agent environment and 1Password environment resolution        |
-| `manifest/`            | Manifest schemas, parsing, discovery, values, and types       |
-| `paths/`               | PATH projection, Codex path config, and workspace ignores     |
-| `tools/<capability>/`  | Tool schemas, execution, and optional lifecycle contribution  |
-| `utils/`               | Cross-owner independently testable function primitives        |
-| `scripts/`             | Development and release tasks                                 |
-| `test/`                | Flat behavior-focused unit tests                              |
+Capability-specific guides live beside their tool or channel. The planned
+third-party integration boundary is documented in [Tool API](./API.md); the
+current `api/` implementation remains internal to Agent System.
 
-Keep implementation in its nearest owning scope, keep the plugin entrypoint at
-`index.ts`, and verify visible behavior before documenting a feature as
-functional. Capability-specific configuration and usage documentation belongs
-beside its tool or channel. The planned third-party integration boundary is
-documented in [Tool API](./API.md); the current `api/` implementation remains
-internal to Agent System.
+## Documentation
+
+Read [Documentation Design](./DOCUMENTATION.md) before editing docs: it owns the
+structure, change gate, reference formats, worked examples, and review requirements.

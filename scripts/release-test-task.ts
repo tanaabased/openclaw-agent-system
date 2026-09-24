@@ -198,6 +198,7 @@ try {
     'bin/agent-system-worktree',
     'bin/git',
     'bin/gh',
+    'channels/github/ADVANCED.md',
     'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
     'skills/git-cli/SKILL.md',
@@ -206,6 +207,8 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
+    'tools/install/README.md',
+    'tools/doctor/README.md',
     'skills/doctor/SKILL.md',
     'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',
@@ -215,8 +218,12 @@ try {
     'assets/github-icon-large.svg',
     'README.md',
     'API.md',
-    'ADVANCED.md',
+    'MANIFEST.md',
+    'CLI.md',
+    'CONFIG.md',
     'DEVELOPMENT.md',
+    'DOCUMENTATION.md',
+    'CODEX.md',
     'CHANGELOG.md',
     'LICENSE',
   ];
@@ -228,6 +235,7 @@ try {
   await check('exclude repository-only files', () => {
     for (const path of [
       'AGENTS.md',
+      '.github/OPTIMIZATION.md',
       'examples/install/README.md',
       'scenarios/issue-guided-assignment/expected-evidence.json',
       'scenarios/issue-guided-assignment/model-fixture.ts',

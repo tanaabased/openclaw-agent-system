@@ -171,8 +171,12 @@ const requiredPackageFiles = [
   'openclaw.plugin.json',
   'README.md',
   'API.md',
-  'ADVANCED.md',
+  'MANIFEST.md',
+  'CLI.md',
+  'CONFIG.md',
   'DEVELOPMENT.md',
+  'DOCUMENTATION.md',
+  'CODEX.md',
   'CHANGELOG.md',
   'LICENSE',
 ];

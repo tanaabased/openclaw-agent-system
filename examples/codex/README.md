@@ -78,6 +78,22 @@ test -f "$root/workspace/.codex-only"
 test ! -e "$root/workspace/.openclaw-checked"
 test ! -e "$root/workspace/.openclaw-only"
 
+# should report a blocked setup check when an exited parent leaves inherited pipes open
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+mkdir -p "$root/timeout-workspace"
+printf '%s\n' \
+  'schema-version: 1' \
+  'agent: { id: codex-timeout }' \
+  'setup:' \
+  '  check: { command: sh, args: ["-c", "sleep 3 & exit 0"], timeout-seconds: 1 }' \
+  '  apply: "true"' \
+  > "$root/timeout-workspace/agent.yaml"
+node "$runtime" binding bind --plugin-data "$root/timeout-data" --workspace "$root/timeout-workspace" --confirm
+node "$runtime" setup inspect --plugin-data "$root/timeout-data" \
+  | jq -e '.status == "inspected" and [.findings[].code] == ["setup-blocked"]'
+
 # should load the bound workspace and only standalone capabilities through the packaged hook
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

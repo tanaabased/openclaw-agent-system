@@ -12,40 +12,23 @@ prompted them.
 
 ## Overview
 
-Configure the channel through `github.notifications` in the agent workspace
-manifest. Each accepted issue starts in one manifest-selected mode:
+Choose the initial mode through `github.notifications.initial-mode`:
 
 | Mode     | Initial assignment behavior                                                              |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `guided` | Prepares the session and worktree, acknowledges the assignment, and waits for direction. |
 | `work`   | Assesses the issue, may publish a plan, and schedules one private implementation turn.   |
 
-Work implementation uses the same session and worktree, validates the change,
-creates one local commit, performs the first ordinary push, and creates or
-normalizes one delivery pull request. Guided performs no automatic
-implementation; the operator or an approved exact-mention comment decides what
-happens next. GitHub prose cannot select or elevate the configured mode.
+Work proceeds toward a validated change and delivery pull request. Guided waits
+for direction. Approved issue and delivery pull-request comments continue in the
+same private session; GitHub prose cannot elevate the configured mode. See
+[processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
+publication, and retirement behavior.
 
-The channel also:
+Other documentation:
 
-- records existing assignments as a safe baseline during `install`, without
-  creating work for them
-- admits only configured assignment types, approved actors, eligible repository
-  owners, and repositories where the agent has sufficient access
-- keeps approved issue and delivery pull-request comments in the issue-owned
-  session, publishes each ordinary final response back to its exact source,
-  and drains a bounded pair of queued comments serially per execution pass
-- retires issue-owned work after delivery merge or loss of assignment authority
-  and removes only clean managed worktrees for completed lifecycles
-- supports the bundled [GitHub Update skill](../../skills/github-update/SKILL.md)
-  for an explicit, mode-neutral public progress update
-
-The Gateway polls independently of issue workers, so new assignments can begin
-while another issue is running. Each issue serializes preparation, comments,
-responses, and retirement across Gateway and CLI processes. Different issues
-can proceed concurrently up to the agent's durable issue-work limit; shared
-repository preparation is serialized. Assignment acknowledgments wait for
-durable session recording.
+- **[Configuration reference](./ADVANCED.md#configuration-reference)** — All channel fields and defaults.
+- **[CLI reference](./ADVANCED.md#cli)** — Refresh intake, inspect state, and wait for lifecycle checkpoints.
 
 ## Requirements
 
@@ -62,61 +45,17 @@ durable session recording.
 The GitHub account must have `write`, `maintain`, or `admin` access to every
 repository from which the channel accepts assignments.
 
-## Model routing
+`github.token` names an environment variable and never accepts a literal token.
+Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
+for the authenticated branch push. The matching public key must already belong
+to the configured GitHub account, or `github.ssh-keys` can declare it for
+`install` to reconcile. SSH configuration also keeps private-repository
+worktree preparation free of credential-bearing clone URLs.
 
-Declaring all four [model profiles](../../ADVANCED.md#models) enables routing for
-new issue conversations in either mode. Existing conversations and default-only
-manifests keep their ordinary behavior. Before the initial assignment turn, the
-manifest default model assesses bounded issue content in a fresh, tool-free
-native runtime context. The model supplies the reasoning judgment; code validates
-its response, maps the tier to the configured profile, and saves the decision
-before substantive work. Routing runs inside the issue's execution lease and
-outside the shared polling lease.
+## Configuration
 
-Verified native **Complexity** determines the tier. When native metadata is
-missing or unavailable, the visible fenced YAML capsule with
-`schema: tanaab/task-metadata/v2`, `mode: fallback`, and `fallback.complexity`
-can supply it. Missing, invalid, conflicting, and unavailable values remain
-distinct evidence for the model's labeled content assessment. **Work size**
-informs scope and decomposition, never the model tier. An unresolvable assessment,
-unsupported profile, or failed classifier blocks that issue for retry; it does
-not select an expensive default or a fallback chain. Automatic efforts are
-`medium`, `high`, or justified `xhigh`.
-
-For complete issue routing, `install` additively grants Agent System permission
-to select the agent and classifier model, allowing the manifest default in both
-OpenClaw LLM allowlists. It preserves unrelated grants and settings; default-only,
-disabled, and pull-request-only declarations request nothing.
-
-`doctor` distinguishes saved access from permissions loaded by its process. If
-loaded access is stale, restart the Gateway and retry the prepared assignment.
-Background polling never grants permissions or substitutes for authentication.
-
-The saved model and effort survive retries, restarts, comments, and delivery
-pull-request continuation. Later manifest edits do not reclassify existing
-conversations. Explicit supported native model and effort overrides take
-precedence independently. Automatic routing can continue on a permitted native
-fallback; a mismatch with a strict selection or an unapproved model cancels work.
-Execution records distinguish verified selections, permitted continuations, and
-unverified settings when native evidence is incomplete. Missing evidence alone
-does not block publication or prove the requested route ran.
-
-The initial private assessment includes a short routing note with model, effort,
-complexity, source, and reason. It is excluded from the public reply and is not
-runtime verification.
-
-For a demonstrated reasoning blocker, the agent explains the failed approach
-and asks the operator to approve a specific stronger profile. This is a
-conversational request, not an automatic escalation or structured clarification
-outcome. An approved change requires native controls that support and preserve
-both model and effort; otherwise the operator uses supported session controls.
-Authentication failures, rate limits, slow tests, and missing requirements do
-not justify escalation. A stronger profile is only confirmed by native runtime
-evidence.
-
-## Configuration Reference
-
-Add the channel to `.agent-system/agent.yaml` or the root `agent.yaml`:
+Add the channel to `.agent-system/agent.yaml` or the root `agent.yaml`. Replace
+the account, SSH paths, and pinned GitHub identities with your own:
 
 ```yaml
 schema-version: 1
@@ -134,7 +73,8 @@ environment:
 git:
   worktrees: {}
   ssh:
-    private-keys: ~/.ssh/id_ed25519
+    private-keys:
+      path: ~/.ssh/id_ed25519
 
 github:
   host: github.com
@@ -155,238 +95,60 @@ github:
         node-id: O_kgDOB7x6Qw
 ```
 
-### `github.notifications.assignment-types`
+`approved-actors` pins who may assign work; `allowed-repository-owners` restricts
+which repositories are eligible. Neither grants GitHub repository access. See the
+[configuration reference](./ADVANCED.md#configuration-reference) for all fields,
+defaults, and optional OpenClaw operator recognition.
 
-| Type        | Required | Default                    |
-| ----------- | -------- | -------------------------- |
-| string list | no       | `issue` and `pull-request` |
+## Install and Verify
 
-Selects the assignment kinds the channel discovers. The list must contain one
-or both supported values without duplicates.
+From the agent workspace:
 
-### `github.notifications.approved-actors`
+```sh
+# reconcile the channel and establish its assignment baseline.
+openclaw agent-system install
 
-| Type                 | Required | Default |
-| -------------------- | -------- | ------- |
-| GitHub identity list | yes      | none    |
+# inspect configuration and required conversation-hook access.
+openclaw agent-system doctor
 
-Lists the GitHub users allowed to assign work to the notification agent. This
-may include the agent's own verified identity when self-assignment is intended.
-At least one identity is required.
-
-| Field            | Type    | Required | Behavior                                                   |
-| ---------------- | ------- | -------- | ---------------------------------------------------------- |
-| `login`          | string  | yes      | Records the user's current GitHub login.                   |
-| `node-id`        | string  | yes      | Pins the user's immutable GitHub identity.                 |
-| `operator-owner` | boolean | no       | Requests OpenClaw operator recognition; defaults to false. |
-
-Node IDs must be unique within the list. The channel verifies the login and
-node ID together so a renamed or recycled login cannot inherit authorization.
-
-#### Optional operator recognition
-
-`operator-owner: true` requests `commands.ownerAllowFrom` access for the verified
-`agent-system-github:<node-id>` identity. This is **channel-wide OpenClaw operator
-recognition**, not a repository-scoped or styling-only permission. It can expose
-other owner-gated capabilities permitted by independent tool policy. The flag is
-not accepted on `allowed-repository-owners` and is unrelated to the visible session
-assignee. No username-only, unqualified, or wildcard grant is generated.
-
-```yaml
-github:
-  notifications:
-    approved-actors:
-      - login: pirog
-        node-id: MDQ6VXNlcjcxMzQyNA==
-        operator-owner: true
-      - login: emoriwan
-        node-id: U_kgDOEUqvpg
-        operator-owner: false
+# inspect the saved baseline and notification state.
+openclaw agent-system notifications status --json
 ```
 
-Each actor opts in independently; omitted or false flags grant nothing. Run
-`doctor` to inspect access and `install` to reconcile it. Missing or unverifiable
-optional access warns without blocking intake. Install verifies login/node-ID
-pins before changing grants; passive discovery and issue prose never grant access.
+Installation records existing assignments without creating work for them. After
+installation succeeds, have an approved actor assign a new issue to the configured
+GitHub account in an eligible repository. The Gateway polls automatically.
 
-Install requests a configuration reload. If the Gateway remains stale, restart
-it and verify a fresh assignment. Doctor inspects its own process's loaded policy,
-not a separate Gateway. Explicit tool denials, narrower allowlists, and session
-visibility restrictions still apply.
-
-Removing a flag, actor, or notification declaration retires its grant claim on
-the next install. Pre-existing/manual grants and grants needed by other
-installations remain. Uncertain ownership warns and preserves access; do not
-delete the provenance ledger to repair it. Before uninstalling the plugin or
-deleting a workspace, remove the flags and run install to verify cleanup while
-the declaration and receipts are available. Plugin removal cannot revoke grants.
-
-Initial assignments use native `sessions` tools for owner, color, and group
-setup. A read-only check records persisted results privately, preserves manual
-fields, and reports missing evidence as unverified. Setup failures do not retry,
-block work, or add GitHub comments. This optional access does not replace the
-[required conversation hook](#required-conversation-hook).
-
-### `github.notifications.allowed-repository-owners`
-
-| Type                 | Required | Default   |
-| -------------------- | -------- | --------- |
-| GitHub identity list | no       | any owner |
-
-Filters assignments by repository owner using the same `login` and `node-id`
-identity shape as `approved-actors`. At least one identity is required when the
-field is present, and node IDs must be unique within the list. The filter does
-not grant repository access or approve the owner's members.
-
-### `github.notifications.initial-mode`
-
-| Type   | Required | Default |
-| ------ | -------- | ------- |
-| string | no       | `work`  |
-
-Selects `guided` or `work` for newly accepted issues. Guided prepares the
-session and waits for direction; Work schedules the initial implementation
-turn.
-
-### `github.notifications.interval-minutes`
-
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | no       | `5`     |
-
-Sets the polling interval from `1` through `1440` minutes.
-
-### `github.notifications.max-concurrent-issues`
-
-| Type    | Required | Default |
-| ------- | -------- | ------- |
-| integer | no       | `2`     |
-
-Limits concurrent issue work for one agent. The durable queue is shared by the
-Gateway and one-shot CLI refreshes, so a second process cannot evade the limit.
-An issue keeps its slot across planning and automatic implementation. Delivery,
-an explicit wait for follow-up, or a retryable failure releases the slot; failed
-work moves to the back of the queue. Pull-request assignment intake is not
-counted against this issue-work limit.
-
-`github.token` names an environment variable and never accepts a literal token.
-Work delivery requires [`git.ssh`](../../tools/git/README.md#gitsshprivate-keys)
-for the authenticated branch push. The matching public key must already belong
-to the configured GitHub account, or `github.ssh-keys` can declare it for
-`install` to reconcile. SSH configuration also keeps private-repository
-worktree preparation free of credential-bearing clone URLs.
-
-Run `openclaw agent-system install` after changing the configuration. Installation
-establishes the first safe assignment baseline; only assignments observed after
-that baseline create local work. A baseline failure reports
-`github-notification-baseline-failed` and leaves intake inactive.
-
-### Required Conversation Hook
-
-For configured notifications, `doctor` reports unset or denied
-`plugins.entries.agent-system.hooks.allowConversationAccess` as blocked without
-changing it. Run `openclaw agent-system install` from the agent workspace to grant
-access and verify required hook registration. Install preserves unrelated
-configuration and does not override `hooks.allowPromptInjection: false`.
-If the running Gateway has not reloaded the permission, restart it after install;
-notifications remain blocked until its required hooks are available.
+A failed baseline leaves intake inactive. Install also grants the required
+conversation hook; if the Gateway has not reloaded that permission, restart it.
+See [hook access](./ADVANCED.md#required-conversation-hook) for diagnostics and
+[the command reference](./ADVANCED.md#cli) to refresh intake or wait for a checkpoint.
 
 ## CLI
 
-All notification commands run from an agent workspace or use `--agent <id>` to
-select one installed agent explicitly. `openclaw as` is an equivalent alias for
-`openclaw agent-system`. Bare `notifications` prints command help.
-
-### Usage
-
-```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
-openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
-```
-
-### Common Options
-
-| Option                                                      | Commands | Behavior                                                       |
-| ----------------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| `--agent <id>`                                              | all      | Uses the exact installed agent instead of workspace discovery. |
-| `--repository <owner/name> --kind <kind> --number <number>` | all      | Selects one item; all three values must be provided together.  |
-| `--json`                                                    | all      | Writes one undecorated structured result to standard output.   |
-
-`--kind` accepts `issue` or `pull-request`. Item numbers and timeout values must
-be positive integers. Invalid options return exit code `2`; failed, degraded,
-timed-out, or otherwise incomplete operations return nonzero.
-
-### `openclaw agent-system notifications refresh`
-
-Runs one GitHub notification intake cycle immediately.
-
-| Option                | Required | Default | Behavior                           |
-| --------------------- | -------- | ------- | ---------------------------------- |
-| `--timeout <seconds>` | no       | `300`   | Bounds the complete refresh cycle. |
-
-Without an item selector, `refresh` processes the agent's eligible assignments.
-A selector limits the cycle to one exact item. A completed cycle may establish
-the baseline, prepare an issue, continue one pending Work implementation,
-process a bounded pair of admitted comments, or retire work. Deferred and failed
-cycles return nonzero.
-
-The CLI first polls and saves intake, then waits for execution within the refresh
-timeout. If execution is busy or the wait ends, newly admitted items remain visible
-through `notifications status` and can resume on a later cycle. The CLI waits for
-any execution it starts to settle before exiting.
-
-### `openclaw agent-system notifications status`
-
-Reads the durable notification state without advancing intake.
-
-The result reports a redacted baseline and item projection, including lifecycle,
-worktree, cleanup, scheduling state, and aggregate active, queued, and limit
-counts when available. Waiting items include a stable reason code. A durable
-monitor diagnostic returns `degraded` and a nonzero exit code.
-
-### `openclaw agent-system notifications wait`
-
-Waits for one semantic notification checkpoint without parsing session history
-or presentation text.
-
-| Option                | Required | Default | Behavior                                      |
-| --------------------- | -------- | ------- | --------------------------------------------- |
-| `--for <target>`      | yes      | none    | Selects the lifecycle checkpoint.             |
-| `--refresh`           | no       | off     | Advances provider-owned intake while waiting. |
-| `--timeout <seconds>` | no       | `300`   | Bounds the complete wait.                     |
-
-Supported targets:
-
-| Target                | Selector required | Meaning                                       |
-| --------------------- | ----------------- | --------------------------------------------- |
-| `baseline-ready`      | no                | The first safe provider observation completed |
-| `assignment-rejected` | yes               | The selected assignment failed admission      |
-| `prepared`            | yes               | Lifecycle-owned intake resources are ready    |
-| `worktree-ready`      | yes               | The selected issue worktree is ready          |
-| `retired`             | yes               | The selected assignment retired logically     |
-
-Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
-returns nonzero.
-
-### Examples
+From the agent workspace:
 
 ```sh
-# run intake and prepared-issue reconciliation now.
+# process eligible assignments and pending issue work now.
 openclaw agent-system notifications refresh
 
-# inspect redacted state for the workspace agent.
+# inspect saved state without advancing intake.
 openclaw agent-system notifications status --json
 
-# advance intake until one issue worktree is ready.
+# advance intake until this issue's worktree is ready.
 openclaw agent-system notifications wait \
-  --repository tanaabased/example \
-  --kind issue \
-  --number 12 \
-  --for worktree-ready \
-  --refresh \
-  --json
+  --repository tanaabased/example --kind issue --number 12 \
+  --for worktree-ready --refresh --json
 ```
+
+See the [CLI reference](./ADVANCED.md#cli) for item selectors, timeouts, and supported checkpoints.
+
+## Model Routing
+
+Declare all four [model profiles](../../MANIFEST.md#models) to route new issue
+conversations by complexity. Existing conversations retain their selection;
+default-only manifests keep ordinary behavior. See [routing details](./ADVANCED.md#model-routing)
+for assessment, permissions, overrides, and escalation.
 
 ## Current Limitations
 
@@ -403,45 +165,12 @@ openclaw agent-system notifications wait \
   GitHub Update skill is the explicit private-session path for publishing a
   missing progress update outside a notification reply turn.
 
-## Security and Lifecycle
-
-- Installed account and workspace routing must match the manifest. Missing,
-  duplicate, conflicting, or cross-agent routing fails closed.
-- Admission requires the authenticated assigned account, an approved immutable
-  assigning actor, an eligible repository owner, and sufficient repository
-  access.
-- Assignment and comment reads are bounded and reauthorized before model turns.
-  Private monitor and conversation state contain no tokens.
-- An approved actor may enter the conversation but cannot select capabilities;
-  the trusted channel lifecycle and configured mode remain authoritative.
-- Replies are reauthorized against their exact source before credentials load
-  and are published idempotently. An ordinary approved comment uses the same
-  final response in GitHub and the private session. If deterministic validation
-  rejects that response, the channel publishes a safe notice instead of going
-  silent while retaining the detailed response privately.
-- Merging a delivery pull request retires its issue-owned lifecycle. Closing and
-  reopening the pull request suspends and safely re-baselines that comment source.
-- Removing `github.notifications` and reinstalling retires tracked assignments,
-  removes owned routing and converged monitor state, and stops intake without
-  deleting existing issue worktrees.
-
-### Durable State and Upgrades
-
-Intake checkpoints and per-issue conversation state are stored separately in the
-agent's private state directory. Stop old runtime processes before upgrading;
-running old and new state writers together is unsupported.
-
-Supported older conversation snapshots and reply-turn records migrate on use.
-The retained `github-notification-conversations.legacy.json` snapshot allows an
-interrupted migration to retry, but receives no later updates and is not a
-current backup. Older plugin versions cannot read the new index. Missing or
-invalid conversation records block only the affected lifecycle.
-
 ## Further Reading
 
+- [Advanced guide](./ADVANCED.md): configuration, commands, routing, security, and upgrades
 - [Agent System README](../../README.md): installation and common manifest workflow
-- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
-- [Design](./DESIGN.md): target message flow, lifecycle types, modes, durable conversation state, and response boundaries
-- [Presentation](./PRESENTATION.md): reusable visible component definitions
-- [Git tools](../../tools/git/README.md): identity, SSH, policy, and managed worktree configuration
-- [GitHub CLI tool](../../tools/github/README.md): shared GitHub identity, credentials, configuration, and policy
+- [Global configuration](../../CONFIG.md): operator-owned plugin settings
+- [Git tools](../../tools/git/README.md): identity, SSH, policy, and managed worktrees
+- [GitHub CLI tool](../../tools/github/README.md): shared GitHub credentials and policy
+- [Design](./DESIGN.md): target lifecycle behavior, including unimplemented features
+- [Presentation](./PRESENTATION.md): reusable visible components

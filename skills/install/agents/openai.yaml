@@ -2,7 +2,7 @@ interface:
   display_name: 'Agent System Install'
   short_description: 'Install the runtime-owned Agent System projection'
   icon_small: './assets/icon-small.svg'
-  icon_large: './assets/icon-large.png'
+  icon_large: './assets/icon-large.svg'
   brand_color: '#00c88a'
   default_prompt: 'Use $agent-system-install to inspect or install the active Agent System workspace through its owning runtime.'
 policy:

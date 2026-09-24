@@ -65,7 +65,8 @@ const runCodexSetupProcess: SetupProcessRunner = async (argv, options) =>
     });
 
     const stop = (reason: 'signal' | 'timeout') => {
-      if (settled || child.exitCode !== null || child.signalCode !== null) return;
+      // Descendants can keep inherited pipes open after the direct child exits.
+      if (settled || termination !== 'exit') return;
       termination = reason;
       signalProcess(child, 'SIGTERM');
       forceTimer = setTimeout(() => signalProcess(child, 'SIGKILL'), options.killGraceMs);
@@ -94,7 +95,7 @@ const runCodexSetupProcess: SetupProcessRunner = async (argv, options) =>
       if (forceTimer) clearTimeout(forceTimer);
       options.signal?.removeEventListener('abort', abort);
       resolve({
-        code,
+        code: termination === 'exit' ? code : null,
         killed: termination !== 'exit',
         signal,
         stdout: Buffer.concat(stdout.chunks).toString('utf8'),

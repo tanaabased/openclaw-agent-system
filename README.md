@@ -12,21 +12,19 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System equips each OpenClaw agent with its own identity, environment, and
-credentials. Declare the agent's configuration in `agent.yaml`, then run
-`openclaw agent-system install` from the workspace to register it and configure
-its managed tools.
+Agent System puts your OpenClaw agent's identity, environment, and credential
+configuration in the repo alongside setup steps for installing dependencies and
+configuring the workspace. Clone the repo and run
+`openclaw agent-system install` to get your agent ready for work.
 
-**Current cool capabilities:**
+Enable [GitHub notifications in Work mode](./channels/github/README.md), assign
+an issue to the agent, and watch it work toward a delivery pull request.
 
-- **1Password-backed per-agent SSH private keys are never written to disk.**
-- **Each agent gets its own Git authorship, signing, and GitHub identity.**
-- **Work mode turns an assigned GitHub issue into a delivery pull request.**
-- **Automatically route GitHub issues to models matched to their complexity.**
+Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 > [!NOTE]
-> Requires OpenClaw 2026.9.5 or newer and is developed against 2026.9.5. See
-> [version compatibility](./ADVANCED.md#version-compatibility).
+> The OpenClaw integration requires 2026.9.5 or newer and is developed against 2026.9.5. See
+> [version compatibility](#version-compatibility).
 
 > [!WARNING]
 > Agent System remains a work in progress. Development and Leia coverage focus
@@ -35,18 +33,20 @@ its managed tools.
 
 ## Overview
 
-Today, Agent System:
-
-- registers an agent workspace with OpenClaw and reconciles its public identity
-- assembles environment variables and credentials per agent from declared dotenv, inline, and 1Password sources
-- wraps supported tools with the active agent's declared configuration, environment, credentials, and workspace boundaries
-- applies each tool's operation-specific `allow` or `deny` policy before resolving credentials or executing the operation
-- validates manifests, installs configured components, projects executable paths, and reports installed-state drift
+- **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
+- **Assign work like you would to a developer:** the GitHub notification channel turns issue assignments into agent work and delivery pull requests.
+- **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
+- **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
+- **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
+- **The right model for the work:** route GitHub issues to declared model tiers by complexity.
+- **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
 
 ## Ships With
 
 ### Tools
 
+- [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
+- [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
 - [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
@@ -55,15 +55,31 @@ Today, Agent System:
 
 - [`agent-system-github`](./channels/github/README.md) — Polls and admits approved GitHub assignments, prepares managed issue worktrees, and keeps issue and delivery pull-request comments in one lifecycle session.
 
+### CLI
+
+- [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
+- [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
+- [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
+- [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
+- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system notifications`](./CLI.md#openclaw-agent-system-notifications) — Refresh and inspect GitHub assignments.
+- [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
+- [Complete CLI reference](./CLI.md) — All commands, options, and examples.
+
+### Configuration
+
+- [Manifest reference](./MANIFEST.md) — Repository-owned agent configuration and setup.
+- [Global configuration](./CONFIG.md) — Operator-owned OpenClaw plugin settings.
+
 ### Skills
 
-- [Codex binding](./skills/codex-binding/SKILL.md) — Binds one Codex plugin installation to one Agent System workspace.
-- [Doctor](./skills/doctor/SKILL.md) — Reports runtime-owned readiness without applying repairs.
-- [Install](./skills/install/SKILL.md) — Routes installation through the full OpenClaw lifecycle or the setup-only standalone Codex adapter.
-- [Git CLI](./skills/git-cli/SKILL.md) — Guides agents through ordinary Git operations with `agent_system_git`.
-- [Git worktree](./skills/git-worktree/SKILL.md) — Guides agents through preparing, reusing, and removing managed worktrees.
-- [GitHub CLI](./skills/github-cli/SKILL.md) — Guides agents through GitHub operations with `agent_system_github`.
-- [GitHub Update](./skills/github-update/SKILL.md) — Reconciles private notification progress with the owning public issue and publishes one safe, concise update when needed.
+- [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.
+- [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
+- [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
+- [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
+- [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
+- [GitHub Update](./skills/github-update/SKILL.md) — Publish missing progress from a private notification session.
+- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
 
 ## Installation
 
@@ -73,75 +89,36 @@ Install the current release from ClawHub:
 
 ```sh
 openclaw plugins install clawhub:@tanaab/openclaw-agent-system --accept-capabilities
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
 To select npm explicitly instead:
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true
 ```
 
-Either install command accepts Agent System's declared capabilities, then
-registers and enables the `agent-system` plugin. The explicit conversation-access
-grant lets Agent System add manifest and GitHub lifecycle guidance through
-OpenClaw's `before_prompt_build` hook.
+Both commands accept the declared capabilities, register the plugin, and enable
+it. When GitHub notifications are configured, `openclaw agent-system install`
+also grants and verifies the required conversation-hook access; see
+[hook setup](./channels/github/ADVANCED.md#required-conversation-hook).
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
 
-### Codex
+### Version Compatibility
 
-Install the same npm release with [Codex Tools](https://github.com/tanaabased/codex-tools):
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| Unreleased           | 2026.9.5         | 2026.9.5           |
+| 0.6.0                | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
 
-```sh
-npm install --global @tanaab/codex-tools
-codex-tools install npm:@tanaab/openclaw-agent-system --dry-run --json
-codex-tools install npm:@tanaab/openclaw-agent-system
-```
-
-Codex Tools registers the personal marketplace and installs the plugin. On the
-first fresh task, Codex warns that the bundled SessionStart hook needs review.
-Open `/hooks`, inspect and trust the Agent System hook, then start another fresh
-task. Installation does not trust the hook automatically; Codex binds trust to
-its exact definition and asks again after that definition changes.
-
-Ask Codex to bind this plugin installation to one workspace:
-
-```text
-Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/agent-workspace.
-```
-
-The skill previews the canonical directory and its current manifest state before
-asking for confirmation. A missing or malformed manifest does not block the
-binding: choose the explicit bind-anyway path and Agent System context remains
-inactive until the workspace has a valid manifest. Start a fresh task after any
-binding change. See [Codex workspace binding](./ADVANCED.md#codex-workspace-binding)
-for state, refresh, and projection details.
-
-To inspect the bound workspace without applying repairs, ask Codex:
-
-```text
-Use $agent-system-doctor to inspect the active Agent System workspace.
-```
-
-To inspect and apply setup steps for the bound workspace, ask Codex:
-
-```text
-Use $agent-system-install to install the active Agent System workspace.
-```
-
-One manifest serves both runtimes, but the projections are deliberately unequal.
-Standalone Codex Doctor and Install inspect or run only setup steps whose
-`runtimes` includes `codex` or is omitted. OpenClaw owns the full lifecycle:
-agent registration, models, memory, tool access, paths, Git, GitHub,
-notifications, credentials, and declared environment resolution. The Codex
-adapter does not imitate any of those owners; it projects declared model tiers
-only as non-secret candidates for native Codex task creation.
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
 
 ## Usage
 
-Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand.
+Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand. The optional setup script below assumes Homebrew is already installed.
 
 ```yaml
 schema-version: 1
@@ -185,6 +162,18 @@ git:
   ssh:
     private-keys:
       from-environment: SSH_KEY
+
+setup:
+  runtimes: [openclaw]
+  apply: |
+    # install workspace dependencies.
+    brew install jq ripgrep
+    # install and configure the diffs plugin for browser previews.
+    openclaw plugins inspect diffs >/dev/null 2>&1 || openclaw plugins install clawhub:@openclaw/diffs --accept-capabilities
+    openclaw plugins enable diffs --accept-capabilities
+    openclaw config set plugins.entries.diffs.config.defaults.mode view
+    # prepare local working directories.
+    mkdir -p repos artifacts
 ```
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
@@ -204,25 +193,18 @@ openclaw agent-system doctor
 openclaw agent-system tool gh -- api user --jq .login
 ```
 
-For workspace preparation, add an optional `setup` declaration:
-
-```yaml
-setup:
-  check: test -d repos
-  apply: mkdir -p repos
-```
-
 OpenClaw `install` prepares the agent's managed tools before running applicable
 setup, asks for confirmation interactively, and proceeds without a prompt in CI
-or with `--yes`. Standalone Codex runs only its applicable setup projection.
-Doctor runs OpenClaw setup checks without applying changes. Use checks and
+or with `--yes`. Doctor runs setup checks without applying changes. Use checks and
 repeatable applies to make subsequent installs safe; arbitrary setup effects are
-not rolled back. See [Setup](./ADVANCED.md#setup) for inline scripts, named steps,
+not rolled back. See [Setup](./MANIFEST.md#setup) for inline scripts, named steps,
 runtime filters, and cloning repositories with the agent's Git/GitHub identity.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See
-[Advanced](./ADVANCED.md) for the complete manifest and CLI references.
+[Manifest Reference](./MANIFEST.md) for all workspace settings,
+[CLI Reference](./CLI.md) for commands, and [Global Configuration](./CONFIG.md)
+for operator-owned plugin settings.
 
 ## Development
 
