@@ -42,6 +42,7 @@ const packageMetadata: PackageMetadata = {
     'CLI.md',
     'CONFIG.md',
     'DEVELOPMENT.md',
+    'DOCUMENTATION.md',
     'CODEX.md',
     'CHANGELOG.md',
     'LICENSE',
@@ -320,6 +321,7 @@ describe('core/plugin-metadata-failures', () => {
                 'CLI.md',
                 'CONFIG.md',
                 'DEVELOPMENT.md',
+                'DOCUMENTATION.md',
                 'CODEX.md',
               ].includes(path),
           ),
@@ -336,6 +338,7 @@ describe('core/plugin-metadata-failures', () => {
         { code: 'package-file', message: 'package files must include CLI.md' },
         { code: 'package-file', message: 'package files must include CONFIG.md' },
         { code: 'package-file', message: 'package files must include DEVELOPMENT.md' },
+        { code: 'package-file', message: 'package files must include DOCUMENTATION.md' },
         { code: 'package-file', message: 'package files must include CODEX.md' },
       ],
     );

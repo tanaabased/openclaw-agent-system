@@ -31,22 +31,10 @@
 - Keep risk classification available for audit and design work without making it an implicit authorization decision.
 - Redesign and validate policy one tool at a time; do not copy a legacy tool's fields into a new surface.
 
-## Documentation
+## Required Reading
 
-- Treat the locations below as ownership boundaries, not a checklist of files to update. Keep aligned documents unchanged and avoid repeating explanations across them.
-- Apply the [documentation change gate and reference formats](./DEVELOPMENT.md#documentation) before any documentation edit. Require an explicit request, verified behavioral mismatch, or broken reference; feature work does not authorize incidental prose cleanup. Review the final diff against that reason. Keep command and configuration presentation consistent across root, tool, and channel guides.
-- Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
-- Preserve the opening's three-paragraph message: repository-owned identity, environment, credential configuration, and setup activated by cloning and running `openclaw agent-system install`; GitHub issue-to-pull-request work; then the minimal standalone Codex plugin. Keep repository portability, one-command setup, and assigning agents work through GitHub visible in the Overview.
-- Keep the rest of `README.md` focused on installation, version compatibility, the common manifest workflow, and first verification.
-- Keep root-level companion guides: manifest discovery, schema, setup, environment resolution, and path projection in `MANIFEST.md`; common commands and execution boundaries in `CLI.md`; operator-owned OpenClaw plugin settings in `CONFIG.md`.
-- Keep standalone Codex installation, binding, context, setup, model routing, and development guidance in `CODEX.md`; use short contextual links elsewhere. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.
-- Keep the target GitHub notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior in `channels/github/DESIGN.md`.
-- Keep reusable human-visible GitHub notification components and styling in `channels/github/PRESENTATION.md`; do not put lifecycle or feature behavior there.
-- Put each first-party tool's complete configuration, invocation, policy, lifecycle, and security guide in `tools/<capability>/README.md`; keep only common-path summaries and contextual links in root documentation.
-- Put each first-party channel's common configuration, routing, lifecycle, and security guide in `channels/<provider>/README.md`; keep focused companion guides beside it when a distinct channel-owned contract would overload the common path.
-- Put OpenClaw source installation, DevGuard usage, runtime logging, validation, and coding standards in `DEVELOPMENT.md`.
-- Keep explanatory comments inside documentation code blocks fully lowercase. Preserve required casing only in commands, identifiers, environment-variable names, and expected values.
-- Treat `CHANGELOG.md` as the record of implemented changes.
+- Before editing or auditing documentation, read and apply [Documentation Design](./DOCUMENTATION.md), including its change gate and protected README positioning.
+- Before optimization assessments or changes to an accepted optimization decision, read and apply [Optimization Guidance](./.github/OPTIMIZATION.md).
 
 ## Identity and configuration
 
@@ -93,32 +81,6 @@
 - Use `tanaabased/big-test-bucket` as the default hosted repository for manual and GitHub-backed tests that can use a Tanaab organization repository.
 - Use `pirog/me` only when a test specifically requires a non-organization, user-owned repository.
 - Keep created GitHub fixtures bounded and disposable, clean them up after capturing evidence, and do not spread live testing across unrelated repositories.
-
-## Optimization
-
-- Audit every session-facing inbound and outbound path against `channels/github/DESIGN.md` for target lifecycle and message boundaries and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` aligned with the implementation.
-- Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
-- Treat logger selection and propagation as an output contract. Long-lived lifecycle services used by both Gateway and CLI paths must not acquire a console logger merely because a machine-readable command invokes them.
-- Require focused unit coverage for logger routing and JSON writers plus an executable GitHub Actions example when output purity depends on the assembled plugin, OpenClaw logging level, or another installed-runtime boundary.
-- Preserve aligned surfaces and recommend changes only for evidenced presentation drift, context leakage, publication-boundary violations, ambiguous compatibility behavior, or machine-output contamination.
-
-## Accepted optimization decisions
-
-- Keep `API.md` as the public planning surface for the future cross-plugin Tool API, include it in the published package, and keep current-behavior docs explicit that the API is not yet available. Do not recommend removing or internalizing it unless the user changes that product decision or the document contradicts implemented behavior.
-- Keep release package inspection, npm publication, and ClawHub publication as separate pack operations. Exact tarball byte reuse across those paths is not an owned requirement. Each path must still originate from the same prepared release version and keep package contents, plugin metadata, compatibility, tags, source repository, and source commit aligned. Do not recommend unifying the archives unless repository evidence shows those contracts have diverged.
-- Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. The Brewfile provides the command in the developer-machine toolchain, while the pinned dependency keeps repository scripts and GitHub Actions reproducible. Do not recommend deduplicating them unless one of those installation contracts is removed.
-- Treat GitHub notification monitor-state schema 2 as unsupported legacy state. The only known installation was manually upgraded before schema 3 became the active contract, so keep the decoder rejection test and do not recommend a schema 2 migration or retroactive activation unless the support policy changes or repository evidence shows additional persisted users.
-- Project monitor-state schema 3 into current schema 5 by retaining assignment,
-  lifecycle, worktree, failure, and retirement facts while dropping its removed
-  session, publication, mode, and comment-tracking fields. Project schema 4 into
-  schema 5 without inventing provider-retirement proof or cleanup outcomes. Do
-  not restore removed fields to the active intake schema for compatibility.
-- Keep bounded item/comment reads, comment admission, public-candidate parsing,
-  and idempotent comment publication as lifecycle-neutral provider primitives.
-  Do not wire them into intake state or restore legacy comment tracking; a
-  lifecycle session must own scheduling, continuation, and publication authority.
-- Keep general Leia examples in `pr-examples-tests.yml` and manually dispatched GitHub notification acceptance scenarios in `notification-tests.yml`. Scope shared test credentials to each workflow's final Leia execution step even though every matrix entry receives that step environment. Use strict AIMock for the `agent` and `github` examples and the `credentials` cache checks; only `approval`, `containment`, `models`, and `path` select a live OpenAI model. The `codex` example uses direct assertions without a model. The assignment mock must match the created issue title and body so a passing fixture proves bounded provider context reached the installed model turn.
-- Keep synthetic Leia SSH-key preparation in the shared `openclaw-setup` path used by both matrices. It creates an isolated per-job fixture rather than exposing a shared credential. Do not narrow that setup unless repository evidence shows material cost, exposure, or cross-scenario consumption.
 
 ## Validation
 

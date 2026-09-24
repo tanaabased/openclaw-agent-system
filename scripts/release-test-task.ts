@@ -221,6 +221,7 @@ try {
     'CLI.md',
     'CONFIG.md',
     'DEVELOPMENT.md',
+    'DOCUMENTATION.md',
     'CODEX.md',
     'CHANGELOG.md',
     'LICENSE',
@@ -233,6 +234,7 @@ try {
   await check('exclude repository-only files', () => {
     for (const path of [
       'AGENTS.md',
+      '.github/OPTIMIZATION.md',
       'examples/install/README.md',
       'scenarios/issue-guided-assignment/expected-evidence.json',
       'scenarios/issue-guided-assignment/model-fixture.ts',

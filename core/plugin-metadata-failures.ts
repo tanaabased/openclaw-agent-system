@@ -175,6 +175,7 @@ const requiredPackageFiles = [
   'CLI.md',
   'CONFIG.md',
   'DEVELOPMENT.md',
+  'DOCUMENTATION.md',
   'CODEX.md',
   'CHANGELOG.md',
   'LICENSE',
