@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageBin = join(projectDir, 'bin');
 const launcher = join(packageBin, 'agent-system-tool');
+const strictLaunchers = [
+  ['agent-system-git', 'git'],
+  ['agent-system-gh', 'gh'],
+  ['agent-system-worktree', 'worktree'],
+] as const;
 
 describe('bin/agent-system-tool', () => {
   let root = '';
@@ -49,6 +54,36 @@ describe('bin/agent-system-tool', () => {
       const result = spawnSync(launcher, args, { encoding: 'utf8' });
       assert.equal(result.status, 2);
       assert.match(result.stderr, /tool command/u);
+    }
+  });
+
+  it('should keep route-bound launchers on strict managed execution', async () => {
+    const hostBin = join(root, 'host-bin');
+    await mkdir(hostBin);
+    await writeFile(
+      join(hostBin, 'openclaw'),
+      '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n',
+    );
+    await chmod(join(hostBin, 'openclaw'), 0o755);
+
+    for (const [name, command] of strictLaunchers) {
+      const result = spawnSync('/bin/sh', [join(packageBin, name), 'example'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: [hostBin, packageBin, process.env.PATH].filter(Boolean).join(delimiter),
+        },
+      });
+      assert.equal(result.status, 0);
+      assert.deepEqual(JSON.parse(result.stdout), [
+        'agent-system',
+        'tool',
+        command,
+        '--shim',
+        'managed',
+        '--',
+        'example',
+      ]);
     }
   });
 

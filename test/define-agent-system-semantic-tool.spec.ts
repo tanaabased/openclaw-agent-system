@@ -66,6 +66,8 @@ describe('api/define-semantic-tool', () => {
         scope: { source: 'tool', toolCallId: 'call-1', toolContext },
       },
     ]);
-    assert.deepEqual(registered.commands, [{ command: 'test-semantic-tool' }]);
+    assert.deepEqual(registered.commands, [
+      { command: 'test-semantic-tool', environmentVariable: 'test-semantic-tool' },
+    ]);
   });
 });

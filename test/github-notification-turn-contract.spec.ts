@@ -76,6 +76,27 @@ describe('channels/github/conversation/turn-contract', () => {
     }
   });
 
+  it('should limit the initial commit count to its implementation event', () => {
+    const resolver = createGitHubNotificationTurnContractResolver();
+
+    for (const identity of [
+      { eventId: 'assignment', lifecycleId: 'issue', modeId: 'work' },
+      { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' },
+      { eventId: 'implementation', lifecycleId: 'issue', modeId: 'work' },
+      { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+      { eventId: 'assignment', lifecycleId: 'issue', modeId: 'guided' },
+      { eventId: 'comment', lifecycleId: 'issue', modeId: 'guided' },
+    ] as const) {
+      const instructions = resolver.instructions(identity, 'tanaabot');
+
+      assert.match(instructions, /exactly-one-local-commit requirement applies only/u);
+      assert.match(instructions, /subsequent fixes as ordinary follow-up commits/u);
+      assert.match(instructions, /Do not amend published commits or force-push merely/u);
+      assert.match(instructions, /current operator request explicitly authorizes/u);
+      assert.match(instructions, /Git policy allows it/u);
+    }
+  });
+
   it('should project one allowlist into both channel dispatch boundaries', () => {
     const toolsAllow = ['agent_system_github_reply'];
 

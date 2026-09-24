@@ -235,6 +235,12 @@ The packaged command automatically uses managed GitHub in agent context and
 sanitized host execution outside it. See the
 [command-routing contract](../../ADVANCED.md#trust-boundary).
 
+Agent-bound Gateway and setup children also receive `AGENT_SYSTEM_GH` as the
+absolute path to the strict managed launcher. Use `"$AGENT_SYSTEM_GH" repo view`
+when host fallback is unacceptable. The binding is child-scoped and fails closed
+without valid active-agent authority; it contains neither the GitHub token nor an
+authority capability.
+
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow

@@ -1,3 +1,5 @@
+import { isAbsolute, join } from 'node:path';
+
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import type { AgentManifest } from '../manifest/types.ts';
@@ -13,6 +15,10 @@ import type {
 /** Own statically imported first-party tool definitions and their command routes. */
 export default class AgentSystemToolRegistry {
   readonly #commands = new Map<string, RegisteredAgentSystemTool>();
+  readonly #environmentVariables = new Map<
+    string,
+    { command: string; tool: RegisteredAgentSystemTool }
+  >();
   readonly #tools = new Map<string, RegisteredAgentSystemTool>();
 
   constructor(tools: readonly RegisteredAgentSystemTool[]) {
@@ -21,7 +27,10 @@ export default class AgentSystemToolRegistry {
         throw new Error(`Duplicate Agent System tool id: ${tool.id}.`);
       }
       this.#tools.set(tool.id, tool);
-      for (const { command, hostFallback } of tool.commands) {
+      for (const { command, environmentVariable, hostFallback } of tool.commands) {
+        if (!/^[a-z][a-z0-9-]{0,63}$/u.test(command)) {
+          throw new Error(`Invalid Agent System tool command: ${command}.`);
+        }
         if (hostFallback !== undefined && !/^[a-z][a-z0-9-]{0,63}$/u.test(hostFallback)) {
           throw new Error(`Invalid Agent System host executable for command: ${command}.`);
         }
@@ -29,8 +38,28 @@ export default class AgentSystemToolRegistry {
           throw new Error(`Duplicate Agent System tool command: ${command}.`);
         }
         this.#commands.set(command, tool);
+        const name = normalizeLauncherEnvironmentName(environmentVariable);
+        if (reservedLauncherEnvironmentNames.has(name)) {
+          throw new Error(`Reserved Agent System launcher environment variable: ${name}.`);
+        }
+        if (this.#environmentVariables.has(name)) {
+          throw new Error(`Duplicate Agent System launcher environment variable: ${name}.`);
+        }
+        this.#environmentVariables.set(name, { command, tool });
       }
     }
+  }
+
+  /** Return strict launcher paths for command routes configured by one manifest. */
+  launcherBindings(manifest: AgentManifest, launcherDirectory: string): Record<string, string> {
+    if (!isAbsolute(launcherDirectory)) {
+      throw new Error('Agent System launcher directory must be absolute.');
+    }
+    return Object.fromEntries(
+      [...this.#environmentVariables.entries()]
+        .filter(([, { tool }]) => tool.isConfigured(manifest))
+        .map(([name, { command }]) => [name, join(launcherDirectory, `agent-system-${command}`)]),
+    );
   }
 
   hostFallback(command: string): string | undefined {
@@ -93,4 +122,22 @@ export default class AgentSystemToolRegistry {
       tool.registerTrustedPolicy?.(api, manifestService);
     }
   }
+}
+
+const reservedLauncherEnvironmentNames = new Set([
+  'AGENT_SYSTEM_EXEC_AUTHORITY',
+  'AGENT_SYSTEM_EXEC_CAPABILITY',
+  'AGENT_SYSTEM_TOOL_LAUNCHER_DIR',
+]);
+
+function normalizeLauncherEnvironmentName(value: string): string {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/gu, '_')
+    .replace(/^_+|_+$/gu, '');
+  if (!normalized || !/^[A-Z][A-Z0-9_]{0,63}$/u.test(normalized)) {
+    throw new Error(`Invalid Agent System launcher environment variable: ${value}.`);
+  }
+  return normalized.startsWith('AGENT_SYSTEM_') ? normalized : `AGENT_SYSTEM_${normalized}`;
 }

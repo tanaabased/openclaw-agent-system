@@ -25,6 +25,8 @@ export interface AgentSystemToolGuidance {
 
 export interface AgentSystemToolCommand {
   command: string;
+  /** Stable logical name projected as an AGENT_SYSTEM_* strict-launcher binding. */
+  environmentVariable: string;
   /** Static host executable for contextual shims only; managed failures never fall back. */
   hostFallback?: string;
 }

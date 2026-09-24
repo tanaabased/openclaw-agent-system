@@ -192,7 +192,10 @@ try {
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
     'bin/agent-system-ssh-signing-key',
+    'bin/agent-system-gh',
+    'bin/agent-system-git',
     'bin/agent-system-tool',
+    'bin/agent-system-worktree',
     'bin/git',
     'bin/gh',
     'channels/github/DESIGN.md',
@@ -451,6 +454,15 @@ try {
     await access(commandPath);
     const result = await run(commandPath, ['git', '--agent-system']);
     assert.equal(result.output, 'agent-system\n');
+  });
+
+  await check('ship executable strict managed tool launchers', async () => {
+    for (const name of ['agent-system-gh', 'agent-system-git', 'agent-system-worktree']) {
+      const commandPath = join(packageRoot, 'bin', name);
+      await access(commandPath);
+      const result = await run(commandPath, ['--agent-system']);
+      assert.equal(result.output, 'agent-system\n');
+    }
   });
 
   await check('ship an executable Agent System ssh launcher', async () => {

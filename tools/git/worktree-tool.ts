@@ -302,7 +302,7 @@ export function createGitWorktreeToolDefinition(
       prompt:
         'For managed worktrees, use the $agent-system-git-worktree skill and agent_system_git_worktree to prepare, list, or remove them. Pass the returned path as cwd to agent_system_git for ordinary Git work.',
     },
-    commands: [{ command: 'worktree' }],
+    commands: [{ command: 'worktree', environmentVariable: 'git-worktree' }],
     tool: {
       classify,
       description:

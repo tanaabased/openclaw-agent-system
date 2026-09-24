@@ -22,6 +22,8 @@
 
 ### Improvements
 
+- Exposed configured command routes through child-scoped strict managed launcher bindings such as `AGENT_SYSTEM_GIT` and `AGENT_SYSTEM_GH`. [#147](https://github.com/tanaabased/openclaw-agent-system/issues/147)
+- Clarified that the single initial lifecycle commit never requires rewriting published history for follow-up fixes. [#147](https://github.com/tanaabased/openclaw-agent-system/issues/147)
 - Migrated release and ordinary CI setup to the shared Tanaab action catalog with independent repository, npm, and ClawHub publishers. [#118](https://github.com/tanaabased/openclaw-agent-system/issues/118)
 
 ## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)

@@ -136,6 +136,7 @@ describe('agent/setup-runner', () => {
         ...context(),
         commandBinding: {
           launcherDirectory: launchers,
+          launcherBindings: {},
           authority: 'authority',
           capability: 'capability',
         },
@@ -255,6 +256,7 @@ describe('agent/setup-runner', () => {
         PATH: [launchers, hostBin, await realpath('/bin'), await realpath('/usr/bin')].join(':'),
         AGENT_SYSTEM_EXEC_AUTHORITY: 'selected-authority',
         AGENT_SYSTEM_EXEC_CAPABILITY: 'selected-capability',
+        AGENT_SYSTEM_GH: join(launchers, 'agent-system-gh'),
       });
       return success;
     }, base);
@@ -264,6 +266,9 @@ describe('agent/setup-runner', () => {
         ...context(),
         commandBinding: {
           launcherDirectory: launchers,
+          launcherBindings: {
+            AGENT_SYSTEM_GH: join(launchers, 'agent-system-gh'),
+          },
           authority: 'selected-authority',
           capability: 'selected-capability',
         },

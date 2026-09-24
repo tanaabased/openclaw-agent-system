@@ -644,6 +644,21 @@ launchers and Agent System's `worktree` route never fall back. Direct `tool` and
 `credentials` commands remain trusted operator interfaces and may select an
 installed agent explicitly.
 
+Agent-bound Gateway and setup child processes receive an absolute strict launcher
+binding for each configured command route. Git uses `AGENT_SYSTEM_GIT`, GitHub uses
+`AGENT_SYSTEM_GH`, and managed worktrees use `AGENT_SYSTEM_GIT_WORKTREE` when that
+route is configured. Invoke a binding as a command, for example
+`"$AGENT_SYSTEM_GIT" status --short`. These values are executable paths, not
+credentials or authority capabilities. They retain the active agent's ordinary
+classification, authorization, policy, credential, containment, and audit path;
+missing or invalid authority fails instead of selecting a host executable.
+
+Bindings exist only in supported Agent System-owned child environments. They are
+not written to login shells, repository configuration, manifest environment
+output, or unrelated host processes. Ordinary `git` and `gh` lookup remains the
+context-sensitive compatibility path described above; use the binding when a
+script must require managed execution.
+
 The `install` and Doctor (`status`) CLI routes remain operator-only through both
 aliases, including setup descendants. In OpenClaw chat, use
 `agent_system_install` or `agent_system_doctor` to request **Allow once** for the

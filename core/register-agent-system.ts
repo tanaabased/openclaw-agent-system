@@ -481,8 +481,10 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   toolRegistry.registerTrustedPolicies(api, manifestService);
   registerAgentCommandAuthority(api, {
     authority: commandAuthority,
+    launcherDirectory: join(packageDir, 'bin'),
     logger,
     manifestService,
+    toolRegistry,
   });
   registerAgentCommandSecurity(api, {
     logger,

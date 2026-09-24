@@ -255,6 +255,9 @@ describe('agent/setup-command-service', function () {
       assert.equal(environment.GH_TOKEN, undefined);
       assert.equal(environment.EMORI_TOKEN, undefined);
       assert.ok(environment.AGENT_SYSTEM_EXEC_CAPABILITY);
+      assert.equal(environment.AGENT_SYSTEM_GIT, join(projectDir, 'bin', 'agent-system-git'));
+      assert.equal(environment.AGENT_SYSTEM_GH, join(projectDir, 'bin', 'agent-system-gh'));
+      assert.equal(environment.AGENT_SYSTEM_GIT_WORKTREE, undefined);
       assert.equal(environment.OPENCLAW_PROFILE, 'fixture');
       assert.equal(environment.OPENCLAW_STATE_DIR, join(root, 'profile'));
       assert.equal(environment.OPENCLAW_CONFIG_PATH, join(root, 'profile', 'openclaw.json'));
@@ -368,7 +371,11 @@ describe('agent/setup-command-service', function () {
   it('should distinguish ordinary tool exit one from unavailable tool execution', async () => {
     loaded.manifest.github = { token: 'EMORI_TOKEN' };
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
+      dependencies.toolRegistry,
+    );
     dependencies.toolRegistry = {
+      launcherBindings,
       async invoke(...args) {
         const result = await original(...args);
         assert.equal(result.kind, 'cli');
@@ -382,8 +389,12 @@ describe('agent/setup-command-service', function () {
 
   it('should surface managed tool timeouts and signals even when a script catches failure', async () => {
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
+      dependencies.toolRegistry,
+    );
     for (const timedOut of [true, false]) {
       dependencies.toolRegistry = {
+        launcherBindings,
         async invoke(...args) {
           const result = await original(...args);
           assert.equal(result.kind, 'cli');

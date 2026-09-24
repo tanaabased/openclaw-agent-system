@@ -24,7 +24,7 @@ export interface SetupCommandServiceDependencies {
   packageDir: string;
   runCommandWithTimeout: Parameters<typeof createSetupCommandRunner>[0]['runCommandWithTimeout'];
   temporaryDirectory?: string;
-  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke'>;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'launcherBindings'>;
   toolRuntime: AgentSystemToolRuntime;
 }
 
@@ -153,6 +153,10 @@ export default class SetupCommandService {
           executableDirectories: (dependencies.baseEnvironment.PATH ?? '').split(delimiter),
           commandBinding: {
             launcherDirectory: join(dependencies.packageDir, 'bin'),
+            launcherBindings: dependencies.toolRegistry.launcherBindings(
+              loaded.manifest,
+              join(dependencies.packageDir, 'bin'),
+            ),
             authority: environment[agentCommandAuthorityEnvironmentName]!,
             capability: environment[agentCommandCapabilityEnvironmentName]!,
           },
