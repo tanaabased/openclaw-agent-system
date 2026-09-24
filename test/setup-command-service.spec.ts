@@ -371,7 +371,11 @@ describe('agent/setup-command-service', function () {
   it('should distinguish ordinary tool exit one from unavailable tool execution', async () => {
     loaded.manifest.github = { token: 'EMORI_TOKEN' };
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
+      dependencies.toolRegistry,
+    );
     dependencies.toolRegistry = {
+      launcherBindings,
       async invoke(...args) {
         const result = await original(...args);
         assert.equal(result.kind, 'cli');
@@ -385,8 +389,12 @@ describe('agent/setup-command-service', function () {
 
   it('should surface managed tool timeouts and signals even when a script catches failure', async () => {
     const original = dependencies.toolRegistry.invoke.bind(dependencies.toolRegistry);
+    const launcherBindings = dependencies.toolRegistry.launcherBindings.bind(
+      dependencies.toolRegistry,
+    );
     for (const timedOut of [true, false]) {
       dependencies.toolRegistry = {
+        launcherBindings,
         async invoke(...args) {
           const result = await original(...args);
           assert.equal(result.kind, 'cli');
