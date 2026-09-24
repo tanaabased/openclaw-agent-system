@@ -35,7 +35,7 @@ links to standalone Codex guidance rather than spreading it across OpenClaw docs
 - Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
 - Preserve the opening's three-paragraph message: repository-owned identity, environment, credential configuration, and setup activated by cloning and running `openclaw agent-system install`; GitHub issue-to-pull-request work; then the minimal standalone Codex plugin. Keep repository portability, one-command setup, and assigning agents work through GitHub visible in the Overview.
 
-## Change Gate
+## Before Editing
 
 Treat existing documentation as a maintained interface. Before editing, identify
 one concrete reason: an explicit documentation request, a verified mismatch with
@@ -166,7 +166,7 @@ openclaw config set plugins.entries.agent-system.config.githubNotifications.maxC
 Overlong comments are rejected without executing truncated prose.
 ````
 
-## Review Gate
+## Before Committing
 
 Before committing, compare the diff to its stated reason and remove incidental
 edits. Verify commands and defaults against registration, schemas, and tests;

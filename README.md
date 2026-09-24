@@ -118,7 +118,7 @@ release.
 
 ## Usage
 
-Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand.
+Add `.agent-system/agent.yaml` to the workspace you want Agent System to manage. A root-level `agent.yaml` is also supported as a shorthand. The optional setup script below assumes Homebrew is already installed.
 
 ```yaml
 schema-version: 1
@@ -162,6 +162,18 @@ git:
   ssh:
     private-keys:
       from-environment: SSH_KEY
+
+setup:
+  runtimes: [openclaw]
+  apply: |
+    # install workspace dependencies.
+    brew install jq ripgrep
+    # install and configure the diffs plugin for browser previews.
+    openclaw plugins inspect diffs >/dev/null 2>&1 || openclaw plugins install clawhub:@openclaw/diffs --accept-capabilities
+    openclaw plugins enable diffs --accept-capabilities
+    openclaw config set plugins.entries.diffs.config.defaults.mode view
+    # prepare local working directories.
+    mkdir -p repos artifacts
 ```
 
 From that workspace, store the 1Password bootstrap credential when needed, then validate and install the agent:
@@ -179,14 +191,6 @@ openclaw agent-system doctor
 
 # verify the github identity supplied by this agent's environment.
 openclaw agent-system tool gh -- api user --jq .login
-```
-
-For workspace preparation, add an optional `setup` declaration:
-
-```yaml
-setup:
-  check: test -d repos
-  apply: mkdir -p repos
 ```
 
 OpenClaw `install` prepares the agent's managed tools before running applicable
