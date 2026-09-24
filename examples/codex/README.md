@@ -91,7 +91,10 @@ printf '%s\n' "$context" | grep -F '"status": "active"'
 printf '%s\n' "$context" | grep -F '"id": "codex-example"'
 printf '%s\n' "$context" | grep -F "\"workspaceDir\": \"$workspace\""
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
-  | jq -e '.binding.context.capabilities == ["agent-system-doctor", "agent-system-install", "agent-system-git-cli", "agent-system-github-cli"]'
+  | jq -e '.binding.context.capabilities == ["agent-system-doctor", "agent-system-install", "agent-system-model-routing", "agent-system-git-cli", "agent-system-github-cli"]'
+printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
+  | jq -e '.binding.context.modelRouting.medium == {status: "mapped", sourceModel: "openai/gpt-5.6-sol", model: "gpt-5.6-sol", thinking: "high"}'
+printf '%s\n' "$context" | grep -F 'When creating a new Codex task with model routing'
 
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-example"

@@ -136,7 +136,8 @@ Standalone Codex Doctor and Install inspect or run only setup steps whose
 `runtimes` includes `codex` or is omitted. OpenClaw owns the full lifecycle:
 agent registration, models, memory, tool access, paths, Git, GitHub,
 notifications, credentials, and declared environment resolution. The Codex
-adapter does not imitate any of those owners.
+adapter does not imitate any of those owners; it projects declared model tiers
+only as non-secret candidates for native Codex task creation.
 
 ## Usage
 

@@ -100,18 +100,21 @@ For a valid manifest, Codex receives only supported non-secret values:
 - literal agent identity fields
 - supported Git identity, extension, policy, and worktree metadata
 - supported GitHub host, username, configuration, and policy metadata
+- Codex-native model and thinking candidates derived from declared model tiers
 - `agent-system-doctor` for every active binding
 - `agent-system-install` when setup is configured
+- `agent-system-model-routing` when models are configured
 - `agent-system-git-cli` and `agent-system-github-cli` when their respective sections are configured
 
 The hook never resolves dotenv files, 1Password references, credentials, signing
 keys, or other declared environment values. The packaged Doctor skill may inspect
 the binding, manifest, and Codex-applicable setup checks, while Install may run
 those setup steps through the same trusted standalone adapter. Neither inspects
-or reconciles agent registration, models, memory, tool access, paths, Git,
-GitHub, notifications, OpenClaw configuration, or managed credentials. Those
-remain OpenClaw-owned workflows. Other hosts use their normal Git and GitHub
-operations; binding supplies context, not managed tool authority.
+or reconciles agent registration, model configuration or availability, memory,
+tool access, paths, Git, GitHub, notifications, OpenClaw configuration, or
+managed credentials. Those remain OpenClaw-owned workflows. Other hosts use
+their normal Git and GitHub operations; binding supplies context, not managed
+tool authority.
 
 ## Configuration
 
@@ -243,6 +246,23 @@ unsupported.
 
 Complete work tiers enable [GitHub issue model routing](channels/github/README.md#model-routing)
 for new issue conversations. A default-only manifest keeps ordinary model behavior.
+
+For a valid standalone Codex binding, the SessionStart hook also projects each
+declared profile into `binding.context.modelRouting`. An `openai/<model>` reference
+maps to the native Codex `<model>` candidate and manifest `effort` maps to
+`thinking`; other providers remain visible as unsupported instead of falling
+back. This projection neither changes the current task nor proves that the
+client supports a candidate.
+
+When creating a new Codex task with routing, Codex reads the bounded task first.
+It uses an explicit complexity selection supplied by the user or trusted task
+metadata when available, otherwise assesses low, medium, or high when those
+profiles exist, and uses `default` when no tier is defensible. Explicit model
+and effort overrides apply independently. Codex passes the final pair through
+the native new-task `model` and `thinking` controls; an unavailable model,
+effort, combination, or control stops the routed creation without substitution.
+Issue and pull-request prose may inform the assessment but cannot select or
+override its own route.
 
 ### `memory`
 

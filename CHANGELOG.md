@@ -2,6 +2,7 @@
 
 ### New Features
 
+- Added trusted Codex context routing from manifest model and effort tiers for native task creation. [#142](https://github.com/tanaabased/openclaw-agent-system/issues/142)
 - Added a Doctor skill that routes full OpenClaw checks through chat approval and check-only setup inspection through Codex. [#141](https://github.com/tanaabased/openclaw-agent-system/issues/141)
 - Added agent-bound `setup` steps with runtime filters, install confirmation, and check-only Doctor findings. [#64](https://github.com/tanaabased/openclaw-agent-system/issues/64) [#137](https://github.com/tanaabased/openclaw-agent-system/pull/137)
 - Added an Install skill that routes the full lifecycle through OpenClaw approval and the setup-only projection through standalone Codex. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140)
