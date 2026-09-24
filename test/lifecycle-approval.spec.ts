@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
+import { Value } from 'typebox/value';
+
+import createInstallTool from '../tools/install/tool.ts';
+import createDoctorTool from '../tools/doctor/tool.ts';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +14,7 @@ import AgentDoctorService from '../agent/doctor-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import AgentManifestService from '../manifest/service.ts';
-import { lifecycleToolNames, type LifecycleToolName } from '../tools/lifecycle/schema.ts';
+import { lifecycleToolNames, type LifecycleToolName } from '../agent/lifecycle-tool-contract.ts';
 
 const roots: string[] = [];
 const manifest = `schema-version: 1
@@ -138,22 +143,51 @@ describe('agent/lifecycle-approval', () => {
       assert.deepEqual(f.calls, completed);
     });
 
-    it(`should execute ${name} once only after approval`, async () => {
+    it(`should register ${name} with its own schema and execute once only after approval`, async () => {
       const f = await fixture();
+      const definition = (name === 'agent_system_install' ? createInstallTool : createDoctorTool)(
+        () => f.approval,
+      );
+      assert.deepEqual(definition.commands, []);
+      assert.deepEqual(definition.toolNames, [name]);
+      let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+      definition.registerTools(
+        {
+          registerTool(value) {
+            factory = value;
+          },
+        },
+        {} as never,
+      );
+      assert.equal(typeof factory, 'function');
+      if (typeof factory !== 'function') throw new Error('missing native tool factory');
+      const native = await factory(f.toolContext);
+      assert.ok(native && !Array.isArray(native));
+      assert.equal(native.name, name);
+      assert.equal(Value.Check(native.parameters, {}), true);
+      assert.equal(Value.Check(native.parameters, { agent: 'other' }), false);
+      assert.equal(
+        Value.Check(native.parameters, { skipSetup: true }),
+        name === 'agent_system_install',
+      );
+      await assert.rejects(native.execute('call', {}, f.controller.signal), {
+        code: 'approval_denied',
+      });
+      assert.deepEqual(f.calls, []);
       const request = await f.request(name, {}, f.context);
       assert.deepEqual(request.requireApproval.allowedDecisions, ['allow-once', 'deny']);
       assert.ok(request.requireApproval.description.includes(f.root));
       assert.ok(request.requireApproval.description.includes('data'));
       assert.deepEqual(f.calls, []);
       request.requireApproval.onResolution('allow-once');
-      await f.approval.execute(name, {}, 'call', f.toolContext);
+      await native.execute('call', {}, f.controller.signal);
       assert.deepEqual(
         f.calls,
         name === 'agent_system_install'
           ? ['credentials', 'reconcile', 'inspect', 'check-approved']
           : ['inspect', 'check-approved'],
       );
-      await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
+      await assert.rejects(native.execute('call', {}, f.controller.signal), {
         code: 'approval_denied',
       });
     });

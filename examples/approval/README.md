@@ -42,6 +42,9 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" app
 
 # should allow doctor checks without setup apply in the native openclaw harness
 node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" approval-openclaw doctor
+
+# should discover the separate doctor tool and allow checks in the codex harness
+node --import tsx "$GITHUB_WORKSPACE/scripts/lifecycle-approval-scenario.ts" approval-codex doctor
 ```
 
 ## Cleanup

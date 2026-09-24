@@ -206,6 +206,8 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
+    'tools/install/README.md',
+    'tools/doctor/README.md',
     'skills/doctor/SKILL.md',
     'skills/doctor/agents/openai.yaml',
     'skills/install/SKILL.md',

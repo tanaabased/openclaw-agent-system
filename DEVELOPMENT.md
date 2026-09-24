@@ -144,6 +144,19 @@ they install plugins and mutate isolated OpenClaw or provider state.
 - The [manual workflow](./.github/workflows/notification-tests.yml) runs selected scenarios or the full matrix with a live provider on Ubuntu or macOS.
 - Mock checks do not establish model reasoning, provider authentication, capacity, latency, or provider-specific format compatibility.
 
+#### Lifecycle Approval
+
+The [approval example](./examples/approval/README.md) checks native Install and
+Doctor discovery, approval, denial, cancellation, and unavailable approval through
+the Control UI protocol with native OpenClaw and OpenClaw-hosted Codex. It runs
+only in GitHub Actions against OpenClaw 2026.9.5; local unit checks do not prove
+installed chat compatibility. Other chat channels are outside this matrix.
+
+The integration uses the public
+[`before_tool_call.requireApproval` hook](https://docs.openclaw.ai/plugins/plugin-permission-requests),
+without protected Gateway APIs, generic MCP approval restoration, or changes to
+Git/GitHub authorization.
+
 ## Coding Standards
 
 Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and Leia conventions in the [Tanaab Canon repository](https://github.com/tanaabased/canon). The repository's [AGENTS.md](./AGENTS.md) adds Agent System-specific identity, configuration, structure, and validation boundaries.

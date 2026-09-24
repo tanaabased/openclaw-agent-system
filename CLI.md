@@ -374,17 +374,32 @@ installed agent explicitly.
 Strict launcher bindings belong to the [Git tool](./tools/git/README.md#launcher-bindings)
 and [GitHub tool](./tools/github/README.md#launcher-bindings) guides.
 
-The `install` and Doctor (`status`) CLI routes remain operator-only through both
-aliases, including setup descendants. In OpenClaw chat, use
-`agent_system_install` or `agent_system_doctor` to request **Allow once** for the
-active agent and manifest. This includes Doctor's declared check commands.
-Unattended CLI options do not grant chat approval. See the
-[lifecycle tool guide](tools/lifecycle/README.md) for the approval boundary and
-supported harnesses.
-
 These are practical same-user guardrails, not process isolation. Absolute
 binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
 processes can bypass them. See OpenClaw's
 [security model](https://docs.openclaw.ai/gateway/security) and
 [sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the host
 boundary beneath Agent System.
+
+### Chat Approval
+
+The `install`, `doctor`, and `status` CLI routes remain operator-only, including
+setup descendants. Agents use the native [Install](./tools/install/README.md) or
+[Doctor](./tools/doctor/README.md) tool. CLI consent flags, a missing TTY, skill
+prose, and earlier approvals cannot substitute for native **Allow once**.
+
+OpenClaw displays the operation, agent, workspace, manifest digest, and setup
+scope before inspection, commands, or credential resolution. Select **Allow
+once** or **Deny**. OpenClaw owns approval delivery and approver authorization;
+Agent System adds no operator identity or persistent trust store.
+
+Consent covers one matching call and expires after two minutes. Changed
+operation, options, workspace binding, or manifest requires new approval.
+Denial, timeout, cancellation while waiting, missing hooks, or an unavailable
+approval route execute nothing. Nested lifecycle consumers cannot reload a
+different manifest under the approved operation.
+
+The native OpenClaw harness and OpenClaw-hosted Codex use this route; standalone
+Codex uses its [setup-only adapter](./CODEX.md#supported-context-and-operations).
+Control UI chat is the tested approval surface; other chat channels depend on
+their OpenClaw plugin approval support. See [approval validation](./DEVELOPMENT.md#lifecycle-approval).

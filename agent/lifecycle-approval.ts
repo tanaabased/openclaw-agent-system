@@ -8,7 +8,7 @@ import type AgentInstallService from './install-service.ts';
 import setupStepApplies from './setup-runtime.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-import { lifecycleParameters, type LifecycleToolName } from '../tools/lifecycle/schema.ts';
+import { lifecycleParameters, type LifecycleToolName } from './lifecycle-tool-contract.ts';
 import AgentSystemToolError from '../api/error.ts';
 
 type LoadedManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
