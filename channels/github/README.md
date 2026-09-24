@@ -12,9 +12,6 @@ prompted them.
 
 ## Overview
 
-- **[Configuration reference](./ADVANCED.md#configuration-reference)** — All channel fields and defaults.
-- **[CLI reference](./ADVANCED.md#cli)** — Refresh intake, inspect state, and wait for lifecycle checkpoints.
-
 Choose the initial mode through `github.notifications.initial-mode`:
 
 | Mode     | Initial assignment behavior                                                              |
@@ -27,6 +24,11 @@ for direction. Approved issue and delivery pull-request comments continue in the
 same private session; GitHub prose cannot elevate the configured mode. See
 [processing and lifecycle](./ADVANCED.md#processing-and-lifecycle) for scheduling,
 publication, and retirement behavior.
+
+Other documentation:
+
+- **[Configuration reference](./ADVANCED.md#configuration-reference)** — All channel fields and defaults.
+- **[CLI reference](./ADVANCED.md#cli)** — Refresh intake, inspect state, and wait for lifecycle checkpoints.
 
 ## Requirements
 
