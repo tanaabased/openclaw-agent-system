@@ -1,6 +1,6 @@
 # Codex Example
 
-This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, session context, transfer, and removal on a disposable GitHub Actions runner.
+This scenario installs the prepared Agent System plugin into isolated Codex state and verifies deterministic skill discovery, workspace binding, runtime-aware setup, session context, transfer, and removal on a disposable GitHub Actions runner.
 
 ## Setup
 
@@ -62,6 +62,22 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/wor
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
+# should inspect and install only setup applicable to standalone codex
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
+printf '%s\n' "$inspection" \
+  | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
+installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
+printf '%s\n' "$installed" \
+  | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+test -f "$root/workspace/.codex-shared"
+test -f "$root/workspace/.codex-only"
+test ! -e "$root/workspace/.openclaw-checked"
+test ! -e "$root/workspace/.openclaw-only"
+
 # should load the bound workspace and only standalone capabilities through the packaged hook
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -75,7 +91,7 @@ printf '%s\n' "$context" | grep -F '"status": "active"'
 printf '%s\n' "$context" | grep -F '"id": "codex-example"'
 printf '%s\n' "$context" | grep -F "\"workspaceDir\": \"$workspace\""
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
-  | jq -e '.binding.context.capabilities == ["agent-system-git-cli", "agent-system-github-cli"]'
+  | jq -e '.binding.context.capabilities == ["agent-system-install", "agent-system-git-cli", "agent-system-github-cli"]'
 
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-example"

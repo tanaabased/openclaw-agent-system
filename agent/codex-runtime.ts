@@ -8,6 +8,8 @@ import {
   type CodexWorkspacePreview,
 } from './codex-workspace-binding.ts';
 import { createCodexSessionContext } from './codex-context.ts';
+import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
+import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 interface SessionStartInput {
   hook_event_name?: unknown;
@@ -21,6 +23,13 @@ interface BindingOptions {
   confirm: boolean;
   pluginData?: string;
   workspace?: string;
+}
+
+function parsePluginData(args: string[]): string {
+  if (args.length !== 2 || args[0] !== '--plugin-data' || !args[1]) {
+    throw new Error('expected exactly --plugin-data <path>');
+  }
+  return args[1];
 }
 
 function parseBindingOptions(args: string[]): BindingOptions {
@@ -172,15 +181,48 @@ async function runBinding(args: string[]): Promise<void> {
   throw new Error(`unsupported binding action: ${action}`);
 }
 
+async function runSetup(args: string[]): Promise<void> {
+  const action = args[0];
+  if (action !== 'inspect' && action !== 'install') {
+    throw new Error('expected setup inspect or setup install');
+  }
+  const pluginData = parsePluginData(args.slice(1));
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+  try {
+    writeJson(
+      action === 'inspect'
+        ? await inspectCodexSetup(pluginData, controller.signal)
+        : await installCodexSetup(pluginData, controller.signal),
+    );
+  } finally {
+    process.off('SIGINT', abort);
+    process.off('SIGTERM', abort);
+  }
+}
+
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
-  throw new Error('expected session-start or binding command');
+  if (command === 'setup') return runSetup(args.slice(1));
+  throw new Error('expected session-start, binding, or setup command');
 }
 
 runCodexRuntime().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'unknown Agent System Codex failure';
-  process.stderr.write(`${JSON.stringify({ status: 'error', message })}\n`);
+  const details =
+    error instanceof AgentSystemLifecycleError
+      ? {
+          component: error.component,
+          code: error.code,
+          ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
+        }
+      : error instanceof CodexSetupError
+        ? { code: error.code }
+        : {};
+  process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);
   process.exitCode = 1;
 });

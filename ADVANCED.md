@@ -100,14 +100,16 @@ For a valid manifest, Codex receives only supported non-secret values:
 - literal agent identity fields
 - supported Git identity, extension, policy, and worktree metadata
 - supported GitHub host, username, configuration, and policy metadata
+- `agent-system-install` when setup is configured
 - `agent-system-git-cli` and `agent-system-github-cli` when their respective sections are configured
 
 The hook never resolves dotenv files, 1Password references, credentials, signing
-keys, or other declared environment values. It also does not run Agent System
-installation, setup, Doctor, model routing, channels, or OpenClaw model-facing
-tools. Those remain explicit OpenClaw-owned workflows. Other hosts use their
-normal Git and GitHub operations; binding supplies context, not managed tool
-authority.
+keys, or other declared environment values. The packaged Install skill may run
+the bound manifest's setup steps through a trusted standalone Codex adapter, but
+it does not run Doctor or reconcile agent registration, models, memory, tool
+access, paths, Git, GitHub, notifications, OpenClaw configuration, or managed
+credentials. Those remain OpenClaw-owned workflows. Other hosts use their normal
+Git and GitHub operations; binding supplies context, not managed tool authority.
 
 ## Configuration
 
@@ -465,11 +467,17 @@ setup:
 Lists must be nonempty and contain unique supported values. There is no
 `runtimes` field or runtime inheritance on the `steps` container.
 
-The invoking integration supplies the runtime through trusted context. The
-current OpenClaw CLI always selects `openclaw`, including when Codex drives its
-model turns. Installed binaries, environment variables, and model selection do
-not select the runtime. The `codex` label reserves applicability for a future
-integration; this release does not include a Codex setup adapter.
+The invoking integration supplies the runtime through trusted context. OpenClaw
+always selects `openclaw`, including when Codex drives an OpenClaw-hosted model
+turn. The standalone Codex Install skill always selects `codex` through its
+packaged adapter. Installed binaries, environment variables, manifest prose, and
+model selection do not select or override the runtime.
+
+The two integrations share the setup lifecycle contract, not a complete install
+engine. OpenClaw reconciles its full lifecycle and may prepare managed tools and
+credentials before applicable setup. Standalone Codex runs only applicable setup
+checks and applies with the host's sanitized executable environment. It neither
+resolves managed credentials nor reconciles any OpenClaw-owned component.
 
 Nonmatching steps run neither command and report `status: skipped`,
 `code: setup-not-applicable`, and their `stepId` in install and Doctor results.

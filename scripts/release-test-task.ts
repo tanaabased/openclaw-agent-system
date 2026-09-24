@@ -206,6 +206,8 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
+    'skills/install/SKILL.md',
+    'skills/install/agents/openai.yaml',
     'assets/icon.png',
     'assets/git-icon-large.svg',
     'assets/github-icon-large.svg',
@@ -433,6 +435,63 @@ try {
       ).output,
     ) as { status?: string };
     assert.equal(inactiveBound.status, 'bound');
+  });
+
+  await check('ship the Codex runtime-aware setup interface', async () => {
+    const runtime = join(packageRoot, 'dist', 'codex', 'codex-runtime.js');
+    const pluginData = join(temporaryRoot, 'codex-setup-data');
+    const workspace = join(temporaryRoot, 'codex-setup-workspace');
+    await mkdir(workspace);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      [
+        'schema-version: 1',
+        'agent:',
+        '  id: package-test',
+        'setup:',
+        '  steps:',
+        '    - id: shared',
+        '      check: test -f .codex-installed',
+        '      apply: touch .codex-installed',
+        '    - id: openclaw-only',
+        '      runtimes: [openclaw]',
+        '      apply: touch .openclaw-installed',
+        '',
+      ].join('\n'),
+    );
+    await run(process.execPath, [
+      runtime,
+      'binding',
+      'bind',
+      '--plugin-data',
+      pluginData,
+      '--workspace',
+      workspace,
+      '--confirm',
+    ]);
+    const setup = (...args: string[]) => run(process.execPath, [runtime, 'setup', ...args]);
+    const setupInspection = JSON.parse(
+      (await setup('inspect', '--plugin-data', pluginData)).output,
+    ) as { findings?: Array<{ code?: string; stepId?: string }> };
+    assert.deepEqual(
+      setupInspection.findings?.map(({ code, stepId }) => ({ code, stepId })),
+      [
+        { code: 'setup-drift', stepId: 'shared' },
+        { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+      ],
+    );
+    const setupInstalled = JSON.parse(
+      (await setup('install', '--plugin-data', pluginData)).output,
+    ) as { outcomes?: Array<{ code?: string; stepId?: string }> };
+    assert.deepEqual(
+      setupInstalled.outcomes?.map(({ code, stepId }) => ({ code, stepId })),
+      [
+        { code: 'setup-applied', stepId: 'shared' },
+        { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+      ],
+    );
+    await access(join(workspace, '.codex-installed'));
+    await assert.rejects(access(join(workspace, '.openclaw-installed')));
   });
 
   await check('ship an executable Agent System gh command', async () => {

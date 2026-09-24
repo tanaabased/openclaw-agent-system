@@ -2,6 +2,18 @@ schema-version: 1
 agent:
   id: codex-example
   name: Codex Example
+setup:
+  steps:
+    - id: shared
+      check: test -f .codex-shared
+      apply: touch .codex-shared
+    - id: codex-only
+      runtimes: [codex]
+      apply: touch .codex-only
+    - id: openclaw-only
+      runtimes: [openclaw]
+      check: touch .openclaw-checked
+      apply: touch .openclaw-only
 git:
   worktrees:
     root: worktrees

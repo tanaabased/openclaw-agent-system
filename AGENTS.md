@@ -12,6 +12,7 @@
 ## Product boundary
 
 - Treat `agent.yaml` as workspace-owned desired state, not global OpenClaw configuration, an agent biography, or a secret store.
+- Treat `agent.yaml` as one shared desired-state document with deliberately runtime-owned projections. OpenClaw may reconcile the full Agent System lifecycle; standalone Codex may consume only explicitly supported portable fields through trusted thin adapters. A shared field never authorizes Codex to resolve OpenClaw credentials, mutate OpenClaw configuration, or recreate per-agent tool management.
 - Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
 - Keep ordinary Git and GitHub execution native in Codex. Do not add Codex MCP wrappers, automations, duplicate operator identity, or another lifecycle implementation merely to mirror OpenClaw.
