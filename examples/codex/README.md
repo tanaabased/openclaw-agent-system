@@ -110,7 +110,22 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.capabilities == ["agent-system-doctor", "agent-system-install", "agent-system-model-routing", "agent-system-git-cli", "agent-system-github-cli"]'
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.binding.context.modelRouting.medium == {status: "mapped", sourceModel: "openai/gpt-5.6-sol", model: "gpt-5.6-sol", thinking: "high"}'
-printf '%s\n' "$context" | grep -F 'When creating a new Codex task with model routing'
+printf '%s\n' "$context" | grep -F 'For new routed work, use'
+
+# should resolve bounded routing through the installed cache and preserve unresolved reasoning
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
+printf '%s\n' "$inspection" | jq -e '.status == "available" and (.reportGuidance | contains("**Model routing**"))'
+digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
+jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."}}' \
+  | node "$runtime" model-routing --plugin-data "$plugin_data" \
+  | jq -e '.status == "unresolved" and .profile == null and .selection == null and .reason == "No defensible tier."'
+jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."},fallback:"default",overrides:{effort:"low"}}' \
+  | node "$runtime" model-routing --plugin-data "$plugin_data" \
+  | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
 # should preserve the active binding when a workspace has no agent manifest
 root="$TMPDIR/agent-system-codex-example"

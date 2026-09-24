@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Model Routing'
+  short_description: 'Resolve task models and effort from workspace profiles'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-model-routing to assess this task and return a validated model and effort selection for native Codex task controls.'

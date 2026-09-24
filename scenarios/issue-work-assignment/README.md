@@ -23,7 +23,7 @@ after the scenario removes its classifier grant. `doctor` identifies the drift,
 Releasing the first issue then proves that its resumed execution preserves the second issue. The hold models a busy executor; overlapping
 model turns, comment workers, failure isolation, and shutdown are covered by unit tests.
 
-Complete model profiles opt both issues into a separate tool-free assessment. The
+Complete model profiles opt both issues into a separate tool-free assessment validated by the shared model-routing resolver. The
 strict fixture checks bounded issue content and absence of tools; the dispatcher
 requires the native work selection to report the saved model and medium effort.
 The deterministic mock gives the classifier/default and selected work turns distinct

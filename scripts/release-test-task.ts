@@ -377,6 +377,62 @@ try {
     assert.match(response.hookSpecificOutput?.additionalContext ?? '', /"status": "unbound"/u);
   });
 
+  await check(
+    'resolve routing from packaged codex profiles without an openclaw gateway',
+    async () => {
+      const runtime = join(packageRoot, 'dist', 'codex', 'codex-runtime.js');
+      const pluginData = join(temporaryRoot, 'routing-data');
+      const workspace = join(temporaryRoot, 'routing-workspace');
+      await mkdir(workspace);
+      const manifest =
+        'schema-version: 1\nagent:\n  id: routing-package\nmodels:\n  default: {model: openai/package-default, effort: high}\n';
+      await writeFile(join(workspace, 'agent.yaml'), manifest);
+      await run(process.execPath, [
+        runtime,
+        'binding',
+        'bind',
+        '--plugin-data',
+        pluginData,
+        '--workspace',
+        workspace,
+        '--confirm',
+      ]);
+      const resolveRouting = async (input: unknown) =>
+        JSON.parse(
+          (
+            await run(process.execPath, [runtime, 'model-routing', '--plugin-data', pluginData], {
+              input: JSON.stringify(input),
+            })
+          ).output,
+        );
+      const inspected = await resolveRouting({ action: 'inspect' });
+      assert.equal(inspected.profiles.default.model, 'package-default');
+      const input = {
+        action: 'resolve',
+        manifestDigest: inspected.manifestDigest,
+        context: 'Insufficient scope.',
+        assessment: { complexity: 'unset', reason: 'No work tier is defensible.' },
+        fallback: 'default',
+      };
+      const result = await resolveRouting(input);
+      assert.equal(result.status, 'unresolved');
+      assert.deepEqual(result.candidate, inspected.profiles.default);
+      assert.equal(result.application, 'not-requested');
+      assert.match(inspected.reportGuidance, /\*\*Model routing\*\*/);
+      const overridden = await resolveRouting({
+        ...input,
+        overrides: { model: 'manual', effort: 'low' },
+      });
+      assert.equal(overridden.candidate.model, 'manual');
+      assert.equal(overridden.candidate.thinking, 'low');
+      await assert.rejects(
+        resolveRouting({ ...input, overrides: { model: 'anthropic/other' } }),
+        /codex-model-provider-unsupported/,
+      );
+      assert.equal(await readFile(join(workspace, 'agent.yaml'), 'utf8'), manifest);
+    },
+  );
+
   await check('ship a confirmed Codex workspace binding interface', async () => {
     const runtime = join(packageRoot, 'dist', 'codex', 'codex-runtime.js');
     const pluginData = join(temporaryRoot, 'codex-binding-data');

@@ -1,5 +1,8 @@
 import process from 'node:process';
 
+import codexModelRouting from './codex-model-routing.ts';
+import { RoutingError } from './model-routing.ts';
+
 import {
   bindCodexWorkspace,
   inspectCodexWorkspaceBinding,
@@ -207,8 +210,13 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
+  if (command === 'model-routing') {
+    const pluginData = parsePluginData(args.slice(1));
+    writeJson(await codexModelRouting(pluginData, JSON.parse(await readStandardInput())));
+    return;
+  }
   if (command === 'setup') return runSetup(args.slice(1));
-  throw new Error('expected session-start, binding, or setup command');
+  throw new Error('expected session-start, binding, setup, or model-routing command');
 }
 
 runCodexRuntime().catch((error: unknown) => {
@@ -220,7 +228,7 @@ runCodexRuntime().catch((error: unknown) => {
           code: error.code,
           ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
         }
-      : error instanceof CodexSetupError
+      : error instanceof CodexSetupError || error instanceof RoutingError
         ? { code: error.code }
         : {};
   process.stderr.write(`${JSON.stringify({ status: 'error', ...details, message })}\n`);

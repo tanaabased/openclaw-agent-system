@@ -46,7 +46,7 @@ describe('agent/codex-context', () => {
     });
 
     assert.match(context, /supersedes every earlier Agent System context/u);
-    assert.doesNotMatch(context, /When creating a new Codex task with model routing/u);
+    assert.doesNotMatch(context, /For new routed work, use/u);
     assert.deepEqual(envelope(context), {
       version: 1,
       source: 'startup',
@@ -235,15 +235,24 @@ describe('agent/codex-context', () => {
       source: 'startup',
     });
     const projection = JSON.stringify(envelope(context));
-    const guidance = 'When creating a new Codex task with model routing';
+    const guidance = 'For new routed work, use';
 
     assert.match(projection, /"agent-system-model-routing"/u);
     assert.match(projection, /"model":"gpt-5\.6-sol","thinking":"high"/u);
     assert.equal(context.indexOf(guidance) > context.lastIndexOf('}'), true);
-    assert.match(context, /Honor explicit user model and effort overrides independently\./u);
-    assert.match(context, /controls reject or do not expose the model, effort, or combination/u);
-    assert.match(context, /report that result without substitution/u);
-    assert.match(context, /do not claim prompt text changed the runtime/u);
+    const projected = envelope(context);
+    assert.deepEqual(projected.routingRuntime, {
+      argvPrefix: [
+        nodeExecutable,
+        join(pluginRoot, 'dist/codex/codex-runtime.js'),
+        'model-routing',
+      ],
+      pluginData,
+    });
+    assert.match(context, /explicit selections/);
+    assert.match(context, /invalid or unsupported selections never authorize substitution/);
+    assert.match(context, /Preserve saved selections/);
+    assert.match(context, /never launches work or changes a model/);
   });
 
   it('should refresh valid, invalid, and revoked context on every session source', async () => {

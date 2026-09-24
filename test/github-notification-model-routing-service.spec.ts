@@ -194,6 +194,32 @@ describe('channels/github/conversation/model-routing-service', () => {
     assert.deepEqual((await h.service.apply(route))?.expected, profiles.low);
   });
 
+  it('should save unresolved reasoning and continue on the frozen default across retries', async () => {
+    const h = harness();
+    const original = await h.runtime.complete({} as Parameters<ModelRoutingRuntime['complete']>[0]);
+    h.requests.length = 0;
+    h.setComplete(async (input) => {
+      h.requests.push(input);
+      return {
+        ...original,
+        text: '{"complexity":"unset","reason":"The requested change has no defensible scope."}',
+      };
+    });
+    await h.service.assess(h.snapshot, { ...context, routingMetadata: nativeRoutingMetadata([]) });
+    const saved = h.snapshots.get(route.conversationId)!;
+    assert.equal(saved.conversation?.modelRouting?.decision?.complexity, 'unset');
+    assert.equal(
+      saved.conversation?.modelRouting?.decision?.reason,
+      'The requested change has no defensible scope.',
+    );
+    const applied = await h.service.apply(route);
+    assert.deepEqual(applied?.expected, profiles.default);
+    assert.match(applied!.guidance, /unresolved/);
+    assert.match(applied!.guidance, /\*\*Model routing\*\*/);
+    await h.service.assess(saved, context);
+    assert.equal(h.requests.length, 1);
+  });
+
   it('should preserve explicit model and effort changes independently across follow-ups', async () => {
     const h = harness();
     await h.service.assess(h.snapshot, context);

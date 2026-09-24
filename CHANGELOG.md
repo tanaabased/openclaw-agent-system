@@ -8,6 +8,7 @@
 - Added durable per-agent GitHub issue-work limits with stable queueing and visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117)
 - Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
 - Added runtime-aware Doctor and Install skills for the full OpenClaw lifecycle and standalone Codex setup. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140) [#141](https://github.com/tanaabased/openclaw-agent-system/issues/141)
+- Added shared model routing helpers and a skill, preserving explicit selections and reporting unresolved default use. [#158](https://github.com/tanaabased/openclaw-agent-system/issues/158)
 - Added standalone Codex plugin installation, skill discovery, explicit workspace binding, and trusted context refresh. [#138](https://github.com/tanaabased/openclaw-agent-system/issues/138) [#139](https://github.com/tanaabased/openclaw-agent-system/issues/139)
 - Added trusted Codex task routing from manifest model and effort tiers. [#142](https://github.com/tanaabased/openclaw-agent-system/issues/142)
 - Allowed self-assignment when the agent's verified GitHub identity is explicitly approved. [#125](https://github.com/tanaabased/openclaw-agent-system/issues/125) [#129](https://github.com/tanaabased/openclaw-agent-system/pull/129)
