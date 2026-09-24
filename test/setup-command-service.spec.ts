@@ -70,7 +70,12 @@ describe('agent/setup-command-service', function () {
       manifest: {
         schemaVersion: 1,
         agent: { id: 'emori', name: 'Emori', email: 'emori@example.invalid' },
-        git: { ssh: { privateKeys: [{ fromEnvironment: 'EMORI_SSH_KEY' }] } },
+        git: {
+          ssh: { privateKeys: [{ fromEnvironment: 'EMORI_SSH_KEY' }] },
+          worktrees: {
+            repositories: { local: { missing: join(root, 'missing-repository') } },
+          },
+        },
         github: { username: 'emori', token: 'EMORI_TOKEN', policy: { releases: 'deny' } },
       },
     };
