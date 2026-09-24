@@ -186,11 +186,11 @@ assignments have the [limitations below](#current-limitations).
 Lists the GitHub users allowed to assign work, including the agent's own
 verified identity when self-assignment is intended.
 
-| Field            | Type    | Required | Behavior                                                   |
-| ---------------- | ------- | -------- | ---------------------------------------------------------- |
-| `login`          | string  | yes      | Records the user's current GitHub login.                   |
-| `node-id`        | string  | yes      | Pins the user's immutable GitHub identity.                 |
-| `operator-owner` | boolean | no       | Requests OpenClaw operator recognition; defaults to false. |
+| Field            | Type    | Required | Default | Description                                |
+| ---------------- | ------- | -------- | ------- | ------------------------------------------ |
+| `login`          | string  | yes      | none    | Records the user's current GitHub login.   |
+| `node-id`        | string  | yes      | none    | Pins the user's immutable GitHub identity. |
+| `operator-owner` | boolean | no       | `false` | Requests OpenClaw operator recognition.    |
 
 Node IDs must be unique within the list. The channel verifies the login and
 node ID together so a renamed or recycled login cannot inherit authorization.
@@ -276,37 +276,33 @@ notifications remain blocked until its required hooks are available.
 
 ## CLI
 
-All notification commands run from an agent workspace or use `--agent <id>` to
-select one installed agent explicitly. `openclaw as` is an equivalent alias for
-`openclaw agent-system`. Bare `notifications` prints command help.
-
-### Usage
-
-```text
-openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
-openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
-openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
-```
-
-### Common Options
-
-| Option                                                      | Commands | Behavior                                                       |
-| ----------------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| `--agent <id>`                                              | all      | Uses the exact installed agent instead of workspace discovery. |
-| `--repository <owner/name> --kind <kind> --number <number>` | all      | Selects one item; all three values must be provided together.  |
-| `--json`                                                    | all      | Writes one undecorated structured result to standard output.   |
-
-`--kind` accepts `issue` or `pull-request`. Item numbers and timeout values must
-be positive integers. Invalid options return exit code `2`; failed, degraded,
-timed-out, or otherwise incomplete operations return nonzero.
+`openclaw as` aliases `openclaw agent-system`. Bare `notifications` prints help.
 
 ### `openclaw agent-system notifications refresh`
 
-Runs one GitHub notification intake cycle immediately.
+Run one GitHub notification intake cycle immediately.
 
-| Option                | Required | Default | Behavior                           |
-| --------------------- | -------- | ------- | ---------------------------------- |
-| `--timeout <seconds>` | no       | `300`   | Bounds the complete refresh cycle. |
+#### Options
+
+| Option or argument          | Required             | Default              | Description                                                                  |
+| --------------------------- | -------------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery  | Use the exact configured workspace for an installed agent.                   |
+| `--repository <owner/name>` | with other selectors | none                 | Select a repository; provide `--kind` and `--number` together.               |
+| `--kind <issue              | pull-request>`       | with other selectors | none                                                                         | Select the item kind; provide `--repository` and `--number` together. |
+| `--number <number>`         | with other selectors | none                 | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--timeout <seconds>`       | no                   | `300`                | Positive integer bounding the complete refresh cycle.                        |
+| `--json`                    | no                   | off                  | Write one undecorated structured result to stdout.                           |
+
+#### Usage
+
+```text
+openclaw agent-system notifications refresh [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--timeout <seconds>] [--json]
+```
+
+```sh
+# run intake and prepared-issue reconciliation now.
+openclaw agent-system notifications refresh
+```
 
 Without an item selector, `refresh` processes the agent's eligible assignments.
 A selector limits the cycle to one exact item. A completed cycle may establish
@@ -319,25 +315,75 @@ timeout. If execution is busy or the wait ends, newly admitted items remain visi
 through `notifications status` and can resume on a later cycle. The CLI waits for
 any execution it starts to settle before exiting.
 
+Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
+operations return nonzero.
+
 ### `openclaw agent-system notifications status`
 
-Reads the durable notification state without advancing intake.
+Read durable notification state without advancing intake.
+
+#### Options
+
+| Option or argument          | Required             | Default              | Description                                                                  |
+| --------------------------- | -------------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery  | Use the exact configured workspace for an installed agent.                   |
+| `--repository <owner/name>` | with other selectors | none                 | Select a repository; provide `--kind` and `--number` together.               |
+| `--kind <issue              | pull-request>`       | with other selectors | none                                                                         | Select the item kind; provide `--repository` and `--number` together. |
+| `--number <number>`         | with other selectors | none                 | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--json`                    | no                   | off                  | Write one undecorated structured result to stdout.                           |
+
+#### Usage
+
+```text
+openclaw agent-system notifications status [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] [--json]
+```
+
+```sh
+# inspect redacted state for the workspace agent.
+openclaw agent-system notifications status --json
+```
 
 The result reports a redacted baseline and item projection, including lifecycle,
 worktree, cleanup, scheduling state, and aggregate active, queued, and limit
 counts when available. Waiting items include a stable reason code. A durable
 monitor diagnostic returns `degraded` and a nonzero exit code.
 
+Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
+operations return nonzero.
+
 ### `openclaw agent-system notifications wait`
 
-Waits for one semantic notification checkpoint without parsing session history
-or presentation text.
+Wait for one semantic notification checkpoint without parsing session history or presentation text.
 
-| Option                | Required | Default | Behavior                                      |
-| --------------------- | -------- | ------- | --------------------------------------------- |
-| `--for <target>`      | yes      | none    | Selects the lifecycle checkpoint.             |
-| `--refresh`           | no       | off     | Advances provider-owned intake while waiting. |
-| `--timeout <seconds>` | no       | `300`   | Bounds the complete wait.                     |
+#### Options
+
+| Option or argument          | Required             | Default              | Description                                                                  |
+| --------------------------- | -------------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `--agent <id>`              | no                   | workspace discovery  | Use the exact configured workspace for an installed agent.                   |
+| `--repository <owner/name>` | with other selectors | none                 | Select a repository; provide `--kind` and `--number` together.               |
+| `--kind <issue              | pull-request>`       | with other selectors | none                                                                         | Select the item kind; provide `--repository` and `--number` together. |
+| `--number <number>`         | with other selectors | none                 | Select a positive item number; provide `--repository` and `--kind` together. |
+| `--for <target>`            | yes                  | none                 | Select a supported lifecycle checkpoint below.                               |
+| `--refresh`                 | no                   | off                  | Advance provider-owned intake while waiting.                                 |
+| `--timeout <seconds>`       | no                   | `300`                | Positive integer bounding the complete wait.                                 |
+| `--json`                    | no                   | off                  | Write one undecorated structured result to stdout.                           |
+
+#### Usage
+
+```text
+openclaw agent-system notifications wait [--agent <id>] [--repository <owner/name> --kind <issue|pull-request> --number <number>] --for <target> [--refresh] [--timeout <seconds>] [--json]
+```
+
+```sh
+# advance intake until one issue worktree is ready.
+openclaw agent-system notifications wait \
+  --repository tanaabased/example \
+  --kind issue \
+  --number 12 \
+  --for worktree-ready \
+  --refresh \
+  --json
+```
 
 Supported targets:
 
@@ -352,24 +398,8 @@ Supported targets:
 Terminal diagnostics fail immediately. A timed-out or otherwise incomplete wait
 returns nonzero.
 
-### Examples
-
-```sh
-# run intake and prepared-issue reconciliation now.
-openclaw agent-system notifications refresh
-
-# inspect redacted state for the workspace agent.
-openclaw agent-system notifications status --json
-
-# advance intake until one issue worktree is ready.
-openclaw agent-system notifications wait \
-  --repository tanaabased/example \
-  --kind issue \
-  --number 12 \
-  --for worktree-ready \
-  --refresh \
-  --json
-```
+Invalid options return exit code `2`; failed, degraded, timed-out, or incomplete
+operations return nonzero.
 
 ## Current Limitations
 

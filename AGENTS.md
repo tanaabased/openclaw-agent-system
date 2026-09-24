@@ -34,6 +34,7 @@
 ## Documentation
 
 - Treat the locations below as ownership boundaries, not a checklist of files to update. Keep aligned documents unchanged and avoid repeating explanations across them.
+- Apply the [documentation change gate and reference formats](./DEVELOPMENT.md#documentation) before any documentation edit. Require an explicit request, verified behavioral mismatch, or broken reference; feature work does not authorize incidental prose cleanup. Review the final diff against that reason. Keep command and configuration presentation consistent across root, tool, and channel guides.
 - Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
 - Preserve the opening's three-paragraph message: repository-owned identity, environment, credential configuration, and setup activated by cloning and running `openclaw agent-system install`; GitHub issue-to-pull-request work; then the minimal standalone Codex plugin. Keep repository portability, one-command setup, and assigning agents work through GitHub visible in the Overview.
 - Keep the rest of `README.md` focused on installation, version compatibility, the common manifest workflow, and first verification.

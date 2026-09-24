@@ -104,14 +104,14 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 
 ### `agent`
 
-| Field         | Type                               | Required      | Behavior                                                         |
-| ------------- | ---------------------------------- | ------------- | ---------------------------------------------------------------- |
-| `id`          | string                             | yes           | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
-| `name`        | string or `from-environment` value | for `install` | Agent display name applied to OpenClaw by `install`.             |
-| `email`       | string or `from-environment` value | no            | Agent email available to configured consumers.                   |
-| `description` | string                             | no            | Agent description retained for configured consumers.             |
-| `avatar`      | string                             | no            | Applied by `install`; an undeclared OpenClaw avatar is retained. |
-| `emoji`       | string                             | no            | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
+| Field         | Type                               | Required      | Default                  | Behavior                                                         |
+| ------------- | ---------------------------------- | ------------- | ------------------------ | ---------------------------------------------------------------- |
+| `id`          | string                             | yes           | none                     | Literal lowercase id matching `^[a-z0-9][a-z0-9-]*$`.            |
+| `name`        | string or `from-environment` value | for `install` | none                     | Agent display name applied to OpenClaw by `install`.             |
+| `email`       | string or `from-environment` value | no            | none                     | Agent email available to configured consumers.                   |
+| `description` | string                             | no            | none                     | Agent description retained for configured consumers.             |
+| `avatar`      | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw avatar is retained. |
+| `emoji`       | string                             | no            | installed value retained | Applied by `install`; an undeclared OpenClaw emoji is retained.  |
 
 `name` and `email` accept a literal or an explicit reference to the completed
 Agent System environment:
@@ -136,10 +136,10 @@ additive work-tier group and must be declared together or omitted together.
 
 Each profile requires both fields:
 
-| Field    | Type                         | Behavior                                                      |
-| -------- | ---------------------------- | ------------------------------------------------------------- |
-| `model`  | provider-qualified model ref | Exact `provider/model` reference; no model value is built in. |
-| `effort` | `medium`, `high`, or `xhigh` | Explicit profile effort, intersected with runtime support.    |
+| Field    | Type                         | Required | Default | Behavior                                                      |
+| -------- | ---------------------------- | -------- | ------- | ------------------------------------------------------------- |
+| `model`  | provider-qualified model ref | yes      | none    | Exact `provider/model` reference; no model value is built in. |
+| `effort` | `medium`, `high`, or `xhigh` | yes      | none    | Explicit profile effort, intersected with runtime support.    |
 
 Model refs cannot select an authentication profile. Runtime and credential
 configuration remain outside the manifest.
@@ -176,11 +176,11 @@ For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-
 memory search configuration untouched. When present, `search.provider` is
 required:
 
-| Field      | Type                      | Required | Behavior                                                                  |
-| ---------- | ------------------------- | -------- | ------------------------------------------------------------------------- |
-| `provider` | `none`, `local`, `openai` | yes      | Selects keyword-only, local embedding, or OpenAI embedding search.        |
-| `model`    | string                    | no       | Overrides OpenClaw's embedding model; valid only with `openai`.           |
-| `api-key`  | environment name          | no       | Reads one declared Agent System environment binding; valid with `openai`. |
+| Field      | Type                      | Required | Default | Behavior                                                                  |
+| ---------- | ------------------------- | -------- | ------- | ------------------------------------------------------------------------- |
+| `provider` | `none`, `local`, `openai` | yes      | none    | Selects keyword-only, local embedding, or OpenAI embedding search.        |
+| `model`    | string                    | no       | none    | Overrides OpenClaw's embedding model; valid only with `openai`.           |
+| `api-key`  | environment name          | no       | none    | Reads one declared Agent System environment binding; valid with `openai`. |
 
 `install` sets the bound agent's provider and fallback, plus the optional model
 and API-key reference, while preserving other memory settings and agents. The
@@ -222,13 +222,13 @@ openclaw memory status --index --agent tanaabot
 
 ### `environment`
 
-| Field          | Type                    | Required | Behavior                                                              |
-| -------------- | ----------------------- | -------- | --------------------------------------------------------------------- |
-| `dotenv`       | string or string list   | no       | Ordered workspace-relative dotenv files.                              |
-| `set`          | string or `from-op` map | no       | Explicit values merged over dotenv values.                            |
-| `op`           | string or string list   | no       | Ordered 1Password Environment IDs merged after `set`.                 |
-| `path-prepend` | string or string list   | no       | Ordered workspace-relative executable directories.                    |
-| `required`     | string list             | no       | Names that fail complete environment resolution when absent or empty. |
+| Field          | Type                    | Required | Default | Behavior                                                              |
+| -------------- | ----------------------- | -------- | ------- | --------------------------------------------------------------------- |
+| `dotenv`       | string or string list   | no       | none    | Ordered workspace-relative dotenv files.                              |
+| `set`          | string or `from-op` map | no       | none    | Explicit values merged over dotenv values.                            |
+| `op`           | string or string list   | no       | none    | Ordered 1Password Environment IDs merged after `set`.                 |
+| `path-prepend` | string or string list   | no       | none    | Ordered workspace-relative executable directories.                    |
+| `required`     | string list             | no       | none    | Names that fail complete environment resolution when absent or empty. |
 
 Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
@@ -237,7 +237,7 @@ identifiers remain literal and are never casing-converted. See
 
 ### `setup`
 
-Declares workspace preparation that an operator runs through `install`, with
+Declares dependency installation and workspace configuration run through `install`, with
 optional checks for repeat installation and Doctor. Omit `setup` when the
 first-party configuration already handles the work. Setup scripts can change
 files or external services; their authors must make checks read-only and applies
@@ -459,7 +459,7 @@ not display names, and loads them in order through the SDK.
 
 Only explicit consumers load dotenv or 1Password values; passive discovery never
 does. `environment.required` applies to complete environment resolution, not
-unrelated actions. [Credential storage](./CLI.md#openclaw-agent-system-credentials)
+unrelated actions. [Credential storage](./CLI.md#credential-storage)
 defines lookup order. Install requires a persistent credential; the bootstrap
 token is never exported, required, or interpolated by the manifest.
 

@@ -13,7 +13,8 @@
 </p>
 
 Agent System puts your OpenClaw agent's identity, environment, and credential
-configuration in the repo alongside its setup. Clone the repo and run
+configuration in the repo alongside setup steps for installing dependencies and
+configuring the workspace. Clone the repo and run
 `openclaw agent-system install` to get your agent ready for work.
 
 Enable [GitHub notifications in Work mode](./channels/github/README.md), assign
@@ -38,7 +39,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
-- **Repeatable setup:** rerun Install to reconcile configuration and checked setup; use Doctor to find drift.
+- **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
 
 ## Ships With
 
@@ -51,6 +52,22 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 ### Channels
 
 - [`agent-system-github`](./channels/github/README.md) — Polls and admits approved GitHub assignments, prepares managed issue worktrees, and keeps issue and delivery pull-request comments in one lifecycle session.
+
+### CLI
+
+- [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
+- [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
+- [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
+- [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
+- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system notifications`](./CLI.md#openclaw-agent-system-notifications) — Refresh and inspect GitHub assignments.
+- [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
+- [Complete CLI reference](./CLI.md) — All commands, options, and examples.
+
+### Configuration
+
+- [Manifest reference](./MANIFEST.md) — Repository-owned agent configuration and setup.
+- [Global configuration](./CONFIG.md) — Operator-owned OpenClaw plugin settings.
 
 ### Skills
 

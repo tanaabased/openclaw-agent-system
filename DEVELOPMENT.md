@@ -151,3 +151,47 @@ Agent System follows the shared JavaScript, OpenClaw plugin, documentation, and 
 Capability-specific guides live beside their tool or channel. The planned
 third-party integration boundary is documented in [Tool API](./API.md); the
 current `api/` implementation remains internal to Agent System.
+
+## Documentation
+
+Treat existing documentation as a maintained interface. Before editing, identify
+one concrete reason: an explicit documentation request, a verified mismatch with
+shipped behavior, or a broken reference. Name the affected reader and owning
+section in the work summary. If none applies, leave the document alone.
+
+- A feature or bug fix authorizes only the documentation needed to explain its changed contract. It does not authorize a broader rewrite, reorder, new guide, or voice cleanup.
+- Find the existing owner before adding prose. Correct or link it; do not restate it elsewhere. Repeat command option rows where needed for a self-contained reference.
+- Preserve examples, defaults, supported values, caveats, and the README marketing gate in [AGENTS.md](./AGENTS.md). Moving content does not authorize rewriting it.
+- Stop expanding a documentation change when it would require a new ownership decision; propose that change separately. Do not edit the conventions merely to make an unrelated diff conform.
+
+### Command References
+
+Use this order for every command in root, tool, and channel guides:
+
+1. A heading and navigation link containing the full command in backticks.
+2. A short description of the operation.
+3. **Options:** a table with `Option or argument`, `Required`, `Default`, and `Description`. Include every applicable Agent System option; use `none` for no default and state when there are no command-specific options. Do not reproduce the underlying Git or GitHub CLI’s complete option inventory.
+4. **Usage:** a syntax block followed by runnable shell examples with lowercase comments explaining their purpose.
+5. Only necessary output, failure, precedence, or operational details after usage.
+
+Give independently invocable subcommands their own entries. Keep aliases with
+the canonical command. Put tool-owned launcher variables in the tool guide and
+shared execution boundaries after the root command reference. Native tool guides
+use the same order with **Parameters** and JSON examples instead of CLI options
+and shell examples; JSON has no comments, so explain examples immediately above them.
+
+### Configuration References
+
+For each field or coherent object, show its exact key, type or supported values,
+required state, and default. Preserve whether omission means no action, inherited
+configuration, or a literal default. A scalar may use a one-row metadata table;
+an object uses one row per field. Put examples and non-obvious interactions after
+the table. Link shared manifest types and resolution rules to their owner.
+
+### Review Gate
+
+Before committing, compare the diff to its stated reason and remove incidental
+edits. Verify commands and defaults against registration, schemas, and tests;
+check local links and fragments, preserve complete reference coverage, and run
+formatting. Package changes also require package checks. Report what was verified
+and what remains untested; do not add prose or tests solely to demonstrate activity.

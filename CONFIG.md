@@ -6,10 +6,19 @@ belong in the [manifest](./MANIFEST.md). Start with the [README](./README.md) fo
 
 ## `githubNotifications`
 
-Controls operator-wide GitHub notification intake limits. `maxCommentCharacters`
-is an integer from `1` through `64000` and defaults to `8000`. Comments above the
-effective limit are rejected without executing truncated prose. This setting does
-not change the separate outgoing reply or routing-assessment excerpt limits.
+Controls operator-wide GitHub notification intake limits.
+
+| Field                  | Type    | Required | Default | Description                                       |
+| ---------------------- | ------- | -------- | ------- | ------------------------------------------------- |
+| `maxCommentCharacters` | integer | no       | `8000`  | Incoming comment limit, from `1` through `64000`. |
+
+Overlong comments are rejected without executing truncated prose. This does not
+change outgoing reply or routing-assessment excerpt limits.
+
+```sh
+# reject incoming comments longer than twelve thousand characters.
+openclaw config set plugins.entries.agent-system.config.githubNotifications.maxCommentCharacters 12000 --strict-json
+```
 
 ## `opCache`
 
@@ -17,11 +26,11 @@ Controls in-memory reuse of 1Password clients and resolved values. Gateway tools
 share the cache; separate CLI processes do not. GitHub responses, permissions,
 and command results are not cached.
 
-| Field             | Type    | Default | Behavior                                                                               |
-| ----------------- | ------- | ------- | -------------------------------------------------------------------------------------- |
-| `mode`            | string  | `timed` | `off`, `timed`, or `process-lifetime`.                                                 |
-| `durationSeconds` | number  | `300`   | Timed mode only; greater than zero, at most `4503599627370`.                           |
-| `maxEntries`      | integer | `128`   | Maximum agent/workspace entries, from `1` to `1024`; oldest entries are evicted first. |
+| Field             | Type    | Required | Default | Behavior                                                                               |
+| ----------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `mode`            | string  | no       | `timed` | `off`, `timed`, or `process-lifetime`.                                                 |
+| `durationSeconds` | number  | no       | `300`   | Timed mode only; greater than zero, at most `4503599627370`.                           |
+| `maxEntries`      | integer | no       | `128`   | Maximum agent/workspace entries, from `1` to `1024`; oldest entries are evicted first. |
 
 Timed values expire after the configured duration from retrieval; cache hits do
 not extend it. Expiry refreshes values on demand, not an unchanged authenticated

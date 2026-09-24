@@ -112,12 +112,11 @@ not hostile-process secret isolation.
 
 ### `github.policy`
 
-| Field      | Values          | Default | Covers                                             |
-| ---------- | --------------- | ------- | -------------------------------------------------- |
-| `releases` | `allow`, `deny` | `deny`  | Creating, editing, deleting, or uploading releases |
-
-The default needs no manifest entry. Add the field only when this agent should
-be able to mutate releases:
+| Field                                                                          | Values          | Required | Default | Covers                                             |
+| ------------------------------------------------------------------------------ | --------------- | -------- | ------- | -------------------------------------------------- |
+| `releases`                                                                     | `allow`, `deny` | no       | `deny`  | Creating, editing, deleting, or uploading releases |
+| The default needs no manifest entry. Add the field only when this agent should |
+| be able to mutate releases:                                                    |
 
 ```yaml
 github:
@@ -151,18 +150,17 @@ Agent System resolves the environment or token.
 
 ### `github.config`
 
-| Field               | Values                | Default    |
-| ------------------- | --------------------- | ---------- |
-| `git-protocol`      | `ssh`, `https`        | `ssh`      |
-| `color-labels`      | `enabled`, `disabled` | `enabled`  |
-| `accessible-colors` | `enabled`, `disabled` | `disabled` |
-| `spinner`           | `enabled`, `disabled` | `enabled`  |
-| `telemetry`         | `enabled`, `disabled` | `disabled` |
-
-Agent System writes a token-free `config.yml` beneath a private per-agent state
-directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the
-operator's normal `~/.config/gh` configuration. The child environment also
-disables prompts and editor launches and uses `cat` as its pager.
+| Field                                                                             | Values                | Required | Default    |
+| --------------------------------------------------------------------------------- | --------------------- | -------- | ---------- |
+| `git-protocol`                                                                    | `ssh`, `https`        | no       | `ssh`      |
+| `color-labels`                                                                    | `enabled`, `disabled` | no       | `enabled`  |
+| `accessible-colors`                                                               | `enabled`, `disabled` | no       | `disabled` |
+| `spinner`                                                                         | `enabled`, `disabled` | no       | `enabled`  |
+| `telemetry`                                                                       | `enabled`, `disabled` | no       | `disabled` |
+| Agent System writes a token-free `config.yml` beneath a private per-agent state   |
+| directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the |
+| operator's normal `~/.config/gh` configuration. The child environment also        |
+| disables prompts and editor launches and uses `cat` as its pager.                 |
 
 ### `github.ssh-keys`
 
@@ -195,10 +193,20 @@ configuration, routing, lifecycle, and security contract.
 ## CLI
 
 These are operator commands; agents use `agent_system_github`. See the
-[shared trust boundary](../../CLI.md#trust-boundary) for identity binding and
-host-access limits.
+[shared trust boundary](../../CLI.md#trust-boundary) for identity binding and host-access limits.
 
-### Usage
+### `openclaw agent-system tool gh`
+
+Run ordinary GitHub CLI commands through the agent’s account and operation policy.
+
+#### Options
+
+| Option or argument     | Required | Default             | Description                                                |
+| ---------------------- | -------- | ------------------- | ---------------------------------------------------------- |
+| `--agent <id>`         | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
+| `-- <gh-arguments...>` | yes      | none                | Pass ordinary GitHub CLI arguments unchanged.              |
+
+#### Usage
 
 ```text
 openclaw agent-system tool gh [--agent <id>] -- <gh-arguments...>
@@ -208,16 +216,13 @@ openclaw agent-system tool gh [--agent <id>] -- <gh-arguments...>
 # discover agent.yaml from the current workspace.
 openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 
-# select one installed agent from any directory and verify its github identity.
-openclaw as tool gh --agent tanaabot -- api user --jq .login
+# select an installed agent and verify its github identity.
+openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
-
-### Behavior
 
 Arguments after `--` pass to `gh` unchanged. The runtime blocks token display,
 authentication or generated-config mutation, aliases, extensions, and browser
-or editor launch paths. These are non-configurable Agent System invariants, not
-operation policy.
+or editor launch paths. These are non-configurable invariants, not operation policy.
 
 ## Shim
 
@@ -235,11 +240,21 @@ The packaged command automatically uses managed GitHub in agent context and
 sanitized host execution outside it. See the
 [command-routing contract](../../CLI.md#trust-boundary).
 
-Agent-bound Gateway and setup children also receive `AGENT_SYSTEM_GH` as the
-absolute path to the strict managed launcher. Use `"$AGENT_SYSTEM_GH" repo view`
-when host fallback is unacceptable. The binding is child-scoped and fails closed
-without valid active-agent authority; it contains neither the GitHub token nor an
-authority capability.
+## Launcher Bindings
+
+Agent-bound Gateway and setup children receive `AGENT_SYSTEM_GH`, the absolute
+path to the strict managed launcher:
+
+```sh
+# require the bound agent's github identity and policy without host fallback.
+"$AGENT_SYSTEM_GH" repo view owner/repo
+```
+
+The binding exists only in Agent System-owned child environments, not login
+shells, repository config, or manifest environment output. It is an executable
+path, not a token or authority capability. It retains classification, policy,
+credential, containment, and audit checks and fails without valid active-agent
+authority. The [shim](#shim) retains its contextual host fallback.
 
 ## Further Reading
 
