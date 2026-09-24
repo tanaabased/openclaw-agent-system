@@ -14,7 +14,6 @@ const agentId = process.argv[2];
 assert.ok(agentId === 'approval-codex' || agentId === 'approval-openclaw');
 const operation = process.argv[3] ?? 'install';
 assert.ok(operation === 'doctor' || operation === 'install');
-if (operation === 'doctor') assert.equal(agentId, 'approval-openclaw');
 const temporaryDirectory = process.env.TMPDIR;
 assert.ok(temporaryDirectory);
 const checkFile = join(temporaryDirectory, 'agent-system-approval-check');
