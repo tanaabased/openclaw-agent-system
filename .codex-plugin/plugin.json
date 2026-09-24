@@ -15,15 +15,13 @@
   "interface": {
     "displayName": "Agent System",
     "shortDescription": "Agent-scoped OpenClaw and Codex workflows",
-    "longDescription": "Use Agent System skills for agent-scoped setup, diagnostics, Git, and GitHub workflows across supported OpenClaw and Codex runtimes.",
+    "longDescription": "Agent System manages per-agent identity and workflows in OpenClaw. This plugin provides workspace binding and shared skills.",
     "developerName": "Tanaab Maneuvering Systems",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Write"],
     "websiteURL": "https://github.com/tanaabased/openclaw-agent-system",
     "defaultPrompt": [
-      "Use Agent System to manage this agent's declared workspace safely.",
-      "Use $agent-system-git-cli for agent-scoped Git work.",
-      "Use $agent-system-github-cli for agent-scoped GitHub work."
+      "Use $agent-system-codex-binding to inspect or change this plugin installation workspace binding."
     ],
     "brandColor": "#00c88a",
     "composerIcon": "./assets/icon.png",

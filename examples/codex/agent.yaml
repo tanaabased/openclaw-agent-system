@@ -2,3 +2,11 @@ schema-version: 1
 agent:
   id: codex-example
   name: Codex Example
+git:
+  worktrees:
+    root: worktrees
+github:
+  notifications:
+    approved-actors:
+      - login: operator
+        node-id: U_operator

@@ -94,12 +94,7 @@ describe('agent/codex-context', () => {
       },
       git: { name: 'Emori Git', policy: { forcePush: 'deny' } },
       github: { host: 'github.com', username: 'emoriwan', policy: { releases: 'deny' } },
-      capabilities: [
-        'agent-system-git-cli',
-        'agent-system-git-worktree',
-        'agent-system-github-cli',
-        'agent-system-github-update',
-      ],
+      capabilities: ['agent-system-git-cli', 'agent-system-github-cli'],
     });
     for (const secret of [
       'AGENT_NAME_SECRET',
@@ -112,6 +107,37 @@ describe('agent/codex-context', () => {
       'op://vault/item/field',
     ]) {
       assert.equal(serialized.includes(secret), false);
+    }
+  });
+
+  it('should advertise only standalone skills for configured integrations', () => {
+    const base: AgentManifest = { schemaVersion: 1, agent: { id: 'emori' } };
+    const cases: Array<[Partial<AgentManifest>, string[]]> = [
+      [{}, []],
+      [{ git: {} }, ['agent-system-git-cli']],
+      [{ github: {} }, ['agent-system-github-cli']],
+      [{ git: {}, github: {} }, ['agent-system-git-cli', 'agent-system-github-cli']],
+      [
+        {
+          git: { worktrees: { root: 'worktrees' } },
+          github: {
+            notifications: {
+              assignmentTypes: ['issue'],
+              approvedActors: [{ login: 'operator', nodeId: 'U_operator' }],
+              intervalMinutes: 5,
+              maxConcurrentIssues: 2,
+            },
+          },
+        },
+        ['agent-system-git-cli', 'agent-system-github-cli'],
+      ],
+    ];
+
+    for (const [configuration, capabilities] of cases) {
+      assert.deepEqual(
+        projectCodexManifest({ ...base, ...configuration }).capabilities,
+        capabilities,
+      );
     }
   });
 
