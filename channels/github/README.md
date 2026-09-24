@@ -76,7 +76,7 @@ that baseline create local work. A baseline failure reports
 
 ## Model routing
 
-Declaring all four [model profiles](../../ADVANCED.md#models) enables routing for
+Declaring all four [model profiles](../../MANIFEST.md#models) enables routing for
 new issue conversations in either mode. Existing conversations and default-only
 manifests keep their ordinary behavior. Before the initial assignment turn, the
 manifest default model assesses bounded issue content in a fresh, tool-free
@@ -423,7 +423,9 @@ invalid conversation records block only the affected lifecycle.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and common manifest workflow
-- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
+- [Manifest reference](../../MANIFEST.md): workspace declarations, environment, and paths
+- [CLI reference](../../CLI.md): shared commands and execution boundaries
+- [Global configuration](../../CONFIG.md): operator-owned plugin settings
 - [Design](./DESIGN.md): target message flow, lifecycle types, modes, durable conversation state, and response boundaries
 - [Presentation](./PRESENTATION.md): reusable visible component definitions
 - [Git tools](../../tools/git/README.md): identity, SSH, policy, and managed worktree configuration

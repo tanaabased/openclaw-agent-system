@@ -122,7 +122,7 @@ the agent workspace; absolute and `~/` paths are explicit operator choices.
 `from-environment` reads the named value from the completed Agent System
 environment, so dotenv, 1Password Environments, and direct OP secret references
 can supply the key. Secret acquisition belongs to the shared
-[environment contract](../../ADVANCED.md#environment-resolution), so the Git schema does
+[environment contract](../../MANIFEST.md#environment-resolution), so the Git schema does
 not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
 isolates the declared keys from ambient SSH identities and presents them only
 for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
@@ -264,7 +264,7 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 ## CLI
 
 These are operator commands; agents use `agent_system_git` and `agent_system_git_worktree`. See the
-[shared trust boundary](../../ADVANCED.md#trust-boundary) for identity binding and
+[shared trust boundary](../../CLI.md#trust-boundary) for identity binding and
 host-access limits.
 
 ### Usage
@@ -328,7 +328,7 @@ git status --short
 
 The packaged command automatically uses managed Git in agent context and
 sanitized host execution outside it. See the
-[command-routing contract](../../ADVANCED.md#trust-boundary).
+[command-routing contract](../../CLI.md#trust-boundary).
 
 Agent-bound Gateway and setup children also receive `AGENT_SYSTEM_GIT` as the
 absolute path to the strict managed launcher. Use `"$AGENT_SYSTEM_GIT" status`
@@ -339,7 +339,9 @@ are child-scoped and fail closed without valid active-agent authority.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
-- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
+- [Manifest reference](../../MANIFEST.md): workspace declarations, environment, and paths
+- [CLI reference](../../CLI.md): shared commands and execution boundaries
+- [Global configuration](../../CONFIG.md): operator-owned plugin settings
 - [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
 - [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance

@@ -34,8 +34,10 @@
 ## Documentation
 
 - Treat the locations below as ownership boundaries, not a checklist of files to update. Keep aligned documents unchanged and avoid repeating explanations across them.
-- Keep `README.md` focused on installation, the common manifest workflow, and first verification.
-- Put complete manifest, configuration, CLI, environment, and path reference material in `ADVANCED.md`.
+- Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
+- Preserve the opening's three-paragraph message: repository-owned identity, environment, credential configuration, and setup activated by cloning and running `openclaw agent-system install`; GitHub issue-to-pull-request work; then the minimal standalone Codex plugin. Keep repository portability, one-command setup, and assigning agents work through GitHub visible in the Overview.
+- Keep the rest of `README.md` focused on installation, version compatibility, the common manifest workflow, and first verification.
+- Keep root-level companion guides: manifest discovery, schema, setup, environment resolution, and path projection in `MANIFEST.md`; common commands and execution boundaries in `CLI.md`; operator-owned OpenClaw plugin settings in `CONFIG.md`.
 - Keep standalone Codex installation, binding, context, setup, model routing, and development guidance in `CODEX.md`; use short contextual links elsewhere. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.
 - Keep the target GitHub notification message flow, lifecycle types, stable machine identifiers, modes, states, context boundaries, and publication behavior in `channels/github/DESIGN.md`.
 - Keep reusable human-visible GitHub notification components and styling in `channels/github/PRESENTATION.md`; do not put lifecycle or feature behavior there.

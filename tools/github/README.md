@@ -186,7 +186,7 @@ supported. Files must be non-symlinked regular files no larger than 64 KiB and
 contain exactly one supported public key. Agent System never accepts private
 keys, removes remote keys, rotates keys, or changes existing titles.
 
-The generic [`validate`, `install`, and `doctor`](../../ADVANCED.md#cli)
+The generic [`validate`, `install`, and `doctor`](../../CLI.md)
 commands validate declarations, reconcile the private GitHub CLI configuration,
 agent-scoped OpenClaw identity, and missing account keys, and report drift. See the
 [GitHub notifications channel](../../channels/github/README.md) for its separate
@@ -195,7 +195,7 @@ configuration, routing, lifecycle, and security contract.
 ## CLI
 
 These are operator commands; agents use `agent_system_github`. See the
-[shared trust boundary](../../ADVANCED.md#trust-boundary) for identity binding and
+[shared trust boundary](../../CLI.md#trust-boundary) for identity binding and
 host-access limits.
 
 ### Usage
@@ -233,7 +233,7 @@ gh repo view owner/repo --json name,url
 
 The packaged command automatically uses managed GitHub in agent context and
 sanitized host execution outside it. See the
-[command-routing contract](../../ADVANCED.md#trust-boundary).
+[command-routing contract](../../CLI.md#trust-boundary).
 
 Agent-bound Gateway and setup children also receive `AGENT_SYSTEM_GH` as the
 absolute path to the strict managed launcher. Use `"$AGENT_SYSTEM_GH" repo view`
@@ -244,6 +244,8 @@ authority capability.
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow
-- [Advanced](../../ADVANCED.md): core manifest, configuration, CLI, environment, and path reference
+- [Manifest reference](../../MANIFEST.md): workspace declarations, environment, and paths
+- [CLI reference](../../CLI.md): shared commands and execution boundaries
+- [Global configuration](../../CONFIG.md): operator-owned plugin settings
 - [Development](../../DEVELOPMENT.md#logging): runtime logging during development
 - [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md): model-facing GitHub guidance

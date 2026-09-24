@@ -12,15 +12,18 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System equips each OpenClaw agent with its own identity, environment, and
-credentials. Enable [GitHub notifications in Work mode](./channels/github/README.md),
-assign an issue to the agent, and watch it work toward a delivery pull request.
+Agent System puts your OpenClaw agent's identity, environment, and credential
+configuration in the repo alongside its setup. Clone the repo and run
+`openclaw agent-system install` to get your agent ready for work.
+
+Enable [GitHub notifications in Work mode](./channels/github/README.md), assign
+an issue to the agent, and watch it work toward a delivery pull request.
 
 Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 > [!NOTE]
 > The OpenClaw integration requires 2026.9.5 or newer and is developed against 2026.9.5. See
-> [version compatibility](./ADVANCED.md#version-compatibility).
+> [version compatibility](#version-compatibility).
 
 > [!WARNING]
 > Agent System remains a work in progress. Development and Leia coverage focus
@@ -29,11 +32,13 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ## Overview
 
+- **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
+- **Assign work like you would to a developer:** the GitHub notification channel turns issue assignments into agent work and delivery pull requests.
 - **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
-- **Repeatable setup:** declare desired state in `agent.yaml`, install it, and use Doctor to find drift.
+- **Repeatable setup:** rerun Install to reconcile configuration and checked setup; use Doctor to find drift.
 
 ## Ships With
 
@@ -79,6 +84,18 @@ also grants and verifies the required conversation-hook access; see
 [hook setup](./channels/github/README.md#required-conversation-hook).
 
 For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+
+### Version Compatibility
+
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| Unreleased           | 2026.9.5         | 2026.9.5           |
+| 0.6.0                | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
+
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
 
 ## Usage
 
@@ -157,12 +174,14 @@ OpenClaw `install` prepares the agent's managed tools before running applicable
 setup, asks for confirmation interactively, and proceeds without a prompt in CI
 or with `--yes`. Doctor runs setup checks without applying changes. Use checks and
 repeatable applies to make subsequent installs safe; arbitrary setup effects are
-not rolled back. See [Setup](./ADVANCED.md#setup) for inline scripts, named steps,
+not rolled back. See [Setup](./MANIFEST.md#setup) for inline scripts, named steps,
 runtime filters, and cloning repositories with the agent's Git/GitHub identity.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See
-[Advanced](./ADVANCED.md) for the complete manifest and CLI references.
+[Manifest Reference](./MANIFEST.md) for all workspace settings,
+[CLI Reference](./CLI.md) for commands, and [Global Configuration](./CONFIG.md)
+for operator-owned plugin settings.
 
 ## Development
 

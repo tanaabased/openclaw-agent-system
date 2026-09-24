@@ -43,7 +43,7 @@ supports inspecting, replacing, and removing the binding.
 Each installation or profile stores one workspace pointer in
 `PLUGIN_DATA/workspace-binding.json`. Binding never changes workspace files and
 is independent of `CODEX_HOME`, the current task directory, and OpenClaw
-configuration. See [manifest discovery](./ADVANCED.md#manifest) for supported
+configuration. See [manifest discovery](./MANIFEST.md#discovery) for supported
 locations and validation rules.
 
 Start a fresh task after binding, rebinding, or unbinding. The trusted hook also
@@ -79,12 +79,12 @@ Doctor and Install inspect or run only setup steps whose `runtimes` includes
 `codex` or is omitted. They use the host's sanitized executable environment and
 do not inspect or reconcile OpenClaw agent registration, model availability,
 memory, tool access, paths, Git, GitHub, notifications, or credentials. Follow the
-shared [setup syntax and retry rules](./ADVANCED.md#setup); setup applies can
+shared [setup syntax and retry rules](./MANIFEST.md#setup); setup applies can
 change files or external services and completed effects are not rolled back.
 
 ## Model Routing
 
-Declared [model profiles](./ADVANCED.md#models) appear in
+Declared [model profiles](./MANIFEST.md#models) appear in
 `binding.context.modelRouting`. An `openai/<model>` reference maps to the native
 Codex `<model>` candidate and `effort` maps to `thinking`. Other providers remain
 visible as unsupported. The projection neither changes the current task nor

@@ -125,7 +125,7 @@ export default function createPathLifecycleContribution(
                       remediation:
                         path.codex.ownership === 'managed'
                           ? 'Run openclaw agent-system install from this workspace.'
-                          : 'Add allow_login_shell = false to .codex/config.toml as documented in ADVANCED.md, then start a new Codex session.',
+                          : 'Add allow_login_shell = false to .codex/config.toml as documented in MANIFEST.md#path, then start a new Codex session.',
                       status:
                         path.codex.ownership === 'managed'
                           ? ('drift' as const)
