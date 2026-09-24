@@ -60,18 +60,11 @@ describe('github notification concurrent assignment', () => {
             entered.resolve();
             await release.promise;
           }
-          // retain the original invocation only when replaying this regression against 2fe15db.
-          const binding =
-            input.ctxPayload.GatewayRunToolBindings?.['agent-system.github-reply-turn'];
-          const stage = executor.stage.bind(executor) as (
-            turn: GitHubNotificationReplyCandidateFinishInput | string,
-            body: string,
-          ) => Promise<void>;
-          await stage(
-            (binding as GitHubNotificationReplyCandidateFinishInput | undefined) ??
-              candidate.agentId,
-            `I will resolve issue ${number}.`,
-          );
+          const binding = input.ctxPayload.GatewayRunToolBindings?.[
+            'agent-system.github-reply-turn'
+          ] as GitHubNotificationReplyCandidateFinishInput | undefined;
+          assert.ok(binding);
+          await executor.stage(binding, `I will resolve issue ${number}.`);
           await input.delivery.deliver({ text: `Private plan ${number}.` }, { kind: 'final' });
           completed.push(number);
           return {

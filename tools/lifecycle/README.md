@@ -40,7 +40,7 @@ tool approval. The operator CLI retains its existing explicit-install workflow.
 
 The declared compatibility floor and installed acceptance target are OpenClaw
 **2026.9.5**. Control UI chat is the initial acceptance surface. The
-[GitHub Actions security example](../../examples/security/README.md) exercises
+[GitHub Actions approval example](../../examples/approval/README.md) exercises
 the Control UI protocol and installed approval routing with both harnesses,
 covering allow, deny, cancellation, and unavailable approval. These operational
 tests run only in GitHub Actions; local unit checks do not establish installed

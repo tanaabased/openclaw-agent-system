@@ -138,29 +138,3 @@ export function formatManifestFailure(
         : 'manifest: an OpenClaw agent workspace could not be resolved';
   return [{ level: 'error', message: summary }, ...formatManifestDiagnostics(result)];
 }
-
-export function reportError(
-  logger: Logger,
-  component: string,
-  error: unknown,
-  code?: string,
-): void {
-  logger.error(formatErrorDiagnostic(component, error, code));
-}
-
-export function reportManifestDiagnostics(result: AgentManifestLoadResult, logger: Logger): void {
-  for (const diagnostic of formatManifestDiagnostics(result)) {
-    if (diagnostic.level === 'warning') logger.warn(diagnostic.message);
-    else logger.error(diagnostic.message);
-  }
-}
-
-export function reportManifestFailure(
-  result: Exclude<AgentManifestLoadResult, { status: 'loaded' }>,
-  logger: Logger,
-): void {
-  for (const diagnostic of formatManifestFailure(result)) {
-    if (diagnostic.level === 'warning') logger.warn(diagnostic.message);
-    else logger.error(diagnostic.message);
-  }
-}

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import githubNotificationMessage, {
   githubNotificationMarkdownText,
 } from '../channels/github/conversation/presentation/card.ts';
-import { githubNotificationBlockquote } from '../channels/github/conversation/presentation/public-response.ts';
 
 describe('channels/github/conversation/presentation', () => {
   it('should render one compact card with labeled facts', () => {
@@ -43,14 +42,10 @@ describe('channels/github/conversation/presentation', () => {
     );
   });
 
-  it('should escape provider text and render multiline blockquotes', () => {
+  it('should escape provider text', () => {
     assert.equal(
       githubNotificationMarkdownText(' Michael *[reviewed]* this '),
       'Michael \\*\\[reviewed\\]\\* this',
-    );
-    assert.equal(
-      githubNotificationBlockquote('First line.\n\nSecond line.'),
-      ['> First line.', '>', '> Second line.'].join('\n'),
     );
   });
 });

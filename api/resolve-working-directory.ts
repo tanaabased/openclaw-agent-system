@@ -19,8 +19,3 @@ export default async function resolveToolWorkingDirectory(
   }
   return candidate;
 }
-
-/** Check lexical containment before resolving a command caller's current directory. */
-export function isToolWorkingDirectoryContained(workspaceDir: string, candidate: string): boolean {
-  return isPathContained(resolve(workspaceDir), resolve(candidate));
-}
