@@ -2,20 +2,13 @@ import { access, lstat, mkdtemp, realpath, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
-
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schema.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 
 const maximumOutputBytes = 65_536;
-const inheritedEnvironmentNames = [
-  'HOME',
-  'LANG',
-  'LC_ALL',
-  'TMPDIR',
-  'TMP',
-  'TEMP',
+const inheritedEnvironmentNames = ['HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TMP', 'TEMP'] as const;
+const inheritedOpenClawEnvironmentNames = [
   // Managed launchers must load the same OpenClaw profile as the installing operator.
   'OPENCLAW_PROFILE',
   'OPENCLAW_STATE_DIR',
@@ -44,6 +37,36 @@ export interface SetupCommandResult {
   timedOut: boolean;
   truncated: boolean;
 }
+
+export interface SetupProcessResult {
+  code: number | null;
+  killed: boolean;
+  signal: NodeJS.Signals | null;
+  stderr: string;
+  stderrTruncatedBytes?: number;
+  stdout: string;
+  stdoutTruncatedBytes?: number;
+  termination: 'exit' | 'signal' | 'timeout' | 'no-output-timeout';
+}
+
+export interface SetupProcessOptions {
+  baseEnv: Readonly<NodeJS.ProcessEnv>;
+  cwd: string;
+  env: Readonly<NodeJS.ProcessEnv>;
+  input: string;
+  killGraceMs: number;
+  killProcessTree: boolean;
+  maxCombinedOutputBytes: number;
+  maxOutputBytes: number;
+  outputCapture: 'head';
+  signal?: AbortSignal;
+  timeoutMs: number;
+}
+
+export type SetupProcessRunner = (
+  argv: string[],
+  options: SetupProcessOptions,
+) => Promise<SetupProcessResult>;
 
 export class SetupCommandError extends Error {
   override name = 'SetupCommandError';
@@ -120,7 +143,8 @@ async function removeScript(directory: string) {
 /** Run one normalized setup command without publishing its declaration, output, or host errors. */
 export default function createSetupCommandRunner(dependencies: {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
-  runCommandWithTimeout: OpenClawPluginApi['runtime']['system']['runCommandWithTimeout'];
+  inheritOpenClawEnvironment?: boolean;
+  runCommandWithTimeout: SetupProcessRunner;
   temporaryDirectory?: string;
 }) {
   return async (
@@ -151,6 +175,12 @@ export default function createSetupCommandRunner(dependencies: {
       for (const name of inheritedEnvironmentNames) {
         const value = dependencies.baseEnvironment[name];
         if (value !== undefined) environment[name] = value;
+      }
+      if (dependencies.inheritOpenClawEnvironment !== false) {
+        for (const name of inheritedOpenClawEnvironmentNames) {
+          const value = dependencies.baseEnvironment[name];
+          if (value !== undefined) environment[name] = value;
+        }
       }
       if (binding) {
         environment.AGENT_SYSTEM_EXEC_AUTHORITY = binding.authority;

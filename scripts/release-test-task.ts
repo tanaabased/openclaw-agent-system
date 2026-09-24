@@ -203,6 +203,8 @@ try {
     'skills/github-cli/agents/openai.yaml',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
+    'skills/install/SKILL.md',
+    'skills/install/agents/openai.yaml',
     'assets/icon.png',
     'assets/git-icon-large.svg',
     'assets/github-icon-large.svg',
@@ -394,6 +396,47 @@ try {
     ) as { binding?: { workspaceDir?: string }; status?: string };
     assert.equal(inspected.status, 'bound');
     assert.equal(inspected.binding?.workspaceDir, await realpath(workspace));
+
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      [
+        'schema-version: 1',
+        'agent:',
+        '  id: package-test',
+        'setup:',
+        '  steps:',
+        '    - id: shared',
+        '      check: test -f .codex-installed',
+        '      apply: touch .codex-installed',
+        '    - id: openclaw-only',
+        '      runtimes: [openclaw]',
+        '      apply: touch .openclaw-installed',
+        '',
+      ].join('\n'),
+    );
+    const setup = (...args: string[]) => run(process.execPath, [runtime, 'setup', ...args]);
+    const setupInspection = JSON.parse(
+      (await setup('inspect', '--plugin-data', pluginData)).output,
+    ) as { findings?: Array<{ code?: string; stepId?: string }> };
+    assert.deepEqual(
+      setupInspection.findings?.map(({ code, stepId }) => ({ code, stepId })),
+      [
+        { code: 'setup-drift', stepId: 'shared' },
+        { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+      ],
+    );
+    const setupInstalled = JSON.parse(
+      (await setup('install', '--plugin-data', pluginData)).output,
+    ) as { outcomes?: Array<{ code?: string; stepId?: string }> };
+    assert.deepEqual(
+      setupInstalled.outcomes?.map(({ code, stepId }) => ({ code, stepId })),
+      [
+        { code: 'setup-applied', stepId: 'shared' },
+        { code: 'setup-not-applicable', stepId: 'openclaw-only' },
+      ],
+    );
+    await access(join(workspace, '.codex-installed'));
+    await assert.rejects(access(join(workspace, '.openclaw-installed')));
 
     const unbound = JSON.parse(
       (await binding('unbind', '--plugin-data', pluginData, '--confirm')).output,

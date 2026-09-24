@@ -49,6 +49,10 @@ describe('agent/codex-context', () => {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'binding'],
         pluginData,
       },
+      setupRuntime: {
+        argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'setup'],
+        pluginData,
+      },
       binding: { status: 'unbound' },
     });
   });
@@ -114,9 +118,14 @@ describe('agent/codex-context', () => {
     const base: AgentManifest = { schemaVersion: 1, agent: { id: 'emori' } };
     const cases: Array<[Partial<AgentManifest>, string[]]> = [
       [{}, []],
+      [{ setup: { steps: [] } }, ['agent-system-install']],
       [{ git: {} }, ['agent-system-git-cli']],
       [{ github: {} }, ['agent-system-github-cli']],
       [{ git: {}, github: {} }, ['agent-system-git-cli', 'agent-system-github-cli']],
+      [
+        { setup: { steps: [] }, git: {}, github: {} },
+        ['agent-system-install', 'agent-system-git-cli', 'agent-system-github-cli'],
+      ],
       [
         {
           git: { worktrees: { root: 'worktrees' } },

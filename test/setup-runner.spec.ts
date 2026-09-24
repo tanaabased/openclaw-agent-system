@@ -272,6 +272,28 @@ describe('agent/setup-runner', () => {
     assert.equal(base.GH_TOKEN, 'secret');
   });
 
+  it('should omit openclaw process state from standalone adapters', async () => {
+    await executable(join(hostBin, 'helper'));
+    const run = createSetupCommandRunner({
+      baseEnvironment: {
+        HOME: root,
+        OPENCLAW_PROFILE: 'operator',
+        OPENCLAW_STATE_DIR: join(root, 'openclaw-state'),
+        OPENCLAW_CONFIG_PATH: join(root, 'openclaw.json'),
+      },
+      inheritOpenClawEnvironment: false,
+      temporaryDirectory,
+      runCommandWithTimeout: async (_argv, options) => {
+        assert.deepEqual(options.env, { HOME: root, PATH: hostBin });
+        return success;
+      },
+    });
+    await run(
+      { kind: 'exec', executable: 'helper', args: [], timeoutSeconds: 1 },
+      { workspaceDir: workspace, executableDirectories: [hostBin] },
+    );
+  });
+
   it('should exclude relative, empty, and workspace search directories including symlink aliases', async () => {
     const alias = join(root, 'alias');
     await symlink(workspace, alias);

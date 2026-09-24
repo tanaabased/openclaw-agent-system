@@ -4,15 +4,21 @@ import {
   type AgentSystemLifecycleFinding,
   type AgentSystemLifecycleReconcileResult,
 } from '../core/lifecycle-registry.ts';
-import type SetupCommandService from './setup-command-service.ts';
+import type { SetupCommandResult } from './setup-runner.ts';
 import setupStepApplies from './setup-runtime.ts';
 import type { AgentSetupCommand, AgentSetupStep } from '../manifest/setup-schema.ts';
 
 /** Inspect applicable checks; reconcile ordered steps without rolling back external effects. */
 export default class SetupLifecycleService {
   constructor(
-    private readonly commands: Pick<SetupCommandService, 'run'> &
-      Partial<Pick<SetupCommandService, 'prepare'>>,
+    private readonly commands: {
+      prepare?(context: AgentSystemLifecycleExecutionContext): Promise<void>;
+      run(
+        command: AgentSetupCommand,
+        target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
+        signal?: AbortSignal,
+      ): Promise<SetupCommandResult>;
+    },
   ) {}
 
   async inspect(

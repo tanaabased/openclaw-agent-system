@@ -2,8 +2,10 @@
 
 `agent_system_install` and `agent_system_doctor` run Agent System lifecycle
 operations for the active OpenClaw agent after explicit chat approval. Both the
-default OpenClaw harness and OpenClaw-hosted Codex use these native tools;
-standalone Codex does not acquire an OpenClaw approval route by installing skills.
+default OpenClaw harness and OpenClaw-hosted Codex use these native tools. The
+shared Install skill routes those runtimes here and waits for native **Allow
+once** approval. Standalone Codex does not acquire an OpenClaw approval route by
+installing skills; the skill instead uses its trusted setup-only adapter.
 
 Call Doctor with `{}`. Call install with `{}`, `{"skipSetup": true}` to omit
 setup checks and applies, or `{"rebuildCodexPath": true}` to replace the saved

@@ -3,6 +3,7 @@
 ### New Features
 
 - Added agent-bound `setup` steps with runtime filters, install confirmation, and check-only Doctor findings. [#64](https://github.com/tanaabased/openclaw-agent-system/issues/64) [#137](https://github.com/tanaabased/openclaw-agent-system/pull/137)
+- Added an Install skill that routes the full lifecycle through OpenClaw approval and the setup-only projection through standalone Codex. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140)
 - Added an npm-backed Codex plugin with shared skill discovery and source-cache synchronization. [#138](https://github.com/tanaabased/openclaw-agent-system/issues/138)
 - Added chat-approved install and Doctor tools for the active OpenClaw agent, with single-use consent bound to its workspace and manifest. [#143](https://github.com/tanaabased/openclaw-agent-system/issues/143)
 - Added durable per-agent GitHub issue-work concurrency with a configurable limit, stable queueing, and operator-visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117)
