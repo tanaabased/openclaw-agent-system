@@ -5,6 +5,7 @@ import {
   type default as AgentCommandAuthority,
 } from '../agent/command-authority.ts';
 import type AgentManifestService from '../manifest/service.ts';
+import type AgentSystemToolRegistry from '../api/registry.ts';
 import type { Logger } from './logger.ts';
 
 type RegistrationApi = Pick<OpenClawPluginApi, 'on' | 'registerService'>;
@@ -13,7 +14,9 @@ type AuthorityManifestService = Pick<AgentManifestService, 'loadForRuntimeContex
 export interface RegisterAgentCommandAuthorityDependencies {
   authority: Pick<AgentCommandAuthority, 'issue' | 'start' | 'stop'>;
   logger: Logger;
+  launcherDirectory: string;
   manifestService: AuthorityManifestService;
+  toolRegistry: Pick<AgentSystemToolRegistry, 'launcherBindings'>;
 }
 
 /** Issue opaque active-agent capabilities only to Gateway-hosted exec descendants. */
@@ -41,6 +44,12 @@ export default function registerAgentCommandAuthority(
       'resolve_exec_env',
     );
     if (loaded.status !== 'loaded') return deniedAgentCommandEnvironment();
-    return dependencies.authority.issue(loaded.manifest.agent.id);
+    return {
+      ...dependencies.authority.issue(loaded.manifest.agent.id),
+      ...dependencies.toolRegistry.launcherBindings(
+        loaded.manifest,
+        dependencies.launcherDirectory,
+      ),
+    };
   });
 }

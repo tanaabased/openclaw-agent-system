@@ -85,7 +85,7 @@ export function createToolTestDefinition(
       authorize: options.authorize ?? (() => ({ status: 'allowed' })),
       policyId: 'agent-system.test-tool',
     },
-    commands: [{ command: 'test-tool' }],
+    commands: [{ command: 'test-tool', environmentVariable: 'test-tool' }],
     configuration: {
       read: () => (options.configured === false ? undefined : { token: 'AGENT_TOKEN' }),
       resolve: (configuration) => configuration,
@@ -126,7 +126,7 @@ export function createSemanticToolTestDefinition(
       authorize: options.authorize ?? (() => ({ status: 'allowed' })),
       policyId: 'agent-system.test-semantic-tool',
     },
-    commands: [{ command: 'test-semantic-tool' }],
+    commands: [{ command: 'test-semantic-tool', environmentVariable: 'test-semantic-tool' }],
     configuration: {
       read: () => ({ token: 'AGENT_TOKEN' }),
       resolve: (configuration) => configuration,

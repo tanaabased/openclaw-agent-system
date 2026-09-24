@@ -330,6 +330,12 @@ The packaged command automatically uses managed Git in agent context and
 sanitized host execution outside it. See the
 [command-routing contract](../../ADVANCED.md#trust-boundary).
 
+Agent-bound Gateway and setup children also receive `AGENT_SYSTEM_GIT` as the
+absolute path to the strict managed launcher. Use `"$AGENT_SYSTEM_GIT" status`
+when host fallback is unacceptable. Managed worktrees similarly expose
+`AGENT_SYSTEM_GIT_WORKTREE` when `git.worktrees` is configured. These bindings
+are child-scoped and fail closed without valid active-agent authority.
+
 ## Further Reading
 
 - [Agent System README](../../README.md): installation and the common manifest workflow

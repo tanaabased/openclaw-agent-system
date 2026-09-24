@@ -34,6 +34,7 @@ export interface SetupExecutionContext {
   /** Supplied by the authority owner; this runner never selects or authenticates an agent. */
   commandBinding?: {
     launcherDirectory: string;
+    launcherBindings: Readonly<Record<string, string>>;
     authority: string;
     capability: string;
   };
@@ -155,6 +156,12 @@ export default function createSetupCommandRunner(dependencies: {
       if (binding) {
         environment.AGENT_SYSTEM_EXEC_AUTHORITY = binding.authority;
         environment.AGENT_SYSTEM_EXEC_CAPABILITY = binding.capability;
+        for (const [name, path] of Object.entries(binding.launcherBindings)) {
+          if (!/^AGENT_SYSTEM_[A-Z][A-Z0-9_]*$/u.test(name) || !isAbsolute(path)) {
+            throw new SetupCommandError('setup-invalid-command-context');
+          }
+          environment[name] = path;
+        }
       }
 
       let executable: string;

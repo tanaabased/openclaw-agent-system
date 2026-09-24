@@ -255,6 +255,9 @@ describe('agent/setup-command-service', function () {
       assert.equal(environment.GH_TOKEN, undefined);
       assert.equal(environment.EMORI_TOKEN, undefined);
       assert.ok(environment.AGENT_SYSTEM_EXEC_CAPABILITY);
+      assert.equal(environment.AGENT_SYSTEM_GIT, join(projectDir, 'bin', 'agent-system-git'));
+      assert.equal(environment.AGENT_SYSTEM_GH, join(projectDir, 'bin', 'agent-system-gh'));
+      assert.equal(environment.AGENT_SYSTEM_GIT_WORKTREE, undefined);
       assert.equal(environment.OPENCLAW_PROFILE, 'fixture');
       assert.equal(environment.OPENCLAW_STATE_DIR, join(root, 'profile'));
       assert.equal(environment.OPENCLAW_CONFIG_PATH, join(root, 'profile', 'openclaw.json'));

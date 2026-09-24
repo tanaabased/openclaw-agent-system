@@ -30,6 +30,7 @@ describe('core/register-agent-command-authority', () => {
             calls.push('stop');
           },
         },
+        launcherDirectory: '/package/bin',
         logger: { error() {}, info() {}, warn() {} },
         manifestService: {
           async loadForRuntimeContext(_context, trigger) {
@@ -43,6 +44,13 @@ describe('core/register-agent-command-authority', () => {
               diagnostics: [],
               validationChecks: [],
             } as const;
+          },
+        },
+        toolRegistry: {
+          launcherBindings(manifest, directory) {
+            assert.equal(manifest.agent.id, 'data');
+            assert.equal(directory, '/package/bin');
+            return { AGENT_SYSTEM_GIT: '/package/bin/agent-system-git' };
           },
         },
       },
@@ -60,7 +68,10 @@ describe('core/register-agent-command-authority', () => {
     await services[0]?.stop?.();
 
     assert.equal(sandbox, undefined);
-    assert.deepEqual(gateway, { AGENT_SYSTEM_EXEC_CAPABILITY: 'opaque' });
+    assert.deepEqual(gateway, {
+      AGENT_SYSTEM_EXEC_CAPABILITY: 'opaque',
+      AGENT_SYSTEM_GIT: '/package/bin/agent-system-git',
+    });
     assert.deepEqual(calls, ['start', 'manifest:resolve_exec_env', 'issue:data', 'stop']);
   });
 
@@ -87,10 +98,16 @@ describe('core/register-agent-command-authority', () => {
           },
           async stop() {},
         },
+        launcherDirectory: '/package/bin',
         logger: { error: (message) => errors.push(message), info() {}, warn() {} },
         manifestService: {
           async loadForRuntimeContext() {
             return { status: 'unresolved', diagnostics: [] } as const;
+          },
+        },
+        toolRegistry: {
+          launcherBindings() {
+            assert.fail('unresolved agent must not receive launcher bindings');
           },
         },
       },

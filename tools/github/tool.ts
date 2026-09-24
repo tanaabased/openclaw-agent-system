@@ -194,7 +194,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         return scope.source === 'agent-command' ? scope.commandWorkingDirectory : undefined;
       },
     },
-    commands: [{ command: 'gh', hostFallback: 'gh' }],
+    commands: [{ command: 'gh', environmentVariable: 'gh', hostFallback: 'gh' }],
     tool: {
       classify(input) {
         return classifyGitHubOperation(input);

@@ -20,7 +20,7 @@ describe('api/registry', () => {
     const configured = registeredTestTool();
     const unconfigured: RegisteredAgentSystemTool = {
       ...configured,
-      commands: [{ command: 'other-tool' }],
+      commands: [{ command: 'other-tool', environmentVariable: 'other-tool' }],
       id: 'other-tool',
       isConfigured: () => false,
       toolNames: ['agent_system_other_tool'],
@@ -98,9 +98,9 @@ describe('api/registry', () => {
       {
         ...tool,
         commands: [
-          { command: 'git', hostFallback: 'git' },
-          { command: 'gh', hostFallback: 'gh' },
-          { command: 'worktree' },
+          { command: 'git', environmentVariable: 'git', hostFallback: 'git' },
+          { command: 'gh', environmentVariable: 'gh', hostFallback: 'gh' },
+          { command: 'worktree', environmentVariable: 'git-worktree' },
         ],
       },
     ]);
@@ -111,9 +111,67 @@ describe('api/registry', () => {
     for (const hostFallback of ['/tmp/git', '../git', 'git; true', '']) {
       assert.throws(
         () =>
-          new AgentSystemToolRegistry([{ ...tool, commands: [{ command: 'git', hostFallback }] }]),
+          new AgentSystemToolRegistry([
+            {
+              ...tool,
+              commands: [{ command: 'git', environmentVariable: 'git', hostFallback }],
+            },
+          ]),
       );
     }
+  });
+
+  it('should expose absolute strict launcher bindings only for configured command routes', () => {
+    const configured = registeredTestTool();
+    const unconfigured: RegisteredAgentSystemTool = {
+      ...configured,
+      commands: [{ command: 'other-tool', environmentVariable: 'other-tool' }],
+      id: 'other-tool',
+      isConfigured: () => false,
+    };
+    const registry = new AgentSystemToolRegistry([configured, unconfigured]);
+
+    assert.deepEqual(registry.launcherBindings(toolTestManifest, '/package/bin'), {
+      AGENT_SYSTEM_TEST_TOOL: '/package/bin/agent-system-test-tool',
+    });
+    assert.throws(() => registry.launcherBindings(toolTestManifest, 'relative/bin'));
+  });
+
+  it('should reject reserved, invalid, and normalized launcher binding collisions', () => {
+    const tool = registeredTestTool();
+
+    for (const environmentVariable of [
+      '',
+      '123',
+      'EXEC_AUTHORITY',
+      'AGENT_SYSTEM_EXEC_CAPABILITY',
+    ]) {
+      assert.throws(
+        () =>
+          new AgentSystemToolRegistry([
+            { ...tool, commands: [{ command: 'git', environmentVariable }] },
+          ]),
+      );
+    }
+    assert.throws(
+      () =>
+        new AgentSystemToolRegistry([
+          { ...tool, commands: [{ command: 'first', environmentVariable: 'git-tool' }] },
+          {
+            ...tool,
+            id: 'other',
+            commands: [{ command: 'second', environmentVariable: 'AGENT_SYSTEM_GIT_TOOL' }],
+          },
+        ]),
+      /Duplicate Agent System launcher environment variable/u,
+    );
+    assert.throws(
+      () =>
+        new AgentSystemToolRegistry([
+          { ...tool, commands: [{ command: '../git', environmentVariable: 'git' }] },
+        ]),
+      /Invalid Agent System tool command/u,
+    );
   });
 
   it('should reject duplicate tool and command ownership', () => {
@@ -135,7 +193,7 @@ describe('api/registry', () => {
     const tools = ['first', 'second'].map((id): RegisteredAgentSystemTool => ({
       ...base,
       id,
-      commands: [{ command: id }],
+      commands: [{ command: id, environmentVariable: id }],
       registerTools() {
         calls.push(`tool:${id}`);
       },
