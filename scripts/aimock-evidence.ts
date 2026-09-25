@@ -1,11 +1,14 @@
+import type { ChatCompletionRequest } from '@copilotkit/aimock';
+
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
+import { normalizeToolSearchRequest } from './aimock-tool-search.ts';
 
 interface EvidenceMessage {
   content: unknown;
   role: string;
   tool_calls?: Array<{
-    function?: { name?: string };
+    function?: { name?: string; arguments?: string };
     id?: string;
   }>;
   tool_call_id?: string;
@@ -37,6 +40,7 @@ export interface OpenClawAIMockToolEvidence {
 }
 
 export interface OpenClawAIMockEvidence {
+  discoveryRequestCount?: number;
   finalResponseCount: number;
   model: string;
   promptRequestCount: number;
@@ -132,9 +136,21 @@ export default function openClawAIMockEvidence(
   scenario: OpenClawAIMockScenario,
   entries: readonly OpenClawAIMockJournalEntry[],
 ): OpenClawAIMockEvidence {
-  const requests = entries.filter((entry) => entry.body !== null);
+  const requests = entries
+    .filter((entry) => entry.body !== null)
+    .map((entry) => ({
+      ...entry,
+      body: normalizeToolSearchRequest(entry.body as ChatCompletionRequest),
+    }));
   const toolNames = [...new Set(scenario.toolCalls.map(({ name }) => name))].sort();
   return {
+    ...(scenario.toolSearchDiscoveryFixture
+      ? {
+          discoveryRequestCount: requests.filter(
+            (entry) => entry.response.fixture === scenario.toolSearchDiscoveryFixture,
+          ).length,
+        }
+      : {}),
     finalResponseCount: requests.filter((entry) => isFinalResponse(scenario, entry)).length,
     model: normalizedModel(requests[0]?.body?.model, scenario),
     promptRequestCount: requests.filter((entry) => {

@@ -118,6 +118,7 @@ fixtures.push(
 );
 
 export const agentExampleScenario: OpenClawAIMockScenario = {
+  skipToolSearch: hasAgentPrompt,
   finalResponses: [agentExampleFinalResponse, routingReady],
   fixtures,
   id: 'agent',

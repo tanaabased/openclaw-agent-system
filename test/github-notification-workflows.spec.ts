@@ -476,7 +476,7 @@ describe('github notification workflows', () => {
     assert.ok(retirementAssertionIndex < cleanupAssertionIndex);
     assert.ok(cleanupAssertionIndex < evidenceIndex);
     assert.equal(expectedEvidence.scenario, 'pr-lifecycle');
-    assert.equal(expectedEvidence.requestCount, 9);
+    assert.equal(expectedEvidence.requestCount, 13);
     assert.equal(expectedEvidence.finalResponseCount, 4);
   });
 

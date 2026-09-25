@@ -1,4 +1,4 @@
-import type { Fixture } from '@copilotkit/aimock';
+import type { ChatCompletionRequest, Fixture } from '@copilotkit/aimock';
 
 export interface OpenClawAIMockToolCall {
   id: string;
@@ -7,6 +7,8 @@ export interface OpenClawAIMockToolCall {
 
 /** One strict fixture set and its expected observable exchange. */
 export interface OpenClawAIMockScenario {
+  skipToolSearch?: (request: ChatCompletionRequest) => boolean;
+  toolSearchDiscoveryFixture?: Fixture;
   dynamicFinalResponseFixtures?: readonly Fixture[];
   finalResponses: readonly string[];
   fixtures: readonly Fixture[];
