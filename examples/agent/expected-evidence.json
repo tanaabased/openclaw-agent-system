@@ -1,19 +1,20 @@
 {
+  "discoveryRequestCount": 1,
   "finalResponseCount": 2,
   "model": "aimock/gpt-5.5",
   "promptRequestCount": 1,
   "provider": "aimock",
-  "requestCount": 4,
-  "responsesApiRequestCount": 4,
+  "requestCount": 5,
+  "responsesApiRequestCount": 5,
   "scenario": "agent",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 4,
+  "successfulFixtureResponseCount": 5,
   "tools": [
     {
       "callResponseCount": 2,
       "name": "agent_system_model_routing",
-      "projectionRequestCount": 4,
+      "projectionRequestCount": 3,
       "resultRequestCount": 3
     }
   ]

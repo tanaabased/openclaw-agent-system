@@ -7,7 +7,7 @@ This guide covers installing, developing, logging, and testing Agent System. Sta
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.9.5 for development and minimum package compatibility
+- OpenClaw 2026.9.6 for development; minimum package compatibility remains 2026.9.5
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
@@ -149,7 +149,7 @@ they install plugins and mutate isolated OpenClaw or provider state.
 The [approval example](./examples/approval/README.md) checks native Install and
 Doctor discovery, approval, denial, cancellation, and unavailable approval through
 the Control UI protocol with native OpenClaw and OpenClaw-hosted Codex. It runs
-only in GitHub Actions against OpenClaw 2026.9.5; local unit checks do not prove
+only in GitHub Actions against the [development target](./README.md#version-compatibility); local unit checks do not prove
 installed chat compatibility. Other chat channels are outside this matrix.
 
 The integration uses the public

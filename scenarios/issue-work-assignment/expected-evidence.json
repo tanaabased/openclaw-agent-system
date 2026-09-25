@@ -1,14 +1,15 @@
 {
+  "discoveryRequestCount": 2,
   "finalResponseCount": 2,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 4,
+  "promptRequestCount": 6,
   "provider": "aimock",
-  "requestCount": 6,
-  "responsesApiRequestCount": 6,
+  "requestCount": 8,
+  "responsesApiRequestCount": 8,
   "scenario": "assignment",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 6,
+  "successfulFixtureResponseCount": 8,
   "tools": [
     {
       "callResponseCount": 2,

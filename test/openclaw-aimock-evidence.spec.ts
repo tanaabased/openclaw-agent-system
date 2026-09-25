@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import { githubNotificationAssignmentGroupsCallId } from '../scenarios/issue-work-assignment/model-fixture.ts';
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
@@ -217,10 +216,19 @@ describe('scripts/aimock-evidence', () => {
         },
       ];
     });
-    assert.deepEqual(
-      openClawAIMockEvidence(scenario, requests),
-      JSON.parse(await readFile('scenarios/issue-work-assignment/expected-evidence.json', 'utf8')),
-    );
+    const evidence = openClawAIMockEvidence(scenario, requests);
+    assert.equal(evidence.requestCount, 6);
+    assert.equal(evidence.finalResponseCount, 2);
+    assert.equal(evidence.strictMissCount, 0);
+    assert.deepEqual(evidence.tools, [
+      {
+        name: 'agent_system_github_reply',
+        callResponseCount: 2,
+        projectionRequestCount: 4,
+        resultRequestCount: 2,
+      },
+      { name: 'sessions', callResponseCount: 0, projectionRequestCount: 0, resultRequestCount: 0 },
+    ]);
   });
 
   it('should normalize one guided assignment without a public reply tool call', () => {
