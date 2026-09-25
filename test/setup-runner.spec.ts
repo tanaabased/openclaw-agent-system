@@ -245,6 +245,7 @@ describe('agent/setup-runner', () => {
       PATH: workspace,
       BASH_ENV: 'startup',
       NODE_OPTIONS: '--inspect',
+      RUNNER_DEBUG: '0',
       AGENT_SYSTEM_EXEC_CAPABILITY: 'ambient',
     };
     const run = runner(async (argv, options) => {
@@ -275,6 +276,65 @@ describe('agent/setup-runner', () => {
       },
     );
     assert.equal(base.GH_TOKEN, 'secret');
+  });
+
+  it('should publish only bounded debug diagnostics when runner debug is enabled', async () => {
+    await executable(join(hostBin, 'helper'));
+    const diagnostics: string[] = [];
+    const secret = 'command-secret';
+    const run = createSetupCommandRunner({
+      baseEnvironment: {
+        HOME: root,
+        RUNNER_DEBUG: '1',
+        UNRELATED_SECRET: 'environment-secret',
+      },
+      temporaryDirectory,
+      writeDebug: (value) => diagnostics.push(value),
+      runCommandWithTimeout: async (argv, options) => {
+        assert.deepEqual(argv, [join(hostBin, 'helper'), secret]);
+        assert.deepEqual(options.env, { HOME: root, PATH: hostBin, RUNNER_DEBUG: '1' });
+        return {
+          ...success,
+          stdout: `debug: ${secret}\n`,
+          stderr: [
+            `error: ${secret}`,
+            'environment-secret',
+            'debug: useful diagnostic',
+            `debug: ${'x'.repeat(16_384)}`,
+          ].join('\n'),
+        };
+      },
+    });
+
+    await run(
+      { kind: 'exec', executable: 'helper', args: [secret], timeoutSeconds: 1 },
+      { workspaceDir: workspace, executableDirectories: [hostBin] },
+    );
+
+    assert.deepEqual(diagnostics, ['debug: useful diagnostic\n']);
+    assert.equal(diagnostics.join('').includes(secret), false);
+    assert.equal(diagnostics.join('').includes('environment-secret'), false);
+  });
+
+  it('should keep diagnostics quiet without exact runner debug enablement', async () => {
+    await executable(join(hostBin, 'helper'));
+    for (const value of [undefined, '0', 'true']) {
+      const diagnostics: string[] = [];
+      const run = createSetupCommandRunner({
+        baseEnvironment: value === undefined ? {} : { RUNNER_DEBUG: value },
+        temporaryDirectory,
+        writeDebug: (diagnostic) => diagnostics.push(diagnostic),
+        runCommandWithTimeout: async (_argv, options) => {
+          assert.equal(options.env.RUNNER_DEBUG, undefined);
+          return { ...success, stderr: 'debug: hidden diagnostic\n' };
+        },
+      });
+      await run(
+        { kind: 'exec', executable: 'helper', args: [], timeoutSeconds: 1 },
+        { workspaceDir: workspace, executableDirectories: [hostBin] },
+      );
+      assert.deepEqual(diagnostics, []);
+    }
   });
 
   it('should omit openclaw process state from standalone adapters', async () => {
