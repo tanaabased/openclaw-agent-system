@@ -9,6 +9,12 @@ models:
   high: { model: openai/gpt-6-astra, effort: xhigh }
 setup:
   steps:
+    - id: codex-tools-debug
+      runtimes: [codex]
+      check:
+        command: codex-tools
+        args: [status, --repo-root, ../package/package, --absent-check, neutral, --json]
+      apply: 'true'
     - id: shared
       check: test -f .codex-shared
       apply: touch .codex-shared

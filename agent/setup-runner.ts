@@ -7,6 +7,7 @@ import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schem
 import isPathContained from '../utils/is-path-contained.ts';
 
 const maximumOutputBytes = 65_536;
+const maximumDiagnosticBytes = 16_384;
 const inheritedEnvironmentNames = ['HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TMP', 'TEMP'] as const;
 const inheritedOpenClawEnvironmentNames = [
   // Managed launchers must load the same OpenClaw profile as the installing operator.
@@ -141,12 +142,27 @@ async function removeScript(directory: string) {
   }
 }
 
-/** Run one normalized setup command without publishing its declaration, output, or host errors. */
+function selectDebugDiagnostics(stderr: string): string {
+  let selected = '';
+  let selectedBytes = 0;
+  for (const line of stderr.split(/\r?\n/u)) {
+    if (!line.startsWith('debug: ')) continue;
+    const rendered = `${line}\n`;
+    const bytes = Buffer.byteLength(rendered);
+    if (selectedBytes + bytes > maximumDiagnosticBytes) break;
+    selected += rendered;
+    selectedBytes += bytes;
+  }
+  return selected;
+}
+
+/** Run one normalized setup command without publishing its declaration, stdout, or host errors. */
 export default function createSetupCommandRunner(dependencies: {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   inheritOpenClawEnvironment?: boolean;
   runCommandWithTimeout: SetupProcessRunner;
   temporaryDirectory?: string;
+  writeDebug?: (value: string) => void;
 }) {
   return async (
     command: AgentSetupCommand,
@@ -183,6 +199,8 @@ export default function createSetupCommandRunner(dependencies: {
           if (value !== undefined) environment[name] = value;
         }
       }
+      const runnerDebug = dependencies.baseEnvironment.RUNNER_DEBUG === '1';
+      if (runnerDebug) environment.RUNNER_DEBUG = '1';
       if (binding) {
         environment.AGENT_SYSTEM_EXEC_AUTHORITY = binding.authority;
         environment.AGENT_SYSTEM_EXEC_CAPABILITY = binding.capability;
@@ -233,6 +251,10 @@ export default function createSetupCommandRunner(dependencies: {
         killProcessTree: true,
         ...(signal === undefined ? {} : { signal }),
       });
+      if (runnerDebug && dependencies.writeDebug) {
+        const diagnostics = selectDebugDiagnostics(result.stderr);
+        if (diagnostics) dependencies.writeDebug(diagnostics);
+      }
       const timedOut =
         result.termination === 'timeout' || result.termination === 'no-output-timeout';
       return {

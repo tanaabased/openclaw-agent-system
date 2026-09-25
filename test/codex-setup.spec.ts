@@ -128,6 +128,33 @@ describe('agent/codex-setup', () => {
     );
   });
 
+  it('should wire runner debug diagnostics to the standalone adapter stderr boundary', async () => {
+    await manifest(`setup:
+  check: 'true'
+  apply: 'true'
+`);
+    const diagnostics: string[] = [];
+
+    const inspected = await inspectCodexSetup(pluginData, undefined, {
+      baseEnvironment: { ...dependencies.baseEnvironment, RUNNER_DEBUG: '1' },
+      writeDebug: (value) => diagnostics.push(value),
+      runCommandWithTimeout: async (_argv, options) => {
+        assert.equal(options.env.RUNNER_DEBUG, '1');
+        return {
+          code: 0,
+          killed: false,
+          signal: null,
+          stdout: 'debug: private stdout\n',
+          stderr: 'error: private stderr\ndebug: visible setup diagnostic\n',
+          termination: 'exit',
+        };
+      },
+    });
+
+    assert.equal(inspected.findings[0]?.code, 'setup-healthy');
+    assert.deepEqual(diagnostics, ['debug: visible setup diagnostic\n']);
+  });
+
   it('should stop on the first failure while preserving earlier effects', async () => {
     await manifest(`setup:
   steps:
