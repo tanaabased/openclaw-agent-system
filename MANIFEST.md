@@ -314,9 +314,13 @@ the default.
 
 Commands start in the bound workspace with closed stdin and a 64 KiB combined
 output capture limit. Timeouts terminate the command's process tree. Ordinary
-diagnostics and JSON results report step ids and diagnostic codes without
-including raw command output. The interactive confirmation deliberately shows
-the declared commands, so keep secrets out of declarations.
+runs report step ids and diagnostic codes without raw command output. When
+GitHub Actions runner debug is enabled, setup commands receive only the exact
+`RUNNER_DEBUG=1` signal. Standalone Codex relays bounded `debug: ` lines from
+captured standard error to its own standard error. Standard output, other
+standard-error lines, command declarations, arguments, and unrelated environment
+values remain private. The interactive confirmation deliberately shows the
+declared commands, so keep secrets out of declarations.
 
 OpenClaw setup receives a minimal host environment for home, locale, temporary paths,
 and OpenClaw profile selection, plus managed command bindings. Its `PATH` places

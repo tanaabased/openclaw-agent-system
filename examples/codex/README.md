@@ -62,6 +62,22 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$root/wor
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
+# should keep standalone setup diagnostics quiet without runner debug
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+diagnostics=$(node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null)
+test -z "$diagnostics"
+
+# should expose codex tools diagnostics through standalone setup with runner debug
+root="$TMPDIR/agent-system-codex-example"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+diagnostics=$(RUNNER_DEBUG=1 node "$runtime" setup inspect --plugin-data "$plugin_data" 2>&1 >/dev/null)
+printf '%s\n' "$diagnostics" | grep -F 'debug: {"command":"status"'
+
 # should inspect and install only setup applicable to standalone codex
 root="$TMPDIR/agent-system-codex-example"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -69,10 +85,10 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(node "$runtime" setup inspect --plugin-data "$plugin_data")
 printf '%s\n' "$inspection" \
-  | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "inspected" and [.findings[] | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 printf '%s\n' "$installed" \
-  | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "installed" and [.outcomes[] | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
 test -f "$root/workspace/.codex-shared"
 test -f "$root/workspace/.codex-only"
 test ! -e "$root/workspace/.openclaw-checked"

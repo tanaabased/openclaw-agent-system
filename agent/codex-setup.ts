@@ -25,6 +25,7 @@ export interface CodexSetupDependencies {
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   runCommandWithTimeout?: SetupProcessRunner;
   temporaryDirectory?: string;
+  writeDebug?: (value: string) => void;
 }
 
 export class CodexSetupError extends Error {
@@ -105,6 +106,7 @@ async function runtime(
     baseEnvironment,
     inheritOpenClawEnvironment: false,
     runCommandWithTimeout: dependencies.runCommandWithTimeout ?? runCodexSetupProcess,
+    writeDebug: dependencies.writeDebug ?? ((value) => process.stderr.write(value)),
     ...(dependencies.temporaryDirectory === undefined
       ? {}
       : { temporaryDirectory: dependencies.temporaryDirectory }),
