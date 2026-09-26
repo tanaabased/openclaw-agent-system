@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.7.0 - [September 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.7.0)
+
 ### Compatibility
 
 - Raised the minimum OpenClaw version to `2026.9.5`; built and tested against `2026.9.6`. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132) [#134](https://github.com/tanaabased/openclaw-agent-system/pull/134) [#164](https://github.com/tanaabased/openclaw-agent-system/pull/164)
