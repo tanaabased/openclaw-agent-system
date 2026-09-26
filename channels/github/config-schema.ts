@@ -24,6 +24,19 @@ const externalGitHubApprovedActorSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const externalPullRequestRecipientsSchema = Type.Object(
+  {
+    assignees: Type.Optional(
+      Type.Union([
+        Type.Literal('assignment-actor'),
+        Type.Array(externalGitHubIdentitySchema, { maxItems: 10 }),
+      ]),
+    ),
+    reviewers: Type.Optional(Type.Array(externalGitHubIdentitySchema)),
+  },
+  { additionalProperties: false },
+);
+
 export const externalGitHubNotificationsSchema = Type.Object(
   {
     'assignment-types': Type.Optional(
@@ -45,6 +58,7 @@ export const externalGitHubNotificationsSchema = Type.Object(
     'initial-mode': Type.Optional(Type.Union([Type.Literal('guided'), Type.Literal('work')])),
     'interval-minutes': Type.Optional(Type.Integer({ maximum: 1_440, minimum: 1 })),
     'max-concurrent-issues': Type.Optional(Type.Integer({ minimum: 1 })),
+    'pull-request': Type.Optional(externalPullRequestRecipientsSchema),
   },
   { additionalProperties: false },
 );
@@ -67,6 +81,10 @@ export interface GitHubNotificationsConfiguration {
   initialMode?: 'guided' | 'work';
   intervalMinutes: number;
   maxConcurrentIssues: number;
+  pullRequest?: {
+    assignees: 'assignment-actor' | GitHubIdentityPin[];
+    reviewers: GitHubIdentityPin[];
+  };
 }
 
 /** Decode the channel-owned github.notifications manifest fragment. */
@@ -94,5 +112,13 @@ export function decodeGitHubNotifications(
     initialMode: value['initial-mode'] ?? 'work',
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentIssues: value['max-concurrent-issues'] ?? 2,
+    pullRequest: {
+      assignees:
+        value['pull-request']?.assignees === undefined ||
+        value['pull-request'].assignees === 'assignment-actor'
+          ? 'assignment-actor'
+          : value['pull-request'].assignees.map(decodeIdentity),
+      reviewers: value['pull-request']?.reviewers?.map(decodeIdentity) ?? [],
+    },
   };
 }

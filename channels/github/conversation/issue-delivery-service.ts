@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { AgentSystemCliResult } from '../../../api/types.ts';
 import type GitHubAccountClient from '../../../core/github-account-client.ts';
 import type AgentManifestService from '../../../manifest/service.ts';
+import type { GitHubIdentityPin } from '../config-schema.ts';
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import type { GitHubNotificationLifecycleWorktree } from '../lifecycles/types.ts';
 
@@ -36,7 +37,6 @@ export interface GitHubNotificationIssueDeliveryInput {
 }
 
 interface IssueIdentity {
-  authorLogin: string;
   title: string;
 }
 
@@ -96,12 +96,29 @@ function parseIssue(value: unknown, item: GitHubNotificationItemState): IssueIde
   ) {
     throw new Error('GitHub returned a different issue during delivery.');
   }
-  const authorLogin = requiredString(issue.authorLogin, 'issue author', 100);
-  if (!loginPattern.test(authorLogin)) throw new Error('GitHub returned an invalid issue author.');
   return {
-    authorLogin,
     title: requiredString(issue.title, 'issue title', 512).trim(),
   };
+}
+
+function identities(value: unknown, label: string): GitHubIdentityPin[] {
+  if (!Array.isArray(value)) throw new Error(`GitHub returned invalid ${label}.`);
+  return value.map((entry) => {
+    const identity = record(entry, label);
+    const login = requiredString(identity.login, `${label} login`, 100);
+    if (!loginPattern.test(login)) throw new Error(`GitHub returned invalid ${label} login.`);
+    return { login, nodeId: requiredString(identity.nodeId, `${label} node id`, 255) };
+  });
+}
+
+function logins(value: unknown, label: string): Set<string> {
+  if (
+    !Array.isArray(value) ||
+    !value.every((login) => typeof login === 'string' && loginPattern.test(login))
+  ) {
+    throw new Error(`GitHub returned invalid ${label}.`);
+  }
+  return new Set((value as string[]).map((login) => login.toLowerCase()));
 }
 
 function parsePullRequest(value: unknown): PullRequestIdentity {
@@ -217,7 +234,7 @@ export default class GitHubNotificationIssueDeliveryService {
           'api',
           `repos/${repository}/issues/${input.item.number}`,
           '--jq',
-          '{authorLogin:.user.login,databaseId:.id,nodeId:.node_id,number,title}',
+          '{databaseId:.id,nodeId:.node_id,number,title}',
         ],
         input.signal,
       ),
@@ -303,30 +320,13 @@ export default class GitHubNotificationIssueDeliveryService {
         ),
       );
     }
-    const assignees = await this.#github(
+    await this.#reconcileRecipients(
       github,
-      [
-        'api',
-        '--method',
-        'POST',
-        `repos/${repository}/issues/${pullRequest.number}/assignees`,
-        '--input',
-        '-',
-        '--jq',
-        '[.assignees[].login]',
-      ],
-      input.signal,
-      JSON.stringify({ assignees: [issue.authorLogin] }),
+      loaded.manifest.github?.notifications?.pullRequest,
+      input,
+      repository,
+      pullRequest.number,
     );
-    if (
-      !Array.isArray(assignees) ||
-      !assignees.some(
-        (login) =>
-          typeof login === 'string' && login.toLowerCase() === issue.authorLogin.toLowerCase(),
-      )
-    ) {
-      throw new Error('GitHub did not assign the issue author to the pull request.');
-    }
     if (
       pullRequest.baseRef !== input.item.repositoryDefaultBranch ||
       pullRequest.body !== body ||
@@ -338,6 +338,214 @@ export default class GitHubNotificationIssueDeliveryService {
       pullRequestNodeId: pullRequest.itemNodeId,
       pullRequestNumber: pullRequest.number,
     };
+  }
+
+  async #reconcileRecipients(
+    github: Awaited<ReturnType<GitHubAccountClient['connect']>>,
+    configured:
+      | { assignees: 'assignment-actor' | GitHubIdentityPin[]; reviewers: GitHubIdentityPin[] }
+      | undefined,
+    input: GitHubNotificationIssueDeliveryInput,
+    repository: string,
+    number: number,
+  ): Promise<void> {
+    const assignees = configured?.assignees ?? 'assignment-actor';
+    const recipients: GitHubIdentityPin[] =
+      assignees === 'assignment-actor'
+        ? (() => {
+            const login = input.item.assignmentActorLogin;
+            const nodeId = input.item.assignmentActorNodeId;
+            if (!login || !nodeId)
+              throw new Error(
+                'The admitted assignment actor identity is unavailable for pull request delivery.',
+              );
+            return [{ login, nodeId }];
+          })()
+        : assignees;
+    const reviewers = configured?.reviewers ?? [];
+    if (recipients.length === 0 && reviewers.length === 0) return;
+    const agentNodeId = github.identity.nodeId;
+    for (const reviewer of reviewers) {
+      if (
+        reviewer.nodeId === agentNodeId ||
+        reviewer.login.toLowerCase() === github.identity.login.toLowerCase()
+      ) {
+        throw new Error(`The agent cannot request its own review (${reviewer.login}).`);
+      }
+    }
+    for (const recipient of [...recipients, ...reviewers]) {
+      const observed = identities(
+        await this.#github(
+          github,
+          ['api', `users/${recipient.login}`, '--jq', '[{login,nodeId:.node_id}]'],
+          input.signal,
+        ),
+        'recipient',
+      )[0];
+      if (
+        !observed ||
+        observed.nodeId !== recipient.nodeId ||
+        observed.login.toLowerCase() !== recipient.login.toLowerCase()
+      ) {
+        throw new Error(`The GitHub recipient pin does not match ${recipient.login}.`);
+      }
+    }
+    const issueEndpoint = `repos/${repository}/issues/${number}`;
+    const pullEndpoint = `repos/${repository}/pulls/${number}`;
+    const current = identities(
+      await this.#github(
+        github,
+        ['api', issueEndpoint, '--jq', '[.assignees[]|{login,nodeId:.node_id}]'],
+        input.signal,
+      ),
+      'pull request assignees',
+    );
+    const currentLogins = new Set(current.map(({ login }) => login.toLowerCase()));
+    const missingAssignees = recipients.filter(
+      ({ login }) => !currentLogins.has(login.toLowerCase()),
+    );
+    for (const recipient of missingAssignees) {
+      await this.#githubStatus(
+        github,
+        ['api', `repos/${repository}/assignees/${recipient.login}`, '--silent'],
+        input.signal,
+        `assignee eligibility for ${recipient.login}`,
+      );
+    }
+    const pending =
+      reviewers.length === 0
+        ? new Set<string>()
+        : logins(
+            await this.#github(
+              github,
+              ['api', `${pullEndpoint}/requested_reviewers`, '--jq', '[.users[].login]'],
+              input.signal,
+            ),
+            'pending reviewers',
+          );
+    const completed =
+      reviewers.length === 0
+        ? new Set<string>()
+        : logins(
+            await this.#github(
+              github,
+              [
+                'api',
+                `${pullEndpoint}/reviews`,
+                '--paginate',
+                '--slurp',
+                '--jq',
+                '[.[][]|select(.state != "PENDING")|.user.login]',
+              ],
+              input.signal,
+            ),
+            'completed reviewers',
+          );
+    const missingReviewers = reviewers.filter(
+      ({ login }) => !pending.has(login.toLowerCase()) && !completed.has(login.toLowerCase()),
+    );
+    for (const reviewer of missingReviewers) {
+      const permission = record(
+        await this.#github(
+          github,
+          [
+            'api',
+            `repos/${repository}/collaborators/${reviewer.login}/permission`,
+            '--jq',
+            '{permission}',
+          ],
+          input.signal,
+        ),
+        'reviewer permission',
+      ).permission;
+      if (!['read', 'triage', 'write', 'maintain', 'admin'].includes(String(permission))) {
+        throw new Error(
+          `GitHub reviewer ${reviewer.login} is not eligible for pull request ${number}.`,
+        );
+      }
+    }
+    if (missingAssignees.length > 0) {
+      const updated = logins(
+        await this.#github(
+          github,
+          [
+            'api',
+            '--method',
+            'POST',
+            `${issueEndpoint}/assignees`,
+            '--input',
+            '-',
+            '--jq',
+            '[.assignees[].login]',
+          ],
+          input.signal,
+          JSON.stringify({ assignees: missingAssignees.map(({ login }) => login) }),
+        ),
+        'updated assignees',
+      );
+      for (const { login } of recipients) {
+        if (!updated.has(login.toLowerCase()))
+          throw new Error(`GitHub did not assign ${login} to pull request ${number}.`);
+      }
+    }
+    if (missingReviewers.length > 0) {
+      await this.#github(
+        github,
+        [
+          'api',
+          '--method',
+          'POST',
+          `${pullEndpoint}/requested_reviewers`,
+          '--input',
+          '-',
+          '--jq',
+          '[.requested_reviewers[].login]',
+        ],
+        input.signal,
+        JSON.stringify({ reviewers: missingReviewers.map(({ login }) => login) }),
+      );
+      const requested = logins(
+        await this.#github(
+          github,
+          ['api', `${pullEndpoint}/requested_reviewers`, '--jq', '[.users[].login]'],
+          input.signal,
+        ),
+        'requested reviewers',
+      );
+      const reviewed = logins(
+        await this.#github(
+          github,
+          [
+            'api',
+            `${pullEndpoint}/reviews`,
+            '--paginate',
+            '--slurp',
+            '--jq',
+            '[.[][]|select(.state != "PENDING")|.user.login]',
+          ],
+          input.signal,
+        ),
+        'completed reviewers',
+      );
+      for (const { login } of missingReviewers) {
+        if (!requested.has(login.toLowerCase()) && !reviewed.has(login.toLowerCase()))
+          throw new Error(`GitHub did not request review from ${login} on pull request ${number}.`);
+      }
+    }
+  }
+
+  async #githubStatus(
+    client: Awaited<ReturnType<GitHubAccountClient['connect']>>,
+    argv: string[],
+    signal: AbortSignal | undefined,
+    operation: string,
+  ): Promise<void> {
+    const result = await client.execute(argv, undefined, {
+      ...(signal === undefined ? {} : { signal }),
+      timeoutMs: 60_000,
+    });
+    if (result.exitCode !== 0 || result.timedOut || result.truncated)
+      throw new Error(`GitHub rejected ${operation}.`);
   }
 
   async #git(
@@ -369,7 +577,9 @@ export default class GitHubNotificationIssueDeliveryService {
       timeoutMs: 60_000,
     });
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {
-      throw new Error('GitHub rejected issue delivery reconciliation.');
+      throw new Error(
+        `GitHub rejected issue delivery reconciliation at ${argv.find((argument) => argument.startsWith('repos/') || argument.startsWith('users/')) ?? 'unknown endpoint'}.`,
+      );
     }
     try {
       return JSON.parse(result.stdout);
