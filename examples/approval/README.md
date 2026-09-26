@@ -1,6 +1,6 @@
 # Lifecycle Approval Example
 
-This scenario runs the prepared Agent System package in the default Gateway with one native OpenClaw agent and one Codex agent. It exercises the authenticated Control UI protocol and installed approval router, proving that denial prevents lifecycle effects, approved Doctor runs checks without applying setup, and Allow once permits exactly one installation. Unit tests own the exhaustive lifecycle tool and decision matrix; the live model is used only for installed native tool discovery, including Codex dynamic tools. This scenario tests the OpenClaw [development target](../../README.md#version-compatibility).
+This scenario runs the prepared Agent System package in the default Gateway with one native OpenClaw agent and one Codex agent. It exercises the authenticated Control UI protocol and installed approval router, proving that denial prevents lifecycle effects, approved Doctor runs checks without applying setup, and Allow once permits exactly one installation. Calls explicitly request the ten-minute tool budget. Unit tests own the exhaustive lifecycle tool and decision matrix; the live model is used only for installed native tool discovery, including Codex dynamic tools. This scenario tests the OpenClaw [development target](../../README.md#version-compatibility).
 
 ## Setup
 

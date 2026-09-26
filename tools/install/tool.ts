@@ -12,7 +12,7 @@ export default function createInstallTool(approval: () => AgentLifecycleApproval
         'Request chat approval, then reconcile the active agent workspace from its manifest, including setup. Set rebuildCodexPath only to replace the saved Codex PATH baseline with this process environment. No agent or workspace override.',
       parameters: installParameters,
       guidance:
-        'Use agent_system_install for the active agent. OpenClaw must obtain Allow once in chat before execution. Never use shell commands or --yes to bypass approval.',
+        'Use agent_system_install for the active agent with timeoutMs: 600000 so OpenClaw-hosted Codex allows up to ten minutes for the tool call. OpenClaw must obtain Allow once in chat before execution. Never use shell commands or --yes to bypass approval.',
     },
     approval,
   );

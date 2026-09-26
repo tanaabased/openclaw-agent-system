@@ -39,20 +39,27 @@ approval even though Doctor applies no repairs; see [chat approval](../../CLI.md
 
 ### Parameters
 
-No parameters. Pass an empty object; unknown fields are rejected.
+| Parameter   | Type    | Required | Default      | Description                                                                                          |
+| ----------- | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `timeoutMs` | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
 ### Usage
 
 Inspect the active agent and run its applicable setup checks:
 
 ```json
-{}
+{ "timeoutMs": 600000 }
 ```
 
 The tool returns the aggregate status, findings, and remediation. It may resolve
 credentials needed for inspection; it never calls Install or repairs prerequisites.
 For setup, it reports unchecked steps as manual and other-runtime steps as skipped.
 A check's read-only behavior remains its author's responsibility.
+
+Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
+Codex). This argument does not extend the two-minute approval window or
+[setup-command timeouts](../../MANIFEST.md#setup). Other harnesses retain their
+own execution limits.
 
 See [Doctor behavior](../../CLI.md#openclaw-agent-system-doctor) for drift and
 provider-probe behavior and [setup check results](../../MANIFEST.md#checks-installation-and-retries)
