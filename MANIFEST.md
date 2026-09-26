@@ -390,7 +390,7 @@ responsibility. `validate` only validates declarations and never executes them.
 #### Agent identity and repository cloning
 
 For applicable OpenClaw setup, installation establishes agent registration, managed
-paths, and configured Git/GitHub tools, including declared GitHub SSH-key
+paths, and configured Git/GitHub/Google tools, including declared GitHub SSH-key
 registration, before running setup. Remaining lifecycle components follow
 setup. Unavailable prerequisites block execution; setup cannot bootstrap a tool
 or credential required to reach its own commands.
@@ -537,3 +537,10 @@ the workspace configuration. Agent System disables login-shell
 execution and sets the deterministic PATH without otherwise changing Codex's
 inherited-environment policy. Remote, sandboxed, ACP, MCP, and third-party
 surfaces retain their own path and mount contracts.
+
+## `google`
+
+Optional agent-scoped Google account and OAuth binding declarations are documented
+in the [Google tool guide](./tools/google/README.md#configuration). The account accepts
+both literal and environment-reference forms. Standalone Codex does not reconcile
+this section.

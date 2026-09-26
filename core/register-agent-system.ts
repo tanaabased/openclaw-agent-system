@@ -9,6 +9,7 @@ import { runPluginCommandWithTimeout } from 'openclaw/plugin-sdk/run-command';
 import { resolveSecretRefValues } from 'openclaw/plugin-sdk/secret-ref-runtime';
 
 import createGitHubNotificationRuntime from '../channels/github/runtime/create-runtime.ts';
+import createGoogleCapability from '../tools/google/capability.ts';
 import createGitCapability from '../tools/git/capability.ts';
 import createGitHubCapability from '../tools/github/capability.ts';
 import resolveCodexCommandAgentId from '../agent/resolve-codex-command-id.ts';
@@ -203,6 +204,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
     readConfig,
   });
+  const googleCapability = createGoogleCapability({
+    ...capabilityDependencies,
+    environmentService: lifecycleEnvironmentService,
+    privateStateRoot,
+  });
   const registrationPolicy = inspectConversationHookPolicy(api.config ?? {});
   const hookAccess = new ConversationHookAccess({
     readConfig,
@@ -255,6 +261,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const toolRegistry = new AgentSystemToolRegistry([
     ...gitCapability.tools,
     ...githubCapability.tools,
+    ...googleCapability.tools,
     notificationRuntime.replyTool,
     createInstallTool((): AgentLifecycleApproval => lifecycleApproval),
     createDoctorTool((): AgentLifecycleApproval => lifecycleApproval),
@@ -393,6 +400,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     createPathLifecycleContribution({ pathService }),
     ...gitCapability.lifecycleContributions,
     ...githubCapability.lifecycleContributions,
+    ...googleCapability.lifecycleContributions,
     notificationRuntime.lifecycleContribution,
   ];
   const lifecycleRegistry = new AgentSystemLifecycleRegistry(

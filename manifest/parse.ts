@@ -4,6 +4,10 @@ import { isAlias, parseDocument, visit } from 'yaml';
 
 import { externalAgentSetupSchema, normalizeAgentSetup } from './setup-schema.ts';
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
+import {
+  decodeGoogleConfiguration,
+  externalGoogleSectionSchema,
+} from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
@@ -73,6 +77,7 @@ const externalAgentManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    google: Type.Optional(externalGoogleSectionSchema),
     git: Type.Optional(externalGitSectionSchema),
     github: Type.Optional(externalGitHubSectionSchema),
     memory: Type.Optional(externalAgentMemorySchema),
@@ -229,6 +234,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
                 }),
           },
         }),
+    ...(value.google === undefined ? {} : { google: decodeGoogleConfiguration(value.google) }),
     ...(value.git === undefined ? {} : { git: decodeGitSection(value.git) }),
     ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
     ...(value.memory === undefined ? {} : { memory: decodeAgentMemory(value.memory) }),

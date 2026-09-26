@@ -2,6 +2,7 @@
 
 ### Improvements
 
+- Added Google data commands with verified per-agent OAuth accounts, isolated encrypted keyrings, and managed installation and diagnostics. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
 
 ## v0.7.0 - [September 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.7.0)

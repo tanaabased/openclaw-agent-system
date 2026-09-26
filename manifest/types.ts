@@ -1,5 +1,6 @@
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
+import type { GoogleConfiguration } from '../tools/google/config-schema.ts';
 import type { GitManifestConfiguration } from '../tools/git/config-schema.ts';
 import type { GitHubManifestConfiguration } from './github-schema.ts';
 import type { AgentSetupConfiguration } from './setup-schema.ts';
@@ -23,6 +24,7 @@ export interface AgentManifest {
     required?: string[];
     set?: Record<string, EnvironmentSetValue>;
   };
+  google?: GoogleConfiguration;
   git?: GitManifestConfiguration;
   github?: GitHubManifestConfiguration;
   memory?: AgentMemoryConfiguration;

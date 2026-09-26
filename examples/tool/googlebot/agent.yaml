@@ -1,0 +1,16 @@
+schema-version: 1
+agent:
+  id: googlebot
+  name: Googlebot
+environment:
+  set:
+    GOOGLE_ACCOUNT: googlebot@example.invalid
+    GOOGLE_CLIENT: '{"installed":{"client_id":"fixture-client","client_secret":"fixture-secret"}}'
+    GOOGLE_TOKEN: '{"email":"googlebot@example.invalid","refresh_token":"fixture-refresh","scopes":["https://www.googleapis.com/auth/userinfo.email"]}'
+    GOOGLE_PASSWORD: fixture-password
+google:
+  account:
+    from-environment: GOOGLE_ACCOUNT
+  oauth-client: GOOGLE_CLIENT
+  oauth-token: GOOGLE_TOKEN
+  keyring-password: GOOGLE_PASSWORD

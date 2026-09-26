@@ -247,7 +247,7 @@ export default class AgentSystemLifecycleRegistry {
     const prerequisiteIds = context.manifest.setup.steps.some((step) =>
       setupStepApplies(step, context.runtime),
     )
-      ? ['agent', 'path', 'git', 'github']
+      ? ['agent', 'path', 'git', 'github', 'google']
       : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
       configured.filter((entry) => entry.id === id),

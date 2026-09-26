@@ -53,3 +53,27 @@ cd "$TMPDIR"
 PATH="$GITHUB_WORKSPACE/bin:$PATH" git -c user.name=host-fixture -c user.email=host@example.invalid var GIT_AUTHOR_IDENT | grep -F 'host-fixture <host@example.invalid>'
 PATH="$GITHUB_WORKSPACE/bin:$PATH" gh --version | grep -F 'gh version'
 ```
+
+## Google
+
+These blocks use a fake GoG host executable and disposable OAuth fixtures. They do
+not contact Google or prove live OAuth transport.
+
+```bash
+# should install and inspect google credentials without changing a ready installation
+cd "$GITHUB_WORKSPACE/examples/tool/googlebot"
+PATH="$GITHUB_WORKSPACE/examples/tool/google-host:$PATH" openclaw agent-system install --json | jq -e '.outcomes | any(.code == "google-credentials-created")'
+PATH="$GITHUB_WORKSPACE/examples/tool/google-host:$PATH" openclaw agent-system install --json | jq -e '.outcomes | any(.code == "google-credentials-unchanged")'
+PATH="$GITHUB_WORKSPACE/examples/tool/google-host:$PATH" openclaw agent-system doctor --json | jq -e '.findings | any(.code == "google-live-identity-ready")'
+
+# should run a google data command through the public tool route with the configured account
+cd "$GITHUB_WORKSPACE/examples/tool/googlebot"
+PATH="$GITHUB_WORKSPACE/examples/tool/google-host:$PATH" openclaw agent-system tool gog --agent googlebot -- gmail search 'is:unread' | jq -e '.account == "googlebot@example.invalid" and .backend == "file" and .managed == true'
+
+# should identify packaged google shims and reject account overrides without host fallback
+"$GITHUB_WORKSPACE/bin/gog" --agent-system | grep -Fx agent-system
+"$GITHUB_WORKSPACE/bin/agent-system-gog" --agent-system | grep -Fx agent-system
+cd "$GITHUB_WORKSPACE/examples/tool/googlebot"
+PATH="$GITHUB_WORKSPACE/examples/tool/google-host:$PATH" openclaw agent-system tool gog --agent googlebot -- gmail search --account other@example.invalid > "$TMPDIR/google-override.out" 2>&1 && exit 1
+grep -F invalid_arguments "$TMPDIR/google-override.out"
+```

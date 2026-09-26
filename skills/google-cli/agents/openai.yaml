@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Google CLI'
+  short_description: 'Run Google data commands with the active agent account'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-google-cli for Google data operations with the active OpenClaw agent account.'
