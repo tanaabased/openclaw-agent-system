@@ -47,5 +47,6 @@ export type ParsedAgentManifest =
   | {
       status: 'valid';
       manifest: AgentManifest;
+      setupFile?: string;
       diagnostics: ManifestDiagnostic[];
     };
