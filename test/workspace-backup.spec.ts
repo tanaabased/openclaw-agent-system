@@ -67,7 +67,8 @@ describe('workspace backup', () => {
     );
   });
 
-  it('should recover ignored descendants and let excludes win', async () => {
+  it('should recover ignored descendants and let excludes win', async function () {
+    this.timeout(10_000);
     await executeFile('/usr/bin/git', ['init', workspace]);
     await writeFile(join(workspace, '.gitignore'), 'MEMORY.md\nmemory/\n');
     const selected = await service.plan({

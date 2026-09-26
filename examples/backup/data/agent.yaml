@@ -1,6 +1,7 @@
 schema-version: 1
 agent:
   id: backup-example
+  name: Backup Example
 backup:
   git-ignore: true
   include:
