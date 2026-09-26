@@ -23,6 +23,7 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$TMPDIR/setup-tanaabot/setup-key.pub"
 cp "$GITHUB_WORKSPACE/examples/setup/tanaabot/host-descendant.sh" "$TMPDIR/setup-tanaabot/host-descendant.sh"
+cp "$GITHUB_WORKSPACE/examples/setup/tanaabot/setup.yaml" "$TMPDIR/setup-tanaabot/setup.yaml"
 runner_os="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
 sed \
   -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" \
