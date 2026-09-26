@@ -7,6 +7,8 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
+- [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
+- [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
 - [`openclaw agent-system env`](#openclaw-agent-system-env)
 - [`openclaw agent-system install`](#openclaw-agent-system-install)
 - [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
@@ -42,6 +44,119 @@ openclaw agent-system validate --json
 
 The result identifies the selected agent and workspace and reports the core and
 configured capability declarations that passed validation.
+
+## `openclaw agent-system backup create`
+
+Capture selected workspace files in a private, verified `.tar.gz`. This stage is
+workspace-only: OpenClaw databases, sessions, runtime state, out-of-workspace
+sources, and external memory backends are not captured.
+
+### Options
+
+| Option or argument           | Required | Default                             | Description                                                                                    |
+| ---------------------------- | -------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `--agent <id>`               | no       | workspace discovery                 | Select an installed agent; operators only.                                                     |
+| `--output <directory>`       | no       | manifest or `.agent-system/backups` | Resolve relative destinations against the discovered workspace.                                |
+| `--git-ignore[=true\|false]` | no       | manifest or `false`                 | Bare flag means `true`; omission inherits the manifest.                                        |
+| `--include <patterns...>`    | no       | manifest or `[]`                    | Repeatable quoted workspace-relative globs; replace the manifest list. `--include=` clears it. |
+| `--exclude <patterns...>`    | no       | manifest or `[]`                    | Repeatable globs applied last; replace the manifest list. `--exclude=` clears it.              |
+| `--dry-run`                  | no       | off                                 | Report settings and selection without writing any files, ignore rules, locks, or staging.      |
+| `--json`                     | no       | off                                 | Write one structured result, including failures.                                               |
+
+### Usage
+
+```text
+openclaw agent-system backup create [--agent <id>] [--output <directory>]
+  [--git-ignore[=true|false]] [--include <patterns...>] [--exclude <patterns...>]
+  [--dry-run] [--json]
+```
+
+```sh
+# inspect selected private memory before capturing it.
+openclaw as backup create --dry-run --json --git-ignore \
+  --include 'MEMORY.md' 'memory/**' --include 'DREAMS.md' 'GOALS.md' \
+  --exclude 'scratch/**'
+
+# capture with the manifest defaults.
+openclaw agent-system backup create --json
+
+# clear configured exclusions and turn off git-ignore filtering.
+openclaw as backup create --exclude= --git-ignore=false
+```
+
+Selection starts with workspace entries, removes the small regenerable filter
+(`**/node_modules/**`, `**/.npm/_cacache/**`, `**/.eslintcache`), optionally applies
+Git-ignore, restores includes, then applies excludes. Includes can recover files
+under ignored parents; excludes win. Build outputs and worktrees are not blanket
+excluded. Exact include paths must exist; unmatched globs produce diagnostics.
+Git-ignore requires a Git repository and keeps tracked files. Paths use `/`;
+absolute patterns, traversal, backslashes, and control characters are unsupported.
+
+The default backup destination, effective destination, and
+`.agent-system/backup-staging` are always excluded, including aliases and explicit
+includes. Add previous custom backup destinations to `exclude` yourself; archives
+are not excluded merely by extension. Relative links are preserved only when their
+target belongs to the selected payload; escaping, absolute, and broken links are
+omitted with diagnostics. Known live OpenClaw state and database sidecars are
+protected independently of selection patterns.
+
+Operators may choose local destinations. Bound callers cannot supply `--agent`
+and may use only contained workspace destinations or the manifest-configured
+external directory. Locations belonging to another or invalid agent workspace are
+rejected. Destinations cannot equal or contain the workspace, or reside
+in live OpenClaw state or Git metadata. Inside Git repositories, creation reuses
+an effective ignore rule or appends a narrow directory rule to local
+`info/exclude`; unrelated rules and the rest of `.agent-system/` remain intact.
+Tracked destinations and overriding ignore rules fail with diagnostics.
+
+Archives contain root `manifest.json` and `workspace/`. Version `1` records agent
+identity, capture time, effective settings, coverage, diagnostics, inventory,
+permissions, safe link targets, and SHA-256 checksums. Files are staged privately;
+concurrent captures for the same workspace/agent serialize. An exclusive final
+name appears only after verification. Archives have mode `0600`; staging has mode
+`0700`. Failed capture or verification publishes no archive. Changed or vanished
+files detected during capture fail explicitly; files can still change before or
+after their individual capture. This is not an atomic workspace snapshot.
+
+Setup `apply` steps may create backups; checks may only use `--dry-run` or verify
+existing archives. Creation is noninteractive and installs no scheduler. A preview
+returns `status: preview`, creation `status: created`, and failures `status: failed`
+with nonzero exit and diagnostic codes. Sensitive local files can be included;
+keep archives private. Restore, retention, uploads, scheduling, and database
+snapshot capture are separate features.
+
+## `openclaw agent-system backup verify`
+
+Read and verify a workspace archive without extracting it or changing a live
+workspace. Operators can verify an archive without an installed workspace.
+
+### Options
+
+| Option or argument | Required | Default | Description                                                   |
+| ------------------ | -------- | ------- | ------------------------------------------------------------- |
+| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
+| `--agent <id>`     | no       | none    | Require this recorded agent identity; operators only.         |
+| `--json`           | no       | off     | Write one structured verification result, including failures. |
+
+### Usage
+
+```text
+openclaw agent-system backup verify <archive> [--agent <id>] [--json]
+```
+
+```sh
+# verify a workspace-only artifact without restoring it.
+openclaw as backup verify /private/backups/agent-backup.tar.gz --json
+```
+
+Verification rejects unsupported versions, invalid manifests, duplicate or unsafe
+paths, unsafe links, unsupported entry types, missing/extra inventory entries,
+permission mismatches, and checksum failures. Selection scans up to 100,000
+workspace entries; the root manifest supports up to 16 MiB. Bound callers may verify only their
+own identity's archives inside their workspace or configured destination. Success
+returns `status: verified`; failures return `status: failed` and nonzero exit.
+Checksums verify internal integrity, not authenticity or completeness of omitted
+state. Verification does not imply OpenClaw database coverage.
 
 ## `openclaw agent-system env`
 

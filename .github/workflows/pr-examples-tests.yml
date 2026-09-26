@@ -23,6 +23,7 @@ jobs:
         example:
           - agent
           - approval
+          - backup
           - codex
           - containment
           - credentials

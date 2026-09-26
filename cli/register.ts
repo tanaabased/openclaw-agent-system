@@ -10,6 +10,9 @@ import unsetCredentialsAgentSystem from './credentials-unset.ts';
 import validateCredentialsAgentSystem from './credentials-validate.ts';
 import installAgentSystem from './install.ts';
 import validateAgentSystem from './validate.ts';
+import backupCreate from './backup-create.ts';
+import backupVerify from './backup-verify.ts';
+import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
 import type GitHubNotificationStatusService from '../channels/github/intake/monitor/status-service.ts';
@@ -44,6 +47,7 @@ export interface CommandLike {
 }
 
 export interface RegisterAgentSystemCliOptions {
+  backupService?: WorkspaceBackupService;
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
   cacheGatewayRequest?: OpCacheGatewayRequest;
   completeOneShot?: (code: number) => Promise<void>;
@@ -107,6 +111,80 @@ export default function registerAgentSystemCli(
     .alias('as')
     .description('Manage reproducible OpenClaw agent workspaces.')
     .action(() => writeHelp(agentSystem, output));
+  const backupService = options.backupService ?? new WorkspaceBackupService();
+  const backup = agentSystem
+    .command('backup')
+    .description('Create and verify private workspace-only recovery archives.')
+    .action(() => writeHelp(backup, output));
+  const create = backup
+    .command('create')
+    .description('Capture selected workspace files; OpenClaw database state is not included.')
+    .option('--agent <id>', 'Select an installed agent (operators only).')
+    .option('--output <directory>', 'Override the manifest backup destination.')
+    .option('--dry-run', 'Preview effective settings and selected files without writing.')
+    .option('--json', 'Write one structured JSON result.')
+    .addOption(
+      backup
+        .createOption('--git-ignore [boolean]', 'Apply Git-ignore rules; true or false.')
+        .choices(['true', 'false'])
+        .preset('true'),
+    );
+  for (const name of ['include', 'exclude']) {
+    create.addOption(
+      backup
+        .createOption(
+          `--${name} <patterns...>`,
+          `Replace the manifest ${name} list; repeatable, use --${name}= to clear.`,
+        )
+        .argParser((value: string, previous: string[] | undefined) => [
+          ...(previous ?? []),
+          ...(value === '' ? [] : [value]),
+        ]),
+    );
+  }
+  create.action(async () => {
+    const selected = create.opts();
+    await backupCreate({
+      ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+      commandAuthority,
+      environment,
+      manifestService: options.manifestService,
+      workspaceDir: cwd(),
+      service: backupService,
+      output,
+      setExitCode,
+      styles: options.styles,
+      json: selected.json === true,
+      dryRun: selected.dryRun === true,
+      overrides: {
+        ...(typeof selected.output === 'string' ? { output: selected.output } : {}),
+        ...(selected.gitIgnore === undefined ? {} : { gitIgnore: selected.gitIgnore === 'true' }),
+        ...(Array.isArray(selected.include) ? { include: selected.include.map(String) } : {}),
+        ...(Array.isArray(selected.exclude) ? { exclude: selected.exclude.map(String) } : {}),
+      },
+    });
+  });
+  const verify = backup
+    .command('verify <archive>')
+    .description('Check archive structure, inventory and checksums without extraction.')
+    .option('--agent <id>', 'Require this archive agent identity (operators only).')
+    .option('--json', 'Write one structured JSON result.')
+    .action(async (archive) => {
+      const selected = verify.opts();
+      await backupVerify({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        archive: String(archive),
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+      });
+    });
   const validate = agentSystem
     .command('validate')
     .description('Discover and validate the workspace Agent System manifest.')

@@ -141,7 +141,7 @@ export default class SetupCommandService {
         throw new SetupCommandError('setup-agent-not-resolved');
       }
       await authority.start();
-      const environment = authority.issue(target.agentId);
+      const environment = authority.issue(target.agentId, target.mode ?? 'check');
       const binding = await authority.resolve(environment, target.workspaceDir);
       if (!binding?.executeCommand || binding.agentId !== target.agentId) {
         throw new SetupCommandError('setup-agent-not-resolved');

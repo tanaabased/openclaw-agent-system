@@ -12,6 +12,8 @@ import registerAgentSystemCli, { type RegisterAgentSystemCliOptions } from '../c
 import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import OpCache from '../environment/op-cache.ts';
+import WorkspaceBackupService from '../agent/backup-service.ts';
+import type { BackupPlan } from '../agent/backup-types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -41,6 +43,7 @@ const validEnvironmentResult: Extract<AgentEnvironmentLoadResult, { status: 'loa
 function createProgram(
   input?: Readable,
   dependencies: {
+    backupService?: WorkspaceBackupService;
     manifestResult?: AgentManifestLoadResult;
     environment?: Readonly<NodeJS.ProcessEnv>;
     commandAuthority?: RegisterAgentSystemCliOptions['commandAuthority'];
@@ -97,6 +100,7 @@ function createProgram(
   const program = new Command();
   program.name('openclaw').exitOverride();
   registerAgentSystemCli(program, {
+    backupService: dependencies.backupService,
     environment: dependencies.environment ?? {},
     ...(dependencies.commandAuthority ? { commandAuthority: dependencies.commandAuthority } : {}),
     ...(dependencies.setupPrompt ? { setupPrompt: dependencies.setupPrompt } : {}),
@@ -386,7 +390,7 @@ describe('cli/register', () => {
     assert.deepEqual(command?.aliases(), ['as']);
     assert.deepEqual(
       command?.commands.map((subcommand) => subcommand.name()),
-      ['validate', 'env', 'doctor', 'notifications', 'tool', 'credentials', 'install'],
+      ['backup', 'validate', 'env', 'doctor', 'notifications', 'tool', 'credentials', 'install'],
     );
     assert.deepEqual(
       command?.commands
@@ -1093,5 +1097,144 @@ describe('cli/register', () => {
     await program.parseAsync(['node', 'openclaw', 'agent-system', 'credentials', 'unset', 'op']);
 
     assert.deepEqual(calls.credentialUnset, [{ agentId: 'tanaabot' }]);
+  });
+});
+
+describe('backup cli registration', () => {
+  const plan: BackupPlan = {
+    agentId: 'tanaabot',
+    workspaceDir: '/workspace',
+    settings: { output: '/workspace/backups', gitIgnore: false, include: [], exclude: [] },
+    coverage: {
+      stage: 'workspace-only',
+      openclawState: 'unsupported',
+      atomic: false,
+      omittedPaths: [],
+      limitations: [],
+    },
+    diagnostics: [],
+    protectedPaths: [],
+    files: ['MEMORY.md'],
+  };
+
+  it('should parse repeated multi-value lists and explicit false without overriding omitted settings', async () => {
+    let overrides: unknown;
+    class Service extends WorkspaceBackupService {
+      override async plan(input: Parameters<WorkspaceBackupService['plan']>[0]) {
+        overrides = input.overrides;
+        return plan;
+      }
+    }
+    const result = createProgram(undefined, { backupService: new Service() });
+    await result.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'backup',
+      'create',
+      '--dry-run',
+      '--json',
+      '--git-ignore=false',
+      '--include',
+      'MEMORY.md',
+      'memory/**',
+      '--include',
+      'GOALS.md',
+      '--exclude=',
+    ]);
+    assert.deepEqual(overrides, {
+      gitIgnore: false,
+      include: ['MEMORY.md', 'memory/**', 'GOALS.md'],
+      exclude: [],
+    });
+    const output = JSON.parse(result.output.join(''));
+    assert.equal(output.status, 'preview');
+    assert.equal(output.coverage.stage, 'workspace-only');
+  });
+
+  it('should reuse aligned cli summaries and color-free rendering', async () => {
+    class Service extends WorkspaceBackupService {
+      override async plan() {
+        return plan;
+      }
+    }
+    const result = createProgram(undefined, { backupService: new Service() });
+    await result.program.parseAsync([
+      'node',
+      'openclaw',
+      'agent-system',
+      'backup',
+      'create',
+      '--dry-run',
+      '--include=',
+    ]);
+    const output = result.output.join('');
+    assert.ok(output.includes('backup'));
+    assert.ok(output.includes('preview'));
+    assert.ok(output.includes('workspace-only'));
+    assert.ok(!output.includes('\u001b'));
+  });
+
+  it('should reject selectors for bound callers and prevent creation in setup checks', async () => {
+    let planned = false;
+    class Service extends WorkspaceBackupService {
+      override async plan() {
+        planned = true;
+        return plan;
+      }
+    }
+    const authority = {
+      async resolve() {
+        return {
+          agentId: 'tanaabot',
+          workingDirectory: '/workspace',
+          admittedWorkingDirectories: ['/workspace'],
+          setupMode: 'check' as const,
+        };
+      },
+      async classify() {
+        return { status: 'unbound' as const };
+      },
+    };
+    for (const [args, code] of [
+      [['--agent', 'other'], 'backup-agent-selector-forbidden'],
+      [[], 'backup-setup-check-read-only'],
+    ] as const) {
+      const result = createProgram(undefined, {
+        backupService: new Service(),
+        commandAuthority: authority,
+      });
+      await result.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'backup',
+        'create',
+        '--json',
+        ...args,
+      ]);
+      assert.equal(JSON.parse(result.output.join('')).diagnostics[0].code, code);
+    }
+    assert.equal(planned, false);
+  });
+
+  it('should return structured failures when authority or manifest resolution fails', async () => {
+    const result = createProgram(undefined, {
+      environment: { AGENT_SYSTEM_EXEC_AUTHORITY: 'denied' },
+    });
+    await result.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'backup',
+      'verify',
+      '/other.tar.gz',
+      '--json',
+    ]);
+    assert.equal(JSON.parse(result.output.join('')).status, 'failed');
+    assert.equal(
+      JSON.parse(result.output.join('')).diagnostics[0].code,
+      'backup-authority-unresolved',
+    );
   });
 });

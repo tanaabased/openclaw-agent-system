@@ -8,6 +8,7 @@ import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-
 import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
+import { decodeBackup, externalBackupSchema } from './backup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic, ParsedAgentManifest } from './types.ts';
 import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './value-schemas.ts';
 
@@ -78,6 +79,7 @@ const externalAgentManifestSchema = Type.Object(
     memory: Type.Optional(externalAgentMemorySchema),
     models: Type.Optional(externalAgentModelsSchema),
     setup: Type.Optional(externalAgentSetupSchema),
+    backup: Type.Optional(externalBackupSchema),
   },
   { additionalProperties: false },
 );
@@ -233,6 +235,7 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
     ...(value.github === undefined ? {} : { github: decodeGitHubSection(value.github) }),
     ...(value.memory === undefined ? {} : { memory: decodeAgentMemory(value.memory) }),
     ...(value.models === undefined ? {} : { models: decodeAgentModels(value.models) }),
+    ...(value.backup === undefined ? {} : { backup: decodeBackup(value.backup) }),
   };
 }
 

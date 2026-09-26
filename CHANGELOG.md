@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Added configurable workspace-only backups with private archives, dry-run selection, and checksum verification. [#173](https://github.com/tanaabased/openclaw-agent-system/issues/173)
+
 ## v0.7.0 - [September 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.7.0)
 
 ### Compatibility

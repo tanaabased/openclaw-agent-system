@@ -58,6 +58,7 @@ import createToolAccessLifecycleContribution from '../api/access-lifecycle.ts';
 import createAgentToolAccessGrants from '../api/tool-access-grants.ts';
 import createToolSecurityLifecycleContribution from '../api/security-lifecycle.ts';
 import WorkspaceGitignoreService from '../paths/workspace-gitignore-service.ts';
+import WorkspaceBackupService from '../agent/backup-service.ts';
 import ConversationHookAccess, {
   inspectConversationHookPolicy,
   inspectRunningConversationHook,
@@ -506,6 +507,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
   api.registerCli(({ program }) => {
     registerAgentSystemCli(program, {
+      backupService: new WorkspaceBackupService(async (agentId) => {
+        const config = await readConfig();
+        return [
+          api.runtime.state.resolveStateDir(),
+          api.runtime.agent.resolveAgentDir(config, agentId),
+        ];
+      }),
       commandAuthority,
       credentialInput: opCredentialInput,
       credentialManager,

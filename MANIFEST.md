@@ -6,6 +6,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
 
 - [Discovery](#discovery)
 - [Configuration](#configuration)
+- [Backup](#backup)
 - [Setup](#setup)
 - [Component configuration](#component-configuration)
 - [Environment resolution](#environment-resolution)
@@ -239,6 +240,44 @@ Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
+
+### `backup`
+
+Optional defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
+Omitting `backup` uses the same defaults as omitting all its fields. Loading the
+manifest validates declarations without creating backups or installing schedules.
+
+| Field               | Type         | Required | Default                 | Description                                                      |
+| ------------------- | ------------ | -------- | ----------------------- | ---------------------------------------------------------------- |
+| `backup.output`     | string       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
+| `backup.git-ignore` | boolean      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
+| `backup.include`    | string array | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
+| `backup.exclude`    | string array | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
+
+```yaml
+backup:
+  output: .agent-system/backups
+  git-ignore: true
+  include:
+    - MEMORY.md
+    - memory/**
+    - DREAMS.md
+    - GOALS.md
+  exclude:
+    - scratch/**
+    - previous-backups/**
+```
+
+Defaults apply first, then manifest fields, then explicitly supplied CLI options.
+No backup-specific environment-variable layer exists. A supplied include/exclude
+option replaces its manifest list; `--include=` or `--exclude=` clears that list.
+Includes cannot override mandatory destination, staging, or live OpenClaw state
+exclusions. Previous custom backup locations require explicit exclusions.
+
+This configuration covers workspace files only. It does not capture OpenClaw
+SQLite databases or sidecars, sessions, runtime state, out-of-workspace sources, or
+external memory backends. See the command reference for safe destinations,
+private permissions, Git-ignore handling, symlink limits, and capture diagnostics.
 
 ### `setup`
 
