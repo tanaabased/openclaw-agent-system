@@ -22,8 +22,11 @@ import {
   isRawGitWorktreeMutation,
 } from './operation-classifier.ts';
 import { authorizeGitOperation } from './policy.ts';
+import {
+  gitSshRequiredExecutables,
+  type default as GitSshResourceService,
+} from './ssh-resource-service.ts';
 import gitCommandHasSigningControl from './signing-control.ts';
-import type GitSshResourceService from './ssh-resource-service.ts';
 import { gitToolSchema, type GitToolInput } from './tool-schema.ts';
 import resolveGitWorktreeLayout from './worktree-layout.ts';
 
@@ -215,6 +218,12 @@ export function createGitToolDefinition(
   return {
     apiVersion: 1,
     id: 'git',
+    requiredExecutables(configuration) {
+      return gitSshRequiredExecutables(
+        Boolean(configuration.git.ssh?.privateKeys.length),
+        Boolean(configuration.git.signing),
+      );
+    },
     authorization: {
       authorize(operation, configuration) {
         return authorizeGitOperation(operation, configuration, {

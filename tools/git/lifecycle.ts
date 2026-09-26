@@ -7,7 +7,7 @@ import type GitSshResourceService from './ssh-resource-service.ts';
 import type GitWorktreeLayoutService from './worktree-layout-service.ts';
 
 export interface GitLifecycleDependencies {
-  sshResourceService?: Pick<GitSshResourceService, 'inspectDependencies'>;
+  sshResourceService?: Pick<GitSshResourceService, 'acquire'>;
   worktreeLayoutService?: Pick<GitWorktreeLayoutService, 'inspect' | 'reconcile'>;
 }
 
@@ -125,30 +125,6 @@ export default function createGitLifecycleContribution(
         });
         return diagnostics;
       }
-      const { missing } = await dependencies.sshResourceService.inspectDependencies({
-        authentication,
-        signing,
-      });
-      const capability =
-        authentication && signing
-          ? 'authentication and signing'
-          : authentication
-            ? 'authentication'
-            : 'signing';
-      if (missing.length > 0) {
-        diagnostics.push({
-          code: 'git-ssh-dependencies-missing',
-          message: `Git SSH ${capability} requires missing executables: ${missing.join(', ')}.`,
-          remediation: `Install OpenSSH and make ${missing.join(', ')} available on PATH.`,
-          status: 'blocked' as const,
-        });
-        return diagnostics;
-      }
-      diagnostics.push({
-        code: 'git-ssh-dependencies-ready',
-        message: `Git SSH ${capability} dependencies are available.`,
-        status: 'healthy' as const,
-      });
       return diagnostics;
     },
     async reconcile({ manifest, workspaceDir }) {

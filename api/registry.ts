@@ -83,6 +83,17 @@ export default class AgentSystemToolRegistry {
     ];
   }
 
+  /** Return declared requirements only for configured first-party tools. */
+  configuredExecutableRequirements(manifest: AgentManifest): Array<{
+    id: string;
+    executables: readonly string[];
+  }> {
+    return [...this.#tools.values()]
+      .filter((tool) => tool.isConfigured(manifest))
+      .map((tool) => ({ id: tool.id, executables: tool.requiredExecutables?.(manifest) ?? [] }))
+      .filter(({ executables }) => executables.length > 0);
+  }
+
   guidance(manifest: AgentManifest): string[] {
     return [...this.#tools.values()].flatMap((tool) =>
       tool.isConfigured(manifest) && tool.guidance ? [tool.guidance.prompt] : [],

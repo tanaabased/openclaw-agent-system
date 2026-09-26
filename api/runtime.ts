@@ -9,6 +9,13 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type AgentEnvironmentService from '../environment/service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import AgentSystemToolError from './error.ts';
+import type { resolveToolExecutable } from './cli-runner.ts';
+import {
+  excludedToolExecutableDirectories,
+  executableGuidance,
+  requiredToolExecutables,
+  unavailableToolExecutables,
+} from './executable-requirements.ts';
 import executeAgentSystemCliTool from './cli-execution.ts';
 import loadBoundToolManifest from './manifest-binding.ts';
 import type {
@@ -42,6 +49,7 @@ export interface AgentSystemToolRuntimeDependencies {
   logger: ToolLogger;
   manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'loadForCommandDirectory'>;
   runCli: AgentSystemCliRunner;
+  resolveExecutable?: typeof resolveToolExecutable;
 }
 
 interface RuntimeDefinition<
@@ -62,6 +70,8 @@ interface RuntimeDefinition<
     unknown
   >['configuration'];
   id: string;
+  requiredExecutables?(configuration: TDeclaredConfiguration): readonly string[];
+  runner?: { executable: string };
   tool: {
     classify(
       input: Static<TParameters>,
@@ -243,6 +253,22 @@ export default class AgentSystemToolRuntime {
     );
 
     try {
+      const unavailable = await unavailableToolExecutables(
+        requiredToolExecutables(definition, declaredConfiguration),
+        this.#dependencies.baseEnvironment.PATH ?? '',
+        excludedToolExecutableDirectories(
+          loaded.manifest,
+          workspaceDir,
+          this.#dependencies.excludedExecutableDirectories,
+        ),
+        this.#dependencies.resolveExecutable,
+      );
+      if (unavailable.length > 0) {
+        throw new AgentSystemToolError(
+          'tool_unavailable',
+          executableGuidance(definition.id, unavailable),
+        );
+      }
       const environmentResult = await this.#dependencies.environmentService.loadForAgentId(
         agentId,
         'cli',

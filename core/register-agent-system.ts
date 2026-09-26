@@ -434,7 +434,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       });
     },
   });
-  const doctorService = new AgentDoctorService({ lifecycleRegistry });
+  const doctorService = new AgentDoctorService({
+    lifecycleRegistry,
+    toolRegistry,
+    baseEnvironment: process.env,
+    excludedExecutableDirectories: excludedToolExecutableDirectories,
+  });
   const toolRuntime = new AgentSystemToolRuntime({
     runCli,
     baseEnvironment: process.env,

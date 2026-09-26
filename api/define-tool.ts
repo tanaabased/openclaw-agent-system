@@ -10,6 +10,7 @@ import type {
   AgentSystemToolScope,
   RegisteredAgentSystemTool,
 } from './types.ts';
+import { requiredToolExecutables } from './executable-requirements.ts';
 
 type ExecuteTool<TParameters extends TSchema> = (
   runtime: AgentSystemToolRuntime,
@@ -107,6 +108,10 @@ export default function defineAgentSystemTool<TParameters extends TSchema, TDecl
     ...(definition.guidance ? { guidance: definition.guidance } : {}),
     id: definition.id,
     isConfigured: (manifest) => definition.configuration.read(manifest) !== undefined,
+    requiredExecutables(manifest) {
+      const configuration = definition.configuration.read(manifest);
+      return configuration === undefined ? [] : requiredToolExecutables(definition, configuration);
+    },
     invoke(runtime, argv, scope, stdin, signal) {
       return execute(runtime, definition.tool.inputFromCommand(argv, stdin), scope, signal);
     },
