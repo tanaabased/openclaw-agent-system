@@ -111,6 +111,26 @@ function validateNotifications(manifest: AgentManifest): ManifestDiagnostic[] {
       '/github/notifications/allowed-repository-owners',
     ),
   );
+  for (const field of ['assignees', 'reviewers'] as const) {
+    const recipients = manifest.github.notifications.pullRequest?.[field];
+    if (recipients === undefined) continue;
+    if (recipients === 'assignment-actor') continue;
+    const seenNodes = new Set<string>();
+    const seenLogins = new Set<string>();
+    recipients.forEach(({ login, nodeId }, index) => {
+      const normalizedLogin = login.toLowerCase();
+      if (seenNodes.has(nodeId) || seenLogins.has(normalizedLogin)) {
+        diagnostics.push({
+          code: 'github-notification-recipient-duplicate',
+          fieldPath: `/github/notifications/pull-request/${field}/${index}`,
+          message: 'Pull request recipient identities must be unique within each list.',
+          severity: 'error',
+        });
+      }
+      seenNodes.add(nodeId);
+      seenLogins.add(normalizedLogin);
+    });
+  }
   return diagnostics;
 }
 
