@@ -53,6 +53,8 @@ Inspect the active agent and run its applicable setup checks:
 
 The tool returns the aggregate status, findings, and remediation. It may resolve
 credentials needed for inspection; it never calls Install or repairs prerequisites.
+For configured tools, missing host executables produce one blocked finding per
+tool with the missing names and runtime PATH guidance.
 For setup, it reports unchecked steps as manual and other-runtime steps as skipped.
 A check's read-only behavior remains its author's responsibility.
 

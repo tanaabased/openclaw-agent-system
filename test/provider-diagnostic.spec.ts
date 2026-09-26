@@ -94,6 +94,7 @@ function fixture(error: Error, creation = false, missing = false) {
     opEnvironmentService: provider,
   });
   const runtime = new AgentSystemToolRuntime({
+    resolveExecutable: async (name) => `/usr/bin/${name}`,
     baseEnvironment: {},
     logger,
     manifestService,

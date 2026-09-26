@@ -29,9 +29,16 @@ export interface GitSshResourceRequest {
   signing?: Pick<GitSigningConfiguration, 'key'> & { gitConfigurationOffset: number };
 }
 
-export interface GitSshDependencyRequirements {
-  authentication?: boolean;
-  signing?: boolean;
+/** Declare OpenSSH requirements without resolving private-key configuration. */
+export function gitSshRequiredExecutables(authentication: boolean, signing: boolean): string[] {
+  return authentication || signing
+    ? [
+        'ssh-agent',
+        'ssh-add',
+        ...(authentication ? ['ssh'] : []),
+        ...(signing ? ['ssh-keygen'] : []),
+      ]
+    : [];
 }
 
 export interface GitSshResourceServiceDependencies {
@@ -136,24 +143,6 @@ export default class GitSshResourceService {
     this.#writePrivateFile =
       dependencies.writePrivateFile ??
       ((path, contents) => writeFile(path, contents, { encoding: 'utf8', mode: 0o600 }));
-  }
-
-  /** Report missing installed-host OpenSSH dependencies without mutating the host. */
-  async inspectDependencies(
-    requirements: GitSshDependencyRequirements = { authentication: true },
-  ): Promise<{ missing: string[] }> {
-    const missing: string[] = [];
-    const names = new Set(['ssh-agent', 'ssh-add']);
-    if (requirements.authentication) names.add('ssh');
-    if (requirements.signing) names.add('ssh-keygen');
-    for (const name of names) {
-      try {
-        await this.#resolveExecutable(name);
-      } catch {
-        missing.push(name);
-      }
-    }
-    return { missing };
   }
 
   /** Route every SSH transport through the invocation-scoped authentication helper. */

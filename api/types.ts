@@ -133,6 +133,8 @@ export interface AgentSystemToolDefinition<
   };
   commands?: AgentSystemToolCommand[];
   guidance?: AgentSystemToolGuidance;
+  /** Additional host executables derived only from declared, unresolved configuration. */
+  requiredExecutables?(configuration: TDeclaredConfiguration): readonly string[];
   tool: {
     available?(context: OpenClawPluginToolContext): boolean;
     classify(
@@ -276,6 +278,7 @@ export interface RegisteredAgentSystemTool {
   guidance?: AgentSystemToolGuidance;
   id: string;
   isConfigured(manifest: AgentManifest): boolean;
+  requiredExecutables?(manifest: AgentManifest): readonly string[];
   invoke(
     runtime: AgentSystemToolRuntime,
     argv: string[],

@@ -23,6 +23,7 @@ function createRuntime(options: {
     timedOut: boolean;
     truncated: boolean;
   }>;
+  resolveExecutable?: (name: string, path: string, excluded?: readonly string[]) => Promise<string>;
 }): AgentSystemToolRuntime {
   const auditEvents = options.auditEvents ?? [];
   const environmentCalls = options.environmentCalls ?? [];
@@ -36,6 +37,7 @@ function createRuntime(options: {
       },
     },
     baseEnvironment: { PATH: '/usr/bin', SHOULD_NOT_INHERIT: 'host-private' },
+    resolveExecutable: options.resolveExecutable ?? (async (name) => `/usr/bin/${name}`),
     environmentService: {
       invalidateCredentials(agentId) {
         options.invalidations?.push(agentId);
@@ -84,6 +86,104 @@ function createRuntime(options: {
 }
 
 describe('api/runtime', () => {
+  it('should check declared executables after authorization and before credentials or resources', async () => {
+    const events: string[] = [];
+    const runtime = createRuntime({
+      events,
+      resolveExecutable: async (name, path, excluded) => {
+        events.push(`check:${name}`);
+        assert.equal(path, '/usr/bin');
+        assert.ok(excluded?.includes(`${toolTestWorkspaceDir}/bin`));
+        if (name !== 'test-tool') throw new Error('missing');
+        return `/usr/bin/${name}`;
+      },
+    });
+    const definition = createToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'allowed' };
+      },
+      acquireResources() {
+        events.push('resources');
+        return undefined;
+      },
+    });
+    definition.requiredExecutables = () => ['test-tool', 'missing-helper', 'missing-helper'];
+
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'inspect' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.code === 'tool_unavailable' &&
+        error.message.includes('test-tool') &&
+        error.message.includes('missing-helper') &&
+        error.message.includes('Install them on the host') &&
+        error.message.includes('runtime PATH'),
+    );
+    assert.deepEqual(
+      events.filter((event) => event === 'authorize' || event.startsWith('check:')),
+      ['authorize', 'check:test-tool', 'check:missing-helper'],
+    );
+    assert.ok(!events.includes('environment'));
+    assert.ok(!events.includes('resources'));
+  });
+
+  it('should not inspect executables for denied operations', async () => {
+    const events: string[] = [];
+    const runtime = createRuntime({
+      events,
+      resolveExecutable: async () => {
+        events.push('check');
+        throw new Error('missing');
+      },
+    });
+    const definition = createToolTestDefinition({
+      authorize() {
+        events.push('authorize');
+        return { status: 'denied', reason: 'denied' };
+      },
+    });
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'inspect' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+    );
+    assert.deepEqual(events, ['authorize']);
+  });
+
+  it('should check optional semantic requirements before environment resolution', async () => {
+    const events: string[] = [];
+    const runtime = createRuntime({
+      events,
+      resolveExecutable: async (name) => {
+        events.push(`check:${name}`);
+        throw new Error('missing');
+      },
+    });
+    const definition = createSemanticToolTestDefinition();
+    definition.requiredExecutables = () => ['semantic-helper'];
+    await assert.rejects(
+      runtime.executeSemantic(
+        definition,
+        { argument: 'inspect' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.code === 'tool_unavailable' &&
+        error.message.includes('semantic-helper'),
+    );
+    assert.ok(events.includes('check:semantic-helper'));
+    assert.ok(!events.includes('environment'));
+  });
+
   it('should invalidate an owner-reported credential rejection without replaying the command', async () => {
     const invalidations: string[] = [];
     let executions = 0;

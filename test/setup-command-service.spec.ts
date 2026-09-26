@@ -133,6 +133,7 @@ describe('agent/setup-command-service', function () {
     ]);
     const toolRuntime = new AgentSystemToolRuntime({
       baseEnvironment: { PATH: hostBin, GH_TOKEN: 'operator-private-token' },
+      resolveExecutable: async (name) => join(hostBin, name),
       manifestService,
       environmentService: {
         async loadForAgentId(id) {

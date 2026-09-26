@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
+import { readFile, realpath } from 'node:fs/promises';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import discoverManifest, { discoverManifestFromDirectory } from './discover.ts';
@@ -58,6 +60,16 @@ function quote(value: string): string {
 
 function diagnosticCodes(diagnostics: ManifestDiagnostic[]): string {
   return diagnostics.map(({ code }) => code).join(',');
+}
+
+async function setupFileFingerprint(path: string): Promise<string | undefined> {
+  try {
+    const canonicalPath = await realpath(path);
+    const contents = await readFile(canonicalPath);
+    return createHash('sha256').update(canonicalPath).update('\0').update(contents).digest('hex');
+  } catch {
+    return undefined;
+  }
 }
 
 /** Own manifest resolution, parsing, cache invalidation, and redacted runtime diagnostics. */
@@ -189,7 +201,17 @@ export default class AgentManifestService {
     const discovery = await discoverManifest(workspaceDir);
     const cacheKey = `${discovery.workspaceDir}\u0000${expectedAgentId ?? ''}`;
     const cached = this.#cache.get(cacheKey);
-    if (cached?.fingerprint === discovery.fingerprint) return cached.result;
+    if (cached?.fingerprint === discovery.fingerprint) {
+      if (cached.result.status === 'unmanaged') return cached.result;
+      if (cached.result.status === 'loaded') {
+        if (!cached.result.setupFilePath) return cached.result;
+        const fingerprint = await setupFileFingerprint(cached.result.setupFilePath);
+        if (fingerprint !== undefined && fingerprint === cached.result.setupFileFingerprint)
+          return cached.result;
+      } else if (cached.result.status === 'invalid' && !cached.result.setupFilePath) {
+        return cached.result;
+      }
+    }
 
     const inFlightKey = `${cacheKey}\u0000${discovery.fingerprint}`;
     const existingLoad = this.#inFlight.get(inFlightKey);

@@ -171,19 +171,6 @@ describe('tools/git/ssh-resource-service', () => {
     assert.deepEqual(events, ['stop', 'remove']);
   });
 
-  it('should report exactly which openssh executables are unavailable', async () => {
-    const service = new GitSshResourceService({
-      ...helperPaths,
-      baseEnvironment: { PATH: '/system/bin' },
-      resolveExecutable: async (name) => {
-        if (name !== 'ssh') throw new Error('missing');
-        return `/system/bin/${name}`;
-      },
-    });
-
-    assert.deepEqual(await service.inspectDependencies(), { missing: ['ssh-agent', 'ssh-add'] });
-  });
-
   it('should project one environment-bound signing key without ssh authentication', async () => {
     const commands: CredentialCommandOptions[] = [];
     const executables: string[] = [];

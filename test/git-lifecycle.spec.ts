@@ -45,13 +45,11 @@ describe('tools/git/lifecycle', () => {
     );
   });
 
-  it('should inspect openssh readiness only when managed ssh is configured', async () => {
-    let inspections = 0;
+  it('should leave openssh availability to the shared tool checker', async () => {
     const contribution = createGitLifecycleContribution({
       sshResourceService: {
-        async inspectDependencies() {
-          inspections += 1;
-          return { missing: [] };
+        async acquire() {
+          throw new Error('not called');
         },
       },
     });
@@ -67,7 +65,6 @@ describe('tools/git/lifecycle', () => {
       }),
       [],
     );
-    assert.equal(inspections, 0);
     assert.deepEqual(
       await contribution.inspect?.({
         manifest: {
@@ -79,15 +76,8 @@ describe('tools/git/lifecycle', () => {
         },
         workspaceDir: '/workspace',
       }),
-      [
-        {
-          code: 'git-ssh-dependencies-ready',
-          message: 'Git SSH authentication dependencies are available.',
-          status: 'healthy',
-        },
-      ],
+      [],
     );
-    assert.equal(inspections, 1);
   });
 
   it('should inspect and reconcile managed worktree roots only when configured', async () => {
@@ -174,37 +164,6 @@ describe('tools/git/lifecycle', () => {
     assert.deepEqual(calls, ['inspect', 'reconcile']);
   });
 
-  it('should report missing openssh dependencies as blocked', async () => {
-    const contribution = createGitLifecycleContribution({
-      sshResourceService: {
-        async inspectDependencies() {
-          return { missing: ['ssh-agent', 'ssh-add'] };
-        },
-      },
-    });
-
-    assert.deepEqual(
-      await contribution.inspect?.({
-        manifest: {
-          schemaVersion: 1,
-          agent: { id: 'data', email: 'data@example.com', name: 'Data' },
-          git: {
-            ssh: { privateKeys: [{ path: '/run/keys/id_ed25519' }] },
-          },
-        },
-        workspaceDir: '/workspace',
-      }),
-      [
-        {
-          code: 'git-ssh-dependencies-missing',
-          message: 'Git SSH authentication requires missing executables: ssh-agent, ssh-add.',
-          remediation: 'Install OpenSSH and make ssh-agent, ssh-add available on PATH.',
-          status: 'blocked',
-        },
-      ],
-    );
-  });
-
   it('should inspect signing dependencies and the public trust file without credentials', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-system-git-lifecycle-'));
     const workspaceDir = join(root, 'workspace');
@@ -215,9 +174,8 @@ describe('tools/git/lifecycle', () => {
     );
     const contribution = createGitLifecycleContribution({
       sshResourceService: {
-        async inspectDependencies(requirements) {
-          assert.deepEqual(requirements, { authentication: false, signing: true });
-          return { missing: [] };
+        async acquire() {
+          throw new Error('not called');
         },
       },
     });
@@ -241,11 +199,6 @@ describe('tools/git/lifecycle', () => {
           {
             code: 'git-signing-allowed-signers-ready',
             message: 'Git SSH allowed signers file is available.',
-            status: 'healthy',
-          },
-          {
-            code: 'git-ssh-dependencies-ready',
-            message: 'Git SSH signing dependencies are available.',
             status: 'healthy',
           },
         ],

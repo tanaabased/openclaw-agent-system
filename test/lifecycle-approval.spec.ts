@@ -457,6 +457,23 @@ describe('agent/lifecycle-approval', () => {
     assert.deepEqual(f.calls, ['inspect']);
   });
 
+  it('should reject approval when only the included setup file changes', async () => {
+    const f = await fixture();
+    await writeFile(
+      join(f.root, 'agent.yaml'),
+      manifest.replace(
+        '  steps:\n    - id: sample\n      check: check-approved\n      apply: apply-approved',
+        '  file: ./setup.yaml',
+      ),
+    );
+    await writeFile(join(f.root, 'setup.yaml'), 'check: check-approved\napply: apply-approved\n');
+    const request = await f.request('agent_system_install', {}, f.context);
+    await writeFile(join(f.root, 'setup.yaml'), 'check: changed-check\napply: apply-approved\n');
+    request.requireApproval.onResolution('allow-once');
+    await assert.rejects(f.approval.execute('agent_system_install', {}, 'call', f.toolContext));
+    assert.deepEqual(f.calls, []);
+  });
+
   it('should bind nested manifest consumers without changing unrelated operator loads', async () => {
     const f = await fixture();
     const loaded = await f.service.loadForAgentId('data');

@@ -4,6 +4,7 @@ import type { AgentManifest } from '../../manifest/types.ts';
 import { Value } from 'typebox/value';
 
 import { authorizeGitOperation } from './policy.ts';
+import { gitSshRequiredExecutables } from './ssh-resource-service.ts';
 import type {
   GitSshConfiguration,
   GitToolConfiguration,
@@ -269,6 +270,12 @@ export function createGitWorktreeToolDefinition(
   return {
     apiVersion: 1,
     id: 'git-worktree',
+    requiredExecutables(configuration) {
+      return [
+        'git',
+        ...gitSshRequiredExecutables(Boolean(configuration.git.ssh?.privateKeys.length), false),
+      ];
+    },
     authorization: {
       authorize: authorizeGitOperation,
       policyId: 'agent-system.git-worktree',
