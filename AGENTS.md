@@ -44,7 +44,7 @@
 - Give every skill a surface-specific `metadata.openclaw.emoji` and HTTPS homepage in `SKILL.md`; keep OpenClaw metadata there instead of duplicating it in `agents/openai.yaml`.
 - Give every skill complete OpenAI interface metadata in `agents/openai.yaml`, including a display name, short description, default prompt, brand color, and valid local small and large icon assets that reflect the owned surface.
 - Keep skill icons transparent SVGs in `#00c88a`, with consistent visual weight and padding. Use capability or provider marks rather than Tanaab wordmarks or framed tiles.
-- Keep `package.json#codexTools.managedPaths` limited to the installed Codex payload. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
+- Keep `package.json#codexTools.managedPaths` limited to the Codex runtime and skill paths owned by cache reconciliation; it does not control what native Codex copies during installation. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
 - Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
 - Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.
 
