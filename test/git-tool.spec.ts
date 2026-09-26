@@ -9,10 +9,37 @@ import AgentSystemToolError from '../api/error.ts';
 import AgentSystemToolRegistry from '../api/registry.ts';
 import AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
-import { createGitTool } from '../tools/git/tool.ts';
+import { createGitTool, createGitToolDefinition } from '../tools/git/tool.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 describe('tools/git/tool', () => {
+  it('should declare openssh executables only for configured transport and signing', () => {
+    const definition = createGitToolDefinition();
+    const plain = definition.configuration.read({
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      git: {},
+    });
+    const ssh = definition.configuration.read({
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      git: { ssh: { privateKeys: [{ fromEnvironment: 'GIT_SSH_PRIVATE_KEY' }] } },
+    });
+    const signing = definition.configuration.read({
+      schemaVersion: 1,
+      agent: { id: 'data' },
+      git: { signing: { key: 'GIT_SIGNING_KEY' } },
+    });
+    assert.ok(plain && ssh && signing);
+    assert.deepEqual(definition.requiredExecutables?.(plain), []);
+    assert.deepEqual(definition.requiredExecutables?.(ssh), ['ssh-agent', 'ssh-add', 'ssh']);
+    assert.deepEqual(definition.requiredExecutables?.(signing), [
+      'ssh-agent',
+      'ssh-add',
+      'ssh-keygen',
+    ]);
+  });
+
   let root = '';
   let workspaceDir = '';
   let repositoryDir = '';
@@ -56,6 +83,7 @@ describe('tools/git/tool', () => {
     environmentCalls: string[] = [],
   ): AgentSystemToolRuntime {
     return new AgentSystemToolRuntime({
+      resolveExecutable: async (name) => `/usr/bin/${name}`,
       baseEnvironment: {
         HOME: '/home/runner',
         PATH: '/usr/bin',

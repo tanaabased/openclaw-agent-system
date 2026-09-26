@@ -84,10 +84,10 @@ cd "$GITHUB_WORKSPACE/examples/git/tanaabot/repository"
 "$GITHUB_WORKSPACE/bin/git" tag --message 'verify managed signing' agent-system-signing-test
 "$GITHUB_WORKSPACE/bin/git" verify-tag agent-system-signing-test
 
-# should report managed ssh dependencies as healthy
+# should find no missing managed git executables
 export GIT_SSH_PRIVATE_KEY="$(cat "$HOME/.ssh/big-test-bucket-ssh")"
 cd "$GITHUB_WORKSPACE/examples/git/tanaabot"
-openclaw agent-system doctor --json | jq -e '.findings | any(.component == "git" and .status == "healthy" and .code == "git-ssh-dependencies-ready")'
+openclaw agent-system doctor --json | jq -e '[.findings[] | select(.code == "tool-executables-unavailable" and (.component == "git" or .component == "git-worktree"))] | length == 0'
 
 # should authenticate with the same generated key used for signing
 export GIT_SSH_PRIVATE_KEY="$(cat "$HOME/.ssh/big-test-bucket-ssh")"

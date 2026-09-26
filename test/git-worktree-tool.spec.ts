@@ -64,6 +64,18 @@ function definitionFixture(options: { cleanupFails?: boolean; ssh?: boolean } = 
 }
 
 describe('tools/git/worktree-tool', () => {
+  it('should declare git and configured ssh transport requirements', () => {
+    const plain = definitionFixture();
+    const ssh = definitionFixture({ ssh: true });
+    assert.deepEqual(plain.definition.requiredExecutables?.(plain.declared), ['git']);
+    assert.deepEqual(ssh.definition.requiredExecutables?.(ssh.declared), [
+      'git',
+      'ssh-agent',
+      'ssh-add',
+      'ssh',
+    ]);
+  });
+
   it('should expose only prepare, list, and remove through one definition', async () => {
     const { configuration, declared, definition, events, scope } = definitionFixture();
 

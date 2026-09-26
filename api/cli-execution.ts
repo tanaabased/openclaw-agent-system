@@ -1,9 +1,8 @@
-import { join, resolve } from 'node:path';
-
 import type { Static, TSchema } from 'typebox';
 
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveToolWorkingDirectory from './resolve-working-directory.ts';
+import { excludedToolExecutableDirectories } from './executable-requirements.ts';
 import AgentSystemToolError from './error.ts';
 import type {
   AgentSystemCliResult,
@@ -208,11 +207,11 @@ export default async function executeAgentSystemCliTool<
         cwd: childWorkingDirectory,
         environment: childEnvironment,
         executable: options.definition.runner.executable,
-        excludedExecutableDirectories: [
-          join(workspaceDir, 'bin'),
-          ...(manifest.environment?.pathPrepend ?? []).map((path) => resolve(workspaceDir, path)),
-          ...(options.excludedExecutableDirectories ?? []),
-        ],
+        excludedExecutableDirectories: excludedToolExecutableDirectories(
+          manifest,
+          workspaceDir,
+          options.excludedExecutableDirectories,
+        ),
         maxOutputBytes: options.definition.runner.maxOutputBytes ?? 65_536,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(stdin === undefined ? {} : { stdin }),

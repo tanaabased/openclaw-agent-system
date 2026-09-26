@@ -83,6 +83,7 @@ function createRuntime(
   const logs = options.logs ?? [];
   const environmentCalls = options.environmentCalls ?? [];
   return new AgentSystemToolRuntime({
+    resolveExecutable: async (name) => `/usr/bin/${name}`,
     baseEnvironment: {
       HOME: '/home/runner',
       NO_COLOR: '1',
