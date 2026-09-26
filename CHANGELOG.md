@@ -1,39 +1,49 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Compatibility
+
+- Raised the minimum OpenClaw version to `2026.9.5`; built and tested against `2026.9.6`. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132) [#134](https://github.com/tanaabased/openclaw-agent-system/pull/134) [#164](https://github.com/tanaabased/openclaw-agent-system/pull/164)
+
 ### New Features
 
-- Added `status` as an alias for `openclaw agent-system doctor`. [#111](https://github.com/tanaabased/openclaw-agent-system/issues/111) [#114](https://github.com/tanaabased/openclaw-agent-system/pull/114)
+- Added a standalone Codex plugin with explicit workspace binding, shared skills, and trusted context refresh. [#138](https://github.com/tanaabased/openclaw-agent-system/issues/138) [#139](https://github.com/tanaabased/openclaw-agent-system/issues/139) [#145](https://github.com/tanaabased/openclaw-agent-system/pull/145) [#149](https://github.com/tanaabased/openclaw-agent-system/pull/149)
 - Added agent-bound `setup` steps with runtime filters, install confirmation, and check-only Doctor findings. [#64](https://github.com/tanaabased/openclaw-agent-system/issues/64) [#137](https://github.com/tanaabased/openclaw-agent-system/pull/137)
-- Added chat-approved install and Doctor tools with single-use consent bound to the active OpenClaw workspace and manifest. [#143](https://github.com/tanaabased/openclaw-agent-system/issues/143)
-- Added durable per-agent GitHub issue-work limits with stable queueing and visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117)
-- Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106)
-- Added runtime-aware Doctor and Install skills for the full OpenClaw lifecycle and standalone Codex setup. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140) [#141](https://github.com/tanaabased/openclaw-agent-system/issues/141)
-- Added shared model routing helpers and a skill, preserving explicit selections and reporting unresolved default use. [#158](https://github.com/tanaabased/openclaw-agent-system/issues/158)
-- Added standalone Codex plugin installation, skill discovery, explicit workspace binding, and trusted context refresh. [#138](https://github.com/tanaabased/openclaw-agent-system/issues/138) [#139](https://github.com/tanaabased/openclaw-agent-system/issues/139)
-- Added trusted Codex task routing from manifest model and effort tiers. [#142](https://github.com/tanaabased/openclaw-agent-system/issues/142)
+- Added chat-approved Install and Doctor tools with single-use consent bound to the active workspace and manifest. [#143](https://github.com/tanaabased/openclaw-agent-system/issues/143) [#144](https://github.com/tanaabased/openclaw-agent-system/pull/144)
+- Added manifest-managed memory search providers, agent-bound secret references, and readiness diagnostics. [#106](https://github.com/tanaabased/openclaw-agent-system/issues/106) [#107](https://github.com/tanaabased/openclaw-agent-system/pull/107)
+- Added per-agent GitHub issue-work limits with durable queueing and visible capacity. [#117](https://github.com/tanaabased/openclaw-agent-system/issues/117) [#136](https://github.com/tanaabased/openclaw-agent-system/pull/136)
+- Added runtime-aware Doctor and Install skills for OpenClaw lifecycle management and standalone Codex setup. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140) [#141](https://github.com/tanaabased/openclaw-agent-system/issues/141) [#155](https://github.com/tanaabased/openclaw-agent-system/pull/155) [#156](https://github.com/tanaabased/openclaw-agent-system/pull/156)
+- Added shared model and effort routing for OpenClaw and Codex, preserving overrides and reporting unresolved selections. [#142](https://github.com/tanaabased/openclaw-agent-system/issues/142) [#158](https://github.com/tanaabased/openclaw-agent-system/issues/158) [#157](https://github.com/tanaabased/openclaw-agent-system/pull/157) [#160](https://github.com/tanaabased/openclaw-agent-system/pull/160)
 - Allowed self-assignment when the agent's verified GitHub identity is explicitly approved. [#125](https://github.com/tanaabased/openclaw-agent-system/issues/125) [#129](https://github.com/tanaabased/openclaw-agent-system/pull/129)
 
 ### Bug Fixes
 
-- Allowed action references, scoped packages, and GitHub mentions in publications; surfaced assignment-publication failures privately. [#126](https://github.com/tanaabased/openclaw-agent-system/issues/126)
-- Allowed bare `git` and `gh` shims to use sanitized host executables outside agent scope while keeping strict launchers bound. [#148](https://github.com/tanaabased/openclaw-agent-system/issues/148)
-- Fixed Codex setup timeouts and cancellation after a parent exits with descendant output pipes still open.
-- Fixed Doctor rejecting available models when OpenClaw 2026.9.4 omits the `missing` flag. [#120](https://github.com/tanaabased/openclaw-agent-system/issues/120)
-- Fixed linked-install memory credentials on OpenClaw 2026.9.5 by using the discovered plugin root and matching SDK. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132)
-- Fixed source-linked memory secret resolution and prevented unrelated embedding probes from reporting readiness. [#108](https://github.com/tanaabased/openclaw-agent-system/issues/108)
+- Allowed action references, scoped packages, and GitHub mentions in publications; surfaced publication failures privately. [#126](https://github.com/tanaabased/openclaw-agent-system/issues/126) [#130](https://github.com/tanaabased/openclaw-agent-system/pull/130)
+- Allowed bare `git` and `gh` shims to use host executables outside agent scope while keeping managed launchers bound. [#148](https://github.com/tanaabased/openclaw-agent-system/issues/148) [#150](https://github.com/tanaabased/openclaw-agent-system/pull/150)
+- Allowed setup to clone into missing declared local repository paths using the agent's Git/GitHub identity. [#161](https://github.com/tanaabased/openclaw-agent-system/issues/161) [#162](https://github.com/tanaabased/openclaw-agent-system/pull/162)
+- Fixed Codex setup timeouts and cancellation when a parent exits while descendants still hold output pipes open. [#140](https://github.com/tanaabased/openclaw-agent-system/issues/140) [#159](https://github.com/tanaabased/openclaw-agent-system/pull/159)
+- Fixed Doctor rejecting available models when OpenClaw omits the `missing` flag. [#120](https://github.com/tanaabased/openclaw-agent-system/issues/120) [#121](https://github.com/tanaabased/openclaw-agent-system/pull/121)
+- Fixed linked-install memory credentials on OpenClaw `2026.9.5` by using the discovered plugin root and matching SDK. [#132](https://github.com/tanaabased/openclaw-agent-system/issues/132) [#134](https://github.com/tanaabased/openclaw-agent-system/pull/134)
+- Fixed source-linked memory secret resolution and prevented unrelated embedding probes from reporting readiness. [#108](https://github.com/tanaabased/openclaw-agent-system/issues/108) [#109](https://github.com/tanaabased/openclaw-agent-system/pull/109)
 - Fixed standalone Codex skills to use native Git and GitHub commands without advertising OpenClaw-only capabilities. [#139](https://github.com/tanaabased/openclaw-agent-system/issues/139) [#153](https://github.com/tanaabased/openclaw-agent-system/pull/153)
-- Made pull-request card references clickable and kept GitHub item links repository-explicit. [#123](https://github.com/tanaabased/openclaw-agent-system/issues/123)
+- Made pull-request card references clickable and kept GitHub item links repository-explicit. [#123](https://github.com/tanaabased/openclaw-agent-system/issues/123) [#127](https://github.com/tanaabased/openclaw-agent-system/pull/127)
 - Preserved Codex PATH baselines across installs; added `--rebuild-codex-path` for explicit replacement. [#151](https://github.com/tanaabased/openclaw-agent-system/issues/151) [#152](https://github.com/tanaabased/openclaw-agent-system/pull/152)
 
 ### Improvements
 
-- Added `bun run sync` to reconcile source dependencies, rebuild, and verify the memory secret provider. [#122](https://github.com/tanaabased/openclaw-agent-system/issues/122) [#131](https://github.com/tanaabased/openclaw-agent-system/pull/131)
-- Clarified that follow-up fixes never require rewriting published history. [#147](https://github.com/tanaabased/openclaw-agent-system/issues/147)
-- Exposed strict managed launchers through child-scoped `AGENT_SYSTEM_GIT` and `AGENT_SYSTEM_GH` bindings. [#147](https://github.com/tanaabased/openclaw-agent-system/issues/147)
-- Migrated CI and releases to shared Tanaab actions with independent repository, npm, and ClawHub publishers. [#118](https://github.com/tanaabased/openclaw-agent-system/issues/118)
-- Named new issue branches from public issue numbers and bounded titles while preserving worktree recovery. [#110](https://github.com/tanaabased/openclaw-agent-system/issues/110)
+- Added `status` as an alias for `openclaw agent-system doctor`. [#111](https://github.com/tanaabased/openclaw-agent-system/issues/111) [#114](https://github.com/tanaabased/openclaw-agent-system/pull/114)
+- Exposed managed launchers through child-scoped `AGENT_SYSTEM_GIT` and `AGENT_SYSTEM_GH` bindings. [#147](https://github.com/tanaabased/openclaw-agent-system/issues/147) [#154](https://github.com/tanaabased/openclaw-agent-system/pull/154)
+- Named new issue branches from public issue numbers and bounded titles while preserving worktree recovery. [#110](https://github.com/tanaabased/openclaw-agent-system/issues/110) [#115](https://github.com/tanaabased/openclaw-agent-system/pull/115)
+- Raised Doctor and Install skill tool-call budgets to ten minutes for OpenClaw-hosted Codex. [#167](https://github.com/tanaabased/openclaw-agent-system/pull/167)
 - Raised incoming GitHub comments to 8,000 characters by default, configurable through `githubNotifications.maxCommentCharacters`. [#124](https://github.com/tanaabased/openclaw-agent-system/issues/124) [#128](https://github.com/tanaabased/openclaw-agent-system/pull/128)
+- Split CLI, manifest, global configuration, Codex, and GitHub channel references into focused guides. [#159](https://github.com/tanaabased/openclaw-agent-system/pull/159)
 - Tightened Work guidance to require justified changes and avoid redundant documentation and tests. [#112](https://github.com/tanaabased/openclaw-agent-system/issues/112) [#113](https://github.com/tanaabased/openclaw-agent-system/pull/113)
+
+### Developer Notes
+
+- Added `bun run sync` to reconcile source dependencies, rebuild, and verify the memory secret provider. [#122](https://github.com/tanaabased/openclaw-agent-system/issues/122) [#131](https://github.com/tanaabased/openclaw-agent-system/pull/131)
+- Added bounded standalone Codex setup diagnostics under `RUNNER_DEBUG=1`. [#165](https://github.com/tanaabased/openclaw-agent-system/issues/165) [#166](https://github.com/tanaabased/openclaw-agent-system/pull/166)
+- Migrated CI and releases to shared Tanaab actions with independent repository, npm, and ClawHub publishers. [#118](https://github.com/tanaabased/openclaw-agent-system/issues/118) [#119](https://github.com/tanaabased/openclaw-agent-system/pull/119)
+- Pinned release preparation to the triggering commit across publication jobs. [#159](https://github.com/tanaabased/openclaw-agent-system/pull/159)
 
 ## v0.6.0 - [September 13, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.6.0)
 
