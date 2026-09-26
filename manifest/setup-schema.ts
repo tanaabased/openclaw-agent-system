@@ -53,6 +53,14 @@ const stepsSchema = Type.Object(
 );
 
 export const externalAgentSetupSchema = Type.Union([scriptSchema, shortSchema, stepsSchema]);
+export const externalSetupFileSchema = Type.Object(
+  { file: Type.String({ minLength: 1 }) },
+  { additionalProperties: false },
+);
+export const externalSetupDeclarationSchema = Type.Union([
+  externalAgentSetupSchema,
+  externalSetupFileSchema,
+]);
 
 export type AgentSetupShell = Static<typeof shellSchema>;
 export type AgentSetupRuntime = Static<typeof runtimeSchema>;

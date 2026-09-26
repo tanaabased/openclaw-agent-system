@@ -259,6 +259,31 @@ setup:
   apply: mkdir -p repos
 ```
 
+For a long declaration, `setup.file` may name one YAML file relative to the
+containing `agent.yaml`. The file contains the setup value itself, without a
+second `setup:` wrapper:
+
+```yaml
+# agent.yaml
+setup:
+  file: ./setup.yaml
+```
+
+```yaml
+# setup.yaml
+shell: bash
+steps:
+  - id: directories
+    check: test -d repos
+    apply: mkdir -p repos
+```
+
+The referenced file may use any inline setup form shown below: a scalar script,
+a short mapping, or named steps. `file` cannot be combined with inline fields or
+another file reference. Absolute paths, URLs, and paths escaping the workspace
+(including through symlinks) are rejected. Commands still run from the bound
+workspace, not from the setup file's directory.
+
 | Form                                                                | Meaning                                                                       |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `setup: mkdir -p repos` or a YAML block scalar                      | One unchecked `apply` script using `sh`                                       |

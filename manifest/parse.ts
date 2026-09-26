@@ -2,7 +2,11 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
-import { externalAgentSetupSchema, normalizeAgentSetup } from './setup-schema.ts';
+import {
+  externalSetupDeclarationSchema,
+  externalSetupFileSchema,
+  normalizeAgentSetup,
+} from './setup-schema.ts';
 import { decodeAgentSection, externalAgentSectionSchema } from './agent-schema.ts';
 import {
   decodeGoogleConfiguration,
@@ -82,7 +86,7 @@ const externalAgentManifestSchema = Type.Object(
     github: Type.Optional(externalGitHubSectionSchema),
     memory: Type.Optional(externalAgentMemorySchema),
     models: Type.Optional(externalAgentModelsSchema),
-    setup: Type.Optional(externalAgentSetupSchema),
+    setup: Type.Optional(externalSetupDeclarationSchema),
   },
   { additionalProperties: false },
 );
@@ -242,8 +246,10 @@ function decodeManifest(value: ExternalAgentManifest): AgentManifest {
   };
 }
 
-/** Parse one manifest without permitting YAML references, tags, or schema extensions. */
-export default function parseAgentManifest(source: string): ParsedAgentManifest {
+/** Parse YAML without permitting aliases, anchors, tags, or schema extensions. */
+export function parseManifestYaml(
+  source: string,
+): { status: 'valid'; value: unknown } | { status: 'invalid'; diagnostics: ManifestDiagnostic[] } {
   const document = parseDocument(source, {
     customTags: [],
     merge: false,
@@ -312,12 +318,45 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     };
   }
 
+  return { status: 'valid', value };
+}
+
+/** Parse one manifest without reading files or executing setup commands. */
+export default function parseAgentManifest(source: string): ParsedAgentManifest {
+  const yaml = parseManifestYaml(source);
+  if (yaml.status === 'invalid') return yaml;
+  const { value } = yaml;
+  const setupValue = isRecord(value) ? value['setup'] : undefined;
+  const setupFile =
+    isRecord(setupValue) && Object.hasOwn(setupValue, 'file') ? setupValue : undefined;
   const setup =
-    isRecord(value) && Object.hasOwn(value, 'setup')
-      ? normalizeAgentSetup(value['setup'])
+    isRecord(value) && Object.hasOwn(value, 'setup') && setupFile === undefined
+      ? normalizeAgentSetup(setupValue)
       : undefined;
+  const setupFileDiagnostics =
+    setupFile && !Value.Check(externalSetupFileSchema, setupFile)
+      ? Value.Errors(externalSetupFileSchema, setupFile).flatMap((error) => {
+          const path = `/setup${error.instancePath}`;
+          if (error.keyword === 'additionalProperties')
+            return error.params.additionalProperties.map((key) => ({
+              code: 'manifest-unknown-key',
+              fieldPath: `${path}/${pointerSegment(key)}`,
+              message: `Invalid setup file declaration at ${path}/${pointerSegment(key)}.`,
+              severity: 'error' as const,
+            }));
+          return [
+            {
+              code: 'manifest-schema',
+              fieldPath: path,
+              message: `Invalid setup file declaration at ${path}.`,
+              severity: 'error' as const,
+            },
+          ];
+        })
+      : [];
   const declarationDiagnostics = [
     ...(setup?.status === 'invalid' ? setup.diagnostics : []),
+    ...setupFileDiagnostics,
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
   ];
@@ -334,7 +373,7 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
           fieldPath === undefined ||
           (!declarationPaths.has(fieldPath) &&
             !(
-              setup?.status === 'invalid' &&
+              (setup?.status === 'invalid' || setupFileDiagnostics.length > 0) &&
               (fieldPath === '/setup' || fieldPath.startsWith('/setup/'))
             )),
       );
@@ -350,6 +389,7 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
       ...decodeManifest(value),
       ...(setup?.status === 'valid' ? { setup: setup.setup } : {}),
     },
+    ...(setupFile && typeof setupFile.file === 'string' ? { setupFile: setupFile.file } : {}),
     diagnostics: [],
   };
 }

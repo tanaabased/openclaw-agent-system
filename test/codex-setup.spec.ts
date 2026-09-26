@@ -36,19 +36,22 @@ describe('agent/codex-setup', () => {
   };
 
   it('should inspect and install only setup steps applicable to codex', async () => {
-    await manifest(`setup:
-  steps:
-    - id: shared
-      check: test -f .shared-ready
-      apply: touch .shared-ready
-    - id: codex-only
-      runtimes: [codex]
-      apply: touch .codex-applied
-    - id: openclaw-only
-      runtimes: [openclaw]
-      check: touch .openclaw-checked
-      apply: touch .openclaw-applied
-`);
+    await writeFile(
+      join(workspace, 'setup.yaml'),
+      `steps:
+  - id: shared
+    check: test -f .shared-ready
+    apply: touch .shared-ready
+  - id: codex-only
+    runtimes: [codex]
+    apply: touch .codex-applied
+  - id: openclaw-only
+    runtimes: [openclaw]
+    check: touch .openclaw-checked
+    apply: touch .openclaw-applied
+`,
+    );
+    await manifest('setup:\n  file: ./setup.yaml\n');
 
     const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
     assert.deepEqual(
@@ -201,5 +204,20 @@ describe('agent/codex-setup', () => {
       },
     );
     assert.match(await readFile(join(workspace, 'agent.yaml'), 'utf8'), /\n\n$/u);
+
+    await writeFile(
+      join(workspace, 'setup.yaml'),
+      "check: exit 1\napply: printf '\\n' >> setup.yaml\n",
+    );
+    await manifest('setup:\n  file: ./setup.yaml\n');
+    await assert.rejects(
+      installCodexSetup(pluginData, undefined, dependencies),
+      (error: unknown) => {
+        assert.ok(error instanceof CodexSetupError);
+        assert.equal(error.code, 'codex-setup-stale');
+        return true;
+      },
+    );
+    assert.match(await readFile(join(workspace, 'setup.yaml'), 'utf8'), /\n\n$/u);
   });
 });
