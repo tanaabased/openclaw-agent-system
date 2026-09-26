@@ -109,14 +109,16 @@ Request approval, then inspect the active workspace without applying repairs.
 
 ### Parameters
 
-No parameters. Pass an empty object; unknown fields are rejected.
+| Parameter   | Type    | Required | Default      | Description                                                                                          |
+| ----------- | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `timeoutMs` | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
 ### Usage
 
 Inspect the active agent and run its applicable setup checks:
 
 ```json
-{}
+{ "timeoutMs": 600000 }
 ```
 
 The tool returns status, findings, and remediation.

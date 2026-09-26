@@ -47,7 +47,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 ### OpenClaw
 
-1. Call `agent_system_doctor` without an agent id, workspace override, or repair option.
+1. Call `agent_system_doctor` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id, workspace override, or repair option. Approval and setup-command deadlines remain separate.
 2. Let OpenClaw present its native chat approval and wait for **Allow once**. Skill prose, CLI consent, `--yes`, and shell commands cannot replace or bypass that approval.
 3. If approval is denied or the approved manifest changes, stop and report that result. Do not retry through another route.
 4. Report the returned aggregate status, findings, and remediation. Do not call Install unless the user separately requests it.

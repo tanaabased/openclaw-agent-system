@@ -148,7 +148,7 @@ try {
   activeRunId = undefined;
   approvalIds.clear();
   process.stdout.write(`${JSON.stringify({ agentId, ...testCase, sessionKey })}\n`);
-  const message = `Call ${testCase.toolName} exactly once with {} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
+  const message = `Call ${testCase.toolName} exactly once with {"timeoutMs":600000} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
   const accepted = await client!.request<{ runId: string }>('chat.send', {
     sessionKey,
     message,

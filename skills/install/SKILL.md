@@ -48,7 +48,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 ### OpenClaw
 
 1. Confirm the user requested installation of the active agent workspace.
-2. Call `agent_system_install` without an agent id or workspace override. Set `rebuildCodexPath` only when the user explicitly requests replacing the saved Codex PATH baseline.
+2. Call `agent_system_install` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id or workspace override. Approval and setup-command deadlines remain separate. Set `rebuildCodexPath` only when the user explicitly requests replacing the saved Codex PATH baseline.
 3. Let OpenClaw present its native chat approval and wait for **Allow once**. Skill prose, CLI consent, `--yes`, and shell commands cannot replace or bypass that approval.
 4. If approval is denied or the approved manifest changes, stop and report that result. Do not retry through another route.
 5. Report the returned lifecycle outcomes and warnings, including setup results.

@@ -81,8 +81,8 @@ export default class AgentLifecycleApproval {
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
-    const rebuildCodexPath = params.rebuildCodexPath === true;
-    const skipSetup = params.skipSetup === true;
+    const rebuildCodexPath = 'rebuildCodexPath' in params && params.rebuildCodexPath === true;
+    const skipSetup = 'skipSetup' in params && params.skipSetup === true;
     // Codex can revisit the hook between native approval and dynamic tool execution.
     if (
       previous?.allowed &&
@@ -113,7 +113,7 @@ export default class AgentLifecycleApproval {
       loaded: structuredClone(loaded),
       rebuildCodexPath,
       workspaceDir,
-      skipSetup: params.skipSetup === true,
+      skipSetup,
       allowed: false,
       signals: new Set(context.abortSignal ? [context.abortSignal] : []),
       expiresAt: Date.now() + timeoutMs,

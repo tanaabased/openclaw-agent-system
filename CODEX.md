@@ -89,8 +89,8 @@ bun run codex:check
 ```
 
 Start a fresh task to verify skill discovery. `package.json#codexTools.managedPaths`
-defines the installed payload; it excludes OpenClaw runtime source, tests,
-examples, and scenarios.
+selects the paths owned by cache synchronization and checks; it does not control
+what native Codex copies during installation.
 
 For packaged installation and discovery checks, run `bun run test:codex-plugin`
 with `AGENT_SYSTEM_PACKAGE` set to a prepared npm tarball. The release-test

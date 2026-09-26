@@ -39,33 +39,39 @@ for consent lifetime, cancellation, and supported chat surfaces.
 
 ### Parameters
 
-| Parameter          | Type    | Required | Default | Description                                                          |
-| ------------------ | ------- | -------- | ------- | -------------------------------------------------------------------- |
-| `skipSetup`        | boolean | no       | `false` | Skip every setup check and apply; reconcile other components.        |
-| `rebuildCodexPath` | boolean | no       | `false` | Replace the saved Codex PATH baseline with the invoking environment. |
+| Parameter          | Type    | Required | Default      | Description                                                                                          |
+| ------------------ | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `skipSetup`        | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
+| `rebuildCodexPath` | boolean | no       | `false`      | Replace the saved Codex PATH baseline with the invoking environment.                                 |
+| `timeoutMs`        | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
 ### Usage
 
 Install the declared configuration and applicable setup:
 
 ```json
-{}
+{ "timeoutMs": 600000 }
 ```
 
 Install other components while skipping setup:
 
 ```json
-{ "skipSetup": true }
+{ "skipSetup": true, "timeoutMs": 600000 }
 ```
 
 Replace the saved Codex PATH baseline:
 
 ```json
-{ "rebuildCodexPath": true }
+{ "rebuildCodexPath": true, "timeoutMs": 600000 }
 ```
 
-Both optional parameters may be combined. The approval description identifies
+The optional parameters may be combined. The approval description identifies
 setup scope and any requested PATH rebuild before execution.
+
+Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
+Codex). This argument does not extend the two-minute approval window or
+[setup-command timeouts](../../MANIFEST.md#setup). Other harnesses retain their
+own execution limits.
 
 The tool returns structured installation outcomes and warnings. Installation may
 resolve declared credentials, change configuration, and run setup commands.

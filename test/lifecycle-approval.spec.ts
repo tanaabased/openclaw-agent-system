@@ -165,29 +165,35 @@ describe('agent/lifecycle-approval', () => {
       assert.ok(native && !Array.isArray(native));
       assert.equal(native.name, name);
       assert.equal(Value.Check(native.parameters, {}), true);
+      const params = { timeoutMs: 600_000 };
+      assert.equal(Value.Check(native.parameters, params), true);
+      for (const timeoutMs of [0, -1, 1.5, 600_001, '600000']) {
+        assert.equal(Value.Check(native.parameters, { timeoutMs }), false);
+      }
       assert.equal(Value.Check(native.parameters, { agent: 'other' }), false);
       assert.equal(
         Value.Check(native.parameters, { skipSetup: true }),
         name === 'agent_system_install',
       );
-      await assert.rejects(native.execute('call', {}, f.controller.signal), {
+      await assert.rejects(native.execute('call', params, f.controller.signal), {
         code: 'approval_denied',
       });
       assert.deepEqual(f.calls, []);
-      const request = await f.request(name, {}, f.context);
+      const request = await f.request(name, params, f.context);
+      assert.equal(request.requireApproval.timeoutMs, 120_000);
       assert.deepEqual(request.requireApproval.allowedDecisions, ['allow-once', 'deny']);
       assert.ok(request.requireApproval.description.includes(f.root));
       assert.ok(request.requireApproval.description.includes('data'));
       assert.deepEqual(f.calls, []);
       request.requireApproval.onResolution('allow-once');
-      await native.execute('call', {}, f.controller.signal);
+      await native.execute('call', params, f.controller.signal);
       assert.deepEqual(
         f.calls,
         name === 'agent_system_install'
           ? ['credentials', 'reconcile', 'inspect', 'check-approved']
           : ['inspect', 'check-approved'],
       );
-      await assert.rejects(native.execute('call', {}, f.controller.signal), {
+      await assert.rejects(native.execute('call', params, f.controller.signal), {
         code: 'approval_denied',
       });
     });
