@@ -103,6 +103,46 @@ describe('channels/github/runtime/lifecycle-contribution', () => {
     ]);
   });
 
+  it('should reject duplicate pull request recipients without changing actor admission', () => {
+    const contribution = createNotificationLifecycleContribution({
+      hookAccess: healthyHookAccess,
+      routingService: {
+        async inspect() {
+          throw new Error('not used');
+        },
+        async reconcile() {
+          throw new Error('not used');
+        },
+      },
+    });
+    const configured: AgentManifest = {
+      ...manifest,
+      github: {
+        ...manifest.github,
+        notifications: {
+          ...manifest.github?.notifications,
+          assignmentTypes: ['issue'],
+          approvedActors: [{ login: 'pirog', nodeId: 'U_1' }],
+          intervalMinutes: 5,
+          maxConcurrentIssues: 2,
+          pullRequest: {
+            assignees: [
+              { login: 'reviewer', nodeId: 'U_2' },
+              { login: 'Reviewer', nodeId: 'U_3' },
+            ],
+            reviewers: [],
+          },
+        },
+      },
+    };
+    assert.equal(
+      contribution
+        .validate?.({ manifest: configured, workspaceDir: '/workspace/data' })
+        ?.diagnostics?.some(({ code }) => code === 'github-notification-recipient-duplicate'),
+      true,
+    );
+  });
+
   it('should report healthy, drifted, and conflicting routing state', async () => {
     let kind: 'conflict' | 'noop' | 'upsert' = 'noop';
     const contribution = createNotificationLifecycleContribution({

@@ -28,6 +28,42 @@ Declare `github.notifications` in the workspace manifest; see the
 | `initial-mode`                     | no       | `work`                  | `guided` or `work`                       |
 | `interval-minutes`                 | no       | `5`                     | Integer from `1` through `1440`          |
 | `max-concurrent-issues`            | no       | `2`                     | Positive integer                         |
+| `pull-request`                     | no       | see below               | Delivery PR assignees and reviewers      |
+
+### `github.notifications.pull-request`
+
+Controls recipients on pull requests created or recovered by issue Work delivery.
+It does not affect direct `gh` pull requests or grant authority to direct the agent.
+
+| Field       | Type                              | Required | Default            | Description                                                                                                               |
+| ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `assignees` | `assignment-actor` or pinned list | no       | `assignment-actor` | Add the admitted assigning actor, or replace that choice with up to ten pinned users. `[]` disables automatic assignment. |
+| `reviewers` | pinned list                       | no       | `[]`               | Request reviews from eligible users. Assignment alone does not request review.                                            |
+
+Each pinned user has `login` and `node-id`, as in `approved-actors`. The login
+must still resolve to that node ID at delivery. Duplicate identities within a
+list are invalid. GitHub eligibility applies; the agent cannot review its own
+PR. The same person may be both assignee and reviewer. Recipients need not be
+`approved-actors`: receiving a PR never grants assignment or comment authority.
+Existing assignees, review requests, and CODEOWNERS behavior are preserved.
+
+```yaml
+github:
+  notifications:
+    approved-actors:
+      - login: pirog
+        node-id: U_kgDOB9x7Qw
+    pull-request:
+      reviewers:
+        - login: reviewer
+          node-id: REPLACE_WITH_REAL_GITHUB_NODE_ID
+```
+
+Omitting `pull-request` or either field retains its default. This changes the
+default PR assignee from the issue author to the actor whose admitted assignment
+started the work; a missing actor identity fails delivery rather than falling
+back to the author. An interrupted handoff reuses its PR and reconciles only
+missing recipients, without re-requesting a submitted review.
 
 ### `github.notifications.assignment-types`
 

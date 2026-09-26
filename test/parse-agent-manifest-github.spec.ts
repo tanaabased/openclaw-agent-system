@@ -130,7 +130,26 @@ github:
       initialMode: 'work',
       intervalMinutes: 5,
       maxConcurrentIssues: 2,
+      pullRequest: { assignees: 'assignment-actor', reviewers: [] },
     });
+  });
+
+  it('should parse pull request recipient overrides and reject more than ten assignees', () => {
+    const prefix = `\nschema-version: 1\nagent:\n  id: data\ngithub:\n  notifications:\n    approved-actors:\n      - login: pirog\n        node-id: U_actor\n    pull-request:\n`;
+    const result = parseAgentManifest(
+      `${prefix}      assignees: []\n      reviewers:\n        - login: reviewer\n          node-id: U_reviewer\n`,
+    );
+    assert.equal(result.status, 'valid');
+    if (result.status === 'valid')
+      assert.deepEqual(result.manifest.github?.notifications?.pullRequest, {
+        assignees: [],
+        reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
+      });
+    const assignees = Array.from(
+      { length: 11 },
+      (_, index) => `        - login: user${index}\n          node-id: U_${index}`,
+    ).join('\n');
+    assert.equal(parseAgentManifest(`${prefix}      assignees:\n${assignees}\n`).status, 'invalid');
   });
 
   it('should parse a guided github notification initial mode', () => {
