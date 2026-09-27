@@ -214,21 +214,20 @@ per-list permission. A separate project avoids [combined authorization](https://
 with the production app. The reviewed GoG version disables incremental inclusion
 when `--readonly` is selected.
 
-Put the same three named values in the existing test 1Password environment
+Put the four named values (`GOG_ACCOUNT`, `GOG_CREDENTIALS_JSON_B64`,
+`GOG_TOKEN_JSON_B64`, and `GOG_KEYRING_PASSWORD`) in the existing test 1Password environment
 `jglytdfegfggijqkalco2cxexa`, which is already used by repository 1Password tests.
 The repository secret `TANAAB_OP_TESTVAULT` supplies the service account; confirm it
 can read these environment values. The test job does not need Google passwords,
 `gcloud`, a model key, or extra project/client-ID/client-secret fields.
 
-Manually run **Example tests** with `google-account` set to Emori's actual email
-and choose the reviewed branch. The dispatch runs only the
-[live Tasks scenario](../../examples/tool/google-live/README.md); normal PR jobs
-keep fake Google fixtures. It imports into a fresh runner `GOG_HOME`, verifies
-identity, confirms unchanged installation, and reads one task list through the
-managed tool. Assertions discard task data, and cleanup removes the runner store.
-Run it after populating the secrets; this guide does not claim live authorization
-has already passed. GitHub must recognize the dispatch-enabled workflow before
-its manual trigger is available.
+The normal PR example matrix runs the
+[Google Tasks scenario](../../examples/google/README.md) on macOS and Linux. It
+imports into a fresh agent-specific `GOG_HOME`, verifies identity, confirms
+unchanged installation, and reads one task list through the managed tool.
+Assertions discard task data, and the ephemeral runner removes its store.
+The scenario runs after the test environment is populated; this guide does not
+claim live authorization has already passed.
 
 ## `agent_system_google`
 

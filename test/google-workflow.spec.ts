@@ -10,32 +10,45 @@ const Leia = createRequire(import.meta.url)('@lando/leia') as new () => {
   parse(files: string[]): Array<{ tests: Record<string, Array<{ command: string }>> }>;
 };
 
-describe('google live workflow', () => {
-  it('should reserve live credential access for manual dispatch without a model', async () => {
+describe('google example workflow', () => {
+  it('should run live tasks through the standard example matrix without a model', async () => {
     const workflow = parse(await readFile('.github/workflows/pr-examples-tests.yml', 'utf8'));
-    assert.equal(workflow.jobs.examples.if, "github.event_name == 'pull_request'");
-    assert.equal(workflow.jobs['google-live'].if, "github.event_name == 'workflow_dispatch'");
-    assert.equal(workflow.on.workflow_dispatch.inputs['google-account'].required, true);
+    assert.ok(workflow.on.pull_request !== undefined);
+    assert.equal(workflow.on.workflow_dispatch, undefined);
+    assert.deepEqual(Object.keys(workflow.jobs), ['examples']);
+    assert.ok(workflow.jobs.examples.strategy.matrix.example.includes('google'));
+    assert.deepEqual(workflow.jobs.examples.strategy.matrix.os, ['macos-26', 'ubuntu-24.04']);
     assert.equal(workflow.permissions.contents, 'read');
-    const live = workflow.jobs['google-live'].steps.find(
-      (step: { name: string }) => step.name === 'Run live Tasks example',
+    const steps = workflow.jobs.examples.steps as Array<{
+      name: string;
+      if?: string;
+      env?: Record<string, string>;
+      run?: string;
+    }>;
+    const install = steps.find((step) => step.name === 'Install reviewed GoG');
+    assert.equal(install?.if, "matrix.example == 'google'");
+    assert.match(install?.run ?? '', /gogcli_0\.42\.0_darwin_arm64/u);
+    assert.match(install?.run ?? '', /gogcli_0\.42\.0_linux_amd64/u);
+    const run = steps.find((step) => step.name === 'Run Leia-backed example');
+    assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
+    assert.equal(
+      run?.run,
+      'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
     );
-    assert.equal(live.env.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
-    assert.equal(live.env.GOG_HOME, '${{ runner.temp }}/google-live-gog');
-    assert.ok(!Object.keys(live.env).some((key) => /MODEL|OPENAI/u.test(key)));
-    const fixture = parseAgentManifest(
-      await readFile('examples/tool/google-live/agent.yaml', 'utf8'),
-    );
+    const fixture = parseAgentManifest(await readFile('examples/google/agent.yaml', 'utf8'));
     assert.equal(fixture.status, 'valid');
     if (fixture.status !== 'valid') throw new Error();
     assert.equal(fixture.manifest.google?.credentialEncoding, 'base64');
     assert.equal(fixture.manifest.google?.account, undefined);
+    assert.deepEqual(fixture.manifest.agent.email, { fromEnvironment: 'GOG_ACCOUNT' });
+    assert.deepEqual(fixture.manifest.environment?.op, ['jglytdfegfggijqkalco2cxexa']);
     assert.deepEqual(fixture.manifest.environment?.required, [
+      'GOG_ACCOUNT',
       'GOG_CREDENTIALS_JSON_B64',
       'GOG_TOKEN_JSON_B64',
       'GOG_KEYRING_PASSWORD',
     ]);
-    const suites = new Leia().parse([resolve('examples/tool/google-live/README.md')]);
+    const suites = new Leia().parse([resolve('examples/google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)
       .flat()

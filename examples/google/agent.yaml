@@ -2,12 +2,11 @@ schema-version: 1
 agent:
   id: google-live
   email:
-    from-environment: GOG_TEST_ACCOUNT
+    from-environment: GOG_ACCOUNT
 environment:
   op: jglytdfegfggijqkalco2cxexa
-  set:
-    GOG_TEST_ACCOUNT: '${GOG_TEST_ACCOUNT}'
   required:
+    - GOG_ACCOUNT
     - GOG_CREDENTIALS_JSON_B64
     - GOG_TOKEN_JSON_B64
     - GOG_KEYRING_PASSWORD

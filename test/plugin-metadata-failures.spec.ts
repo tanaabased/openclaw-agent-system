@@ -126,9 +126,15 @@ const manifest: PluginManifest = {
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'agent_system_google',
       'agent_system_github_reply',
     ],
-    trustedToolPolicies: ['agent-system.git', 'agent-system.git-worktree', 'agent-system.github'],
+    trustedToolPolicies: [
+      'agent-system.git',
+      'agent-system.git-worktree',
+      'agent-system.github',
+      'agent-system.google',
+    ],
   },
   skills: ['./skills'],
   configSchema: {
