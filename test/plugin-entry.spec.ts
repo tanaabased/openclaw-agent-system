@@ -145,6 +145,7 @@ describe('index', () => {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_github_reply',
+      'agent_system_github_task_pr',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',

@@ -282,14 +282,13 @@ selection fails closed instead of falling back to a different prompt.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
-- **Pull-request handoff:** Successful issue delivery checkpoints the pull request
+- **Pull-request handoff:** Automatic Work delivery or an explicit issue-owned
+  task-PR publication checkpoints the pull request
   as the delivery comment source, preserves recorded revisions, and leaves eligible
   unseen comments actionable after handoff while baselining ineligible history. It records one
   private card through the registered `pull-request-opened` model turn, retains
   its private response in the issue-owned session, and publishes one deterministic
-  handoff comment to the owning issue. A verified agent-created PR on the exact
-  managed branch may enter the same handoff after Work recovery; that checkpoint
-  remains distinct from completed automatic delivery.
+  handoff comment to the owning issue.
 - **Comments:** An admitted comment enters as an attributed direct-message card
   in the existing session and inherits its lifecycle type, current mode, and
   capability. The event presentation replaces only admitted account mentions,

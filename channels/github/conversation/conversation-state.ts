@@ -69,7 +69,7 @@ export type GitHubNotificationAssignmentAcknowledgmentState =
   GitHubNotificationPublicationPendingState | GitHubNotificationPublicationPublishedState;
 
 export interface GitHubNotificationImplementationState {
-  status: 'completed' | 'delivery-pending' | 'pending' | 'recovery-linked';
+  status: 'completed' | 'delivery-pending' | 'pending';
 }
 
 export interface GitHubNotificationCommentRevisionState {
@@ -318,8 +318,7 @@ function validImplementation(
     onlyKeys(value, ['status']) &&
     (value.status === 'pending' ||
       value.status === 'completed' ||
-      (schemaVersion >= 6 && value.status === 'delivery-pending') ||
-      (schemaVersion >= 7 && value.status === 'recovery-linked'))
+      (schemaVersion >= 6 && value.status === 'delivery-pending'))
   );
 }
 
@@ -332,9 +331,7 @@ function validImplementationRelationship(
   if (!validImplementation(implementation, schemaVersion) || !record(assignmentResponse)) {
     return false;
   }
-  return implementation.status === 'completed' ||
-    implementation.status === 'delivery-pending' ||
-    implementation.status === 'recovery-linked'
+  return implementation.status === 'completed' || implementation.status === 'delivery-pending'
     ? assignmentResponse.status === 'published'
     : assignmentResponse.status === 'pending' || assignmentResponse.status === 'published';
 }

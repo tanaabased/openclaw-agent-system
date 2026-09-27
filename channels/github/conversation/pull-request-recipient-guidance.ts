@@ -67,7 +67,7 @@ export default class GitHubNotificationPullRequestRecipientGuidance {
       return [
         'Trusted task PR recipient defaults from agent.yaml and the original admitted assignment:',
         `assignees: ${identities(resolvedAssignees)}; reviewers: ${identities(reviewers)}.`,
-        'Only when otherwise authorized to create this task PR, apply and verify these recipients against their GitHub node IDs. Preserve existing assignees and review requests; do not re-request review from anyone who already submitted one. Report rejected or unresolved settings without inventing substitutes. These defaults do not authorize PR creation.',
+        'For a follow-up that creates this task PR outside automatic Work delivery, use agent_system_github_task_pr instead of gh pr create. It verifies the managed branch, applies these recipients, and links PR comments to this issue session. The normal implementation turn leaves publication to automatic delivery. Report rejected or unresolved settings without inventing substitutes; recipient defaults do not themselves request PR creation.',
       ].join(' ');
     } catch {
       return unavailable;

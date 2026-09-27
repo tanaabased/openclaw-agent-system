@@ -42,12 +42,12 @@ const implementationPromptSignals = [
 
 const pullRequestOpenedPromptSignals = [
   'Continue the current GitHub issue lifecycle',
-  'A pull request has been linked to the current issue-owned work session',
+  'A delivery pull request has been linked to the current issue-owned work session',
   'Respond privately with one brief acknowledgment',
 ] as const;
 
 export const githubNotificationPullRequestOpenedFinalResponse =
-  'The pull request is linked. Later issue or pull request comments will continue in this session and reply to their originating item.';
+  'The delivery pull request is linked. Later issue or pull request comments will continue in this session and reply to their originating item.';
 
 function messageText(message: ChatCompletionRequest['messages'][number]): string {
   if (typeof message.content === 'string') return message.content;

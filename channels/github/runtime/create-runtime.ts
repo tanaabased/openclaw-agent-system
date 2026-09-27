@@ -63,6 +63,7 @@ import createGitHubNotificationMessageAdapter from '../publication/message-adapt
 import GitHubNotificationPublicationLeaseStore from '../publication/publication-lease.ts';
 import GitHubNotificationReplyCandidateStore from '../publication/reply-candidate-store.ts';
 import createGitHubNotificationReplyTool from '../publication/reply-tool.ts';
+import createGitHubNotificationTaskPullRequestTool from '../publication/task-pull-request-tool.ts';
 import NotificationRoutingReceiptStore from '../routing/receipt-store.ts';
 import NotificationRoutingService, {
   type NotificationRoutingServiceDependencies,
@@ -165,6 +166,13 @@ export default function createGitHubNotificationRuntime(
   });
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
   let recipientGuidance: GitHubNotificationPullRequestRecipientGuidance | undefined;
+  const taskPullRequestServices: {
+    current?: {
+      authority: GitHubNotificationAssignmentProvider;
+      delivery: GitHubNotificationIssueDeliveryService;
+      handoff: GitHubNotificationPullRequestHandoffService;
+    };
+  } = {};
   const modelRouting = new ModelRoutingService({
     runtime: dependencies.modelRoutingRuntime,
     conversations: conversationStateStore,
@@ -238,6 +246,11 @@ export default function createGitHubNotificationRuntime(
       turnSelector,
       dependencies.replyToolLogger,
     ),
+    taskPullRequestTool: createGitHubNotificationTaskPullRequestTool({
+      conversations: conversationStateStore,
+      monitor: monitorStateStore,
+      services: () => taskPullRequestServices.current,
+    }),
     assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
       recipientGuidance = new GitHubNotificationPullRequestRecipientGuidance({
         conversations: conversationStateStore,
@@ -279,7 +292,6 @@ export default function createGitHubNotificationRuntime(
       );
       const pullRequestHandoffService = new GitHubNotificationPullRequestHandoffService({
         assignmentAuthority: assignmentProvider,
-        recoveryAuthority: assignmentProvider,
         conversationStateStore,
         coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
@@ -288,6 +300,16 @@ export default function createGitHubNotificationRuntime(
         resolveNotificationRoute: resolveRoute,
         turnContracts,
       });
+      const issueDeliveryService = new GitHubNotificationIssueDeliveryService({
+        accountClient: dependencies.accountClient,
+        git,
+        manifestService,
+      });
+      taskPullRequestServices.current = {
+        authority: assignmentProvider,
+        delivery: issueDeliveryService,
+        handoff: pullRequestHandoffService,
+      };
       const assignmentSessionService = new GitHubNotificationAssignmentSessionService({
         modelRouting,
         async readModels(input) {
@@ -305,11 +327,7 @@ export default function createGitHubNotificationRuntime(
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
         coordinator: turnCoordinator,
-        deliveries: new GitHubNotificationIssueDeliveryService({
-          accountClient: dependencies.accountClient,
-          git,
-          manifestService,
-        }),
+        deliveries: issueDeliveryService,
         handoffs: pullRequestHandoffService,
         logger: dependencies.lifecycleLogger,
         publications: commentPublicationService,
@@ -342,7 +360,6 @@ export default function createGitHubNotificationRuntime(
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
-        handoffs: pullRequestHandoffService,
         initialModeId: async (input) => (await initialMode(input)).policy.id,
         lifecycles: lifecycleRegistry,
         logger: dependencies.lifecycleLogger,

@@ -21,7 +21,6 @@ import {
 } from './work-event-api-client.ts';
 import type {
   GitHubAssignedItemDiscovery,
-  GitHubManagedPullRequestPage,
   GitHubNotificationIntakeClient,
 } from './work-event-types.ts';
 import {
@@ -48,42 +47,6 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
 
   get identity(): GitHubIdentity {
     return this.#api.identity;
-  }
-
-  async listPullRequestsForBranch(
-    owner: string,
-    name: string,
-    branch: string,
-  ): Promise<GitHubManagedPullRequestPage> {
-    const head = `${owner}:${githubResponseGitRef(branch, 'managed branch')}`;
-    const response = await this.#api.request(
-      [
-        '--method',
-        'GET',
-        `${githubRepositoryEndpoint(owner, name)}/pulls`,
-        '-f',
-        'state=all',
-        '-f',
-        `head=${head}`,
-        '-F',
-        `per_page=${pageSize}`,
-        '--jq',
-        '[.[]|{number}]',
-      ],
-      'managed-branch pull requests',
-    );
-    if (!Array.isArray(response.value)) {
-      throw new Error('GitHub returned invalid managed-branch pull requests.');
-    }
-    return {
-      numbers: response.value.map((value) =>
-        githubResponsePositiveInteger(
-          githubResponseRecord(value, 'managed-branch pull request').number,
-          'managed-branch pull request number',
-        ),
-      ),
-      truncated: response.hasNextPage,
-    };
   }
 
   async discoverAssigned(

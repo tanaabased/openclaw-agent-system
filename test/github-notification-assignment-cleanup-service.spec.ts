@@ -30,7 +30,7 @@ const config: OpenClawConfig = {
 function fixture(
   options: {
     active?: boolean;
-    implementation?: 'completed' | 'pending' | 'recovery-linked';
+    implementation?: 'completed' | 'pending';
     session?: 'archived' | 'failed' | 'missing' | 'pinned';
     worktree?: 'dirty' | 'failed' | 'missing' | 'removed' | 'unsafe';
   } = {},
@@ -119,12 +119,6 @@ describe('channels/github/intake/assignment-cleanup-service', () => {
       status: 'completed',
       worktree: 'removed',
     });
-    assert.equal(test.cleanupCalls(), 1);
-  });
-
-  it('should clean a retired recovery-linked work session', async () => {
-    const test = fixture({ implementation: 'recovery-linked' });
-    assert.equal((await test.service.cleanup(test.input)).status, 'completed');
     assert.equal(test.cleanupCalls(), 1);
   });
 

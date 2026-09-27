@@ -88,7 +88,7 @@ describe('channels/github/events/presentation', () => {
         '',
         '- **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
         '- **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
-        '- **Comment flow:** This issue and its linked pull request share this session; each reply returns to its originating item.',
+        '- **Comment flow:** This issue and its delivery pull request share this session; each reply returns to its originating item.',
       ].join('\n'),
     );
     const publicText = githubNotificationPullRequestHandoffComment(45);

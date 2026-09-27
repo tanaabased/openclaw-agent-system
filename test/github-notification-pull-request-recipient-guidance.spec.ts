@@ -95,9 +95,8 @@ describe('channels/github/conversation/pull-request-recipient-guidance', () => {
     assert.match(instructions, /assignees: @pirog \(node ID U_actor\)/u);
     assert.match(instructions, /reviewers: none/u);
     assert.doesNotMatch(instructions, /comment-revision.*assignee/u);
-    assert.match(instructions, /Only when otherwise authorized/u);
-    assert.match(instructions, /Preserve existing assignees and review requests/u);
-    assert.match(instructions, /do not re-request review/u);
+    assert.match(instructions, /use agent_system_github_task_pr instead of gh pr create/u);
+    assert.match(instructions, /normal implementation turn leaves publication to automatic delivery/u);
     assert.match(instructions, /Report rejected or unresolved settings/u);
   });
 

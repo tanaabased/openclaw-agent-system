@@ -57,8 +57,7 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
   deliveries: Pick<GitHubNotificationIssueDeliveryService, 'deliver'>;
-  handoffs: Pick<GitHubNotificationPullRequestHandoffService, 'checkpoint' | 'reconcile'> &
-    Partial<Pick<GitHubNotificationPullRequestHandoffService, 'recover'>>;
+  handoffs: Pick<GitHubNotificationPullRequestHandoffService, 'checkpoint' | 'reconcile'>;
   logger: Logger;
   publications: Pick<GitHubNotificationCommentPublicationService, 'publish'>;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
@@ -117,8 +116,7 @@ interface AssignmentImplementationInput {
 function handoffPending(conversation: GitHubNotificationConversation): boolean {
   const source = conversation.deliveryPullRequest;
   return Boolean(
-    (conversation.implementation?.status === 'completed' ||
-      conversation.implementation?.status === 'recovery-linked') &&
+    conversation.implementation?.status === 'completed' &&
     source?.status === 'open' &&
     (!source.baselineEstablished ||
       !source.eventRecorded ||
@@ -133,9 +131,6 @@ function sessionOutcome(
   if (conversation.implementation?.status === 'delivery-pending') return { status: 'active' };
   if (conversation.implementation?.status === 'completed') {
     return { reasonCode: 'github-notification-pull-request-delivered', status: 'waiting' };
-  }
-  if (conversation.implementation?.status === 'recovery-linked') {
-    return { reasonCode: 'github-notification-pull-request-recovery-linked', status: 'waiting' };
   }
   if (conversation.assignmentResponse?.status === 'withheld') {
     return { reasonCode: conversation.assignmentResponse.reasonCode, status: 'waiting' };
@@ -246,30 +241,22 @@ export default class GitHubNotificationAssignmentSessionService {
         reconciled.conversation.assignmentResponse?.status === 'published' &&
         reconciled.conversation.implementation?.status === 'pending'
       ) {
-        if (!(await this.#recoverHandoff(input))) {
-          const contextInput = await this.#context(input);
-          const projection = assignmentSupport.session.project(contextInput);
-          await this.#implement({
-            assignmentEventId,
-            config,
-            conversationId,
-            lifecycleContext: input.lifecycle.context.project(contextInput),
-            projectionTimestamp: projection.timestamp,
-            repository,
-            route,
-            session: input,
-          });
-        }
+        const contextInput = await this.#context(input);
+        const projection = assignmentSupport.session.project(contextInput);
+        await this.#implement({
+          assignmentEventId,
+          config,
+          conversationId,
+          lifecycleContext: input.lifecycle.context.project(contextInput),
+          projectionTimestamp: projection.timestamp,
+          repository,
+          route,
+          session: input,
+        });
       } else if (reconciled.conversation.implementation?.status === 'delivery-pending') {
-        if (!(await this.#recoverHandoff(input))) {
-          await this.#deliver(input, conversationId, repository);
-        }
+        await this.#deliver(input, conversationId, repository);
       } else if (handoffPending(reconciled.conversation)) {
-        if (reconciled.conversation.implementation?.status === 'recovery-linked') {
-          await this.#recoverHandoff(input);
-        } else {
-          await this.#reconcileHandoff(input);
-        }
+        await this.#reconcileHandoff(input);
       }
       return sessionOutcome((await this.#conversation(input, conversationId)).conversation);
     }
@@ -490,20 +477,6 @@ export default class GitHubNotificationAssignmentSessionService {
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       workspaceDir: input.workspaceDir,
     });
-  }
-
-  async #recoverHandoff(input: GitHubNotificationAssignmentSessionInput): Promise<boolean> {
-    if (input.item.lifecycleId !== 'issue' || input.mode.policy.id !== 'work') return false;
-    return (
-      (await this.#dependencies.handoffs.recover?.({
-        agentId: input.agentId,
-        executionSurface: input.executionSurface,
-        item: input.item,
-        lifecycle: input.lifecycle,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-        workspaceDir: input.workspaceDir,
-      })) ?? false
-    );
   }
 
   async #conversation(

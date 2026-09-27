@@ -76,10 +76,7 @@ export default class GitHubNotificationAssignmentCleanupService {
     if (conversation.activeTurn) {
       return skipped('github-notification-cleanup-turn-active');
     }
-    if (
-      conversation.implementation?.status !== 'completed' &&
-      conversation.implementation?.status !== 'recovery-linked'
-    ) {
+    if (conversation.implementation?.status !== 'completed') {
       return skipped('github-notification-cleanup-implementation-incomplete');
     }
 

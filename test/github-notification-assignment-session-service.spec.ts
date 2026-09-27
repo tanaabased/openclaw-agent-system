@@ -182,7 +182,6 @@ interface HarnessOptions {
   mode?: GitHubNotificationMode;
   publicationFailures?: number;
   recipientText?: string;
-  recoverPullRequest?: boolean;
   verifyAssignment?(input: GitHubNotificationModelTurnCoordinatorInput): void;
   verifyDelivery?(input: GitHubNotificationIssueDeliveryInput): void;
   verifyImplementation?(input: GitHubNotificationModelTurnCoordinatorInput): void;
@@ -198,7 +197,6 @@ function harness(options: HarnessOptions = {}) {
   let contextReads = 0;
   let classifications = 0;
   let metadataReads = 0;
-  let recoveryReads = 0;
   if (options.initialActiveTurn) {
     state.conversations[conversationId]!.activeTurn = options.initialActiveTurn;
   }
@@ -312,36 +310,6 @@ function harness(options: HarnessOptions = {}) {
       },
     },
     handoffs: {
-      async recover(handoffInput) {
-        recoveryReads += 1;
-        assert.equal(handoffInput.item, item);
-        assert.equal(handoffInput.workspaceDir, workspaceDir);
-        if (!options.recoverPullRequest) return false;
-        const conversation = state.conversations[conversationId]!;
-        if (conversation.implementation?.status !== 'pending') return false;
-        conversation.implementation = { status: 'recovery-linked' };
-        const publicText = 'Pull request linked.';
-        conversation.deliveryPullRequest = {
-          baselineEstablished: true,
-          eventRecorded: true,
-          handoff: {
-            commentDatabaseId: 46,
-            commentNodeId: 'IC_handoff',
-            publicText,
-            publicTextDigest: githubNotificationPublicTextDigest(publicText),
-            status: 'published',
-            target: githubNotificationPublicationTarget({
-              conversationId,
-              intent: 'pull-request-handoff',
-              publicationId: 'PR_recovery',
-            }),
-          },
-          nodeId: 'PR_recovery',
-          number: 45,
-          status: 'open',
-        };
-        return true;
-      },
       async checkpoint(handoffInput) {
         counts.handoffCheckpoints += 1;
         assert.equal(handoffInput.agentId, agentId);
@@ -432,7 +400,6 @@ function harness(options: HarnessOptions = {}) {
   return {
     classifications: () => classifications,
     metadataReads: () => metadataReads,
-    recoveryReads: () => recoveryReads,
     counts,
     contextReads: () => contextReads,
     prepare: () => service.prepare({ ...input, mode }),
@@ -441,24 +408,6 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe('channels/github/conversation/assignment-session-service', () => {
-  it('should keep recovery-linked work separate from automatic delivery', async () => {
-    const scenario = harness({ recoverPullRequest: true });
-    await scenario.prepare();
-    const outcome = await scenario.prepare();
-    assert.deepEqual(outcome, {
-      reasonCode: 'github-notification-pull-request-recovery-linked',
-      status: 'waiting',
-    });
-    await scenario.prepare();
-    assert.equal(scenario.recoveryReads(), 1);
-    assert.equal(scenario.counts.implementationTurns, 0);
-    assert.equal(scenario.counts.deliveries, 0);
-    assert.equal(
-      scenario.state().conversations[conversationId]?.implementation?.status,
-      'recovery-linked',
-    );
-  });
-
   it('should carry the same recipient defaults into assignment and implementation turns', async () => {
     const recipientText = 'assignees: @pirog (node ID U_actor); reviewers: none.';
     const scenario = harness({ recipientText });

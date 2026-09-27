@@ -295,7 +295,7 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.equal(contract.lifecycle.id, 'issue');
     assert.deepEqual(contract.mode, { disableTools: false, id: 'work' });
     assert.equal(contract.publicationIntent, undefined);
-    assert.match(contract.instructions, /pull request has been linked/u);
+    assert.match(contract.instructions, /delivery pull request has been linked/u);
     assert.match(contract.instructions, /both supply later approved comments/u);
     assert.match(contract.instructions, /Do not inspect files, call tools/u);
     assert.match(contract.instructions, /Respond privately with one brief acknowledgment/u);

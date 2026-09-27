@@ -245,10 +245,6 @@ describe('channels/github/conversation/conversation-state', () => {
     };
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
     state.conversations['github:issue:R_repo:12']!.implementation = {
-      status: 'recovery-linked',
-    };
-    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
-    state.conversations['github:issue:R_repo:12']!.implementation = {
       status: 'completed',
     };
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);

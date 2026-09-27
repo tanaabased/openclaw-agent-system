@@ -52,12 +52,7 @@ async function handoffFixture() {
   monitor.agentId = agentId;
   monitor.workspaceDir = workspaceDir;
   const item = monitor.items[notificationItemKey]!;
-  item.intake = {
-    ...item.intake!,
-    stage: 'prepared',
-    worktreeBranch: 'issue-12',
-    worktreePath: '/workspace/worktrees/issue-12',
-  };
+  item.intake = { ...item.intake!, stage: 'prepared' };
   const conversationId = githubNotificationConversationId({
     itemNumber: item.number,
     lifecycleId: item.lifecycleId,
@@ -152,7 +147,6 @@ async function handoffFixture() {
               nodeId: 'PR_delivery',
               number: source.number,
               pullRequest: {
-                author: notificationAccount,
                 baseRef: 'main',
                 baseRepositoryDatabaseId: 3,
                 baseRepositoryNodeId: 'R_repo',
@@ -330,34 +324,6 @@ async function handoffFixture() {
 }
 
 describe('channels/github/conversation initial handoff', () => {
-  it('should admit a pull request comment from a recovery-linked work session', async () => {
-    const fixture = await handoffFixture();
-    await fixture.reconcileHandoff();
-    fixture.updateConversation((conversation) => {
-      conversation.implementation = { status: 'recovery-linked' };
-    });
-    fixture.comments.push(incomingComment());
-
-    await fixture.reconcileComments();
-    assert.deepEqual(fixture.counts, { comments: 1, handoffs: 1, replies: 1 });
-    assert.equal(fixture.snapshot().conversation?.implementation?.status, 'recovery-linked');
-    assert.deepEqual(
-      fixture.replies.map(({ number }) => number),
-      [source.number],
-    );
-  });
-
-  it('should suspend a recovery-linked comment source when its pull request closes', async () => {
-    const fixture = await handoffFixture();
-    await fixture.reconcileHandoff();
-    fixture.updateConversation((conversation) => {
-      conversation.implementation = { status: 'recovery-linked' };
-    });
-    fixture.controls.state = 'closed';
-    await fixture.reconcileComments();
-    assert.equal(fixture.snapshot().conversation?.deliveryPullRequest?.status, 'closed');
-  });
-
   it('should deliver an approved pre-handoff pull request comment exactly once', async () => {
     const fixture = await handoffFixture();
     const comment = incomingComment();

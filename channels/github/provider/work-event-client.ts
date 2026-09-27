@@ -9,7 +9,6 @@ import type {
   GitHubIssueCommentPage,
   GitHubIssueCommentReceipt,
   GitHubIssueCommentReconciliationReceipt,
-  GitHubManagedPullRequestPage,
   GitHubNotificationItemContext,
   GitHubNotificationProviderClient,
 } from './work-event-types.ts';
@@ -32,7 +31,6 @@ export type {
   GitHubIssueCommentPage,
   GitHubIssueCommentReceipt,
   GitHubIssueCommentReconciliationReceipt,
-  GitHubManagedPullRequestPage,
   GitHubNotificationCommentClient,
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
@@ -40,7 +38,6 @@ export type {
   GitHubNotificationItemContextComment,
   GitHubNotificationItemContextFile,
   GitHubNotificationProviderClient,
-  GitHubNotificationRecoveryClient,
   GitHubNotificationPublicationClient,
 } from './work-event-types.ts';
 
@@ -104,14 +101,6 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     number: number,
   ): Promise<{ events: GitHubAssignmentEvent[]; truncated: boolean }> {
     return this.#items.listAssignmentEvents(owner, name, number);
-  }
-
-  listPullRequestsForBranch(
-    owner: string,
-    name: string,
-    branch: string,
-  ): Promise<GitHubManagedPullRequestPage> {
-    return this.#items.listPullRequestsForBranch(owner, name, branch);
   }
 
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage> {

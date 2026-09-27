@@ -27,10 +27,6 @@ import { githubNotificationLifecycleSupportsEvent } from '../lifecycles/event-su
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import type GitHubNotificationCommentTurnService from './comment-turn-service.ts';
-import {
-  matchesRecoveryPullRequest,
-  type default as GitHubNotificationPullRequestHandoffService,
-} from './pull-request-handoff-service.ts';
 import type GitHubNotificationConversationStateStore from './conversation-state-store.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
 import type GitHubNotificationTurnCatalog from './turn-catalog.ts';
@@ -55,7 +51,6 @@ export interface GitHubNotificationCommentOrchestratorDependencies {
         agentId: string;
         workspaceDir: string;
       }) => GitHubNotificationModeId | Promise<GitHubNotificationModeId>);
-  handoffs?: Pick<GitHubNotificationPullRequestHandoffService, 'recover'>;
   lifecycles: Pick<GitHubNotificationLifecycleRegistry, 'resolve'>;
   logger: Logger;
   monitorStateStore: Pick<GitHubNotificationMonitorStateStore, 'read' | 'update'>;
@@ -226,28 +221,13 @@ export default class GitHubNotificationCommentOrchestrator {
     ) {
       return;
     }
-    if (
-      existingConversation?.mode === 'work' &&
-      item.lifecycleId === 'issue' &&
-      (await this.#dependencies.handoffs?.recover({
-        agentId,
-        executionSurface,
-        item,
-        lifecycle,
-        ...(signal === undefined ? {} : { signal }),
-        workspaceDir: monitor.workspaceDir,
-      }))
-    ) {
-      return;
-    }
     // handoff owns the initial baseline and active event, including interrupted retries.
     // provider close/merge transitions above still take precedence over pending delivery.
     const delivery = existingConversation?.deliveryPullRequest;
     if (
       delivery?.status === 'open' &&
       (!delivery.eventRecorded ||
-        ((existingConversation?.implementation?.status === 'completed' ||
-          existingConversation?.implementation?.status === 'recovery-linked') &&
+        (existingConversation?.implementation?.status === 'completed' &&
           delivery.baselineEstablished &&
           delivery.handoff?.status !== 'published'))
     ) {
@@ -429,9 +409,7 @@ export default class GitHubNotificationCommentOrchestrator {
     if (
       observed.itemType !== 'pull-request' ||
       observed.nodeId !== source.nodeId ||
-      observed.number !== source.number ||
-      (conversation.implementation?.status === 'recovery-linked' &&
-        !matchesRecoveryPullRequest(item, client.identity, observed, false))
+      observed.number !== source.number
     ) {
       throw new GitHubNotificationCommentOrchestratorError(
         'github-notification-comment-source-changed',

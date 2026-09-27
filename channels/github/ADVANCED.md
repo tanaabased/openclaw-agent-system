@@ -32,10 +32,9 @@ Declare `github.notifications` in the workspace manifest; see the
 
 ### `github.notifications.pull-request`
 
-Controls recipients on pull requests created or recovered by issue Work delivery.
-Relevant Work turns also receive these defaults for an otherwise authorized,
-agent-created task PR after a recovery detour. This does not grant PR creation
-authority or affect unrelated direct `gh` pull requests.
+Controls recipients on issue task pull requests published by automatic Work
+delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant Work
+turns receive these defaults; unrelated direct `gh` pull requests are not linked.
 
 | Field       | Type                              | Required | Default            | Description                                                                                                               |
 | ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
@@ -66,6 +65,36 @@ default PR assignee from the issue author to the actor whose admitted assignment
 started the work; a missing actor identity fails delivery rather than falling
 back to the author. An interrupted handoff reuses its PR and reconciles only
 missing recipients, without re-requesting a submitted review.
+
+### `agent_system_github_task_pr`
+
+Publish a task pull request from a prepared, trusted GitHub issue-owned session
+when work continues outside the automatic Work implementation turn. Use this
+tool instead of `gh pr create` for that issue. Automatic Work delivery still
+publishes terminally without a model tool call.
+
+#### Parameters
+
+| Parameter | Type   | Required | Default             | Description                   |
+| --------- | ------ | -------- | ------------------- | ----------------------------- |
+| `title`   | string | no       | current issue title | Title for a newly created PR. |
+| `body`    | string | no       | `Closes #<issue>`   | Body for a newly created PR.  |
+
+#### Usage
+
+From the prepared issue session, publish committed work on its exact managed
+branch:
+
+```json
+{ "title": "Finish the issue fix", "body": "Implementation and validation. Closes #12" }
+```
+
+The tool verifies current assignment authority, the agent-owned open PR and
+branch, then adds missing configured recipients. It preserves an existing PR's
+title, body, assignees, and completed reviews. It records the PR in the issue
+session; the next notification reconciliation completes the ordinary
+`pull-request-opened` card, comment baseline, and issue handoff. The tool does
+not merge. It is unavailable outside a prepared issue-owned session.
 
 ### `github.notifications.assignment-types`
 
@@ -360,15 +389,6 @@ normalizes one delivery pull request. Guided performs no automatic
 implementation; the operator or an approved exact-mention comment decides what
 happens next. GitHub prose cannot select or elevate the configured mode.
 
-If Work delivery is interrupted and the agent creates a pull request separately,
-comment reconciliation can link one open PR on the exact managed branch to the
-issue-owned session. The channel rechecks assignment authority, repository and
-branch identity, base branch, and agent authorship before linking. It then uses
-the normal comment baseline and handoff. Missing or ambiguous matches stay
-unlinked; the channel does not infer a link from PR prose or change the PR's
-title, body, or recipients. The durable `recovery-linked` state does not claim
-automatic delivery completed and remains retryable after interruption.
-
 The channel also:
 
 - records existing assignments as a safe baseline during `install`, without
@@ -406,7 +426,7 @@ durable session recording.
   final response in GitHub and the private session. If deterministic validation
   rejects that response, the channel publishes a safe notice instead of going
   silent while retaining the detailed response privately.
-- Merging a linked pull request retires its issue-owned lifecycle. Closing and
+- Merging a delivery pull request retires its issue-owned lifecycle. Closing and
   reopening the pull request suspends and safely re-baselines that comment source.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without

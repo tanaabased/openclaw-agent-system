@@ -11,15 +11,8 @@ import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/as
 import type { GitHubNotificationItemState } from '../intake/monitor/state.ts';
 import resolveGitHubNotificationLifecycleEventSupport from '../lifecycles/event-support.ts';
 import type { GitHubNotificationLifecycle } from '../lifecycles/types.ts';
-import type {
-  GitHubNotificationCommentClient,
-  GitHubNotificationRecoveryClient,
-} from '../provider/work-event-client.ts';
-import {
-  githubWorkItemKey,
-  type GitHubCanonicalWorkItem,
-  type GitHubIdentity,
-} from '../provider/work-item.ts';
+import type { GitHubNotificationCommentClient } from '../provider/work-event-client.ts';
+import { githubWorkItemKey } from '../provider/work-item.ts';
 import type GitHubNotificationCommentPublicationService from '../publication/comment-publication-service.ts';
 import { githubNotificationPublicationTarget } from '../publication/publication.ts';
 import { githubNotificationChannelId, type NotificationRouteResolver } from '../routing/routing.ts';
@@ -55,7 +48,6 @@ export class GitHubNotificationPullRequestHandoffError extends Error {
 
 export interface GitHubNotificationPullRequestHandoffServiceDependencies {
   assignmentAuthority: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationCommentClient>;
-  recoveryAuthority?: GitHubNotificationAssignmentProviderAuthority<GitHubNotificationRecoveryClient>;
   clock?: () => number;
   conversationStateStore: Pick<GitHubNotificationConversationStateStore, 'read' | 'write'>;
   coordinator: Pick<GitHubNotificationModelTurnCoordinator, 'run'>;
@@ -110,28 +102,6 @@ function nestedDiagnosticCode(error: unknown): string | undefined {
   return undefined;
 }
 
-export function matchesRecoveryPullRequest(
-  item: GitHubNotificationItemState,
-  identity: GitHubIdentity,
-  observed: GitHubCanonicalWorkItem,
-  requireOpen = true,
-): boolean {
-  const branch = item.intake?.worktreeBranch;
-  return (
-    Boolean(branch) &&
-    observed.itemType === 'pull-request' &&
-    (!requireOpen || observed.state === 'open') &&
-    observed.pullRequest.baseRef === item.repositoryDefaultBranch &&
-    observed.pullRequest.baseRepositoryDatabaseId === item.repositoryDatabaseId &&
-    observed.pullRequest.baseRepositoryNodeId === item.repositoryNodeId &&
-    observed.pullRequest.headRef === branch &&
-    observed.pullRequest.headRepositoryDatabaseId === item.repositoryDatabaseId &&
-    observed.pullRequest.headRepositoryNodeId === item.repositoryNodeId &&
-    observed.pullRequest.author?.nodeId === identity.nodeId &&
-    observed.pullRequest.author.login.toLowerCase() === identity.login.toLowerCase()
-  );
-}
-
 /** Link one delivered pull request to its issue-owned session and publish the handoff event. */
 export default class GitHubNotificationPullRequestHandoffService {
   readonly #clock: () => number;
@@ -149,6 +119,56 @@ export default class GitHubNotificationPullRequestHandoffService {
     );
   }
 
+  /** Register an explicitly published task PR; the monitor completes handoff after this turn. */
+  async checkpointTask(
+    input: Omit<
+      GitHubNotificationPullRequestHandoffCheckpointInput,
+      'executionSurface' | 'lifecycle'
+    >,
+  ): Promise<void> {
+    this.#validateInput(input);
+    const current = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      this.#conversationId(input),
+    );
+    const conversation = current?.conversation;
+    if (
+      !current ||
+      current.workspaceDir !== input.workspaceDir ||
+      !conversation ||
+      conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
+      conversation.lifecycleId !== 'issue' ||
+      !conversation.assignmentResponse ||
+      (conversation.activeTurn && conversation.activeTurn.eventId !== 'comment')
+    ) {
+      throw new Error('The task pull request has no eligible issue-owned session.');
+    }
+    const existing = conversation.deliveryPullRequest;
+    if (existing) {
+      if (
+        existing.nodeId !== input.pullRequest.pullRequestNodeId ||
+        existing.number !== input.pullRequest.pullRequestNumber ||
+        existing.status !== 'open'
+      ) {
+        throw new Error('The issue-owned session is linked to a different pull request.');
+      }
+      if (conversation.implementation?.status !== 'completed') {
+        throw new Error('Automatic Work delivery still owns this pull request handoff.');
+      }
+      return;
+    }
+    const next = structuredClone(current);
+    next.conversation!.implementation = { status: 'completed' };
+    next.conversation!.deliveryPullRequest = {
+      baselineEstablished: false,
+      eventRecorded: false,
+      nodeId: input.pullRequest.pullRequestNodeId,
+      number: input.pullRequest.pullRequestNumber,
+      status: 'open',
+    };
+    await this.#dependencies.conversationStateStore.write(next);
+  }
+
   async reconcile(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<void> {
     this.#validateInput(input);
     resolveGitHubNotificationLifecycleEventSupport(input.lifecycle, 'pull-request-opened');
@@ -163,121 +183,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     );
   }
 
-  /** adopt one agent-created PR on the exact managed branch without claiming lifecycle delivery. */
-  async recover(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<boolean> {
-    this.#validateInput(input);
-    const conversationId = this.#conversationId(input);
-    const current = await this.#dependencies.conversationStateStore.read(
-      input.agentId,
-      conversationId,
-    );
-    const conversation = current?.conversation;
-    if (
-      !current ||
-      current.workspaceDir !== input.workspaceDir ||
-      !conversation ||
-      conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
-      conversation.lifecycleId !== 'issue' ||
-      conversation.mode !== 'work' ||
-      conversation.assignmentResponse?.status !== 'published'
-    ) {
-      return false;
-    }
-    if (conversation.implementation?.status === 'recovery-linked') {
-      const source = conversation.deliveryPullRequest;
-      if (source?.status !== 'open') return false;
-      if (
-        !source.baselineEstablished ||
-        !source.eventRecorded ||
-        source.handoff?.status !== 'published'
-      ) {
-        const client = await this.#recoveryClient(input);
-        const observed = await client.getItem(
-          input.item.repositoryOwner,
-          input.item.repositoryName,
-          source.number,
-        );
-        if (
-          observed.nodeId !== source.nodeId ||
-          observed.number !== source.number ||
-          !matchesRecoveryPullRequest(input.item, client.identity, observed)
-        ) {
-          throw new Error('The recovery pull request identity has changed.');
-        }
-        await this.reconcile(input);
-        return true;
-      }
-      return false;
-    }
-    if (
-      (conversation.implementation?.status !== 'pending' &&
-        conversation.implementation?.status !== 'delivery-pending') ||
-      conversation.deliveryPullRequest ||
-      conversation.activeTurn
-    ) {
-      return false;
-    }
-    const branch = input.item.intake?.worktreeBranch;
-    if (!branch || !input.item.intake?.worktreePath) return false;
-    const client = await this.#recoveryClient(input);
-    const owner = input.item.repositoryOwner;
-    const name = input.item.repositoryName;
-    const page = await client.listPullRequestsForBranch(owner, name, branch);
-    if (page.truncated || page.numbers.length > 1) {
-      throw new Error('GitHub returned ambiguous pull requests for the managed branch.');
-    }
-    const number = page.numbers[0];
-    if (number === undefined) return false;
-    const pullRequest = await client.getItem(owner, name, number);
-    if (
-      pullRequest.number !== number ||
-      !matchesRecoveryPullRequest(input.item, client.identity, pullRequest)
-    ) {
-      throw new Error('The managed branch belongs to an incompatible pull request.');
-    }
-    // reauthorize at the state-write boundary, after provider discovery may have stalled.
-    const refreshed = await this.#recoveryClient(input);
-    const exact = await refreshed.getItem(owner, name, number);
-    if (
-      exact.nodeId !== pullRequest.nodeId ||
-      exact.number !== number ||
-      !matchesRecoveryPullRequest(input.item, refreshed.identity, exact)
-    ) {
-      throw new Error('The recovery pull request identity has changed.');
-    }
-    await this.#phase('github-notification-pull-request-handoff-source-failed', () =>
-      this.#checkpointRecoverySource(input, {
-        pullRequestNodeId: pullRequest.nodeId,
-        pullRequestNumber: number,
-      }),
-    );
-    await this.reconcile(input);
-    return true;
-  }
-
-  async #recoveryClient(
-    input: GitHubNotificationPullRequestHandoffReconcileInput,
-  ): Promise<GitHubNotificationRecoveryClient> {
-    const authority = this.#dependencies.recoveryAuthority;
-    if (!authority || !input.item.intake) {
-      throw new Error('The recovery pull request authority is unavailable.');
-    }
-    const opened = await authority.open({
-      agentId: input.agentId,
-      intake: input.item.intake,
-      item: input.item,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      workspaceDir: input.workspaceDir,
-    });
-    if (!opened.authorized) {
-      throw new Error(
-        `The recovery pull request is not currently authorized (${opened.reasonCode ?? 'github-notification-assignment-authority-revoked'}).`,
-      );
-    }
-    return opened.client;
-  }
-
-  #validateInput(input: GitHubNotificationPullRequestHandoffBaseInput): void {
+  #validateInput(input: Pick<GitHubNotificationPullRequestHandoffBaseInput, 'item'>): void {
     if (
       input.item.itemType !== 'issue' ||
       input.item.lifecycleId !== 'issue' ||
@@ -289,7 +195,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
   }
 
-  #conversationId(input: GitHubNotificationPullRequestHandoffBaseInput): string {
+  #conversationId(input: Pick<GitHubNotificationPullRequestHandoffBaseInput, 'item'>): string {
     return githubNotificationConversationId({
       itemNumber: input.item.number,
       lifecycleId: input.item.lifecycleId,
@@ -312,8 +218,7 @@ export default class GitHubNotificationPullRequestHandoffService {
       !conversation ||
       conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
       conversation.lifecycleId !== input.item.lifecycleId ||
-      (conversation.implementation?.status !== 'completed' &&
-        conversation.implementation?.status !== 'recovery-linked') ||
+      conversation.implementation?.status !== 'completed' ||
       !source
     ) {
       throw new Error('The pull request handoff conversation checkpoint is missing.');
@@ -356,42 +261,6 @@ export default class GitHubNotificationPullRequestHandoffService {
       eventRecorded: false,
       nodeId: input.pullRequest.pullRequestNodeId,
       number: input.pullRequest.pullRequestNumber,
-      status: 'open',
-    };
-    await this.#dependencies.conversationStateStore.write(next);
-  }
-
-  async #checkpointRecoverySource(
-    input: GitHubNotificationPullRequestHandoffReconcileInput,
-    pullRequest: GitHubNotificationIssueDeliveryReceipt,
-  ): Promise<void> {
-    const current = await this.#dependencies.conversationStateStore.read(
-      input.agentId,
-      this.#conversationId(input),
-    );
-    const conversation = current?.conversation;
-    if (
-      !current ||
-      current.workspaceDir !== input.workspaceDir ||
-      !conversation ||
-      conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
-      conversation.lifecycleId !== 'issue' ||
-      conversation.mode !== 'work' ||
-      conversation.assignmentResponse?.status !== 'published' ||
-      (conversation.implementation?.status !== 'pending' &&
-        conversation.implementation?.status !== 'delivery-pending') ||
-      conversation.activeTurn ||
-      conversation.deliveryPullRequest
-    ) {
-      throw new Error('The recovery pull request checkpoint has changed.');
-    }
-    const next = structuredClone(current);
-    next.conversation!.implementation = { status: 'recovery-linked' };
-    next.conversation!.deliveryPullRequest = {
-      baselineEstablished: false,
-      eventRecorded: false,
-      nodeId: pullRequest.pullRequestNodeId,
-      number: pullRequest.pullRequestNumber,
       status: 'open',
     };
     await this.#dependencies.conversationStateStore.write(next);

@@ -55,11 +55,6 @@ export interface GitHubIssueCommentPage {
   truncated: boolean;
 }
 
-export interface GitHubManagedPullRequestPage {
-  numbers: number[];
-  truncated: boolean;
-}
-
 export interface GitHubNotificationIntakeClient {
   readonly identity: GitHubIdentity;
   discoverAssigned(
@@ -98,15 +93,6 @@ export interface GitHubNotificationCommentClient {
   listIssueComments(owner: string, name: string, number: number): Promise<GitHubIssueCommentPage>;
 }
 
-export interface GitHubNotificationRecoveryClient extends GitHubNotificationCommentClient {
-  getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem>;
-  listPullRequestsForBranch(
-    owner: string,
-    name: string,
-    branch: string,
-  ): Promise<GitHubManagedPullRequestPage>;
-}
-
 export interface GitHubNotificationPublicationClient {
   readonly identity: GitHubIdentity;
   readonly maximumCommentCharacters?: number;
@@ -134,5 +120,5 @@ export interface GitHubNotificationProviderClient
   extends
     GitHubNotificationIntakeClient,
     GitHubNotificationItemContextClient,
-    GitHubNotificationRecoveryClient,
+    GitHubNotificationCommentClient,
     GitHubNotificationPublicationClient {}

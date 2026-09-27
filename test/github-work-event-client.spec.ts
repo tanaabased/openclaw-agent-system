@@ -24,28 +24,6 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
-  it('should query the exact managed branch with bounded pull request results', async () => {
-    const requests: string[][] = [];
-    const client = new GitHubWorkEventClient({
-      identity: { login: 'tanaabot', nodeId: 'U_agent' },
-      async execute(argv) {
-        requests.push(argv);
-        return response(
-          [{ number: 45 }],
-          '<https://api.github.com/repos/tanaabased/example/pulls?page=2>; rel="next"',
-        );
-      },
-    });
-    assert.deepEqual(await client.listPullRequestsForBranch('tanaabased', 'example', 'issue-12'), {
-      numbers: [45],
-      truncated: true,
-    });
-    assert.ok(requests[0]?.includes('/repos/tanaabased/example/pulls'));
-    assert.ok(requests[0]?.includes('head=tanaabased:issue-12'));
-    assert.ok(requests[0]?.includes('state=all'));
-    assert.ok(requests[0]?.includes('per_page=100'));
-  });
-
   it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
     const requests: string[][] = [];
     let unavailable = false;
