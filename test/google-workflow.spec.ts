@@ -29,6 +29,8 @@ describe('google example workflow', () => {
     assert.equal(install?.if, "matrix.example == 'google'");
     assert.match(install?.run ?? '', /gogcli_0\.42\.0_darwin_arm64/u);
     assert.match(install?.run ?? '', /gogcli_0\.42\.0_linux_amd64/u);
+    assert.match(install?.run ?? '', /shasum -a 256 -c/u);
+    assert.match(install?.run ?? '', /sha256sum --check/u);
     const run = steps.find((step) => step.name === 'Run Leia-backed example');
     assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
     assert.equal(
@@ -44,6 +46,7 @@ describe('google example workflow', () => {
     if (fixture.status !== 'valid') throw new Error();
     assert.equal(fixture.manifest.google?.credentialEncoding, 'base64');
     assert.equal(fixture.manifest.google?.account, undefined);
+    assert.equal(fixture.manifest.agent.name, 'Google Test');
     assert.deepEqual(fixture.manifest.agent.email, { fromEnvironment: 'GOG_ACCOUNT' });
     assert.deepEqual(fixture.manifest.environment?.op, ['jglytdfegfggijqkalco2cxexa']);
     assert.deepEqual(fixture.manifest.environment?.required, [

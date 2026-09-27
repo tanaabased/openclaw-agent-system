@@ -1,6 +1,7 @@
 schema-version: 1
 agent:
   id: google-live
+  name: Google Test
   email:
     from-environment: GOG_ACCOUNT
 environment:
