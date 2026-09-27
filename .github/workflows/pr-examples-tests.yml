@@ -113,7 +113,7 @@ jobs:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
-          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
+          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && (matrix.example == 'credentials' || matrix.example == 'google') && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}

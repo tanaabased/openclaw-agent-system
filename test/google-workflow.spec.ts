@@ -32,6 +32,10 @@ describe('google example workflow', () => {
     const run = steps.find((step) => step.name === 'Run Leia-backed example');
     assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
     assert.equal(
+      run?.env?.DBUS_SESSION_BUS_ADDRESS,
+      "${{ runner.os == 'Linux' && (matrix.example == 'credentials' || matrix.example == 'google') && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}",
+    );
+    assert.equal(
       run?.run,
       'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',
     );
@@ -54,6 +58,8 @@ describe('google example workflow', () => {
       .flat()
       .map(({ command }) => command)
       .join('\n');
+    assert.match(commands, /--needs-secret-service/u);
+    assert.match(commands, /credentials set op --from-env/u);
     assert.match(commands, /tasks lists list --max 1 --readonly/u);
     assert.match(commands, /google-credentials-unchanged/u);
     assert.doesNotMatch(commands, /auth add|gcloud|gateway run|agent --/u);

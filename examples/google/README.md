@@ -10,8 +10,12 @@ home. See [Google onboarding](../../tools/google/README.md#test-authorization).
 ## Setup
 
 ```bash
-# should prepare an isolated profile with the packed plugin
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
+# should prepare an isolated profile with the packed plugin and native credential store
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
+
+# should store the bootstrap 1password credential for the google agent
+cd "$GITHUB_WORKSPACE/examples/google"
+openclaw agent-system credentials set op --from-env | grep -F "$DEFAULT_CREDENTIAL_STORE"
 
 # should initialize a fresh home through agent system and verify the account
 cd "$GITHUB_WORKSPACE/examples/google"
