@@ -35,10 +35,9 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     snapshot.conversation = {
       assignmentResponse: { reasonCode: 'github-notification-guided-waiting', status: 'withheld' },
       baselineEstablished: true,
-      implementation: { status: 'pending' },
       itemKey: notificationItemKey,
       lifecycleId: 'issue',
-      mode: 'work',
+      mode: 'guided',
       revisions: {},
     };
     const calls: string[] = [];

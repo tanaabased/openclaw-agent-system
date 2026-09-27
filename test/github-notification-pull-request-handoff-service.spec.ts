@@ -116,7 +116,8 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
           reasonCode: 'github-notification-guided-waiting',
           status: 'withheld',
         };
-        state.conversations[conversationId]!.implementation = { status: 'pending' };
+        delete state.conversations[conversationId]!.implementation;
+        state.conversations[conversationId]!.mode = 'guided';
       }
       const baselineComment = {
         author: notificationActor,
@@ -131,10 +132,14 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
       let eventTurns = 0;
       let publications = 0;
       const contract = {
-        identity: { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+        identity: {
+          eventId: 'pull-request-opened',
+          lifecycleId: 'issue',
+          modeId: checkpointMode === 'task' ? 'guided' : 'work',
+        },
         instructions: 'trusted pull request opened instructions',
         lifecycle,
-        mode: { disableTools: false, id: 'work' },
+        mode: { disableTools: false, id: checkpointMode === 'task' ? 'guided' : 'work' },
       } as GitHubNotificationTurnContract;
       const service = new GitHubNotificationPullRequestHandoffService({
         assignmentAuthority: {

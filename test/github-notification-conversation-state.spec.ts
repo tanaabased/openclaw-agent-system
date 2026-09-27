@@ -467,6 +467,31 @@ describe('channels/github/conversation/conversation-state', () => {
     assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
   });
 
+  it('should accept guided task PR completion only when the PR is linked', () => {
+    const state = createGitHubNotificationConversationState('notification-data', '/workspace');
+    state.conversations['github:issue:R_repo:12'] = {
+      assignmentResponse: {
+        reasonCode: 'github-notification-guided-waiting',
+        status: 'withheld',
+      },
+      baselineEstablished: true,
+      implementation: { status: 'completed' },
+      itemKey: 'github:R_repo:12',
+      lifecycleId: 'issue',
+      mode: 'guided',
+      revisions: {},
+    };
+    assert.equal(decodeGitHubNotificationConversationState(state, 'notification-data'), undefined);
+    state.conversations['github:issue:R_repo:12']!.deliveryPullRequest = {
+      baselineEstablished: false,
+      eventRecorded: false,
+      nodeId: 'PR_task',
+      number: 45,
+      status: 'open',
+    };
+    assert.deepEqual(decodeGitHubNotificationConversationState(state, 'notification-data'), state);
+  });
+
   it('should retain a withheld publication without storing private response text', () => {
     const state = createGitHubNotificationConversationState('notification-data', '/workspace');
     state.conversations['github:issue:R_repo:12'] = {

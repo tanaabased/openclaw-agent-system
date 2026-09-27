@@ -33,8 +33,9 @@ Declare `github.notifications` in the workspace manifest; see the
 ### `github.notifications.pull-request`
 
 Controls recipients on issue task pull requests published by automatic Work
-delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant Work
-turns receive these defaults; unrelated direct `gh` pull requests are not linked.
+delivery or the issue-owned `agent_system_github_task_pr` tool. Relevant issue
+Work and Guided turns receive these defaults; unrelated direct `gh` pull requests
+are not linked.
 
 | Field       | Type                              | Required | Default            | Description                                                                                                               |
 | ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |

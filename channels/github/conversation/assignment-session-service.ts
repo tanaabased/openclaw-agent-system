@@ -294,7 +294,7 @@ export default class GitHubNotificationAssignmentSessionService {
     });
     await this.#checkpointActiveTurn(input, conversationId, assignmentEventId);
     const recipients =
-      input.item.lifecycleId === 'issue' && input.mode.policy.id === 'work'
+      input.item.lifecycleId === 'issue'
         ? await this.#dependencies.recipientGuidance?.forItem({
             agentId: input.agentId,
             item: input.item,

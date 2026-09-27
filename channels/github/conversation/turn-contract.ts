@@ -53,7 +53,6 @@ function turnInstructions(
     responseInstructions: turn.eventTurn.responseInstructions,
   });
   return turn.identity.lifecycleId === 'issue' &&
-    turn.identity.modeId === 'work' &&
     turn.identity.eventId !== 'pull-request-opened' &&
     recipientGuidance
     ? `${prompt}\n\n## Task pull request recipients\n\n${recipientGuidance}`

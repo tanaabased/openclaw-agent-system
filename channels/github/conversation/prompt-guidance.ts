@@ -43,9 +43,7 @@ export default async function githubNotificationPromptGuidance(
     return undefined;
   }
   const recipients =
-    selected.identity.lifecycleId === 'issue' &&
-    selected.identity.modeId === 'work' &&
-    selected.identity.eventId !== 'pull-request-opened'
+    selected.identity.lifecycleId === 'issue' && selected.identity.eventId !== 'pull-request-opened'
       ? await dependencies.recipientGuidance?.forConversation({
           agentId: selected.agentId,
           conversationId: selected.conversationId,

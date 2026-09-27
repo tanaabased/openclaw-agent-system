@@ -138,7 +138,7 @@ export default class GitHubNotificationCommentTurnService {
       modeId: input.modeId,
     };
     const recipients =
-      identity.lifecycleId === 'issue' && identity.modeId === 'work'
+      identity.lifecycleId === 'issue'
         ? await this.#dependencies.recipientGuidance?.forItem({
             agentId: input.agentId,
             item: input.item,
