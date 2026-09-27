@@ -20,10 +20,14 @@ export default function createGoogleTool(store: GoogleStore) {
     configuration: {
       read: (manifest) =>
         manifest.google
-          ? { ...manifest.google, pathPrepend: manifest.environment?.pathPrepend ?? [] }
+          ? {
+              ...manifest.google,
+              agentEmail: manifest.agent.email,
+              pathPrepend: manifest.environment?.pathPrepend ?? [],
+            }
           : undefined,
       resolve: (configuration, resolver) => ({
-        ...resolveGoogleConfiguration(configuration, resolver),
+        ...resolveGoogleConfiguration(configuration, resolver, configuration.agentEmail),
         pathPrepend: configuration.pathPrepend,
       }),
     },
@@ -49,6 +53,11 @@ export default function createGoogleTool(store: GoogleStore) {
         ];
       },
       async acquireResources(_input, configuration, scope) {
+        const home = scope.resolveEnvironment('GOG_HOME');
+        await store.assertLocation(scope.agentId, home, [
+          scope.workspaceDir,
+          ...(scope.admittedWorkingDirectories ?? []),
+        ]);
         return store.acquire(
           scope.agentId,
           configuration.account,
@@ -56,6 +65,7 @@ export default function createGoogleTool(store: GoogleStore) {
           scope.workspaceDir,
           configuration.pathPrepend.map((path) => resolve(scope.workspaceDir, path)),
           scope.signal,
+          home,
         );
       },
       preflight(configuration) {

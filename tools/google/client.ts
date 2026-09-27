@@ -12,6 +12,12 @@ export const googleIdentityArgv = [
 ];
 
 export function googleFailureStatus(result: AgentSystemCliResult) {
+  if (result.exitCode !== 0 && /API is not enabled/u.test(result.stderr)) return 'api-disabled';
+  if (
+    result.exitCode !== 0 &&
+    /aes\.keyunwrap|integrity check failed|file keyring password mismatch/u.test(result.stderr)
+  )
+    return 'keyring-unavailable';
   if (result.exitCode === 4 && /OAuth grant .* is missing required .* scope:/u.test(result.stderr))
     return 'insufficient-scope';
   if (result.exitCode === 4) return 'authentication-rejected';
@@ -24,6 +30,16 @@ export function assertGoogleResult(result: AgentSystemCliResult): void {
   if (result.timedOut)
     throw new AgentSystemToolError('execution_timed_out', 'Google request timed out.');
   if (result.exitCode === 0 && !result.truncated) return;
+  if (googleFailureStatus(result) === 'api-disabled')
+    throw new AgentSystemToolError(
+      'configuration_unavailable',
+      'The Google service API is not enabled. Enable it in the OAuth client project, then retry.',
+    );
+  if (googleFailureStatus(result) === 'keyring-unavailable')
+    throw new AgentSystemToolError(
+      'credential_unavailable',
+      'Google file keyring could not be unlocked. Check the declared keyring password and run install.',
+    );
   if (googleFailureStatus(result) === 'insufficient-scope')
     throw new AgentSystemToolError(
       'execution_failed',

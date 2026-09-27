@@ -31,6 +31,39 @@ describe('google manifest', () => {
       assert.equal(resolved.oauthClient, 'CLIENT');
     }
   });
+  it('should default to the agent email and json while preserving explicit overrides', () => {
+    const parsed = parseAgentManifest(
+      'schema-version: 1\nagent:\n  id: one\n  email:\n    from-environment: EMAIL\ngoogle:\n' +
+        bindings,
+    );
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') throw new Error();
+    const resolver = { resolve: () => ' ONE@example.com ' };
+    const resolved = resolveGoogleConfiguration(
+      parsed.manifest.google!,
+      resolver,
+      parsed.manifest.agent.email,
+    );
+    assert.equal(resolved.account, 'one@example.com');
+    assert.equal(resolved.credentialEncoding, 'json');
+    assert.equal(
+      resolveGoogleConfiguration(
+        { ...parsed.manifest.google!, account: 'other@example.com', credentialEncoding: 'base64' },
+        { resolve: (value) => String(value) },
+        parsed.manifest.agent.email,
+      ).account,
+      'other@example.com',
+    );
+    assert.throws(() => resolveGoogleConfiguration(parsed.manifest.google!, resolver), {
+      code: 'configuration_unavailable',
+    });
+    assert.equal(
+      parseAgentManifest(
+        'schema-version: 1\nagent:\n  id: one\ngoogle:\n  credential-encoding: hex\n' + bindings,
+      ).status,
+      'invalid',
+    );
+  });
   it('should reject unknown keys, raw secrets in binding fields and missing references', () => {
     assert.equal(
       parseAgentManifest(

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,8 +25,11 @@ function store(
 }
 describe('google store', () => {
   let root = '';
+  let workspace = '';
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'google-store-'));
+    workspace = join(root, 'workspace');
+    await mkdir(workspace);
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -35,13 +38,13 @@ describe('google store', () => {
     const requests: AgentSystemCliRunRequest[] = [];
     const owned = store(root, requests);
     assert.equal(
-      await owned.reconcile('one', googleConfiguration.account, material(), root),
+      await owned.reconcile('one', googleConfiguration.account, material(), workspace),
       'created',
     );
     const receipt = await readFile(join(root, 'one', 'tools', 'gog', 'current.json'), 'utf8');
     requests.length = 0;
     assert.equal(
-      await owned.reconcile('one', googleConfiguration.account, material(), root),
+      await owned.reconcile('one', googleConfiguration.account, material(), workspace),
       'unchanged',
     );
     assert.ok(
@@ -74,8 +77,8 @@ describe('google store', () => {
       TOKEN: JSON.stringify({ email: two.account, refresh_token: 'two-refresh' }),
       PASSWORD: 'two-password',
     });
-    await owned.reconcile('one', googleConfiguration.account, material(), root);
-    await owned.reconcile('two', two.account, twoMaterial, root);
+    await owned.reconcile('one', googleConfiguration.account, material(), workspace);
+    await owned.reconcile('two', two.account, twoMaterial, workspace);
     const first = await owned.acquire('one', googleConfiguration.account, material());
     const second = await owned.acquire('two', two.account, twoMaterial);
     try {
@@ -88,14 +91,14 @@ describe('google store', () => {
     }
     const changed = material(googleConfiguration, { ...googleValues, PASSWORD: 'new-password' });
     assert.equal(
-      await owned.reconcile('one', googleConfiguration.account, changed, root),
+      await owned.reconcile('one', googleConfiguration.account, changed, workspace),
       'updated',
     );
     assert.equal(await owned.inspect('one', googleConfiguration.account, material()), 'drift');
   });
   it('should preserve the active generation after identity or import failure and reject unsafe state', async () => {
     const owned = store(root);
-    await owned.reconcile('one', googleConfiguration.account, material(), root);
+    await owned.reconcile('one', googleConfiguration.account, material(), workspace);
     const file = join(root, 'one', 'tools', 'gog', 'current.json');
     const before = await readFile(file, 'utf8');
     const changed = material(googleConfiguration, { ...googleValues, PASSWORD: 'new-password' });
@@ -104,7 +107,7 @@ describe('google store', () => {
         'one',
         googleConfiguration.account,
         changed,
-        root,
+        workspace,
       ),
       { code: 'tool_identity_mismatch' },
     );
@@ -121,13 +124,126 @@ describe('google store', () => {
       1,
     );
   });
+  it('should honor a declared home and host precedence while refusing cross-agent reuse', async () => {
+    const owned = store(root);
+    const home = join(root, 'declared-home');
+    await owned.reconcile('one', googleConfiguration.account, material(), workspace, [], home);
+    assert.equal(JSON.parse(await readFile(join(home, 'current.json'), 'utf8')).agentId, 'one');
+    const lease = await owned.acquire(
+      'one',
+      googleConfiguration.account,
+      material(),
+      workspace,
+      [],
+      undefined,
+      home,
+    );
+    try {
+      assert.equal(lease.environment.GOG_HOME, lease.environment.HOME);
+    } finally {
+      await lease.dispose();
+    }
+    await assert.rejects(
+      owned.reconcile('two', googleConfiguration.account, material(), workspace, [], home),
+      { code: 'tool_identity_mismatch' },
+    );
+    const hostHome = join(root, 'host-home');
+    const host = new GoogleStore(
+      undefined,
+      new GoogleClient(fakeGoogle(), { PATH: '/usr/bin' }),
+      undefined,
+      hostHome,
+    );
+    await host.reconcile('one', googleConfiguration.account, material(), workspace, [], home);
+    assert.equal(
+      await host.inspect('one', googleConfiguration.account, material(), 'relative-ignored'),
+      'ready',
+    );
+    assert.ok(await readFile(join(hostHome, 'current.json')));
+    await assert.rejects(
+      owned.reconcile('one', googleConfiguration.account, material(), workspace, [], 'relative'),
+      { code: 'configuration_unavailable' },
+    );
+    await assert.rejects(
+      owned.reconcile(
+        'one',
+        googleConfiguration.account,
+        material(),
+        workspace,
+        [],
+        join(workspace, 'private'),
+      ),
+      { code: 'configuration_unavailable' },
+    );
+    await assert.rejects(
+      owned.reconcile('one', googleConfiguration.account, material(), workspace, [], '/'),
+      { code: 'configuration_unavailable' },
+    );
+  });
+  it('should reject a home hidden inside a workspace through a symlink', async () => {
+    const alias = join(root, 'workspace-alias');
+    await symlink(workspace, alias);
+    await assert.rejects(
+      store(root).reconcile(
+        'one',
+        googleConfiguration.account,
+        material(),
+        workspace,
+        [],
+        join(alias, 'gog'),
+      ),
+      { code: 'configuration_unavailable' },
+    );
+  });
+  it('should serialize installation and leave the winning credentials usable', async () => {
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner = fakeGoogle();
+    let first = true;
+    const owned = new GoogleStore(
+      root,
+      new GoogleClient(
+        async (request) => {
+          if (first) {
+            first = false;
+            enter();
+            await resume;
+          }
+          return runner(request);
+        },
+        { PATH: '/usr/bin' },
+      ),
+    );
+    const installing = owned.reconcile('one', googleConfiguration.account, material(), workspace);
+    await entered;
+    try {
+      await assert.rejects(
+        owned.reconcile('one', googleConfiguration.account, material(), workspace),
+        /installation is busy/u,
+      );
+    } finally {
+      release();
+    }
+    assert.equal(await installing, 'created');
+    assert.equal(await owned.inspect('one', googleConfiguration.account, material()), 'ready');
+    assert.equal(
+      await owned.reconcile('one', googleConfiguration.account, material(), workspace),
+      'unchanged',
+    );
+  });
   it('should distinguish revoked authorization and refuse an unreviewed executable version', async () => {
     await assert.rejects(
       store(root, [], { exitCode: 4 }).reconcile(
         'one',
         googleConfiguration.account,
         material(),
-        root,
+        workspace,
       ),
       { credentialRejected: true },
     );
@@ -136,7 +252,7 @@ describe('google store', () => {
         'one',
         googleConfiguration.account,
         material(),
-        root,
+        workspace,
       ),
       { code: 'tool_unavailable' },
     );

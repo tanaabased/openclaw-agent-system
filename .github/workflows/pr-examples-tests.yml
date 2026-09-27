@@ -2,6 +2,12 @@ name: Example tests
 
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      google-account:
+        description: Expected Google account for the Tasks read-only test
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,6 +18,7 @@ env:
 
 jobs:
   examples:
+    if: github.event_name == 'pull_request'
     name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -106,3 +113,58 @@ jobs:
         if: failure()
         shell: bash
         run: openclaw-diagnostics
+
+  google-live:
+    name: Google Tasks live authorization
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed code
+        uses: actions/checkout@v7
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Brew updates
+        shell: bash
+        run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+      - name: Install Node
+        uses: tanaabased/actions/setup-node@v1
+      - name: Install Bun
+        uses: tanaabased/actions/setup-bun@v1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build and check plugin
+        run: |
+          bun run build
+          bun run plugin:check
+      - name: Pack plugin
+        id: pack
+        uses: tanaabased/actions/npm-pack@v1
+      - name: Install OpenClaw
+        uses: tanaabased/actions/setup-openclaw@v1
+      - name: Install reviewed GoG
+        shell: bash
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/gog-bin"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/gog.tar.gz" https://github.com/openclaw/gogcli/releases/download/v0.42.0/gogcli_0.42.0_linux_amd64.tar.gz
+          printf '%s  %s\n' 1967a962a57d689958c408dd0abc784792c3712da9d0a90650bb76ab7e3de388 "$RUNNER_TEMP/gog.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gog.tar.gz" -C "$RUNNER_TEMP/gog-bin" gog
+          echo "$RUNNER_TEMP/gog-bin" >> "$GITHUB_PATH"
+      - name: Run live Tasks example
+        shell: bash
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+          GOG_HOME: ${{ runner.temp }}/google-live-gog
+          GOG_TEST_ACCOUNT: ${{ inputs.google-account }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
+        run: bun run leia examples/tool/google-live/README.md --stdin --retry 0
+      - name: Remove test authorization state
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/google-live-gog"

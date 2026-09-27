@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,8 +23,11 @@ import {
 
 describe('google managed runtime', () => {
   let root = '';
+  let workspace = '';
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'google-runtime-'));
+    workspace = join(root, 'workspace');
+    await mkdir(workspace);
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
@@ -36,6 +39,8 @@ describe('google managed runtime', () => {
       environmentAccount?: boolean;
       mismatch?: boolean;
       echoSecret?: boolean;
+      agentEmail?: boolean;
+      base64?: boolean;
     } = {},
   ) {
     const requests: AgentSystemCliRunRequest[] = [];
@@ -46,23 +51,29 @@ describe('google managed runtime', () => {
       join(root, 'private'),
       new GoogleClient(runner, { PATH: '/usr/bin' }),
     );
-    await store.reconcile('one', googleConfiguration.account, material(), root);
+    await store.reconcile('one', googleConfiguration.account, material(), workspace);
     requests.length = 0;
     const tool = createGoogleTool(store);
     const manifest: AgentManifest = {
       schemaVersion: 1,
-      agent: { id: 'one' },
+      agent: {
+        id: 'one',
+        ...(options.agentEmail ? { email: { fromEnvironment: 'ACCOUNT' } } : {}),
+      },
       google: {
         ...googleConfiguration,
-        account: options.environmentAccount
-          ? { fromEnvironment: 'ACCOUNT' }
-          : googleConfiguration.account,
+        credentialEncoding: options.base64 ? 'base64' : 'json',
+        account: options.agentEmail
+          ? undefined
+          : options.environmentAccount
+            ? { fromEnvironment: 'ACCOUNT' }
+            : googleConfiguration.account,
       },
     };
     const loaded = {
       status: 'loaded' as const,
-      scope: { agentId: 'one', workspaceDir: root },
-      path: join(root, 'agent.yaml'),
+      scope: { agentId: 'one', workspaceDir: workspace },
+      path: join(workspace, 'agent.yaml'),
       digest: 'digest',
       manifest,
       diagnostics: [],
@@ -97,7 +108,19 @@ describe('google managed runtime', () => {
           events.push('credentials');
           return {
             ...loaded,
-            environment: { values: { ...googleValues, ACCOUNT: 'one@example.com' }, variables: [] },
+            environment: {
+              values: {
+                ...googleValues,
+                ...(options.base64
+                  ? {
+                      CLIENT: Buffer.from(googleValues.CLIENT).toString('base64'),
+                      TOKEN: Buffer.from(googleValues.TOKEN).toString('base64'),
+                    }
+                  : {}),
+                ACCOUNT: 'one@example.com',
+              },
+              variables: [],
+            },
           };
         },
       },
@@ -106,19 +129,24 @@ describe('google managed runtime', () => {
         if (options.mismatch && request.argv.includes('oauth2.userinfo.get'))
           return result(JSON.stringify({ email: 'other@example.com', verified_email: true }));
         if (options.echoSecret && request.argv.includes('gmail'))
-          return result('refresh-secret client-secret keyring-secret');
+          return result(
+            'refresh-secret client-secret keyring-secret ' +
+              Buffer.from(googleValues.CLIENT).toString('base64') +
+              ' ' +
+              googleValues.TOKEN,
+          );
         return runner(request);
       },
     });
     return { tool, runtime, events, requests, logs };
   }
   it('should execute literal and environment accounts identically with isolated credentials and audit', async () => {
-    for (const environmentAccount of [false, true]) {
-      const f = await fixture({ environmentAccount });
+    for (const options of [{}, { environmentAccount: true }, { agentEmail: true, base64: true }]) {
+      const f = await fixture(options);
       const executed = await f.tool.invoke(f.runtime, ['gmail', 'search', 'q'], {
         source: 'command',
         agentId: 'one',
-        workspaceDir: root,
+        workspaceDir: workspace,
       });
       assert.equal(executed.operation.action, 'gmail.search');
       const command = f.requests.find((request) => request.argv.includes('gmail'))!;
@@ -136,7 +164,7 @@ describe('google managed runtime', () => {
       invalid.tool.invoke(invalid.runtime, ['gmail', 'search', '--client=host'], {
         source: 'command',
         agentId: 'one',
-        workspaceDir: root,
+        workspaceDir: workspace,
       }),
       { code: 'invalid_arguments' },
     );
@@ -147,7 +175,7 @@ describe('google managed runtime', () => {
         f.tool.invoke(f.runtime, ['gmail', 'search', 'q'], {
           source: 'command',
           agentId: 'one',
-          workspaceDir: root,
+          workspaceDir: workspace,
         }),
         { code: options.deny ? 'approval_denied' : 'tool_unavailable' },
       );
@@ -161,7 +189,7 @@ describe('google managed runtime', () => {
       f.tool.invoke(f.runtime, ['gmail', 'search', 'q'], {
         source: 'command',
         agentId: 'one',
-        workspaceDir: root,
+        workspaceDir: workspace,
       }),
       { code: 'tool_identity_mismatch' },
     );
@@ -169,16 +197,20 @@ describe('google managed runtime', () => {
     assert.ok(f.logs.some((log) => log.includes('tool_call_failed')));
   });
   it('should redact credential components and allow provider-authorized writes', async () => {
-    const f = await fixture({ echoSecret: true });
+    const f = await fixture({ echoSecret: true, base64: true });
     const executed = await f.tool.invoke(
       f.runtime,
       ['gmail', 'send', '--to=one@example.com', '--subject=test', '--body=test'],
-      { source: 'command', agentId: 'one', workspaceDir: root },
+      { source: 'command', agentId: 'one', workspaceDir: workspace },
     );
     assert.equal(executed.operation.risk, 'write');
     assert.ok(!JSON.stringify(executed).includes('refresh-secret'));
     assert.ok(!JSON.stringify(executed).includes('client-secret'));
     assert.ok(!JSON.stringify(executed).includes('keyring-secret'));
+    assert.ok(
+      !JSON.stringify(executed).includes(Buffer.from(googleValues.CLIENT).toString('base64')),
+    );
+    assert.ok(!JSON.stringify(executed).includes(googleValues.TOKEN));
   });
   it('should distinguish revoked grants, insufficient scopes, provider permission and malformed identity', () => {
     assert.throws(() => assertGoogleResult(result('', 4, 'invalid_grant')), {
@@ -191,6 +223,19 @@ describe('google managed runtime', () => {
       'insufficient-scope',
     );
     assert.throws(() => assertGoogleResult(result('', 6)), /permissions/u);
+    assert.equal(googleFailureStatus(result('', 6, 'Tasks API is not enabled')), 'api-disabled');
+    assert.throws(
+      () => assertGoogleResult(result('', 6, 'Tasks API is not enabled')),
+      /Enable it/u,
+    );
+    assert.equal(
+      googleFailureStatus(result('', 1, 'aes.keyunwrap: integrity check failed')),
+      'keyring-unavailable',
+    );
+    assert.throws(
+      () => assertGoogleResult(result('', 1, 'aes.keyunwrap: integrity check failed')),
+      /keyring password/u,
+    );
     assert.throws(() => assertGoogleIdentity(result('{}'), 'one@example.com'), {
       code: 'tool_identity_mismatch',
     });

@@ -17,10 +17,20 @@ export function googleCredentials(
       );
     return value;
   };
-  const clientJSON = read(configuration.oauthClient);
-  const tokenJSON = read(configuration.oauthToken);
+  const clientValue = read(configuration.oauthClient);
+  const tokenValue = read(configuration.oauthToken);
   const password = read(configuration.keyringPassword);
   try {
+    const decode = (value: string) => {
+      if (configuration.credentialEncoding !== 'base64') return value;
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value))
+        throw new Error();
+      const bytes = Buffer.from(value, 'base64');
+      if (bytes.toString('base64') !== value) throw new Error();
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    };
+    const clientJSON = decode(clientValue);
+    const tokenJSON = decode(tokenValue);
     const client = JSON.parse(clientJSON);
     const oauth = client.installed;
     const token = JSON.parse(tokenJSON);
@@ -69,8 +79,12 @@ export function googleCredentials(
         )
         .digest('hex'),
       sensitiveValues: [
+        clientValue,
+        tokenValue,
         clientJSON,
         tokenJSON,
+        normalizedClient,
+        normalizedToken,
         password,
         oauth.client_secret,
         token.refresh_token,
@@ -80,7 +94,7 @@ export function googleCredentials(
   } catch {
     throw new AgentSystemToolError(
       'credential_unavailable',
-      'Google requires installed-app OAuth client JSON and a matching exported refresh authorization. Check the declared bindings.',
+      'Google requires installed-app OAuth client JSON and a matching exported refresh authorization. Check the declared bindings and credential-encoding.',
     );
   }
 }

@@ -34,7 +34,12 @@ export default function createGoogleCapability(
     dependencies.baseEnvironment,
     dependencies.excludedExecutableDirectories,
   );
-  const store = new GoogleStore(dependencies.privateStateRoot, client, dependencies.currentUid);
+  const store = new GoogleStore(
+    dependencies.privateStateRoot,
+    client,
+    dependencies.currentUid,
+    dependencies.baseEnvironment.GOG_HOME,
+  );
   const load = async (context: AgentSystemLifecycleContext) => {
     const missing = await unavailableToolExecutables(
       ['gog'],
@@ -60,16 +65,21 @@ export default function createGoogleCapability(
         'credential_unavailable',
         'Google declared environment is unavailable.',
       );
-    const configuration = resolveGoogleConfiguration(context.manifest.google!, {
-      resolve(value, path) {
-        const resolved = resolveManifestValue(value, result.environment.values, path);
-        if (resolved.status === 'invalid')
-          throw new AgentSystemToolError('credential_unavailable', resolved.diagnostic.message);
-        return resolved.value;
+    const configuration = resolveGoogleConfiguration(
+      context.manifest.google!,
+      {
+        resolve(value, path) {
+          const resolved = resolveManifestValue(value, result.environment.values, path);
+          if (resolved.status === 'invalid')
+            throw new AgentSystemToolError('credential_unavailable', resolved.diagnostic.message);
+          return resolved.value;
+        },
       },
-    });
+      context.manifest.agent.email,
+    );
     return {
       configuration,
+      home: result.environment.values.GOG_HOME,
       excludedDirectories: excludedToolExecutableDirectories(
         context.manifest,
         context.workspaceDir,
@@ -84,17 +94,36 @@ export default function createGoogleCapability(
       {
         id: 'google',
         isConfigured: (manifest) => manifest.google !== undefined,
-        validate: () => ({
-          code: 'google-config-valid',
-          summary: 'Google account and OAuth credential bindings',
-        }),
+        validate: (context) => {
+          if (
+            context.manifest.google?.account === undefined &&
+            context.manifest.agent.email === undefined
+          )
+            return {
+              code: 'google-account-required',
+              summary: 'Google requires an account declaration',
+              diagnostics: [
+                {
+                  code: 'google-account-required',
+                  fieldPath: '/google/account',
+                  message: 'Google requires google.account or agent.email.',
+                  severity: 'error' as const,
+                },
+              ],
+            };
+          return {
+            code: 'google-config-valid',
+            summary: 'Google account and OAuth credential bindings',
+          };
+        },
         async inspect(context) {
           try {
-            const { configuration, material, excludedDirectories } = await load(context);
+            const { configuration, material, excludedDirectories, home } = await load(context);
             const status = await store.inspect(
               context.manifest.agent.id,
               configuration.account,
               material,
+              home,
             );
             if (status !== 'ready')
               return [
@@ -109,6 +138,10 @@ export default function createGoogleCapability(
               context.manifest.agent.id,
               configuration.account,
               material,
+              context.workspaceDir,
+              excludedDirectories,
+              undefined,
+              home,
             );
             try {
               await client
@@ -121,7 +154,11 @@ export default function createGoogleCapability(
               {
                 code: 'google-live-identity-ready',
                 message:
-                  'Live Google authentication check matched the declared account; durable credentials were not changed.',
+                  'Live Google authentication matched ' +
+                  configuration.account +
+                  '; managed home: ' +
+                  store.location(context.manifest.agent.id, home) +
+                  '. Durable credentials were not changed.',
                 status: 'healthy' as const,
               },
             ];
@@ -145,13 +182,14 @@ export default function createGoogleCapability(
         },
         async reconcile(context) {
           try {
-            const { configuration, material, excludedDirectories } = await load(context);
+            const { configuration, material, excludedDirectories, home } = await load(context);
             const status = await store.reconcile(
               context.manifest.agent.id,
               configuration.account,
               material,
               context.workspaceDir,
               excludedDirectories,
+              home,
             );
             return {
               outcomes: [

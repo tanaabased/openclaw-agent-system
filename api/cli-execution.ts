@@ -191,6 +191,7 @@ export default async function executeAgentSystemCliTool<
       resolvedConfiguration,
       {
         agentId,
+        admittedWorkingDirectories: options.scope.admittedWorkingDirectories,
         resolveEnvironment(name) {
           return values[name];
         },

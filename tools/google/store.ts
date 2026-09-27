@@ -1,17 +1,22 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import AgentSystemToolError from '../../api/error.ts';
 import ensurePrivateStateDirectories from '../../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../../core/private-state-file-lock.ts';
+import acquirePrivateStateFileLock, {
+  privateStateFileLockBusyErrorCode,
+} from '../../core/private-state-file-lock.ts';
+import isPathContained from '../../utils/is-path-contained.ts';
+import nodeErrorCode from '../../utils/node-error-code.ts';
 import { assertGoogleResult, type default as GoogleClient } from './client.ts';
 import type { GoogleCredentials } from './credentials.ts';
 
 interface GoogleReceipt {
+  agentId?: string;
   generation: string;
   account: string;
   fingerprint: string;
@@ -24,25 +29,36 @@ export default class GoogleStore {
     private readonly rootDir: string | undefined,
     private readonly client: GoogleClient,
     private readonly currentUid = process.getuid?.(),
+    private readonly hostHome?: string,
   ) {}
 
-  #paths(agentId: string) {
-    if (!this.rootDir || !/^[a-z0-9][a-z0-9-]*$/u.test(agentId))
+  #paths(agentId: string, configuredHome?: string) {
+    const home = this.hostHome ?? configuredHome;
+    if ((!this.rootDir && home === undefined) || !/^[a-z0-9][a-z0-9-]*$/u.test(agentId))
       throw new AgentSystemToolError(
         'configuration_unavailable',
         'Google private state is unavailable.',
       );
-    const root = resolve(this.rootDir);
-    const directories = [
-      root,
-      join(root, agentId),
-      join(root, agentId, 'tools'),
-      join(root, agentId, 'tools', 'gog'),
-    ];
+    if (home !== undefined && (!isAbsolute(home) || home.includes('\0') || resolve(home) === '/'))
+      throw new AgentSystemToolError(
+        'configuration_unavailable',
+        'GOG_HOME must be an absolute private directory.',
+      );
+    const root = resolve(this.rootDir ?? home!);
+    const directories =
+      home === undefined
+        ? [
+            root,
+            join(root, agentId),
+            join(root, agentId, 'tools'),
+            join(root, agentId, 'tools', 'gog'),
+          ]
+        : [resolve(home)];
     const directory = directories.at(-1)!;
     return {
       directory,
       directories,
+      overridden: home !== undefined,
       receipt: new PrivateStateFile({
         directories,
         path: join(directory, 'current.json'),
@@ -53,8 +69,9 @@ export default class GoogleStore {
     };
   }
 
-  async #receipt(agentId: string): Promise<GoogleReceipt | undefined> {
-    const source = await this.#paths(agentId).receipt.read();
+  async #receipt(agentId: string, configuredHome?: string): Promise<GoogleReceipt | undefined> {
+    const paths = this.#paths(agentId, configuredHome);
+    const source = await paths.receipt.read();
     if (!source) return undefined;
     try {
       const value = JSON.parse(source);
@@ -65,8 +82,17 @@ export default class GoogleStore {
         !/^[a-f0-9]{64}$/u.test(value.contents)
       )
         throw new Error();
+      if (
+        (value.agentId !== undefined && value.agentId !== agentId) ||
+        (paths.overridden && value.agentId === undefined)
+      )
+        throw new AgentSystemToolError(
+          'tool_identity_mismatch',
+          'This Google home is not owned by the active agent. Select a separate GOG_HOME.',
+        );
       return value;
-    } catch {
+    } catch (error) {
+      if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'configuration_unavailable',
         'Google installation receipt is invalid. Run install.',
@@ -74,8 +100,38 @@ export default class GoogleStore {
     }
   }
 
+  async assertLocation(
+    agentId: string,
+    configuredHome: string | undefined,
+    workspaces: readonly string[],
+  ) {
+    const paths = this.#paths(agentId, configuredHome);
+    // resolve existing parents too, so a symlink cannot hide a home inside a workspace.
+    const canonical = async (path: string): Promise<string> => {
+      try {
+        return await realpath(path);
+      } catch (error) {
+        if (nodeErrorCode(error) !== 'ENOENT' || dirname(path) === path) throw error;
+        return join(await canonical(dirname(path)), basename(path));
+      }
+    };
+    const home = await canonical(paths.directory);
+    for (const workspace of workspaces) {
+      if (isPathContained(await canonical(resolve(workspace)), home))
+        throw new AgentSystemToolError(
+          'configuration_unavailable',
+          'Google private state must remain outside agent workspaces and worktrees.',
+        );
+    }
+  }
+
+  location(agentId: string, configuredHome?: string) {
+    return this.#paths(agentId, configuredHome).directory;
+  }
+
   environment(home: string, password: string): Record<string, string> {
     return {
+      GOG_HOME: home,
       HOME: home,
       XDG_CONFIG_HOME: join(home, 'config'),
       XDG_DATA_HOME: join(home, 'data'),
@@ -135,11 +191,12 @@ export default class GoogleStore {
     agentId: string,
     account: string,
     material: GoogleCredentials,
+    configuredHome?: string,
   ): Promise<'missing' | 'drift' | 'ready'> {
-    const receipt = await this.#receipt(agentId);
+    const receipt = await this.#receipt(agentId, configuredHome);
     if (!receipt) return 'missing';
     if (receipt.account !== account || receipt.fingerprint !== material.fingerprint) return 'drift';
-    const generation = join(this.#paths(agentId).directory, receipt.generation);
+    const generation = join(this.#paths(agentId, configuredHome).directory, receipt.generation);
     const stat = await lstat(generation);
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.mode & 0o077)
       throw new Error('Google generation is unsafe.');
@@ -153,17 +210,19 @@ export default class GoogleStore {
     workspaceDir?: string,
     excludedDirectories: readonly string[] = [],
     signal?: AbortSignal,
+    configuredHome?: string,
   ) {
-    if ((await this.inspect(agentId, account, material)) !== 'ready')
+    await this.assertLocation(agentId, configuredHome, workspaceDir ? [workspaceDir] : []);
+    if ((await this.inspect(agentId, account, material, configuredHome)) !== 'ready')
       throw new AgentSystemToolError(
         'configuration_unavailable',
         'Google credentials require openclaw agent-system install.',
       );
-    const receipt = (await this.#receipt(agentId))!;
+    const receipt = (await this.#receipt(agentId, configuredHome))!;
     const home = await mkdtemp(join(tmpdir(), 'agent-system-google-'));
     try {
       const contents = await this.#copy(
-        join(this.#paths(agentId).directory, receipt.generation),
+        join(this.#paths(agentId, configuredHome).directory, receipt.generation),
         home,
       );
       if (contents !== receipt.contents)
@@ -191,9 +250,11 @@ export default class GoogleStore {
     material: GoogleCredentials,
     workspaceDir: string,
     excludedDirectories: readonly string[] = [],
+    configuredHome?: string,
   ): Promise<'created' | 'updated' | 'unchanged'> {
+    await this.assertLocation(agentId, configuredHome, workspaceDir ? [workspaceDir] : []);
     const client = this.client.withScope(excludedDirectories);
-    const paths = this.#paths(agentId);
+    const paths = this.#paths(agentId, configuredHome);
     await ensurePrivateStateDirectories({
       directories: paths.directories,
       label: 'Google state',
@@ -202,12 +263,26 @@ export default class GoogleStore {
     const lock = await acquirePrivateStateFileLock(paths.directory, {
       staleMs: 120000,
       retries: { retries: 0, factor: 1, minTimeout: 0, maxTimeout: 0 },
+    }).catch((error) => {
+      if (nodeErrorCode(error) !== privateStateFileLockBusyErrorCode) throw error;
+      throw new AgentSystemToolError(
+        'configuration_unavailable',
+        'Google installation is busy for this home. Retry install after the current installation finishes.',
+      );
     });
     try {
-      const previous = await this.#receipt(agentId);
-      const status = await this.inspect(agentId, account, material);
+      const previous = await this.#receipt(agentId, configuredHome);
+      const status = await this.inspect(agentId, account, material, configuredHome);
       if (status === 'ready') {
-        const lease = await this.acquire(agentId, account, material);
+        const lease = await this.acquire(
+          agentId,
+          account,
+          material,
+          undefined,
+          [],
+          undefined,
+          configuredHome,
+        );
         try {
           await client.verify(lease.environment, workspaceDir, account);
         } finally {
@@ -250,7 +325,13 @@ export default class GoogleStore {
         await client.verify(environment, workspaceDir, account);
         const contents = await this.#copy(home);
         await paths.receipt.write(
-          JSON.stringify({ generation, account, fingerprint: material.fingerprint, contents }),
+          JSON.stringify({
+            agentId,
+            generation,
+            account,
+            fingerprint: material.fingerprint,
+            contents,
+          }),
         );
         installed = true;
         if (previous)

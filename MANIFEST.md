@@ -567,5 +567,7 @@ surfaces retain their own path and mount contracts.
 
 Optional agent-scoped Google account and OAuth binding declarations are documented
 in the [Google tool guide](./tools/google/README.md#configuration). The account accepts
-both literal and environment-reference forms. Standalone Codex does not reconcile
+both literal and environment-reference forms and defaults to `agent.email`. The
+credential representation defaults to JSON, with Base64 available explicitly.
+Standalone Codex does not reconcile
 this section.

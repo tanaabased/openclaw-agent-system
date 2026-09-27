@@ -27,6 +27,7 @@ describe('google lifecycle', () => {
       agent: { id: 'one' },
       google: googleConfiguration,
     };
+    const values: Record<string, string> = { ...googleValues };
     let resolutions = 0;
     const requests: AgentSystemCliRunRequest[] = [];
     const capability = createGoogleCapability({
@@ -45,7 +46,7 @@ describe('google lifecycle', () => {
             manifest,
             diagnostics: [],
             validationChecks: [],
-            environment: { values: googleValues, variables: [] },
+            environment: { values, variables: [] },
           };
         },
       },
@@ -54,6 +55,7 @@ describe('google lifecycle', () => {
       contribution: capability.lifecycleContributions[0]!,
       context: { workspaceDir, manifest },
       requests,
+      values,
       resolutions: () => resolutions,
     };
   }
@@ -73,6 +75,21 @@ describe('google lifecycle', () => {
     assert.ok(f.requests.some((request) => request.argv.includes('oauth2.userinfo.get')));
     assert.ok(!f.requests.some((request) => request.argv.includes('auth')));
     assert.equal(await readFile(receiptPath, 'utf8'), before);
+  });
+  it('should report a missing account passively and resolve an inherited email and declared home', async () => {
+    const f = await fixture();
+    f.context.manifest.google = { ...googleConfiguration, account: undefined };
+    assert.equal(
+      f.contribution.validate!(f.context)?.diagnostics?.[0]?.code,
+      'google-account-required',
+    );
+    assert.equal(f.resolutions(), 0);
+    f.context.manifest.agent.email = 'one@example.com';
+    const home = join(root, 'declared-gog');
+    f.values.GOG_HOME = home;
+    assert.equal((await f.contribution.reconcile!(f.context)).outcomes[0]?.status, 'created');
+    assert.equal(JSON.parse(await readFile(join(home, 'current.json'), 'utf8')).agentId, 'one');
+    assert.equal((await f.contribution.inspect!(f.context))[0]?.code, 'google-live-identity-ready');
   });
   it('should reject excluded executables before resolving secrets or importing state', async () => {
     const f = await fixture(true);
