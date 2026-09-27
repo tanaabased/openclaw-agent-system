@@ -279,6 +279,7 @@ export default function createGitHubNotificationRuntime(
       );
       const pullRequestHandoffService = new GitHubNotificationPullRequestHandoffService({
         assignmentAuthority: assignmentProvider,
+        recoveryAuthority: assignmentProvider,
         conversationStateStore,
         coordinator: turnCoordinator,
         logger: dependencies.lifecycleLogger,
@@ -341,6 +342,7 @@ export default function createGitHubNotificationRuntime(
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
         assignmentAuthority: assignmentProvider,
         conversationStateStore,
+        handoffs: pullRequestHandoffService,
         initialModeId: async (input) => (await initialMode(input)).policy.id,
         lifecycles: lifecycleRegistry,
         logger: dependencies.lifecycleLogger,

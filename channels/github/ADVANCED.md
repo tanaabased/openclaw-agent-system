@@ -360,6 +360,15 @@ normalizes one delivery pull request. Guided performs no automatic
 implementation; the operator or an approved exact-mention comment decides what
 happens next. GitHub prose cannot select or elevate the configured mode.
 
+If Work delivery is interrupted and the agent creates a pull request separately,
+comment reconciliation can link one open PR on the exact managed branch to the
+issue-owned session. The channel rechecks assignment authority, repository and
+branch identity, base branch, and agent authorship before linking. It then uses
+the normal comment baseline and handoff. Missing or ambiguous matches stay
+unlinked; the channel does not infer a link from PR prose or change the PR's
+title, body, or recipients. The durable `recovery-linked` state does not claim
+automatic delivery completed and remains retryable after interruption.
+
 The channel also:
 
 - records existing assignments as a safe baseline during `install`, without
@@ -397,7 +406,7 @@ durable session recording.
   final response in GitHub and the private session. If deterministic validation
   rejects that response, the channel publishes a safe notice instead of going
   silent while retaining the detailed response privately.
-- Merging a delivery pull request retires its issue-owned lifecycle. Closing and
+- Merging a linked pull request retires its issue-owned lifecycle. Closing and
   reopening the pull request suspends and safely re-baselines that comment source.
 - Removing `github.notifications` and reinstalling retires tracked assignments,
   removes owned routing and converged monitor state, and stops intake without

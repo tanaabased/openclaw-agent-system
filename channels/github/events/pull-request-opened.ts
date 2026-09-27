@@ -12,7 +12,7 @@ interface GitHubNotificationPullRequestOpenedPresentationInput {
   repositoryOwner: string;
 }
 
-/** Render one trusted private card for an issue lifecycle's delivery pull request. */
+/** render one trusted private card for an issue lifecycle's linked pull request. */
 export function githubNotificationPullRequestOpenedCard(
   input: GitHubNotificationPullRequestOpenedPresentationInput,
 ): string {
@@ -34,14 +34,14 @@ export function githubNotificationPullRequestOpenedCard(
       {
         label: 'Comment flow',
         value:
-          'This issue and its delivery pull request share this session; each reply returns to its originating item.',
+          'This issue and its linked pull request share this session; each reply returns to its originating item.',
       },
     ],
     title: 'Pull request opened',
   });
 }
 
-/** Render the deterministic issue comment that announces the delivery pull request. */
+/** render the deterministic issue comment that announces the linked pull request. */
 export function githubNotificationPullRequestHandoffComment(pullRequestNumber: number): string {
   if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) {
     throw new Error('GitHub notification pull request numbers must be positive safe integers.');
@@ -50,7 +50,7 @@ export function githubNotificationPullRequestHandoffComment(pullRequestNumber: n
     '## Pull request opened',
     '',
     `- **Pull request:** #${pullRequestNumber}`,
-    '- **Conversation:** Comments on this issue and its delivery pull request now continue in the same private work session.',
+    '- **Conversation:** Comments on this issue and its linked pull request now continue in the same private work session.',
     '- **Replies:** Each response is posted back to the issue or pull request where its comment originated.',
   ].join('\n');
 }

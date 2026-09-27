@@ -602,7 +602,7 @@ describe('scripts/github-notification-model-scenarios', () => {
           {
             content: [
               'Continue the current GitHub issue lifecycle.',
-              'A delivery pull request has been linked to the current issue-owned work session.',
+              'A pull request has been linked to the current issue-owned work session.',
               'Respond privately with one brief acknowledgment.',
             ].join('\n'),
             role: 'system',

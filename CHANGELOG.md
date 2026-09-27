@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### Bug Fixes
+
+- Linked verified agent-created recovery PRs to the issue-owned comment flow without claiming automatic delivery or rewriting the PR. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180) [#181](https://github.com/tanaabased/openclaw-agent-system/pull/181)
+
 ### Improvements
 
 - Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)

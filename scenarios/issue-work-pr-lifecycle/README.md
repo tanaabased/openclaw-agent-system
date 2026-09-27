@@ -7,10 +7,12 @@ the visible issue handoff, one source-affine pull-request reply, closed-unmerged
 recovery, reopen baselining, merge-driven retirement, session archival, and
 clean worktree removal. The same lifecycle contract runs against the
 deterministic mock provider on pull requests and the live provider through
-workflow dispatch.
+workflow dispatch. A second disposable issue verifies that an agent-created PR
+on the exact managed branch joins the issue-owned comment flow without claiming
+automatic delivery or rewriting the PR.
 
-The scenario creates one disposable issue, pull request, head branch, and
-temporary base branch in `tanaabased/big-test-bucket`, then removes every
+The scenario creates two disposable issues and pull requests, their head branches,
+and one temporary base branch in `tanaabased/big-test-bucket`, then removes every
 remaining remote fixture, generated SSH key, and issue during cleanup.
 
 ## Setup
@@ -273,6 +275,94 @@ test "$(jq length <<< "$worktrees")" -eq 0
 ```
 
 ```bash
+# should prepare a second issue without automatic delivery
+cd "$TMPDIR/agent-system-notification-actor"
+agent_login="$(cat "$TMPDIR/notification-agent-login")"
+openclaw-github-issue create-and-assign \
+  --creator-agent notification-actor \
+  --repository tanaabased/big-test-bucket \
+  --title "recover pull request lifecycle fixture $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS" \
+  --body "Create pull-request-lifecycle-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt at the repository root with the exact contents: pull request lifecycle fixture ready." \
+  --assignee "$agent_login" \
+  --issue-number-path "$TMPDIR/recovery-issue-number"
+cd "$TMPDIR/agent-system-notifications"
+recovery_issue="$(cat "$TMPDIR/recovery-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$recovery_issue" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+worktrees="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool worktree --agent notification-data -- list)"
+jq -re 'select(length == 1) | .[0].path' <<< "$worktrees" > "$TMPDIR/recovery-worktree-path"
+jq -re 'select(length == 1) | .[0].branch' <<< "$worktrees" > "$TMPDIR/recovery-worktree-branch"
+```
+
+```bash
+# should create one agent-authored pull request on the exact managed branch
+recovery_issue="$(cat "$TMPDIR/recovery-issue-number")"
+worktree_path="$(cat "$TMPDIR/recovery-worktree-path")"
+worktree_branch="$(cat "$TMPDIR/recovery-worktree-branch")"
+fixture="pull-request-lifecycle-fixture-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+printf '%s\n' 'pull request lifecycle fixture ready.' > "$worktree_path/$fixture"
+cd "$worktree_path"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- add -- "$fixture"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- commit -m "#$recovery_issue: add recovery pull request fixture"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool git --agent notification-data -- push --set-upstream origin "HEAD:refs/heads/$worktree_branch"
+recovery_title="Agent-created recovery PR $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS"
+recovery_body="Closes #$recovery_issue. Recovery PR title and body must remain unchanged."
+printf '%s' "$recovery_title" > "$TMPDIR/recovery-pr-title"
+printf '%s' "$recovery_body" > "$TMPDIR/recovery-pr-body"
+pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr create --repo tanaabased/big-test-bucket --head "$worktree_branch" --base main --title "$recovery_title" --body "$recovery_body")"
+printf '%s\n' "$pull_request" > "$TMPDIR/recovery-pr-url"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr view "$pull_request" --repo tanaabased/big-test-bucket --json number --jq .number > "$TMPDIR/recovery-pr-number"
+```
+
+```bash
+# should link the recovery pull request and retain its authored metadata
+cd "$TMPDIR/agent-system-notifications"
+recovery_issue="$(cat "$TMPDIR/recovery-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$recovery_issue" \
+    --timeout 420
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+recovery_pr="$(cat "$TMPDIR/recovery-pr-number")"
+handoffs="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$recovery_issue/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff"))) | .id')"
+jq -se 'length == 1' <<< "$handoffs"
+pull_request="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr view "$recovery_pr" --repo tanaabased/big-test-bucket --json author,body,headRefName,title)"
+jq -e --arg title "$(cat "$TMPDIR/recovery-pr-title")" --arg body "$(cat "$TMPDIR/recovery-pr-body")" --arg branch "$(cat "$TMPDIR/recovery-worktree-branch")" '.author.login == "tanaabot" and .title == $title and .body == $body and .headRefName == $branch' <<< "$pull_request"
+```
+
+```bash
+# should answer a recovery pull request comment on that pull request
+cd "$TMPDIR/agent-system-notification-actor"
+recovery_pr="$(cat "$TMPDIR/recovery-pr-number")"
+reply_token="pr-ready-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- pr comment "$recovery_pr" --repo tanaabased/big-test-bucket --body "@tanaabot Reply briefly with $reply_token. Do not inspect files or perform repository work."
+cd "$TMPDIR/agent-system-notifications"
+recovery_issue="$(cat "$TMPDIR/recovery-issue-number")"
+refresh_result="$(
+  openclaw-github-notifications refresh-completed \
+    --agent notification-data \
+    --repository tanaabased/big-test-bucket \
+    --kind issue \
+    --number "$recovery_issue" \
+    --timeout 180
+)"
+jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
+replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$recovery_pr/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body,id}')"
+jq -se --arg token "$reply_token" 'length == 1 and (.[0].body | contains($token))' <<< "$replies"
+```
+
+```bash
 # should expose bounded evidence for the selected notification model
 openclaw-notification-setup evidence \
   --model "$NOTIFICATION_MODEL" \
@@ -281,6 +371,32 @@ openclaw-notification-setup evidence \
 ```
 
 ## Cleanup
+
+```bash
+# should remove the recovery issue, pull request, and managed head branch
+if test -f "$TMPDIR/recovery-pr-number"; then
+  cd "$TMPDIR/agent-system-notifications"
+  recovery_pr="$(cat "$TMPDIR/recovery-pr-number")"
+  recovery_state="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr view "$recovery_pr" --repo tanaabased/big-test-bucket --json state --jq .state)"
+  if [[ "$recovery_state" == 'OPEN' ]]; then
+    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- pr close "$recovery_pr" --repo tanaabased/big-test-bucket
+  fi
+fi
+if test -f "$TMPDIR/recovery-worktree-branch"; then
+  cd "$TMPDIR/agent-system-notifications"
+  worktree_branch="$(cat "$TMPDIR/recovery-worktree-branch")"
+  if OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --silent --method GET "/repos/tanaabased/big-test-bucket/git/ref/heads/$worktree_branch"; then
+    OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --method DELETE "/repos/tanaabased/big-test-bucket/git/refs/heads/$worktree_branch"
+  fi
+fi
+if test -f "$TMPDIR/recovery-issue-number"; then
+  cd "$TMPDIR/agent-system-notification-actor"
+  recovery_issue="$(cat "$TMPDIR/recovery-issue-number")"
+  agent_login="$(cat "$TMPDIR/notification-agent-login")"
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue edit "$recovery_issue" --repo tanaabased/big-test-bucket --remove-assignee "$agent_login"
+  OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- issue close "$recovery_issue" --repo tanaabased/big-test-bucket
+fi
+```
 
 ```bash
 # should remove only the generated tanaabot public key
