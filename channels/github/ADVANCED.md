@@ -33,7 +33,9 @@ Declare `github.notifications` in the workspace manifest; see the
 ### `github.notifications.pull-request`
 
 Controls recipients on pull requests created or recovered by issue Work delivery.
-It does not affect direct `gh` pull requests or grant authority to direct the agent.
+Relevant Work turns also receive these defaults for an otherwise authorized,
+agent-created task PR after a recovery detour. This does not grant PR creation
+authority or affect unrelated direct `gh` pull requests.
 
 | Field       | Type                              | Required | Default            | Description                                                                                                               |
 | ----------- | --------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |

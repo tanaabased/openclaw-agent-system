@@ -11,6 +11,36 @@ const contractConfig = {
 };
 
 describe('channels/github/conversation/turn-contract', () => {
+  it('should carry trusted recipient guidance only on relevant issue work turns', () => {
+    const resolver = createGitHubNotificationTurnContractResolver();
+    const recipients = 'assignees: @pirog (node ID U_actor); reviewers: none.';
+    for (const eventId of ['assignment', 'implementation', 'comment'] as const) {
+      const identity = { eventId, lifecycleId: 'issue', modeId: 'work' } as const;
+      assert.match(
+        resolver.resolve(identity, contractConfig, 'tanaabot', recipients).instructions,
+        /## Task pull request recipients\n\nassignees: @pirog/u,
+      );
+    }
+    assert.doesNotMatch(
+      resolver.resolve(
+        { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+        contractConfig,
+        'tanaabot',
+        recipients,
+      ).instructions,
+      /## Task pull request recipients/u,
+    );
+    assert.doesNotMatch(
+      resolver.resolve(
+        { eventId: 'comment', lifecycleId: 'issue', modeId: 'guided' },
+        contractConfig,
+        'tanaabot',
+        recipients,
+      ).instructions,
+      /## Task pull request recipients/u,
+    );
+  });
+
   it('should compose one supported lifecycle mode event contract', () => {
     const contract = createGitHubNotificationTurnContractResolver().resolve(
       commentIdentity,

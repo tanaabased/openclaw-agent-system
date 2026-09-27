@@ -37,6 +37,7 @@ import GitHubNotificationTurnCatalog, {
   githubNotificationSupportedTurnIdentities,
 } from '../conversation/turn-catalog.ts';
 import GitHubNotificationTurnSelector from '../conversation/turn-selector.ts';
+import GitHubNotificationPullRequestRecipientGuidance from '../conversation/pull-request-recipient-guidance.ts';
 import githubNotificationAssignmentEvent from '../events/assignment.ts';
 import githubNotificationCommentEvent from '../events/comment.ts';
 import githubNotificationImplementationEvent from '../events/implementation.ts';
@@ -163,6 +164,7 @@ export default function createGitHubNotificationRuntime(
     turns: turnCatalog,
   });
   const turnContracts = new GitHubNotificationTurnContractResolver({ turns: turnCatalog });
+  let recipientGuidance: GitHubNotificationPullRequestRecipientGuidance | undefined;
   const modelRouting = new ModelRoutingService({
     runtime: dependencies.modelRoutingRuntime,
     conversations: conversationStateStore,
@@ -227,6 +229,7 @@ export default function createGitHubNotificationRuntime(
           logger: dependencies.lifecycleLogger,
           turnContracts,
           turnSelector,
+          ...(recipientGuidance ? { recipientGuidance } : {}),
         });
       },
     },
@@ -236,6 +239,11 @@ export default function createGitHubNotificationRuntime(
       dependencies.replyToolLogger,
     ),
     assemble(manifestService: AgentManifestService, git: GitHubNotificationGitExecutor) {
+      recipientGuidance = new GitHubNotificationPullRequestRecipientGuidance({
+        conversations: conversationStateStore,
+        manifestService,
+        monitor: monitorStateStore,
+      });
       const initialMode = async (input: { agentId: string; workspaceDir: string }) => {
         const loaded = await manifestService.loadForAgentId(input.agentId, 'service');
         if (
@@ -306,6 +314,7 @@ export default function createGitHubNotificationRuntime(
         publications: commentPublicationService,
         readConfig: dependencies.readRuntimeConfig,
         resolveNotificationRoute: resolveRoute,
+        recipientGuidance,
         turnContracts,
       });
       const assignmentOrchestrator = new GitHubNotificationAssignmentOrchestrator({
@@ -326,6 +335,7 @@ export default function createGitHubNotificationRuntime(
         logger: dependencies.lifecycleLogger,
         readConfig: dependencies.readRuntimeConfig,
         resolveNotificationRoute: resolveRoute,
+        recipientGuidance,
         turnContracts,
       });
       const commentOrchestrator = new GitHubNotificationCommentOrchestrator({
