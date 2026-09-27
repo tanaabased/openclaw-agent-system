@@ -275,6 +275,14 @@ test "$(jq length <<< "$worktrees")" -eq 0
 ```
 
 ```bash
+# should retain the established mock evidence for normal delivery
+openclaw-notification-setup evidence \
+  --model "$NOTIFICATION_MODEL" \
+  --scenario pr-lifecycle \
+  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-pr-lifecycle/expected-evidence.json"
+```
+
+```bash
 # should prepare a second issue without automatic delivery
 cd "$TMPDIR/agent-system-notification-actor"
 agent_login="$(cat "$TMPDIR/notification-agent-login")"
@@ -360,14 +368,10 @@ refresh_result="$(
 jq -se 'length == 1 and (.[0] | .status == "completed" and .code == "github-notification-poll-complete")' <<< "$refresh_result"
 replies="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-data -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$recovery_pr/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:github-reply"))) | {body,id}')"
 jq -se --arg token "$reply_token" 'length == 1 and (.[0].body | contains($token))' <<< "$replies"
-```
-
-```bash
-# should expose bounded evidence for the selected notification model
-openclaw-notification-setup evidence \
-  --model "$NOTIFICATION_MODEL" \
-  --scenario pr-lifecycle \
-  --expected-evidence "$GITHUB_WORKSPACE/scenarios/issue-work-pr-lifecycle/expected-evidence.json"
+if [[ "$NOTIFICATION_MODEL" == aimock/* ]]; then
+  curl --fail --silent --show-error 'http://127.0.0.1:4010/proof/evidence' \
+    | jq -e '.schemaVersion == 2 and .scenario == "pr-lifecycle" and .strictMissCount == 0 and .requestCount > 13'
+fi
 ```
 
 ## Cleanup
