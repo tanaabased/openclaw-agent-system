@@ -12,6 +12,7 @@ import {
   backupControlDirectory,
   backupDefaultOutput,
   type BackupPlan,
+  type BackupRuntimeProtection,
 } from './backup-types.ts';
 
 const executeFile = promisify(execFile);
@@ -85,6 +86,7 @@ export async function planWorkspaceBackup(options: {
   overrides?: BackupConfiguration;
   bound?: boolean;
   protectedPaths?: string[];
+  runtimeProtection?: BackupRuntimeProtection;
 }): Promise<BackupPlan> {
   const workspaceDir = await realpath(options.workspaceDir);
   const configured = options.manifest.backup ?? {};
@@ -132,12 +134,31 @@ export async function planWorkspaceBackup(options: {
       'A bound caller must use the configured backup destination or a contained workspace directory.',
     );
   }
+  const stateDir = options.runtimeProtection?.stateDir
+    ? await canonicalBackupPath(options.runtimeProtection.stateDir)
+    : undefined;
+  const runtimeWorkspace = options.runtimeProtection?.workspaceDir
+    ? await canonicalBackupPath(options.runtimeProtection.workspaceDir)
+    : undefined;
+  // only the host-resolved workspace may sit beneath the state root; runtime-only paths stay protected.
+  const stateWorkspace =
+    stateDir !== undefined &&
+    workspaceDir !== stateDir &&
+    workspaceDir === runtimeWorkspace &&
+    isPathContained(stateDir, workspaceDir);
+  const runtimePaths = await Promise.all(
+    [
+      ...(options.protectedPaths ?? []),
+      ...(options.runtimeProtection?.paths ?? []),
+      ...(stateDir && !stateWorkspace ? [stateDir] : []),
+    ].map(canonicalBackupPath),
+  );
   const protectedPaths = await Promise.all(
     [
       resolve(workspaceDir, backupDefaultOutput),
       resolve(workspaceDir, backupControlDirectory),
       settings.output,
-      ...(options.protectedPaths ?? []),
+      ...runtimePaths,
     ].map(canonicalBackupPath),
   );
   if (protectedPaths.some((path) => isPathContained(path, workspaceDir))) {
@@ -147,7 +168,10 @@ export async function planWorkspaceBackup(options: {
     );
   }
   if (
-    (options.protectedPaths ?? []).some((path) => isPathContained(resolve(path), settings.output))
+    runtimePaths.some((path) => isPathContained(path, settings.output)) ||
+    (stateDir &&
+      isPathContained(stateDir, settings.output) &&
+      !(stateWorkspace && isPathContained(workspaceDir, settings.output)))
   ) {
     throw new BackupError(
       'backup-output-is-runtime-state',
@@ -203,12 +227,6 @@ export async function planWorkspaceBackup(options: {
           'A workspace backup supports at most 100000 entries.',
         );
       if (entry.isDirectory()) await visit(path);
-      else if (!entry.isFile() && !entry.isSymbolicLink()) {
-        throw new BackupError(
-          'backup-source-type-unsupported',
-          `Unsupported workspace entry: ${workspacePath}.`,
-        );
-      }
     }
   }
   await visit(workspaceDir);
@@ -262,6 +280,11 @@ export async function planWorkspaceBackup(options: {
   );
   for (const path of [...selected]) {
     const stats = await lstat(join(workspaceDir, path));
+    if (!stats.isDirectory() && !stats.isFile() && !stats.isSymbolicLink())
+      throw new BackupError(
+        'backup-source-type-unsupported',
+        `Unsupported workspace entry: ${path}.`,
+      );
     if (stats.isSymbolicLink()) {
       const target = await realpath(join(workspaceDir, path)).catch(() => undefined);
       const linkTarget = await readlink(join(workspaceDir, path));

@@ -145,7 +145,9 @@ describe('workspace backup', () => {
     const database = join(workspace, 'custom-memory.sqlite');
     await writeFile(database, 'database');
     await writeFile(`${database}-wal`, 'wal');
-    const protectedService = new WorkspaceBackupService(async () => [database, `${database}-wal`]);
+    const protectedService = new WorkspaceBackupService(async () => ({
+      paths: [database, `${database}-wal`],
+    }));
     const result = await protectedService.plan({
       manifest,
       workspaceDir: workspace,
@@ -177,6 +179,82 @@ describe('workspace backup', () => {
     assert.ok(plan.files.includes('memory/daily.md'));
     assert.deepEqual(await readdir(workspace), before);
     await assert.rejects(lstat(plan.settings.output), { code: 'ENOENT' });
+  });
+
+  it('should capture the host workspace beneath state while protecting runtime paths and destinations', async () => {
+    const stateDir = join(root, '.openclaw');
+    const hostWorkspace = join(stateDir, 'workspace-tanaabot');
+    const agentDir = join(stateDir, 'agents', 'tanaabot', 'agent');
+    const nestedRuntime = join(hostWorkspace, 'private-runtime');
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(nestedRuntime, { recursive: true });
+    await writeFile(join(agentDir, 'state.sqlite'), 'outside runtime');
+    await writeFile(join(nestedRuntime, 'state.sqlite'), 'nested runtime');
+    await writeFile(join(hostWorkspace, 'MEMORY.md'), 'workspace memory');
+    await symlink(agentDir, join(hostWorkspace, 'runtime-alias'));
+    const protection = {
+      paths: [agentDir, nestedRuntime],
+      stateDir,
+      workspaceDir: hostWorkspace,
+    };
+    const protectedService = new WorkspaceBackupService(async () => protection);
+    const plan = await protectedService.plan({
+      manifest,
+      workspaceDir: hostWorkspace,
+      overrides: { include: ['**'] },
+    });
+    assert.ok(plan.files.includes('MEMORY.md'));
+    assert.ok(!plan.files.some((path) => path.startsWith('private-runtime')));
+    assert.ok(!plan.files.includes('runtime-alias'));
+    const result = await protectedService.create(plan);
+    assert.ok(result.manifest.inventory.some(({ path }) => path === 'MEMORY.md'));
+    assert.ok(!result.manifest.inventory.some(({ path }) => path.includes('state.sqlite')));
+    await protectedService.verify(result.archive);
+    for (const output of [agentDir, join(stateDir, 'unowned-backups'), 'runtime-alias']) {
+      await assert.rejects(
+        protectedService.plan({
+          manifest,
+          workspaceDir: hostWorkspace,
+          overrides: { output },
+        }),
+        { code: 'backup-output-is-runtime-state' },
+      );
+    }
+    await assert.rejects(protectedService.plan({ manifest, workspaceDir: stateDir }), {
+      code: 'backup-workspace-is-runtime-state',
+    });
+    await assert.rejects(protectedService.plan({ manifest, workspaceDir: agentDir }), {
+      code: 'backup-workspace-is-runtime-state',
+    });
+    const otherWorkspace = join(stateDir, 'workspace-other');
+    await mkdir(otherWorkspace);
+    await assert.rejects(protectedService.plan({ manifest, workspaceDir: otherWorkspace }), {
+      code: 'backup-workspace-is-runtime-state',
+    });
+    const unsafeService = new WorkspaceBackupService(async () => ({
+      ...protection,
+      workspaceDir: agentDir,
+    }));
+    await assert.rejects(unsafeService.plan({ manifest, workspaceDir: agentDir }), {
+      code: 'backup-workspace-is-runtime-state',
+    });
+  });
+
+  it('should reject special files only when selected after exclusions', async () => {
+    await mkdir(join(workspace, 'scratch'));
+    await executeFile('/usr/bin/mkfifo', [join(workspace, 'scratch', 'pipe')]);
+    const plan = await service.plan({
+      manifest,
+      workspaceDir: workspace,
+      overrides: { include: ['scratch/pipe'], exclude: ['scratch/**'] },
+    });
+    assert.ok(!plan.files.includes('scratch/pipe'));
+    const result = await service.create(plan);
+    assert.ok(result.manifest.inventory.some(({ path }) => path === 'MEMORY.md'));
+    assert.ok(!result.manifest.inventory.some(({ path }) => path === 'scratch/pipe'));
+    await assert.rejects(service.plan({ manifest, workspaceDir: workspace }), {
+      code: 'backup-source-type-unsupported',
+    });
   });
 
   it('should create private verified archives and preserve contents permissions and safe links on extraction', async () => {

@@ -31,6 +31,7 @@ import {
   backupControlDirectory,
   type BackupEntry,
   type BackupPlan,
+  type BackupRuntimeProtection,
   type WorkspaceBackupManifest,
 } from './backup-types.ts';
 
@@ -246,7 +247,9 @@ async function captureWorkspace(
 
 export default class WorkspaceBackupService {
   constructor(
-    private readonly protectedPaths: (agentId: string) => Promise<string[]> = async () => [],
+    private readonly runtimeProtection: (
+      agentId: string,
+    ) => Promise<BackupRuntimeProtection> = async () => ({ paths: [] }),
   ) {}
 
   async plan(options: {
@@ -257,7 +260,7 @@ export default class WorkspaceBackupService {
   }): Promise<BackupPlan> {
     return planWorkspaceBackup({
       ...options,
-      protectedPaths: await this.protectedPaths(options.manifest.agent.id),
+      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
     });
   }
 

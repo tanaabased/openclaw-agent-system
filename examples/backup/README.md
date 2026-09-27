@@ -1,8 +1,7 @@
 # Workspace Backup Example
 
-Exercises the packed plugin's workspace-only backup commands, ignored-memory
-selection, setup check/apply authority, local destination ignore rules, and
-verification with direct assertions. All writes stay in disposable runner state.
+Tests packed-plugin backups, ignored-memory selection, setup authority,
+destination ignore rules, and verification. Writes stay in disposable runner state.
 
 ## Setup
 

@@ -244,8 +244,7 @@ identifiers remain literal and are never casing-converted. See
 ### `backup`
 
 Optional defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
-Omitting `backup` uses the same defaults as omitting all its fields. Loading the
-manifest validates declarations without creating backups or installing schedules.
+Omit `backup` to use the defaults. Loading the manifest creates no backups.
 
 | Field               | Type         | Required | Default                 | Description                                                      |
 | ------------------- | ------------ | -------- | ----------------------- | ---------------------------------------------------------------- |
@@ -268,16 +267,13 @@ backup:
     - previous-backups/**
 ```
 
-Defaults apply first, then manifest fields, then explicitly supplied CLI options.
-No backup-specific environment-variable layer exists. A supplied include/exclude
-option replaces its manifest list; `--include=` or `--exclude=` clears that list.
-Includes cannot override mandatory destination, staging, or live OpenClaw state
-exclusions. Previous custom backup locations require explicit exclusions.
+CLI options override manifest fields, which override defaults; there is no
+backup-specific environment layer. Include/exclude options replace their manifest
+lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
+exclusions. Exclude previous custom destinations explicitly.
 
-This configuration covers workspace files only. It does not capture OpenClaw
-SQLite databases or sidecars, sessions, runtime state, out-of-workspace sources, or
-external memory backends. See the command reference for safe destinations,
-private permissions, Git-ignore handling, symlink limits, and capture diagnostics.
+Only workspace files are captured. See the command reference for coverage,
+destination restrictions, permissions, selection rules, and diagnostics.
 
 ### `setup`
 

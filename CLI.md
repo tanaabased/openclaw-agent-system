@@ -47,9 +47,8 @@ configured capability declarations that passed validation.
 
 ## `openclaw agent-system backup create`
 
-Capture selected workspace files in a private, verified `.tar.gz`. This stage is
-workspace-only: OpenClaw databases, sessions, runtime state, out-of-workspace
-sources, and external memory backends are not captured.
+Capture selected workspace files in a private, verified `.tar.gz`. OpenClaw
+databases, sessions, runtime state, and external sources are excluded.
 
 ### Options
 
@@ -84,46 +83,39 @@ openclaw agent-system backup create --json
 openclaw as backup create --exclude= --git-ignore=false
 ```
 
-Selection starts with workspace entries, removes the small regenerable filter
-(`**/node_modules/**`, `**/.npm/_cacache/**`, `**/.eslintcache`), optionally applies
-Git-ignore, restores includes, then applies excludes. Includes can recover files
-under ignored parents; excludes win. Build outputs and worktrees are not blanket
-excluded. Exact include paths must exist; unmatched globs produce diagnostics.
-Git-ignore requires a Git repository and keeps tracked files. Paths use `/`;
-absolute patterns, traversal, backslashes, and control characters are unsupported.
+Selection filters `**/node_modules/**`, `**/.npm/_cacache/**`, and `**/.eslintcache`,
+optionally applies Git-ignore, restores includes, then applies excludes. Includes
+recover ignored descendants; excludes win. Build outputs and worktrees are not
+blanket excluded. Exact includes must exist; unmatched globs produce diagnostics.
+Git-ignore requires a repository and keeps tracked files. Patterns use `/`;
+absolute paths, traversal, backslashes, and control characters are unsupported.
+Selected special files cannot be archived.
 
-The default backup destination, effective destination, and
-`.agent-system/backup-staging` are always excluded, including aliases and explicit
-includes. Add previous custom backup destinations to `exclude` yourself; archives
-are not excluded merely by extension. Relative links are preserved only when their
-target belongs to the selected payload; escaping, absolute, and broken links are
-omitted with diagnostics. Known live OpenClaw state and database sidecars are
-protected independently of selection patterns.
+The default destination, effective destination, and `.agent-system/backup-staging`
+are always excluded, including aliases. Includes cannot override these exclusions
+or runtime-state protections. Exclude previous custom destinations explicitly;
+archive extensions alone do not exclude files. Only relative links to selected
+targets are preserved; other links are omitted with diagnostics.
 
-Operators may choose local destinations. Bound callers cannot supply `--agent`
-and may use only contained workspace destinations or the manifest-configured
-external directory. Locations belonging to another or invalid agent workspace are
-rejected. Destinations cannot equal or contain the workspace, or reside
-in live OpenClaw state or Git metadata. Inside Git repositories, creation reuses
-an effective ignore rule or appends a narrow directory rule to local
-`info/exclude`; unrelated rules and the rest of `.agent-system/` remain intact.
-Tracked destinations and overriding ignore rules fail with diagnostics.
+Operators may choose local destinations. Bound callers cannot supply `--agent` and
+must use their workspace or the configured external destination. Another or
+invalid agent's workspace is rejected. Host-resolved workspaces beneath OpenClaw's
+state directory are supported. Destinations cannot equal or contain the workspace,
+or reside in runtime-only state or Git metadata. Git destinations must be untracked
+and ignored; creation reuses an effective rule or adds a scoped directory rule to
+local `info/exclude`. Overriding ignore rules fail with diagnostics.
 
-Archives contain root `manifest.json` and `workspace/`. Version `1` records agent
-identity, capture time, effective settings, coverage, diagnostics, inventory,
-permissions, safe link targets, and SHA-256 checksums. Files are staged privately;
-concurrent captures for the same workspace/agent serialize. An exclusive final
-name appears only after verification. Archives have mode `0600`; staging has mode
-`0700`. Failed capture or verification publishes no archive. Changed or vanished
-files detected during capture fail explicitly; files can still change before or
-after their individual capture. This is not an atomic workspace snapshot.
+Archives contain root `manifest.json` and `workspace/`, with a versioned inventory
+and SHA-256 checksums. Captures for the same workspace serialize and publish unique
+archives only after verification. Archives use mode `0600`; staging uses `0700`.
+Capture or verification failures publish nothing. Detected file changes or loss
+fail explicitly; the backup is not an atomic workspace snapshot.
 
-Setup `apply` steps may create backups; checks may only use `--dry-run` or verify
-existing archives. Creation is noninteractive and installs no scheduler. A preview
-returns `status: preview`, creation `status: created`, and failures `status: failed`
-with nonzero exit and diagnostic codes. Sensitive local files can be included;
-keep archives private. Restore, retention, uploads, scheduling, and database
-snapshot capture are separate features.
+Setup applies may create backups; checks may only preview or verify. Creation is
+noninteractive. Results report `status: preview`, `status: created`, or
+`status: failed`; failures return nonzero with diagnostic codes. Archives may
+contain sensitive files; keep them private. Restore, retention, uploads,
+scheduling, and database snapshots are separate features.
 
 ## `openclaw agent-system backup verify`
 
@@ -149,12 +141,11 @@ openclaw agent-system backup verify <archive> [--agent <id>] [--json]
 openclaw as backup verify /private/backups/agent-backup.tar.gz --json
 ```
 
-Verification rejects unsupported versions, invalid manifests, duplicate or unsafe
-paths, unsafe links, unsupported entry types, missing/extra inventory entries,
-permission mismatches, and checksum failures. Selection scans up to 100,000
-workspace entries; the root manifest supports up to 16 MiB. Bound callers may verify only their
-own identity's archives inside their workspace or configured destination. Success
-returns `status: verified`; failures return `status: failed` and nonzero exit.
+Verification checks versions, manifests, paths, links, entry types, inventory,
+permissions, and checksums. Selection supports 100,000 entries; the root manifest
+is limited to 16 MiB. Bound callers may verify only their agent's archives within
+their workspace or configured destination. Success returns `status: verified`;
+failure returns `status: failed` and nonzero exit.
 Checksums verify internal integrity, not authenticity or completeness of omitted
 state. Verification does not imply OpenClaw database coverage.
 

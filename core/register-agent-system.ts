@@ -514,10 +514,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     registerAgentSystemCli(program, {
       backupService: new WorkspaceBackupService(async (agentId) => {
         const config = await readConfig();
-        return [
-          api.runtime.state.resolveStateDir(),
-          api.runtime.agent.resolveAgentDir(config, agentId),
-        ];
+        return {
+          paths: [api.runtime.agent.resolveAgentDir(config, agentId)],
+          stateDir: api.runtime.state.resolveStateDir(),
+          workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(config, agentId),
+        };
       }),
       commandAuthority,
       credentialInput: opCredentialInput,

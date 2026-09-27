@@ -20,6 +20,12 @@ export interface BackupDiagnostic {
 
 export type BackupSettings = Required<BackupConfiguration>;
 
+export interface BackupRuntimeProtection {
+  paths: string[];
+  stateDir?: string;
+  workspaceDir?: string;
+}
+
 export interface BackupEntry {
   path: string;
   type: 'file' | 'directory' | 'symlink';
