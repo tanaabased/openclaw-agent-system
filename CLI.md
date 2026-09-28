@@ -7,6 +7,8 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
+- [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
+- [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
 - [`openclaw agent-system env`](#openclaw-agent-system-env)
 - [`openclaw agent-system install`](#openclaw-agent-system-install)
 - [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
@@ -42,6 +44,97 @@ openclaw agent-system validate --json
 
 The result identifies the selected agent and workspace and reports the core and
 configured capability declarations that passed validation.
+
+## `openclaw agent-system backup create`
+
+Capture selected workspace files in a private, verified `.tar.gz`. OpenClaw
+databases, sessions, runtime state, and external sources are excluded.
+
+### Options
+
+| Option or argument           | Required | Default                             | Description                                                                                    |
+| ---------------------------- | -------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `--agent <id>`               | no       | workspace discovery                 | Select an installed agent; operators only.                                                     |
+| `--output <directory>`       | no       | manifest or `.agent-system/backups` | Resolve relative destinations against the discovered workspace.                                |
+| `--git-ignore[=true\|false]` | no       | manifest or `false`                 | Bare flag means `true`; omission inherits the manifest.                                        |
+| `--include <patterns...>`    | no       | manifest or `[]`                    | Repeatable quoted workspace-relative globs; replace the manifest list. `--include=` clears it. |
+| `--exclude <patterns...>`    | no       | manifest or `[]`                    | Repeatable globs applied last; replace the manifest list. `--exclude=` clears it.              |
+| `--dry-run`                  | no       | off                                 | Report settings and selection without writing any files, ignore rules, locks, or staging.      |
+| `--json`                     | no       | off                                 | Write one structured result, including failures.                                               |
+
+### Usage
+
+```text
+openclaw agent-system backup create [--agent <id>] [--output <directory>]
+  [--git-ignore[=true|false]] [--include <patterns...>] [--exclude <patterns...>]
+  [--dry-run] [--json]
+```
+
+```sh
+# inspect selected private memory before capturing it.
+openclaw as backup create --dry-run --json --git-ignore \
+  --include 'MEMORY.md' 'memory/**' --include 'DREAMS.md' 'GOALS.md' \
+  --exclude 'scratch/**'
+
+# capture with the manifest defaults.
+openclaw agent-system backup create --json
+
+# clear configured exclusions and turn off git-ignore filtering.
+openclaw as backup create --exclude= --git-ignore=false
+```
+
+Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and `**/.eslintcache`.
+Optional Git-ignore runs before includes; excludes run last. Includes recover ignored
+files. Exact includes must exist, unmatched globs produce diagnostics, and selected
+special files fail. Git-ignore requires a repository and keeps tracked files.
+Patterns must be safe workspace-relative paths using `/`.
+
+Default and selected destinations and `.agent-system/backup-staging` are always
+excluded, including path aliases. Exclude previous custom destinations explicitly.
+Only relative links to selected targets are archived.
+
+Operators may choose local destinations. Bound callers cannot set `--agent` and
+may use only their workspace or configured external destination. Host-resolved
+workspaces inside OpenClaw state are supported, but destinations cannot contain
+the workspace or use runtime-only state or Git metadata. Git destinations must
+be untracked and ignored; creation adds a local `info/exclude` rule if needed.
+
+Archives are private (`0600`) and published only after verification. Capture fails
+if files change; it is not an atomic workspace snapshot. Setup applies may create
+backups; checks may only preview or verify. Archives may contain sensitive files.
+Restore, retention, uploads, scheduling, and database snapshots are separate features.
+
+## `openclaw agent-system backup verify`
+
+Read and verify a workspace archive without extracting it or changing a live
+workspace. Operators can verify an archive without an installed workspace.
+
+### Options
+
+| Option or argument | Required | Default | Description                                                   |
+| ------------------ | -------- | ------- | ------------------------------------------------------------- |
+| `<archive>`        | yes      | none    | Local `.tar.gz` path, relative to the current directory.      |
+| `--agent <id>`     | no       | none    | Require this recorded agent identity; operators only.         |
+| `--json`           | no       | off     | Write one structured verification result, including failures. |
+
+### Usage
+
+```text
+openclaw agent-system backup verify <archive> [--agent <id>] [--json]
+```
+
+```sh
+# verify a workspace-only artifact without restoring it.
+openclaw as backup verify /private/backups/agent-backup.tar.gz --json
+```
+
+Verification checks versions, manifests, paths, links, entry types, inventory,
+permissions, and checksums. Selection supports 100,000 entries; the root manifest
+is limited to 16 MiB. Bound callers may verify only their agent's archives within
+their workspace or configured destination. Success returns `status: verified`;
+failure returns `status: failed` and nonzero exit.
+Checksums verify internal integrity, not authenticity or completeness of omitted
+state. Verification does not imply OpenClaw database coverage.
 
 ## `openclaw agent-system env`
 

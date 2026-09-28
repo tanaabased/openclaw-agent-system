@@ -6,8 +6,14 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
 
 - [Discovery](#discovery)
 - [Configuration](#configuration)
-- [Setup](#setup)
-- [Component configuration](#component-configuration)
+  - [`schema-version`](#schema-version)
+  - [`agent`](#agent)
+  - [`models`](#models)
+  - [`memory`](#memory)
+  - [`environment`](#environment)
+  - [`backup`](#backup)
+  - [`setup`](#setup)
+  - [Component Configuration](#component-configuration)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
 
@@ -239,6 +245,40 @@ Schema-owned YAML keys use kebab-case. Environment names and user-defined
 identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
+
+### `backup`
+
+Optional defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
+Omit `backup` to use the defaults. Loading the manifest creates no backups.
+
+| Field               | Type         | Required | Default                 | Description                                                      |
+| ------------------- | ------------ | -------- | ----------------------- | ---------------------------------------------------------------- |
+| `backup.output`     | string       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
+| `backup.git-ignore` | boolean      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
+| `backup.include`    | string array | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
+| `backup.exclude`    | string array | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
+
+```yaml
+backup:
+  output: .agent-system/backups
+  git-ignore: true
+  include:
+    - MEMORY.md
+    - memory/**
+    - DREAMS.md
+    - GOALS.md
+  exclude:
+    - scratch/**
+    - previous-backups/**
+```
+
+CLI options override manifest fields, which override defaults; there is no
+backup-specific environment layer. Include/exclude options replace their manifest
+lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
+exclusions. Exclude previous custom destinations explicitly.
+
+Only workspace files are captured. See the command reference for coverage,
+destination restrictions, permissions, selection rules, and diagnostics.
 
 ### `setup`
 

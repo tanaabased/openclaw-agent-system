@@ -5,6 +5,7 @@ import type { GitHubManifestConfiguration } from './github-schema.ts';
 import type { AgentSetupConfiguration } from './setup-schema.ts';
 import type { AgentModelsConfiguration } from './models-schema.ts';
 import type { AgentMemoryConfiguration } from './memory-schema.ts';
+import type { BackupConfiguration } from './backup-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;
@@ -28,6 +29,7 @@ export interface AgentManifest {
   memory?: AgentMemoryConfiguration;
   models?: AgentModelsConfiguration;
   setup?: AgentSetupConfiguration;
+  backup?: BackupConfiguration;
 }
 
 export interface ManifestDiagnostic {

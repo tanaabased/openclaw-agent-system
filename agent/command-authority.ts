@@ -29,6 +29,7 @@ type AuthorityManifestService = Pick<AgentManifestService, 'loadForAgentId'> &
 interface CapabilityLease {
   agentId: string;
   expiresAt: number;
+  setupMode?: 'check' | 'apply';
 }
 
 interface AuthorityRequest {
@@ -62,6 +63,7 @@ type AuthorityResponse =
       status: 'allowed' | 'outside-agent-scope';
       workingDirectory: string;
       executesCommands?: true;
+      setupMode?: 'check' | 'apply';
     }
   | { status: 'denied' };
 
@@ -69,6 +71,7 @@ export interface AgentCommandBinding {
   admittedWorkingDirectories: readonly string[];
   agentId: string;
   workingDirectory: string;
+  setupMode?: 'check' | 'apply';
   executeCommand?(command: AgentBoundCommand): Promise<AgentBoundCommandResult>;
 }
 
@@ -166,6 +169,9 @@ function isContextResponse(
     ) &&
     (response.executesCommands === undefined ||
       (response.status === 'allowed' && response.executesCommands === true)) &&
+    (response.setupMode === undefined ||
+      response.setupMode === 'check' ||
+      response.setupMode === 'apply') &&
     response.admittedWorkingDirectories.some((root) =>
       isPathContained(root, response.workingDirectory!),
     ) ===
@@ -301,7 +307,7 @@ export default class AgentCommandAuthority {
     if (socketPath) await unlink(socketPath).catch(() => undefined);
   }
 
-  issue(agentId: string): Record<string, string> {
+  issue(agentId: string, setupMode?: 'check' | 'apply'): Record<string, string> {
     const normalizedAgentId = agentId.trim();
     if (!this.#server || !this.#authorityId || !agentIdPattern.test(normalizedAgentId)) {
       return deniedAgentCommandEnvironment();
@@ -316,6 +322,7 @@ export default class AgentCommandAuthority {
     this.#leases.set(capability, {
       agentId: normalizedAgentId,
       expiresAt: this.#now() + this.#leaseLifetimeMs,
+      ...(setupMode === undefined ? {} : { setupMode }),
     });
     return {
       [agentCommandAuthorityEnvironmentName]: this.#authorityId,
@@ -374,6 +381,7 @@ export default class AgentCommandAuthority {
           admittedWorkingDirectories: response.admittedWorkingDirectories,
           agentId: response.agentId,
           workingDirectory: response.workingDirectory,
+          ...(response.setupMode === undefined ? {} : { setupMode: response.setupMode }),
           ...(response.executesCommands === true
             ? {
                 executeCommand: (command: AgentBoundCommand) =>
@@ -489,7 +497,10 @@ export default class AgentCommandAuthority {
     this.#prune();
     const lease = this.#leases.get(request.capability);
     if (!lease || lease.expiresAt <= this.#now()) return { status: 'denied' };
-    return this.#authorizeAgent(lease.agentId, request.cwd);
+    const response = await this.#authorizeAgent(lease.agentId, request.cwd);
+    return response.status === 'allowed' && lease.setupMode
+      ? { ...response, setupMode: lease.setupMode }
+      : response;
   }
 
   async #authorizeAgent(agentId: string, cwd: string): Promise<AuthorityResponse> {

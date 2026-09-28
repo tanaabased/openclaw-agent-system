@@ -2,7 +2,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 
 export interface AgentOperatorInvocation {
   recommendedTool?: string;
-  surface: 'credentials' | 'shim' | 'tool' | 'setup';
+  surface: 'credentials' | 'shim' | 'tool' | 'setup' | 'backup';
   targetAgentDynamic: boolean;
   targetAgentId?: string;
 }
@@ -182,7 +182,7 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
   const namespace = words[index + 1]?.toLowerCase();
   const surface = words[index + 2]?.toLowerCase();
   if (!['agent-system', 'as'].includes(namespace ?? '')) return undefined;
-  if (!['tool', 'credentials', 'install', 'doctor', 'status'].includes(surface ?? ''))
+  if (!['tool', 'credentials', 'install', 'doctor', 'status', 'backup'].includes(surface ?? ''))
     return undefined;
 
   const argumentsAfterSurface = words.slice(index + 3);
@@ -191,7 +191,8 @@ function operatorInvocation(words: readonly string[]): AgentOperatorInvocation |
     ...(surface === 'tool'
       ? { recommendedTool: recommendedTool(readToolCommand(argumentsAfterSurface)) }
       : {}),
-    surface: surface === 'tool' || surface === 'credentials' ? surface : 'setup',
+    surface:
+      surface === 'tool' || surface === 'credentials' || surface === 'backup' ? surface : 'setup',
     targetAgentDynamic: target.dynamic,
     ...(target.targetAgentId ? { targetAgentId: target.targetAgentId } : {}),
   };

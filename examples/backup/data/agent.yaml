@@ -1,0 +1,16 @@
+schema-version: 1
+agent:
+  id: backup-example
+  name: Backup Example
+backup:
+  git-ignore: true
+  include:
+    - MEMORY.md
+    - memory/**
+setup:
+  runtimes: [openclaw]
+  check: |
+    test -f backup-applied || openclaw as backup create --json
+  apply: |
+    openclaw agent-system backup create --json
+    touch backup-applied

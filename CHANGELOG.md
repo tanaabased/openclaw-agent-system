@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added `openclaw agent-system backup` for private per-agent workspace archives, with `create` and `verify` commands. [#173](https://github.com/tanaabased/openclaw-agent-system/issues/173)
+
 ### Improvements
 
 - Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
