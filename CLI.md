@@ -83,39 +83,26 @@ openclaw agent-system backup create --json
 openclaw as backup create --exclude= --git-ignore=false
 ```
 
-Selection filters `**/node_modules/**`, `**/.npm/_cacache/**`, and `**/.eslintcache`,
-optionally applies Git-ignore, restores includes, then applies excludes. Includes
-recover ignored descendants; excludes win. Build outputs and worktrees are not
-blanket excluded. Exact includes must exist; unmatched globs produce diagnostics.
-Git-ignore requires a repository and keeps tracked files. Patterns use `/`;
-absolute paths, traversal, backslashes, and control characters are unsupported.
-Selected special files cannot be archived.
+Selection skips `**/node_modules/**`, `**/.npm/_cacache/**`, and `**/.eslintcache`.
+Optional Git-ignore runs before includes; excludes run last. Includes recover ignored
+files. Exact includes must exist, unmatched globs produce diagnostics, and selected
+special files fail. Git-ignore requires a repository and keeps tracked files.
+Patterns must be safe workspace-relative paths using `/`.
 
-The default destination, effective destination, and `.agent-system/backup-staging`
-are always excluded, including aliases. Includes cannot override these exclusions
-or runtime-state protections. Exclude previous custom destinations explicitly;
-archive extensions alone do not exclude files. Only relative links to selected
-targets are preserved; other links are omitted with diagnostics.
+Default and selected destinations and `.agent-system/backup-staging` are always
+excluded, including path aliases. Exclude previous custom destinations explicitly.
+Only relative links to selected targets are archived.
 
-Operators may choose local destinations. Bound callers cannot supply `--agent` and
-must use their workspace or the configured external destination. Another or
-invalid agent's workspace is rejected. Host-resolved workspaces beneath OpenClaw's
-state directory are supported. Destinations cannot equal or contain the workspace,
-or reside in runtime-only state or Git metadata. Git destinations must be untracked
-and ignored; creation reuses an effective rule or adds a scoped directory rule to
-local `info/exclude`. Overriding ignore rules fail with diagnostics.
+Operators may choose local destinations. Bound callers cannot set `--agent` and
+may use only their workspace or configured external destination. Host-resolved
+workspaces inside OpenClaw state are supported, but destinations cannot contain
+the workspace or use runtime-only state or Git metadata. Git destinations must
+be untracked and ignored; creation adds a local `info/exclude` rule if needed.
 
-Archives contain root `manifest.json` and `workspace/`, with a versioned inventory
-and SHA-256 checksums. Captures for the same workspace serialize and publish unique
-archives only after verification. Archives use mode `0600`; staging uses `0700`.
-Capture or verification failures publish nothing. Detected file changes or loss
-fail explicitly; the backup is not an atomic workspace snapshot.
-
-Setup applies may create backups; checks may only preview or verify. Creation is
-noninteractive. Results report `status: preview`, `status: created`, or
-`status: failed`; failures return nonzero with diagnostic codes. Archives may
-contain sensitive files; keep them private. Restore, retention, uploads,
-scheduling, and database snapshots are separate features.
+Archives are private (`0600`) and published only after verification. Capture fails
+if files change; it is not an atomic workspace snapshot. Setup applies may create
+backups; checks may only preview or verify. Archives may contain sensitive files.
+Restore, retention, uploads, scheduling, and database snapshots are separate features.
 
 ## `openclaw agent-system backup verify`
 

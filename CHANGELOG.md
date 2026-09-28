@@ -2,7 +2,7 @@
 
 ### New Features
 
-- Added configurable workspace-only backups with private archives, dry-run selection, and checksum verification. [#173](https://github.com/tanaabased/openclaw-agent-system/issues/173)
+- Added `openclaw agent-system backup` for private per-agent workspace archives, with `create` and `verify` commands. [#173](https://github.com/tanaabased/openclaw-agent-system/issues/173)
 
 ### Improvements
 

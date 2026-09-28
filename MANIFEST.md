@@ -6,9 +6,14 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
 
 - [Discovery](#discovery)
 - [Configuration](#configuration)
-- [Backup](#backup)
-- [Setup](#setup)
-- [Component configuration](#component-configuration)
+  - [`schema-version`](#schema-version)
+  - [`agent`](#agent)
+  - [`models`](#models)
+  - [`memory`](#memory)
+  - [`environment`](#environment)
+  - [`backup`](#backup)
+  - [`setup`](#setup)
+  - [Component Configuration](#component-configuration)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
 
