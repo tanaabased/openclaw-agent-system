@@ -6,11 +6,14 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts';
-import AgentSystemToolError from '../../../api/error.ts';
+import AgentSystemToolError, { type AgentSystemToolFailureDiagnostic } from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';
-import type GitHubNotificationIssueDeliveryService from '../conversation/issue-delivery-service.ts';
+import {
+  GitHubIssueDeliveryError,
+  type default as GitHubNotificationIssueDeliveryService,
+} from '../conversation/issue-delivery-service.ts';
 import type GitHubNotificationPullRequestHandoffService from '../conversation/pull-request-handoff-service.ts';
 import type { GitHubNotificationAssignmentProviderAuthority } from '../intake/assignment-provider.ts';
 import type GitHubNotificationMonitorStateStore from '../intake/monitor/state-store.ts';
@@ -70,6 +73,29 @@ function unavailable(): never {
   );
 }
 
+function handoffFailure(
+  stage: AgentSystemToolFailureDiagnostic['stage'],
+  category: AgentSystemToolFailureDiagnostic['category'],
+): AgentSystemToolError {
+  const guidance =
+    stage === 'publication'
+      ? category === 'invalid-response'
+        ? 'GitHub returned unexpected data. Inspect the Gateway audit and response contract before retrying.'
+        : category === 'identity-mismatch'
+          ? 'Do not reuse this PR; verify its author and the managed branch.'
+          : 'Inspect GitHub access, the managed branch, and existing PR before retrying; publication may have partially completed.'
+      : stage === 'checkpoint'
+        ? 'The PR may already exist. Check the issue-session link before retrying.'
+        : 'Check that the issue assignment is still authorized before retrying.';
+  return new AgentSystemToolError(
+    'execution_failed',
+    `Task PR handoff failed at ${stage} (${category}). ${guidance}`,
+    false,
+    undefined,
+    { stage, category },
+  );
+}
+
 /** Publish an issue task PR through the same creation and recipient owner as Work delivery. */
 export default function createGitHubNotificationTaskPullRequestTool(dependencies: Dependencies) {
   return defineAgentSystemSemanticTool({
@@ -124,28 +150,50 @@ export default function createGitHubNotificationTaskPullRequestTool(dependencies
         workspaceDir: scope.workspaceDir,
         ...(scope.signal === undefined ? {} : { signal: scope.signal }),
       };
-      const opened = await services.authority.open(authorityInput);
-      if (!opened.authorized) unavailable();
-      const pullRequest = await services.delivery.publishTaskPullRequest({
-        agentId: scope.agentId,
-        item,
-        workspaceDir: scope.workspaceDir,
-        worktree: { branch: item.intake.worktreeBranch, path: item.intake.worktreePath },
-        ...(input.body === undefined ? {} : { body: input.body }),
-        ...(input.title === undefined ? {} : { title: input.title }),
-        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-      });
-      const refreshed = await services.authority.open(authorityInput);
-      if (!refreshed.authorized) {
-        throw new Error('The assignment changed after task PR creation; linkage was not recorded.');
+      let opened;
+      try {
+        opened = await services.authority.open(authorityInput);
+      } catch {
+        throw handoffFailure('authorization', 'state-or-configuration');
       }
-      await services.handoff.checkpointTask({
-        agentId: scope.agentId,
-        item,
-        pullRequest,
-        workspaceDir: scope.workspaceDir,
-        ...(scope.signal === undefined ? {} : { signal: scope.signal }),
-      });
+      if (!opened.authorized) throw handoffFailure('authorization', 'authority-revoked');
+      let pullRequest;
+      try {
+        pullRequest = await services.delivery.publishTaskPullRequest({
+          agentId: scope.agentId,
+          item,
+          workspaceDir: scope.workspaceDir,
+          worktree: { branch: item.intake.worktreeBranch, path: item.intake.worktreePath },
+          ...(input.body === undefined ? {} : { body: input.body }),
+          ...(input.title === undefined ? {} : { title: input.title }),
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+        });
+      } catch (error) {
+        throw handoffFailure(
+          'publication',
+          error instanceof GitHubIssueDeliveryError ? error.category : 'state-or-configuration',
+        );
+      }
+      let refreshed;
+      try {
+        refreshed = await services.authority.open(authorityInput);
+      } catch {
+        throw handoffFailure('authorization', 'state-or-configuration');
+      }
+      if (!refreshed.authorized) {
+        throw handoffFailure('authorization', 'authority-revoked');
+      }
+      try {
+        await services.handoff.checkpointTask({
+          agentId: scope.agentId,
+          item,
+          pullRequest,
+          workspaceDir: scope.workspaceDir,
+          ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+        });
+      } catch {
+        throw handoffFailure('checkpoint', 'checkpoint-failed');
+      }
       return {
         number: pullRequest.pullRequestNumber,
         status: 'linked-pending-handoff',

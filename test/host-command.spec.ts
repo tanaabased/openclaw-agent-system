@@ -7,8 +7,7 @@ import { join, delimiter } from 'node:path';
 
 import { prepareHostCommand } from '../api/host-command.ts';
 
-describe('api/host-command', function () {
-  this.timeout(10_000);
+describe('api/host-command', () => {
   let root: string;
   let host: string;
   let managed: string;

@@ -12,6 +12,20 @@ export interface GitHubNotificationIssueDeliveryReceipt {
   pullRequestNumber: number;
 }
 
+export type GitHubIssueDeliveryFailureCategory =
+  'github-request' | 'invalid-response' | 'identity-mismatch';
+
+export class GitHubIssueDeliveryError extends Error {
+  override name = 'GitHubIssueDeliveryError';
+
+  constructor(
+    readonly category: GitHubIssueDeliveryFailureCategory,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface GitHubNotificationGitExecutor {
   execute(input: {
     agentId: string;
@@ -353,13 +367,31 @@ export default class GitHubNotificationIssueDeliveryService {
       throw new Error('The task pull request targets a different base branch.');
     }
     if (!normalize) {
-      const authorNodeId = await this.#github(
+      const authorResponse = await this.#github(
         github,
-        ['api', `repos/${repository}/pulls/${pullRequest.number}`, '--jq', '.user.node_id'],
+        [
+          'api',
+          `repos/${repository}/pulls/${pullRequest.number}`,
+          '--jq',
+          '{nodeId:.user.node_id}',
+        ],
         input.signal,
       );
+      let authorNodeId: string;
+      try {
+        const author = record(authorResponse, 'pull request author');
+        authorNodeId = requiredString(author.nodeId, 'pull request author node id', 255);
+      } catch {
+        throw new GitHubIssueDeliveryError(
+          'invalid-response',
+          'GitHub returned an invalid pull request author.',
+        );
+      }
       if (authorNodeId !== github.identity.nodeId) {
-        throw new Error('The task pull request was not created by the active agent.');
+        throw new GitHubIssueDeliveryError(
+          'identity-mismatch',
+          'The task pull request was not created by the active agent.',
+        );
       }
     }
     if (
@@ -616,7 +648,7 @@ export default class GitHubNotificationIssueDeliveryService {
       timeoutMs: 60_000,
     });
     if (result.exitCode !== 0 || result.timedOut || result.truncated)
-      throw new Error(`GitHub rejected ${operation}.`);
+      throw new GitHubIssueDeliveryError('github-request', `GitHub rejected ${operation}.`);
   }
 
   async #git(
@@ -648,14 +680,18 @@ export default class GitHubNotificationIssueDeliveryService {
       timeoutMs: 60_000,
     });
     if (result.exitCode !== 0 || result.timedOut || result.truncated) {
-      throw new Error(
+      throw new GitHubIssueDeliveryError(
+        'github-request',
         `GitHub rejected issue delivery reconciliation at ${argv.find((argument) => argument.startsWith('repos/') || argument.startsWith('users/')) ?? 'unknown endpoint'}.`,
       );
     }
     try {
       return JSON.parse(result.stdout);
-    } catch (error) {
-      throw new Error('GitHub returned invalid issue delivery data.', { cause: error });
+    } catch {
+      throw new GitHubIssueDeliveryError(
+        'invalid-response',
+        'GitHub returned invalid issue delivery data.',
+      );
     }
   }
 }
