@@ -325,15 +325,25 @@ function validImplementation(
 function validImplementationRelationship(
   implementation: unknown,
   assignmentResponse: unknown,
+  deliveryPullRequest: unknown,
   schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7,
 ): boolean {
   if (implementation === undefined) return true;
   if (!validImplementation(implementation, schemaVersion) || !record(assignmentResponse)) {
     return false;
   }
-  return implementation.status === 'completed' || implementation.status === 'delivery-pending'
-    ? assignmentResponse.status === 'published'
-    : assignmentResponse.status === 'pending' || assignmentResponse.status === 'published';
+  if (implementation.status === 'delivery-pending') {
+    return assignmentResponse.status === 'published';
+  }
+  if (implementation.status === 'completed') {
+    return (
+      assignmentResponse.status === 'published' ||
+      (schemaVersion >= 7 &&
+        assignmentResponse.status === 'withheld' &&
+        record(deliveryPullRequest))
+    );
+  }
+  return assignmentResponse.status === 'pending' || assignmentResponse.status === 'published';
 }
 
 function validConversation(
@@ -365,6 +375,7 @@ function validConversation(
     !validImplementationRelationship(
       value.implementation,
       value.assignmentResponse,
+      value.deliveryPullRequest,
       schemaVersion,
     ) ||
     typeof value.itemKey !== 'string' ||

@@ -11,6 +11,36 @@ const contractConfig = {
 };
 
 describe('channels/github/conversation/turn-contract', () => {
+  it('should carry trusted recipient guidance on issue turns that can publish a task PR', () => {
+    const resolver = createGitHubNotificationTurnContractResolver();
+    const recipients = 'assignees: @pirog (node ID U_actor); reviewers: none.';
+    for (const eventId of ['assignment', 'implementation', 'comment'] as const) {
+      const identity = { eventId, lifecycleId: 'issue', modeId: 'work' } as const;
+      assert.match(
+        resolver.resolve(identity, contractConfig, 'tanaabot', recipients).instructions,
+        /## Task pull request recipients\n\nassignees: @pirog/u,
+      );
+    }
+    assert.doesNotMatch(
+      resolver.resolve(
+        { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
+        contractConfig,
+        'tanaabot',
+        recipients,
+      ).instructions,
+      /## Task pull request recipients/u,
+    );
+    assert.match(
+      resolver.resolve(
+        { eventId: 'comment', lifecycleId: 'issue', modeId: 'guided' },
+        contractConfig,
+        'tanaabot',
+        recipients,
+      ).instructions,
+      /## Task pull request recipients\n\nassignees: @pirog/u,
+    );
+  });
+
   it('should compose one supported lifecycle mode event contract', () => {
     const contract = createGitHubNotificationTurnContractResolver().resolve(
       commentIdentity,
@@ -270,5 +300,16 @@ describe('channels/github/conversation/turn-contract', () => {
     assert.match(contract.instructions, /Do not inspect files, call tools/u);
     assert.match(contract.instructions, /Respond privately with one brief acknowledgment/u);
     assert.match(contract.instructions, /Do not call `agent_system_github_reply`/u);
+  });
+
+  it('should retain Guided mode for an explicitly published task PR handoff', () => {
+    const contract = createGitHubNotificationTurnContractResolver().resolve(
+      { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'guided' },
+      contractConfig,
+      'tanaabot',
+    );
+    assert.deepEqual(contract.mode, { disableTools: false, id: 'guided' });
+    assert.equal(contract.publicationIntent, undefined);
+    assert.match(contract.instructions, /delivery pull request has been linked/u);
   });
 });

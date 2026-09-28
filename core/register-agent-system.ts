@@ -263,6 +263,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ...githubCapability.tools,
     ...googleCapability.tools,
     notificationRuntime.replyTool,
+    notificationRuntime.taskPullRequestTool,
     createInstallTool((): AgentLifecycleApproval => lifecycleApproval),
     createDoctorTool((): AgentLifecycleApproval => lifecycleApproval),
     createModelRoutingTool({

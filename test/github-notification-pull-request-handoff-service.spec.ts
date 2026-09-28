@@ -74,190 +74,216 @@ function privateEventResult(): GitHubNotificationModelTurnCoordinatorResult {
 }
 
 describe('channels/github/conversation/pull-request-handoff-service', () => {
-  it('should checkpoint, baseline, dispatch, and publish one idempotent issue-owned handoff', async () => {
-    const item = approvedNotificationItem();
-    item.intake = {
-      ...item.intake!,
-      stage: 'prepared',
-      worktreeBranch: 'issue-12',
-      worktreePath: '/workspace/worktrees/issue-12',
-    };
-    const lifecycle = issueLifecycle();
-    const conversationId = githubNotificationConversationId({
-      itemNumber: item.number,
-      lifecycleId: item.lifecycleId,
-      repositoryId: item.repositoryNodeId,
-    });
-    let state = createGitHubNotificationConversationState(agentId, workspaceDir);
-    const assignmentText = 'I reviewed the assignment and have a plan ready.';
-    state.conversations[conversationId] = {
-      assignmentResponse: {
-        commentDatabaseId: 44,
-        commentNodeId: 'IC_assignment',
-        publicText: assignmentText,
-        publicTextDigest: githubNotificationPublicTextDigest(assignmentText),
-        status: 'published',
-        target: githubNotificationPublicationTarget({
-          conversationId,
-          intent: 'assignment-response',
-          publicationId: item.intake.assignmentEventId,
-        }),
-      },
-      baselineEstablished: true,
-      implementation: { status: 'delivery-pending' },
-      itemKey: `github:${item.repositoryNodeId}:${item.number}`,
-      lifecycleId: 'issue',
-      mode: 'work',
-      revisions: {},
-    };
-    const baselineComment = {
-      author: notificationActor,
-      body: '@tanaabot comment before handoff',
-      bodyTruncated: false,
-      createdAt: '2026-08-25T12:00:00.000Z',
-      databaseId: 91,
-      nodeId: 'IC_pr_baseline',
-      updatedAt: '2026-08-25T12:00:00.000Z',
-    };
-    let baselineReads = 0;
-    let eventTurns = 0;
-    let publications = 0;
-    const contract = {
-      identity: { eventId: 'pull-request-opened', lifecycleId: 'issue', modeId: 'work' },
-      instructions: 'trusted pull request opened instructions',
-      lifecycle,
-      mode: { disableTools: false, id: 'work' },
-    } as GitHubNotificationTurnContract;
-    const service = new GitHubNotificationPullRequestHandoffService({
-      assignmentAuthority: {
-        async open() {
-          return {
-            authorized: true,
-            client: {
-              identity: notificationAccount,
-              async getIssueComment() {
-                throw new Error('not used');
+  for (const checkpointMode of ['automatic', 'task'] as const) {
+    it(`should ${checkpointMode} checkpoint, baseline, dispatch, and publish one idempotent issue-owned handoff`, async () => {
+      const item = approvedNotificationItem();
+      item.intake = {
+        ...item.intake!,
+        stage: 'prepared',
+        worktreeBranch: 'issue-12',
+        worktreePath: '/workspace/worktrees/issue-12',
+      };
+      const lifecycle = issueLifecycle();
+      const conversationId = githubNotificationConversationId({
+        itemNumber: item.number,
+        lifecycleId: item.lifecycleId,
+        repositoryId: item.repositoryNodeId,
+      });
+      let state = createGitHubNotificationConversationState(agentId, workspaceDir);
+      const assignmentText = 'I reviewed the assignment and have a plan ready.';
+      state.conversations[conversationId] = {
+        assignmentResponse: {
+          commentDatabaseId: 44,
+          commentNodeId: 'IC_assignment',
+          publicText: assignmentText,
+          publicTextDigest: githubNotificationPublicTextDigest(assignmentText),
+          status: 'published',
+          target: githubNotificationPublicationTarget({
+            conversationId,
+            intent: 'assignment-response',
+            publicationId: item.intake.assignmentEventId,
+          }),
+        },
+        baselineEstablished: true,
+        implementation: { status: 'delivery-pending' },
+        itemKey: `github:${item.repositoryNodeId}:${item.number}`,
+        lifecycleId: 'issue',
+        mode: 'work',
+        revisions: {},
+      };
+      if (checkpointMode === 'task') {
+        state.conversations[conversationId]!.assignmentResponse = {
+          reasonCode: 'github-notification-guided-waiting',
+          status: 'withheld',
+        };
+        delete state.conversations[conversationId]!.implementation;
+        state.conversations[conversationId]!.mode = 'guided';
+      }
+      const baselineComment = {
+        author: notificationActor,
+        body: '@tanaabot comment before handoff',
+        bodyTruncated: false,
+        createdAt: '2026-08-25T12:00:00.000Z',
+        databaseId: 91,
+        nodeId: 'IC_pr_baseline',
+        updatedAt: '2026-08-25T12:00:00.000Z',
+      };
+      let baselineReads = 0;
+      let eventTurns = 0;
+      let publications = 0;
+      const contract = {
+        identity: {
+          eventId: 'pull-request-opened',
+          lifecycleId: 'issue',
+          modeId: checkpointMode === 'task' ? 'guided' : 'work',
+        },
+        instructions: 'trusted pull request opened instructions',
+        lifecycle,
+        mode: { disableTools: false, id: checkpointMode === 'task' ? 'guided' : 'work' },
+      } as GitHubNotificationTurnContract;
+      const service = new GitHubNotificationPullRequestHandoffService({
+        assignmentAuthority: {
+          async open() {
+            return {
+              authorized: true,
+              client: {
+                identity: notificationAccount,
+                async getIssueComment() {
+                  throw new Error('not used');
+                },
+                async listIssueComments(owner, repository, number) {
+                  baselineReads += 1;
+                  assert.deepEqual([owner, repository, number], ['tanaabased', 'example', 45]);
+                  return { comments: [baselineComment], truncated: false };
+                },
               },
-              async listIssueComments(owner, repository, number) {
-                baselineReads += 1;
-                assert.deepEqual([owner, repository, number], ['tanaabased', 'example', 45]);
-                return { comments: [baselineComment], truncated: false };
+              configuration: {
+                approvedActors: [],
+                assignmentTypes: ['issue' as const],
+                intervalMinutes: 5,
+                maxConcurrentIssues: 2,
               },
-            },
-            configuration: {
-              approvedActors: [],
-              assignmentTypes: ['issue' as const],
-              intervalMinutes: 5,
-              maxConcurrentIssues: 2,
-            },
-          };
+            };
+          },
         },
-      },
-      clock: () => 1_755_259_200_000,
-      conversationStateStore: {
-        async read(_agentId, selectedConversationId) {
-          assert.equal(selectedConversationId, conversationId);
-          return conversationSnapshot(state, selectedConversationId);
+        clock: () => 1_755_259_200_000,
+        conversationStateStore: {
+          async read(_agentId, selectedConversationId) {
+            assert.equal(selectedConversationId, conversationId);
+            return conversationSnapshot(state, selectedConversationId);
+          },
+          async write(next) {
+            state = replaceConversationSnapshot(state, next);
+          },
         },
-        async write(next) {
-          state = replaceConversationSnapshot(state, next);
+        coordinator: {
+          async run(input) {
+            eventTurns += 1;
+            assert.equal(input.contract, contract);
+            assert.equal(input.createIfMissing, false);
+            assert.equal(input.executionSurface, 'cli-one-shot');
+            assert.equal(input.messageId, 'pull-request-opened:PR_delivery');
+            assert.equal(input.sourceId, 'PR_delivery');
+            assert.equal(input.ctxPayload.Provider, githubNotificationChannelId);
+            assert.match(input.ctxPayload.Body ?? '', /Pull request opened/u);
+            assert.match(input.ctxPayload.Body ?? '', /originating item/u);
+            assert.deepEqual(state.conversations[conversationId]?.activeTurn, {
+              eventId: 'pull-request-opened',
+              sourceId: 'PR_delivery',
+            });
+            return privateEventResult();
+          },
         },
-      },
-      coordinator: {
-        async run(input) {
-          eventTurns += 1;
-          assert.equal(input.contract, contract);
-          assert.equal(input.createIfMissing, false);
-          assert.equal(input.executionSurface, 'cli-one-shot');
-          assert.equal(input.messageId, 'pull-request-opened:PR_delivery');
-          assert.equal(input.sourceId, 'PR_delivery');
-          assert.equal(input.ctxPayload.Provider, githubNotificationChannelId);
-          assert.match(input.ctxPayload.Body ?? '', /Pull request opened/u);
-          assert.match(input.ctxPayload.Body ?? '', /originating item/u);
-          assert.deepEqual(state.conversations[conversationId]?.activeTurn, {
-            eventId: 'pull-request-opened',
-            sourceId: 'PR_delivery',
-          });
-          return privateEventResult();
+        logger: { error() {}, info() {}, warn() {} },
+        publications: {
+          async publish(input) {
+            publications += 1;
+            const handoff = state.conversations[conversationId]?.deliveryPullRequest?.handoff;
+            assert.ok(handoff?.status === 'pending');
+            assert.equal(input.target, handoff.target);
+            assert.equal(input.text, handoff.publicText);
+            return {
+              receipt: { databaseId: 101, nodeId: 'IC_handoff' },
+              status: 'published' as const,
+              target: input.target,
+            };
+          },
         },
-      },
-      logger: { error() {}, info() {}, warn() {} },
-      publications: {
-        async publish(input) {
-          publications += 1;
-          const handoff = state.conversations[conversationId]?.deliveryPullRequest?.handoff;
-          assert.ok(handoff?.status === 'pending');
-          assert.equal(input.target, handoff.target);
-          assert.equal(input.text, handoff.publicText);
-          return {
-            receipt: { databaseId: 101, nodeId: 'IC_handoff' },
-            status: 'published' as const,
-            target: input.target,
-          };
+        readConfig: async () => config,
+        resolveNotificationRoute: resolveTestNotificationRoute,
+        turnContracts: {
+          resolve(identity, resolvedConfig, resolvedAgentId) {
+            assert.deepEqual(identity, contract.identity);
+            assert.equal(resolvedConfig, config);
+            assert.equal(resolvedAgentId, agentId);
+            return contract;
+          },
         },
-      },
-      readConfig: async () => config,
-      resolveNotificationRoute: resolveTestNotificationRoute,
-      turnContracts: {
-        resolve(identity, resolvedConfig, resolvedAgentId) {
-          assert.deepEqual(identity, contract.identity);
-          assert.equal(resolvedConfig, config);
-          assert.equal(resolvedAgentId, agentId);
-          return contract;
-        },
-      },
-    });
-    const checkpointInput = {
-      agentId,
-      executionSurface: 'cli-one-shot' as const,
-      item,
-      lifecycle,
-      pullRequest,
-      workspaceDir,
-    };
-    const reconcileInput = {
-      agentId,
-      executionSurface: 'cli-one-shot' as const,
-      item,
-      lifecycle,
-      workspaceDir,
-    };
+      });
+      const checkpointInput = {
+        agentId,
+        executionSurface: 'cli-one-shot' as const,
+        item,
+        lifecycle,
+        pullRequest,
+        workspaceDir,
+      };
+      const reconcileInput = {
+        agentId,
+        executionSurface: 'cli-one-shot' as const,
+        item,
+        lifecycle,
+        workspaceDir,
+      };
 
-    await service.checkpoint(checkpointInput);
-    state.conversations[conversationId]!.implementation = { status: 'completed' };
-    await service.reconcile(reconcileInput);
-    await service.reconcile(reconcileInput);
+      if (checkpointMode === 'automatic') {
+        await service.checkpoint(checkpointInput);
+        await assert.rejects(
+          service.checkpointTask(checkpointInput),
+          /Automatic Work delivery still owns/u,
+        );
+        state.conversations[conversationId]!.implementation = { status: 'completed' };
+      } else {
+        await service.checkpointTask(checkpointInput);
+        await service.checkpointTask(checkpointInput);
+        assert.deepEqual(state.conversations[conversationId]!.implementation, {
+          status: 'completed',
+        });
+      }
+      await service.reconcile(reconcileInput);
+      await service.reconcile(reconcileInput);
 
-    assert.equal(baselineReads, 1);
-    assert.equal(eventTurns, 1);
-    assert.equal(publications, 1);
-    assert.equal(state.conversations[conversationId]?.activeTurn, undefined);
-    const source = state.conversations[conversationId]?.deliveryPullRequest;
-    assert.deepEqual(source, {
-      baselineEstablished: true,
-      eventRecorded: true,
-      handoff: {
-        commentDatabaseId: 101,
-        commentNodeId: 'IC_handoff',
-        publicText: source?.handoff?.status === 'published' ? source.handoff.publicText : '',
-        publicTextDigest:
-          source?.handoff?.status === 'published' ? source.handoff.publicTextDigest : '',
-        status: 'published',
-        target: source?.handoff?.status === 'published' ? source.handoff.target : '',
-      },
-      nodeId: 'PR_delivery',
-      number: 45,
-      status: 'open',
+      assert.equal(baselineReads, 1);
+      assert.equal(eventTurns, 1);
+      assert.equal(publications, 1);
+      assert.equal(state.conversations[conversationId]?.activeTurn, undefined);
+      const source = state.conversations[conversationId]?.deliveryPullRequest;
+      assert.deepEqual(source, {
+        baselineEstablished: true,
+        eventRecorded: true,
+        handoff: {
+          commentDatabaseId: 101,
+          commentNodeId: 'IC_handoff',
+          publicText: source?.handoff?.status === 'published' ? source.handoff.publicText : '',
+          publicTextDigest:
+            source?.handoff?.status === 'published' ? source.handoff.publicTextDigest : '',
+          status: 'published',
+          target: source?.handoff?.status === 'published' ? source.handoff.target : '',
+        },
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      });
+      assert.deepEqual(state.conversations[conversationId]?.revisions.IC_pr_baseline, {
+        bodyDigest: githubCommentRevision(baselineComment).bodyDigest,
+        commentDatabaseId: 91,
+        reasonCode: 'comment-baseline',
+        revisionId: githubCommentRevision(baselineComment).revisionId,
+        source: { itemType: 'pull-request', number: 45 },
+        status: 'baseline',
+      });
     });
-    assert.deepEqual(state.conversations[conversationId]?.revisions.IC_pr_baseline, {
-      bodyDigest: githubCommentRevision(baselineComment).bodyDigest,
-      commentDatabaseId: 91,
-      reasonCode: 'comment-baseline',
-      revisionId: githubCommentRevision(baselineComment).revisionId,
-      source: { itemType: 'pull-request', number: 45 },
-      status: 'baseline',
-    });
-  });
+  }
 
   it('should report the exact handoff phase when the pull request baseline fails', async () => {
     const item = approvedNotificationItem();

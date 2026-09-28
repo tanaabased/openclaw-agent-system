@@ -320,6 +320,7 @@ export default function pluginMetadataFailures(
       'agent_system_github',
       'agent_system_google',
       'agent_system_github_reply',
+      'agent_system_github_task_pr',
     ]),
     'tool-contract',
     'plugin must declare exactly the registered Agent System tools',

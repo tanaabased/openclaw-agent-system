@@ -181,6 +181,7 @@ interface HarnessOptions {
   implementationFailures?: number;
   mode?: GitHubNotificationMode;
   publicationFailures?: number;
+  recipientText?: string;
   verifyAssignment?(input: GitHubNotificationModelTurnCoordinatorInput): void;
   verifyDelivery?(input: GitHubNotificationIssueDeliveryInput): void;
   verifyImplementation?(input: GitHubNotificationModelTurnCoordinatorInput): void;
@@ -379,10 +380,14 @@ function harness(options: HarnessOptions = {}) {
     },
     readConfig: async () => config,
     resolveNotificationRoute: resolveTestNotificationRoute,
+    ...(options.recipientText === undefined
+      ? {}
+      : { recipientGuidance: { forItem: async () => options.recipientText! } }),
     turnContracts: {
-      resolve(identity, resolvedConfig, resolvedAgentId) {
+      resolve(identity, resolvedConfig, resolvedAgentId, recipients) {
         assert.equal(resolvedConfig, config);
         assert.equal(resolvedAgentId, agentId);
+        assert.equal(recipients, options.recipientText);
         if (identity.eventId === 'assignment') {
           assert.deepEqual(identity, expectedAssignmentContract.identity);
           return expectedAssignmentContract;
@@ -403,6 +408,15 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe('channels/github/conversation/assignment-session-service', () => {
+  it('should carry the same recipient defaults into assignment and implementation turns', async () => {
+    const recipientText = 'assignees: @pirog (node ID U_actor); reviewers: none.';
+    const scenario = harness({ recipientText });
+    await scenario.prepare();
+    await scenario.prepare();
+    assert.equal(scenario.counts.assignmentTurns, 1);
+    assert.equal(scenario.counts.implementationTurns, 1);
+  });
+
   it('should classify a new opted-in issue before dispatch, reauthorize, and reuse its saved decision on retry', async () => {
     const profile = { model: 'openai/gpt-5.5', effort: 'high' } as const;
     const scenario = harness({

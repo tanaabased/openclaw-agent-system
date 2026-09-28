@@ -6,6 +6,7 @@ import type GitHubNotificationReplyCandidateStore from '../publication/reply-can
 import { githubNotificationChannelId } from '../routing/routing.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
 import type GitHubNotificationTurnSelector from './turn-selector.ts';
+import type GitHubNotificationPullRequestRecipientGuidance from './pull-request-recipient-guidance.ts';
 import { modelRoutingGuidance } from './model-routing.ts';
 
 export interface GitHubNotificationPromptGuidanceDependencies {
@@ -13,6 +14,7 @@ export interface GitHubNotificationPromptGuidanceDependencies {
   logger: Pick<Logger, 'warn'>;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'instructions'>;
   turnSelector: Pick<GitHubNotificationTurnSelector, 'select'>;
+  recipientGuidance?: Pick<GitHubNotificationPullRequestRecipientGuidance, 'forConversation'>;
 }
 
 function isGitHubNotificationContext(context: AgentSystemHookContext): boolean {
@@ -40,7 +42,18 @@ export default async function githubNotificationPromptGuidance(
     );
     return undefined;
   }
-  const instructions = dependencies.turnContracts.instructions(selected.identity, selected.agentId);
+  const recipients =
+    selected.identity.lifecycleId === 'issue' && selected.identity.eventId !== 'pull-request-opened'
+      ? await dependencies.recipientGuidance?.forConversation({
+          agentId: selected.agentId,
+          conversationId: selected.conversationId,
+        })
+      : undefined;
+  const instructions = dependencies.turnContracts.instructions(
+    selected.identity,
+    selected.agentId,
+    recipients,
+  );
   await dependencies.candidates.attestPromptSelection(selected);
   return [
     instructions,

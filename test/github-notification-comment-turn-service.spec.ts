@@ -158,6 +158,7 @@ async function respondWithCandidates(
   finishError?: Error,
   currentConfig: OpenClawConfig = config,
   finalText = 'Private response remains available.',
+  recipientText?: string,
 ) {
   const item = notificationMonitorState().items[notificationItemKey]!;
   item.intake = {
@@ -194,6 +195,9 @@ async function respondWithCandidates(
     logger: { error() {}, info() {}, warn() {} },
     readConfig: async () => currentConfig,
     resolveNotificationRoute: resolveTestNotificationRoute,
+    ...(recipientText === undefined
+      ? {}
+      : { recipientGuidance: { forItem: async () => recipientText } }),
     turnContracts: contracts,
   });
   return service.respond({
@@ -210,6 +214,21 @@ async function respondWithCandidates(
 }
 
 describe('channels/github/conversation/comment-turn-service', () => {
+  it('should carry recovery recipient defaults through the cli one-shot contract', async () => {
+    await respondWithCandidates(
+      [],
+      'cli-one-shot',
+      (_options, context) => {
+        assert.match(String(context.GroupSystemPrompt), /## Task pull request recipients/u);
+        assert.match(String(context.GroupSystemPrompt), /@pirog \(node ID U_actor\)/u);
+      },
+      undefined,
+      config,
+      'Private response remains available.',
+      'assignees: @pirog (node ID U_actor); reviewers: none.',
+    );
+  });
+
   it('should dispatch the comment card and publish the ordinary final response', async () => {
     const item = notificationMonitorState().items[notificationItemKey]!;
     item.intake = {

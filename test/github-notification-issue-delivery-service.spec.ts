@@ -63,6 +63,8 @@ function serviceHarness(
     failReviewRequestOnce?: boolean;
     ineligibleAssignee?: string;
     ineligibleReviewer?: string;
+    commitCount?: number;
+    pullRequestAuthorNodeId?: string;
   } = {},
 ) {
   let amended = false;
@@ -122,8 +124,12 @@ function serviceHarness(
               return cliResult(JSON.stringify(createdPullRequest ? [createdPullRequest] : []));
             }
             if (endpoint === 'repos/tanaabased/example/pulls' && argv.includes('POST')) {
-              createdPullRequest = pullRequest();
+              const input = JSON.parse(stdin ?? '{}') as { body: string; title: string };
+              createdPullRequest = pullRequest({ body: input.body, title: input.title });
               return cliResult(JSON.stringify(createdPullRequest));
+            }
+            if (endpoint === 'repos/tanaabased/example/pulls/45' && !argv.includes('PATCH')) {
+              return cliResult(JSON.stringify(options.pullRequestAuthorNodeId ?? 'U_agent'));
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45' && argv.includes('PATCH')) {
               return cliResult(JSON.stringify(pullRequest()));
@@ -193,7 +199,7 @@ function serviceHarness(
         const command = input.argv[0];
         if (command === 'branch') return cliResult(`${worktree.branch}\n`);
         if (command === 'status') return cliResult();
-        if (command === 'rev-list') return cliResult('1\n');
+        if (command === 'rev-list') return cliResult(`${options.commitCount ?? 1}\n`);
         if (command === 'rev-parse') return cliResult(`${amended ? normalizedSha : originalSha}\n`);
         if (command === 'log') return cliResult(options.commitMessage ?? 'add fixture file\n');
         if (command === 'commit') {
@@ -448,5 +454,96 @@ describe('channels/github/conversation/issue-delivery-service', () => {
       scenario.gitRequests.some(({ argv }) => argv[0] === 'push'),
       false,
     );
+  });
+
+  it('should publish a follow-up task PR without amending commits or replacing authored metadata', async () => {
+    const scenario = serviceHarness({ commitCount: 2 });
+    const input = {
+      agentId,
+      body: 'Review the fix and rollout notes. Closes #12',
+      item: approvedNotificationItem(),
+      title: 'Repair the interrupted issue flow',
+      workspaceDir,
+      worktree,
+    };
+    const receipt = await scenario.delivery.publishTaskPullRequest(input);
+    assert.deepEqual(receipt, { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 });
+    assert.equal(
+      scenario.gitRequests.some(({ argv }) => argv[0] === 'commit'),
+      false,
+    );
+    const create = scenario.githubRequests.find(
+      ({ argv }) => argv.includes('POST') && argv.includes('repos/tanaabased/example/pulls'),
+    );
+    assert.deepEqual(JSON.parse(create?.stdin ?? ''), {
+      base: 'main',
+      body: input.body,
+      head: worktree.branch,
+      title: input.title,
+    });
+    assert.equal(
+      scenario.githubRequests.some(({ argv }) => argv.includes('PATCH')),
+      false,
+    );
+    assert.equal(
+      scenario.githubRequests.some(({ argv }) =>
+        argv.includes('repos/tanaabased/example/issues/45/assignees'),
+      ),
+      true,
+    );
+  });
+
+  it('should reuse an agent-owned task PR while preserving its existing title and body', async () => {
+    const scenario = serviceHarness({
+      commitCount: 3,
+      existingPullRequest: pullRequest({ body: 'Authored explanation', title: 'Authored title' }),
+      remoteSha: originalSha,
+    });
+    const input = { agentId, item: approvedNotificationItem(), workspaceDir, worktree };
+    await scenario.delivery.publishTaskPullRequest(input);
+    await scenario.delivery.publishTaskPullRequest(input);
+    assert.equal(
+      scenario.githubRequests.some(({ argv }) => argv.includes('POST') && argv.includes('pulls')),
+      false,
+    );
+    assert.equal(
+      scenario.githubRequests.some(({ argv }) => argv.includes('PATCH')),
+      false,
+    );
+    assert.equal(
+      scenario.gitRequests.some(({ argv }) => argv[0] === 'push'),
+      false,
+    );
+  });
+
+  it('should reject an unrelated PR or divergent branch before recipient reconciliation', async () => {
+    const input = { agentId, item: approvedNotificationItem(), workspaceDir, worktree };
+    const otherAuthor = serviceHarness({
+      existingPullRequest: pullRequest(),
+      pullRequestAuthorNodeId: 'U_other',
+      remoteSha: originalSha,
+    });
+    await assert.rejects(
+      otherAuthor.delivery.publishTaskPullRequest(input),
+      /not created by the active agent/u,
+    );
+    assert.equal(
+      otherAuthor.githubRequests.some(({ argv }) => argv.includes('issues/45/assignees')),
+      false,
+    );
+    const wrongBase = serviceHarness({
+      existingPullRequest: pullRequest({ baseRef: 'develop' }),
+      remoteSha: originalSha,
+    });
+    await assert.rejects(
+      wrongBase.delivery.publishTaskPullRequest(input),
+      /different base branch/u,
+    );
+    const divergent = serviceHarness({ remoteSha: 'd'.repeat(40) });
+    await assert.rejects(
+      divergent.delivery.publishTaskPullRequest(input),
+      /does not match the task worktree/u,
+    );
+    assert.equal(divergent.githubRequests.length, 0);
   });
 });
