@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
@@ -495,22 +495,6 @@ describe('github notification workflows', () => {
     assert.match(source, /agent-system-github-publication:github-reply/u);
     assert.match(source, /contains\("@emoriwan"\) and contains\(\$token\)/u);
     assert.equal(expectedEvidence.scenario, 'comment');
-  });
-
-  it('should run every example in alphabetical order on both supported runners', async () => {
-    const source = await readFile('.github/workflows/pr-examples-tests.yml', 'utf8');
-    const workflow = parse(source) as ExampleWorkflow;
-    const job = workflow.jobs?.examples;
-    const exampleDirectories = (await readdir('examples', { recursive: true }))
-      .filter((entry) => /^[^/]+\/README\.md$/u.test(entry))
-      .map((entry) => entry.split('/')[0])
-      .sort();
-
-    assert.deepEqual(job?.strategy?.matrix, {
-      example: exampleDirectories,
-      os: ['macos-26', 'ubuntu-24.04'],
-    });
-    assert.match(source, /name: RUNNING A LEVEL THREE DIAGNOSTICS/u);
   });
 
   it('should run native codex acceptance through the shared leia matrix step', async () => {

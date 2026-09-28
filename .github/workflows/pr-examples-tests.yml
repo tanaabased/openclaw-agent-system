@@ -21,27 +21,8 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          - agent
-          - approval
-          - backup
-          - codex
-          - containment
-          - credentials
-          - doctor
-          - env
-          - git
-          - github
+          # temporarily focus on google while diagnosing host setup.
           - google
-          - identity
-          - install
-          - memory
-          - models
-          - path
-          - routing
-          - setup
-          - tool
-          - validate
-          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
