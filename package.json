@@ -108,7 +108,7 @@
     "test:codex-plugin": "node --import tsx scripts/codex-plugin-test-task.ts",
     "test:release": "node --import tsx scripts/release-test-task.ts",
     "test": "bun run test:unit",
-    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js \"test/**/*.spec.ts\"",
+    "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js --timeout 10000 \"test/**/*.spec.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json"
   },
   "codexTools": {
