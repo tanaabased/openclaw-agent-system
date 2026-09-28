@@ -44,8 +44,8 @@ export default async function backupVerify(
           { label: 'entries', style: 'field', value: String(manifest.inventory.length) },
           {
             label: 'coverage',
-            style: 'warning',
-            value: 'workspace-only; OpenClaw state is not captured',
+            style: manifest.coverage.openclawState === 'captured' ? 'status' : 'warning',
+            value: `workspace and agent state: ${manifest.coverage.openclawState}`,
           },
         ],
         options.styles,

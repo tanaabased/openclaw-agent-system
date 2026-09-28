@@ -12,6 +12,7 @@ import installAgentSystem from './install.ts';
 import validateAgentSystem from './validate.ts';
 import backupCreate from './backup-create.ts';
 import backupVerify from './backup-verify.ts';
+import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
@@ -114,13 +115,18 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('Create and verify private workspace-only recovery archives.')
+    .description('Create, verify, and restore private per-agent recovery archives.')
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
-    .description('Capture selected workspace files; OpenClaw database state is not included.')
+    .description('Capture selected workspace files and optional OpenClaw agent state.')
     .option('--agent <id>', 'Select an installed agent (operators only).')
     .option('--output <directory>', 'Override the manifest backup destination.')
+    .addOption(
+      backup
+        .createOption('--openclaw-state <mode>', 'Capture agent state: auto, required, or off.')
+        .choices(['auto', 'required', 'off']),
+    )
     .option('--dry-run', 'Preview effective settings and selected files without writing.')
     .option('--json', 'Write one structured JSON result.')
     .addOption(
@@ -159,6 +165,11 @@ export default function registerAgentSystemCli(
       overrides: {
         ...(typeof selected.output === 'string' ? { output: selected.output } : {}),
         ...(selected.gitIgnore === undefined ? {} : { gitIgnore: selected.gitIgnore === 'true' }),
+        ...(selected.openclawState === 'auto' ||
+        selected.openclawState === 'required' ||
+        selected.openclawState === 'off'
+          ? { openclawState: selected.openclawState }
+          : {}),
         ...(Array.isArray(selected.include) ? { include: selected.include.map(String) } : {}),
         ...(Array.isArray(selected.exclude) ? { exclude: selected.exclude.map(String) } : {}),
       },
@@ -174,6 +185,31 @@ export default function registerAgentSystemCli(
       await backupVerify({
         ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
         archive: String(archive),
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+      });
+    });
+  const restore = backup
+    .command('restore <archive>')
+    .description(
+      'Recover a verified archive into a fresh private staging directory (operators only).',
+    )
+    .option('--target <directory>', 'Required fresh recovery directory; never a live agent path.')
+    .option('--agent <id>', 'Require this recorded agent identity.')
+    .option('--json', 'Write one structured JSON result.')
+    .action(async (archive) => {
+      const selected = restore.opts();
+      await backupRestore({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        archive: String(archive),
+        target: typeof selected.target === 'string' ? selected.target : '',
         commandAuthority,
         environment,
         manifestService: options.manifestService,

@@ -13,7 +13,7 @@ import type { OpCacheGatewayRequest } from '../cli/credentials-cache.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import OpCache from '../environment/op-cache.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
-import type { BackupPlan } from '../agent/backup-types.ts';
+import type { BackupPlan, WorkspaceBackupManifest } from '../agent/backup-types.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
   status: 'loaded',
@@ -1104,10 +1104,16 @@ describe('backup cli registration', () => {
   const plan: BackupPlan = {
     agentId: 'tanaabot',
     workspaceDir: '/workspace',
-    settings: { output: '/workspace/backups', gitIgnore: false, include: [], exclude: [] },
+    settings: {
+      output: '/workspace/backups',
+      gitIgnore: false,
+      openclawState: 'off',
+      include: [],
+      exclude: [],
+    },
     coverage: {
       stage: 'workspace-only',
-      openclawState: 'unsupported',
+      openclawState: 'off',
       atomic: false,
       omittedPaths: [],
       limitations: [],
@@ -1116,6 +1122,65 @@ describe('backup cli registration', () => {
     protectedPaths: [],
     files: ['MEMORY.md'],
   };
+
+  it('should route operator restore through the alias with structured layout output', async () => {
+    const calls: Array<{ archive: string; target: string; agentId?: string }> = [];
+    const manifest: WorkspaceBackupManifest = {
+      format: 'agent-system-backup',
+      version: 2,
+      agentId: 'tanaabot',
+      capturedAt: '2026-09-28T00:00:00.000Z',
+      settings: plan.settings,
+      coverage: {
+        stage: 'workspace-only',
+        openclawState: 'off',
+        atomic: false,
+        omittedPaths: [],
+        limitations: [],
+      },
+      diagnostics: [],
+      inventory: [],
+    };
+    class Service extends WorkspaceBackupService {
+      override async restore(archive: string, target: string, agentId?: string) {
+        calls.push({ archive, target, ...(agentId ? { agentId } : {}) });
+        return { target, manifest };
+      }
+    }
+    const result = createProgram(undefined, { backupService: new Service() });
+    await result.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'backup',
+      'restore',
+      '/private/archive.tar.gz',
+      '--target',
+      '/private/recovery',
+      '--agent',
+      'tanaabot',
+      '--json',
+    ]);
+    assert.deepEqual(calls, [
+      { archive: '/private/archive.tar.gz', target: '/private/recovery', agentId: 'tanaabot' },
+    ]);
+    assert.equal(JSON.parse(result.output.join('')).status, 'restored');
+    assert.equal(JSON.parse(result.output.join('')).workspace, '/private/recovery/workspace');
+  });
+
+  it('should require a restore target in structured output', async () => {
+    const result = createProgram();
+    await result.program.parseAsync([
+      'node',
+      'openclaw',
+      'as',
+      'backup',
+      'restore',
+      '/private/archive.tar.gz',
+      '--json',
+    ]);
+    assert.equal(JSON.parse(result.output.join('')).diagnostics[0].code, 'backup-target-required');
+  });
 
   it('should parse repeated multi-value lists and explicit false without overriding omitted settings', async () => {
     let overrides: unknown;
@@ -1135,6 +1200,8 @@ describe('backup cli registration', () => {
       '--dry-run',
       '--json',
       '--git-ignore=false',
+      '--openclaw-state',
+      'required',
       '--include',
       'MEMORY.md',
       'memory/**',
@@ -1144,6 +1211,7 @@ describe('backup cli registration', () => {
     ]);
     assert.deepEqual(overrides, {
       gitIgnore: false,
+      openclawState: 'required',
       include: ['MEMORY.md', 'memory/**', 'GOALS.md'],
       exclude: [],
     });
@@ -1171,7 +1239,7 @@ describe('backup cli registration', () => {
     const output = result.output.join('');
     assert.ok(output.includes('backup'));
     assert.ok(output.includes('preview'));
-    assert.ok(output.includes('workspace-only'));
+    assert.ok(output.includes('agent state: off'));
     assert.ok(!output.includes('\u001b'));
   });
 
