@@ -64,8 +64,8 @@ describe('google example workflow', () => {
       timeoutSeconds: 600,
     });
     const brewfile = await readFile('examples/google/Brewfile', 'utf8');
-    assert.match(brewfile, /tap "openclaw\/tap", trusted: true/u);
-    assert.match(brewfile, /brew "openclaw\/tap\/gogcli"/u);
+    assert.match(brewfile, /tap "openclaw\/tap"/u);
+    assert.match(brewfile, /brew "openclaw\/tap\/gogcli", trusted: true/u);
     const suites = new Leia().parse([resolve('examples/google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)
