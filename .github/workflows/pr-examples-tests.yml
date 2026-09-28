@@ -39,6 +39,7 @@ jobs:
         shell: bash
         run: |
           HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+          brew --version
           brew install coreutils
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1

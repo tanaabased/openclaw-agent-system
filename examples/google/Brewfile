@@ -1,2 +1,2 @@
-tap "openclaw/tap"
-brew "openclaw/tap/gogcli", trusted: true
+tap "openclaw/tap", trusted: true
+brew "openclaw/tap/gogcli"

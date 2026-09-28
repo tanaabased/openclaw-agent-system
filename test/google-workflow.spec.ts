@@ -59,13 +59,17 @@ describe('google example workflow', () => {
     assert.equal(fixture.manifest.setup, undefined);
     assert.deepEqual(fixture.manifest.setupHost?.steps[0]?.apply, {
       kind: 'exec',
-      executable: 'brew',
-      args: ['bundle', '--file=Brewfile'],
+      executable: 'sh',
+      args: [
+        '-e',
+        '-c',
+        'brew tap openclaw/tap\nbrew trust --tap openclaw/tap\nbrew bundle --file=Brewfile\n',
+      ],
       timeoutSeconds: 600,
     });
     const brewfile = await readFile('examples/google/Brewfile', 'utf8');
-    assert.match(brewfile, /tap "openclaw\/tap"/u);
-    assert.match(brewfile, /brew "openclaw\/tap\/gogcli", trusted: true/u);
+    assert.match(brewfile, /tap "openclaw\/tap", trusted: true/u);
+    assert.match(brewfile, /brew "openclaw\/tap\/gogcli"/u);
     const suites = new Leia().parse([resolve('examples/google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)

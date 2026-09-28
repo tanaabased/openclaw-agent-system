@@ -22,6 +22,12 @@ setup-host:
       runtimes: [openclaw]
       check: brew bundle check --file=Brewfile
       apply:
-        command: brew
-        args: [bundle, --file=Brewfile]
+        command: sh
+        args:
+          - -e
+          - -c
+          - |
+            brew tap openclaw/tap
+            brew trust --tap openclaw/tap
+            brew bundle --file=Brewfile
         timeout-seconds: 600
