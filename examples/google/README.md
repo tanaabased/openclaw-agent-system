@@ -21,14 +21,6 @@ openclaw agent-system credentials set op --from-env | grep -F "$DEFAULT_CREDENTI
 # should install gog before google reconciliation and verify the account
 cd "$GITHUB_WORKSPACE/examples/google"
 openclaw agent-system install --json | jq -e '.outcomes | any(.stepId == "gog-cli" and (.status == "updated" or .status == "unchanged")) and any(.code == "google-credentials-created") and ([.[] | .stepId // .component] | index("gog-cli") < index("google"))' > /dev/null
-
-# should report any unmet homebrew entries after host setup
-cd "$GITHUB_WORKSPACE/examples/google"
-brew bundle check --verbose --file=Brewfile
-
-# should report the installed gog version after host setup
-cd "$GITHUB_WORKSPACE/examples/google"
-gog --version
 ```
 
 ## Testing

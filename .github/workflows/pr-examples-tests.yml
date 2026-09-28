@@ -21,8 +21,27 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
-          # temporarily focus on google while diagnosing host setup.
+          - agent
+          - approval
+          - backup
+          - codex
+          - containment
+          - credentials
+          - doctor
+          - env
+          - git
+          - github
           - google
+          - identity
+          - install
+          - memory
+          - models
+          - path
+          - routing
+          - setup
+          - tool
+          - validate
+          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -39,7 +58,6 @@ jobs:
         shell: bash
         run: |
           HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
-          brew --version
           brew install coreutils
       - name: Install Node
         uses: tanaabased/actions/setup-node@v1
