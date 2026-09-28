@@ -1104,10 +1104,16 @@ describe('backup cli registration', () => {
   const plan: BackupPlan = {
     agentId: 'tanaabot',
     workspaceDir: '/workspace',
-    settings: { output: '/workspace/backups', gitIgnore: false, include: [], exclude: [] },
+    settings: {
+      output: '/workspace/backups',
+      gitIgnore: false,
+      openclawState: 'off',
+      include: [],
+      exclude: [],
+    },
     coverage: {
       stage: 'workspace-only',
-      openclawState: 'unsupported',
+      openclawState: 'off',
       atomic: false,
       omittedPaths: [],
       limitations: [],
@@ -1135,6 +1141,8 @@ describe('backup cli registration', () => {
       '--dry-run',
       '--json',
       '--git-ignore=false',
+      '--openclaw-state',
+      'required',
       '--include',
       'MEMORY.md',
       'memory/**',
@@ -1144,6 +1152,7 @@ describe('backup cli registration', () => {
     ]);
     assert.deepEqual(overrides, {
       gitIgnore: false,
+      openclawState: 'required',
       include: ['MEMORY.md', 'memory/**', 'GOALS.md'],
       exclude: [],
     });
@@ -1171,7 +1180,7 @@ describe('backup cli registration', () => {
     const output = result.output.join('');
     assert.ok(output.includes('backup'));
     assert.ok(output.includes('preview'));
-    assert.ok(output.includes('workspace-only'));
+    assert.ok(output.includes('agent state: off'));
     assert.ok(!output.includes('\u001b'));
   });
 

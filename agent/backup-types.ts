@@ -22,6 +22,8 @@ export type BackupSettings = Required<BackupConfiguration>;
 
 export interface BackupRuntimeProtection {
   paths: string[];
+  agentDir?: string;
+  openclawVersion?: string;
   stateDir?: string;
   workspaceDir?: string;
 }
@@ -36,8 +38,8 @@ export interface BackupEntry {
 }
 
 export interface BackupCoverage {
-  stage: 'workspace-only';
-  openclawState: 'unsupported';
+  stage: 'workspace-only' | 'workspace-and-agent-state';
+  openclawState: 'pending' | 'captured' | 'absent' | 'off';
   atomic: false;
   omittedPaths: string[];
   limitations: string[];
@@ -51,15 +53,55 @@ export interface BackupPlan {
   files: string[];
   diagnostics: BackupDiagnostic[];
   protectedPaths: string[];
+  agentDir?: string;
+  openclawVersion?: string;
 }
 
-export interface WorkspaceBackupManifest {
+export interface OpenClawSnapshotManifest {
+  schemaVersion: 1;
+  snapshotId: string;
+  createdAt: string;
+  database: {
+    role: 'agent';
+    agentId: string;
+    basename: string;
+    userVersion: number;
+  };
+  artifact: { path: 'database.sqlite'; sha256: string; sizeBytes: number };
+}
+
+interface BackupManifestBase {
   format: 'agent-system-backup';
-  version: 1;
   agentId: string;
   capturedAt: string;
-  settings: BackupSettings;
-  coverage: BackupCoverage;
   inventory: BackupEntry[];
   diagnostics: BackupDiagnostic[];
 }
+
+export interface LegacyWorkspaceBackupManifest extends BackupManifestBase {
+  version: 1;
+  settings: Omit<BackupSettings, 'openclawState'>;
+  coverage: {
+    stage: 'workspace-only';
+    openclawState: 'unsupported';
+    atomic: false;
+    omittedPaths: string[];
+    limitations: string[];
+  };
+}
+
+export interface CurrentWorkspaceBackupManifest extends BackupManifestBase {
+  version: 2;
+  settings: BackupSettings;
+  coverage: Omit<BackupCoverage, 'openclawState'> & {
+    openclawState: 'captured' | 'absent' | 'off';
+  };
+  snapshot?: {
+    manifest: OpenClawSnapshotManifest;
+    openclawVersion: string;
+    agentSystemVersion: string;
+  };
+}
+
+export type WorkspaceBackupManifest =
+  LegacyWorkspaceBackupManifest | CurrentWorkspaceBackupManifest;

@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { open } from 'node:fs/promises';
-import { dirname, posix } from 'node:path';
+import { mkdir, mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, posix } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
@@ -12,7 +14,12 @@ import { Value } from 'typebox/value';
 
 import { externalBackupSchema } from '../manifest/backup-schema.ts';
 import { safeBackupRelativePath } from './backup-selection.ts';
-import { BackupError, type BackupEntry, type WorkspaceBackupManifest } from './backup-types.ts';
+import {
+  BackupError,
+  type BackupEntry,
+  type OpenClawSnapshotManifest,
+  type WorkspaceBackupManifest,
+} from './backup-types.ts';
 
 const maximumManifestBytes = 16 * 1024 * 1024;
 const diagnosticSchema = Type.Object(
@@ -30,21 +37,52 @@ const entrySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const manifestSchema = Type.Object(
+const manifestBase = {
+  format: Type.Literal('agent-system-backup'),
+  agentId: Type.String({ pattern: '^[a-z0-9][a-z0-9-]*$' }),
+  capturedAt: Type.String(),
+  inventory: Type.Array(entrySchema, { maxItems: 100_000 }),
+  diagnostics: Type.Array(diagnosticSchema),
+};
+const legacySettingsSchema = Type.Object(
   {
-    format: Type.Literal('agent-system-backup'),
-    version: Type.Literal(1),
-    agentId: Type.String({ pattern: '^[a-z0-9][a-z0-9-]*$' }),
-    capturedAt: Type.String(),
-    settings: Type.Object(
+    output: Type.String(),
+    gitIgnore: Type.Boolean(),
+    include: Type.Array(Type.String()),
+    exclude: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
+const snapshotManifestSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    snapshotId: Type.String({ pattern: '^[a-zA-Z0-9-]+$' }),
+    createdAt: Type.String(),
+    database: Type.Object(
       {
-        output: Type.String(),
-        gitIgnore: Type.Boolean(),
-        include: Type.Array(Type.String()),
-        exclude: Type.Array(Type.String()),
+        role: Type.Literal('agent'),
+        agentId: Type.String(),
+        basename: Type.Literal('openclaw-agent.sqlite'),
+        userVersion: Type.Integer({ minimum: 0 }),
       },
       { additionalProperties: false },
     ),
+    artifact: Type.Object(
+      {
+        path: Type.Literal('database.sqlite'),
+        sha256: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+        sizeBytes: Type.Integer({ minimum: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+const legacyManifestSchema = Type.Object(
+  {
+    ...manifestBase,
+    version: Type.Literal(1),
+    settings: legacySettingsSchema,
     coverage: Type.Object(
       {
         stage: Type.Literal('workspace-only'),
@@ -55,8 +93,51 @@ const manifestSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
-    inventory: Type.Array(entrySchema, { maxItems: 100_000 }),
-    diagnostics: Type.Array(diagnosticSchema),
+  },
+  { additionalProperties: false },
+);
+const currentManifestSchema = Type.Object(
+  {
+    ...manifestBase,
+    version: Type.Literal(2),
+    settings: Type.Object(
+      {
+        ...legacySettingsSchema.properties,
+        openclawState: Type.Union([
+          Type.Literal('auto'),
+          Type.Literal('required'),
+          Type.Literal('off'),
+        ]),
+      },
+      { additionalProperties: false },
+    ),
+    coverage: Type.Object(
+      {
+        stage: Type.Union([
+          Type.Literal('workspace-only'),
+          Type.Literal('workspace-and-agent-state'),
+        ]),
+        openclawState: Type.Union([
+          Type.Literal('captured'),
+          Type.Literal('absent'),
+          Type.Literal('off'),
+        ]),
+        atomic: Type.Literal(false),
+        omittedPaths: Type.Array(Type.String()),
+        limitations: Type.Array(Type.String()),
+      },
+      { additionalProperties: false },
+    ),
+    snapshot: Type.Optional(
+      Type.Object(
+        {
+          manifest: snapshotManifestSchema,
+          openclawVersion: Type.String({ minLength: 1 }),
+          agentSystemVersion: Type.String({ minLength: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -76,17 +157,30 @@ export function safeBackupLink(path: string, target: string): boolean {
 }
 
 function validateInventory(manifest: WorkspaceBackupManifest): void {
-  if (!Value.Check(manifestSchema, manifest) || !Number.isFinite(Date.parse(manifest.capturedAt))) {
+  if (
+    !(manifest.version === 1
+      ? Value.Check(legacyManifestSchema, manifest)
+      : Value.Check(currentManifestSchema, manifest)) ||
+    !Number.isFinite(Date.parse(manifest.capturedAt))
+  ) {
     throw new BackupError(
       'backup-manifest-invalid',
       'The archive manifest is invalid or its format/version is unsupported.',
     );
   }
+  if (
+    manifest.version === 2 &&
+    ((manifest.coverage.openclawState === 'captured') !== Boolean(manifest.snapshot) ||
+      (manifest.coverage.stage === 'workspace-and-agent-state') !== Boolean(manifest.snapshot) ||
+      (manifest.snapshot && manifest.snapshot.manifest.database.agentId !== manifest.agentId))
+  )
+    throw new BackupError('backup-manifest-invalid', 'The snapshot coverage is inconsistent.');
   const external = {
     output: manifest.settings.output,
     'git-ignore': manifest.settings.gitIgnore,
     include: manifest.settings.include,
     exclude: manifest.settings.exclude,
+    ...(manifest.version === 2 ? { 'openclaw-state': manifest.settings.openclawState } : {}),
   };
   if (!Value.Check(externalBackupSchema, external))
     throw new BackupError('backup-settings-invalid', 'The archive selection settings are invalid.');
@@ -150,8 +244,11 @@ export async function writeWorkspaceArchive(
   stage: string,
   manifest: WorkspaceBackupManifest,
   signal?: AbortSignal,
+  snapshotDirectory?: string,
 ): Promise<void> {
   validateInventory(manifest);
+  if (manifest.version === 2 && manifest.snapshot && !snapshotDirectory)
+    throw new BackupError('backup-snapshot-missing', 'The captured snapshot directory is missing.');
   const source = Buffer.from(`${JSON.stringify(manifest)}\n`);
   if (source.length > maximumManifestBytes)
     throw new BackupError(
@@ -195,6 +292,25 @@ export async function writeWorkspaceArchive(
         );
       else await add(header, Buffer.alloc(0));
     }
+    if (manifest.version === 2 && manifest.snapshot && snapshotDirectory) {
+      await add({ name: 'openclaw-state/', type: 'directory', mode: 0o700 }, Buffer.alloc(0));
+      for (const name of ['manifest.json', 'database.sqlite']) {
+        const size =
+          name === 'database.sqlite'
+            ? manifest.snapshot.manifest.artifact.sizeBytes
+            : (await stat(join(snapshotDirectory, name))).size;
+        await pipeline(
+          createReadStream(join(snapshotDirectory, name)),
+          stream.entry({
+            name: `openclaw-state/${name}`,
+            type: 'file',
+            mode: 0o600,
+            size,
+          }) as unknown as Writable,
+          { signal },
+        );
+      }
+    }
     stream.finalize();
     await writing;
   } catch (error) {
@@ -209,6 +325,7 @@ export async function verifyWorkspaceArchive(
   archive: string,
   expectedAgentId?: string,
   signal?: AbortSignal,
+  verifySnapshot?: (directory: string, manifest: OpenClawSnapshotManifest) => Promise<void>,
 ): Promise<WorkspaceBackupManifest> {
   const handle = await open(
     archive,
@@ -219,6 +336,10 @@ export async function verifyWorkspaceArchive(
   let inventory = new Map<string, BackupEntry>();
   const seen = new Set<string>();
   let root = false;
+  let snapshotRoot = false;
+  let snapshotScratch: string | undefined;
+  let snapshotDirectory: string | undefined;
+  const snapshotSeen = new Set<string>();
   const reading = pipeline(
     handle.createReadStream(),
     createGunzip(),
@@ -271,6 +392,76 @@ export async function verifyWorkspaceArchive(
         entry.resume();
         continue;
       }
+      if (
+        manifest.version === 2 &&
+        manifest.snapshot &&
+        root &&
+        header.name === 'openclaw-state/' &&
+        !snapshotRoot &&
+        header.type === 'directory' &&
+        header.size === 0 &&
+        header.mode === 0o700
+      ) {
+        snapshotRoot = true;
+        snapshotScratch = await mkdtemp(join(tmpdir(), 'agent-system-verify-'));
+        const repository = join(snapshotScratch, 'repository');
+        await mkdir(repository, { mode: 0o700 });
+        snapshotDirectory = join(repository, manifest.snapshot.manifest.snapshotId);
+        await mkdir(snapshotDirectory, { mode: 0o700 });
+        entry.resume();
+        continue;
+      }
+      if (snapshotRoot && header.name.startsWith('openclaw-state/')) {
+        const name = header.name.slice('openclaw-state/'.length);
+        const expected = manifest.version === 2 ? manifest.snapshot?.manifest : undefined;
+        if (
+          !expected ||
+          !snapshotDirectory ||
+          (name !== 'manifest.json' && name !== 'database.sqlite') ||
+          snapshotSeen.has(name) ||
+          header.type !== 'file' ||
+          header.mode !== 0o600 ||
+          (name === 'manifest.json' && header.size! > 1024 * 1024) ||
+          (name === 'database.sqlite' && header.size !== expected.artifact.sizeBytes)
+        )
+          throw new BackupError('backup-snapshot-invalid', 'Invalid embedded snapshot entry.');
+        const output = await open(
+          join(snapshotDirectory, name),
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        const hash = createHash('sha256');
+        try {
+          for await (const chunk of entry) {
+            const bytes = chunk as Uint8Array;
+            hash.update(bytes);
+            await output.writeFile(bytes);
+          }
+          await output.sync();
+        } finally {
+          await output.close();
+        }
+        if (name === 'database.sqlite' && hash.digest('hex') !== expected.artifact.sha256)
+          throw new BackupError('backup-checksum-mismatch', 'The embedded database hash differs.');
+        if (name === 'manifest.json') {
+          let embedded: unknown;
+          try {
+            embedded = JSON.parse(await readFile(join(snapshotDirectory, name), 'utf8'));
+          } catch {
+            throw new BackupError(
+              'backup-snapshot-invalid',
+              'The embedded snapshot manifest is invalid.',
+            );
+          }
+          if (!isDeepStrictEqual(embedded, expected))
+            throw new BackupError(
+              'backup-snapshot-invalid',
+              'The embedded snapshot metadata differs.',
+            );
+        }
+        snapshotSeen.add(name);
+        continue;
+      }
       if (!root || !header.name.startsWith('workspace/'))
         throw new BackupError(
           'backup-layout-invalid',
@@ -306,6 +497,14 @@ export async function verifyWorkspaceArchive(
         'backup-inventory-mismatch',
         'The archive is missing inventoried entries.',
       );
+    if (manifest.version === 2 && manifest.snapshot) {
+      if (!snapshotRoot || snapshotSeen.size !== 2 || !snapshotDirectory || !verifySnapshot)
+        throw new BackupError(
+          'backup-snapshot-invalid',
+          'The embedded snapshot is incomplete or cannot be verified.',
+        );
+      await verifySnapshot(snapshotDirectory, manifest.snapshot.manifest);
+    }
     return manifest;
   } catch (error) {
     parser.destroy(error as Error);
@@ -318,5 +517,6 @@ export async function verifyWorkspaceArchive(
         );
   } finally {
     await handle.close();
+    if (snapshotScratch) await rm(snapshotScratch, { recursive: true, force: true });
   }
 }

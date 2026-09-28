@@ -96,6 +96,7 @@ export async function planWorkspaceBackup(options: {
       resolve(workspaceDir, overrides.output ?? configured.output ?? backupDefaultOutput),
     ),
     gitIgnore: overrides.gitIgnore ?? configured.gitIgnore ?? false,
+    openclawState: overrides.openclawState ?? configured.openclawState ?? 'auto',
     include: overrides.include ?? configured.include ?? [],
     exclude: overrides.exclude ?? configured.exclude ?? [],
   };
@@ -137,6 +138,9 @@ export async function planWorkspaceBackup(options: {
   const stateDir = options.runtimeProtection?.stateDir
     ? await canonicalBackupPath(options.runtimeProtection.stateDir)
     : undefined;
+  const agentDir = options.runtimeProtection?.agentDir
+    ? await canonicalBackupPath(options.runtimeProtection.agentDir)
+    : undefined;
   const runtimeWorkspace = options.runtimeProtection?.workspaceDir
     ? await canonicalBackupPath(options.runtimeProtection.workspaceDir)
     : undefined;
@@ -150,6 +154,7 @@ export async function planWorkspaceBackup(options: {
     [
       ...(options.protectedPaths ?? []),
       ...(options.runtimeProtection?.paths ?? []),
+      ...(agentDir ? [agentDir] : []),
       ...(stateDir && !stateWorkspace ? [stateDir] : []),
     ].map(canonicalBackupPath),
   );
@@ -316,16 +321,22 @@ export async function planWorkspaceBackup(options: {
     agentId: options.manifest.agent.id,
     workspaceDir,
     settings,
+    ...(agentDir ? { agentDir } : {}),
+    ...(options.runtimeProtection?.openclawVersion
+      ? { openclawVersion: options.runtimeProtection.openclawVersion }
+      : {}),
     protectedPaths,
     files: [...selected].sort(),
     diagnostics,
     coverage: {
       stage: 'workspace-only',
-      openclawState: 'unsupported',
+      openclawState: settings.openclawState === 'off' ? 'off' : 'pending',
       atomic: false,
       omittedPaths: protectedPaths,
       limitations: [
-        'OpenClaw databases, sessions and runtime state are not captured.',
+        ...(settings.openclawState === 'off'
+          ? ['The OpenClaw agent database was explicitly omitted.']
+          : []),
         'Out-of-workspace sources and external memory backends are not captured.',
         'Files can change during capture; this is not an atomic workspace snapshot.',
       ],

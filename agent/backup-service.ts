@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   open,
+  readFile,
   readlink,
   realpath,
   rm,
@@ -19,6 +20,11 @@ import isPathContained from '../utils/is-path-contained.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { BackupConfiguration } from '../manifest/backup-schema.ts';
+import {
+  captureAgentSnapshot,
+  verifyAgentSnapshot,
+  type BackupSnapshotCommand,
+} from './backup-snapshot.ts';
 import { writeWorkspaceArchive, verifyWorkspaceArchive, safeBackupLink } from './backup-archive.ts';
 import {
   backupGit,
@@ -250,6 +256,7 @@ export default class WorkspaceBackupService {
     private readonly runtimeProtection: (
       agentId: string,
     ) => Promise<BackupRuntimeProtection> = async () => ({ paths: [] }),
+    private readonly snapshotCommand?: BackupSnapshotCommand,
   ) {}
 
   async plan(options: {
@@ -289,19 +296,51 @@ export default class WorkspaceBackupService {
       const payload = join(stage, 'workspace');
       await mkdir(payload, { mode: 0o700 });
       const captured = await captureWorkspace(fresh, payload, signal);
+      const snapshot = await captureAgentSnapshot(fresh, stage, this.snapshotCommand);
+      const coverage = {
+        ...fresh.coverage,
+        stage:
+          snapshot.state === 'captured'
+            ? ('workspace-and-agent-state' as const)
+            : ('workspace-only' as const),
+        openclawState: snapshot.state,
+        limitations: [
+          ...fresh.coverage.limitations,
+          ...(snapshot.state === 'absent'
+            ? ['The selected OpenClaw agent database did not exist at capture time.']
+            : []),
+          ...(snapshot.state === 'captured'
+            ? ['OpenClaw omits transient agent database lease rows from its snapshot.']
+            : []),
+        ],
+      };
+      const agentSystemVersion = (
+        JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+          version: string;
+        }
+      ).version;
       const manifest: WorkspaceBackupManifest = {
         format: 'agent-system-backup',
-        version: 1,
+        version: 2,
         agentId: fresh.agentId,
         capturedAt: new Date().toISOString(),
         settings: fresh.settings,
-        coverage: fresh.coverage,
+        coverage,
         diagnostics: fresh.diagnostics,
         inventory: captured.inventory,
+        ...(snapshot.manifest
+          ? {
+              snapshot: {
+                manifest: snapshot.manifest,
+                openclawVersion: fresh.openclawVersion ?? 'unavailable',
+                agentSystemVersion,
+              },
+            }
+          : {}),
       };
       const temporaryArchive = join(stage, 'archive.tar.gz');
-      await writeWorkspaceArchive(temporaryArchive, payload, manifest, signal);
-      await verifyWorkspaceArchive(temporaryArchive, plan.agentId, signal);
+      await writeWorkspaceArchive(temporaryArchive, payload, manifest, signal, snapshot.directory);
+      await this.verify(temporaryArchive, plan.agentId, signal);
       const destination = join(
         fresh.settings.output,
         `${plan.agentId}-${manifest.capturedAt.replace(/[:.]/gu, '-')}-${randomUUID()}.tar.gz`,
@@ -326,7 +365,7 @@ export default class WorkspaceBackupService {
           await source.close();
           await target?.close();
         }
-        await verifyWorkspaceArchive(pending, plan.agentId, signal);
+        await this.verify(pending, plan.agentId, signal);
         await ensureDirectory(fresh.settings.output);
         signal?.throwIfAborted();
         for (const [source, expected] of captured.sources) {
@@ -359,7 +398,9 @@ export default class WorkspaceBackupService {
     }
   }
 
-  async verify(archive: string, agentId?: string) {
-    return verifyWorkspaceArchive(archive, agentId);
+  async verify(archive: string, agentId?: string, signal?: AbortSignal) {
+    return verifyWorkspaceArchive(archive, agentId, signal, (directory, manifest) =>
+      verifyAgentSnapshot(directory, manifest, this.snapshotCommand),
+    );
   }
 }

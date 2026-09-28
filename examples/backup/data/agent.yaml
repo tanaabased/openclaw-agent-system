@@ -4,6 +4,7 @@ agent:
   name: Backup Example
 backup:
   git-ignore: true
+  openclaw-state: off
   include:
     - MEMORY.md
     - memory/**

@@ -16,6 +16,7 @@ cp -R "$GITHUB_WORKSPACE/examples/backup/data" "$TMPDIR/backup-workspace"
 cd "$TMPDIR/backup-workspace"
 mv gitignore .gitignore
 git init
+openclaw agents add backup-example --workspace "$TMPDIR/backup-workspace" --non-interactive --json
 ```
 
 ## Testing
@@ -23,7 +24,7 @@ git init
 ```bash
 # should preview ignored memory without creating any backup state
 cd "$TMPDIR/backup-workspace/memory"
-openclaw as backup create --dry-run --json | jq -e '.status == "preview" and .coverage.stage == "workspace-only" and (.files | index("MEMORY.md")) and (.files | index("memory/day.md"))'
+openclaw as backup create --dry-run --json | jq -e '.status == "preview" and .coverage.openclawState == "off" and (.files | index("MEMORY.md")) and (.files | index("memory/day.md"))'
 test ! -e "$TMPDIR/backup-workspace/.agent-system"
 
 # should prevent setup checks from creating archives and allow an explicit apply
@@ -35,7 +36,7 @@ test "$(find .agent-system/backups -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
 # should verify and extract selected memory without modifying the live workspace
 cd "$TMPDIR/backup-workspace"
 archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
-openclaw as backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-example" and .coverage.openclawState == "unsupported"'
+openclaw as backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-example" and .coverage.openclawState == "off"'
 git check-ignore "$archive"
 mkdir "$TMPDIR/backup-recovered"
 tar -xzf "$archive" -C "$TMPDIR/backup-recovered"
@@ -55,4 +56,23 @@ cd "$TMPDIR/backup-workspace"
 printf 'corrupt' > "$TMPDIR/bad-backup.tar.gz"
 if output="$(openclaw as backup verify "$TMPDIR/bad-backup.tar.gz" --json)"; then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "failed" and (.diagnostics | length > 0)'
+
+# should capture committed wal data and compact the selected agent database
+cd "$TMPDIR/backup-workspace"
+node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" seed "$TMPDIR/backup-agent-ready" &
+fixture_pid=$!
+trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if test -f "$TMPDIR/backup-agent-ready"; then break; fi
+  sleep 1
+done
+test -f "$TMPDIR/backup-agent-ready"
+database="$(cat "$TMPDIR/backup-agent-ready")"
+test -s "$database-wal"
+archive="$(openclaw as backup create --openclaw-state required --json | jq -er '.archive')"
+openclaw as backup verify "$archive" --json | jq -e '.coverage.openclawState == "captured" and .snapshot.manifest.database.agentId == "backup-example"'
+mkdir "$TMPDIR/backup-with-state"
+tar -xzf "$archive" -C "$TMPDIR/backup-with-state"
+node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-with-state/openclaw-state/database.sqlite"
+cmp MEMORY.md "$TMPDIR/backup-with-state/workspace/MEMORY.md"
 ```

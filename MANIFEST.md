@@ -264,17 +264,19 @@ identifiers remain literal and are never casing-converted. See
 Optional defaults for [workspace backup commands](./CLI.md#openclaw-agent-system-backup-create).
 Omit `backup` to use the defaults. Loading the manifest creates no backups.
 
-| Field               | Type         | Required | Default                 | Description                                                      |
-| ------------------- | ------------ | -------- | ----------------------- | ---------------------------------------------------------------- |
-| `backup.output`     | string       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
-| `backup.git-ignore` | boolean      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
-| `backup.include`    | string array | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
-| `backup.exclude`    | string array | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
+| Field                   | Type                         | Required | Default                 | Description                                                      |
+| ----------------------- | ---------------------------- | -------- | ----------------------- | ---------------------------------------------------------------- |
+| `backup.output`         | string                       | no       | `.agent-system/backups` | Local destination; relative paths resolve against the workspace. |
+| `backup.git-ignore`     | boolean                      | no       | `false`                 | Apply local Git-ignore rules before restoring includes.          |
+| `backup.openclaw-state` | `auto`, `required`, or `off` | no       | `auto`                  | Capture an existing agent database, require it, or omit it.      |
+| `backup.include`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns that restore filtered entries.  |
+| `backup.exclude`        | string array                 | no       | `[]`                    | Workspace-relative glob patterns applied last; exclusions win.   |
 
 ```yaml
 backup:
   output: .agent-system/backups
   git-ignore: true
+  openclaw-state: auto
   include:
     - MEMORY.md
     - memory/**
@@ -290,8 +292,9 @@ backup-specific environment layer. Include/exclude options replace their manifes
 lists; `--include=` and `--exclude=` clear them. Includes cannot override mandatory
 exclusions. Exclude previous custom destinations explicitly.
 
-Only workspace files are captured. See the command reference for coverage,
-destination restrictions, permissions, selection rules, and diagnostics.
+The selected agent's OpenClaw database is captured through OpenClaw's snapshot
+command when present. See the command reference for coverage, destination
+restrictions, permissions, selection rules, and diagnostics.
 
 ### Setup
 
