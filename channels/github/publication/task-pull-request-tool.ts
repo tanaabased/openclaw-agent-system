@@ -6,9 +6,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import defineAgentSystemSemanticTool from '../../../api/define-semantic-tool.ts';
-import AgentSystemToolError, {
-  type AgentSystemToolFailureDiagnostic,
-} from '../../../api/error.ts';
+import AgentSystemToolError, { type AgentSystemToolFailureDiagnostic } from '../../../api/error.ts';
 import type { AgentManifest } from '../../../manifest/types.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationConversationStateStore from '../conversation/conversation-state-store.ts';

@@ -13,14 +13,15 @@ export interface GitHubNotificationIssueDeliveryReceipt {
 }
 
 export type GitHubIssueDeliveryFailureCategory =
-  | 'github-request'
-  | 'invalid-response'
-  | 'identity-mismatch';
+  'github-request' | 'invalid-response' | 'identity-mismatch';
 
 export class GitHubIssueDeliveryError extends Error {
   override name = 'GitHubIssueDeliveryError';
 
-  constructor(readonly category: GitHubIssueDeliveryFailureCategory, message: string) {
+  constructor(
+    readonly category: GitHubIssueDeliveryFailureCategory,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -687,7 +688,10 @@ export default class GitHubNotificationIssueDeliveryService {
     try {
       return JSON.parse(result.stdout);
     } catch {
-      throw new GitHubIssueDeliveryError('invalid-response', 'GitHub returned invalid issue delivery data.');
+      throw new GitHubIssueDeliveryError(
+        'invalid-response',
+        'GitHub returned invalid issue delivery data.',
+      );
     }
   }
 }

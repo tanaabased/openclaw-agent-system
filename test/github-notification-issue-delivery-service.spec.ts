@@ -530,8 +530,7 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     assert.equal(
       scenario.githubRequests.filter(
         ({ argv }) =>
-          argv.includes('POST') &&
-          argv.includes('repos/tanaabased/example/issues/45/assignees'),
+          argv.includes('POST') && argv.includes('repos/tanaabased/example/issues/45/assignees'),
       ).length,
       1,
     );

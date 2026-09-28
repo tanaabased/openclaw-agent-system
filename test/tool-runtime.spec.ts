@@ -271,9 +271,7 @@ describe('api/runtime', () => {
         error instanceof AgentSystemToolError &&
         error.failureDiagnostic?.category === 'invalid-response',
     );
-    assert.ok(
-      logs.some((log) => log.includes('stage="publication" category="invalid-response"')),
-    );
+    assert.ok(logs.some((log) => log.includes('stage="publication" category="invalid-response"')));
     assert.ok(logs.every((log) => !log.includes('raw private')));
   });
 
