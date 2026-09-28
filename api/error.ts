@@ -13,6 +13,17 @@ export type AgentSystemToolErrorCode =
   | 'tool_identity_mismatch'
   | 'tool_unavailable';
 
+export interface AgentSystemToolFailureDiagnostic {
+  stage: 'authorization' | 'publication' | 'checkpoint';
+  category:
+    | 'authority-revoked'
+    | 'github-request'
+    | 'invalid-response'
+    | 'identity-mismatch'
+    | 'state-or-configuration'
+    | 'checkpoint-failed';
+}
+
 /** Identify stable Agent System tool failures without exposing runtime details. */
 export default class AgentSystemToolError extends Error {
   override name = 'AgentSystemToolError';
@@ -22,6 +33,7 @@ export default class AgentSystemToolError extends Error {
     message: string,
     readonly credentialRejected = false,
     readonly providerDiagnostic?: ProviderDiagnostic,
+    readonly failureDiagnostic?: AgentSystemToolFailureDiagnostic,
   ) {
     super(withProviderDiagnostic(message, providerDiagnostic));
   }

@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 
 import type { OpenClawPluginToolFactory } from 'openclaw/plugin-sdk/plugin-entry';
 
+import AgentSystemToolError from '../api/error.ts';
 import type { AgentSystemToolScope } from '../api/types.ts';
 import { githubNotificationConversationId } from '../channels/github/channel.ts';
 import { createGitHubNotificationConversationSnapshot } from '../channels/github/conversation/conversation-state.ts';
-import type GitHubNotificationIssueDeliveryService from '../channels/github/conversation/issue-delivery-service.ts';
+import {
+  GitHubIssueDeliveryError,
+  type default as GitHubNotificationIssueDeliveryService,
+} from '../channels/github/conversation/issue-delivery-service.ts';
 import type GitHubNotificationPullRequestHandoffService from '../channels/github/conversation/pull-request-handoff-service.ts';
 import createGitHubNotificationTaskPullRequestTool from '../channels/github/publication/task-pull-request-tool.ts';
 import { notificationItemKey, notificationMonitorState } from './github-notification-fixtures.ts';
@@ -42,6 +46,8 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     };
     const calls: string[] = [];
     let authorized = true;
+    let failPublication = false;
+    let failCheckpoint = false;
     const dependencies: Parameters<typeof createGitHubNotificationTaskPullRequestTool>[0] = {
       conversations: {
         async readRouted() {
@@ -68,6 +74,8 @@ describe('channels/github/publication/task-pull-request-tool', () => {
               >[0],
             ) {
               calls.push('publish');
+              if (failPublication)
+                throw new GitHubIssueDeliveryError('invalid-response', 'raw private response');
               assert.equal(input.worktree.branch, 'issue-12');
               assert.equal(input.title, 'Ready for review');
               return { pullRequestNodeId: 'PR_task', pullRequestNumber: 45 };
@@ -78,6 +86,7 @@ describe('channels/github/publication/task-pull-request-tool', () => {
               input: Parameters<GitHubNotificationPullRequestHandoffService['checkpointTask']>[0],
             ) {
               calls.push('checkpoint');
+              if (failCheckpoint) throw new Error('raw private checkpoint data');
               assert.deepEqual(input.pullRequest, {
                 pullRequestNodeId: 'PR_task',
                 pullRequestNumber: 45,
@@ -141,8 +150,40 @@ describe('channels/github/publication/task-pull-request-tool', () => {
     assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
 
     calls.length = 0;
+    failPublication = true;
+    await assert.rejects(
+      tool.execute('call-publication', { title: 'Ready for review' }),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.failureDiagnostic?.stage === 'publication' &&
+        error.failureDiagnostic.category === 'invalid-response' &&
+        !error.message.includes('raw private'),
+    );
+    assert.deepEqual(calls, ['authorize', 'publish']);
+    failPublication = false;
+
+    calls.length = 0;
+    failCheckpoint = true;
+    await assert.rejects(
+      tool.execute('call-checkpoint', { title: 'Ready for review' }),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.failureDiagnostic?.stage === 'checkpoint' &&
+        error.failureDiagnostic.category === 'checkpoint-failed' &&
+        !error.message.includes('raw private'),
+    );
+    assert.deepEqual(calls, ['authorize', 'publish', 'authorize', 'checkpoint']);
+    failCheckpoint = false;
+
+    calls.length = 0;
     authorized = false;
-    await assert.rejects(tool.execute('call-2', { title: 'Ready for review' }));
+    await assert.rejects(
+      tool.execute('call-2', { title: 'Ready for review' }),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.failureDiagnostic?.stage === 'authorization' &&
+        error.failureDiagnostic.category === 'authority-revoked',
+    );
     assert.deepEqual(calls, ['authorize']);
     authorized = true;
     calls.length = 0;

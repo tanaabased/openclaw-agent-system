@@ -129,7 +129,12 @@ function serviceHarness(
               return cliResult(JSON.stringify(createdPullRequest));
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45' && !argv.includes('PATCH')) {
-              return cliResult(JSON.stringify(options.pullRequestAuthorNodeId ?? 'U_agent'));
+              const authorNodeId = options.pullRequestAuthorNodeId ?? 'U_agent';
+              return cliResult(
+                argv.includes('.user.node_id')
+                  ? authorNodeId
+                  : JSON.stringify({ nodeId: authorNodeId }),
+              );
             }
             if (endpoint === 'repos/tanaabased/example/pulls/45' && argv.includes('PATCH')) {
               return cliResult(JSON.stringify(pullRequest()));
@@ -495,13 +500,21 @@ describe('channels/github/conversation/issue-delivery-service', () => {
 
   it('should reuse an agent-owned task PR while preserving its existing title and body', async () => {
     const scenario = serviceHarness({
+      assignees: [{ login: 'maintainer', nodeId: 'U_maintainer' }],
       commitCount: 3,
       existingPullRequest: pullRequest({ body: 'Authored explanation', title: 'Authored title' }),
       remoteSha: originalSha,
+      reviewers: [{ login: 'reviewer', nodeId: 'U_reviewer' }],
     });
     const input = { agentId, item: approvedNotificationItem(), workspaceDir, worktree };
-    await scenario.delivery.publishTaskPullRequest(input);
-    await scenario.delivery.publishTaskPullRequest(input);
+    const first = await scenario.delivery.publishTaskPullRequest(input);
+    const second = await scenario.delivery.publishTaskPullRequest(input);
+    assert.deepEqual(first, { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 });
+    assert.deepEqual(second, first);
+    assert.equal(
+      scenario.githubRequests.filter(({ argv }) => argv.includes('{nodeId:.user.node_id}')).length,
+      2,
+    );
     assert.equal(
       scenario.githubRequests.some(({ argv }) => argv.includes('POST') && argv.includes('pulls')),
       false,
@@ -513,6 +526,22 @@ describe('channels/github/conversation/issue-delivery-service', () => {
     assert.equal(
       scenario.gitRequests.some(({ argv }) => argv[0] === 'push'),
       false,
+    );
+    assert.equal(
+      scenario.githubRequests.filter(
+        ({ argv }) =>
+          argv.includes('POST') &&
+          argv.includes('repos/tanaabased/example/issues/45/assignees'),
+      ).length,
+      1,
+    );
+    assert.equal(
+      scenario.githubRequests.filter(
+        ({ argv }) =>
+          argv.includes('POST') &&
+          argv.includes('repos/tanaabased/example/pulls/45/requested_reviewers'),
+      ).length,
+      1,
     );
   });
 

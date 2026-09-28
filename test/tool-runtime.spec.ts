@@ -247,6 +247,36 @@ describe('api/runtime', () => {
     );
   });
 
+  it('should log only bounded task handoff diagnostics from a failed semantic tool', async () => {
+    const logs: string[] = [];
+    const runtime = createRuntime({ logs });
+    const definition = createSemanticToolTestDefinition({
+      async execute() {
+        throw new AgentSystemToolError(
+          'execution_failed',
+          'Task PR handoff failed at publication (invalid-response).',
+          false,
+          undefined,
+          { stage: 'publication', category: 'invalid-response' },
+        );
+      },
+    });
+    await assert.rejects(
+      runtime.executeSemantic(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError &&
+        error.failureDiagnostic?.category === 'invalid-response',
+    );
+    assert.ok(
+      logs.some((log) => log.includes('stage="publication" category="invalid-response"')),
+    );
+    assert.ok(logs.every((log) => !log.includes('raw private')));
+  });
+
   it('should deny semantic operations before resolving the environment', async () => {
     const events: string[] = [];
     const runtime = createRuntime({ events });
