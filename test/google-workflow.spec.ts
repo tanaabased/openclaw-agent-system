@@ -26,6 +26,10 @@ describe('google example workflow', () => {
       run?: string;
     }>;
     assert.ok(!steps.some((step) => step.name === 'Install reviewed GoG'));
+    const pathStep = steps.findIndex((step) => step.name === 'PATH updates');
+    const brewStep = steps.findIndex((step) => step.name === 'Brew updates');
+    assert.ok(pathStep >= 0 && brewStep > pathStep);
+    assert.match(steps[pathStep]?.run ?? '', /\/home\/linuxbrew\/\.linuxbrew\/bin/u);
     const run = steps.find((step) => step.name === 'Run Leia-backed example');
     assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
     assert.equal(
@@ -59,7 +63,9 @@ describe('google example workflow', () => {
       args: ['bundle', '--file=Brewfile'],
       timeoutSeconds: 600,
     });
-    assert.match(await readFile('examples/google/Brewfile', 'utf8'), /openclaw\/tap\/gogcli/u);
+    const brewfile = await readFile('examples/google/Brewfile', 'utf8');
+    assert.match(brewfile, /tap "openclaw\/tap", trusted: true/u);
+    assert.match(brewfile, /brew "openclaw\/tap\/gogcli"/u);
     const suites = new Leia().parse([resolve('examples/google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)
