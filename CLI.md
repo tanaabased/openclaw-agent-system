@@ -6,6 +6,8 @@ for declarations. `openclaw as` aliases `openclaw agent-system`; either bare
 namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
+**Core commands**
+
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 - [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
 - [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
@@ -17,8 +19,11 @@ namespace prints help. Agent System human summaries honor `NO_COLOR` and
 - [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op)
 - [`openclaw agent-system credentials cache status`](#openclaw-agent-system-credentials-cache-status)
 - [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush)
-- [`openclaw agent-system notifications`](#openclaw-agent-system-notifications)
-- [`openclaw agent-system tool`](#openclaw-agent-system-tool)
+
+**Component commands**
+
+- [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — [GitHub channel](./channels/github/ADVANCED.md).
+- [`openclaw agent-system tool`](#openclaw-agent-system-tool) — [Git](./tools/git/README.md), [GitHub](./tools/github/README.md), and [Google](./tools/google/README.md) tools.
 
 ## `openclaw agent-system validate`
 
@@ -229,7 +234,7 @@ Installation:
 - Validates declarations and requires persistent credentials for declared 1Password resources before mutation.
 - Verifies owned state, reporting already reconciled components as unchanged. Setup follows its [check and retry rules](./MANIFEST.md#checks-installation-and-retries).
 - Rejects an agent id already bound to another workspace.
-- Reconciles manifest-selected Git, worktree, and GitHub tool grants while preserving unrelated grants.
+- Reconciles manifest-selected Git, worktree, GitHub, and Google tool grants while preserving unrelated grants.
 - Reconciles an agent-scoped GitHub managed profile when account and credential bindings are explicit.
 - Grants and verifies [conversation-hook access](./channels/github/ADVANCED.md#required-conversation-hook) when notifications are configured.
 
@@ -432,7 +437,7 @@ Run a registered tool command with an explicitly selected operator identity for 
 
 | Option or argument  | Required | Default             | Description                                                         |
 | ------------------- | -------- | ------------------- | ------------------------------------------------------------------- |
-| `<command>`         | yes      | none                | Select `git`, `gh`, or `worktree`.                                  |
+| `<command>`         | yes      | none                | Select `git`, `gh`, `gog`, or `worktree`.                           |
 | `--agent <id>`      | no       | workspace discovery | Use the exact configured workspace for an installed OpenClaw agent. |
 | `-- <arguments...>` | yes      | none                | Pass the remaining arguments to the selected command.               |
 
@@ -447,11 +452,12 @@ openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
-| ID                          | Command    | CLI                                   | Shim                                           |
-| --------------------------- | ---------- | ------------------------------------- | ---------------------------------------------- |
-| `agent_system_git`          | `git`      | [Usage](./tools/git/README.md#cli)    | [Packaged shim](./tools/git/README.md#shim)    |
-| `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)    | none                                           |
-| `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli) | [Packaged shim](./tools/github/README.md#shim) |
+| ID                          | Command    | CLI                                                   | Shim                                                               |
+| --------------------------- | ---------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `agent_system_git`          | `git`      | [Usage](./tools/git/README.md#cli)                    | [Packaged shim](./tools/git/README.md#shim)                        |
+| `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)                    | none                                                               |
+| `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                 | [Packaged shim](./tools/github/README.md#shim)                     |
+| `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#agent_system_google) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
 
 Tool-specific arguments, policy, and routing behavior belong in the linked guide.
 

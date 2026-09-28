@@ -225,6 +225,29 @@ describe('agent/setup-command-service', function () {
     });
   }
 
+  it('should run pre-agent commands with host tools and without managed authority or secrets', async () => {
+    const service = new SetupCommandService(dependencies);
+    await service.runPreAgent(command('touch pre-agent-ready'), {
+      agentId: 'emori',
+      workspaceDir,
+      mode: 'apply',
+    });
+    assert.equal((await readFile(join(workspaceDir, 'pre-agent-ready'))).length, 0);
+    assert.deepEqual(requests, []);
+    assert.deepEqual(environmentCalls, []);
+    assert.equal(childEnvironments.length, 1);
+    const environment = childEnvironments[0]!;
+    for (const name of [
+      'AGENT_SYSTEM_EXEC_AUTHORITY',
+      'AGENT_SYSTEM_EXEC_CAPABILITY',
+      'AGENT_SYSTEM_GH',
+      'GH_TOKEN',
+      'EMORI_TOKEN',
+      'OPENCLAW_PROFILE',
+    ])
+      assert.equal(environment[name], undefined);
+  });
+
   it('should prepare configured tool credentials and key resources before launching any setup command', async () => {
     const service = new SetupCommandService(dependencies);
     await service.prepare({ manifest: loaded.manifest, workspaceDir });

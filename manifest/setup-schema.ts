@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 
 import type { ManifestDiagnostic } from './types.ts';
 
-export const setupDefaultTimeoutSeconds = 300;
+export const setupDefaultTimeoutSeconds = 600;
 export const setupMaximumTimeoutSeconds = 3_600;
 
 const shellSchema = Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]);
@@ -162,13 +162,16 @@ function decodeCommand(command: ExternalCommand, shell: AgentSetupShell): AgentS
 }
 
 /** Normalize a setup value without reading files, resolving environment values, or executing code. */
-export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
+export function normalizeAgentSetup(value: unknown, fieldPath = '/setup'): NormalizedAgentSetup {
   if (
     isRecord(value) &&
     Object.hasOwn(value, 'steps') &&
     (Object.hasOwn(value, 'check') || Object.hasOwn(value, 'apply'))
   ) {
-    return { status: 'invalid', diagnostics: [diagnostic('manifest-setup-mixed-forms', '/setup')] };
+    return {
+      status: 'invalid',
+      diagnostics: [diagnostic('manifest-setup-mixed-forms', fieldPath)],
+    };
   }
   const selected =
     typeof value === 'string'
@@ -177,7 +180,7 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
         ? stepsSchema
         : shortSchema;
   if (!Value.Check(externalAgentSetupSchema, value)) {
-    return { status: 'invalid', diagnostics: schemaDiagnostics(selected, value, '/setup') };
+    return { status: 'invalid', diagnostics: schemaDiagnostics(selected, value, fieldPath) };
   }
 
   const setup = typeof value === 'string' ? { apply: value } : value;
@@ -186,7 +189,7 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
   const ids = new Set<string>();
   const diagnostics: ManifestDiagnostic[] = [];
   const steps = entries.map((entry, index) => {
-    const path = 'steps' in setup ? `/setup/steps/${index}` : '/setup';
+    const path = 'steps' in setup ? `${fieldPath}/steps/${index}` : fieldPath;
     if (ids.has(entry.id))
       diagnostics.push(diagnostic('manifest-setup-duplicate-id', `${path}/id`));
     ids.add(entry.id);

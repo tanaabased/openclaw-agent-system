@@ -204,11 +204,24 @@ export default class AgentManifestService {
     if (cached?.fingerprint === discovery.fingerprint) {
       if (cached.result.status === 'unmanaged') return cached.result;
       if (cached.result.status === 'loaded') {
-        if (!cached.result.setupFilePath) return cached.result;
-        const fingerprint = await setupFileFingerprint(cached.result.setupFilePath);
-        if (fingerprint !== undefined && fingerprint === cached.result.setupFileFingerprint)
+        const agentFingerprint = cached.result.setupFilePath
+          ? await setupFileFingerprint(cached.result.setupFilePath)
+          : undefined;
+        const hostFingerprint = cached.result.setupHostFilePath
+          ? await setupFileFingerprint(cached.result.setupHostFilePath)
+          : undefined;
+        if (
+          (!cached.result.setupFilePath ||
+            agentFingerprint === cached.result.setupFileFingerprint) &&
+          (!cached.result.setupHostFilePath ||
+            hostFingerprint === cached.result.setupHostFileFingerprint)
+        )
           return cached.result;
-      } else if (cached.result.status === 'invalid' && !cached.result.setupFilePath) {
+      } else if (
+        cached.result.status === 'invalid' &&
+        !cached.result.setupFilePath &&
+        !cached.result.setupHostFilePath
+      ) {
         return cached.result;
       }
     }

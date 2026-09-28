@@ -145,21 +145,24 @@ describe('index', () => {
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
+      'agent_system_google',
       'agent_system_github_reply',
       'agent_system_github_task_pr',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',
     ]);
-    const manifest = JSON.parse(
-      readFileSync(new URL('../openclaw.plugin.json', import.meta.url), 'utf8'),
-    ) as { contracts?: { tools?: string[] } };
-    assert.deepEqual([...toolNames].sort(), [...(manifest.contracts?.tools ?? [])].sort());
     assert.deepEqual(policyIds, [
       'agent-system.git',
       'agent-system.git-worktree',
       'agent-system.github',
+      'agent-system.google',
     ]);
+    const manifest = JSON.parse(
+      readFileSync(new URL('../openclaw.plugin.json', import.meta.url), 'utf8'),
+    ) as { contracts: { tools: string[]; trustedToolPolicies: string[] } };
+    assert.deepEqual(manifest.contracts.tools.toSorted(), toolNames.toSorted());
+    assert.deepEqual(manifest.contracts.trustedToolPolicies.toSorted(), policyIds.toSorted());
     assert.equal(options, agentSystemCliMetadata);
     assert.deepEqual(options?.commands, ['agent-system', 'as']);
     assert.deepEqual(

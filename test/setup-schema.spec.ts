@@ -26,6 +26,22 @@ function invalid(value: unknown, code: string, fieldPath: string) {
 }
 
 describe('manifest/setup-schema', () => {
+  it('should select setup-agent before the deprecated setup fallback', () => {
+    const source = (declarations: string) =>
+      parseAgentManifest(`schema-version: 1\nagent:\n  id: test\n${declarations}`);
+    const both = source('setup-host: echo host\nsetup-agent: echo agent\nsetup: echo legacy\n');
+    assert.equal(both.status, 'valid');
+    if (both.status !== 'valid') return;
+    assert.equal(both.manifest.setupHost?.steps[0]?.apply.kind, 'shell');
+    assert.equal(both.manifest.setup?.steps[0]?.apply.kind, 'shell');
+    assert.deepEqual(both.manifest.setup, normalized('echo agent'));
+    const legacy = source('setup: echo legacy\n');
+    assert.equal(legacy.status, 'valid');
+    if (legacy.status === 'valid')
+      assert.deepEqual(legacy.manifest.setup, normalized('echo legacy'));
+    invalid({ phase: 'pre-agent', apply: 'true' }, 'manifest-unknown-key', '/setup/phase');
+  });
+
   it('should preserve independent runtime filters in short and long forms', () => {
     for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
       const short = normalized({ runtimes, apply: 'true' });
@@ -73,7 +89,7 @@ describe('manifest/setup-schema', () => {
             kind: 'shell',
             script: 'brew bundle --file=Brewfile',
             shell: 'sh',
-            timeoutSeconds: 300,
+            timeoutSeconds: 600,
           },
         },
       ],
@@ -92,7 +108,7 @@ describe('manifest/setup-schema', () => {
       kind: 'shell',
       script: 'echo "$HOME"\nfalse | true\n',
       shell: 'sh',
-      timeoutSeconds: 300,
+      timeoutSeconds: 600,
     });
     const source = '  printf "%s" "$(whoami)"  \n';
     assert.equal(normalized(source).steps[0]?.apply.kind, 'shell');
@@ -102,7 +118,7 @@ describe('manifest/setup-schema', () => {
 
   it('should preserve direct arguments and normalize arrays and objects equally', () => {
     const args = ['check', '', '$HOME', 'two words', '|', 'line\nbreak'];
-    const expected = { kind: 'exec', executable: './scripts/setup', args, timeoutSeconds: 300 };
+    const expected = { kind: 'exec', executable: './scripts/setup', args, timeoutSeconds: 600 };
     assert.deepEqual(normalized({ apply: ['./scripts/setup', ...args] }).steps[0]?.apply, expected);
     assert.deepEqual(
       normalized({ apply: { command: './scripts/setup', args } }).steps[0]?.apply,
@@ -112,7 +128,7 @@ describe('manifest/setup-schema', () => {
       kind: 'exec',
       executable: '/usr/bin/true',
       args: [],
-      timeoutSeconds: 300,
+      timeoutSeconds: 600,
     });
   });
 
@@ -137,13 +153,13 @@ describe('manifest/setup-schema', () => {
       kind: 'shell',
       script: 'brew bundle check',
       shell: 'bash',
-      timeoutSeconds: 300,
+      timeoutSeconds: 600,
     });
     assert.deepEqual(setup.steps[1]?.check, {
       kind: 'shell',
       script: 'verify',
       shell: 'zsh',
-      timeoutSeconds: 300,
+      timeoutSeconds: 600,
     });
     assert.equal(Object.hasOwn(setup.steps[2] ?? {}, 'check'), false);
     assert.equal(
@@ -153,7 +169,7 @@ describe('manifest/setup-schema', () => {
   });
 
   it('should bound explicit timeouts and supply the shared default', () => {
-    assert.equal(setupDefaultTimeoutSeconds, 300);
+    assert.equal(setupDefaultTimeoutSeconds, 600);
     assert.equal(setupMaximumTimeoutSeconds, 3_600);
     for (const timeout of [1, 3_600]) {
       assert.equal(
@@ -276,7 +292,7 @@ describe('manifest/setup-schema', () => {
       kind: 'exec',
       executable: './setup',
       args: ['apply'],
-      timeoutSeconds: 300,
+      timeoutSeconds: 600,
     });
   });
 

@@ -6,9 +6,13 @@
 
 ### Improvements
 
+- Added [`agent-system-google-cli`](./skills/google-cli/SKILL.md) guidance for an agent's managed Google operations. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
+- Added [`agent_system_google`](./tools/google/README.md#agent_system_google) with verified per-agent OAuth and an encrypted keyring. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
+- Added contextual [`gog`](./tools/google/README.md#gog-and-agent_system_gog) and strict `AGENT_SYSTEM_GOG` launchers. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
+- Added top-level `setup-host` before agent and managed-tool reconciliation, plus `setup-agent` with deprecated `setup` fallback. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Added the selected agent's compacted, verified OpenClaw database snapshot to per-agent backups, with explicit absent and omitted coverage. [#174](https://github.com/tanaabased/openclaw-agent-system/issues/174)
-- Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
 - Added issue-owned task PR publication for follow-up work, sharing Work delivery recipients and comment handoff without replacing automatic Work delivery. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180)
+- Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
 
 ## v0.7.0 - [September 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.7.0)
 

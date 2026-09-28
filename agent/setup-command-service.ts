@@ -32,6 +32,29 @@ export interface SetupCommandServiceDependencies {
 export default class SetupCommandService {
   constructor(private readonly dependencies: SetupCommandServiceDependencies) {}
 
+  async runPreAgent(
+    command: AgentSetupCommand,
+    target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
+    signal?: AbortSignal,
+  ): Promise<SetupCommandResult> {
+    const dependencies = this.dependencies;
+    return createSetupCommandRunner({
+      baseEnvironment: dependencies.baseEnvironment,
+      inheritOpenClawEnvironment: false,
+      runCommandWithTimeout: dependencies.runCommandWithTimeout,
+      ...(dependencies.temporaryDirectory === undefined
+        ? {}
+        : { temporaryDirectory: dependencies.temporaryDirectory }),
+    })(
+      command,
+      {
+        workspaceDir: target.workspaceDir,
+        executableDirectories: (dependencies.baseEnvironment.PATH ?? '').split(delimiter),
+      },
+      signal,
+    );
+  }
+
   async prepare(context: {
     manifest: AgentManifest;
     workspaceDir: string;

@@ -67,6 +67,70 @@ describe('manifest/setup-file', () => {
     }
   });
 
+  it('should load independent host and agent files while ignoring a legacy fallback', async () => {
+    await writeFile(
+      join(root, 'agent.yaml'),
+      'schema-version: 1\nagent:\n  id: test\nsetup-host:\n  file: ./host.yaml\nsetup-agent:\n  file: ./agent-setup.yaml\nsetup:\n  file: ./missing-legacy.yaml\n',
+    );
+    await writeFile(join(root, 'host.yaml'), 'check: test -f ready\napply: touch ready\n');
+    await writeFile(join(root, 'agent-setup.yaml'), 'apply: echo agent\n');
+    const loaded = await load();
+    assert.equal(loaded.status, 'loaded', JSON.stringify(loaded.diagnostics));
+    if (loaded.status !== 'loaded') return;
+    const host = normalizeAgentSetup(parse('check: test -f ready\napply: touch ready\n'));
+    const agent = normalizeAgentSetup(parse('apply: echo agent\n'));
+    assert.equal(host.status, 'valid');
+    assert.equal(agent.status, 'valid');
+    if (host.status !== 'valid' || agent.status !== 'valid') return;
+    assert.deepEqual(loaded.manifest.setupHost, host.setup);
+    assert.deepEqual(loaded.manifest.setup, agent.setup);
+    assert.equal(loaded.setupHostFilePath, join(root, 'host.yaml'));
+    assert.equal(loaded.setupFilePath, join(root, 'agent-setup.yaml'));
+    assert.ok(
+      loaded.diagnostics.some(
+        ({ code, severity }) => code === 'manifest-setup-deprecated' && severity === 'warning',
+      ),
+    );
+  });
+
+  it('should attribute an invalid host file reference to setup-host', async () => {
+    await writeFile(
+      join(root, 'agent.yaml'),
+      'schema-version: 1\nagent:\n  id: test\nsetup-host:\n  file: ../outside.yaml\n',
+    );
+    const result = await load();
+    assert.equal(result.status, 'invalid');
+    assert.ok(
+      result.diagnostics.some(
+        ({ code, fieldPath }) =>
+          code === 'manifest-setup-file-escape' && fieldPath === '/setup-host/file',
+      ),
+    );
+  });
+
+  it('should invalidate the cached manifest when only the host file changes', async () => {
+    await writeFile(
+      join(root, 'agent.yaml'),
+      'schema-version: 1\nagent:\n  id: test\nsetup-host:\n  file: ./host.yaml\n',
+    );
+    const included = join(root, 'host.yaml');
+    await writeFile(included, 'apply: echo first\n');
+    const service = new AgentManifestService({
+      getConfig: () => ({}),
+      logger: { info() {}, warn() {}, error() {} },
+      parseSessionAgentId: () => 'test',
+      resolveAgentWorkspaceDir: () => root,
+    });
+    const first = await service.loadForAgentId('test');
+    assert.equal(first.status, 'loaded');
+    assert.strictEqual(await service.loadForAgentId('test'), first);
+    await writeFile(included, 'apply: echo other\n');
+    const changed = await service.loadForAgentId('test');
+    assert.equal(changed.status, 'loaded');
+    if (first.status !== 'loaded' || changed.status !== 'loaded') return;
+    assert.notEqual(changed.digest, first.digest);
+  });
+
   it('should resolve relative to the selected manifest and reject escapes through symlinks', async () => {
     await manifest('./setup.yaml', true);
     await writeFile(join(root, 'setup.yaml'), 'apply: wrong\n');

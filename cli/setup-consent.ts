@@ -13,6 +13,7 @@ import type { CliOutput } from './output.ts';
 export interface SetupConsentOptions {
   runtime: AgentSetupRuntime;
   setup?: AgentSetupConfiguration;
+  setupHost?: AgentSetupConfiguration;
   workspaceDir: string;
   yes?: boolean;
   nonInteractive?: boolean;
@@ -35,14 +36,17 @@ function describeCommand(command: AgentSetupCommand): string {
 
 /** Ask before any install mutation; only this deliberate preview includes command text. */
 export default async function confirmSetupInstall(options: SetupConsentOptions): Promise<boolean> {
-  if (!options.setup) return true;
+  if (!options.setup && !options.setupHost) return true;
   if (options.skipSetup) {
     options.output.writeStderr(
       'Warning: setup was skipped; no setup checks or applies will run.\n',
     );
     return true;
   }
-  const applicable = options.setup.steps.filter((step) => setupStepApplies(step, options.runtime));
+  const applicable = [
+    ...(options.setupHost?.steps ?? []).map((step) => ({ step, stage: 'setup-host' })),
+    ...(options.setup?.steps ?? []).map((step) => ({ step, stage: 'setup-agent' })),
+  ].filter(({ step }) => setupStepApplies(step, options.runtime));
   if (applicable.length === 0) return true;
   const environment = options.environment ?? process.env;
   const input = options.input ?? process.stdin;
@@ -57,8 +61,8 @@ export default async function confirmSetupInstall(options: SetupConsentOptions):
 
   const lines = [
     `Install workspace ${JSON.stringify(options.workspaceDir)} with these setup steps:`,
-    ...applicable.flatMap((step) => [
-      `  ${step.id}`,
+    ...applicable.flatMap(({ step, stage }) => [
+      `  ${stage}: ${step.id}`,
       ...(step.check
         ? [`    check (${describeCommand(step.check)})`]
         : ['    check: not declared']),
