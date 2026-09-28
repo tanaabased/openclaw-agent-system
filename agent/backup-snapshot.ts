@@ -100,6 +100,78 @@ export async function verifyAgentSnapshot(
   }
 }
 
+/** let OpenClaw revalidate and materialize its own database into a fresh path. */
+export async function restoreAgentSnapshot(
+  directory: string,
+  target: string,
+  expected: OpenClawSnapshotManifest,
+  command: BackupSnapshotCommand | undefined,
+): Promise<void> {
+  if (!command)
+    throw new BackupError(
+      'backup-snapshot-unavailable',
+      'The OpenClaw SQLite restore command is unavailable in this runtime.',
+    );
+  let result: Awaited<ReturnType<BackupSnapshotCommand>>;
+  try {
+    result = await command(
+      ['backup', 'sqlite', 'restore', directory, '--target', target, '--json'],
+      dirname(directory),
+    );
+  } catch {
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw SQLite restore execution failed.',
+    );
+  }
+  if (result.code !== 0)
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      `OpenClaw SQLite restore failed: ${result.stderr.trim().slice(0, 1000) || `exit ${result.code}`}.`,
+    );
+  let response: unknown;
+  try {
+    response = JSON.parse(result.stdout);
+  } catch {
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw returned invalid restore JSON.',
+    );
+  }
+  if (
+    !response ||
+    typeof response !== 'object' ||
+    (response as { ok?: unknown }).ok !== true ||
+    resolve((response as { targetPath?: string }).targetPath ?? '') !== resolve(target)
+  )
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw did not confirm SQLite restore.',
+    );
+  try {
+    assert.deepEqual(
+      snapshotManifest((response as { manifest?: unknown }).manifest, expected.database.agentId),
+      expected,
+    );
+  } catch {
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw restored a different snapshot.',
+    );
+  }
+  const stats = await lstat(target).catch(() => {
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw did not create a database file.',
+    );
+  });
+  if (!stats.isFile())
+    throw new BackupError(
+      'backup-snapshot-restore-failed',
+      'OpenClaw did not create a database file.',
+    );
+}
+
 export async function captureAgentSnapshot(
   plan: BackupPlan,
   stage: string,

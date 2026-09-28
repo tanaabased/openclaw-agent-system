@@ -30,6 +30,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 import backupCreate from '../cli/backup-create.ts';
 import backupVerify from '../cli/backup-verify.ts';
+import backupRestore from '../cli/backup-restore.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 const executeFile = promisify(execFile);
@@ -119,50 +120,66 @@ describe('workspace backup', () => {
     await writeFile(database, 'durable-agent-record');
     await writeFile(`${database}-wal`, 'live-sidecar');
     const calls: string[] = [];
-    const selected = new WorkspaceBackupService(
-      async () => ({ paths: [agentDir], agentDir, openclawVersion: '2026.9.6' }),
-      async (args) => {
-        calls.push(args[2]!);
-        if (args[2] === 'create') {
-          const repository = args[args.indexOf('--repository') + 1]!;
-          const snapshot = join(repository, '2026-09-28-00-00-00-000Z-fixture');
-          await mkdir(snapshot, { recursive: true, mode: 0o700 });
-          await copyFile(database, join(snapshot, 'database.sqlite'));
-          const bytes = await readFile(join(snapshot, 'database.sqlite'));
-          const upstream = {
-            schemaVersion: 1,
-            snapshotId: '2026-09-28-00-00-00-000Z-fixture',
-            createdAt: '2026-09-28T00:00:00.000Z',
-            database: {
-              role: 'agent',
-              agentId: 'tanaabot',
-              basename: 'openclaw-agent.sqlite',
-              userVersion: 1,
-            },
-            artifact: {
-              path: 'database.sqlite',
-              sha256: createHash('sha256').update(bytes).digest('hex'),
-              sizeBytes: bytes.length,
-            },
-          };
-          await writeFile(join(snapshot, 'manifest.json'), JSON.stringify(upstream));
-          return {
-            code: 0,
-            stdout: JSON.stringify({ ok: true, snapshotPath: snapshot, manifest: upstream }),
-            stderr: '',
-          };
-        }
-        const snapshot = args[3]!;
-        const upstream = JSON.parse(await readFile(join(snapshot, 'manifest.json'), 'utf8'));
+    const snapshotCommand = async (args: string[]) => {
+      calls.push(args[2]!);
+      if (args[2] === 'create') {
+        const repository = args[args.indexOf('--repository') + 1]!;
+        const snapshot = join(repository, '2026-09-28-00-00-00-000Z-fixture');
+        await mkdir(snapshot, { recursive: true, mode: 0o700 });
+        await copyFile(database, join(snapshot, 'database.sqlite'));
         const bytes = await readFile(join(snapshot, 'database.sqlite'));
-        if (createHash('sha256').update(bytes).digest('hex') !== upstream.artifact.sha256)
-          return { code: 1, stdout: '', stderr: 'snapshot checksum mismatch' };
+        const upstream = {
+          schemaVersion: 1,
+          snapshotId: '2026-09-28-00-00-00-000Z-fixture',
+          createdAt: '2026-09-28T00:00:00.000Z',
+          database: {
+            role: 'agent',
+            agentId: 'tanaabot',
+            basename: 'openclaw-agent.sqlite',
+            userVersion: 1,
+          },
+          artifact: {
+            path: 'database.sqlite',
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            sizeBytes: bytes.length,
+          },
+        };
+        await writeFile(join(snapshot, 'manifest.json'), JSON.stringify(upstream));
         return {
           code: 0,
           stdout: JSON.stringify({ ok: true, snapshotPath: snapshot, manifest: upstream }),
           stderr: '',
         };
-      },
+      }
+      if (args[2] === 'restore') {
+        const snapshot = args[3]!;
+        const target = args[args.indexOf('--target') + 1]!;
+        await copyFile(join(snapshot, 'database.sqlite'), target);
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            snapshotPath: snapshot,
+            targetPath: target,
+            manifest: JSON.parse(await readFile(join(snapshot, 'manifest.json'), 'utf8')),
+          }),
+          stderr: '',
+        };
+      }
+      const snapshot = args[3]!;
+      const upstream = JSON.parse(await readFile(join(snapshot, 'manifest.json'), 'utf8'));
+      const bytes = await readFile(join(snapshot, 'database.sqlite'));
+      if (createHash('sha256').update(bytes).digest('hex') !== upstream.artifact.sha256)
+        return { code: 1, stdout: '', stderr: 'snapshot checksum mismatch' };
+      return {
+        code: 0,
+        stdout: JSON.stringify({ ok: true, snapshotPath: snapshot, manifest: upstream }),
+        stderr: '',
+      };
+    };
+    const selected = new WorkspaceBackupService(
+      async () => ({ paths: [agentDir], agentDir, openclawVersion: '2026.9.6' }),
+      snapshotCommand,
     );
     const result = await selected.create(
       await selected.plan({
@@ -189,6 +206,76 @@ describe('workspace backup', () => {
       'manifest.json',
     ]);
     assert.deepEqual(await selected.verify(result.archive), result.manifest);
+    const recovery = await selected.restore(result.archive, join(root, 'agent-recovered'));
+    assert.equal(recovery.manifest.agentId, 'tanaabot');
+    assert.equal(
+      await readFile(join(recovery.target, 'openclaw-state', 'openclaw-agent.sqlite'), 'utf8'),
+      'durable-agent-record',
+    );
+    assert.equal(
+      await readFile(join(recovery.target, 'workspace', 'MEMORY.md'), 'utf8'),
+      'private memory\n',
+    );
+    assert.ok(calls.includes('restore'));
+    const failing = new WorkspaceBackupService(
+      async () => ({ paths: [agentDir], agentDir }),
+      async (args) =>
+        args[2] === 'restore'
+          ? { code: 1, stdout: '', stderr: 'restore refused' }
+          : snapshotCommand(args),
+    );
+    const empty = join(root, 'empty-recovery');
+    await mkdir(empty, { mode: 0o700 });
+    await assert.rejects(failing.restore(result.archive, empty), {
+      code: 'backup-snapshot-restore-failed',
+    });
+    assert.deepEqual(await readdir(empty), []);
+    assert.equal(await readFile(result.archive).then((bytes) => bytes.length > 0), true);
+  });
+
+  it('should restore workspace files and safe links into an empty target', async () => {
+    await writeFile(join(workspace, 'run.sh'), '#!/bin/sh\nexit 0\n');
+    await chmod(join(workspace, 'run.sh'), 0o755);
+    await symlink('MEMORY.md', join(workspace, 'memory-link'));
+    const created = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
+    const target = join(root, 'recovered');
+    await mkdir(target, { mode: 0o700 });
+    const recovered = await service.restore(created.archive, target, 'tanaabot');
+    assert.equal(recovered.database, undefined);
+    assert.equal(
+      await readFile(join(target, 'workspace', 'memory-link'), 'utf8'),
+      'private memory\n',
+    );
+    assert.equal((await lstat(join(target, 'workspace', 'run.sh'))).mode & 0o777, 0o755);
+    assert.equal(
+      JSON.parse(await readFile(join(target, 'manifest.json'), 'utf8')).agentId,
+      'tanaabot',
+    );
+    assert.equal(await readFile(join(workspace, 'MEMORY.md'), 'utf8'), 'private memory\n');
+  });
+
+  it('should reject live and nonempty targets without changing them', async () => {
+    const created = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
+    const selected = new WorkspaceBackupService(async () => ({
+      paths: [],
+      livePaths: [workspace, join(root, 'live-state')],
+    }));
+    await assert.rejects(selected.restore(created.archive, join(workspace, 'recovery')), {
+      code: 'backup-target-live',
+    });
+    await assert.rejects(lstat(join(workspace, 'recovery')), { code: 'ENOENT' });
+    const alias = join(root, 'live-alias');
+    await symlink(workspace, alias);
+    await assert.rejects(selected.restore(created.archive, alias), {
+      code: 'backup-target-unsafe',
+    });
+    const nonempty = join(root, 'nonempty');
+    await mkdir(nonempty, { mode: 0o700 });
+    await writeFile(join(nonempty, 'keep.txt'), 'keep');
+    await assert.rejects(selected.restore(created.archive, nonempty), {
+      code: 'backup-target-nonempty',
+    });
+    assert.equal(await readFile(join(nonempty, 'keep.txt'), 'utf8'), 'keep');
   });
 
   it('should fail an existing database when upstream capture fails', async () => {
@@ -233,6 +320,12 @@ describe('workspace backup', () => {
     const archive = join(root, 'legacy.tar.gz');
     await writeWorkspaceArchive(archive, workspace, legacy);
     assert.deepEqual(await service.verify(archive), legacy);
+    const recovery = await service.restore(archive, join(root, 'legacy-recovery'));
+    assert.equal(recovery.manifest.version, 1);
+    assert.equal(
+      await readFile(join(recovery.target, 'workspace', 'MEMORY.md'), 'utf8'),
+      'private memory\n',
+    );
   });
 
   it('should recover ignored descendants and let excludes win', async function () {
@@ -526,6 +619,9 @@ describe('workspace backup', () => {
       stream.finalize();
       await writing;
       await assert.rejects(service.verify(archive), /unsafe or duplicate/u);
+      const recovery = join(root, 'malicious-recovery');
+      await assert.rejects(service.restore(archive, recovery), /unsafe or duplicate/u);
+      await assert.rejects(lstat(recovery), { code: 'ENOENT' });
       await assert.rejects(lstat(join(root, 'escape')), { code: 'ENOENT' });
     }
     const empty = join(root, 'missing.tar.gz');
@@ -536,6 +632,23 @@ describe('workspace backup', () => {
     stream.finalize();
     await writing;
     await assert.rejects(service.verify(empty), /missing inventoried/u);
+  });
+
+  it('should refuse escaping links before creating a recovery target', async () => {
+    await symlink('MEMORY.md', join(workspace, 'memory-link'));
+    const result = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
+    const forged = structuredClone(result.manifest);
+    const link = forged.inventory.find(({ path }) => path === 'memory-link')!;
+    link.linkTarget = '../../outside';
+    const archive = join(root, 'escaping-link.tar.gz');
+    const stream = pack();
+    const writing = pipeline(stream, createGzip(), createWriteStream(archive));
+    stream.entry({ name: 'manifest.json', type: 'file' }, JSON.stringify(forged));
+    stream.finalize();
+    await writing;
+    const target = join(root, 'escaping-link-recovery');
+    await assert.rejects(service.restore(archive, target), { code: 'backup-inventory-invalid' });
+    await assert.rejects(lstat(target), { code: 'ENOENT' });
   });
 
   it('should filter regenerable directories and allow an explicit include to recover them', async () => {
@@ -632,6 +745,10 @@ describe('workspace backup', () => {
     await backupVerify({ ...options, archive: join(root, 'another-agent.tar.gz') });
     assert.equal(JSON.parse(output.pop()!).diagnostics[0].code, 'backup-archive-outside-scope');
     assert.equal(exitCode, 1);
+    const target = join(root, 'bound-recovery');
+    await backupRestore({ ...options, archive: created.archive, target });
+    assert.equal(JSON.parse(output.pop()!).diagnostics[0].code, 'backup-restore-operator-only');
+    await assert.rejects(lstat(target), { code: 'ENOENT' });
   });
 
   it('should reject configured destinations belonging to another agent before creating files', async () => {
