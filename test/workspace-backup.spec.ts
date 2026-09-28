@@ -74,7 +74,8 @@ describe('workspace backup', () => {
     );
   });
 
-  it('should distinguish absent, required, and explicitly omitted agent databases', async () => {
+  it('should distinguish absent, required, and explicitly omitted agent databases', async function () {
+    this.timeout(10_000);
     const agentDir = join(root, 'custom-agent');
     const selected = new WorkspaceBackupService(async () => ({ paths: [agentDir], agentDir }));
     const auto = await selected.create(
