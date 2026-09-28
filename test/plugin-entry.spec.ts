@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import type { OpenClawPluginApi, PluginLogger } from 'openclaw/plugin-sdk/plugin-entry';
 
@@ -145,10 +146,15 @@ describe('index', () => {
       'agent_system_git_worktree',
       'agent_system_github',
       'agent_system_github_reply',
+      'agent_system_github_task_pr',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',
     ]);
+    const manifest = JSON.parse(
+      readFileSync(new URL('../openclaw.plugin.json', import.meta.url), 'utf8'),
+    ) as { contracts?: { tools?: string[] } };
+    assert.deepEqual([...toolNames].sort(), [...(manifest.contracts?.tools ?? [])].sort());
     assert.deepEqual(policyIds, [
       'agent-system.git',
       'agent-system.git-worktree',

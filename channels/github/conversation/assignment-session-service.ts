@@ -42,6 +42,7 @@ import type GitHubNotificationConversationStateStore from './conversation-state-
 import type { GitHubNotificationExecutionSurface } from './execution.ts';
 import type GitHubNotificationModelTurnCoordinator from './model-turn-coordinator.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
+import type GitHubNotificationPullRequestRecipientGuidance from './pull-request-recipient-guidance.ts';
 import type GitHubNotificationIssueDeliveryService from './issue-delivery-service.ts';
 import type GitHubNotificationPullRequestHandoffService from './pull-request-handoff-service.ts';
 
@@ -62,6 +63,7 @@ export interface GitHubNotificationAssignmentSessionServiceDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   resolveNotificationRoute: NotificationRouteResolver;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
+  recipientGuidance?: Pick<GitHubNotificationPullRequestRecipientGuidance, 'forItem'>;
 }
 
 export interface GitHubNotificationAssignmentSessionInput {
@@ -291,6 +293,14 @@ export default class GitHubNotificationAssignmentSessionService {
       timestamp: projection.timestamp,
     });
     await this.#checkpointActiveTurn(input, conversationId, assignmentEventId);
+    const recipients =
+      input.item.lifecycleId === 'issue'
+        ? await this.#dependencies.recipientGuidance?.forItem({
+            agentId: input.agentId,
+            item: input.item,
+            workspaceDir: input.workspaceDir,
+          })
+        : undefined;
     const contract = this.#dependencies.turnContracts.resolve(
       {
         eventId: 'assignment',
@@ -299,6 +309,7 @@ export default class GitHubNotificationAssignmentSessionService {
       },
       config,
       route.agentId,
+      recipients,
     );
     const turn = await this.#dependencies.coordinator.run({
       afterRecord: () =>
@@ -369,6 +380,14 @@ export default class GitHubNotificationAssignmentSessionService {
       input.conversationId,
       input.assignmentEventId,
     );
+    const recipients =
+      input.session.item.lifecycleId === 'issue' && input.session.mode.policy.id === 'work'
+        ? await this.#dependencies.recipientGuidance?.forItem({
+            agentId: input.session.agentId,
+            item: input.session.item,
+            workspaceDir: input.session.workspaceDir,
+          })
+        : undefined;
     const contract = this.#dependencies.turnContracts.resolve(
       {
         eventId: 'implementation',
@@ -377,6 +396,7 @@ export default class GitHubNotificationAssignmentSessionService {
       },
       input.config,
       input.route.agentId,
+      recipients,
     );
     const messageId = `implementation:${input.assignmentEventId}`;
     const body = githubNotificationImplementationCard(input.session.item.number);

@@ -119,6 +119,56 @@ export default class GitHubNotificationPullRequestHandoffService {
     );
   }
 
+  /** Register an explicitly published task PR; the monitor completes handoff after this turn. */
+  async checkpointTask(
+    input: Omit<
+      GitHubNotificationPullRequestHandoffCheckpointInput,
+      'executionSurface' | 'lifecycle'
+    >,
+  ): Promise<void> {
+    this.#validateInput(input);
+    const current = await this.#dependencies.conversationStateStore.read(
+      input.agentId,
+      this.#conversationId(input),
+    );
+    const conversation = current?.conversation;
+    if (
+      !current ||
+      current.workspaceDir !== input.workspaceDir ||
+      !conversation ||
+      conversation.itemKey !== githubWorkItemKey(input.item.repositoryNodeId, input.item.number) ||
+      conversation.lifecycleId !== 'issue' ||
+      !conversation.assignmentResponse ||
+      (conversation.activeTurn && conversation.activeTurn.eventId !== 'comment')
+    ) {
+      throw new Error('The task pull request has no eligible issue-owned session.');
+    }
+    const existing = conversation.deliveryPullRequest;
+    if (existing) {
+      if (
+        existing.nodeId !== input.pullRequest.pullRequestNodeId ||
+        existing.number !== input.pullRequest.pullRequestNumber ||
+        existing.status !== 'open'
+      ) {
+        throw new Error('The issue-owned session is linked to a different pull request.');
+      }
+      if (conversation.implementation?.status !== 'completed') {
+        throw new Error('Automatic Work delivery still owns this pull request handoff.');
+      }
+      return;
+    }
+    const next = structuredClone(current);
+    next.conversation!.implementation = { status: 'completed' };
+    next.conversation!.deliveryPullRequest = {
+      baselineEstablished: false,
+      eventRecorded: false,
+      nodeId: input.pullRequest.pullRequestNodeId,
+      number: input.pullRequest.pullRequestNumber,
+      status: 'open',
+    };
+    await this.#dependencies.conversationStateStore.write(next);
+  }
+
   async reconcile(input: GitHubNotificationPullRequestHandoffReconcileInput): Promise<void> {
     this.#validateInput(input);
     resolveGitHubNotificationLifecycleEventSupport(input.lifecycle, 'pull-request-opened');
@@ -133,7 +183,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     );
   }
 
-  #validateInput(input: GitHubNotificationPullRequestHandoffBaseInput): void {
+  #validateInput(input: Pick<GitHubNotificationPullRequestHandoffBaseInput, 'item'>): void {
     if (
       input.item.itemType !== 'issue' ||
       input.item.lifecycleId !== 'issue' ||
@@ -145,7 +195,7 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
   }
 
-  #conversationId(input: GitHubNotificationPullRequestHandoffBaseInput): string {
+  #conversationId(input: Pick<GitHubNotificationPullRequestHandoffBaseInput, 'item'>): string {
     return githubNotificationConversationId({
       itemNumber: input.item.number,
       lifecycleId: input.item.lifecycleId,

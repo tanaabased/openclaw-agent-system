@@ -32,8 +32,12 @@ export interface GitHubNotificationTurnContractResolverDependencies {
   turns: Pick<GitHubNotificationTurnCatalog, 'resolve'>;
 }
 
-function turnInstructions(turn: GitHubNotificationTurnDefinition, agentId: string): string {
-  return composeGitHubNotificationPrompt({
+function turnInstructions(
+  turn: GitHubNotificationTurnDefinition,
+  agentId: string,
+  recipientGuidance?: string,
+): string {
+  const prompt = composeGitHubNotificationPrompt({
     eventInstructions:
       turn.identity.eventId === 'assignment'
         ? [
@@ -48,6 +52,11 @@ function turnInstructions(turn: GitHubNotificationTurnDefinition, agentId: strin
       : { modeLifecycleInstructions: turn.modeSupport.instructions }),
     responseInstructions: turn.eventTurn.responseInstructions,
   });
+  return turn.identity.lifecycleId === 'issue' &&
+    turn.identity.eventId !== 'pull-request-opened' &&
+    recipientGuidance
+    ? `${prompt}\n\n## Task pull request recipients\n\n${recipientGuidance}`
+    : prompt;
 }
 
 /** Project one resolved turn contract into the channel dispatch boundary. */
@@ -74,14 +83,19 @@ export default class GitHubNotificationTurnContractResolver {
     this.#dependencies = dependencies;
   }
 
-  instructions(identity: GitHubNotificationTurnIdentity, agentId: string): string {
-    return turnInstructions(this.#dependencies.turns.resolve(identity), agentId);
+  instructions(
+    identity: GitHubNotificationTurnIdentity,
+    agentId: string,
+    recipientGuidance?: string,
+  ): string {
+    return turnInstructions(this.#dependencies.turns.resolve(identity), agentId, recipientGuidance);
   }
 
   resolve(
     identity: GitHubNotificationTurnIdentity,
     config: OpenClawConfig,
     agentId: string,
+    recipientGuidance?: string,
   ): GitHubNotificationTurnContract {
     const turn = this.#dependencies.turns.resolve(identity);
     const publicationIntent =
@@ -96,7 +110,7 @@ export default class GitHubNotificationTurnContractResolver {
     }
     return {
       identity: turn.identity,
-      instructions: turnInstructions(turn, agentId),
+      instructions: turnInstructions(turn, agentId, recipientGuidance),
       lifecycle: turn.lifecycle,
       mode: resolveGitHubNotificationModeCapability(turn.mode, config, agentId),
       ...(publicationIntent === undefined ? {} : { publicationIntent }),

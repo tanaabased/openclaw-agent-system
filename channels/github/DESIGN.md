@@ -282,7 +282,8 @@ selection fails closed instead of falling back to a different prompt.
 - **Work:** The agent plans and clarifies before making authorized changes, then
   validates the work, creates or updates the pull request, and reports the
   result privately and publicly.
-- **Pull-request handoff:** Successful issue delivery checkpoints the pull request
+- **Pull-request handoff:** Automatic Work delivery or an explicit issue-owned
+  task-PR publication checkpoints the pull request
   as the delivery comment source, preserves recorded revisions, and leaves eligible
   unseen comments actionable after handoff while baselining ineligible history. It records one
   private card through the registered `pull-request-opened` model turn, retains

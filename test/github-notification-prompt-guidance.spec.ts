@@ -138,6 +138,37 @@ describe('channels/github/conversation/prompt-guidance', () => {
     );
   });
 
+  it('should supply trusted recipient guidance on a resumed gateway work comment', async () => {
+    const turnContracts = createGitHubNotificationTurnContractResolver();
+    const selected = {
+      agentId: 'tanaabot',
+      conversationId: 'github:issue:R_repo:12',
+      identity: { eventId: 'comment', lifecycleId: 'issue', modeId: 'work' } as const,
+      sourceId: 'revision-after-blocker',
+    };
+    const instructions = await githubNotificationPromptGuidance(
+      { messageProvider: githubNotificationChannelId },
+      {
+        candidates: { async attestPromptSelection() {} },
+        logger: { warn() {} },
+        recipientGuidance: {
+          async forConversation(input) {
+            assert.deepEqual(input, {
+              agentId: selected.agentId,
+              conversationId: selected.conversationId,
+            });
+            return 'assignees: @pirog (node ID U_actor); reviewers: @reviewer (node ID U_reviewer).';
+          },
+        },
+        turnContracts,
+        turnSelector: { select: async () => selected },
+      },
+    );
+    assert.match(instructions ?? '', /## Task pull request recipients/u);
+    assert.match(instructions ?? '', /@pirog \(node ID U_actor\)/u);
+    assert.match(instructions ?? '', /@reviewer \(node ID U_reviewer\)/u);
+  });
+
   it('should compose and attest the assignment identity returned by the trusted selector', async () => {
     const turnContracts = createGitHubNotificationTurnContractResolver();
     let selectorContext: unknown;

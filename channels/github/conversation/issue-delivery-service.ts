@@ -36,6 +36,11 @@ export interface GitHubNotificationIssueDeliveryInput {
   worktree: GitHubNotificationLifecycleWorktree;
 }
 
+export interface GitHubNotificationTaskPullRequestInput extends GitHubNotificationIssueDeliveryInput {
+  body?: string;
+  title?: string;
+}
+
 interface IssueIdentity {
   title: string;
 }
@@ -210,6 +215,55 @@ export default class GitHubNotificationIssueDeliveryService {
       await this.#git(input, ['push', '--set-upstream', 'origin', `HEAD:${remoteRef}`]);
     }
 
+    return this.#publishPullRequest(input, true);
+  }
+
+  /** Publish a follow-up PR on the same managed branch without rewriting authored metadata. */
+  async publishTaskPullRequest(
+    input: GitHubNotificationTaskPullRequestInput,
+  ): Promise<GitHubNotificationIssueDeliveryReceipt> {
+    if (input.item.lifecycleId !== 'issue' || input.item.itemType !== 'issue') {
+      throw new Error('Task pull request publication requires an issue lifecycle item.');
+    }
+    const branch = (await this.#git(input, ['branch', '--show-current'])).trim();
+    if (branch !== input.worktree.branch) {
+      throw new Error('The task worktree is not on its lifecycle-managed branch.');
+    }
+    if (await this.#git(input, ['status', '--porcelain=v1'])) {
+      throw new Error('The task worktree still contains uncommitted changes.');
+    }
+    const commitCount = Number(
+      (
+        await this.#git(input, [
+          'rev-list',
+          '--count',
+          `refs/remotes/origin/${input.item.repositoryDefaultBranch}..HEAD`,
+        ])
+      ).trim(),
+    );
+    if (!Number.isSafeInteger(commitCount) || commitCount < 1) {
+      throw new Error('Task pull request publication requires committed work.');
+    }
+    const commitSha = (await this.#git(input, ['rev-parse', '--verify', 'HEAD'])).trim();
+    if (!commitShaPattern.test(commitSha))
+      throw new Error('Git returned an invalid task commit id.');
+    const remoteRef = `refs/heads/${branch}`;
+    const remote = await this.#git(input, ['ls-remote', '--heads', 'origin', remoteRef]);
+    const remoteSha = remote.trim() ? remote.trim().split(/\s+/u)[0] : undefined;
+    if (remoteSha !== undefined && remoteSha !== commitSha) {
+      throw new Error('The managed remote branch does not match the task worktree.');
+    }
+    if (remoteSha === undefined) {
+      await this.#git(input, ['push', '--set-upstream', 'origin', `HEAD:${remoteRef}`]);
+    }
+    return this.#publishPullRequest(input, false);
+  }
+
+  async #publishPullRequest(
+    input: GitHubNotificationTaskPullRequestInput,
+    normalize: boolean,
+  ): Promise<GitHubNotificationIssueDeliveryReceipt> {
+    const branch = input.worktree.branch;
     const loaded = await this.#dependencies.manifestService.loadForAgentId(
       input.agentId,
       'service',
@@ -277,9 +331,11 @@ export default class GitHubNotificationIssueDeliveryService {
               input.signal,
               JSON.stringify({
                 base: input.item.repositoryDefaultBranch,
-                body: `Closes #${input.item.number}`,
+                body: normalize
+                  ? `Closes #${input.item.number}`
+                  : (input.body ?? `Closes #${input.item.number}`),
                 head: branch,
-                title: issue.title,
+                title: normalize ? issue.title : (input.title ?? issue.title),
               }),
             ),
           )
@@ -293,10 +349,24 @@ export default class GitHubNotificationIssueDeliveryService {
     }
 
     const body = `Closes #${input.item.number}`;
+    if (!normalize && pullRequest.baseRef !== input.item.repositoryDefaultBranch) {
+      throw new Error('The task pull request targets a different base branch.');
+    }
+    if (!normalize) {
+      const authorNodeId = await this.#github(
+        github,
+        ['api', `repos/${repository}/pulls/${pullRequest.number}`, '--jq', '.user.node_id'],
+        input.signal,
+      );
+      if (authorNodeId !== github.identity.nodeId) {
+        throw new Error('The task pull request was not created by the active agent.');
+      }
+    }
     if (
-      pullRequest.baseRef !== input.item.repositoryDefaultBranch ||
-      pullRequest.body !== body ||
-      pullRequest.title !== issue.title
+      normalize &&
+      (pullRequest.baseRef !== input.item.repositoryDefaultBranch ||
+        pullRequest.body !== body ||
+        pullRequest.title !== issue.title)
     ) {
       pullRequest = parsePullRequest(
         await this.#github(
@@ -328,9 +398,10 @@ export default class GitHubNotificationIssueDeliveryService {
       pullRequest.number,
     );
     if (
-      pullRequest.baseRef !== input.item.repositoryDefaultBranch ||
-      pullRequest.body !== body ||
-      pullRequest.title !== issue.title
+      normalize &&
+      (pullRequest.baseRef !== input.item.repositoryDefaultBranch ||
+        pullRequest.body !== body ||
+        pullRequest.title !== issue.title)
     ) {
       throw new Error('GitHub did not retain the normalized pull request shape.');
     }

@@ -21,6 +21,7 @@ import { GitHubNotificationModelTurnDispatcherError } from './model-turn-dispatc
 import { githubNotificationChannelId, type NotificationRouteResolver } from '../routing/routing.ts';
 import { githubNotificationConversationId } from '../channel.ts';
 import type GitHubNotificationTurnContractResolver from './turn-contract.ts';
+import type GitHubNotificationPullRequestRecipientGuidance from './pull-request-recipient-guidance.ts';
 import type { GitHubNotificationTurnIdentity } from './turn-identity.ts';
 import type { GitHubNotificationModeId } from '../modes/types.ts';
 import type { GitHubNotificationConversationSource } from './conversation-state.ts';
@@ -31,6 +32,7 @@ export interface GitHubNotificationCommentTurnServiceDependencies {
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
   resolveNotificationRoute: NotificationRouteResolver;
   turnContracts: Pick<GitHubNotificationTurnContractResolver, 'resolve'>;
+  recipientGuidance?: Pick<GitHubNotificationPullRequestRecipientGuidance, 'forItem'>;
 }
 
 export interface GitHubNotificationCommentTurnInput {
@@ -135,7 +137,20 @@ export default class GitHubNotificationCommentTurnService {
       lifecycleId: input.item.lifecycleId,
       modeId: input.modeId,
     };
-    const contract = this.#dependencies.turnContracts.resolve(identity, config, input.agentId);
+    const recipients =
+      identity.lifecycleId === 'issue'
+        ? await this.#dependencies.recipientGuidance?.forItem({
+            agentId: input.agentId,
+            item: input.item,
+            workspaceDir: input.workspaceDir,
+          })
+        : undefined;
+    const contract = this.#dependencies.turnContracts.resolve(
+      identity,
+      config,
+      input.agentId,
+      recipients,
+    );
     const lifecycleContext = contract.lifecycle.context.project({
       item: input.item,
       ...(worktreePath && worktreeBranch
