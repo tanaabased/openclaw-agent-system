@@ -21,7 +21,27 @@ jobs:
           - macos-26
           - ubuntu-24.04
         example:
+          - agent
+          - approval
+          - backup
+          - codex
+          - containment
+          - credentials
+          - doctor
+          - env
+          - git
+          - github
           - google
+          - identity
+          - install
+          - memory
+          - models
+          - path
+          - routing
+          - setup
+          - tool
+          - validate
+          - worktree
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
