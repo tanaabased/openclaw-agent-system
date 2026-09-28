@@ -51,9 +51,9 @@ describe('google example workflow', () => {
       'GOG_TOKEN_JSON_B64',
       'GOG_KEYRING_PASSWORD',
     ]);
-    assert.equal(fixture.manifest.setup?.steps[0]?.phase, 'pre-agent');
-    assert.equal(fixture.manifest.setup?.steps[0]?.id, 'gog-cli');
-    assert.deepEqual(fixture.manifest.setup?.steps[0]?.apply, {
+    assert.equal(fixture.manifest.setupHost?.steps[0]?.id, 'gog-cli');
+    assert.equal(fixture.manifest.setup, undefined);
+    assert.deepEqual(fixture.manifest.setupHost?.steps[0]?.apply, {
       kind: 'exec',
       executable: 'brew',
       args: ['bundle', '--file=Brewfile'],

@@ -78,7 +78,7 @@ export function projectCodexManifest(manifest: AgentManifest): Record<string, un
     ...(modelRouting === undefined ? {} : { modelRouting }),
     capabilities: [
       'agent-system-doctor',
-      ...(manifest.setup ? ['agent-system-install'] : []),
+      ...(manifest.setup || manifest.setupHost ? ['agent-system-install'] : []),
       ...(manifest.models ? ['agent-system-model-routing'] : []),
       ...(manifest.git ? ['agent-system-git-cli'] : []),
       ...(manifest.github ? ['agent-system-github-cli'] : []),

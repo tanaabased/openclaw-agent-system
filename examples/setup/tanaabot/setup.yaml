@@ -1,12 +1,4 @@
 steps:
-  - id: host-tools
-    phase: pre-agent
-    runtimes: [openclaw]
-    check: test -f host-tools-ready
-    apply: |
-      test -z "$AGENT_SYSTEM_GH"
-      test -z "$GH_TOKEN"
-      touch host-tools-ready
   - id: codex-only
     runtimes: [codex]
     check: |

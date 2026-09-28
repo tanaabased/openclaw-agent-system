@@ -86,6 +86,8 @@ const externalAgentManifestSchema = Type.Object(
     github: Type.Optional(externalGitHubSectionSchema),
     memory: Type.Optional(externalAgentMemorySchema),
     models: Type.Optional(externalAgentModelsSchema),
+    'setup-host': Type.Optional(externalSetupDeclarationSchema),
+    'setup-agent': Type.Optional(externalSetupDeclarationSchema),
     setup: Type.Optional(externalSetupDeclarationSchema),
   },
   { additionalProperties: false },
@@ -326,37 +328,41 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
   const yaml = parseManifestYaml(source);
   if (yaml.status === 'invalid') return yaml;
   const { value } = yaml;
-  const setupValue = isRecord(value) ? value['setup'] : undefined;
-  const setupFile =
-    isRecord(setupValue) && Object.hasOwn(setupValue, 'file') ? setupValue : undefined;
-  const setup =
-    isRecord(value) && Object.hasOwn(value, 'setup') && setupFile === undefined
-      ? normalizeAgentSetup(setupValue)
-      : undefined;
-  const setupFileDiagnostics =
-    setupFile && !Value.Check(externalSetupFileSchema, setupFile)
-      ? Value.Errors(externalSetupFileSchema, setupFile).flatMap((error) => {
-          const path = `/setup${error.instancePath}`;
-          if (error.keyword === 'additionalProperties')
-            return error.params.additionalProperties.map((key) => ({
-              code: 'manifest-unknown-key',
-              fieldPath: `${path}/${pointerSegment(key)}`,
-              message: `Invalid setup file declaration at ${path}/${pointerSegment(key)}.`,
-              severity: 'error' as const,
-            }));
-          return [
-            {
-              code: 'manifest-schema',
-              fieldPath: path,
-              message: `Invalid setup file declaration at ${path}.`,
-              severity: 'error' as const,
-            },
-          ];
-        })
-      : [];
+  const agentKey = isRecord(value) && Object.hasOwn(value, 'setup-agent') ? 'setup-agent' : 'setup';
+  const declarations = (['setup-host', agentKey] as const).flatMap((key) => {
+    if (!isRecord(value) || !Object.hasOwn(value, key)) return [];
+    const declaration = value[key];
+    const file =
+      isRecord(declaration) && Object.hasOwn(declaration, 'file') ? declaration : undefined;
+    const setup = file === undefined ? normalizeAgentSetup(declaration, `/${key}`) : undefined;
+    const fileDiagnostics: ManifestDiagnostic[] =
+      file && !Value.Check(externalSetupFileSchema, file)
+        ? Value.Errors(externalSetupFileSchema, file).flatMap((error) => {
+            const path = `/${key}${error.instancePath}`;
+            if (error.keyword === 'additionalProperties')
+              return error.params.additionalProperties.map((property) => ({
+                code: 'manifest-unknown-key',
+                fieldPath: `${path}/${pointerSegment(property)}`,
+                message: `Invalid setup file declaration at ${path}/${pointerSegment(property)}.`,
+                severity: 'error' as const,
+              }));
+            return [
+              {
+                code: 'manifest-schema',
+                fieldPath: path,
+                message: `Invalid setup file declaration at ${path}.`,
+                severity: 'error' as const,
+              },
+            ];
+          })
+        : [];
+    return [{ key, file, setup, fileDiagnostics }];
+  });
   const declarationDiagnostics = [
-    ...(setup?.status === 'invalid' ? setup.diagnostics : []),
-    ...setupFileDiagnostics,
+    ...declarations.flatMap(({ setup, fileDiagnostics }) => [
+      ...(setup?.status === 'invalid' ? setup.diagnostics : []),
+      ...fileDiagnostics,
+    ]),
     ...legacyPolicyDiagnostics(value),
     ...modelTierGroupDiagnostics(value),
   ];
@@ -372,9 +378,10 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
         ({ fieldPath }) =>
           fieldPath === undefined ||
           (!declarationPaths.has(fieldPath) &&
-            !(
-              (setup?.status === 'invalid' || setupFileDiagnostics.length > 0) &&
-              (fieldPath === '/setup' || fieldPath.startsWith('/setup/'))
+            !declarations.some(
+              ({ key, setup, fileDiagnostics }) =>
+                (setup?.status === 'invalid' || fileDiagnostics.length > 0) &&
+                (fieldPath === `/${key}` || fieldPath.startsWith(`/${key}/`)),
             )),
       );
     return {
@@ -383,13 +390,36 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
     };
   }
 
+  const host = declarations.find(({ key }) => key === 'setup-host');
+  const agent = declarations.find(({ key }) => key === agentKey);
+
   return {
     status: 'valid',
     manifest: {
       ...decodeManifest(value),
-      ...(setup?.status === 'valid' ? { setup: setup.setup } : {}),
+      ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
+      ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
-    ...(setupFile && typeof setupFile.file === 'string' ? { setupFile: setupFile.file } : {}),
-    diagnostics: [],
+    ...(host?.file && typeof host.file.file === 'string' ? { setupHostFile: host.file.file } : {}),
+    ...(agent?.file && typeof agent.file.file === 'string'
+      ? {
+          setupFile: agent.file.file,
+          setupFileFieldPath: `/${agentKey}` as '/setup' | '/setup-agent',
+        }
+      : {}),
+    diagnostics:
+      isRecord(value) && Object.hasOwn(value, 'setup')
+        ? [
+            {
+              code: 'manifest-setup-deprecated',
+              fieldPath: '/setup',
+              message:
+                agentKey === 'setup'
+                  ? 'Top-level setup is deprecated; use setup-agent instead.'
+                  : 'Top-level setup is deprecated and ignored because setup-agent is declared.',
+              severity: 'warning',
+            },
+          ]
+        : [],
   };
 }

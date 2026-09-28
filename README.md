@@ -165,11 +165,13 @@ git:
     private-keys:
       from-environment: SSH_KEY
 
-setup:
+setup-host:
+  runtimes: [openclaw]
+  apply: brew install jq ripgrep
+
+setup-agent:
   runtimes: [openclaw]
   apply: |
-    # install workspace dependencies.
-    brew install jq ripgrep
     # install and configure the diffs plugin for browser previews.
     openclaw plugins inspect diffs >/dev/null 2>&1 || openclaw plugins install clawhub:@openclaw/diffs --accept-capabilities
     openclaw plugins enable diffs --accept-capabilities

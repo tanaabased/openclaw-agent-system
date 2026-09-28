@@ -77,6 +77,7 @@ export default async function installAgentSystem(
       ...options,
       runtime: 'openclaw',
       setup: result.manifest.setup,
+      setupHost: result.manifest.setupHost,
       workspaceDir: result.scope.workspaceDir,
     }))
   ) {

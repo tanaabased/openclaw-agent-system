@@ -7,6 +7,7 @@ import AgentSystemLifecycleRegistry, {
   type AgentSystemLifecycleContribution,
 } from '../core/lifecycle-registry.ts';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
+import type { AgentManifest } from '../manifest/types.ts';
 
 function fixture() {
   const normalized = normalizeAgentSetup({
@@ -16,7 +17,11 @@ function fixture() {
     ],
   });
   assert.equal(normalized.status, 'valid');
-  const context = {
+  const context: {
+    runtime: 'openclaw';
+    manifest: AgentManifest & { setup: NonNullable<AgentManifest['setup']> };
+    workspaceDir: string;
+  } = {
     runtime: 'openclaw' as const,
     manifest: { schemaVersion: 1 as const, agent: { id: 'emori' }, setup: normalized.setup },
     workspaceDir: '/workspace/emori',
@@ -103,14 +108,17 @@ function fixture() {
 }
 
 describe('setup installation lifecycle', () => {
-  it('should run pre-agent setup before managed tools and preserve agent-bound setup order', async () => {
+  it('should run host setup before managed tools and preserve agent-bound setup order', async () => {
     const { context, calls, install, doctor } = fixture();
-    context.manifest.setup.steps.unshift({
-      id: 'host-tools',
-      phase: 'pre-agent',
-      check: { kind: 'shell', script: 'host-tools check', shell: 'sh', timeoutSeconds: 300 },
-      apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
-    });
+    context.manifest.setupHost = {
+      steps: [
+        {
+          id: 'host-tools',
+          check: { kind: 'shell', script: 'host-tools check', shell: 'sh', timeoutSeconds: 300 },
+          apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+        },
+      ],
+    };
     const result = await install.install(context);
     assert.deepEqual(calls.slice(0, 3), [
       'pre-agent:host-tools:check',
@@ -128,13 +136,16 @@ describe('setup installation lifecycle', () => {
     assert.equal(calls[0], 'pre-agent:host-tools:check');
   });
 
-  it('should stop before agent reconciliation when pre-agent setup fails', async () => {
+  it('should stop before agent reconciliation when host setup fails', async () => {
     const { context, calls, install, state } = fixture();
-    context.manifest.setup.steps.unshift({
-      id: 'host-tools',
-      phase: 'pre-agent',
-      apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
-    });
+    context.manifest.setupHost = {
+      steps: [
+        {
+          id: 'host-tools',
+          apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+        },
+      ],
+    };
     state.failedSetup = 'host-tools';
     await assert.rejects(install.install(context), {
       component: 'setup',

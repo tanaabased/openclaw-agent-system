@@ -29,6 +29,7 @@ export interface AgentManifest {
   github?: GitHubManifestConfiguration;
   memory?: AgentMemoryConfiguration;
   models?: AgentModelsConfiguration;
+  setupHost?: AgentSetupConfiguration;
   setup?: AgentSetupConfiguration;
 }
 
@@ -49,6 +50,8 @@ export type ParsedAgentManifest =
   | {
       status: 'valid';
       manifest: AgentManifest;
+      setupHostFile?: string;
       setupFile?: string;
+      setupFileFieldPath?: '/setup' | '/setup-agent';
       diagnostics: ManifestDiagnostic[];
     };

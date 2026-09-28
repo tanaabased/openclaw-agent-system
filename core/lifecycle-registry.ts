@@ -157,12 +157,12 @@ export default class AgentSystemLifecycleRegistry {
         });
       }
     }
-    if (context.manifest.setup)
+    if (context.manifest.setup || context.manifest.setupHost)
       checks.push({
         code: 'setup-declaration-valid',
         component: 'setup',
         status: 'valid',
-        message: `Setup declaration with ${context.manifest.setup.steps.length} ordered steps`,
+        message: `Setup declaration with ${(context.manifest.setupHost?.steps.length ?? 0) + (context.manifest.setup?.steps.length ?? 0)} ordered steps`,
       });
     return { checks, diagnostics };
   }
@@ -234,7 +234,7 @@ export default class AgentSystemLifecycleRegistry {
     skipSetup = false,
   ): AgentSystemLifecycleContribution[] {
     const configured = this.#configured(context.manifest);
-    if (!context.manifest.setup || skipSetup) return configured;
+    if ((!context.manifest.setup && !context.manifest.setupHost) || skipSetup) return configured;
     const setupLifecycle = this.setupLifecycle;
     if (!setupLifecycle) {
       throw new AgentSystemLifecycleError(
@@ -243,11 +243,11 @@ export default class AgentSystemLifecycleRegistry {
         'Setup execution is unavailable.',
       );
     }
-    const preAgentSteps = context.manifest.setup.steps.some((step) => step.phase === 'pre-agent');
-    const agentSteps = context.manifest.setup.steps.some((step) => step.phase !== 'pre-agent');
+    const hostSteps = (context.manifest.setupHost?.steps.length ?? 0) > 0;
+    const agentSteps = (context.manifest.setup?.steps.length ?? 0) > 0;
     // These owners establish the identity, launchers, and credentials needed by agent-bound setup.
-    const prerequisiteIds = context.manifest.setup.steps.some(
-      (step) => step.phase !== 'pre-agent' && setupStepApplies(step, context.runtime),
+    const prerequisiteIds = context.manifest.setup?.steps.some((step) =>
+      setupStepApplies(step, context.runtime),
     )
       ? ['agent', 'path', 'git', 'github', 'google']
       : [];
@@ -256,13 +256,13 @@ export default class AgentSystemLifecycleRegistry {
     );
     const dependent = configured.filter((entry) => !prerequisiteIds.includes(entry.id));
     return [
-      ...(preAgentSteps
+      ...(hostSteps
         ? [
             {
               id: 'setup',
               isConfigured: () => true,
-              inspect: () => setupLifecycle.inspect(context, 'pre-agent'),
-              reconcile: () => setupLifecycle.reconcile(context, 'pre-agent'),
+              inspect: () => setupLifecycle.inspect(context, 'host'),
+              reconcile: () => setupLifecycle.reconcile(context, 'host'),
             },
           ]
         : []),

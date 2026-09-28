@@ -4,7 +4,7 @@ agent:
   name: Setup Test Agent
   email: setup-failures@example.invalid
 git: {}
-setup:
+setup-agent:
   steps:
     - id: preserved
       check: [test, -f, preserved]

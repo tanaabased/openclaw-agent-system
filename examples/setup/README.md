@@ -1,6 +1,6 @@
 # Setup Example
 
-Tests pre-agent host preparation, agent-bound GitHub identity and SSH cloning into
+Tests `setup-host` preparation, agent-bound GitHub identity and SSH cloning into
 a declared external checkout, check/apply/recheck, unchanged reruns, unchecked
 steps, Doctor, and skipping setup.
 It also covers runtime filtering, partial failures, retries, nonconvergence, timeouts, and granular
@@ -50,7 +50,7 @@ printf '%s\n' "$output" | jq -e '.findings | any(.stepId == "host-tools" and .st
 test ! -e "$HOME/tanaab/setup-big-test-bucket"
 test ! -e host-tools-ready
 
-# should run pre-agent preparation before tool reconciliation and agent-bound cloning
+# should run host setup before tool reconciliation and agent-bound cloning
 cd "$TMPDIR/setup-tanaabot"
 output="$(openclaw agent-system install --yes --json)"
 printf '%s\n' "$output" | jq -e '.outcomes | any(.component == "github" and .code == "add-github-ssh-keys") and any(.stepId == "host-tools" and .status == "updated") and any(.stepId == "checkout" and .status == "updated") and any(.stepId == "repeatable" and .status == "updated")'

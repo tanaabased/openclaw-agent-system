@@ -39,10 +39,6 @@ describe('agent/codex-setup', () => {
     await writeFile(
       join(workspace, 'setup.yaml'),
       `steps:
-  - id: shared
-    phase: pre-agent
-    check: test -f .shared-ready
-    apply: touch .shared-ready
   - id: codex-only
     runtimes: [codex]
     apply: touch .codex-applied
@@ -52,13 +48,15 @@ describe('agent/codex-setup', () => {
     apply: touch .openclaw-applied
 `,
     );
-    await manifest('setup:\n  file: ./setup.yaml\n');
+    await manifest(
+      'setup-host:\n  check: test -f .shared-ready\n  apply: touch .shared-ready\nsetup-agent:\n  file: ./setup.yaml\n',
+    );
 
     const inspected = await inspectCodexSetup(pluginData, undefined, dependencies);
     assert.deepEqual(
       inspected.findings.map(({ code, status, stepId }) => ({ code, status, stepId })),
       [
-        { code: 'setup-drift', status: 'drift', stepId: 'shared' },
+        { code: 'setup-drift', status: 'drift', stepId: 'default' },
         { code: 'setup-manual', status: 'manual', stepId: 'codex-only' },
         { code: 'setup-not-applicable', status: 'skipped', stepId: 'openclaw-only' },
       ],
@@ -68,7 +66,7 @@ describe('agent/codex-setup', () => {
     assert.deepEqual(
       installed.outcomes.map(({ code, status, stepId }) => ({ code, status, stepId })),
       [
-        { code: 'setup-applied', status: 'updated', stepId: 'shared' },
+        { code: 'setup-applied', status: 'updated', stepId: 'default' },
         { code: 'setup-applied', status: 'updated', stepId: 'codex-only' },
         { code: 'setup-not-applicable', status: 'skipped', stepId: 'openclaw-only' },
       ],

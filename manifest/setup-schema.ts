@@ -8,7 +8,6 @@ export const setupMaximumTimeoutSeconds = 3_600;
 
 const shellSchema = Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]);
 const runtimeSchema = Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]);
-const phaseSchema = Type.Union([Type.Literal('pre-agent'), Type.Literal('agent')]);
 const scriptSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000]*(?![\\s\\S])' });
 const executableSchema = Type.String({
   pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])',
@@ -30,7 +29,6 @@ const commandObjectSchema = Type.Object(
 );
 const commandSchema = Type.Union([scriptSchema, argvSchema, commandObjectSchema]);
 const stepProperties = {
-  phase: Type.Optional(phaseSchema),
   runtimes: Type.Optional(Type.Array(runtimeSchema, { minItems: 1, uniqueItems: true })),
   shell: Type.Optional(shellSchema),
   check: Type.Optional(commandSchema),
@@ -66,14 +64,12 @@ export const externalSetupDeclarationSchema = Type.Union([
 
 export type AgentSetupShell = Static<typeof shellSchema>;
 export type AgentSetupRuntime = Static<typeof runtimeSchema>;
-export type AgentSetupPhase = Static<typeof phaseSchema>;
 export type AgentSetupCommand =
   | { kind: 'shell'; script: string; shell: AgentSetupShell; timeoutSeconds: number }
   | { kind: 'exec'; executable: string; args: string[]; timeoutSeconds: number };
 
 export interface AgentSetupStep {
   id: string;
-  phase?: AgentSetupPhase;
   runtimes?: AgentSetupRuntime[];
   apply: AgentSetupCommand;
   check?: AgentSetupCommand;
@@ -166,13 +162,16 @@ function decodeCommand(command: ExternalCommand, shell: AgentSetupShell): AgentS
 }
 
 /** Normalize a setup value without reading files, resolving environment values, or executing code. */
-export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
+export function normalizeAgentSetup(value: unknown, fieldPath = '/setup'): NormalizedAgentSetup {
   if (
     isRecord(value) &&
     Object.hasOwn(value, 'steps') &&
     (Object.hasOwn(value, 'check') || Object.hasOwn(value, 'apply'))
   ) {
-    return { status: 'invalid', diagnostics: [diagnostic('manifest-setup-mixed-forms', '/setup')] };
+    return {
+      status: 'invalid',
+      diagnostics: [diagnostic('manifest-setup-mixed-forms', fieldPath)],
+    };
   }
   const selected =
     typeof value === 'string'
@@ -181,7 +180,7 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
         ? stepsSchema
         : shortSchema;
   if (!Value.Check(externalAgentSetupSchema, value)) {
-    return { status: 'invalid', diagnostics: schemaDiagnostics(selected, value, '/setup') };
+    return { status: 'invalid', diagnostics: schemaDiagnostics(selected, value, fieldPath) };
   }
 
   const setup = typeof value === 'string' ? { apply: value } : value;
@@ -189,15 +188,11 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
   const entries = 'steps' in setup ? setup.steps : [{ id: 'default', ...setup }];
   const ids = new Set<string>();
   const diagnostics: ManifestDiagnostic[] = [];
-  let agentPhaseSeen = false;
   const steps = entries.map((entry, index) => {
-    const path = 'steps' in setup ? `/setup/steps/${index}` : '/setup';
+    const path = 'steps' in setup ? `${fieldPath}/steps/${index}` : fieldPath;
     if (ids.has(entry.id))
       diagnostics.push(diagnostic('manifest-setup-duplicate-id', `${path}/id`));
     ids.add(entry.id);
-    if (entry.phase === 'pre-agent' && agentPhaseSeen)
-      diagnostics.push(diagnostic('manifest-setup-phase-order', `${path}/phase`));
-    if (entry.phase !== 'pre-agent') agentPhaseSeen = true;
     for (const key of ['check', 'apply'] as const) {
       const command = entry[key];
       if (command === undefined || typeof command === 'string') continue;
@@ -213,7 +208,6 @@ export function normalizeAgentSetup(value: unknown): NormalizedAgentSetup {
     }
     return {
       id: entry.id,
-      ...(entry.phase === undefined ? {} : { phase: entry.phase }),
       ...(entry.runtimes === undefined ? {} : { runtimes: [...entry.runtimes] }),
       apply: decodeCommand(entry.apply, entry.shell ?? shell),
       ...(entry.check === undefined

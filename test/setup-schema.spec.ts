@@ -26,27 +26,20 @@ function invalid(value: unknown, code: string, fieldPath: string) {
 }
 
 describe('manifest/setup-schema', () => {
-  it('should keep pre-agent steps first and default other steps to agent setup', () => {
-    const setup = normalized({
-      steps: [
-        { id: 'host-tools', phase: 'pre-agent', apply: 'brew bundle' },
-        { id: 'workspace', apply: 'true' },
-      ],
-    });
-    assert.equal(setup.steps[0]?.phase, 'pre-agent');
-    assert.equal(setup.steps[1]?.phase, undefined);
-    assert.equal(normalized({ phase: 'pre-agent', apply: 'true' }).steps[0]?.phase, 'pre-agent');
-    invalid(
-      {
-        steps: [
-          { id: 'workspace', apply: 'true' },
-          { id: 'host-tools', phase: 'pre-agent', apply: 'true' },
-        ],
-      },
-      'manifest-setup-phase-order',
-      '/setup/steps/1/phase',
-    );
-    invalid({ phase: 'before-agent', apply: 'true' }, 'manifest-schema', '/setup/phase');
+  it('should select setup-agent before the deprecated setup fallback', () => {
+    const source = (declarations: string) =>
+      parseAgentManifest(`schema-version: 1\nagent:\n  id: test\n${declarations}`);
+    const both = source('setup-host: echo host\nsetup-agent: echo agent\nsetup: echo legacy\n');
+    assert.equal(both.status, 'valid');
+    if (both.status !== 'valid') return;
+    assert.equal(both.manifest.setupHost?.steps[0]?.apply.kind, 'shell');
+    assert.equal(both.manifest.setup?.steps[0]?.apply.kind, 'shell');
+    assert.deepEqual(both.manifest.setup, normalized('echo agent'));
+    const legacy = source('setup: echo legacy\n');
+    assert.equal(legacy.status, 'valid');
+    if (legacy.status === 'valid')
+      assert.deepEqual(legacy.manifest.setup, normalized('echo legacy'));
+    invalid({ phase: 'pre-agent', apply: 'true' }, 'manifest-unknown-key', '/setup/phase');
   });
 
   it('should preserve independent runtime filters in short and long forms', () => {

@@ -253,32 +253,43 @@ identifiers remain literal and are never casing-converted. See
 [Environment Resolution](#environment-resolution) for source precedence and resolution behavior, and
 [Path](#path) for executable projection.
 
-### `setup`
+### Setup
 
-Declares host dependency installation and workspace configuration run through `install`, with
-optional checks for repeat installation and Doctor. Omit `setup` when the
-first-party configuration already handles the work. Setup scripts can change
-files or external services; their authors must make checks read-only and applies
-safe to repeat.
+Use top-level `setup-host` for host executables and other dependencies needed
+before the agent and its managed tools are reconciled. Use top-level
+`setup-agent` for work that needs the configured agent and managed tools.
+Both run through `install`, with optional checks for repeat installation and
+Doctor. The old top-level `setup` is deprecated: it supplies `setup-agent`
+only when `setup-agent` is absent. If both are present, `setup-agent` wins;
+the unused `setup` declaration is still schema-validated.
+Omit setup declarations when first-party configuration already handles the
+work. Setup scripts can change files or external services; their authors must
+make checks read-only and applies safe to repeat.
+
+| Top-level key | Type              | Required | Default | Behavior                                                                  |
+| ------------- | ----------------- | -------- | ------- | ------------------------------------------------------------------------- |
+| `setup-host`  | setup declaration | no       | none    | Runs before agent and managed-tool reconciliation.                        |
+| `setup-agent` | setup declaration | no       | none    | Runs after managed-tool prerequisites.                                    |
+| `setup`       | setup declaration | no       | none    | Deprecated fallback for `setup-agent`; ignored when `setup-agent` exists. |
 
 #### Syntax
 
 Use the short mapping for one checked operation:
 
 ```yaml
-setup:
+setup-agent:
   shell: zsh
   check: test -d repos
   apply: mkdir -p repos
 ```
 
-For a long declaration, `setup.file` may name one YAML file relative to the
+Either top-level key may use `file` to name one YAML file relative to the
 containing `agent.yaml`. The file contains the setup value itself, without a
-second `setup:` wrapper:
+second wrapper:
 
 ```yaml
 # agent.yaml
-setup:
+setup-agent:
   file: ./setup.yaml
 ```
 
@@ -299,27 +310,28 @@ workspace, not from the setup file's directory.
 
 | Form                                                                | Meaning                                                                       |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `setup: mkdir -p repos` or a YAML block scalar                      | One unchecked `apply` script using `sh`                                       |
+| `setup-agent: mkdir -p repos` or a YAML block scalar                | One unchecked `apply` script using `sh`                                       |
 | `check: test -d repos` / `apply: mkdir -p repos`                    | Script using the selected shell                                               |
 | `check: [test, -d, repos]` / `apply: [mkdir, -p, repos]`            | Literal argument array, without shell parsing or expansion                    |
 | `apply: { command: mkdir, args: [-p, repos], timeout-seconds: 60 }` | Direct executable with optional arguments and timeout; also valid for `check` |
 
 Use `steps` for multiple operations in declaration order. String commands inherit
 its shell unless a step overrides it; direct commands ignore shell selection.
-Set `phase: pre-agent` on initial steps that install host executables needed by
-managed tools. Steps without `phase`, or with `phase: agent`, retain the existing
-agent-bound behavior. All pre-agent steps must precede agent steps in the list;
-the manifest is validated before either phase runs.
+Declare host preparation and agent setup separately; no per-step phase is needed.
+The manifest is validated before either section runs.
 This example assumes the referenced script exists:
 
 ```yaml
-setup:
+setup-host:
   shell: bash
   steps:
     - id: host-tools
-      phase: pre-agent
       check: brew bundle check --file=Brewfile
       apply: brew bundle --file=Brewfile
+
+setup-agent:
+  shell: bash
+  steps:
     - id: directories
       check: test -d repos && test -d artifacts
       apply: |
@@ -368,13 +380,13 @@ standard-error lines, command declarations, arguments, and unrelated environment
 values remain private. The interactive confirmation deliberately shows the
 declared commands, so keep secrets out of declarations.
 
-Pre-agent setup receives a minimal host environment for home, locale, and temporary
+`setup-host` receives a minimal host environment for home, locale, and temporary
 paths, using trusted host executables without managed launchers, agent credentials,
 or resolved manifest secrets. It runs from the bound workspace before OpenClaw agent
 and tool reconciliation. It still has the installing OS user's filesystem access;
 the shell and package manager must already be available on the host.
 
-Agent-bound OpenClaw setup receives a minimal host environment for home, locale,
+`setup-agent` under OpenClaw receives a minimal host environment for home, locale,
 temporary paths, and OpenClaw profile selection, plus managed command bindings.
 Its `PATH` places managed launchers before trusted host executable directories.
 Bare `git` and `gh`
@@ -397,7 +409,7 @@ both, including bare strings and blocks. Put the filter on the short mapping or
 individual named steps, never the `steps` container:
 
 ```yaml
-setup:
+setup-agent:
   runtimes: [openclaw]
   check: test -d repos
   apply: mkdir -p repos
@@ -414,7 +426,8 @@ All declarations are validated. Nonmatching steps run neither command and report
 `status: skipped`, `code: setup-not-applicable`, and their `stepId`; they are not
 drift or failure. Filtering precedes preparation, so no matching agent-bound steps
 means no setup-only managed-tool prerequisite checks. Other configured components
-still run normally, and applicable steps retain phase and declaration order.
+still run normally, and applicable steps retain their declaration order within
+`setup-host` and `setup-agent`.
 There is no skip exit code or `when` expression.
 
 #### Checks, installation, and retries
@@ -442,22 +455,22 @@ responsibility. `validate` only validates declarations and never executes them.
 
 #### Agent identity and repository cloning
 
-For applicable OpenClaw setup, installation first runs pre-agent steps, then
+For applicable OpenClaw setup, installation first runs `setup-host`, then
 establishes agent registration, managed paths, and configured Git/GitHub/Google
 tools, including declared GitHub SSH-key registration. Agent-bound setup runs next;
 remaining lifecycle components follow. Unavailable managed-tool prerequisites
-block agent-bound setup. Pre-agent steps can install their host executables but
+block agent-bound setup. `setup-host` can install host executables but
 cannot use managed agent credentials or tools. Stored 1Password access is checked
-before either setup phase.
+before either setup section.
 
 To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
 and public keys](./tools/github/README.md#configuration-reference). Supply host
-executables directly or install them in pre-agent setup; credential sources and
+executables directly or install them in `setup-host`; credential sources and
 key files must be available before agent-bound setup. Then add:
 
 ```yaml
-setup:
+setup-agent:
   steps:
     - id: clone-project
       runtimes: [openclaw]
