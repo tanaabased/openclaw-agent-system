@@ -25,12 +25,7 @@ describe('google example workflow', () => {
       env?: Record<string, string>;
       run?: string;
     }>;
-    const install = steps.find((step) => step.name === 'Install reviewed GoG');
-    assert.equal(install?.if, "matrix.example == 'google'");
-    assert.match(install?.run ?? '', /gogcli_0\.42\.0_darwin_arm64/u);
-    assert.match(install?.run ?? '', /gogcli_0\.42\.0_linux_amd64/u);
-    assert.match(install?.run ?? '', /shasum -a 256 -c/u);
-    assert.match(install?.run ?? '', /sha256sum --check/u);
+    assert.ok(!steps.some((step) => step.name === 'Install reviewed GoG'));
     const run = steps.find((step) => step.name === 'Run Leia-backed example');
     assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
     assert.equal(
@@ -56,6 +51,15 @@ describe('google example workflow', () => {
       'GOG_TOKEN_JSON_B64',
       'GOG_KEYRING_PASSWORD',
     ]);
+    assert.equal(fixture.manifest.setup?.steps[0]?.phase, 'pre-agent');
+    assert.equal(fixture.manifest.setup?.steps[0]?.id, 'gog-cli');
+    assert.deepEqual(fixture.manifest.setup?.steps[0]?.apply, {
+      kind: 'exec',
+      executable: 'brew',
+      args: ['bundle', '--file=Brewfile'],
+      timeoutSeconds: 600,
+    });
+    assert.match(await readFile('examples/google/Brewfile', 'utf8'), /openclaw\/tap\/gogcli/u);
     const suites = new Leia().parse([resolve('examples/google/README.md')]);
     assert.equal(suites.length, 1);
     const commands = Object.values(suites[0]!.tests)
@@ -66,6 +70,7 @@ describe('google example workflow', () => {
     assert.match(commands, /credentials set op --from-env/u);
     assert.match(commands, /tasks lists list --max 1 --readonly/u);
     assert.match(commands, /google-credentials-unchanged/u);
+    assert.match(commands, /index\("gog-cli"\) < index\("google"\)/u);
     assert.doesNotMatch(commands, /auth add|gcloud|gateway run|agent --/u);
   });
 });

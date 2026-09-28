@@ -255,7 +255,7 @@ identifiers remain literal and are never casing-converted. See
 
 ### `setup`
 
-Declares dependency installation and workspace configuration run through `install`, with
+Declares host dependency installation and workspace configuration run through `install`, with
 optional checks for repeat installation and Doctor. Omit `setup` when the
 first-party configuration already handles the work. Setup scripts can change
 files or external services; their authors must make checks read-only and applies
@@ -306,12 +306,20 @@ workspace, not from the setup file's directory.
 
 Use `steps` for multiple operations in declaration order. String commands inherit
 its shell unless a step overrides it; direct commands ignore shell selection.
+Set `phase: pre-agent` on initial steps that install host executables needed by
+managed tools. Steps without `phase`, or with `phase: agent`, retain the existing
+agent-bound behavior. All pre-agent steps must precede agent steps in the list;
+the manifest is validated before either phase runs.
 This example assumes the referenced script exists:
 
 ```yaml
 setup:
   shell: bash
   steps:
+    - id: host-tools
+      phase: pre-agent
+      check: brew bundle check --file=Brewfile
+      apply: brew bundle --file=Brewfile
     - id: directories
       check: test -d repos && test -d artifacts
       apply: |
@@ -360,9 +368,16 @@ standard-error lines, command declarations, arguments, and unrelated environment
 values remain private. The interactive confirmation deliberately shows the
 declared commands, so keep secrets out of declarations.
 
-OpenClaw setup receives a minimal host environment for home, locale, temporary paths,
-and OpenClaw profile selection, plus managed command bindings. Its `PATH` places
-managed launchers before trusted host executable directories. Bare `git` and `gh`
+Pre-agent setup receives a minimal host environment for home, locale, and temporary
+paths, using trusted host executables without managed launchers, agent credentials,
+or resolved manifest secrets. It runs from the bound workspace before OpenClaw agent
+and tool reconciliation. It still has the installing OS user's filesystem access;
+the shell and package manager must already be available on the host.
+
+Agent-bound OpenClaw setup receives a minimal host environment for home, locale,
+temporary paths, and OpenClaw profile selection, plus managed command bindings.
+Its `PATH` places managed launchers before trusted host executable directories.
+Bare `git` and `gh`
 use host executables when a descendant leaves agent scope; see the
 [command-routing contract](./CLI.md#trust-boundary). The completed
 Agent System environment and operator provider tokens are not copied into the
@@ -397,10 +412,10 @@ that choice.
 
 All declarations are validated. Nonmatching steps run neither command and report
 `status: skipped`, `code: setup-not-applicable`, and their `stepId`; they are not
-drift or failure. Filtering precedes preparation, so no matching steps means no
-setup-only prerequisite checks. Other configured components still run normally,
-and applicable steps retain declaration order. There is no skip exit code or
-`when` expression.
+drift or failure. Filtering precedes preparation, so no matching agent-bound steps
+means no setup-only managed-tool prerequisite checks. Other configured components
+still run normally, and applicable steps retain phase and declaration order.
+There is no skip exit code or `when` expression.
 
 #### Checks, installation, and retries
 
@@ -427,16 +442,19 @@ responsibility. `validate` only validates declarations and never executes them.
 
 #### Agent identity and repository cloning
 
-For applicable OpenClaw setup, installation establishes agent registration, managed
-paths, and configured Git/GitHub/Google tools, including declared GitHub SSH-key
-registration, before running setup. Remaining lifecycle components follow
-setup. Unavailable prerequisites block execution; setup cannot bootstrap a tool
-or credential required to reach its own commands.
+For applicable OpenClaw setup, installation first runs pre-agent steps, then
+establishes agent registration, managed paths, and configured Git/GitHub/Google
+tools, including declared GitHub SSH-key registration. Agent-bound setup runs next;
+remaining lifecycle components follow. Unavailable managed-tool prerequisites
+block agent-bound setup. Pre-agent steps can install their host executables but
+cannot use managed agent credentials or tools. Stored 1Password access is checked
+before either setup phase.
 
 To clone as the agent, first declare its [Git identity and SSH
 keys](./tools/git/README.md#configuration-reference) and [GitHub username, token,
-and public keys](./tools/github/README.md#configuration-reference). Executables,
-credential sources, and key files must already be available. Then add:
+and public keys](./tools/github/README.md#configuration-reference). Supply host
+executables directly or install them in pre-agent setup; credential sources and
+key files must be available before agent-bound setup. Then add:
 
 ```yaml
 setup:

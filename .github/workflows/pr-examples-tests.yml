@@ -83,34 +83,6 @@ jobs:
         uses: tanaabased/actions/npm-pack@v1
       - name: Install OpenClaw
         uses: tanaabased/actions/setup-openclaw@v1
-      - name: Install reviewed GoG
-        if: matrix.example == 'google'
-        shell: bash
-        run: |
-          case "$RUNNER_OS/$(uname -m)" in
-            Linux/x86_64)
-              asset=gogcli_0.42.0_linux_amd64.tar.gz
-              checksum=1967a962a57d689958c408dd0abc784792c3712da9d0a90650bb76ab7e3de388
-              ;;
-            macOS/arm64)
-              asset=gogcli_0.42.0_darwin_arm64.tar.gz
-              checksum=6a92b35473ed057c55677c2ba7d5af8e154d1bad23fa35e74994bc2f3bce4672
-              ;;
-            macOS/x86_64)
-              asset=gogcli_0.42.0_darwin_amd64.tar.gz
-              checksum=f28d7f64fb85d726e4757261a02879f35968ad7096fe00761cd9eda8e9f6d2dd
-              ;;
-            *) exit 1 ;;
-          esac
-          mkdir -m 700 "$RUNNER_TEMP/gog-bin"
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/gog.tar.gz" "https://github.com/openclaw/gogcli/releases/download/v0.42.0/$asset"
-          if [[ "$RUNNER_OS" == macOS ]]; then
-            printf '%s  %s\n' "$checksum" "$RUNNER_TEMP/gog.tar.gz" | shasum -a 256 -c
-          else
-            printf '%s  %s\n' "$checksum" "$RUNNER_TEMP/gog.tar.gz" | sha256sum --check
-          fi
-          tar -xzf "$RUNNER_TEMP/gog.tar.gz" -C "$RUNNER_TEMP/gog-bin"
-          echo "$RUNNER_TEMP/gog-bin" >> "$GITHUB_PATH"
       - name: Run Leia-backed example
         shell: bash
         env:

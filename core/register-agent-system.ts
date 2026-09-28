@@ -277,6 +277,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   ]);
   const setupLifecycle = new SetupLifecycleService({
     run: (command, target, signal) => setupCommands.run(command, target, signal),
+    runPreAgent: (command, target, signal) => setupCommands.runPreAgent(command, target, signal),
     prepare: (context) => setupCommands.prepare(context),
   });
   const lifecycleContributions = [

@@ -16,3 +16,13 @@ google:
   oauth-client: GOG_CREDENTIALS_JSON_B64
   oauth-token: GOG_TOKEN_JSON_B64
   keyring-password: GOG_KEYRING_PASSWORD
+setup:
+  steps:
+    - id: gog-cli
+      phase: pre-agent
+      runtimes: [openclaw]
+      check: brew bundle check --file=Brewfile
+      apply:
+        command: brew
+        args: [bundle, --file=Brewfile]
+        timeout-seconds: 600

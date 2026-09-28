@@ -6,7 +6,11 @@ import {
 } from '../core/lifecycle-registry.ts';
 import type { SetupCommandResult } from './setup-runner.ts';
 import setupStepApplies from './setup-runtime.ts';
-import type { AgentSetupCommand, AgentSetupStep } from '../manifest/setup-schema.ts';
+import type {
+  AgentSetupCommand,
+  AgentSetupPhase,
+  AgentSetupStep,
+} from '../manifest/setup-schema.ts';
 
 /** Inspect applicable checks; reconcile ordered steps without rolling back external effects. */
 export default class SetupLifecycleService {
@@ -18,19 +22,26 @@ export default class SetupLifecycleService {
         target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
         signal?: AbortSignal,
       ): Promise<SetupCommandResult>;
+      runPreAgent?(
+        command: AgentSetupCommand,
+        target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
+        signal?: AbortSignal,
+      ): Promise<SetupCommandResult>;
     },
   ) {}
 
   async inspect(
     context: AgentSystemLifecycleExecutionContext,
+    phase?: AgentSetupPhase,
   ): Promise<AgentSystemLifecycleFinding[]> {
     const findings: AgentSystemLifecycleFinding[] = [];
     for (const step of context.manifest.setup?.steps ?? []) {
+      if (phase && (step.phase ?? 'agent') !== phase) continue;
       if (!setupStepApplies(step, context.runtime)) {
         findings.push(this.notApplicable(step, context));
         continue;
       }
-      const status = step.check ? await this.check(step.check, context) : 'manual';
+      const status = step.check ? await this.check(step.check, step, context) : 'manual';
       findings.push({
         component: 'setup',
         stepId: step.id,
@@ -52,31 +63,37 @@ export default class SetupLifecycleService {
 
   async reconcile(
     context: AgentSystemLifecycleExecutionContext,
+    phase?: AgentSetupPhase,
   ): Promise<AgentSystemLifecycleReconcileResult> {
     const outcomes: AgentSystemLifecycleReconcileResult['outcomes'] = [];
-    try {
-      if (context.manifest.setup?.steps.some((step) => setupStepApplies(step, context.runtime))) {
-        await this.commands.prepare?.(context);
-      }
-    } catch {
-      throw new AgentSystemLifecycleError(
-        'setup',
-        'setup-prerequisite-blocked',
-        'Configured setup tools require available executables, credentials, and key sources.',
-      );
-    }
-    for (const step of context.manifest.setup?.steps ?? []) {
+    const steps = (context.manifest.setup?.steps ?? []).filter(
+      (step) => phase === undefined || (step.phase ?? 'agent') === phase,
+    );
+    let prepared = false;
+    for (const step of steps) {
       if (!setupStepApplies(step, context.runtime)) {
         outcomes.push(this.notApplicable(step, context));
         continue;
       }
-      const before = step.check ? await this.check(step.check, context) : 'manual';
+      if (!prepared && (step.phase ?? 'agent') === 'agent') {
+        try {
+          await this.commands.prepare?.(context);
+        } catch {
+          throw new AgentSystemLifecycleError(
+            'setup',
+            'setup-prerequisite-blocked',
+            'Configured setup tools require available executables, credentials, and key sources.',
+          );
+        }
+        prepared = true;
+      }
+      const before = step.check ? await this.check(step.check, step, context) : 'manual';
       if (before === 'blocked') this.fail(step, 'setup-check-blocked');
       if (before !== 'healthy') {
-        const applied = await this.execute(step.apply, context, 'apply');
+        const applied = await this.execute(step.apply, step, context, 'apply');
         if (applied !== 0) this.fail(step, 'setup-apply-failed');
         if (step.check) {
-          const after = await this.check(step.check, context);
+          const after = await this.check(step.check, step, context);
           if (after === 'blocked') this.fail(step, 'setup-check-blocked');
           if (after !== 'healthy') this.fail(step, 'setup-not-converged');
         }
@@ -102,20 +119,29 @@ export default class SetupLifecycleService {
     };
   }
 
-  private async check(command: AgentSetupCommand, context: AgentSystemLifecycleExecutionContext) {
-    const code = await this.execute(command, context, 'check');
+  private async check(
+    command: AgentSetupCommand,
+    step: AgentSetupStep,
+    context: AgentSystemLifecycleExecutionContext,
+  ) {
+    const code = await this.execute(command, step, context, 'check');
     return code === 0 ? 'healthy' : code === 1 ? 'drift' : 'blocked';
   }
 
   private async execute(
     command: AgentSetupCommand,
+    step: AgentSetupStep,
     context: AgentSystemLifecycleExecutionContext,
     mode: 'check' | 'apply',
   ): Promise<number | null> {
     context.signal?.throwIfAborted();
     await context.assertCurrent?.();
     try {
-      const result = await this.commands.run(
+      const run =
+        (step.phase ?? 'agent') === 'pre-agent' ? this.commands.runPreAgent : this.commands.run;
+      if (!run) throw new Error('Pre-agent setup execution is unavailable.');
+      const result = await run.call(
+        this.commands,
         command,
         {
           agentId: context.manifest.agent.id,

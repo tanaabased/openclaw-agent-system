@@ -40,6 +40,7 @@ describe('agent/codex-setup', () => {
       join(workspace, 'setup.yaml'),
       `steps:
   - id: shared
+    phase: pre-agent
     check: test -f .shared-ready
     apply: touch .shared-ready
   - id: codex-only

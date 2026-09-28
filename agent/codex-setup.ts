@@ -7,6 +7,7 @@ import {
 } from './codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
+import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;
@@ -111,17 +112,20 @@ async function runtime(
       ? {}
       : { temporaryDirectory: dependencies.temporaryDirectory }),
   });
-  const lifecycle = new SetupLifecycleService({
-    run: (command, target, commandSignal) =>
-      run(
-        command,
-        {
-          workspaceDir: target.workspaceDir,
-          executableDirectories: (baseEnvironment.PATH ?? '').split(delimiter),
-        },
-        commandSignal,
-      ),
-  });
+  const runStep = (
+    command: AgentSetupCommand,
+    target: { workspaceDir: string },
+    commandSignal?: AbortSignal,
+  ) =>
+    run(
+      command,
+      {
+        workspaceDir: target.workspaceDir,
+        executableDirectories: (baseEnvironment.PATH ?? '').split(delimiter),
+      },
+      commandSignal,
+    );
+  const lifecycle = new SetupLifecycleService({ run: runStep, runPreAgent: runStep });
   const context = {
     manifest: selected.manifest.manifest,
     workspaceDir: selected.workspaceDir,

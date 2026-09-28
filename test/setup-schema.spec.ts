@@ -26,6 +26,29 @@ function invalid(value: unknown, code: string, fieldPath: string) {
 }
 
 describe('manifest/setup-schema', () => {
+  it('should keep pre-agent steps first and default other steps to agent setup', () => {
+    const setup = normalized({
+      steps: [
+        { id: 'host-tools', phase: 'pre-agent', apply: 'brew bundle' },
+        { id: 'workspace', apply: 'true' },
+      ],
+    });
+    assert.equal(setup.steps[0]?.phase, 'pre-agent');
+    assert.equal(setup.steps[1]?.phase, undefined);
+    assert.equal(normalized({ phase: 'pre-agent', apply: 'true' }).steps[0]?.phase, 'pre-agent');
+    invalid(
+      {
+        steps: [
+          { id: 'workspace', apply: 'true' },
+          { id: 'host-tools', phase: 'pre-agent', apply: 'true' },
+        ],
+      },
+      'manifest-setup-phase-order',
+      '/setup/steps/1/phase',
+    );
+    invalid({ phase: 'before-agent', apply: 'true' }, 'manifest-schema', '/setup/phase');
+  });
+
   it('should preserve independent runtime filters in short and long forms', () => {
     for (const runtimes of [['openclaw'], ['codex'], ['openclaw', 'codex']]) {
       const short = normalized({ runtimes, apply: 'true' });

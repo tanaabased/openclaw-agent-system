@@ -1,9 +1,10 @@
 # Google
 
 Agent System runs a reviewed GoG command surface with one ordinary Google user
-OAuth account per OpenClaw agent. The host supplies GoG **v0.42.0**; Agent System
-neither installs the binary nor implements OAuth consent. Google scopes and
-resource permissions remain authoritative. No additional ClawHub skill, GoG
+OAuth account per OpenClaw agent. The host supplies GoG **v0.42.0**, optionally
+through [pre-agent setup](../../MANIFEST.md#setup); Agent System does not implement
+OAuth consent. Google scopes and resource permissions remain authoritative. No
+additional ClawHub skill, GoG
 plugin, or MCP server is needed.
 
 Standalone Codex keeps native host-authorized Google operations. Its Agent System

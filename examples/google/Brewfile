@@ -1,0 +1,2 @@
+tap "openclaw/tap"
+brew "openclaw/tap/gogcli"

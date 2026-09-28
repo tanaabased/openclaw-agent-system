@@ -61,6 +61,20 @@ function fixture() {
     },
   }));
   const setup = new SetupLifecycleService({
+    async runPreAgent(command, target) {
+      assert.equal(command.kind, 'shell');
+      if (command.kind !== 'shell') throw new Error('expected script');
+      const [id, mode] = command.script.split(' ');
+      assert.equal(target.mode, mode);
+      calls.push(`pre-agent:${id}:${mode}`);
+      const key = `setup:${id}`;
+      if (mode === 'apply') installed.add(key);
+      return {
+        exitCode: state.failedSetup === id && mode === 'apply' ? 2 : installed.has(key) ? 0 : 1,
+        timedOut: false,
+        truncated: false,
+      };
+    },
     async run(command, target) {
       assert.equal(command.kind, 'shell');
       if (command.kind !== 'shell') throw new Error('expected script');
@@ -89,6 +103,47 @@ function fixture() {
 }
 
 describe('setup installation lifecycle', () => {
+  it('should run pre-agent setup before managed tools and preserve agent-bound setup order', async () => {
+    const { context, calls, install, doctor } = fixture();
+    context.manifest.setup.steps.unshift({
+      id: 'host-tools',
+      phase: 'pre-agent',
+      check: { kind: 'shell', script: 'host-tools check', shell: 'sh', timeoutSeconds: 300 },
+      apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+    });
+    const result = await install.install(context);
+    assert.deepEqual(calls.slice(0, 3), [
+      'pre-agent:host-tools:check',
+      'pre-agent:host-tools:apply',
+      'pre-agent:host-tools:check',
+    ]);
+    assert.ok(calls.indexOf('pre-agent:host-tools:apply') < calls.indexOf('install:agent'));
+    assert.ok(calls.indexOf('install:github') < calls.indexOf('setup:clone:apply'));
+    assert.deepEqual(
+      result.outcomes.filter(({ component }) => component === 'setup').map(({ stepId }) => stepId),
+      ['host-tools', 'clone', 'configure'],
+    );
+    calls.length = 0;
+    await doctor.inspect(context);
+    assert.equal(calls[0], 'pre-agent:host-tools:check');
+  });
+
+  it('should stop before agent reconciliation when pre-agent setup fails', async () => {
+    const { context, calls, install, state } = fixture();
+    context.manifest.setup.steps.unshift({
+      id: 'host-tools',
+      phase: 'pre-agent',
+      apply: { kind: 'shell', script: 'host-tools apply', shell: 'sh', timeoutSeconds: 300 },
+    });
+    state.failedSetup = 'host-tools';
+    await assert.rejects(install.install(context), {
+      component: 'setup',
+      code: 'setup-apply-failed',
+      stepId: 'host-tools',
+    });
+    assert.deepEqual(calls, ['pre-agent:host-tools:apply']);
+  });
+
   it('should skip setup-only prerequisite gates while keeping configured components active', async () => {
     const { context, calls, state, install, doctor, ids } = fixture();
     for (const step of context.manifest.setup.steps) step.runtimes = ['codex'];

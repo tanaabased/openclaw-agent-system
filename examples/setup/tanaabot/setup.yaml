@@ -1,4 +1,12 @@
 steps:
+  - id: host-tools
+    phase: pre-agent
+    runtimes: [openclaw]
+    check: test -f host-tools-ready
+    apply: |
+      test -z "$AGENT_SYSTEM_GH"
+      test -z "$GH_TOKEN"
+      touch host-tools-ready
   - id: codex-only
     runtimes: [codex]
     check: |
@@ -10,10 +18,12 @@ steps:
   - id: checkout
     runtimes: [openclaw]
     check: |
+      test -f host-tools-ready
       test -d "$HOME/tanaab/setup-big-test-bucket/.git"
       test -f checked-runs
       gh api user --jq .login
     apply: |
+      test -f host-tools-ready
       test -z "$GH_TOKEN_TANAABOT"
       test -z "$GH_TOKEN"
       test -z "$GIT_SSH_COMMAND"

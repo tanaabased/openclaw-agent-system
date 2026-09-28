@@ -1,6 +1,6 @@
 # Setup Example
 
-Tests public setup installation, agent-bound GitHub identity and SSH cloning into
+Tests pre-agent host preparation, agent-bound GitHub identity and SSH cloning into
 a declared external checkout, check/apply/recheck, unchanged reruns, unchecked
 steps, Doctor, and skipping setup.
 It also covers runtime filtering, partial failures, retries, nonconvergence, timeouts, and granular
@@ -39,22 +39,26 @@ sed \
 cd "$TMPDIR/setup-tanaabot"
 openclaw agent-system validate --json | jq -e '.checks | any(.component == "setup" and .status == "valid")'
 test ! -e "$HOME/tanaab/setup-big-test-bucket"
+test ! -e host-tools-ready
 test ! -e unchecked-runs
 
 # should report the missing declared checkout as drift without running setup
 cd "$TMPDIR/setup-tanaabot"
 if output="$(openclaw agent-system doctor --json)"; then exit 1; fi
 printf '%s\n' "$output" | jq -e '.findings | any(.component == "git" and .code == "git-worktree-local-repository-missing" and .status == "drift")'
+printf '%s\n' "$output" | jq -e '.findings | any(.stepId == "host-tools" and .status == "drift")'
 test ! -e "$HOME/tanaab/setup-big-test-bucket"
+test ! -e host-tools-ready
 
-# should install prerequisites before cloning with the declared agent identity
+# should run pre-agent preparation before tool reconciliation and agent-bound cloning
 cd "$TMPDIR/setup-tanaabot"
 output="$(openclaw agent-system install --yes --json)"
-printf '%s\n' "$output" | jq -e '.outcomes | any(.component == "github" and .code == "add-github-ssh-keys") and any(.stepId == "checkout" and .status == "updated") and any(.stepId == "repeatable" and .status == "updated")'
-printf '%s\n' "$output" | jq -e '.outcomes | map(.component) | index("github") < index("setup") and index("setup") < index("tool-access")'
+printf '%s\n' "$output" | jq -e '.outcomes | any(.component == "github" and .code == "add-github-ssh-keys") and any(.stepId == "host-tools" and .status == "updated") and any(.stepId == "checkout" and .status == "updated") and any(.stepId == "repeatable" and .status == "updated")'
+printf '%s\n' "$output" | jq -e '.outcomes | [.[] | .stepId // .component] | index("host-tools") < index("github") and index("github") < index("checkout") and index("checkout") < index("tool-access")'
 printf '%s\n' "$output" | jq -e '.outcomes | any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "updated")'
 test ! -e forbidden-codex-check
 test ! -e forbidden-codex-apply
+test -f host-tools-ready
 test -f shared-ready
 test -d "$HOME/tanaab/setup-big-test-bucket/.git"
 grep -Fx 'tanaabot' github-login
@@ -68,13 +72,13 @@ test "$(wc -l < unchecked-runs | tr -d ' ')" = 1
 
 # should leave the checked step unchanged and repeat an unchecked apply without prompting
 cd "$TMPDIR/setup-tanaabot"
-openclaw as install --non-interactive --json | jq -e '.outcomes | any(.stepId == "checkout" and .status == "unchanged") and any(.stepId == "repeatable" and .status == "updated")'
+openclaw as install --non-interactive --json | jq -e '.outcomes | any(.stepId == "host-tools" and .status == "unchanged") and any(.stepId == "checkout" and .status == "unchanged") and any(.stepId == "repeatable" and .status == "updated")'
 test "$(wc -l < checked-runs | tr -d ' ')" = 1
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
 
 # should inspect setup without running unchecked applies or requiring consent
 cd "$TMPDIR/setup-tanaabot"
-openclaw as doctor --json | jq -e '.status == "healthy" and (.findings | any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual") and any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "healthy"))'
+openclaw as doctor --json | jq -e '.status == "healthy" and (.findings | any(.stepId == "host-tools" and .status == "healthy") and any(.stepId == "checkout" and .status == "healthy") and any(.stepId == "repeatable" and .status == "manual") and any(.stepId == "codex-only" and .code == "setup-not-applicable" and .status == "skipped") and any(.stepId == "shared" and .status == "healthy"))'
 test ! -e forbidden-codex-check
 test ! -e forbidden-codex-apply
 test "$(wc -l < unchecked-runs | tr -d ' ')" = 2
