@@ -513,14 +513,25 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   registerAgentSystemHooks(api, manifestService, toolRegistry, notificationRuntime.promptGuidance);
   api.registerCli(({ program }) => {
     registerAgentSystemCli(program, {
-      backupService: new WorkspaceBackupService(async (agentId) => {
-        const config = await readConfig();
-        return {
-          paths: [api.runtime.agent.resolveAgentDir(config, agentId)],
-          stateDir: api.runtime.state.resolveStateDir(),
-          workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(config, agentId),
-        };
-      }),
+      backupService: new WorkspaceBackupService(
+        async (agentId) => {
+          const config = await readConfig();
+          const agentDir = api.runtime.agent.resolveAgentDir(config, agentId);
+          return {
+            paths: [agentDir],
+            agentDir,
+            openclawVersion: api.version ?? 'unavailable',
+            stateDir: api.runtime.state.resolveStateDir(),
+            workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(config, agentId),
+          };
+        },
+        (args, cwd) =>
+          runPluginCommandWithTimeout({
+            argv: [...openClawCommand, ...args],
+            cwd,
+            timeoutMs: 600_000,
+          }),
+      ),
       commandAuthority,
       credentialInput: opCredentialInput,
       credentialManager,

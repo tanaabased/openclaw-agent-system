@@ -52,8 +52,8 @@ export default async function backupCreate(
             { label: 'entries', style: 'field', value: String(plan.files.length) },
             {
               label: 'coverage',
-              style: 'warning',
-              value: 'workspace-only; OpenClaw state is not captured',
+              style: coverage.openclawState === 'off' ? 'warning' : 'field',
+              value: `workspace and agent state: ${coverage.openclawState}`,
             },
             ...plan.files.map((path) => ({
               label: 'selected',
@@ -83,8 +83,8 @@ export default async function backupCreate(
           { label: 'entries', style: 'field', value: String(result.manifest.inventory.length) },
           {
             label: 'coverage',
-            style: 'warning',
-            value: 'workspace-only; OpenClaw state is not captured',
+            style: result.manifest.coverage.openclawState === 'captured' ? 'status' : 'warning',
+            value: `workspace and agent state: ${result.manifest.coverage.openclawState}`,
           },
         ],
         options.styles,

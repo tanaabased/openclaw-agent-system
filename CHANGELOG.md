@@ -6,6 +6,7 @@
 
 ### Improvements
 
+- Added the selected agent's compacted, verified OpenClaw database snapshot to per-agent backups, with explicit absent and omitted coverage. [#174](https://github.com/tanaabased/openclaw-agent-system/issues/174)
 - Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
 - Added issue-owned task PR publication for follow-up work, sharing Work delivery recipients and comment handoff without replacing automatic Work delivery. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180)
 

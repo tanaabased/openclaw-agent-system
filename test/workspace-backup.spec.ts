@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { pack } from 'tar-stream';
 import {
   chmod,
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -21,6 +23,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import WorkspaceBackupService from '../agent/backup-service.ts';
+import type { LegacyWorkspaceBackupManifest } from '../agent/backup-types.ts';
 import { planWorkspaceBackup } from '../agent/backup-selection.ts';
 import { verifyWorkspaceArchive, writeWorkspaceArchive } from '../agent/backup-archive.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -30,7 +33,11 @@ import backupVerify from '../cli/backup-verify.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 
 const executeFile = promisify(execFile);
-const manifest: AgentManifest = { schemaVersion: 1, agent: { id: 'tanaabot' } };
+const manifest: AgentManifest = {
+  schemaVersion: 1,
+  agent: { id: 'tanaabot' },
+  backup: { openclawState: 'off' },
+};
 
 describe('workspace backup', () => {
   let root: string;
@@ -65,6 +72,166 @@ describe('workspace backup', () => {
         .status,
       'invalid',
     );
+  });
+
+  it('should distinguish absent, required, and explicitly omitted agent databases', async () => {
+    const agentDir = join(root, 'custom-agent');
+    const selected = new WorkspaceBackupService(async () => ({ paths: [agentDir], agentDir }));
+    const auto = await selected.create(
+      await selected.plan({
+        manifest: { ...manifest, backup: { openclawState: 'auto' } },
+        workspaceDir: workspace,
+      }),
+    );
+    assert.equal(auto.manifest.coverage.openclawState, 'absent');
+    assert.equal(auto.manifest.snapshot, undefined);
+    await assert.rejects(
+      selected.create(
+        await selected.plan({
+          manifest: { ...manifest, backup: { openclawState: 'required' } },
+          workspaceDir: workspace,
+        }),
+      ),
+      { code: 'backup-snapshot-absent' },
+    );
+    const off = await selected.create(await selected.plan({ manifest, workspaceDir: workspace }));
+    assert.equal(off.manifest.coverage.openclawState, 'off');
+    assert.equal(off.manifest.snapshot, undefined);
+  });
+
+  it('should keep memory sources independent of search provider selection', async () => {
+    for (const provider of ['openai', 'local', 'none'] as const) {
+      const selected = await service.plan({
+        manifest: { ...manifest, memory: { search: { provider } } },
+        workspaceDir: workspace,
+      });
+      assert.ok(selected.files.includes('MEMORY.md'));
+      assert.ok(selected.files.includes('memory/daily.md'));
+      assert.equal(selected.settings.openclawState, 'off');
+    }
+  });
+
+  it('should package and verify only the selected custom agent snapshot', async () => {
+    const agentDir = join(workspace, 'custom-agent');
+    await mkdir(agentDir);
+    const database = join(agentDir, 'openclaw-agent.sqlite');
+    await writeFile(database, 'durable-agent-record');
+    await writeFile(`${database}-wal`, 'live-sidecar');
+    const calls: string[] = [];
+    const selected = new WorkspaceBackupService(
+      async () => ({ paths: [agentDir], agentDir, openclawVersion: '2026.9.6' }),
+      async (args) => {
+        calls.push(args[2]!);
+        if (args[2] === 'create') {
+          const repository = args[args.indexOf('--repository') + 1]!;
+          const snapshot = join(repository, '2026-09-28-00-00-00-000Z-fixture');
+          await mkdir(snapshot, { recursive: true, mode: 0o700 });
+          await copyFile(database, join(snapshot, 'database.sqlite'));
+          const bytes = await readFile(join(snapshot, 'database.sqlite'));
+          const upstream = {
+            schemaVersion: 1,
+            snapshotId: '2026-09-28-00-00-00-000Z-fixture',
+            createdAt: '2026-09-28T00:00:00.000Z',
+            database: {
+              role: 'agent',
+              agentId: 'tanaabot',
+              basename: 'openclaw-agent.sqlite',
+              userVersion: 1,
+            },
+            artifact: {
+              path: 'database.sqlite',
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+              sizeBytes: bytes.length,
+            },
+          };
+          await writeFile(join(snapshot, 'manifest.json'), JSON.stringify(upstream));
+          return {
+            code: 0,
+            stdout: JSON.stringify({ ok: true, snapshotPath: snapshot, manifest: upstream }),
+            stderr: '',
+          };
+        }
+        const snapshot = args[3]!;
+        const upstream = JSON.parse(await readFile(join(snapshot, 'manifest.json'), 'utf8'));
+        const bytes = await readFile(join(snapshot, 'database.sqlite'));
+        if (createHash('sha256').update(bytes).digest('hex') !== upstream.artifact.sha256)
+          return { code: 1, stdout: '', stderr: 'snapshot checksum mismatch' };
+        return {
+          code: 0,
+          stdout: JSON.stringify({ ok: true, snapshotPath: snapshot, manifest: upstream }),
+          stderr: '',
+        };
+      },
+    );
+    const result = await selected.create(
+      await selected.plan({
+        manifest: { ...manifest, backup: { openclawState: 'required' } },
+        workspaceDir: workspace,
+        overrides: { include: ['**'] },
+      }),
+    );
+    assert.equal(result.manifest.coverage.openclawState, 'captured');
+    assert.equal(result.manifest.snapshot?.manifest.database.agentId, 'tanaabot');
+    assert.equal(result.manifest.snapshot?.openclawVersion, '2026.9.6');
+    assert.ok(!result.manifest.inventory.some(({ path }) => path.startsWith('custom-agent')));
+    assert.ok(calls.includes('create'));
+    assert.ok(calls.includes('verify'));
+    const restored = join(root, 'snapshot-restored');
+    await mkdir(restored);
+    await executeFile('/usr/bin/tar', ['-xzf', result.archive, '-C', restored]);
+    assert.equal(
+      await readFile(join(restored, 'openclaw-state', 'database.sqlite'), 'utf8'),
+      'durable-agent-record',
+    );
+    assert.deepEqual((await readdir(join(restored, 'openclaw-state'))).sort(), [
+      'database.sqlite',
+      'manifest.json',
+    ]);
+    assert.deepEqual(await selected.verify(result.archive), result.manifest);
+  });
+
+  it('should fail an existing database when upstream capture fails', async () => {
+    const agentDir = join(root, 'agent');
+    await mkdir(agentDir);
+    await writeFile(join(agentDir, 'openclaw-agent.sqlite'), 'unreadable fixture');
+    const selected = new WorkspaceBackupService(
+      async () => ({ paths: [agentDir], agentDir }),
+      async () => ({ code: 1, stdout: '', stderr: 'database integrity failed' }),
+    );
+    await assert.rejects(
+      selected.create(
+        await selected.plan({
+          manifest: { ...manifest, backup: { openclawState: 'auto' } },
+          workspaceDir: workspace,
+        }),
+      ),
+      { code: 'backup-snapshot-failed' },
+    );
+    assert.deepEqual(await readdir(join(workspace, '.agent-system', 'backups')), []);
+  });
+
+  it('should continue verifying version one workspace archives', async () => {
+    const current = await service.create(await service.plan({ manifest, workspaceDir: workspace }));
+    const { output, gitIgnore, include, exclude } = current.manifest.settings;
+    const legacy: LegacyWorkspaceBackupManifest = {
+      format: 'agent-system-backup',
+      version: 1,
+      agentId: current.manifest.agentId,
+      capturedAt: current.manifest.capturedAt,
+      settings: { output, gitIgnore, include, exclude },
+      coverage: {
+        stage: 'workspace-only',
+        openclawState: 'unsupported',
+        atomic: false,
+        omittedPaths: [],
+        limitations: [],
+      },
+      inventory: current.manifest.inventory,
+      diagnostics: current.manifest.diagnostics,
+    };
+    const archive = join(root, 'legacy.tar.gz');
+    await writeWorkspaceArchive(archive, workspace, legacy);
+    assert.deepEqual(await service.verify(archive), legacy);
   });
 
   it('should recover ignored descendants and let excludes win', async function () {
@@ -155,7 +322,7 @@ describe('workspace backup', () => {
     });
     assert.ok(!result.files.includes('custom-memory.sqlite'));
     assert.ok(!result.files.includes('custom-memory.sqlite-wal'));
-    assert.equal(result.coverage.openclawState, 'unsupported');
+    assert.equal(result.coverage.openclawState, 'off');
     await assert.rejects(
       service.plan({
         manifest,
