@@ -223,7 +223,7 @@ can read these environment values. The test job does not need Google passwords,
 
 The normal PR example matrix runs the
 [Google Tasks scenario](../../examples/google/README.md) on macOS and Linux. It
-imports into a fresh agent-specific `GOG_HOME`, verifies identity, confirms
+imports into a fresh runner-temp `GOG_HOME`, verifies identity, confirms
 unchanged installation, and reads one task list through the managed tool.
 Assertions discard task data, and the ephemeral runner removes its store.
 The scenario runs after the test environment is populated; this guide does not

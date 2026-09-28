@@ -35,8 +35,9 @@ describe('google example workflow', () => {
     assert.equal(run?.env?.OP_SERVICE_ACCOUNT_TOKEN, '${{ secrets.TANAAB_OP_TESTVAULT }}');
     assert.equal(
       run?.env?.DBUS_SESSION_BUS_ADDRESS,
-      "${{ runner.os == 'Linux' && (matrix.example == 'credentials' || matrix.example == 'google') && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}",
+      'unix:path=${{ runner.temp }}/secret-service-bus',
     );
+    assert.equal(run?.env?.GOG_HOME, '${{ runner.temp }}/google-gog');
     assert.equal(
       run?.run,
       'bun run leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0',

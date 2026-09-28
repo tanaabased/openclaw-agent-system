@@ -5,9 +5,9 @@ Configure an agent workspace through `agent.yaml`. Start with the
 for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or inspect declarations.
 
 - [Discovery](#discovery)
+- [Component configuration](#component-configuration)
 - [Configuration](#configuration)
 - [Setup](#setup)
-- [Component configuration](#component-configuration)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
 
@@ -40,8 +40,21 @@ environment:
     NODE_ENV: development
 ```
 
-See [Configuration](#configuration) for the complete core manifest and
-component-provided sections.
+See [Configuration](#configuration) for core fields. Component-specific fields
+are listed below and documented by their owning guides.
+
+## Component Configuration
+
+| Type    | ID                          | Manifest key           | Configuration                                                                    |
+| ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
+| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
+| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
+| tool    | `agent_system_google`       | `google`               | [Configuration reference](./tools/google/README.md#configuration)                |
+| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
+
+A manifest section opts the workspace into its capability. Tool IDs use
+underscores; the channel ID uses hyphens.
 
 ## Configuration
 
@@ -445,21 +458,6 @@ back to the operator's tool identity. This does not switch OS accounts: the
 process still runs as the installing OS user. The example is OpenClaw-only
 because it relies on that integration's managed tools.
 
-### Component Configuration
-
-Components own their manifest schemas and document them beside their
-implementation:
-
-| Type    | ID                          | Manifest key           | Configuration                                                                    |
-| ------- | --------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
-| tool    | `agent_system_git`          | `git`                  | [Configuration reference](./tools/git/README.md#configuration-reference)         |
-| tool    | `agent_system_git_worktree` | `git.worktrees`        | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
-| tool    | `agent_system_github`       | `github`               | [Configuration reference](./tools/github/README.md#configuration-reference)      |
-| channel | `agent-system-github`       | `github.notifications` | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
-
-A manifest section opts the workspace into its capability. Tool IDs use
-underscores; the channel ID uses hyphens.
-
 ## Environment Resolution
 
 Source precedence is fixed:
@@ -562,12 +560,3 @@ the workspace configuration. Agent System disables login-shell
 execution and sets the deterministic PATH without otherwise changing Codex's
 inherited-environment policy. Remote, sandboxed, ACP, MCP, and third-party
 surfaces retain their own path and mount contracts.
-
-## `google`
-
-Optional agent-scoped Google account and OAuth binding declarations are documented
-in the [Google tool guide](./tools/google/README.md#configuration). The account accepts
-both literal and environment-reference forms and defaults to `agent.email`. The
-credential representation defaults to JSON, with Base64 available explicitly.
-Standalone Codex does not reconcile
-this section.

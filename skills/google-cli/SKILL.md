@@ -15,6 +15,13 @@ metadata:
     requires:
       bins:
         - gog
+    install:
+      - id: brew
+        kind: brew
+        formula: openclaw/tap/gogcli
+        bins:
+          - gog
+        label: Install GoG (brew)
 ---
 
 # Agent System Google CLI

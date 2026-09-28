@@ -2,9 +2,11 @@
 
 ### Improvements
 
-- Added Google data commands with verified per-agent OAuth accounts, isolated encrypted keyrings, and managed installation and diagnostics. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
-- Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
+- Added [`agent-system-google-cli`](./skills/google-cli/SKILL.md) guidance for an agent's managed Google operations. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
+- Added [`agent_system_google`](./tools/google/README.md#agent_system_google) with verified per-agent OAuth and an encrypted keyring. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
+- Added contextual [`gog`](./tools/google/README.md#gog-and-agent_system_gog) and strict `AGENT_SYSTEM_GOG` launchers. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Added issue-owned task PR publication for follow-up work, sharing Work delivery recipients and comment handoff without replacing automatic Work delivery. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180)
+- Assigned issue-delivery pull requests to the admitted assigning actor by default, with optional pinned assignees and review requests that reconcile across retries. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
 
 ## v0.7.0 - [September 26, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.7.0)
 

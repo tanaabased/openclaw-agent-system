@@ -3,9 +3,9 @@
 This PR matrix example uses the existing test 1Password environment and an ordinary
 Google user grant for `tasks.readonly` plus identity/email scopes. It runs the
 installed Agent System plugin without a Gateway or model. The workflow supplies
-the packed plugin and bootstrap 1Password access; the manifest resolves the
-account and credentials from that environment and derives an agent-specific GoG
-home. See [Google onboarding](../../tools/google/README.md#test-authorization).
+the packed plugin, bootstrap 1Password access, and a runner-temp `GOG_HOME`;
+the manifest resolves the account and credentials from that environment. See
+[Google onboarding](../../tools/google/README.md#test-authorization).
 
 ## Setup
 
