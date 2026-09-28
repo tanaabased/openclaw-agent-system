@@ -102,7 +102,7 @@ mkdir -p "$root/timeout-workspace"
 printf '%s\n' \
   'schema-version: 1' \
   'agent: { id: codex-timeout }' \
-  'setup:' \
+  'setup-agent:' \
   '  check: { command: sh, args: ["-c", "sleep 3 & exit 0"], timeout-seconds: 1 }' \
   '  apply: "true"' \
   > "$root/timeout-workspace/agent.yaml"

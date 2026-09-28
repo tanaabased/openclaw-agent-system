@@ -107,7 +107,7 @@ export interface AgentSystemLifecycleContribution {
   }>;
 }
 
-/** Preserve registration order unless setup requires its fixed prerequisite boundary. */
+/** Preserve registration order around the pre-agent and agent-bound setup boundaries. */
 export default class AgentSystemLifecycleRegistry {
   readonly #contributions: readonly AgentSystemLifecycleContribution[];
 
@@ -157,12 +157,12 @@ export default class AgentSystemLifecycleRegistry {
         });
       }
     }
-    if (context.manifest.setup)
+    if (context.manifest.setup || context.manifest.setupHost)
       checks.push({
         code: 'setup-declaration-valid',
         component: 'setup',
         status: 'valid',
-        message: `Setup declaration with ${context.manifest.setup.steps.length} ordered steps`,
+        message: `Setup declaration with ${(context.manifest.setupHost?.steps.length ?? 0) + (context.manifest.setup?.steps.length ?? 0)} ordered steps`,
       });
     return { checks, diagnostics };
   }
@@ -234,7 +234,7 @@ export default class AgentSystemLifecycleRegistry {
     skipSetup = false,
   ): AgentSystemLifecycleContribution[] {
     const configured = this.#configured(context.manifest);
-    if (!context.manifest.setup || skipSetup) return configured;
+    if ((!context.manifest.setup && !context.manifest.setupHost) || skipSetup) return configured;
     const setupLifecycle = this.setupLifecycle;
     if (!setupLifecycle) {
       throw new AgentSystemLifecycleError(
@@ -243,45 +243,61 @@ export default class AgentSystemLifecycleRegistry {
         'Setup execution is unavailable.',
       );
     }
-    // These owners establish the identity, launchers, and credentials needed by setup.
-    const prerequisiteIds = context.manifest.setup.steps.some((step) =>
+    const hostSteps = (context.manifest.setupHost?.steps.length ?? 0) > 0;
+    const agentSteps = (context.manifest.setup?.steps.length ?? 0) > 0;
+    // These owners establish the identity, launchers, and credentials needed by agent-bound setup.
+    const prerequisiteIds = context.manifest.setup?.steps.some((step) =>
       setupStepApplies(step, context.runtime),
     )
-      ? ['agent', 'path', 'git', 'github']
+      ? ['agent', 'path', 'git', 'github', 'google']
       : [];
     const prerequisites = prerequisiteIds.flatMap((id) =>
       configured.filter((entry) => entry.id === id),
     );
     const dependent = configured.filter((entry) => !prerequisiteIds.includes(entry.id));
     return [
+      ...(hostSteps
+        ? [
+            {
+              id: 'setup',
+              isConfigured: () => true,
+              inspect: () => setupLifecycle.inspect(context, 'host'),
+              reconcile: () => setupLifecycle.reconcile(context, 'host'),
+            },
+          ]
+        : []),
       ...prerequisites,
-      {
-        id: 'setup',
-        isConfigured: () => true,
-        inspect: () => setupLifecycle.inspect(context),
-        reconcile: async (input) => {
-          for (const prerequisite of prerequisites) {
-            let findings;
-            try {
-              findings = await prerequisite.inspect?.(input);
-            } catch {
-              throw new AgentSystemLifecycleError(
-                prerequisite.id,
-                'setup-prerequisite-blocked',
-                `Setup prerequisite ${prerequisite.id} could not be inspected.`,
-              );
-            }
-            if (findings?.some(({ status }) => status === 'blocked')) {
-              throw new AgentSystemLifecycleError(
-                prerequisite.id,
-                'setup-prerequisite-blocked',
-                `Setup prerequisite ${prerequisite.id} is blocked.`,
-              );
-            }
-          }
-          return setupLifecycle.reconcile(context);
-        },
-      },
+      ...(agentSteps
+        ? [
+            {
+              id: 'setup',
+              isConfigured: () => true,
+              inspect: () => setupLifecycle.inspect(context, 'agent'),
+              reconcile: async (input: AgentSystemLifecycleExecutionContext) => {
+                for (const prerequisite of prerequisites) {
+                  let findings;
+                  try {
+                    findings = await prerequisite.inspect?.(input);
+                  } catch {
+                    throw new AgentSystemLifecycleError(
+                      prerequisite.id,
+                      'setup-prerequisite-blocked',
+                      `Setup prerequisite ${prerequisite.id} could not be inspected.`,
+                    );
+                  }
+                  if (findings?.some(({ status }) => status === 'blocked')) {
+                    throw new AgentSystemLifecycleError(
+                      prerequisite.id,
+                      'setup-prerequisite-blocked',
+                      `Setup prerequisite ${prerequisite.id} is blocked.`,
+                    );
+                  }
+                }
+                return setupLifecycle.reconcile(context, 'agent');
+              },
+            },
+          ]
+        : []),
       ...dependent,
     ];
   }

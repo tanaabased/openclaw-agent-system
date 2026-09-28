@@ -1,0 +1,17 @@
+schema-version: 1
+agent:
+  id: googlebot
+  name: Googlebot
+  email:
+    from-environment: GOOGLE_ACCOUNT
+environment:
+  set:
+    GOOGLE_ACCOUNT: googlebot@example.invalid
+    GOOGLE_CLIENT: eyJpbnN0YWxsZWQiOnsiY2xpZW50X2lkIjoiZml4dHVyZS1jbGllbnQiLCJjbGllbnRfc2VjcmV0IjoiZml4dHVyZS1zZWNyZXQifX0=
+    GOOGLE_TOKEN: eyJlbWFpbCI6Imdvb2dsZWJvdEBleGFtcGxlLmludmFsaWQiLCJyZWZyZXNoX3Rva2VuIjoiZml4dHVyZS1yZWZyZXNoIiwic2NvcGVzIjpbImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvdXNlcmluZm8uZW1haWwiXX0=
+    GOOGLE_PASSWORD: fixture-password
+google:
+  credential-encoding: base64
+  oauth-client: GOOGLE_CLIENT
+  oauth-token: GOOGLE_TOKEN
+  keyring-password: GOOGLE_PASSWORD

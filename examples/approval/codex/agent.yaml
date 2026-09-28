@@ -4,7 +4,7 @@ agent:
   id: approval-codex
   name: Approval Codex
 
-setup:
+setup-agent:
   check: |
     printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
     test -f "$TMPDIR/agent-system-approval-apply"

@@ -60,6 +60,7 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
                 schemaVersion: 1,
                 agent: { id: 'emori' },
                 ...(options.setup ? { setup: options.setup } : {}),
+                ...(options.setupHost ? { setupHost: options.setupHost } : {}),
               },
             };
           },
@@ -94,6 +95,18 @@ function fixture(overrides: Partial<SetupConsentOptions> = {}) {
 }
 
 describe('cli/setup-consent', () => {
+  it('should preview host setup before agent setup', async () => {
+    const host = normalizeAgentSetup({ check: 'host check', apply: 'host apply' });
+    assert.equal(host.status, 'valid');
+    if (host.status !== 'valid') return;
+    const test = fixture({ setupHost: host.setup });
+    assert.equal(await confirmSetupInstall(test.options), true);
+    const preview = test.stderr.join('');
+    assert.ok(preview.indexOf('setup-host: default') < preview.indexOf('setup-agent: default'));
+    assert.match(preview, /host apply/u);
+    assert.match(preview, /private-script/u);
+  });
+
   it('should preview only applicable steps and require no prompt when none apply', async () => {
     for (const runtime of ['openclaw', 'codex'] as const) {
       const filtered = normalizeAgentSetup({

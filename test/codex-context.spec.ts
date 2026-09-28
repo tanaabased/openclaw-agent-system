@@ -162,6 +162,7 @@ describe('agent/codex-context', () => {
     const cases: Array<[Partial<AgentManifest>, string[]]> = [
       [{}, ['agent-system-doctor']],
       [{ setup: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
+      [{ setupHost: { steps: [] } }, ['agent-system-doctor', 'agent-system-install']],
       [
         { models: { default: { model: 'openai/gpt-6-astra', effort: 'high' } } },
         ['agent-system-doctor', 'agent-system-model-routing'],

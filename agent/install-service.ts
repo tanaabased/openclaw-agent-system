@@ -68,7 +68,7 @@ export default class AgentInstallService {
       agentId: input.manifest.agent.id,
       outcomes: lifecycle.outcomes,
       warnings: [
-        ...(input.skipSetup && input.manifest.setup
+        ...(input.skipSetup && (input.manifest.setup || input.manifest.setupHost)
           ? [
               {
                 code: 'setup-skipped',

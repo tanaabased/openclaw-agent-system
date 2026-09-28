@@ -163,6 +163,7 @@ export interface AgentSystemCliToolDefinition<
       configuration: TResolvedConfiguration,
       scope: {
         agentId: string;
+        admittedWorkingDirectories?: readonly string[];
         resolveEnvironment(name: string): string | undefined;
         signal?: AbortSignal;
         source: AgentSystemToolScope['source'];
@@ -210,6 +211,7 @@ export interface AgentSystemCliToolDefinition<
       configuration: TResolvedConfiguration,
       scope: {
         commandWorkingDirectory?: string;
+        admittedWorkingDirectories?: readonly string[];
         source: AgentSystemToolScope['source'];
         workspaceDir: string;
       },

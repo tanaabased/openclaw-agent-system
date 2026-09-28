@@ -7,7 +7,7 @@ models:
   low: { model: openai/gpt-5.6-terra, effort: medium }
   medium: { model: openai/gpt-5.6-sol, effort: high }
   high: { model: openai/gpt-6-astra, effort: xhigh }
-setup:
+setup-agent:
   steps:
     - id: codex-tools-debug
       runtimes: [codex]

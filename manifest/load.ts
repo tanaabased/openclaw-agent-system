@@ -26,6 +26,7 @@ export type AgentManifestLoadResult =
       status: 'invalid';
       scope: AgentManifestScope;
       path?: string;
+      setupHostFilePath?: string;
       setupFilePath?: string;
       diagnostics: ManifestDiagnostic[];
     }
@@ -34,6 +35,8 @@ export type AgentManifestLoadResult =
       scope: AgentManifestScope;
       path: string;
       digest: string;
+      setupHostFilePath?: string;
+      setupHostFileFingerprint?: string;
       setupFilePath?: string;
       setupFileFingerprint?: string;
       manifest: AgentManifest;
@@ -62,20 +65,27 @@ export function invalidManifestResult(
   diagnostics: ManifestDiagnostic[],
   path?: string,
   setupFilePath?: string,
+  setupHostFilePath?: string,
 ): Extract<AgentManifestLoadResult, { status: 'invalid' }> {
   return {
     status: 'invalid',
     scope,
     ...(path === undefined ? {} : { path }),
     ...(setupFilePath === undefined ? {} : { setupFilePath }),
+    ...(setupHostFilePath === undefined ? {} : { setupHostFilePath }),
     diagnostics,
   };
 }
 
-function setupFileDiagnostic(code: string, reference: string, detail: string): ManifestDiagnostic {
+function setupFileDiagnostic(
+  code: string,
+  reference: string,
+  detail: string,
+  fieldPath: string,
+): ManifestDiagnostic {
   return {
     code,
-    fieldPath: '/setup/file',
+    fieldPath: `${fieldPath}/file`,
     message: `Setup file ${JSON.stringify(reference)} ${detail}`,
     severity: 'error',
   };
@@ -90,6 +100,7 @@ async function loadSetupFile(
   reference: string,
   manifestPath: string,
   workspaceDir: string,
+  fieldPath = '/setup',
 ): Promise<
   | {
       status: 'valid';
@@ -113,6 +124,7 @@ async function loadSetupFile(
           'manifest-setup-file-path',
           reference,
           'must be a local relative path.',
+          fieldPath,
         ),
       ],
     };
@@ -126,6 +138,7 @@ async function loadSetupFile(
           'manifest-setup-file-escape',
           reference,
           'escapes the agent workspace.',
+          fieldPath,
         ),
       ],
     };
@@ -146,6 +159,7 @@ async function loadSetupFile(
             'manifest-setup-file-escape',
             reference,
             'escapes the agent workspace through a symlink.',
+            fieldPath,
           ),
         ],
       };
@@ -160,6 +174,7 @@ async function loadSetupFile(
             'manifest-setup-file-not-regular',
             reference,
             'must name a regular file.',
+            fieldPath,
           ),
         ],
       };
@@ -173,6 +188,7 @@ async function loadSetupFile(
           'manifest-setup-file-unreadable',
           reference,
           `could not be inspected (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
+          fieldPath,
         ),
       ],
     };
@@ -190,6 +206,7 @@ async function loadSetupFile(
           'manifest-setup-file-unreadable',
           reference,
           `could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
+          fieldPath,
         ),
       ],
     };
@@ -203,6 +220,7 @@ async function loadSetupFile(
           'manifest-setup-file-too-large',
           reference,
           `exceeds the ${maximumManifestBytes}-byte size limit.`,
+          fieldPath,
         ),
       ],
     };
@@ -215,7 +233,12 @@ async function loadSetupFile(
       status: 'invalid',
       path,
       diagnostics: [
-        setupFileDiagnostic('manifest-setup-file-encoding', reference, 'must be valid UTF-8.'),
+        setupFileDiagnostic(
+          'manifest-setup-file-encoding',
+          reference,
+          'must be valid UTF-8.',
+          fieldPath,
+        ),
       ],
     };
   }
@@ -226,12 +249,12 @@ async function loadSetupFile(
       path,
       diagnostics: yaml.diagnostics.map((diagnostic) => ({
         ...diagnostic,
-        fieldPath: '/setup',
+        fieldPath,
         message: `Setup file ${JSON.stringify(reference)} contains invalid YAML (${diagnostic.code}).`,
       })),
     };
   }
-  const normalized = normalizeAgentSetup(yaml.value);
+  const normalized = normalizeAgentSetup(yaml.value, fieldPath);
   if (normalized.status === 'invalid') {
     return {
       status: 'invalid',
@@ -326,8 +349,30 @@ export async function loadDiscoveredManifest(
     );
   }
 
+  const includedHost = parsed.setupHostFile
+    ? await loadSetupFile(
+        parsed.setupHostFile,
+        selected.path,
+        discovery.workspaceDir,
+        '/setup-host',
+      )
+    : undefined;
+  if (includedHost?.status === 'invalid') {
+    return invalidManifestResult(
+      scope,
+      [...discovery.diagnostics, ...parsed.diagnostics, ...includedHost.diagnostics],
+      selected.path,
+      undefined,
+      includedHost.path,
+    );
+  }
   const included = parsed.setupFile
-    ? await loadSetupFile(parsed.setupFile, selected.path, discovery.workspaceDir)
+    ? await loadSetupFile(
+        parsed.setupFile,
+        selected.path,
+        discovery.workspaceDir,
+        parsed.setupFileFieldPath,
+      )
     : undefined;
   if (included?.status === 'invalid') {
     return invalidManifestResult(
@@ -335,10 +380,16 @@ export async function loadDiscoveredManifest(
       [...discovery.diagnostics, ...parsed.diagnostics, ...included.diagnostics],
       selected.path,
       included.path,
+      includedHost?.path,
     );
   }
-  const manifest = included ? { ...parsed.manifest, setup: included.setup } : parsed.manifest;
+  const manifest = {
+    ...parsed.manifest,
+    ...(includedHost ? { setupHost: includedHost.setup } : {}),
+    ...(included ? { setup: included.setup } : {}),
+  };
   const digestHash = createHash('sha256').update(contents);
+  if (includedHost) digestHash.update('\0').update(includedHost.contents);
   if (included) digestHash.update('\0').update(included.contents);
   const digest = digestHash.digest('hex').slice(0, 12);
 
@@ -353,6 +404,7 @@ export async function loadDiscoveredManifest(
       [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
       selected.path,
       included?.path,
+      includedHost?.path,
     );
   }
 
@@ -361,6 +413,12 @@ export async function loadDiscoveredManifest(
     scope,
     path: selected.path,
     digest,
+    ...(includedHost === undefined
+      ? {}
+      : {
+          setupHostFilePath: includedHost.path,
+          setupHostFileFingerprint: includedHost.fingerprint,
+        }),
     ...(included === undefined
       ? {}
       : { setupFilePath: included.path, setupFileFingerprint: included.fingerprint }),

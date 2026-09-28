@@ -104,7 +104,10 @@ export default class AgentLifecycleApproval {
     previous?.dispose();
     const steps = skipSetup
       ? []
-      : (loaded.manifest.setup?.steps ?? []).filter((step) => setupStepApplies(step, 'openclaw'));
+      : [
+          ...(loaded.manifest.setupHost?.steps ?? []),
+          ...(loaded.manifest.setup?.steps ?? []),
+        ].filter((step) => setupStepApplies(step, 'openclaw'));
     const description = `${operation} for agent ${JSON.stringify(loaded.manifest.agent.id)} in ${JSON.stringify(workspaceDir)}. ${name === 'agent_system_doctor' ? 'Inspect configured state and run declared checks; no repairs.' : skipSetup ? 'Reconcile configured state; skip setup.' : 'Reconcile configured state and run declared setup checks and applies.'}${rebuildCodexPath ? ' Replace the saved Codex PATH baseline with the invoking environment.' : ''} Manifest ${loaded.digest.slice(0, 12)}; ${steps.length} applicable setup steps.`;
     // Do not let the host's display bound silently omit the target or selected operation.
     if (description.length > 512) denied();

@@ -27,5 +27,15 @@ github:
     path: setup-key.pub
     title: agent-system-setup-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-__RUNNER_OS__
 
-setup:
+setup-host:
+  steps:
+    - id: host-tools
+      runtimes: [openclaw]
+      check: test -f host-tools-ready
+      apply: |
+        test -z "$AGENT_SYSTEM_GH"
+        test -z "$GH_TOKEN"
+        touch host-tools-ready
+
+setup-agent:
   file: ./setup.yaml

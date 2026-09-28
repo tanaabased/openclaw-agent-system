@@ -85,6 +85,9 @@ export default async function executeAgentSystemCliTool<
 ): Promise<AgentSystemCliToolExecutionPayload<TOutput>> {
   const { agentId, manifest, resolvedConfiguration, values, workspaceDir } = options.context;
   const workingDirectoryScope = {
+    ...(options.scope.source === 'agent-command' && options.scope.admittedWorkingDirectories
+      ? { admittedWorkingDirectories: options.scope.admittedWorkingDirectories }
+      : {}),
     ...(options.scope.source !== 'tool' && options.scope.workspaceDir
       ? { commandWorkingDirectory: options.scope.workspaceDir }
       : {}),
@@ -188,6 +191,7 @@ export default async function executeAgentSystemCliTool<
       resolvedConfiguration,
       {
         agentId,
+        admittedWorkingDirectories: options.scope.admittedWorkingDirectories,
         resolveEnvironment(name) {
           return values[name];
         },

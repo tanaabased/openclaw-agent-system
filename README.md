@@ -49,6 +49,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
 - [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
+- [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
 
 ### Channels
@@ -77,6 +78,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
+- [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
 - [GitHub Update](./skills/github-update/SKILL.md) — Publish missing progress from a private notification session.
 - [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
@@ -163,11 +165,13 @@ git:
     private-keys:
       from-environment: SSH_KEY
 
-setup:
+setup-host:
+  runtimes: [openclaw]
+  apply: brew install jq ripgrep
+
+setup-agent:
   runtimes: [openclaw]
   apply: |
-    # install workspace dependencies.
-    brew install jq ripgrep
     # install and configure the diffs plugin for browser previews.
     openclaw plugins inspect diffs >/dev/null 2>&1 || openclaw plugins install clawhub:@openclaw/diffs --accept-capabilities
     openclaw plugins enable diffs --accept-capabilities

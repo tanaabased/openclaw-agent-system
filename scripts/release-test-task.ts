@@ -198,6 +198,8 @@ try {
     'bin/agent-system-worktree',
     'bin/git',
     'bin/gh',
+    'bin/gog',
+    'bin/agent-system-gog',
     'channels/github/ADVANCED.md',
     'channels/github/DESIGN.md',
     'channels/github/PRESENTATION.md',
@@ -205,6 +207,11 @@ try {
     'skills/git-cli/agents/openai.yaml',
     'skills/github-cli/SKILL.md',
     'skills/github-cli/agents/openai.yaml',
+    'skills/google-cli/SKILL.md',
+    'skills/google-cli/agents/openai.yaml',
+    'skills/google-cli/assets/icon-small.svg',
+    'skills/google-cli/assets/icon-large.svg',
+    'tools/google/README.md',
     'skills/github-update/SKILL.md',
     'skills/github-update/agents/openai.yaml',
     'tools/install/README.md',
@@ -582,7 +589,12 @@ try {
   });
 
   await check('ship executable strict managed tool launchers', async () => {
-    for (const name of ['agent-system-gh', 'agent-system-git', 'agent-system-worktree']) {
+    for (const name of [
+      'agent-system-gh',
+      'agent-system-gog',
+      'agent-system-git',
+      'agent-system-worktree',
+    ]) {
       const commandPath = join(packageRoot, 'bin', name);
       await access(commandPath);
       const result = await run(commandPath, ['--agent-system']);

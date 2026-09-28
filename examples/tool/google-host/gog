@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+
+const fs = require('node:fs');
+const path = require('node:path');
+const argv = process.argv.slice(2);
+if (argv.includes('--version')) {
+  process.stdout.write('v0.42.0 (fixture)\n');
+} else if (argv.includes('credentials')) {
+  fs.mkdirSync(path.join(process.env.GOG_DATA_DIR, 'keyring'), { mode: 0o700 });
+  fs.writeFileSync(path.join(process.env.GOG_DATA_DIR, 'credentials.json'), fs.readFileSync(0), {
+    mode: 0o600,
+  });
+  process.stdout.write('{}\n');
+} else if (argv.includes('import')) {
+  fs.writeFileSync(
+    path.join(process.env.GOG_DATA_DIR, 'keyring', 'authorization'),
+    fs.readFileSync(0),
+    { mode: 0o600 },
+  );
+  process.stdout.write('{}\n');
+} else if (argv.includes('oauth2.userinfo.get')) {
+  process.stdout.write('{"email":"googlebot@example.invalid","verified_email":true}\n');
+} else if (argv.includes('gmail')) {
+  process.stdout.write('{"account":"googlebot@example.invalid","backend":"file","managed":true}\n');
+} else {
+  process.stderr.write('unsupported fixture command\n');
+  process.exitCode = 2;
+}

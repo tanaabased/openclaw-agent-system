@@ -1,0 +1,27 @@
+schema-version: 1
+agent:
+  id: google-live
+  name: Google Test
+  email:
+    from-environment: GOG_ACCOUNT
+environment:
+  op: jglytdfegfggijqkalco2cxexa
+  required:
+    - GOG_ACCOUNT
+    - GOG_CREDENTIALS_JSON_B64
+    - GOG_TOKEN_JSON_B64
+    - GOG_KEYRING_PASSWORD
+google:
+  credential-encoding: base64
+  oauth-client: GOG_CREDENTIALS_JSON_B64
+  oauth-token: GOG_TOKEN_JSON_B64
+  keyring-password: GOG_KEYRING_PASSWORD
+setup-host:
+  steps:
+    - id: gog-cli
+      runtimes: [openclaw]
+      check: brew bundle check --file=Brewfile
+      apply: |
+        brew tap openclaw/tap
+        brew trust --tap openclaw/tap
+        brew bundle install --file=Brewfile

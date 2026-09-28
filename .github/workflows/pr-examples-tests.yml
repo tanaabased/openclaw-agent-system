@@ -31,6 +31,7 @@ jobs:
           - env
           - git
           - github
+          - google
           - identity
           - install
           - memory
@@ -89,10 +90,11 @@ jobs:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
-          DBUS_SESSION_BUS_ADDRESS: ${{ runner.os == 'Linux' && matrix.example == 'credentials' && format('unix:path={0}/secret-service-bus', runner.temp) || '' }}
+          DBUS_SESSION_BUS_ADDRESS: unix:path=${{ runner.temp }}/secret-service-bus
           DEFAULT_CREDENTIAL_STORE: ${{ runner.os == 'macOS' && 'keychain' || 'secret-service' }}
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
+          GOG_HOME: ${{ runner.temp }}/google-gog
           OPENCLAW_DEBUG_CODE_MODE: ${{ runner.debug == '1' && '1' || '' }}
           OPENCLAW_DEBUG_MODEL_PAYLOAD: ${{ runner.debug == '1' && 'tools' || '' }}
           OPENCLAW_DEBUG_MODEL_TRANSPORT: ${{ runner.debug == '1' && '1' || '' }}
