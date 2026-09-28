@@ -58,13 +58,10 @@ describe('google example workflow', () => {
     assert.equal(fixture.manifest.setupHost?.steps[0]?.id, 'gog-cli');
     assert.equal(fixture.manifest.setup, undefined);
     assert.deepEqual(fixture.manifest.setupHost?.steps[0]?.apply, {
-      kind: 'exec',
-      executable: 'sh',
-      args: [
-        '-e',
-        '-c',
-        'brew tap openclaw/tap\nbrew trust --tap openclaw/tap\nbrew bundle --file=Brewfile\n',
-      ],
+      kind: 'shell',
+      shell: 'sh',
+      script:
+        'brew tap openclaw/tap\nbrew trust --tap openclaw/tap\nbrew bundle install --file=Brewfile\n',
       timeoutSeconds: 600,
     });
     const brewfile = await readFile('examples/google/Brewfile', 'utf8');

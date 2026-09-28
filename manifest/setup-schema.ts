@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 
 import type { ManifestDiagnostic } from './types.ts';
 
-export const setupDefaultTimeoutSeconds = 300;
+export const setupDefaultTimeoutSeconds = 600;
 export const setupMaximumTimeoutSeconds = 3_600;
 
 const shellSchema = Type.Union([Type.Literal('sh'), Type.Literal('bash'), Type.Literal('zsh')]);

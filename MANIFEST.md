@@ -406,7 +406,7 @@ removed afterward:
 | `zsh`  | `zsh -f -e -o PIPE_FAIL <script>`                 |
 
 There are no custom shell wrappers or automatic login-shell selection. Every
-command defaults to a 300-second timeout. Only the direct command object accepts
+command defaults to a 600-second timeout. Only the direct command object accepts
 `timeout-seconds`, an integer from `1` through `3600`; strings and arrays retain
 the default.
 
