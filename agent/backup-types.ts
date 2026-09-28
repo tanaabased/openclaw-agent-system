@@ -22,6 +22,7 @@ export type BackupSettings = Required<BackupConfiguration>;
 
 export interface BackupRuntimeProtection {
   paths: string[];
+  livePaths?: string[];
   agentDir?: string;
   openclawVersion?: string;
   stateDir?: string;

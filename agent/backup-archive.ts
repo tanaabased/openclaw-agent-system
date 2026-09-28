@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, open, readFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 import type { Writable } from 'node:stream';
@@ -518,5 +518,154 @@ export async function verifyWorkspaceArchive(
   } finally {
     await handle.close();
     if (snapshotScratch) await rm(snapshotScratch, { recursive: true, force: true });
+  }
+}
+
+/** extract a previously verified private archive without delegating path handling to tar. */
+export async function extractWorkspaceArchive(
+  archive: string,
+  destination: string,
+  manifest: WorkspaceBackupManifest,
+  snapshotDirectory?: string,
+): Promise<void> {
+  validateInventory(manifest);
+  const entries = new Map(manifest.inventory.map((entry) => [entry.path, entry]));
+  const directories = manifest.inventory
+    .filter((entry) => entry.type === 'directory')
+    .sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+  const workspace = join(destination, 'workspace');
+  await mkdir(workspace, { mode: 0o700 });
+  for (const directory of directories)
+    await mkdir(join(workspace, directory.path), { mode: 0o700 });
+  const parser = extract();
+  const reading = pipeline(
+    createReadStream(archive),
+    createGunzip(),
+    parser as unknown as Writable,
+  );
+  void reading.catch(() => undefined);
+  const seen = new Set<string>();
+  const snapshotSeen = new Set<string>();
+  const links: BackupEntry[] = [];
+  let rootManifest = false;
+  let workspaceRoot = false;
+  let snapshotRoot = false;
+  try {
+    for await (const entry of parser) {
+      const { header } = entry;
+      if (header.name === 'manifest.json' && !rootManifest) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of entry) chunks.push(Buffer.from(chunk as Uint8Array));
+        if (!isDeepStrictEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), manifest))
+          throw new BackupError(
+            'backup-manifest-invalid',
+            'The archive changed after verification.',
+          );
+        const output = await open(
+          join(destination, 'manifest.json'),
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        try {
+          await output.writeFile(Buffer.concat(chunks));
+        } finally {
+          await output.close();
+        }
+        rootManifest = true;
+        continue;
+      }
+      if (header.name === 'workspace/' && !workspaceRoot && header.type === 'directory') {
+        workspaceRoot = true;
+        entry.resume();
+        continue;
+      }
+      if (
+        header.name === 'openclaw-state/' &&
+        !snapshotRoot &&
+        snapshotDirectory &&
+        header.type === 'directory'
+      ) {
+        snapshotRoot = true;
+        entry.resume();
+        continue;
+      }
+      if (snapshotDirectory && snapshotRoot && header.name.startsWith('openclaw-state/')) {
+        const name = header.name.slice('openclaw-state/'.length);
+        if (
+          (name !== 'manifest.json' && name !== 'database.sqlite') ||
+          snapshotSeen.has(name) ||
+          header.type !== 'file'
+        )
+          throw new BackupError('backup-snapshot-invalid', 'The embedded snapshot changed.');
+        const output = await open(
+          join(snapshotDirectory, name),
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        try {
+          for await (const chunk of entry) await output.writeFile(chunk as Uint8Array);
+        } finally {
+          await output.close();
+        }
+        snapshotSeen.add(name);
+        continue;
+      }
+      if (!workspaceRoot || !header.name.startsWith('workspace/'))
+        throw new BackupError('backup-layout-invalid', 'The archive changed after verification.');
+      const path = header.name.slice('workspace/'.length).replace(/\/$/u, '');
+      const expected = entries.get(path);
+      if (
+        !safeBackupRelativePath(path) ||
+        !expected ||
+        seen.has(path) ||
+        header.type !== expected.type ||
+        header.mode !== expected.mode ||
+        header.size !== expected.size ||
+        (header.linkname || undefined) !== expected.linkTarget
+      )
+        throw new BackupError(
+          'backup-inventory-mismatch',
+          'The archive changed after verification.',
+        );
+      if (expected.type === 'file') {
+        const output = await open(
+          join(workspace, path),
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        const hash = createHash('sha256');
+        try {
+          for await (const chunk of entry) {
+            const bytes = chunk as Uint8Array;
+            hash.update(bytes);
+            await output.writeFile(bytes);
+          }
+        } finally {
+          await output.close();
+        }
+        if (hash.digest('hex') !== expected.sha256)
+          throw new BackupError('backup-checksum-mismatch', `Archive checksum differs: ${path}.`);
+        await chmod(join(workspace, path), expected.mode);
+      } else {
+        entry.resume();
+        if (expected.type === 'symlink') links.push(expected);
+      }
+      seen.add(path);
+    }
+    await reading;
+    if (
+      !rootManifest ||
+      !workspaceRoot ||
+      seen.size !== entries.size ||
+      (snapshotDirectory && (!snapshotRoot || snapshotSeen.size !== 2))
+    )
+      throw new BackupError('backup-inventory-mismatch', 'The archive changed after verification.');
+    for (const link of links) await symlink(link.linkTarget!, join(workspace, link.path));
+    for (const directory of directories.reverse())
+      await chmod(join(workspace, directory.path), directory.mode);
+  } catch (error) {
+    parser.destroy(error as Error);
+    await reading.catch(() => undefined);
+    throw error;
   }
 }

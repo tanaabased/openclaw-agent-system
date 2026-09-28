@@ -33,13 +33,12 @@ openclaw agent-system install --yes --json | jq -e '.outcomes | any(.component =
 test -f backup-applied
 test "$(find .agent-system/backups -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
 
-# should verify and extract selected memory without modifying the live workspace
+# should verify and restore selected memory without modifying the live workspace
 cd "$TMPDIR/backup-workspace"
 archive="$(find .agent-system/backups -name '*.tar.gz' | head -1)"
 openclaw as backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-example" and .coverage.openclawState == "off"'
 git check-ignore "$archive"
-mkdir "$TMPDIR/backup-recovered"
-tar -xzf "$archive" -C "$TMPDIR/backup-recovered"
+openclaw as backup restore "$archive" --target "$TMPDIR/backup-recovered" --json | jq -e '.status == "restored" and .agentId == "backup-example" and .coverage.openclawState == "off"'
 cmp MEMORY.md "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp memory/day.md "$TMPDIR/backup-recovered/workspace/memory/day.md"
 
@@ -71,8 +70,7 @@ database="$(cat "$TMPDIR/backup-agent-ready")"
 test -s "$database-wal"
 archive="$(openclaw as backup create --openclaw-state required --json | jq -er '.archive')"
 openclaw as backup verify "$archive" --json | jq -e '.coverage.openclawState == "captured" and .snapshot.manifest.database.agentId == "backup-example"'
-mkdir "$TMPDIR/backup-with-state"
-tar -xzf "$archive" -C "$TMPDIR/backup-with-state"
-node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-with-state/openclaw-state/database.sqlite"
+openclaw as backup restore "$archive" --target "$TMPDIR/backup-with-state" --json | jq -e '.status == "restored" and .coverage.openclawState == "captured"'
+node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-with-state/openclaw-state/openclaw-agent.sqlite"
 cmp MEMORY.md "$TMPDIR/backup-with-state/workspace/MEMORY.md"
 ```

@@ -12,6 +12,7 @@ import installAgentSystem from './install.ts';
 import validateAgentSystem from './validate.ts';
 import backupCreate from './backup-create.ts';
 import backupVerify from './backup-verify.ts';
+import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
 import type GitHubNotificationMonitorService from '../channels/github/intake/monitor/service.ts';
@@ -114,7 +115,7 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('Create and verify private per-agent recovery archives.')
+    .description('Create, verify, and restore private per-agent recovery archives.')
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
@@ -184,6 +185,31 @@ export default function registerAgentSystemCli(
       await backupVerify({
         ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
         archive: String(archive),
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+      });
+    });
+  const restore = backup
+    .command('restore <archive>')
+    .description(
+      'Recover a verified archive into a fresh private staging directory (operators only).',
+    )
+    .option('--target <directory>', 'Required fresh recovery directory; never a live agent path.')
+    .option('--agent <id>', 'Require this recorded agent identity.')
+    .option('--json', 'Write one structured JSON result.')
+    .action(async (archive) => {
+      const selected = restore.opts();
+      await backupRestore({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        archive: String(archive),
+        target: typeof selected.target === 'string' ? selected.target : '',
         commandAuthority,
         environment,
         manifestService: options.manifestService,

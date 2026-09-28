@@ -124,8 +124,8 @@ and plugin state. Treat the whole archive as full-state sensitive. Workspace
 files and the database are captured separately, without a cross-file atomic
 guarantee. Out-of-workspace sources and external memory backends remain outside
 coverage and are reported as limitations. Setup applies may create backups;
-checks may only preview or verify. Restore, retention, uploads, and scheduling
-remain separate features.
+checks may only preview or verify. Retention, uploads, and scheduling remain
+separate features.
 
 ## `openclaw agent-system backup verify`
 
@@ -161,6 +161,49 @@ layout, checksums, and OpenClaw's database integrity and owner contract from a
 private temporary copy. Older workspace-only archives remain verifiable.
 Checksums verify internal integrity, not authenticity or completeness of omitted
 state. Inspect the root manifest's coverage before relying on the artifact.
+
+## `openclaw agent-system backup restore`
+
+Verify and recover one agent archive into a fresh private directory for operator
+inspection. Recovery does not register or activate the agent.
+
+### Options
+
+| Option or argument     | Required | Default | Description                                                    |
+| ---------------------- | -------- | ------- | -------------------------------------------------------------- |
+| `<archive>`            | yes      | none    | Local backup archive path.                                     |
+| `--target <directory>` | yes      | none    | Absent or empty private recovery directory outside live state. |
+| `--agent <id>`         | no       | none    | Require this recorded agent identity.                          |
+| `--json`               | no       | off     | Write one structured result, including failures.               |
+
+### Usage
+
+```text
+openclaw agent-system backup restore <archive> --target <fresh-directory>
+  [--agent <id>] [--json]
+```
+
+```sh
+# stage one verified backup for inspection without changing the running agent.
+openclaw as backup restore /private/backups/agent-backup.tar.gz \
+  --target /private/recovery/agent-review --json
+```
+
+The target must have an existing parent and must be absent or an empty private
+directory. Live agent workspaces and OpenClaw state paths are refused, including
+path aliases; there is no overwrite or in-place mode. The restored layout is
+`manifest.json`, `workspace/`, and, when captured,
+`openclaw-state/openclaw-agent.sqlite`. Workspace file permissions and safe
+relative links are retained. OpenClaw verifies and restores its database
+snapshot through its supported SQLite restore command. Version 1 and other
+workspace-only archives produce no database; output reports coverage and
+omissions. Failed recovery removes only content created by the current attempt,
+preserving the source archive and any pre-existing empty target. Only operators
+may restore; agent and setup descendants cannot invoke this command.
+
+Activation is a separate offline operator action. Stop the relevant runtime
+before moving recovered data into place, and review restored authentication and
+session state before starting it again.
 
 ## `openclaw agent-system env`
 

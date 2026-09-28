@@ -26,6 +26,7 @@ import {
   type BackupSnapshotCommand,
 } from './backup-snapshot.ts';
 import { writeWorkspaceArchive, verifyWorkspaceArchive, safeBackupLink } from './backup-archive.ts';
+import restoreWorkspaceBackup from './backup-restore.ts';
 import {
   backupGit,
   backupPathProtected,
@@ -402,5 +403,15 @@ export default class WorkspaceBackupService {
     return verifyWorkspaceArchive(archive, agentId, signal, (directory, manifest) =>
       verifyAgentSnapshot(directory, manifest, this.snapshotCommand),
     );
+  }
+
+  async restore(archive: string, target: string, agentId?: string) {
+    return restoreWorkspaceBackup({
+      archive,
+      target,
+      ...(agentId ? { expectedAgentId: agentId } : {}),
+      runtimeProtection: this.runtimeProtection,
+      ...(this.snapshotCommand ? { snapshotCommand: this.snapshotCommand } : {}),
+    });
   }
 }
