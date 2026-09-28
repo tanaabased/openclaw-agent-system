@@ -1,5 +1,9 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+### New Features
+
+- Added `openclaw agent-system backup` for private per-agent workspace archives, with `create` and `verify` commands. [#173](https://github.com/tanaabased/openclaw-agent-system/issues/173)
+
 ### Improvements
 
 - Added [`agent-system-google-cli`](./skills/google-cli/SKILL.md) guidance for an agent's managed Google operations. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)

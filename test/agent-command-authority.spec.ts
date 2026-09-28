@@ -89,6 +89,21 @@ describe('agent/command-authority', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('should retain setup mode in trusted leases rather than descendant environment values', async () => {
+    const check = authority.issue('data', 'check');
+    const apply = authority.issue('data', 'apply');
+    assert.equal(
+      (await authority.resolve({ ...check, AGENT_SYSTEM_SETUP_MODE: 'apply' }, workspaceDir))
+        ?.setupMode,
+      'check',
+    );
+    assert.equal((await authority.resolve(apply, workspaceDir))?.setupMode, 'apply');
+    assert.equal(
+      (await authority.resolve(authority.issue('data'), workspaceDir))?.setupMode,
+      undefined,
+    );
+  });
+
   it('should bind an issued capability to the active agent and admitted repository', async () => {
     const repositoryDirectory = join(localRepository, 'packages', 'task-author');
     await mkdir(repositoryDirectory, { recursive: true });

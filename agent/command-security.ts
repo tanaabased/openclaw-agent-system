@@ -50,7 +50,9 @@ function operatorDecision(
   if (crossAgent) {
     return {
       blockReason:
-        'Agent System blocked an attempt to use another agent identity. Use only native agent_system_* tools bound to the active agent.',
+        crossAgent.surface === 'backup'
+          ? 'Agent System blocked an attempt to use another agent identity. Run backup without --agent using the active command binding.'
+          : 'Agent System blocked an attempt to use another agent identity. Use only native agent_system_* tools bound to the active agent.',
       code: 'agent-cross-identity-blocked',
       severity: 'error',
       ...(crossAgent.targetAgentId ? { targetAgentId: crossAgent.targetAgentId } : {}),
@@ -73,7 +75,7 @@ function operatorDecision(
     };
   }
 
-  const invocation = invocations.find(({ surface }) => surface !== 'shim');
+  const invocation = invocations.find(({ surface }) => surface !== 'shim' && surface !== 'backup');
   if (!invocation) return undefined;
   const retry = invocation.recommendedTool
     ? ` Retry this operation with ${invocation.recommendedTool} using the active agent context.`
