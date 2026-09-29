@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
+import loadAutomations from './automation-files.ts';
+import readManifestFile, { type ManifestFileDependency } from './read-file.ts';
 import { maximumManifestBytes, type ManifestDiscovery } from './discover.ts';
 import parseAgentManifest, { parseManifestYaml } from './parse.ts';
 import { normalizeAgentSetup } from './setup-schema.ts';
@@ -26,6 +27,7 @@ export type AgentManifestLoadResult =
       status: 'invalid';
       scope: AgentManifestScope;
       path?: string;
+      automationFilePaths?: string[];
       setupHostFilePath?: string;
       setupFilePath?: string;
       diagnostics: ManifestDiagnostic[];
@@ -39,6 +41,7 @@ export type AgentManifestLoadResult =
       setupHostFileFingerprint?: string;
       setupFilePath?: string;
       setupFileFingerprint?: string;
+      automationFiles?: ManifestFileDependency[];
       manifest: AgentManifest;
       diagnostics: ManifestDiagnostic[];
       validationChecks: AgentManifestValidationCheck[];
@@ -77,25 +80,6 @@ export function invalidManifestResult(
   };
 }
 
-function setupFileDiagnostic(
-  code: string,
-  reference: string,
-  detail: string,
-  fieldPath: string,
-): ManifestDiagnostic {
-  return {
-    code,
-    fieldPath: `${fieldPath}/file`,
-    message: `Setup file ${JSON.stringify(reference)} ${detail}`,
-    severity: 'error',
-  };
-}
-
-function withinWorkspace(workspace: string, path: string): boolean {
-  const remainder = relative(workspace, path);
-  return remainder !== '..' && !remainder.startsWith('../') && !isAbsolute(remainder);
-}
-
 async function loadSetupFile(
   reference: string,
   manifestPath: string,
@@ -111,137 +95,15 @@ async function loadSetupFile(
     }
   | { status: 'invalid'; path?: string; diagnostics: ManifestDiagnostic[] }
 > {
-  if (
-    isAbsolute(reference) ||
-    /^[a-z][a-z0-9+.-]*:/iu.test(reference) ||
-    reference.includes('\\') ||
-    reference.includes('\0')
-  ) {
-    return {
-      status: 'invalid',
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-path',
-          reference,
-          'must be a local relative path.',
-          fieldPath,
-        ),
-      ],
-    };
-  }
-  const path = resolve(dirname(manifestPath), reference);
-  if (!withinWorkspace(workspaceDir, path)) {
-    return {
-      status: 'invalid',
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-escape',
-          reference,
-          'escapes the agent workspace.',
-          fieldPath,
-        ),
-      ],
-    };
-  }
-
-  let canonicalPath: string;
-  try {
-    const [canonicalWorkspace, resolvedFile] = await Promise.all([
-      realpath(workspaceDir),
-      realpath(path),
-    ]);
-    if (!withinWorkspace(canonicalWorkspace, resolvedFile)) {
-      return {
-        status: 'invalid',
-        path,
-        diagnostics: [
-          setupFileDiagnostic(
-            'manifest-setup-file-escape',
-            reference,
-            'escapes the agent workspace through a symlink.',
-            fieldPath,
-          ),
-        ],
-      };
-    }
-    canonicalPath = resolvedFile;
-    if (!(await stat(canonicalPath)).isFile()) {
-      return {
-        status: 'invalid',
-        path,
-        diagnostics: [
-          setupFileDiagnostic(
-            'manifest-setup-file-not-regular',
-            reference,
-            'must name a regular file.',
-            fieldPath,
-          ),
-        ],
-      };
-    }
-  } catch (error) {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-unreadable',
-          reference,
-          `could not be inspected (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
-          fieldPath,
-        ),
-      ],
-    };
-  }
-
-  let contents: Buffer;
-  try {
-    contents = await readFile(canonicalPath);
-  } catch (error) {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-unreadable',
-          reference,
-          `could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
-          fieldPath,
-        ),
-      ],
-    };
-  }
-  if (contents.byteLength > maximumManifestBytes) {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-too-large',
-          reference,
-          `exceeds the ${maximumManifestBytes}-byte size limit.`,
-          fieldPath,
-        ),
-      ],
-    };
-  }
-  let source: string;
-  try {
-    source = new TextDecoder('utf-8', { fatal: true }).decode(contents);
-  } catch {
-    return {
-      status: 'invalid',
-      path,
-      diagnostics: [
-        setupFileDiagnostic(
-          'manifest-setup-file-encoding',
-          reference,
-          'must be valid UTF-8.',
-          fieldPath,
-        ),
-      ],
-    };
-  }
+  const loaded = await readManifestFile(
+    reference,
+    manifestPath,
+    workspaceDir,
+    fieldPath,
+    'manifest-setup-file',
+  );
+  if (loaded.status === 'invalid') return loaded;
+  const { path, fingerprint, contents, source } = loaded;
   const yaml = parseManifestYaml(source);
   if (yaml.status === 'invalid') {
     return {
@@ -265,11 +127,6 @@ async function loadSetupFile(
       })),
     };
   }
-  const fingerprint = createHash('sha256')
-    .update(canonicalPath)
-    .update('\0')
-    .update(contents)
-    .digest('hex');
   return { status: 'valid', path, fingerprint, contents, setup: normalized.setup };
 }
 
@@ -383,14 +240,30 @@ export async function loadDiscoveredManifest(
       includedHost?.path,
     );
   }
-  const manifest = {
+  const automationResult = await loadAutomations(parsed, selected.path, discovery.workspaceDir);
+  if (automationResult.status === 'invalid')
+    return {
+      ...invalidManifestResult(
+        scope,
+        [...discovery.diagnostics, ...parsed.diagnostics, ...automationResult.diagnostics],
+        selected.path,
+        included?.path,
+        includedHost?.path,
+      ),
+      automationFilePaths: automationResult.paths,
+    };
+  const manifest: AgentManifest = {
     ...parsed.manifest,
+    ...(parsed.automations !== undefined || parsed.automationsFile !== undefined
+      ? { automations: automationResult.automations }
+      : {}),
     ...(includedHost ? { setupHost: includedHost.setup } : {}),
     ...(included ? { setup: included.setup } : {}),
   };
   const digestHash = createHash('sha256').update(contents);
   if (includedHost) digestHash.update('\0').update(includedHost.contents);
   if (included) digestHash.update('\0').update(included.contents);
+  for (const file of automationResult.files) digestHash.update('\0').update(file.fingerprint);
   const digest = digestHash.digest('hex').slice(0, 12);
 
   const lifecycleValidation = options.validateManifest?.(manifest, discovery.workspaceDir) ?? {
@@ -399,13 +272,16 @@ export async function loadDiscoveredManifest(
   };
   const lifecycleDiagnostics = lifecycleValidation.diagnostics;
   if (lifecycleDiagnostics.some(({ severity }) => severity === 'error')) {
-    return invalidManifestResult(
-      scope,
-      [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
-      selected.path,
-      included?.path,
-      includedHost?.path,
-    );
+    return {
+      ...invalidManifestResult(
+        scope,
+        [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
+        selected.path,
+        included?.path,
+        includedHost?.path,
+      ),
+      automationFilePaths: automationResult.files.map((file) => file.path),
+    };
   }
 
   return {
@@ -423,6 +299,7 @@ export async function loadDiscoveredManifest(
       ? {}
       : { setupFilePath: included.path, setupFileFingerprint: included.fingerprint }),
     manifest,
+    ...(automationResult.files.length ? { automationFiles: automationResult.files } : {}),
     diagnostics: [...discovery.diagnostics, ...parsed.diagnostics, ...lifecycleDiagnostics],
     validationChecks: lifecycleValidation.checks,
   };

@@ -34,4 +34,14 @@ cd "$GITHUB_WORKSPACE/examples/validate/invalid"
 if output=$(openclaw agent-system validate 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'manifest: invalid Agent System manifest'
 printf '%s\n' "$output" | grep -F 'code=manifest-unknown-key'
+
+# should validate nested automation references without executing declared commands
+cd "$GITHUB_WORKSPACE/examples/validate/automations"
+openclaw agent-system validate --json | jq -e '.status == "valid" and .agentId == "automation-test"'
+test ! -e automation-ran
+
+# should reject missing automation prompt content with a failing exit code
+cd "$GITHUB_WORKSPACE/examples/validate/automation-missing"
+if output=$(openclaw agent-system validate 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'code=manifest-automation-prompt-file-unreadable'
 ```

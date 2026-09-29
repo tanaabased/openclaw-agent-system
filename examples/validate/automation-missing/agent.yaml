@@ -1,0 +1,8 @@
+schema-version: 1
+agent:
+  id: automation-missing
+automations:
+  - id: missing-prompt
+    schedule: every 1 hour
+    prompt:
+      file: ./missing.md

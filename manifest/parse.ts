@@ -2,6 +2,10 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { isAlias, parseDocument, visit } from 'yaml';
 
+import normalizeAutomations, {
+  automationFileSchema,
+  externalAutomationsSchema,
+} from './automation-schema.ts';
 import {
   externalSetupDeclarationSchema,
   externalSetupFileSchema,
@@ -23,6 +27,7 @@ import { decodeEnvironmentSetValue, externalOpSecretReferenceSchema } from './va
 const externalAgentManifestSchema = Type.Object(
   {
     'schema-version': Type.Literal(1),
+    automations: Type.Optional(externalAutomationsSchema),
     agent: externalAgentSectionSchema,
     environment: Type.Optional(
       Type.Object(
@@ -361,7 +366,16 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
         : [];
     return [{ key, file, setup, fileDiagnostics }];
   });
+  const automationValue = isRecord(value) ? value['automations'] : undefined;
+  const automationsFile = Value.Check(automationFileSchema, automationValue)
+    ? automationValue.file
+    : undefined;
+  const automations =
+    automationValue === undefined || automationsFile !== undefined
+      ? undefined
+      : normalizeAutomations(automationValue);
   const declarationDiagnostics = [
+    ...(automations?.status === 'invalid' ? automations.diagnostics : []),
     ...declarations.flatMap(({ setup, fileDiagnostics }) => [
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,
@@ -403,6 +417,8 @@ export default function parseAgentManifest(source: string): ParsedAgentManifest 
       ...(host?.setup?.status === 'valid' ? { setupHost: host.setup.setup } : {}),
       ...(agent?.setup?.status === 'valid' ? { setup: agent.setup.setup } : {}),
     },
+    ...(automations?.status === 'valid' ? { automations: automations.automations } : {}),
+    ...(automationsFile === undefined ? {} : { automationsFile }),
     ...(host?.file && typeof host.file.file === 'string' ? { setupHostFile: host.file.file } : {}),
     ...(agent?.file && typeof agent.file.file === 'string'
       ? {

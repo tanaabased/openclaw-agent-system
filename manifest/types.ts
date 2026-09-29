@@ -1,3 +1,4 @@
+import type { AgentAutomation, ResolvedAutomation } from './automation-schema.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type { EnvironmentSetValue, ResolvableString } from './value-types.ts';
 import type { GoogleConfiguration } from '../tools/google/config-schema.ts';
@@ -10,6 +11,7 @@ import type { BackupConfiguration } from './backup-schema.ts';
 
 export interface AgentManifest {
   schemaVersion: 1;
+  automations?: ResolvedAutomation[];
   agent: {
     id: string;
     name?: ResolvableString;
@@ -52,6 +54,8 @@ export type ParsedAgentManifest =
   | {
       status: 'valid';
       manifest: AgentManifest;
+      automations?: AgentAutomation[];
+      automationsFile?: string;
       setupHostFile?: string;
       setupFile?: string;
       setupFileFieldPath?: '/setup' | '/setup-agent';

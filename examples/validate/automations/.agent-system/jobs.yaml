@@ -1,0 +1,7 @@
+- id: review
+  schedule: every 1 hour
+  prompt:
+    file: ../prompts/review.md
+- id: never-executed-by-validation
+  schedule: in 1 hour
+  run: touch automation-ran
