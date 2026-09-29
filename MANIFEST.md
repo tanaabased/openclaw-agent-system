@@ -14,6 +14,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`environment`](#environment)
   - [`backup`](#backup)
   - [Setup](#setup)
+- [Automation contract (proposed)](#automation-contract-proposed)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
 
@@ -513,6 +514,293 @@ Replace `your-org/project` with the target repository. Within agent scope,
 managed `gh` and `git` use the declared agent identities without operator-identity
 fallback. The process still runs as the installing OS user. This example requires
 OpenClaw's managed tools.
+
+## Automation Contract (Proposed)
+
+This is the research contract for [#193](https://github.com/tanaabased/openclaw-agent-system/issues/193),
+under [#192](https://github.com/tanaabased/openclaw-agent-system/issues/192).
+It is **not shipped syntax**: the current parser rejects `automations`. The parser
+belongs to #194, runtime adapters to #195/#196, and operator commands and installed
+proof to #197. The following defaults are design decisions for those implementers,
+not claims of native support. The [support gates](#automation-support-gates) must
+be resolved before enabling either adapter.
+
+### Declaration and Payloads
+
+`automations` is an optional list of jobs or `{ file: ./automations.yaml }` naming
+a YAML list. Omission and `[]` both declare no jobs. Once reconciliation exists,
+either disables previously owned jobs for that workspace/runtime; neither touches
+unmanaged jobs. A referenced YAML file cannot include another YAML file. Each
+prompt file resolves relative to the YAML file containing its reference, while
+execution always uses the trusted workspace root. Apply the existing loader's
+size, encoding, YAML, regular-file, and workspace/symlink containment checks.
+Load and validate all references before any native mutation, even for disabled
+jobs. A missing or invalid declaration is an error, never an empty list.
+
+| Field             | Type / values                                              | Required           | Default | Contract                                                                                                           |
+| ----------------- | ---------------------------------------------------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `enabled`         | boolean                                                    | no                 | `true`  | Desired enablement; completed one-shots remain consumed.                                                           |
+| `id`              | string matching `^[a-z0-9]+(?:-[a-z0-9]+)*$`               | yes                | none    | Unique within the entire declaration, including disjoint runtime filters.                                          |
+| `overlap`         | `allow`, `skip`                                            | no                 | `allow` | Whether a due occurrence may start while the same job is running. `skip` drops that occurrence without queuing it. |
+| `overrides`       | object with `codex` / `openclaw` keys                      | no                 | none    | Typed, runtime-specific prompt settings described below.                                                           |
+| `payload`         | discriminated object                                       | long form only     | none    | Exactly one of `kind: command` or `kind: prompt`.                                                                  |
+| `prompt`          | nonblank string or `{ file: path }`                        | prompt short form  | none    | Inline prompt or UTF-8 Markdown content.                                                                           |
+| `run`             | nonblank shell string, argv array, or `{ command, args? }` | command short form | none    | Reuses setup execution shapes, not setup checks or lifecycle steps.                                                |
+| `runtimes`        | nonempty unique list of `openclaw`, `codex`                | no                 | both    | Non-applicable jobs are skipped; applicable unsupported jobs block reconciliation.                                 |
+| `schedule`        | string or schedule object                                  | yes                | none    | Deterministic grammar below.                                                                                       |
+| `shell`           | `sh`, `bash`, `zsh`                                        | no                 | `sh`    | Valid only with a shell-string `run`; use setup runner shell flags.                                                |
+| `timeout-seconds` | integer, 1–3600                                            | no                 | `1800`  | Requested wall-clock execution limit; no unlimited sentinel.                                                       |
+
+Short form supplies exactly one of `run` and `prompt`. Long form supplies
+`payload: { kind: command, run: ..., shell?: ... }` or
+`payload: { kind: prompt, prompt: ... }`; `shell` then belongs inside the payload.
+Reject mixtures, unknown keys, blank prompts/files, empty argv, NULs, and unsafe
+executables using setup's existing checks. Job-level timeout is the only timeout;
+the `run` object does not accept setup's nested `timeout-seconds`. There is no
+arbitrary `env`, `cwd`, credential, agent-selector, or native JSON escape hatch.
+
+```yaml
+automations:
+  - id: hourly-review
+    schedule: every 1 hour
+    prompt: Review outstanding work and report actionable changes.
+  - id: backup
+    runtimes: [openclaw]
+    schedule: '0 2 * * *'
+    run: |
+      ./scripts/backup-upload.sh
+      ./scripts/backup-verify.sh
+      ./scripts/backup-prune.sh
+```
+
+The shell stops on failure; the backup example's repository-owned scripts must
+make verification fail before pruning can proceed. It does not supply a backup
+implementation or establish scheduler authorization.
+
+```yaml
+# .agent-system/agent.yaml
+automations:
+  file: ./automations.yaml
+```
+
+```yaml
+# .agent-system/automations.yaml
+- id: daily-review
+  enabled: true
+  runtimes: [openclaw, codex]
+  schedule:
+    cron: '0 9 * * 1-5'
+    timezone: America/New_York
+    missed-run: skip
+  timeout-seconds: 1800
+  overlap: allow
+  payload:
+    kind: prompt
+    prompt:
+      file: ../automations/daily-review.md
+  overrides:
+    codex:
+      target: independent
+- id: delayed-report
+  schedule: in 1 hour
+  payload:
+    kind: command
+    run: { command: node, args: [scripts/report.mjs] }
+```
+
+Prompt jobs default to `target: independent`: a fresh run without the installer's
+conversation. Each runtime override accepts only `target`, `model`, and `effort`.
+`target` is `independent` or `{ thread: nonblank-native-id }`; the latter must name
+an existing conversation verified within that runtime's trusted ownership scope.
+There is no implicit `current` target or automatic conversation creation on a
+lookup failure. For example, `overrides: { codex: { target: { thread: existing-id } } }`
+does not select an OpenClaw session. Omitted model/effort use runtime defaults;
+explicit strings must be validated against the selected runtime/model without
+substitution. Command jobs reject `overrides`. Overrides cannot replace IDs,
+workspace, payload, schedule, authorization, timeout, or overlap. Readback compares
+declared overrides and resolved native targeting; an override hidden in a native
+session must not silently defeat a declared model or effort.
+
+### Schedule Grammar
+
+Only the following forms are accepted. Trim surrounding schedule whitespace and
+collapse ASCII whitespace between grammar tokens; never ask a model to parse it.
+
+| Short form               | Equivalent long form                                       | Normalized discriminator |
+| ------------------------ | ---------------------------------------------------------- | ------------------------ |
+| `'0 9 * * 1-5'`          | `{ cron: '0 9 * * 1-5', timezone: UTC, missed-run: skip }` | `cron`                   |
+| `every 1 hour`           | `{ every: 1 hour, missed-run: skip }`                      | `every`                  |
+| `in 1 hour`              | `{ in: 1 hour, missed-run: skip }`                         | `after`                  |
+| `'2026-10-01T14:00:00Z'` | `{ at: '2026-10-01T14:00:00Z', missed-run: skip }`         | `at`                     |
+
+Long form requires exactly one of `cron`, `every`, `in`, or `at`; its only other
+keys are `timezone` and `missed-run`. Durations are a positive decimal integer
+without leading zeros, one space, and `second(s)`, `minute(s)`, `hour(s)`, or
+`day(s)` with singular/plural agreement. Units are lowercase; a day is exactly
+86,400 seconds. Converted milliseconds must be a safe integer. No fractions,
+compound durations, month/year units, bare `1h`, or natural-language dates.
+
+Cron has exactly five numeric fields: minute 0–59, hour 0–23, day-of-month 1–31,
+month 1–12, weekday 0–6 (Sunday 0). Each accepts `*`, a number, an ascending
+inclusive range, comma lists of those, or `*/n` / `a-b/n` with a positive step
+no larger than the field's domain. Reject six-field cron, macros, names, wraparound
+ranges, `?`, `L`, `W`, and `#`. Day-of-month and weekday combine with OR when both
+are restricted. Reject schedules with no possible Gregorian occurrence, such as
+`0 9 30 2 *`; February with a restricted weekday can still match through OR.
+Normalize expanded numeric sets so equivalent spellings have identical schedule fingerprints; retain
+whether each day field is unrestricted for the OR rule.
+
+`timezone` is a valid IANA zone and applies only to cron, defaulting explicitly
+to `UTC` rather than host local time. A missing local time at a DST jump is
+skipped; a repeated local time fires once, at its earlier instant. There is no
+jitter. `at` requires a valid RFC 3339 timestamp with seconds and `Z` or numeric
+offset; normalize it to UTC, reject leap seconds and offset-less dates. Fractional
+seconds are limited to milliseconds. `every` uses elapsed time, not wall-clock
+DST arithmetic: first due time is the initial successful activation anchor plus
+the interval, and subsequent times stay anchored rather than following completion.
+
+`missed-run` is `skip` (default) or `run-once`. At activation or resume, `skip`
+consumes missed one-shots and advances recurring jobs to their next future occurrence. `run-once`
+coalesces all missed occurrences into one immediate attempt, then resumes cadence;
+it never drains an unbounded backlog. Scheduler interruption recovery counts as
+a missed occurrence only before execution was admitted. An admitted run with an
+unknown outcome is reported for operator action, not automatically replayed.
+Adapters must prove these semantics or reject the combination before writes.
+
+### Ownership and Reconciliation
+
+Use an Agent System-owned, versioned, non-secret ledger scoped by runtime profile,
+canonical workspace, trusted agent identity, and manifest ID. Native job names are
+labels, never ownership proof. Record native ID, declaration key where supported,
+last applied native revision, desired content hash, schedule generation, resolved
+interval anchor / one-shot time, consumed occurrence, and pending reconciliation
+operation. Do not store provider tokens, environment values, or run output there.
+Moving a workspace or losing its ledger requires explicit recovery; never adopt
+jobs by display name or silently recreate possibly completed jobs.
+
+For each applicable runtime, compute SHA-256 over versioned canonical JSON of the
+normalized effective job: defaults materialized, object keys sorted, set-valued
+fields sorted, argv order preserved, referenced prompt content loaded, and only
+that runtime's overrides applied. Preserve prompt and shell-script whitespace;
+YAML formatting/comments and equivalent schedule spellings alone are not drift.
+Reference path changes with identical effective content do not restart a schedule.
+Do not hash credentials or unrelated manifest sections. A script invoked by path
+remains live workspace code; this contract hashes its declaration, not a recursive
+snapshot of arbitrary executable dependencies.
+
+Persist schedule identity separately from content identity: normalized kind and
+cron expression/timezone, interval, delay, or timestamp. `missed-run` is execution
+policy, not a new trigger identity. Resolve `in` once,
+when first activating the schedule, not while parsing or during Doctor. Disabled
+new jobs have no activation anchor. A prompt/model/timeout edit, reinstall, native
+UI drift repair, or removal/reintroduction retains the existing generation and
+one-shot consumption. Only an explicit manifest schedule change creates a new
+generation; toggling `enabled` does not rearm a consumed one-shot. A delay changed
+back to an earlier value is another intentional schedule change. To repeat an
+unchanged consumed job, use an explicit manual run or a new ID.
+
+Admission consumes a one-shot occurrence even if it fails, times out, or finishes
+with an unknown outcome. Native durable admission/history must let recovery prove
+whether execution could have started; absence of a successful result is not proof
+that a second attempt is safe. Manual execution must preserve the pending scheduled
+occurrence and must not revive an already consumed one.
+
+| Observed change                                          | Required reconciliation                                                                                             |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Unchanged desired and native content                     | No native write; preserve timestamps, failure state, and completion.                                                |
+| Payload/reference content changed                        | Update owned settings; retain schedule generation and consumed state.                                               |
+| Native UI edit to a declared setting                     | Doctor reports drift; explicit sync restores desired settings using observed revision checks.                       |
+| Removed ID / removed runtime applicability               | Disable the retained owned job; preserve mapping and history. Reintroduction reuses it.                             |
+| Native job missing or ownership ambiguous                | Block and request recovery; do not invent completion state or touch a similarly named job.                          |
+| Completed one-shot with desired `enabled: true`          | Keep consumed and non-runnable; native disabled state is not enablement drift.                                      |
+| Native safety auto-disable                               | Report blocked; unchanged sync must not erase failure counters or re-enable it. Require explicit operator recovery. |
+| Native write succeeded but ledger acknowledgement failed | Recover by stable ownership/idempotency key and readback; do not issue another blind create.                        |
+
+Validate the complete applicable projection before writes. Serialize sync per
+ownership scope, journal intent before mutation, and acknowledge only verified
+readback. Recheck binding, effective content, and native revision at each mutation;
+stop on concurrent change. Unsupported readback, idempotent creation, or conditional
+update is a support gap, not permission to edit a private scheduler database.
+Partial failures report what was applied and what remains; retries of reconciliation
+must not execute jobs. Disable prevents new admissions; it is not a promise to undo
+effects from an already running occurrence. History retention remains bounded by
+native retention policy; this contract does not delete history during sync.
+
+### Execution Contract
+
+Each OpenClaw occurrence needs fresh trusted agent/workspace binding and current
+authorization before invocation-scoped credentials are resolved. Never persist or
+reuse an install turn's capability token. Reusing setup's process machinery does
+not confer that authority. Codex uses the ambient profile and native permissions.
+
+Keep the proposed 30-minute default and a 1–3600-second manifest bound. OpenClaw's
+command/agent-turn timeout path accepts 1800 seconds; that is not its native
+default. Its code-mode `script` payload has a separate 900-second cap and is not
+an equivalent shell-command adapter. Codex scheduled timeout support is unproven.
+Timeout means cancellation plus bounded process-tree cleanup, with the timeout
+recorded even if cleanup fails; delivery must not cause payload execution to repeat.
+
+There are no automatic retries of failed, timed-out, or unknown admitted
+occurrences. Future regular occurrences and explicit operator runs are distinct.
+Keep execution (`succeeded`, `failed`, `skipped`, `unknown`) separate from delivery
+(`not-requested`, `delivered`, `suppressed`, `failed`, `unknown`); delivery failure
+cannot convert successful execution into an execution error or rearm a one-shot.
+`overlap: allow` concerns the same job, not a global concurrent-jobs limit. An
+existing conversation may serialize turns; reject incompatible target/overlap
+combinations rather than silently queuing independent occurrences.
+
+### Automation Support Gates
+
+Evidence inspected on 2026-09-29: the installed OpenClaw `2026.9.6` and Codex CLI
+`0.154.0` packages match [package.json](./package.json) and [bun.lock](./bun.lock).
+The desktop app is a separate, unpinned product; see [Codex evidence](./CODEX.md#automation-research).
+This is package/source and protocol inspection, not live scheduler acceptance.
+
+| Operation / requirement                     | OpenClaw 2026.9.6 evidence                                                                                                                                          | Agent System conclusion                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create/read/update/disable/list/run/history | Native `cron.add`, `cron.get`, `cron.update` (`enabled: false`), `cron.list`, `cron.run`, `cron.runs`; operator CLI uses `openclaw automations`, with `cron` alias. | Operator interfaces exist; no permitted external-plugin reconciliation path established.                                                             |
+| Plugin API                                  | `api.runtime.gateway.request` rejects arbitrary external plugins. `plugin-sdk/cron-store-runtime` exports store load/save helpers.                                  | Neither is an admissible integration: do not bypass the Gateway restriction with store writes or spawned Gateway CLI commands.                       |
+| Zero-model commands                         | `runCronCommandJob` calls `runCommandWithTimeout` directly; `command` payloads are operator-admin jobs.                                                             | Native zero-model execution exists. It does not supply Agent System binding, policy-before-credentials, or invocation-scoped managed-tool authority. |
+| Prompt context                              | Explicit `isolated` creates a fresh transcript; `current` / `session:<id>` have different persistence semantics.                                                    | Independent runs have a candidate mapping; exact existing-thread targeting and tool authority still need installed proof.                            |
+| Ownership                                   | `cron.add` reconciles `declarationKey`; native jobs expose `configRevision`; `deleteAfterRun: false` retains successful one-shots.                                  | Useful native primitives, conditional on supported access and full partial-failure/consumption proof.                                                |
+| Overlap                                     | `isJobDue` excludes active jobs; manual admission returns `already-running`.                                                                                        | `allow` is unsupported. Global `maxConcurrentRuns` does not fix it.                                                                                  |
+| Retry / recovery                            | Recurring failure backoff is 30s, 1m, 5m, 15m, 60m; startup can recover interrupted one-shots.                                                                      | No per-job switch proving the contract's no-replay guarantee was found. Treat as unsupported pending an upstream contract or explicit scope change.  |
+| Schedule                                    | Native `at`, `every`, and 5/6-field cron; host-zone default and top-of-hour staggering; runtime-owned catch-up.                                                     | Specify UTC and zero staggering where possible. Desired DST and missed-run policies are not proven configurable; do not claim parity.                |
+| Failure reporting                           | Native history distinguishes payload `status` from `completionStatus` and delivery status.                                                                          | Preserve those distinctions; verify mapping through the eventual supported adapter.                                                                  |
+
+Reproduction anchors inside the pinned OpenClaw package (inspection only):
+
+- `docs/plugins/sdk-runtime/gateway-and-nodes.md`, `api.runtime.gateway`: external-plugin restriction.
+- `docs/automation/cron-jobs/{payloads,schedules,managing-jobs,how-it-works}.md`: native CLI, authorization, targeting, delivery, and recovery contracts.
+- `dist/cron-DcDJigA2.mjs`, `cronHandlers`: native request handlers.
+- `dist/server-cron-Dd6AX5Mc.mjs`, `runCronCommandJob`: direct process execution.
+- `dist/service-C-O17TZr.mjs`, `add`, `resolveCronJobTimeoutMs`, and `already-running` admission: reconciliation, timeouts, and overlap.
+- `dist/jobs-scheduling-BuJ7Yxlw.mjs`, `isJobDue` and `DEFAULT_ERROR_BACKOFF_SCHEDULE_MS`: active-job exclusion and failure backoff.
+- `dist/runtime-api-CkahAQr_.d.ts`, `CronJobSchema`: declaration key, revision, schedule, payload, and retained-job fields.
+
+**Recommendation:** preserve the agreed product contract and block adapter delivery
+on these gaps. #195 needs an upstream-supported external-plugin scheduling and
+authority seam plus compatible execution semantics. #196 needs a supported native
+desktop reconciliation interface and scheduled command payload; an immediate
+command API is insufficient. A narrower feature requires an explicit change to
+#192, not a quiet fallback inside an adapter. No new scheduler, private-store
+writer, model-driven command wrapper, or cross-runtime duplicate suppression is
+part of this contract. #194 can implement deterministic normalization against this
+proposal after contract review, but cannot represent blocked runtimes as supported.
+
+### Acceptance Handoff
+
+The implementation issues must turn these cases into focused tests with injected
+runtime boundaries and fixed clocks; they are not passing implementation tests today.
+
+| Owner     | Required cases                                                                                                                                                                                                                                                             |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #194      | Short/long equivalence; YAML-relative prompt paths; containment and invalid references; duplicate IDs; unknown/mixed payload keys; prompt changes versus formatting-only changes; rejected `1h`, `tomorrow`, offset-less timestamps, six-field cron, and impossible dates. |
+| #194      | UTC/offset equivalence; `every` versus `in`; cron OR semantics; DST spring gap and fall repetition; fixed elapsed-day intervals; safe-integer overflow; default and override normalization.                                                                                |
+| #195/#196 | Create/readback; unchanged no-op; native drift; removal/reintroduction; unmanaged-job preservation; lost ledger/job; concurrent edit; create-success/ledger-failure recovery; completed and failed/unknown one-shot preservation.                                          |
+| #195/#196 | Effective-content changes retain anchors; explicit schedule changes rearm; initially disabled delay anchors only on activation; skip/coalesced catch-up; auto-disable recovery; timeout cleanup; same-job overlap; no scheduler replay; distinct delivery failures.        |
+| #195/#196 | Zero model requests for command jobs; trusted workspace/agent and current authorization; policy before credential resolution; no bulk credential environment; unavailable unattended permission is actionable.                                                             |
+| #197      | GitHub Actions-only OpenClaw installed acceptance and a verified Codex path; demonstrate supported mappings and report remaining parent blockers without declaring parity.                                                                                                 |
 
 ## Environment Resolution
 
