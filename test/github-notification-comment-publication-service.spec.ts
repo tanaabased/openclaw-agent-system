@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
 
+import {
+  reviewFixture,
+  reviewCommentFixture,
+  reviewClientFixture,
+} from './github-review-fixtures.ts';
+import {
+  reviewFeedback,
+  reviewFeedbackRevision,
+} from '../channels/github/conversation/review-feedback.ts';
+
 import { conversationSnapshot } from './github-notification-conversation-fixtures.ts';
 
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -473,5 +483,79 @@ describe('channels/github/publication/comment-publication-service', () => {
 
     assert.equal(result.status, 'published');
     assert.deepEqual(observedNumbers, [12, 12]);
+  });
+});
+
+describe('channels/github/publication/review-feedback', () => {
+  it('should reauthorize grouped findings and publish only a top-level response on the source pr', async () => {
+    const fixture = stateFixture();
+    const review = reviewFixture();
+    const comments = [reviewCommentFixture()];
+    const feedback = reviewFeedback(review, comments);
+    const revision = reviewFeedbackRevision(feedback);
+    const conversationId = Object.keys(fixture.conversations.conversations)[0]!;
+    const conversation = fixture.conversations.conversations[conversationId]!;
+    const target = githubNotificationPublicationTarget({
+      conversationId,
+      intent: 'github-reply',
+      source: { commentDatabaseId: review.databaseId, revisionId: revision.revisionId },
+    });
+    conversation.deliveryPullRequest = {
+      baselineEstablished: true,
+      eventRecorded: true,
+      nodeId: 'PR_delivery',
+      number: 45,
+      status: 'open',
+    };
+    conversation.revisions = {
+      [review.nodeId]: {
+        ...revision,
+        commentDatabaseId: review.databaseId,
+        review: feedback.feedback.receipt,
+        source: { itemType: 'pull-request', number: 45 },
+        status: 'responded',
+        publication: {
+          publicText,
+          publicTextDigest: githubNotificationPublicTextDigest(publicText),
+          status: 'pending',
+          target,
+        },
+      },
+    };
+    const destinations: number[] = [];
+    const service = publicationService(fixture, {
+      async open() {
+        return {
+          authorized: true,
+          configuration,
+          client: {
+            identity: notificationAccount,
+            reviews: reviewClientFixture(review, comments),
+            async getIssueComment() {
+              throw new Error('wrong source endpoint');
+            },
+            async findOwnIssueComment() {
+              return undefined;
+            },
+            async createIssueComment(_owner, _name, number) {
+              destinations.push(number);
+              return { databaseId: 302, nodeId: 'IC_reply' };
+            },
+          },
+        };
+      },
+    });
+    await service.publish({ accountId: agentId, target, text: publicText });
+    assert.deepEqual(destinations, [45]);
+    comments[0]!.body = 'Changed after dispatch.';
+    await assert.rejects(service.publish({ accountId: agentId, target, text: publicText }), {
+      code: 'github-notification-publication-source-changed',
+    });
+    assert.deepEqual(destinations, [45]);
+    comments[0]!.body = 'Handle the empty list.';
+    review.author = { ...notificationActor, nodeId: 'U_unapproved' };
+    await assert.rejects(service.publish({ accountId: agentId, target, text: publicText }), {
+      code: 'comment-actor-unapproved',
+    });
   });
 });

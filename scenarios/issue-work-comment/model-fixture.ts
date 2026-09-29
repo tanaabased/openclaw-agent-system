@@ -52,7 +52,7 @@ export const commentScenario = createGitHubNotificationIssueWorkScenario({
     replyTokenPattern: /\bready-[0-9]+-[0-9]+\b/u,
   },
   commitMessage: 'add comment fixture',
-  fileContents: 'comment fixture ready.',
+  fileContents: 'comment fixture ready.\nreview fixture ready.',
   filenamePattern: /\bcomment-fixture-[0-9]+-[0-9]+\.txt\b/u,
   finalResponse: githubNotificationCommentImplementationFinalResponse,
   id: 'comment',

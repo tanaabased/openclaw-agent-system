@@ -504,7 +504,7 @@ describe('scripts/github-notification-model-scenarios', () => {
       },
       {
         commitMessage: 'add comment fixture',
-        fileContents: 'comment fixture ready.',
+        fileContents: 'comment fixture ready.\nreview fixture ready.',
         filename: 'comment-fixture-123-4.txt',
         id: 'comment',
       },
@@ -642,6 +642,10 @@ describe('scripts/github-notification-model-scenarios', () => {
               'Your final response is published back to the exact source comment.',
             ].join('\n'),
             role: 'system',
+          },
+          {
+            content: `Earlier request: ${entry.scenarioId === 'comment' ? 'ready-111-1' : 'pr-ready-111-1'}`,
+            role: 'user',
           },
           {
             content: `@tanaabot Reply briefly with ${entry.token}.`,

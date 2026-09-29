@@ -167,7 +167,9 @@ admitted answer resumes the same session without a `clarification-needed`
 transition.
 
 The conversation record retains the current trusted mode, processed comment
-revision identifiers and digests, and publication receipts. Opted-in issue routing
+revision identifiers and digests, and publication receipts. Review feedback also
+retains typed review identities, member digests, the selected changed findings, and
+resumable discovery pages; provider prose remains outside the durable intake record. Opted-in issue routing
 also retains the model-authored complexity decision, frozen configured profiles,
 and last applied model and effort so retries and continuations preserve selection
 while respecting explicit native overrides. If promotion from

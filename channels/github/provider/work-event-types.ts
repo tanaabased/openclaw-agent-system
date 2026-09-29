@@ -1,3 +1,4 @@
+import type { GitHubPullRequestReviewClient } from './review-types.ts';
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
 import type { RoutingMetadata } from './routing-metadata.ts';
 import type {
@@ -82,6 +83,7 @@ export interface GitHubNotificationItemContextClient {
 }
 
 export interface GitHubNotificationCommentClient {
+  readonly reviews?: GitHubPullRequestReviewClient;
   readonly identity: GitHubIdentity;
   readonly maximumCommentCharacters?: number;
   getIssueComment(
@@ -94,6 +96,7 @@ export interface GitHubNotificationCommentClient {
 }
 
 export interface GitHubNotificationPublicationClient {
+  readonly reviews?: GitHubPullRequestReviewClient;
   readonly identity: GitHubIdentity;
   readonly maximumCommentCharacters?: number;
   createIssueComment(

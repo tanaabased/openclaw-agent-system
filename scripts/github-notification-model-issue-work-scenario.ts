@@ -63,7 +63,15 @@ function commentReplyToken(
   request: ChatCompletionRequest,
   options: GitHubNotificationIssueWorkScenarioOptions,
 ): string {
-  const token = requestText(request).match(options.comment?.replyTokenPattern ?? /$^/u)?.[0];
+  const latest = [...request.messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === 'user' && options.comment?.replyTokenPattern.test(messageText(message)),
+    );
+  const token = (latest ? messageText(latest) : '').match(
+    options.comment?.replyTokenPattern ?? /$^/u,
+  )?.[0];
   if (!token) throw new Error(`The ${options.id} comment request is missing its reply token.`);
   return token;
 }

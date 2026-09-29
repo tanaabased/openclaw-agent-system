@@ -75,6 +75,13 @@ comment:
 Use the agent's configured emoji and fall back to `🤖` when it has none.
 [Lifecycle rules](./DESIGN.md#lifecycle-rules) govern raw comment preservation.
 
+A review feedback message groups its summary and selected findings under the
+verified reviewer identity and review link. Each finding retains its own permalink,
+body, file path, reviewed commit, and available current or original location. Mark
+an unchanged summary as context. Later inline replies link to their exact source;
+parent text and diff hunks belong in bounded structured context. Never label an
+original location as current code.
+
 ## Pull Request Opened Card
 
 ```markdown

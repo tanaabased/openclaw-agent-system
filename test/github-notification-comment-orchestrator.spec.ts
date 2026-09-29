@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 
 import {
+  reviewFixture,
+  reviewCommentFixture,
+  reviewClientFixture,
+} from './github-review-fixtures.ts';
+import {
+  isReviewFeedback,
+  reviewFeedbackContext,
+} from '../channels/github/conversation/review-feedback.ts';
+import type { GitHubNotificationCommentTurnInput } from '../channels/github/conversation/comment-turn-service.ts';
+
+import {
   conversationSnapshot,
   replaceConversationSnapshot,
 } from './github-notification-conversation-fixtures.ts';
@@ -21,6 +32,7 @@ import {
   type GitHubCanonicalIssueComment,
 } from '../channels/github/conversation/comment-admission.ts';
 import {
+  decodeGitHubNotificationConversationRecord,
   createGitHubNotificationConversationState,
   githubNotificationPublicTextDigest,
   type GitHubNotificationConversationSnapshot,
@@ -1047,5 +1059,246 @@ describe('channels/github/conversation/comment-orchestrator', () => {
         error.code === 'github-notification-comments-truncated',
     );
     assert.equal(store.snapshot(), undefined);
+  });
+});
+
+describe('channels/github/conversation/review-intake', () => {
+  function harness() {
+    const monitor = preparedMonitor();
+    const id = conversationId(monitor);
+    const state = createGitHubNotificationConversationState(agentId, workspaceDir);
+    state.conversations[id] = {
+      baselineEstablished: true,
+      deliveryPullRequest: {
+        baselineEstablished: true,
+        eventRecorded: true,
+        nodeId: 'PR_delivery',
+        number: 45,
+        status: 'open',
+      },
+      itemKey: notificationItemKey,
+      lifecycleId: 'issue',
+      mode: 'guided',
+      revisions: {},
+    };
+    const store = memoryStateStore(state);
+    const review = reviewFixture();
+    const comments = [
+      reviewCommentFixture(),
+      reviewCommentFixture({
+        databaseId: 84,
+        nodeId: 'PRRC_second',
+        body: 'Add coverage for the empty list.',
+      }),
+    ];
+    const client = reviewClientFixture(review, comments);
+    const turns: GitHubNotificationCommentTurnInput[] = [];
+    let fail = false;
+    const make = () =>
+      new GitHubNotificationCommentOrchestrator({
+        assignmentAuthority: {
+          async open() {
+            return {
+              authorized: true,
+              configuration,
+              client: {
+                identity: notificationAccount,
+                reviews: client,
+                async getItem() {
+                  return deliveryPullRequestItem(false, 'open');
+                },
+                async listIssueComments() {
+                  return { comments: [], truncated: false };
+                },
+                async getIssueComment() {
+                  throw new Error('reviews must not use issue-comment reads');
+                },
+              },
+            };
+          },
+        },
+        conversationStateStore: {
+          read: store.read,
+          async write(value) {
+            assert.ok(
+              decodeGitHubNotificationConversationRecord(
+                { ...value, schemaVersion: 3 },
+                value,
+                value.conversationId,
+              ),
+            );
+            await store.write(value);
+          },
+        },
+        initialModeId: 'work',
+        lifecycles: lifecycles(),
+        logger: { error() {}, info() {}, warn() {} },
+        monitorStateStore: monitorStateStore(monitor),
+        turnCatalog,
+        publications: {
+          async publish(input) {
+            return {
+              receipt: { databaseId: 301, nodeId: 'IC_review_reply' },
+              status: 'published',
+              target: input.target,
+            };
+          },
+        },
+        turns: {
+          async respond(input) {
+            if (fail) throw new Error('interrupted turn');
+            turns.push(input);
+            return {
+              agentId,
+              privateText: 'done',
+              publication: { status: 'candidate', publicText: 'Addressed the findings.' },
+            };
+          },
+        },
+      });
+    return {
+      make,
+      review,
+      comments,
+      client,
+      turns,
+      store,
+      id,
+      setFailure(value: boolean) {
+        fail = value;
+      },
+    };
+  }
+
+  it('should group findings once and preserve mode across polling and process restarts', async () => {
+    const h = harness();
+    await h.make().reconcile(agentId, notificationItemKey);
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 1);
+    assert.equal(h.turns[0]?.modeId, 'guided');
+    assert.equal(h.turns[0]?.item.number, 12);
+    assert.equal(h.turns[0]?.source.number, 45);
+    const feedback = h.turns[0]!.comment;
+    assert.ok(isReviewFeedback(feedback));
+    assert.equal(reviewFeedbackContext(feedback).findings.length, 2);
+    assert.equal(
+      h.store.snapshot()?.conversations[h.id]?.revisions.PRR_review?.publication?.status,
+      'published',
+    );
+  });
+
+  it('should wait for submission and discover later replies without replaying the review', async () => {
+    const h = harness();
+    h.review.state = 'PENDING';
+    delete h.review.submittedAt;
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 0);
+    h.review.state = 'COMMENTED';
+    h.review.submittedAt = h.review.createdAt;
+    await h.make().reconcile(agentId, notificationItemKey);
+    h.comments.push(
+      reviewCommentFixture({
+        databaseId: 85,
+        nodeId: 'PRRC_reply',
+        replyToId: 82,
+        createdAt: '2026-09-01T12:01:00Z',
+        updatedAt: '2026-09-01T12:01:00Z',
+        body: '@tanaabot please also handle undefined',
+      }),
+    );
+    await h.make().reconcile(agentId, notificationItemKey);
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 2);
+    assert.equal(h.turns[1]?.comment.nodeId, 'PRRC_reply');
+  });
+
+  it('should deliver only changed findings after edits including a rejected intermediate edit', async () => {
+    const h = harness();
+    await h.make().reconcile(agentId, notificationItemKey);
+    h.review.body = 'No mention';
+    await h.make().reconcile(agentId, notificationItemKey);
+    h.review.body = '@tanaabot please address these findings';
+    h.comments[0]!.body = 'Handle undefined too.';
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 2);
+    const feedback = h.turns[1]!.comment;
+    assert.ok(isReviewFeedback(feedback));
+    assert.deepEqual(
+      reviewFeedbackContext(feedback).findings.map((value) => value.nodeId),
+      ['PRRC_finding'],
+    );
+  });
+
+  it('should resume an admitted group before scanning another page', async () => {
+    const h = harness();
+    h.setFailure(true);
+    await assert.rejects(h.make().reconcile(agentId, notificationItemKey));
+    assert.equal(h.store.snapshot()?.conversations[h.id]?.activeTurn?.eventId, 'comment');
+    h.client.listReviews = async () => ({ values: [], nextPage: 1 });
+    h.setFailure(false);
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 1);
+    assert.equal(h.store.snapshot()?.conversations[h.id]?.activeTurn, undefined);
+  });
+
+  it('should persist pagination and skip overlapping review discovery', async () => {
+    const h = harness();
+    const pages: number[] = [];
+    h.client.listReviews = async (_owner, _name, _number, page) => {
+      pages.push(page);
+      return { values: [structuredClone(h.review)], nextPage: page === 1 ? 2 : 1 };
+    };
+    await h.make().reconcile(agentId, notificationItemKey);
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.deepEqual(pages, [1, 2]);
+    assert.equal(h.turns.length, 1);
+  });
+
+  it('should baseline closed-period edits once and admit subsequent edits after reopening', async () => {
+    const h = harness();
+    await h.make().reconcile(agentId, notificationItemKey);
+    const current = await h.store.read(agentId, h.id);
+    assert.ok(current?.conversation);
+    current.conversation.reviewIntake = {
+      45: { reviewsPage: 1, commentsPage: 1, baselineBefore: Date.parse('2026-09-02T12:00:00Z') },
+    };
+    await h.store.write(current);
+    h.comments[0]!.body = 'Edited while closed';
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 1);
+    h.comments[0]!.body = 'Edited after reopening';
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 2);
+    const next = await h.store.read(agentId, h.id);
+    assert.ok(next?.conversation);
+    next.conversation.reviewIntake![45]!.baselineBefore = Date.parse('2026-09-03T12:00:00Z');
+    await h.store.write(next);
+    await h.make().reconcile(agentId, notificationItemKey);
+    h.comments[0]!.body = 'Edited after another reopening';
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 3);
+  });
+
+  it('should reject unauthorized reviewers without admitting their findings', async () => {
+    const h = harness();
+    h.review.author = { login: 'outsider', nodeId: 'U_other', type: 'User' };
+    for (const comment of h.comments) comment.author = h.review.author;
+    await h.make().reconcile(agentId, notificationItemKey);
+    assert.equal(h.turns.length, 0);
+    assert.equal(
+      h.store.snapshot()?.conversations[h.id]?.revisions.PRR_review?.reasonCode,
+      'comment-actor-unapproved',
+    );
+  });
+
+  it('should not consume a partially fetched review', async () => {
+    const h = harness();
+    h.client.getReviewComments = async () => {
+      throw new Error('incomplete page');
+    };
+    await assert.rejects(h.make().reconcile(agentId, notificationItemKey));
+    assert.equal(h.turns.length, 0);
+    assert.equal(h.store.snapshot()?.conversations[h.id]?.revisions.PRR_review, undefined);
+    assert.equal(h.store.snapshot()?.conversations[h.id]?.reviewIntake, undefined);
   });
 });

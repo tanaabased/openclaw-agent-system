@@ -1,3 +1,4 @@
+import GitHubReviewClient from './review-client.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
 import type { GitHubCanonicalIssueComment } from '../conversation/comment-admission.ts';
 import type { GitHubRateLimit } from './api-response.ts';
@@ -43,6 +44,7 @@ export type {
 
 /** Fixed-endpoint, bounded GitHub access for notification control facts and publication. */
 export default class GitHubWorkEventClient implements GitHubNotificationProviderClient {
+  readonly reviews: GitHubReviewClient;
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
   readonly #items: GitHubWorkItemClient;
@@ -54,6 +56,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   ) {
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
     this.#api = new GitHubWorkEventApiClient(client);
+    this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
   }

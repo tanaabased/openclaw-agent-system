@@ -404,6 +404,38 @@ can proceed concurrently up to the agent's durable issue-work limit; shared
 repository preparation is serialized. Assignment acknowledgments wait for
 durable session recording.
 
+### Pull Request Review Feedback
+
+Submitted reviews on an issue's linked delivery PR enter the same conversation as
+ordinary comments. An approved human must mention the installed GitHub account in
+their review summary or one of their findings, outside quotes and code. That mention
+admits the review's findings together; reviewer assignment or a review skill does
+not grant admission. Pending reviews do not trigger work. Later inline replies
+require their own approved author and exact mention; parent text and diff hunks
+cannot supply either.
+
+One review produces one feedback turn. Later edits include only changed findings,
+while unchanged summaries and parent replies remain context. Review and comment
+links, author identities, reviewed commits, paths, current and original positions,
+diff hunks, and reply relationships accompany the turn where available. Original
+locations are historical; missing current positions are reported as unavailable or
+outdated. The agent must inspect current code before applying an old finding.
+
+Discovery pages and consumed member digests survive restarts. Each pass reads a
+bounded page of reviews and inline comments, resumes pagination, and revisits
+completed scans for edits. A review must fit the complete-group boundary before it
+can dispatch: at most 400 comments within 40 pages, the configured
+`maxCommentCharacters` across its authored prose, and 64,000 characters of projected
+diff context. Each diff hunk is limited to 8,000 characters with explicit truncation
+metadata. Oversized or incomplete groups are not executed as partial instructions.
+The existing 400-revision conversation limit remains; capacity exhaustion reports
+`github-notification-feedback-capacity-exceeded` without consuming the new source.
+
+Replies remain top-level comments on the source PR, with exact-source
+reauthorization and durable publication receipts. Inline reply publication,
+automatic thread resolution, and independent review-assignment sessions are not
+implemented.
+
 ## Security and Lifecycle
 
 - Installed account and workspace routing must match the manifest. Missing,
