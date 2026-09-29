@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   symlink,
@@ -37,6 +38,7 @@ describe('workspace backup pruning', () => {
   const service = new WorkspaceBackupService();
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'backup-prune-'));
+    root = await realpath(root);
     workspace = join(root, 'workspace');
     output = join(workspace, '.agent-system', 'backups');
     await mkdir(output, { recursive: true });
