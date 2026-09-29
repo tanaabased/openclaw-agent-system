@@ -120,6 +120,31 @@ bun run test
 
 The default Mocha suite keeps behavior-focused specifications flat in [`test/`](./test/).
 
+### Recorded CLI Fixtures
+
+The mock delivery tests consume approved CLI captures directly from [`fixtures/`](./fixtures/). The fixture commands are local, explicitly invoked tools; they do not run in CI or as a release prerequisite and need no live model.
+
+Use a disposable pull request in `tanaabased/big-test-bucket`. The PR-author case requires a declared author. The review case also requires a declared reviewer and real pending and completed reviews. The capture requests one review per page to exercise pagination without creating a large review history; the production command retains GitHub's ordinary page size. Arrange the actor roles before recording, and close the PR and remove its setup branch when finished. The recorder creates no GitHub resources itself.
+
+`gh` uses the current native login or `GH_TOKEN`. An operator may supply `GH_TOKEN` through an `op run` wrapper; the recorder does not read 1Password references or retain tokens. It checks the effective identity, repository access, and declared PR author before running a case.
+
+```sh
+# write a sanitized candidate without changing an approved fixture.
+bun run fixtures:record --case pr-author --pr 123 --author example-author
+bun run fixtures:record --case pr-reviews --pr 123 --author example-author --reviewer example-reviewer
+
+# inspect the candidate and its separate provenance, then accept explicitly.
+cat fixtures/pr-author.received.txt fixtures/pr-author.received.meta.json
+bun run fixtures:accept --case pr-author
+
+# compare a fresh live capture against the approved fixture without replacing it.
+bun run fixtures:check --case pr-author --pr 123 --author example-author
+```
+
+Repeat record, review, accept, and check for `pr-reviews`. Approved captures use `fixtures/<case>.approved.txt`; CLI version, source PR, actor roles, and capture time live in `fixtures/<case>.meta.json`. Candidates are ignored by Git. The capture keeps JSON output as JSON text, preserves the review page nesting, and removes fields the production parser does not use. Failed commands, timeouts, incomplete output, and missing actor evidence cannot produce a candidate.
+
+To add a case, define its exact executable and argv in [`scripts/cli-fixtures.ts`](./scripts/cli-fixtures.ts), add only the sanitization its consumer needs, and make the owning fake CLI handler assert the command shape before loading the approved capture. Before a release, an operator may run `fixtures:check` against a controlled resource; refresh an intentional drift with `fixtures:record`, inspect the candidate and provenance, and invoke `fixtures:accept` only after review. Do not run the GitHub Actions-only Leia scenarios locally.
+
 ### Build And Package Validation
 
 ```sh
