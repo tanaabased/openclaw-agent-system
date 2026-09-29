@@ -244,14 +244,18 @@ describe('channels/github/conversation/pull-request-handoff-service', () => {
         );
         state.conversations[conversationId]!.implementation = { status: 'completed' };
       } else {
-        await service.checkpointTask(checkpointInput);
-        await service.checkpointTask(checkpointInput);
+        assert.equal(await service.checkpointTask(checkpointInput), 'awaiting-reconciliation');
+        assert.equal(await service.checkpointTask(checkpointInput), 'awaiting-reconciliation');
         assert.deepEqual(state.conversations[conversationId]!.implementation, {
           status: 'completed',
         });
       }
       await service.reconcile(reconcileInput);
       await service.reconcile(reconcileInput);
+      if (checkpointMode === 'task') {
+        assert.equal(await service.checkpointTask(checkpointInput), 'published');
+        await service.reconcile(reconcileInput);
+      }
 
       assert.equal(baselineReads, 1);
       assert.equal(eventTurns, 1);
