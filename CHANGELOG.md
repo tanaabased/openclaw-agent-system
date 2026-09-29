@@ -16,12 +16,13 @@
 - Added contextual [`gog`](./tools/google/README.md#gog-and-agent_system_gog) shim and strict `AGENT_SYSTEM_GOG` launcher. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Added local YAML file references for `setup-host` and `setup-agent` declarations. [#168](https://github.com/tanaabased/openclaw-agent-system/issues/168)
 - Added the agent's compacted OpenClaw database snapshot to backups, with explicit absent and omitted coverage. [#174](https://github.com/tanaabased/openclaw-agent-system/issues/174)
-- Aligned public pull request handoff cards with their private session presentation.
+- Aligned public pull request handoff cards with their private session presentation. [#191](https://github.com/tanaabased/openclaw-agent-system/pull/191)
 - Assigned delivery PRs to the admitted assigning actor by default, with configurable assignees and review requests. [#169](https://github.com/tanaabased/openclaw-agent-system/issues/169)
-- Reported the task PR's `handoffStatus` snapshot when publication returns. [#187](https://github.com/tanaabased/openclaw-agent-system/issues/187)
+- Raised the default setup command timeout from five to ten minutes. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 
 ### Bug Fixes
 
+- Fixed completed task PR handoffs still reporting a pending `handoffStatus`. [#187](https://github.com/tanaabased/openclaw-agent-system/issues/187)
 - Fixed existing agent-owned task PRs failing to establish their issue conversation handoff. [#183](https://github.com/tanaabased/openclaw-agent-system/issues/183)
 - Fixed local Codex plugin reinstalls by updating `@tanaab/codex-tools` to `1.0.3`. [codex-tools#39](https://github.com/tanaabased/codex-tools/pull/39)
 - Fixed pull request review history pagination output during delivery checks. [#186](https://github.com/tanaabased/openclaw-agent-system/pull/186)
