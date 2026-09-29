@@ -74,3 +74,44 @@ openclaw as backup restore "$archive" --target "$TMPDIR/backup-with-state" --jso
 node "$GITHUB_WORKSPACE/examples/backup/agent-state-fixture.mjs" verify "$TMPDIR/backup-with-state/openclaw-state/openclaw-agent.sqlite"
 cmp MEMORY.md "$TMPDIR/backup-with-state/workspace/MEMORY.md"
 ```
+
+```bash
+# should preview and apply retention to five installed-cli backups without changing the retained set.
+cd "$TMPDIR/backup-workspace"
+for index in 1 2 3 4 5; do
+  openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -e '.status == "created"'
+done
+test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 5
+openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --dry-run --json | jq -e '.status == "preview" and (.kept | length) == 3 and (.wouldDelete | length) == 2 and (.deleted | length) == 0'
+test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 5
+openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --dry-run --json | jq -r '.kept[]' | sort > "$TMPDIR/prune-expected"
+openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --json | jq -e '.status == "pruned" and (.deleted | length) == 2'
+find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | sort > "$TMPDIR/prune-actual"
+cmp "$TMPDIR/prune-expected" "$TMPDIR/prune-actual"
+while IFS= read -r archive; do openclaw as backup verify "$archive" --json | jq -e '.status == "verified"'; done < "$TMPDIR/prune-actual"
+openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --json | jq -e '.status == "pruned" and (.deleted | length) == 0'
+```
+
+```bash
+# should skip pruning when creation or upload fails in an automation sequence.
+cd "$TMPDIR/backup-workspace"
+before="$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')"
+if archive="$(false)"; then openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 1; fi
+if archive="$(openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -er '.archive')"; then
+  if false; then openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 1; fi
+fi
+after="$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')"
+test "$after" = "$((before + 1))"
+```
+
+```bash
+# should prune only after the stubbed upload succeeds for the exact returned archive.
+cd "$TMPDIR/backup-workspace"
+archive="$(openclaw as backup create --output "$TMPDIR/prune-archives" --openclaw-state off --json | jq -er '.archive')"
+openclaw as backup verify "$archive" --json | jq -e '.status == "verified"'
+test -s "$archive"
+if true; then
+  openclaw as backup prune --output "$TMPDIR/prune-archives" --keep 3 --json | jq -e '.status == "pruned" and (.deleted | length) > 0'
+fi
+test "$(find "$TMPDIR/prune-archives" -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 3
+```

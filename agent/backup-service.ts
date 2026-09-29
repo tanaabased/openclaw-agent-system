@@ -8,6 +8,7 @@ import {
   open,
   readFile,
   readlink,
+  readdir,
   realpath,
   rm,
   unlink,
@@ -25,7 +26,12 @@ import {
   verifyAgentSnapshot,
   type BackupSnapshotCommand,
 } from './backup-snapshot.ts';
-import { writeWorkspaceArchive, verifyWorkspaceArchive, safeBackupLink } from './backup-archive.ts';
+import {
+  writeWorkspaceArchive,
+  verifyWorkspaceArchive,
+  readWorkspaceArchiveMetadata,
+  safeBackupLink,
+} from './backup-archive.ts';
 import restoreWorkspaceBackup from './backup-restore.ts';
 import {
   backupGit,
@@ -152,6 +158,26 @@ function fingerprint(stats: Awaited<ReturnType<typeof lstat>>) {
   return [stats.dev, stats.ino, stats.mode, stats.size, stats.mtimeMs, stats.ctimeMs].join(':');
 }
 
+export interface BackupPruneResult {
+  agentId: string;
+  output: string;
+  keep: number;
+  kept: string[];
+  deleted: string[];
+  wouldDelete: string[];
+  skipped: { path: string; reason: string }[];
+}
+
+export class BackupPruneError extends BackupError {
+  constructor(
+    code: string,
+    message: string,
+    public readonly result: BackupPruneResult,
+  ) {
+    super(code, message);
+  }
+}
+
 async function captureWorkspace(
   plan: BackupPlan,
   stage: string,
@@ -258,7 +284,176 @@ export default class WorkspaceBackupService {
       agentId: string,
     ) => Promise<BackupRuntimeProtection> = async () => ({ paths: [] }),
     private readonly snapshotCommand?: BackupSnapshotCommand,
+    private readonly beforePruneDelete?: (path: string) => Promise<void>,
   ) {}
+
+  async prune(options: {
+    manifest: AgentManifest;
+    workspaceDir: string;
+    output?: string;
+    keep: number;
+    dryRun: boolean;
+    bound?: boolean;
+  }): Promise<BackupPruneResult> {
+    if (!Number.isSafeInteger(options.keep) || options.keep < 1)
+      throw new BackupError('backup-keep-invalid', 'Supply --keep as a positive integer.');
+    const plan = await this.plan({
+      manifest: options.manifest,
+      workspaceDir: options.workspaceDir,
+      overrides: options.output ? { output: options.output } : {},
+      bound: options.bound,
+    });
+    const output = plan.settings.output;
+    const control = await canonicalBackupPath(resolve(plan.workspaceDir, backupControlDirectory));
+    const empty = (): BackupPruneResult => ({
+      agentId: plan.agentId,
+      output,
+      keep: options.keep,
+      kept: [],
+      deleted: [],
+      wouldDelete: [],
+      skipped: [],
+    });
+    const inspect = async () => {
+      const result = empty();
+      let names: string[];
+      try {
+        const directory = await lstat(output);
+        if (!directory.isDirectory() || (await realpath(output)) !== output)
+          throw new BackupError(
+            'backup-directory-unsafe',
+            'The backup destination is not a real directory.',
+          );
+        names = (await readdir(output)).sort();
+      } catch (error) {
+        if (nodeErrorCode(error) === 'ENOENT')
+          return { result, eligible: [] as { path: string; stamp: string; identity: string }[] };
+        throw error;
+      }
+      const eligible: { path: string; stamp: string; identity: string }[] = [];
+      for (const name of names) {
+        const path = join(output, name);
+        let stats: Awaited<ReturnType<typeof lstat>>;
+        try {
+          stats = await lstat(path);
+        } catch {
+          result.skipped.push({ path, reason: 'unreadable' });
+          continue;
+        }
+        if (!stats.isFile()) {
+          result.skipped.push({ path, reason: 'not-regular-file' });
+          continue;
+        }
+        if (name.startsWith('.pending-')) {
+          result.skipped.push({ path, reason: 'pending-write' });
+          continue;
+        }
+        if (!name.endsWith('.tar.gz')) {
+          result.skipped.push({ path, reason: 'unrelated-file' });
+          continue;
+        }
+        try {
+          const metadata = await readWorkspaceArchiveMetadata(path);
+          if (fingerprint(await lstat(path)) !== fingerprint(stats))
+            throw new BackupError(
+              'backup-archive-changed',
+              'The archive changed during inspection.',
+            );
+          if (metadata.agentId !== plan.agentId) {
+            result.skipped.push({ path, reason: 'other-agent' });
+            continue;
+          }
+          eligible.push({ path, stamp: metadata.capturedAt, identity: fingerprint(stats) });
+        } catch (error) {
+          result.skipped.push({
+            path,
+            reason: error instanceof BackupError ? error.code : 'unreadable',
+          });
+        }
+      }
+      eligible.sort((a, b) => b.stamp.localeCompare(a.stamp) || a.path.localeCompare(b.path));
+      return { result, eligible };
+    };
+    const run = async () => {
+      const { result, eligible } = await inspect();
+      for (let index = 0; index < eligible.length; index++) {
+        const item = eligible[index]!;
+        try {
+          await this.verify(item.path, plan.agentId);
+          if (fingerprint(await lstat(item.path)) !== item.identity)
+            throw new BackupError(
+              'backup-archive-changed',
+              'The archive changed during verification.',
+            );
+        } catch (error) {
+          const code = error instanceof BackupError ? error.code : 'backup-archive-invalid';
+          if (result.kept.length < options.keep) {
+            result.skipped.push({
+              path: item.path,
+              reason: `retained-verification-failed:${code}`,
+            });
+            throw new BackupPruneError(
+              'backup-retained-verification-failed',
+              `A proposed retained archive failed verification: ${item.path} (${code}).`,
+              result,
+            );
+          }
+          result.skipped.push({ path: item.path, reason: code });
+          continue;
+        }
+        if (result.kept.length < options.keep) result.kept.push(item.path);
+        else result.wouldDelete.push(item.path);
+      }
+      if (options.dryRun || result.wouldDelete.length === 0) return result;
+      const original = new Map(eligible.map((entry) => [entry.path, entry]));
+      const remaining = [...eligible];
+      for (const path of [...result.wouldDelete]) {
+        try {
+          await this.beforePruneDelete?.(path);
+          const fresh = await inspect();
+          const old = original.get(path)!;
+          if (
+            fresh.eligible.length !== remaining.length ||
+            fresh.eligible.some(
+              (entry, index) =>
+                entry.path !== remaining[index]!.path ||
+                entry.identity !== remaining[index]!.identity,
+            ) ||
+            fingerprint(await lstat(path)) !== old.identity
+          )
+            throw new BackupError(
+              'backup-prune-race',
+              'Archive selection changed before deletion.',
+            );
+          await unlink(path);
+          remaining.splice(
+            remaining.findIndex((entry) => entry.path === path),
+            1,
+          );
+          result.deleted.push(path);
+          result.wouldDelete = result.wouldDelete.filter((entry) => entry !== path);
+        } catch (error) {
+          throw new BackupPruneError(
+            error instanceof BackupError ? error.code : 'backup-prune-delete-failed',
+            `Pruning stopped at ${path}: ${error instanceof Error ? error.message : String(error)}.`,
+            result,
+          );
+        }
+      }
+      return result;
+    };
+    if (options.dryRun) return run();
+    // apply uses the same lease as creation; dry-run must not create staging or lock state.
+    await ignoreDestination(plan.workspaceDir, control);
+    await ignoreDestination(plan.workspaceDir, output);
+    await ensureDirectory(control, true);
+    const lock = await acquirePrivateStateFileLock(join(control, 'capture'), lockOptions);
+    try {
+      return await run();
+    } finally {
+      await lock.release();
+    }
+  }
 
   async plan(options: {
     manifest: AgentManifest;

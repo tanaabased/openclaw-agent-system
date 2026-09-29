@@ -12,6 +12,7 @@ import installAgentSystem from './install.ts';
 import validateAgentSystem from './validate.ts';
 import backupCreate from './backup-create.ts';
 import backupVerify from './backup-verify.ts';
+import backupPrune from './backup-prune.ts';
 import backupRestore from './backup-restore.ts';
 import WorkspaceBackupService from '../agent/backup-service.ts';
 import registerGitHubNotificationsCli from '../channels/github/cli/register.ts';
@@ -115,7 +116,7 @@ export default function registerAgentSystemCli(
   const backupService = options.backupService ?? new WorkspaceBackupService();
   const backup = agentSystem
     .command('backup')
-    .description('Create, verify, and restore private per-agent recovery archives.')
+    .description('Create, verify, prune, and restore private per-agent recovery archives.')
     .action(() => writeHelp(backup, output));
   const create = backup
     .command('create')
@@ -175,13 +176,39 @@ export default function registerAgentSystemCli(
       },
     });
   });
-  const verify = backup
+  const prune = backup
+    .command('prune')
+    .description('Retain the newest local backups by embedded capture time.')
+    .option('--agent <id>', 'Select an installed agent (operators only).')
+    .option('--output <directory>', 'Override the manifest backup destination.')
+    .option('--keep <count>', 'Required positive integer number of backups to retain.')
+    .option('--dry-run', 'Preview without deleting or creating state.')
+    .option('--json', 'Write one structured JSON result.')
+    .action(async () => {
+      const selected = prune.opts();
+      await backupPrune({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        ...(typeof selected.output === 'string' ? { destination: selected.output } : {}),
+        keep: typeof selected.keep === 'string' ? selected.keep : undefined,
+        commandAuthority,
+        environment,
+        manifestService: options.manifestService,
+        workspaceDir: cwd(),
+        service: backupService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        json: selected.json === true,
+        dryRun: selected.dryRun === true,
+      });
+    });
+  const verifyArchive = backup
     .command('verify <archive>')
     .description('Check archive structure, inventory and checksums without extraction.')
     .option('--agent <id>', 'Require this archive agent identity (operators only).')
     .option('--json', 'Write one structured JSON result.')
     .action(async (archive) => {
-      const selected = verify.opts();
+      const selected = verifyArchive.opts();
       await backupVerify({
         ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
         archive: String(archive),

@@ -521,6 +521,73 @@ export async function verifyWorkspaceArchive(
   }
 }
 
+/** read only the bounded first entry for retention; payload integrity is checked separately. */
+export async function readWorkspaceArchiveMetadata(archive: string): Promise<{
+  agentId: string;
+  capturedAt: string;
+}> {
+  const handle = await open(
+    archive,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  const parser = extract();
+  const reading = pipeline(
+    handle.createReadStream(),
+    createGunzip(),
+    parser as unknown as Writable,
+  );
+  void reading.catch(() => undefined);
+  try {
+    if (!(await handle.stat()).isFile())
+      throw new BackupError('backup-archive-not-file', 'Not a regular archive.');
+    for await (const entry of parser) {
+      if (
+        entry.header.name !== 'manifest.json' ||
+        entry.header.type !== 'file' ||
+        !Number.isSafeInteger(entry.header.size) ||
+        entry.header.size! < 0 ||
+        entry.header.size! > maximumManifestBytes
+      )
+        throw new BackupError('backup-manifest-invalid', 'The bounded root manifest is missing.');
+      const chunks: Buffer[] = [];
+      for await (const chunk of entry) chunks.push(Buffer.from(chunk as Uint8Array));
+      let value: unknown;
+      try {
+        value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        throw new BackupError('backup-manifest-invalid', 'The root manifest is not valid JSON.');
+      }
+      const candidate = value as Partial<WorkspaceBackupManifest> | null;
+      if (
+        !candidate ||
+        candidate.format !== 'agent-system-backup' ||
+        (candidate.version !== 1 && candidate.version !== 2) ||
+        typeof candidate.agentId !== 'string' ||
+        !/^[a-z0-9][a-z0-9-]*$/u.test(candidate.agentId) ||
+        typeof candidate.capturedAt !== 'string' ||
+        !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(candidate.capturedAt) ||
+        !Number.isFinite(Date.parse(candidate.capturedAt)) ||
+        new Date(candidate.capturedAt).toISOString() !== candidate.capturedAt
+      )
+        throw new BackupError(
+          'backup-manifest-invalid',
+          'The archive retention metadata is invalid.',
+        );
+      validateInventory(candidate as WorkspaceBackupManifest);
+      return { agentId: candidate.agentId, capturedAt: candidate.capturedAt };
+    }
+    throw new BackupError('backup-manifest-invalid', 'The archive has no root manifest.');
+  } catch (error) {
+    throw error instanceof BackupError
+      ? error
+      : new BackupError('backup-archive-invalid', 'The archive metadata could not be read.');
+  } finally {
+    parser.destroy();
+    await reading.catch(() => undefined);
+    await handle.close();
+  }
+}
+
 /** extract a previously verified private archive without delegating path handling to tar. */
 export async function extractWorkspaceArchive(
   archive: string,
