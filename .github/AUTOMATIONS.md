@@ -11,8 +11,9 @@ references as #194–#197 implement them. No scheduler or adapter is implemented
 Useful automation is feasible without runtime parity or a new scheduler:
 
 - **OpenClaw:** reconcile through its authenticated operator CLI transport, then
-  let its native scheduler run commands or agent turns. Command scripts can invoke
-  the existing Agent System operator tool commands for managed identity and policy.
+  let its native scheduler run commands or agent turns. Command jobs should enter
+  a narrow Agent System runner that supplies setup-style managed launchers and
+  fresh agent authority, so scripts can use plain `git` and `gh`.
 - **Codex:** compute a deterministic desired/observed plan, have a Codex skill apply
   that plan through the native automation tool, then verify saved settings. Me
   already implements this pattern. Direct synchronization from a headless CLI is
@@ -66,11 +67,70 @@ reconciliation from the more limited in-process plugin API.
 ### Deterministic command jobs
 
 The native `command` payload calls a process runner directly, without a model.
-It is an operator-authored host job, not a model's `tools.exec` invocation. A
-repository script can use the existing operator route, for example:
+It is an operator-authored host job, not a model's `tools.exec` invocation. It does
+not automatically receive Agent System's descendant authority or launchers.
+
+**Use a plugin-owned command runner for the first delivery.** The native scheduler
+launches one fixed Agent System CLI entrypoint with the owned job identity and
+expected effective hash. That runner validates the installed agent, workspace,
+enabled declaration, and synchronized command before issuing temporary authority
+and running the payload. Missing ownership, disabled/removed jobs, or changed
+effective content require sync; do not execute newly discovered content through
+an old scheduler entry. The CLI spelling remains implementation work in #195/#197.
+
+The existing [agent/setup-command-service.ts](../agent/setup-command-service.ts)
+already owns the useful mechanism: it validates the installed workspace, creates
+an `AgentCommandAuthority`, supplies an invocation-scoped command executor, issues
+a bounded capability, and runs with the packaged launchers first on PATH. The
+launchers route supported plain commands through the existing tool runtime.
+Credentials stay with each managed tool invocation, not in the script environment.
+Reuse this mechanism through a small shared command-execution owner; keep setup
+checks, prerequisite probes, install reconciliation, and setup-specific mode
+metadata in setup. Scheduled execution must not masquerade as a setup check or
+run setup steps. Gateway conversation authorities remain binding-only.
+
+The intended path is:
+
+```text
+native scheduled command
+  -> Agent System owned-job runner
+  -> fresh agent binding + managed launchers
+  -> repository script using git / gh / registered command routes
+  -> existing tool policy, identity, and invocation-scoped credentials
+```
+
+This needs no model turn and no conversational session. The runner is an explicit
+operator entrypoint with the existing admission gate: a model descendant cannot
+use it to select a new agent, and invalid inherited authority must fail rather
+than be cleared. Fix the executable/profile/cwd at reconciliation; mint capability
+only when execution begins, revoke it on completion/cancellation, and bound its
+lifetime by the job deadline. Never persist a live capability or secret environment
+in a scheduler record. The implementation must also prove cleanup when the native
+scheduler terminates the runner and its process tree.
+
+Plain commands receive setup's existing routing semantics, not a complete OS
+sandbox: managed cwd and cross-agent checks still apply; contextual `git`/`gh`
+may use sanitized host fallback outside admitted scope, while strict managed
+launchers reject that fallback. Arbitrary executables and absolute host paths do
+not become managed tools. Missing agent credentials must never fall back to the
+operator's credentials for a managed invocation.
+
+### Why a runner rather than a cron hook
+
+The pinned native command runner invokes `runCommandWithTimeout` directly; it
+does not call `resolve_exec_env`. That hook applies to model `exec` tool calls.
+`cron_reconciled` and `cron_changed` observe state/lifecycle changes; their handler
+contracts return `void`, not per-run environment or execution overrides. Do not
+use a `started` notification to race-inject authority or modify global process
+environment. The public plugin CLI registration surface supplies the required
+entrypoint without patching OpenClaw or adding another scheduler. These findings
+agree with the official [exec hook](https://docs.openclaw.ai/plugins/hooks/tool-policy)
+and [cron hook](https://docs.openclaw.ai/plugins/hooks/reference) contracts.
+
+Explicit operator tool calls remain useful for separately authored raw host jobs:
 
 ```sh
-# illustrative job command; run only in the trusted installed agent workspace.
+# raw operator job alternative, outside the bound runner above.
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
@@ -81,20 +141,14 @@ It resolves the installed agent, checks configured tool policy before environmen
 and credential resolution, and supplies credentials only to that tool invocation.
 An active agent binding still prohibits selecting another agent.
 
-Thus a scheduled script need not inherit a conversational agent capability to
-use managed Git/GitHub/Google commands. The scheduler's operator authorization
-permits the outer script; calls through `agent-system tool` get Agent System's
-tool boundaries. Ordinary shell commands still execute as the host user and do
-not automatically acquire those boundaries. Keep the native job's cwd at the
-verified workspace, agent association explicit, executable selection fixed, and
-profile selection consistent. Never save a turn capability or bulk secret
-environment into the job. Invalid descendant authority must still fail, not be
-cleared to manufacture operator status.
+Inside the proposed bound runner, use managed launchers instead; explicit `--agent`
+selection remains rejected. The raw operator form is an available alternative,
+not a requirement imposed on every repository command.
 
-Installed acceptance must prove the actual scheduler environment, executable
-resolution, intended agent identity, policy denial before credentials, and absence
-of inherited stale turn authority. These are bounded integration checks, not a
-reason to reject the composition before testing it.
+Installed acceptance must prove native scheduler → runner → plain `git`/`gh`,
+intended identity, policy denial before credentials, containment, and authority
+cleanup. Existing setup tests cover those mechanisms with real launcher subprocesses
+and fake providers; that is useful reuse evidence, not scheduled execution proof.
 
 Prompt jobs instead use native `agentTurn` with the owning agent and explicit
 `isolated` targeting by default. Use native Agent System tools inside those turns;
@@ -206,15 +260,16 @@ automations:
   payload:
     kind: command
     run:
-      command: openclaw
-      args: [agent-system, tool, gh, --agent, tanaabot, --, api, user]
+      command: gh
+      args: [api, user, --jq, .login]
 - id: codex-report
   runtimes: [codex]
   schedule: '0 9 * * 1-5'
   prompt: Run node scripts/report.mjs once from this workspace and report its exit status.
 ```
 
-The last entry intentionally incurs a model turn. The first defaults to an
+The command entry relies on the proposed bound runner; it is not a raw native
+command job. The last entry intentionally incurs a model turn. The first defaults to an
 independent workspace-bound native run. `overrides.<runtime>.target` may be
 `independent` or `{ thread: existing-native-id }`; verify the exact existing local
 target and ownership, never silently bind the installer conversation or create a
@@ -343,10 +398,13 @@ Agent System tests were inspected, not rerun under a substituted Node version.
   short/long equivalence, containment, effective hashes, recurring versus delayed
   schedules, malformed inputs, and adapter-specific support diagnostics.
 - **#195:** build the OpenClaw operator transport adapter and inspect/reconcile
-  owner. Test supported RPC shapes, ownership, removal/reintroduction, partial
+  owner, with a bounded owned-job runner reusing setup's command-binding mechanism.
+  Keep setup-only behavior separate. Test supported RPC shapes, ownership, removal/reintroduction, partial
   failure, native revisions, one-shot persistence, timeout, and execution/delivery
-  results. Add GitHub Actions-only installed proof for a zero-model command using
-  Agent System tooling and a prompt using the owning agent context. Model-facing
+  results. Add GitHub Actions-only installed proof for zero-model scripts using
+  plain managed `git`/`gh`, stale/disabled job rejection, cross-agent denial,
+  policy before credentials, missing-credential failure, and authority cleanup on
+  timeout/cancellation, plus a prompt using the owning agent context. Model-facing
   install must not acquire CLI operator authority as an implicit fallback.
 - **#196:** adapt Me's deterministic planner/native-tool workflow to the shared
   lifecycle. First prove workspace/project saved-state readback; implement pause
