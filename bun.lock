@@ -21,7 +21,7 @@
       "devDependencies": {
         "@copilotkit/aimock": "1.35.0",
         "@eslint/js": "^10.0.1",
-        "@lando/leia": "2.0.0-beta.1",
+        "@lando/leia": "2.0.0",
         "@openai/codex": "0.154.0",
         "@tanaab/codex-tools": "1.0.3",
         "@types/bun": "^1.3.14",
@@ -211,7 +211,7 @@
 
     "@lando/chai": ["chai@4.5.0", "", { "dependencies": { "assertion-error": "^1.1.0", "check-error": "^1.0.3", "deep-eql": "^4.1.3", "get-func-name": "^2.0.2", "loupe": "^2.3.6", "pathval": "^1.1.1", "type-detect": "^4.1.0" } }, "sha512-RITGBfijLkBddZvnn8jdqoTypxvqbOLYQkGGxXzeFjVHvudaPw0HNFD9x928/eUwYWd2dPCugVqspGALTZZQKw=="],
 
-    "@lando/leia": ["@lando/leia@2.0.0-beta.1", "", { "dependencies": { "@lando/chai": "npm:chai@^4.4.1", "@types/mocha": "^10.0.10", "chalk": "^4.1.2", "debug": "^4.3.2", "detect-newline": "^3.1.0", "glob": "^7.1.3", "lodash": "^4.17.11", "marked": "^4.0.10", "mocha": "^11.1.0", "object-hash": "^2.2.0" }, "bin": { "leia": "dist/esm/bin/leia.js" } }, "sha512-kQykGO1FoPeRZ/g66wMiLdlQaIqXnCNxtN7H+qk7QCQY+0rHmdZIvlaYkiKPBG3bXkFgAzFkFrCR5XwX9OR09Q=="],
+    "@lando/leia": ["@lando/leia@2.0.0", "", { "dependencies": { "@lando/chai": "npm:chai@^4.4.1", "@types/mocha": "^10.0.10", "chalk": "^4.1.2", "debug": "^4.3.2", "detect-newline": "^3.1.0", "glob": "^7.1.3", "lodash": "^4.17.11", "marked": "^4.0.10", "mocha": "^11.1.0", "object-hash": "^2.2.0" }, "bin": { "leia": "dist/esm/bin/leia.js" } }, "sha512-MdEy+snhhkDOTv5m/zZT1oDMOLJGmMlXt7O2hBuNfVzpLoyOCKnIfMfAhUohIuCDAT8X5wDz0GybXnLWvKd39g=="],
 
     "@lydell/node-pty": ["@lydell/node-pty@1.2.0-beta.15", "", { "optionalDependencies": { "@lydell/node-pty-darwin-arm64": "1.2.0-beta.15", "@lydell/node-pty-darwin-x64": "1.2.0-beta.15", "@lydell/node-pty-linux-arm64": "1.2.0-beta.15", "@lydell/node-pty-linux-x64": "1.2.0-beta.15", "@lydell/node-pty-win32-arm64": "1.2.0-beta.15", "@lydell/node-pty-win32-x64": "1.2.0-beta.15" } }, "sha512-Br8wBxzbxFwdWgk9uQ+rdzE0xfoxOK4QuGH54swhRwc5IxP6H9Y1/bcyazRGvNUs6XkB5qNVkezuKSRxUwZe7A=="],
 
