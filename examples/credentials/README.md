@@ -13,6 +13,7 @@ openclaw-setup \
   --agent-system "$AGENT_SYSTEM_PACKAGE" \
   --needs-secret-service \
   --yolo
+openclaw config set cron.enabled false --strict-json
 openclaw-aimock prepare --scenario credentials
 ```
 
