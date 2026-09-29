@@ -441,7 +441,12 @@ export default class GitHubNotificationPullRequestHandoffService {
     }
     if (checkpoint.source.handoff?.status === 'published') return;
     if (!checkpoint.source.handoff) {
-      const publicText = githubNotificationPullRequestHandoffComment(checkpoint.source.number);
+      const publicText = githubNotificationPullRequestHandoffComment({
+        issueNumber: input.item.number,
+        pullRequestNumber: checkpoint.source.number,
+        repositoryName: input.item.repositoryName,
+        repositoryOwner: input.item.repositoryOwner,
+      });
       const next = structuredClone(checkpoint.state);
       next.conversation!.deliveryPullRequest!.handoff = {
         publicText,

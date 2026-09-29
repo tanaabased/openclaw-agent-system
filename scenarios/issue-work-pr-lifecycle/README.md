@@ -107,7 +107,7 @@ pull_request_number="$(cat "$TMPDIR/approved-pull-request-number")"
 handoffs="$(OPENCLAW_LOG_LEVEL=error openclaw agent-system tool gh --agent notification-actor -- api --paginate "/repos/tanaabased/big-test-bucket/issues/$issue_number/comments" --jq '.[] | select(.user.login == "tanaabot" and (.body | contains("agent-system-github-publication:pull-request-handoff"))) | {body, id}')"
 handoff="$(jq -sce 'select(length == 1) | .[0]' <<< "$handoffs")"
 jq -e --arg pull_request "#$pull_request_number" '.id | type == "number" and . > 0' <<< "$handoff"
-jq -e --arg pull_request "#$pull_request_number" '.body | contains("## Pull request opened") and contains("**Pull request:** " + $pull_request) and contains("**Conversation:**") and contains("**Replies:**")' <<< "$handoff"
+jq -e --arg issue "[tanaabased/big-test-bucket#$issue_number](https://github.com/tanaabased/big-test-bucket/issues/$issue_number)" --arg pull_request "[tanaabased/big-test-bucket#$pull_request_number](https://github.com/tanaabased/big-test-bucket/pull/$pull_request_number)" '.body | contains("## 🔀 Pull request opened") and contains("**Issue:** " + $issue) and contains("**Pull request:** " + $pull_request) and contains("**Comment flow:**")' <<< "$handoff"
 ```
 
 ```bash
